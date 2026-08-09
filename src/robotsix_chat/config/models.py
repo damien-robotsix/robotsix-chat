@@ -1251,6 +1251,13 @@ class AutonomousSessionDefinition(BaseModel):
     prompt: str = ""
     trigger_type: TriggerType = TriggerType.periodic
     trigger_interval_seconds: float = Field(default=45.0, ge=0.0)
+    max_auto_turns: int = Field(
+        default=20,
+        description=(
+            "Maximum number of automatic agent turns during the "
+            "execution phase before reverting to proposal."
+        ),
+    )
     enabled: bool = True
     self_refine: bool = False
     self_refine_require_approval: bool = False
@@ -1260,12 +1267,11 @@ class AutonomousSessionDefinition(BaseModel):
 class AutonomousSettings(BaseModel):
     """Native autonomous chat sessions — self-directed agent loops.
 
-    When enabled, the agent can run fully autonomous sessions that pick a
-    subject, draft a plan, await operator approval, then execute to
-    completion with auto-cycling.
+    Autonomous sessions are defined entirely through the ``sessions`` presets
+    list.  Each preset carries its own prompt, trigger type, max turns, and
+    enabled flag — there are no legacy single-session keys.
 
     Attributes:
-        enabled: Master switch.  Default ``True``.
         proposal_marker: Marker string the agent emits after drafting a plan
             to signal the plan is ready for operator review.  The session
             enters the ``proposal`` state and waits for the operator to
@@ -1273,30 +1279,24 @@ class AutonomousSettings(BaseModel):
         completion_marker: Marker string the agent emits when the plan is
             complete.  The session stays open after completion; the operator
             must explicitly close it.
-        max_auto_turns: Maximum number of automatic agent turns during the
-            execution phase before reverting to ``proposal``.
-        session_color: Optional CSS color string applied as a visual accent
-            on autonomous session rows (e.g. ``"#ef4444"`` for red).
-        initial_task: Optional description of the first task to spawn when
-            an autonomous session starts.  When empty, the agent picks its
-            own subject.
-        sessions: Optional list of named autonomous session definitions.
-            When empty (the default), a single default preset is synthesized
-            at runtime that matches the pre-existing single-session behavior
-            exactly — backward compatible out of the box.  Each entry defines
-            a prompt, trigger, and enabled flag for one autonomous session.
+        continue_interval_seconds: Minimum delay between auto-continue cycles
+            (throttle).  Also serves as the default trigger interval for
+            synthesized sessions when no presets are configured.
+        max_idle_auto_turns: Maximum number of consecutive NO_CHANGE / idle
+            auto-continue turns before the loop halts (reverts to proposal).
+        stale_monitor_runs_before_completion: Number of consecutive NO_CHANGE
+            cycles after which a periodic monitor is considered 'stale'.
+        sessions: List of named autonomous session definitions.  When empty,
+            a single default preset is synthesized at runtime matching the
+            pre-existing single-session behavior — backward compatible out of
+            the box.  Each entry defines a prompt, trigger, max turns, and
+            enabled flag for one autonomous session.
 
     """
 
-    enabled: bool = True
     proposal_marker: str = "---PROPOSAL READY---"
     completion_marker: str = "---AUTONOMOUS COMPLETE---"
-    max_auto_turns: int = 20
-    persist_path: str = "/data/autonomous_sessions.json"
-    session_color: str = ""
-    initial_task: str = ""
     continue_interval_seconds: float = 45.0
-    pending_subsession_wait_timeout: float = 600.0
     max_idle_auto_turns: int = Field(
         default=5,
         description=(
@@ -1304,7 +1304,7 @@ class AutonomousSettings(BaseModel):
             "turns before the loop halts (reverts to proposal).  A turn is "
             "idle when the agent reply is a recognised no-op sentinel "
             "(NO_CHANGE, nothing changed, …).  Set to 0 to disable the "
-            "idle cap and only rely on max_auto_turns."
+            "idle cap and only rely on per-preset max_auto_turns."
         ),
     )
     stale_monitor_runs_before_completion: int = Field(
@@ -1322,11 +1322,46 @@ class AutonomousSettings(BaseModel):
         description=(
             "Named autonomous session definitions.  When empty, a single "
             "default preset matching the pre-existing behavior is synthesized "
-            "at runtime.  Each entry defines a prompt, trigger, and enabled "
-            "flag for one autonomous session."
+            "at runtime.  Each entry defines a prompt, trigger, max turns, "
+            "and enabled flag for one autonomous session."
         ),
     )
     model_config = ConfigDict(extra="forbid")
+
+    @model_validator(mode="before")
+    @classmethod
+    def _migrate_legacy_autonomous_keys(cls, data: Any) -> Any:
+        """Strip removed single-session keys and relocate ``max_auto_turns``.
+
+        Legacy keys ``enabled``, ``initial_task``, ``session_color``,
+        ``persist_path``, and ``pending_subsession_wait_timeout`` are
+        stripped silently — they have no equivalent in the preset model.
+
+        The global ``max_auto_turns`` value is migrated into every session
+        preset that does not already define its own ``max_auto_turns``,
+        then the global key is removed.
+        """
+        if not isinstance(data, dict):
+            return data
+
+        _stripped_keys = (
+            "enabled",
+            "initial_task",
+            "session_color",
+            "persist_path",
+            "pending_subsession_wait_timeout",
+        )
+        for key in _stripped_keys:
+            data.pop(key, None)
+
+        # Migrate global max_auto_turns into each preset that lacks it.
+        legacy_max_turns = data.pop("max_auto_turns", None)
+        if legacy_max_turns is not None and isinstance(data.get("sessions"), list):
+            for preset in data["sessions"]:
+                if isinstance(preset, dict) and "max_auto_turns" not in preset:
+                    preset["max_auto_turns"] = legacy_max_turns
+
+        return data
 
 
 class ComponentCredentials(BaseModel):

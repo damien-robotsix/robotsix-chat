@@ -61,15 +61,23 @@ def autonomous_runner(store, tmp_path, monkeypatch) -> AutonomousRunner:
     settings = MagicMock()
     settings.autonomous.proposal_marker = "---PROPOSAL READY---"
     settings.autonomous.completion_marker = "---AUTONOMOUS COMPLETE---"
-    settings.autonomous.max_auto_turns = 20
-    settings.autonomous.session_color = "#ff0000"
-    settings.autonomous.persist_path = str(tmp_path / "autonomous_sessions.json")
-    settings.autonomous.initial_task = ""
     settings.autonomous.continue_interval_seconds = 45.0
-    settings.autonomous.pending_subsession_wait_timeout = 600.0
     settings.autonomous.max_idle_auto_turns = 5
     settings.autonomous.stale_monitor_runs_before_completion = 3
-    settings.autonomous.sessions = []
+    from types import SimpleNamespace
+
+    settings.autonomous.sessions = [
+        SimpleNamespace(
+            name="default",
+            prompt="",
+            trigger_type=SimpleNamespace(value="periodic"),
+            trigger_interval_seconds=45.0,
+            max_auto_turns=20,
+            enabled=True,
+            self_refine=False,
+            self_refine_require_approval=False,
+        )
+    ]
     runner = AutonomousRunner(
         settings=settings,
         conversation_store=store,
@@ -205,8 +213,6 @@ class TestSessionsListAutonomousAnnotation:
         assert s[SSE_AUTONOMOUS_STATE_TYPE] == "proposal"
         assert s["autonomous_plan_text"] == "Draft plan text"
         assert s["autonomous_turn_count"] == 3
-        assert s["autonomous_max_turns"] == 20
-        assert s["autonomous_session_color"] == "#ff0000"
 
     @pytest.mark.asyncio
     async def test_autonomous_session_listed_without_prior_store_session(
