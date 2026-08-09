@@ -886,7 +886,6 @@ class TestAutonomousEventStreaming:
         sid = sessions[0]["session_id"]
 
         settings = MagicMock()
-        settings.autonomous.initial_task = "Test task"
         run_serializer = MagicMock()
         run_serializer.for_owner.return_value.__aenter__ = AsyncMock()
         run_serializer.for_owner.return_value.__aexit__ = AsyncMock()
@@ -912,7 +911,7 @@ class TestAutonomousEventStreaming:
         turns = store.history(sid)
         assert len(turns) >= 1
         user_msg, asst_msg = turns[0]
-        assert "Test task" in user_msg
+        assert "Begin a new autonomous session" in user_msg
         assert "Plan text" in asst_msg
         assert "APPROVAL_NEEDED" in asst_msg
 
@@ -921,9 +920,7 @@ class TestAutonomousEventStreaming:
         """_auto_continue publishes streamed tokens and agent_message to the sink."""
         store = ConversationStore()
         settings = MagicMock()
-        settings.autonomous.max_auto_turns = 1
         settings.autonomous.continue_interval_seconds = 0
-        settings.autonomous.pending_subsession_wait_timeout = 0
         settings.autonomous.proposal_marker = "[APPROVAL_NEEDED]"
         settings.autonomous.completion_marker = "[COMPLETED]"
         run_serializer = MagicMock()
@@ -947,6 +944,10 @@ class TestAutonomousEventStreaming:
             agent_factory=lambda: agent,
             run_serializer=run_serializer,
             event_sink=event_sink,
+        )
+        # Per-preset max_auto_turns: mock the definition lookup to return 1.
+        runner._definition_for_owner = MagicMock(  # type: ignore[method-assign]
+            return_value={"max_auto_turns": 1, "name": "default"}
         )
         # Create session without scheduling kickoff so the background task
         # does not also publish tokens / agent_message frames.
@@ -1116,7 +1117,20 @@ class TestResumeSessionsNonBlocking:
         """resume_sessions auto-starts one session when the store is empty."""
         store = ConversationStore()
         settings = MagicMock()
-        settings.autonomous.max_auto_turns = 20
+        from types import SimpleNamespace
+
+        settings.autonomous.sessions = [
+            SimpleNamespace(
+                name="default",
+                prompt="",
+                trigger_type=SimpleNamespace(value="periodic"),
+                trigger_interval_seconds=45.0,
+                max_auto_turns=20,
+                enabled=True,
+                self_refine=False,
+                self_refine_require_approval=False,
+            )
+        ]
         run_serializer = MagicMock()
         run_serializer.for_owner.return_value.__aenter__ = AsyncMock()
         run_serializer.for_owner.return_value.__aexit__ = AsyncMock()
@@ -1134,7 +1148,7 @@ class TestResumeSessionsNonBlocking:
 
         await asyncio.wait_for(runner.resume_sessions(), timeout=0.5)
 
-        # A bootstrap session must have been created for owner 'autonomous'.
+        # A bootstrap session must have been created for the preset's owner.
         assert len(runner._sessions) == 1
         new_aq = next(iter(runner._sessions.values()))
         assert new_aq.owner_id == "autonomous"
@@ -1461,13 +1475,18 @@ class TestAutoContinueThrottleAndSubsessionGate:
         assert registry.list_for_owner.call_count >= 1
 
     @pytest.mark.asyncio
-    async def test_subsession_gate_timeout_fallback(self) -> None:
+    async def test_subsession_gate_timeout_fallback(
+        self, monkeypatch: pytest.MonkeyPatch
+    ) -> None:
         """``_wait_before_continue`` eventually returns when subsession stays active."""
         store = ConversationStore()
         timeout = 0.2
+        monkeypatch.setattr(
+            "robotsix_chat.autonomous.runner._PENDING_SUBSESSION_WAIT_TIMEOUT",
+            timeout,
+        )
         settings = MagicMock()
         settings.autonomous.continue_interval_seconds = 0.01
-        settings.autonomous.pending_subsession_wait_timeout = timeout
 
         # Subsession stays active forever — gate must time out.
         registry = self._make_registry(self._make_subsession_info(is_active=True))
@@ -1563,6 +1582,20 @@ class TestStalemateDetection:
     def _make_runner(self) -> AutonomousRunner:
         store = ConversationStore()
         settings = MagicMock()
+        from types import SimpleNamespace
+
+        settings.autonomous.sessions = [
+            SimpleNamespace(
+                name="default",
+                prompt="",
+                trigger_type=SimpleNamespace(value="periodic"),
+                trigger_interval_seconds=45.0,
+                max_auto_turns=20,
+                enabled=True,
+                self_refine=False,
+                self_refine_require_approval=False,
+            )
+        ]
         return AutonomousRunner(
             settings=settings,
             conversation_store=store,
@@ -1684,9 +1717,21 @@ class TestEnsureActiveSessionAutoRestart:
         settings = MagicMock()
         settings.autonomous.completion_marker = "---AUTONOMOUS COMPLETE---"
         settings.autonomous.proposal_marker = "---PROPOSAL READY---"
-        settings.autonomous.max_auto_turns = 20
         settings.autonomous.continue_interval_seconds = 0
-        settings.autonomous.pending_subsession_wait_timeout = 0
+        from types import SimpleNamespace
+
+        settings.autonomous.sessions = [
+            SimpleNamespace(
+                name="default",
+                prompt="",
+                trigger_type=SimpleNamespace(value="periodic"),
+                trigger_interval_seconds=45.0,
+                max_auto_turns=20,
+                enabled=True,
+                self_refine=False,
+                self_refine_require_approval=False,
+            )
+        ]
         return AutonomousRunner(
             settings=settings,
             conversation_store=store,

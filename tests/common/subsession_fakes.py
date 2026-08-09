@@ -188,6 +188,7 @@ def make_settings(
             transient_error_backoff_cap=transient_error_backoff_cap,
             periodic_max_interval_seconds=periodic_max_interval_seconds,
             periodic_max_total_runs=periodic_max_total_runs,
+            event_driven_timeout_seconds=60.0,
         ),
         central_deploy=SimpleNamespace(url="https://central-deploy.example.com"),
         llmio_api_key=SecretStr(llmio_api_key),

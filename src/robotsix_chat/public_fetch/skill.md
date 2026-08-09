@@ -58,7 +58,7 @@ The tool accepts any public HTTP(S) URL, including:
   truncated, `truncated` is `true` and the `body_size_bytes` reports the full size.
 - **Timeout** — short per-request timeout (default 10 s).
 - **Rate-limited** — configurable sliding-window rate limit (default 10 req/minute).
-- **Auth refusal** — HTTP 401/403 responses on non-fleet-auth hosts are reported with a clear error
+- **Auth refusal** — HTTP 401/403 responses on non-fleet hosts are reported with a clear error
   message. Fleet-auth hosts have credentials injected server-side and should not see 401/403 for
   auth reasons; if they do, the credentials may need updating.
 - **Audited** — every fetch is logged at WARNING level with URL, disposition, status, size, and a

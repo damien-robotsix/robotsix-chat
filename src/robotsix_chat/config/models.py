@@ -132,8 +132,8 @@ class LangfuseInspectSettings(BaseModel):
 class MemoryLlmSettings(BaseModel):
     """Extraction-LLM config for cognee memory (OpenRouter via litellm).
 
-    Defaults match the validated robotsix setup: ``gpt-5-mini`` (cognee's
-    own default model, reliable json_mode structured output) through
+    Defaults match the validated robotsix setup: ``gpt-5-nano`` (cognee's
+    cheapest model, reliable json_mode structured output) through
     OpenRouter's ``custom`` provider. ``api_key`` is required when memory
     is enabled (provide it via ``MEMORY_LLM_API_KEY``).
 
@@ -144,14 +144,16 @@ class MemoryLlmSettings(BaseModel):
     """
 
     provider: str = "custom"
-    # gpt-5-mini is cognee's official default and produces reliable
-    # json_mode structured output at a fraction of a frontier model's cost.
-    # Earlier defaults were expensive (claude-haiku-4.5 — ~$20/day in
-    # production) or unreliable (deepseek-v4-flash produced malformed JSON
-    # under instructor, causing multi-minute retry stalls, 2026-07-09).
-    model: str = "openrouter/openai/gpt-5-mini"
+    # gpt-5-nano is ~10x cheaper than gpt-5-mini and still produces
+    # reliable json_mode structured output for cognee's extraction tasks.
+    # Earlier defaults were expensive (claude-haiku-4.5 — ~$20/day,
+    # gpt-5-mini — ~$15/week in production) or unreliable (deepseek-v4-flash
+    # produced malformed JSON under instructor, causing multi-minute retry
+    # stalls, 2026-07-09).
+    model: str = "openrouter/openai/gpt-5-nano"
     endpoint: str = "https://openrouter.ai/api/v1"
     api_key: SecretStr = SecretStr("")
+    max_completion_tokens: int = 1024
     model_config = ConfigDict(extra="forbid")
 
 
@@ -485,7 +487,7 @@ class DirectRepoSettings(BaseModel):
     - Actions are ONLY permitted for tickets in BLOCKED state.
     - Repo scope is resolved dynamically from the GitHub App installation.
     - PRs are opened in a reviewable state with no auto-merge.
-    - ``merge_pr`` can merge an approved, mergeable PR when the ticket is
+    - ``merge_direct_repo_pr`` can merge an approved, mergeable PR when the ticket is
       in BLOCKED state — do not merge before the human gate is satisfied.
 
     **Additional guardrails for ``direct_fix``:**
@@ -802,6 +804,30 @@ class SubsessionsSettings(BaseModel):
             "(paused monitors only resume on service restart)."
         ),
     )
+    paused_monitor_long_poll_interval_seconds: float = Field(
+        default=15.0,
+        description=(
+            "Interval (seconds) between direct mill API polls by a "
+            "paused periodic monitor in its wait loop.  Each paused "
+            "monitor polls the mill for its tracked ticket's state "
+            "at this interval; when the state differs from the "
+            "checkpoint's ``last_known_state`` the monitor resumes "
+            "immediately (zero added latency).  The background "
+            "watcher's ``paused_monitor_poll_interval_seconds`` "
+            "(60 s default) serves as a safety-net backup.  Set to "
+            "``0`` to disable per-monitor long-polling (watcher-only "
+            "wake)."
+        ),
+    )
+    event_driven_timeout_seconds: float = Field(
+        default=900.0,
+        description=(
+            "Default timeout (seconds) for wait-for-event subsessions. "
+            "When no matching mill event arrives within this window, the "
+            "monitor runs a safety-net turn to verify state via the board "
+            "API in case an event was lost, then re-arms the wait."
+        ),
+    )
     periodic_max_interval_seconds: float = Field(
         default=3600.0,
         description=(
@@ -872,13 +898,6 @@ class LifecycleSettings(BaseModel):
             ``self_restart`` (and the cognee frozen-store auto-recovery that
             depends on it) is unavailable.
         timeout: Per-request HTTP timeout in seconds.
-        config_import_enabled: When ``True``, the server will attempt a
-            one-time config import from central-deploy on first boot if no
-            config file exists.  Also gates the ``POST /config/import``
-            endpoint.
-        config_import_url: Optional override for the config-export endpoint
-            URL.  When empty, the URL is constructed from ``base_url`` as
-            ``{base_url}/chat/services/{service_name}/config/export``.
 
     """
 
@@ -891,8 +910,6 @@ class LifecycleSettings(BaseModel):
     self_restart_max_retries: int = 3
     self_restart_backoff_base: float = 1.0
     self_restart_backoff_cap: float = 30.0
-    config_import_enabled: bool = False
-    config_import_url: str = ""
     model_config = ConfigDict(extra="forbid")
 
 
@@ -1016,6 +1033,12 @@ class FeedbackSettings(BaseModel):
             run-time from the deploy server's chat-component roster
             intersected with the mill board's repo registry — no static
             allowlist is needed.
+        max_tickets_per_run: Ceiling on tickets filed by one feedback run.
+            A run fires at every compaction and session-end boundary, and
+            was previously unbounded: across 37 observed runs it filed 114
+            tickets, mean 3.08, peaking at 9 from a single run. Excess
+            tickets are dropped with a warning naming each one. ``0``
+            disables filing while leaving analysis on.
 
     """
 
@@ -1025,36 +1048,7 @@ class FeedbackSettings(BaseModel):
     board_api_token: SecretStr = SecretStr("")
     deploy_api_key: SecretStr = SecretStr("")
     timeout: float = 60.0
-    model_config = ConfigDict(extra="forbid")
-
-
-class FleetAuthSettings(BaseModel):
-    """Server-side HTTP basic-auth credentials for authenticated fleet UIs.
-
-    When configured, the ``http_probe`` and ``render_url`` tools
-    automatically attach an ``Authorization: Basic …`` header to
-    requests targeting hosts in *auth_hosts* — the credentials are
-    injected server-side and never exposed to the chat agent.
-
-    Authenticated hosts must still pass the owning tool's host
-    allowlist (``http_probe.allowlist``, ``render_url.auth_hosts``).
-
-    Attributes:
-        basic_auth_username: Username for HTTP basic authentication.
-            Leave empty when auth is not required.
-        basic_auth_password: Password for HTTP basic authentication
-            (stored as a SecretStr — never serialised in logs or
-            exposed to the agent).
-        auth_hosts: Hostnames (no protocol, no path) for which the
-            basic-auth header is attached.  Requests to hosts not on
-            this list proceed without credentials.  Default empty
-            (no authenticated hosts).
-
-    """
-
-    basic_auth_username: str = ""
-    basic_auth_password: SecretStr = SecretStr("")
-    auth_hosts: list[str] = Field(default_factory=list)
+    max_tickets_per_run: int = 3
     model_config = ConfigDict(extra="forbid")
 
 
@@ -1072,10 +1066,6 @@ class RenderUrlSettings(BaseModel):
         timeout: Per-request timeout in seconds for the page load.
         viewport_width: Browser viewport width in pixels.
         viewport_height: Browser viewport height in pixels.
-        fleet_auth: Optional server-side credentials for authenticated
-            fleet UIs.  When set, requests to hosts in
-            ``fleet_auth.auth_hosts`` carry HTTP basic-auth headers
-            injected by the server (never visible to the agent).
 
     """
 
@@ -1083,7 +1073,6 @@ class RenderUrlSettings(BaseModel):
     timeout: float = 30.0
     viewport_width: int = 1280
     viewport_height: int = 720
-    fleet_auth: FleetAuthSettings | None = None
     model_config = ConfigDict(extra="forbid")
 
 
@@ -1105,10 +1094,6 @@ class HttpProbeSettings(BaseModel):
         max_body_bytes: Maximum bytes of the response body to read and
             return to the agent (default 2048 — ~2 KB).
         max_redirects: Maximum number of redirects to follow (default 5).
-        fleet_auth: Optional server-side credentials for authenticated
-            fleet UIs.  When set, requests to hosts in
-            ``fleet_auth.auth_hosts`` carry HTTP basic-auth headers
-            injected by the server (never visible to the agent).
 
     """
 
@@ -1119,7 +1104,6 @@ class HttpProbeSettings(BaseModel):
     )
     max_body_bytes: int = 2048
     max_redirects: int = 5
-    fleet_auth: FleetAuthSettings | None = None
     model_config = ConfigDict(extra="forbid")
 
 
@@ -1156,8 +1140,9 @@ class PublicFetchSettings(BaseModel):
     a plain HTTP(S) GET to a user-provided public URL, returns the raw
     text/file contents with metadata, and writes an audit-log entry per
     fetch.  SSRF protection blocks internal/private IP ranges for public
-    hosts; hosts listed in ``fleet_auth.auth_hosts`` are trusted by the
-    operator and bypass the SSRF check.
+    hosts.  Fleet components, resolved from the central-deploy roster, are
+    trusted by the operator: they bypass the SSRF check and the domain
+    allowlist, and their requests carry server-injected basic auth.
 
     Attributes:
         enabled: Master switch.  When ``False``, no tool is offered.
@@ -1172,12 +1157,6 @@ class PublicFetchSettings(BaseModel):
             ``rate_limit_window_seconds`` (default 10).
         rate_limit_window_seconds: Sliding window in seconds for the
             rate limiter (default 60.0).
-        fleet_auth: Optional server-side credentials for authenticated
-            fleet UIs.  When set, requests to hosts in
-            ``fleet_auth.auth_hosts`` carry HTTP basic-auth headers
-            injected by the server (never visible to the agent), and
-            those hosts are implicitly allowed through the domain
-            allowlist and SSRF checks.
 
     """
 
@@ -1188,7 +1167,6 @@ class PublicFetchSettings(BaseModel):
     domain_allowlist: list[str] = Field(default_factory=list)
     rate_limit_requests: int = 10
     rate_limit_window_seconds: float = 60.0
-    fleet_auth: FleetAuthSettings | None = None
     model_config = ConfigDict(extra="forbid")
 
 
@@ -1206,9 +1184,9 @@ class AutonomousSessionDefinition(BaseModel):
     """Definition of one named autonomous session.
 
     Each definition maps to one autonomous session owner (``autonomous:<name>``
-    or the legacy ``autonomous`` pseudo-owner for the ``"default"`` preset).
-    The runner respects per-definition prompts, trigger type, and the enabled
-    flag independently.
+    when the preset name is not ``"default"``, otherwise the bare
+    ``autonomous`` pseudo-owner).  The runner respects per-definition prompts,
+    trigger type, and the enabled flag independently.
 
     Attributes:
         name: Unique identifier for this session definition.
@@ -1237,6 +1215,13 @@ class AutonomousSessionDefinition(BaseModel):
     prompt: str = ""
     trigger_type: TriggerType = TriggerType.periodic
     trigger_interval_seconds: float = Field(default=45.0, ge=0.0)
+    max_auto_turns: int = Field(
+        default=20,
+        description=(
+            "Maximum number of automatic agent turns during the "
+            "execution phase before reverting to proposal."
+        ),
+    )
     enabled: bool = True
     self_refine: bool = False
     self_refine_require_approval: bool = False
@@ -1246,12 +1231,16 @@ class AutonomousSessionDefinition(BaseModel):
 class AutonomousSettings(BaseModel):
     """Native autonomous chat sessions — self-directed agent loops.
 
-    When enabled, the agent can run fully autonomous sessions that pick a
-    subject, draft a plan, await operator approval, then execute to
-    completion with auto-cycling.
+    Autonomous sessions are defined entirely through the ``sessions`` presets
+    list.  Each preset carries its own prompt, trigger type, max turns, and
+    enabled flag — there are no legacy single-session keys.
+
+    The built-in default preset ``{"name": "default"}`` ships in the schema
+    defaults (the field default) and in the committed config template so it
+    is always visible in the UI.  The runner reads only the configured
+    presets list — there is no hidden or implicit fallback session.
 
     Attributes:
-        enabled: Master switch.  Default ``True``.
         proposal_marker: Marker string the agent emits after drafting a plan
             to signal the plan is ready for operator review.  The session
             enters the ``proposal`` state and waits for the operator to
@@ -1259,30 +1248,23 @@ class AutonomousSettings(BaseModel):
         completion_marker: Marker string the agent emits when the plan is
             complete.  The session stays open after completion; the operator
             must explicitly close it.
-        max_auto_turns: Maximum number of automatic agent turns during the
-            execution phase before reverting to ``proposal``.
-        session_color: Optional CSS color string applied as a visual accent
-            on autonomous session rows (e.g. ``"#ef4444"`` for red).
-        initial_task: Optional description of the first task to spawn when
-            an autonomous session starts.  When empty, the agent picks its
-            own subject.
-        sessions: Optional list of named autonomous session definitions.
-            When empty (the default), a single default preset is synthesized
-            at runtime that matches the pre-existing single-session behavior
-            exactly — backward compatible out of the box.  Each entry defines
-            a prompt, trigger, and enabled flag for one autonomous session.
+        continue_interval_seconds: Minimum delay between auto-continue cycles
+            (throttle).  Also serves as the default trigger interval for
+            synthesized sessions when no presets are configured.
+        max_idle_auto_turns: Maximum number of consecutive NO_CHANGE / idle
+            auto-continue turns before the loop halts (reverts to proposal).
+        stale_monitor_runs_before_completion: Number of consecutive NO_CHANGE
+            cycles after which a periodic monitor is considered 'stale'.
+        sessions: List of named autonomous session definitions.  When
+            explicitly cleared, no autonomous sessions run — presets are the
+            sole enablement model.  Each entry defines a prompt, trigger, max
+            turns, and enabled flag for one autonomous session.
 
     """
 
-    enabled: bool = True
     proposal_marker: str = "---PROPOSAL READY---"
     completion_marker: str = "---AUTONOMOUS COMPLETE---"
-    max_auto_turns: int = 20
-    persist_path: str = "/data/autonomous_sessions.json"
-    session_color: str = ""
-    initial_task: str = ""
     continue_interval_seconds: float = 45.0
-    pending_subsession_wait_timeout: float = 600.0
     max_idle_auto_turns: int = Field(
         default=5,
         description=(
@@ -1290,7 +1272,7 @@ class AutonomousSettings(BaseModel):
             "turns before the loop halts (reverts to proposal).  A turn is "
             "idle when the agent reply is a recognised no-op sentinel "
             "(NO_CHANGE, nothing changed, …).  Set to 0 to disable the "
-            "idle cap and only rely on max_auto_turns."
+            "idle cap and only rely on per-preset max_auto_turns."
         ),
     )
     stale_monitor_runs_before_completion: int = Field(
@@ -1304,15 +1286,59 @@ class AutonomousSettings(BaseModel):
         ),
     )
     sessions: list[AutonomousSessionDefinition] = Field(
-        default_factory=list,
+        default_factory=lambda: [AutonomousSessionDefinition(name="default")],
         description=(
-            "Named autonomous session definitions.  When empty, a single "
-            "default preset matching the pre-existing behavior is synthesized "
-            "at runtime.  Each entry defines a prompt, trigger, and enabled "
-            "flag for one autonomous session."
+            "Named autonomous session definitions.  The built-in default "
+            'preset ``{"name": "default"}`` ships in the schema defaults '
+            "and in the committed config template so it is always visible.  "
+            "When the list is explicitly cleared, no autonomous sessions run "
+            "— presets are the sole enablement model.  Each entry defines a "
+            "prompt, trigger, max turns, and enabled flag for one autonomous "
+            "session."
         ),
     )
     model_config = ConfigDict(extra="forbid")
+
+    @model_validator(mode="before")
+    @classmethod
+    def _migrate_legacy_autonomous_keys(cls, data: Any) -> Any:
+        """Strip removed single-session keys and relocate ``max_auto_turns``.
+
+        Legacy keys ``enabled``, ``initial_task``, ``session_color``,
+        ``persist_path``, and ``pending_subsession_wait_timeout`` are
+        stripped silently — they have no equivalent in the preset model.
+
+        The built-in default preset (``{"name": "default"}``) is now carried
+        in the ``sessions`` field default (schema default), not injected here.
+        Existing deployments that lack a ``sessions`` key receive the default
+        from the field default; deployments that explicitly clear the list
+        run no autonomous sessions.
+
+        The global ``max_auto_turns`` value is migrated into every session
+        preset that does not already define its own ``max_auto_turns``,
+        then the global key is removed.
+        """
+        if not isinstance(data, dict):
+            return data
+
+        _stripped_keys = (
+            "enabled",
+            "initial_task",
+            "session_color",
+            "persist_path",
+            "pending_subsession_wait_timeout",
+        )
+        for key in _stripped_keys:
+            data.pop(key, None)
+
+        # Migrate global max_auto_turns into each preset that lacks it.
+        legacy_max_turns = data.pop("max_auto_turns", None)
+        if legacy_max_turns is not None and isinstance(data.get("sessions"), list):
+            for preset in data["sessions"]:
+                if isinstance(preset, dict) and "max_auto_turns" not in preset:
+                    preset["max_auto_turns"] = legacy_max_turns
+
+        return data
 
 
 class ComponentCredentials(BaseModel):

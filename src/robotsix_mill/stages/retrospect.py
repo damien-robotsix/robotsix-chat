@@ -18,7 +18,7 @@ from datetime import UTC
 from ..agents import retrospecting
 from ..agents.retrospecting import MemoryEdit, RetrospectResult
 from ..config import ConfigError, Settings, get_repo_config
-from ..core.models import SourceKind, Ticket
+from ..core.models import Comment, SourceKind, Ticket, TicketEvent
 from ..core.states import DONE_OR_CLOSED, State
 from ..core.text_noop import is_noop_report
 from ..core.text_utils import truncate_at_boundary
@@ -643,7 +643,8 @@ class RetrospectStage(Stage):  # type: ignore[misc]  # Stage is from untyped rob
                             f"present or merged: {pr_url}",
                         )
 
-        history = ctx.service.history(ticket.id)
+        history_raw = ctx.service.history(ticket.id)
+        history: list[TicketEvent] = history_raw if history_raw is not None else []
         history_text = "\n".join(
             f"{e.at:%Y-%m-%d %H:%M} {e.state} {e.note or ''}".rstrip() for e in history
         )
@@ -651,13 +652,11 @@ class RetrospectStage(Stage):  # type: ignore[misc]  # Stage is from untyped rob
         # recorded is otherwise fed in uncapped.
         history_text = _tail_truncate_log(history_text, s.retrospect_log_max_chars)
         # Fetch comments
-        comments = ctx.service.list_comments(ticket.id)
-        if comments:
-            comments_text = "\n".join(
-                f"{c.created_at:%Y-%m-%d %H:%M} | {c.body}".rstrip() for c in comments
-            )
-        else:
-            comments_text = ""
+        comments_raw = ctx.service.list_comments(ticket.id)
+        comments: list[Comment] = comments_raw if comments_raw is not None else []
+        comments_text = "\n".join(
+            f"{c.created_at:%Y-%m-%d %H:%M} | {c.body}".rstrip() for c in comments
+        )
         # Cap to the most-recent tail — every comment body is otherwise
         # fed in verbatim.
         comments_text = _tail_truncate_log(comments_text, s.retrospect_log_max_chars)
@@ -681,7 +680,8 @@ class RetrospectStage(Stage):  # type: ignore[misc]  # Stage is from untyped rob
         epic_ctx = ctx.service.get_epic_context(ticket)
         sibling_ctx = ""
         if ticket.parent_id:
-            siblings = ctx.service.list_children(ticket.parent_id)
+            siblings_raw = ctx.service.list_children(ticket.parent_id)
+            siblings: list[Ticket] = siblings_raw if siblings_raw is not None else []
             others = [sib for sib in siblings if sib.id != ticket.id]
             if others:
                 lines = ["<epic_siblings>"]

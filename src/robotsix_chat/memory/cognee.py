@@ -89,7 +89,10 @@ def _recall_gate(limit: int) -> asyncio.Semaphore:
 class CogneeMemory:
     """Long-term agent memory backed by cognee.
 
-    One instance per agent; cognee's own state is process-global. ``recall`` is
+    One instance per *configuration*, shared by every agent — ``build_memory``
+    memoizes construction because cognee's own state is process-global and the
+    cold start is expensive, so the startup warm-up covers all agents,
+    including subsessions spawned later. ``recall`` is
     on the request's latency path (kept to a vector/graph lookup), while
     ``remember`` runs the expensive consolidation and is expected to be called
     in the background by the agent.
@@ -115,6 +118,8 @@ class CogneeMemory:
         self._langfuse = langfuse if langfuse is not None else _LangfuseSettings()
         self._setup_done = False
         self._setup_lock = asyncio.Lock()
+        # The in-flight one-shot configuration task — see :meth:`setup`.
+        self._setup_task: asyncio.Task[None] | None = None
         # Serialise writes: concurrent cognify() runs would contend on cognee's
         # shared stores.
         self._write_lock = asyncio.Lock()
@@ -194,13 +199,38 @@ class CogneeMemory:
     # -- lifecycle --------------------------------------------------------
 
     async def setup(self) -> None:
-        """Apply cognee configuration once (idempotent, concurrency-safe)."""
+        """Apply cognee configuration once (idempotent, cancellation-safe).
+
+        The work runs in a task that callers only ``shield``-await: a caller
+        cancelled by its recall deadline abandons the *wait*, never the setup,
+        so the next recall finds it finished (or still progressing) instead of
+        restarting from zero. Observed live without this: cognee's cold start
+        runs 47-105 s, so an instance whose first recall was cancelled at the
+        recall deadline mid-``_configure`` kept ``_setup_done`` False and
+        re-paid (and re-lost) the full cost on every subsequent recall,
+        leaving it memory-less forever.
+
+        ``_configure`` itself runs in a worker thread: it imports cognee,
+        which blocks for seconds and would otherwise stall the event loop
+        (health checks included) for the duration.
+        """
         if self._setup_done:
             return
+        task = self._setup_task
+        if task is None or task.done():
+            # First call — or the previous attempt itself failed. (A *caller*
+            # being cancelled does not cancel the task, so a live task here
+            # means setup is still progressing and is simply re-awaited.)
+            task = asyncio.create_task(self._run_setup())
+            self._setup_task = task
+        await asyncio.shield(task)
+
+    async def _run_setup(self) -> None:
+        """Configure cognee exactly once (the body behind :meth:`setup`)."""
         async with self._setup_lock:
             if self._setup_done:
                 return
-            self._configure()
+            await asyncio.to_thread(self._configure)
             self._setup_done = True
 
     async def warm(self) -> None:
@@ -248,6 +278,13 @@ class CogneeMemory:
         os.environ.setdefault("ENABLE_BACKEND_ACCESS_CONTROL", "false")
         os.environ.setdefault("TELEMETRY_DISABLED", "1")
         os.environ.setdefault("MONITORING_TOOL", "none")
+        # cognee 1.4's session memory (SQL cache) writes session context on
+        # every search/add.  Chat never reads it back, and on the shared-HDD
+        # deploy host the cache sqlite hit a 626 MB un-checkpointable WAL —
+        # every turn then stalled ~30 s in a "database is locked" busy-wait
+        # inside the recall path (2026-08-07 incident, #1201).  Disabled:
+        # SessionManager no-ops cleanly when caching is off.
+        os.environ.setdefault("CACHING", "false")
 
         # Bound LanceDB's DataFusion memory pool so a single large merge_insert
         # cannot OOM the worker subprocess.  DataFusion reads
@@ -303,6 +340,9 @@ class CogneeMemory:
         cognee.config.set_llm_model(s.llm.model)
         cognee.config.set_llm_endpoint(s.llm.endpoint)
         cognee.config.set_llm_api_key(s.llm.api_key.get_secret_value())
+        cognee.config.set_llm_config(
+            {"llm_max_completion_tokens": s.llm.max_completion_tokens}
+        )
 
         # Embeddings — remote OpenAI-compatible server (Ollama / bge-m3).
         cognee.config.set_embedding_config(

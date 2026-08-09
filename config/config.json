@@ -29,7 +29,7 @@
     "write_throttle_seconds": 0.5,
     "llm": {
       "provider": "custom",
-      "model": "openrouter/openai/gpt-5-mini",
+      "model": "openrouter/openai/gpt-5-nano",
       "endpoint": "https://openrouter.ai/api/v1",
       "api_key": ""
     },
@@ -115,6 +115,7 @@
     "mill_recovery_max_backoff_seconds": 3600.0,
     "mill_recovery_max_retries": 10,
     "paused_monitor_poll_interval_seconds": 60.0,
+    "paused_monitor_long_poll_interval_seconds": 15.0,
     "periodic_max_interval_seconds": 3600.0,
     "periodic_max_total_runs": 100,
     "user_chat_max_retries": 3,
@@ -161,9 +162,7 @@
     "timeout": 30.0,
     "self_restart_max_retries": 3,
     "self_restart_backoff_base": 1.0,
-    "self_restart_backoff_cap": 30.0,
-    "config_import_enabled": false,
-    "config_import_url": ""
+    "self_restart_backoff_cap": 30.0
   },
   "notification": {
     "enabled": true
@@ -176,12 +175,7 @@
       "robotsix.net"
     ],
     "max_body_bytes": 2048,
-    "max_redirects": 5,
-    "fleet_auth": {
-      "basic_auth_username": "",
-      "basic_auth_password": "",
-      "auth_hosts": []
-    }
+    "max_redirects": 5
   },
   "docker_digest": {
     "enabled": false,
@@ -194,8 +188,7 @@
     "max_redirects": 5,
     "domain_allowlist": [],
     "rate_limit_requests": 10,
-    "rate_limit_window_seconds": 60.0,
-    "fleet_auth": null
+    "rate_limit_window_seconds": 60.0
   },
   "sftp": {
     "enabled": false,
@@ -212,12 +205,7 @@
     "enabled": false,
     "timeout": 30.0,
     "viewport_width": 1280,
-    "viewport_height": 720,
-    "fleet_auth": {
-      "basic_auth_username": "",
-      "basic_auth_password": "",
-      "auth_hosts": []
-    }
+    "viewport_height": 720
   },
   "feedback": {
     "enabled": false,
@@ -228,18 +216,16 @@
     "timeout": 60.0
   },
   "autonomous": {
-    "enabled": false,
     "proposal_marker": "---PROPOSAL READY---",
     "completion_marker": "---AUTONOMOUS COMPLETE---",
-    "max_auto_turns": 20,
     "max_idle_auto_turns": 5,
-    "persist_path": "/data/autonomous_sessions.json",
-    "session_color": "",
-    "initial_task": "",
     "continue_interval_seconds": 45.0,
-    "pending_subsession_wait_timeout": 600.0,
     "stale_monitor_runs_before_completion": 3,
-    "sessions": []
+    "sessions": [
+      {
+        "name": "default"
+      }
+    ]
   },
   "max_images_per_message": 8,
   "max_image_bytes": 5242880,
@@ -248,5 +234,6 @@
     "image/jpeg",
     "image/gif",
     "image/webp"
-  ]
+  ],
+  "low_risk_actions": []
 }

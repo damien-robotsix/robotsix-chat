@@ -53,13 +53,28 @@ _repo_cache: dict[str, tuple[float, list[str]]] = {}
 _REPO_CACHE_TTL: float = 60.0  # seconds — short enough to pick up access changes
 
 
-async def _resolve_allowed_repos(deploy_api_key: str) -> list[str]:
+#: Used when no ``lifecycle.base_url`` is configured. The ``central-deploy``
+#: hostname only resolves on the deploy stack's *internal* compose network;
+#: a component attached solely to ``central-deploy-proxy`` (which is how chat
+#: runs) cannot resolve it and gets "Name or service not known". Keeping it as
+#: the fallback preserves behaviour for deployments where it does resolve,
+#: but any real deployment should set ``lifecycle.base_url``.
+_DEFAULT_DEPLOY_BASE_URL = "http://central-deploy:8100"
+
+
+async def _resolve_allowed_repos(
+    deploy_api_key: str, deploy_base_url: str = ""
+) -> list[str]:
     """Resolve the set of allowed feedback target repos dynamically.
 
     Queries the deploy server's chat-component roster and the mill board's
     repo registry, then intersects the two on component/repo id.  The result
     is cached briefly (``_REPO_CACHE_TTL``) to avoid hammering deploy on
     every feedback run.
+
+    *deploy_base_url* should be ``lifecycle.base_url`` — the address this
+    deployment already knows reaches the deploy server. Empty falls back to
+    :data:`_DEFAULT_DEPLOY_BASE_URL`.
 
     Falls back to ``["robotsix-chat"]`` when deploy is unreachable and logs
     a warning.
@@ -69,15 +84,18 @@ async def _resolve_allowed_repos(deploy_api_key: str) -> list[str]:
     if entry is not None and (now - entry[0]) < _REPO_CACHE_TTL:
         return entry[1]
 
-    result = await _do_resolve_allowed_repos(deploy_api_key)
+    result = await _do_resolve_allowed_repos(deploy_api_key, deploy_base_url)
     _repo_cache["repos"] = (now, result)
     return result
 
 
-async def _do_resolve_allowed_repos(deploy_api_key: str) -> list[str]:
+async def _do_resolve_allowed_repos(
+    deploy_api_key: str, deploy_base_url: str = ""
+) -> list[str]:
     """Resolve allowed repos by querying deploy and mill (no caching)."""
     # 1. Fetch components from deploy.
-    deploy_url = "http://central-deploy:8100/chat/components"
+    base = (deploy_base_url or _DEFAULT_DEPLOY_BASE_URL).rstrip("/")
+    deploy_url = f"{base}/chat/components"
     deploy_headers: dict[str, str] = {}
     if deploy_api_key:
         deploy_headers["X-API-Key"] = deploy_api_key
@@ -247,14 +265,22 @@ class FeedbackRunner:
         feedback_agent: LlmioChatAgent,
         *,
         subsession_registry: SubsessionRegistry | None = None,
+        deploy_base_url: str = "",
     ) -> None:
-        """*feedback_agent* is a bare ``LlmioChatAgent`` (no tools, no memory)."""
+        """*feedback_agent* is a bare ``LlmioChatAgent`` (no tools, no memory).
+
+        *deploy_base_url* should be ``lifecycle.base_url``: the address this
+        deployment already knows reaches the deploy server. Left empty, the
+        roster lookup falls back to :data:`_DEFAULT_DEPLOY_BASE_URL`.
+        """
         self._settings = settings
         self._agent = feedback_agent
         self._registry = subsession_registry
+        self._deploy_base_url = deploy_base_url
         self._board_url = settings.board_url.rstrip("/") if settings.board_url else ""
         self._board_token = settings.board_api_token.get_secret_value()
         self._timeout = settings.timeout
+        self._max_tickets_per_run = settings.max_tickets_per_run
 
     # ------------------------------------------------------------------
     # Public entry points — schedule the run as a background task
@@ -320,7 +346,8 @@ class FeedbackRunner:
 
                 # 2. Resolve allowed target repos dynamically.
                 allowed_repos = await _resolve_allowed_repos(
-                    self._settings.deploy_api_key.get_secret_value()
+                    self._settings.deploy_api_key.get_secret_value(),
+                    self._deploy_base_url,
                 )
 
                 # 3. Build prompt and call the feedback agent.
@@ -628,6 +655,36 @@ class FeedbackRunner:
                     )
             return False
 
+    def _apply_cap(
+        self,
+        tickets: list[dict[str, Any]],
+        *,
+        session_id: str,
+    ) -> list[dict[str, Any]]:
+        """Trim *tickets* to ``max_tickets_per_run``.
+
+        A feedback run fires at every compaction and session-end boundary
+        and was previously unbounded. Unlike a mill periodic pass — whose
+        dropped findings resurface on the next run — a chat session ends,
+        so anything dropped here is gone. Each dropped title is therefore
+        logged at WARNING rather than discarded silently.
+        """
+        cap = self._max_tickets_per_run
+        if cap < 0 or len(tickets) <= cap:
+            return tickets
+
+        kept, dropped = tickets[:cap], tickets[cap:]
+        logger.warning(
+            "Feedback run for session %s produced %d ticket(s); filing %d "
+            "(feedback.max_tickets_per_run=%d). Dropped: %s",
+            session_id,
+            len(tickets),
+            len(kept),
+            cap,
+            "; ".join(repr(t.get("title", "?")) for t in dropped),
+        )
+        return kept
+
     async def _file_tickets(
         self,
         tickets: list[dict[str, Any]],
@@ -637,6 +694,10 @@ class FeedbackRunner:
     ) -> tuple[int, int]:
         """POST each ticket to ``/tickets/ingest``; return (filed, failed)."""
         if not self._board_url:
+            return (0, 0)
+
+        tickets = self._apply_cap(tickets, session_id=session_id)
+        if not tickets:
             return (0, 0)
 
         ingest_url = f"{self._board_url}/tickets/ingest"

@@ -19,6 +19,12 @@ import re
 import sys
 from pathlib import Path
 
+from _check_common import (
+    iter_matching_strings,
+    parse_str_enum,
+    run_consistency_checks,
+)
+
 # ---------------------------------------------------------------------------
 # Step 1 — extract canonical SubsessionKind values from models.py
 # ---------------------------------------------------------------------------
@@ -28,26 +34,6 @@ _KIND_VALUE_RE = re.compile(r'^\s+(\w+)\s*=\s*"(?P<value>[^"]+)"$')
 
 # Matches the start of the SubsessionKind class.
 _CLASS_HEADER_RE = re.compile(r"^class SubsessionKind\(StrEnum\):")
-
-
-def _parse_subsession_kinds(models_path: Path) -> dict[str, str]:
-    """Return {constant_name: value} for every SubsessionKind member."""
-    lines = models_path.read_text(encoding="utf-8").splitlines()
-    in_class = False
-    canonical: dict[str, str] = {}
-    for line in lines:
-        if _CLASS_HEADER_RE.match(line.rstrip()):
-            in_class = True
-            continue
-        if in_class:
-            # Class body ended — dedented or next class.
-            if line and not line[0].isspace():
-                break
-            m = _KIND_VALUE_RE.match(line.rstrip())
-            if m:
-                canonical[m.group(1)] = m.group("value")
-    return canonical
-
 
 # ---------------------------------------------------------------------------
 # Step 2 — find SubsessionKind-looking string literals in HTML JavaScript
@@ -62,17 +48,6 @@ _KIND_COMPARISON_RE = re.compile(
 )
 
 
-def _iter_html_kind_strings(html_path: Path) -> list[str]:
-    """Yield every kind-comparison string literal found in the HTML JS."""
-    text = html_path.read_text(encoding="utf-8")
-    # Strip HTML comments so they aren't scanned.
-    text = re.sub(r"<!--.*?-->", "", text, flags=re.DOTALL)
-    found: list[str] = []
-    for m in _KIND_COMPARISON_RE.finditer(text):
-        found.append(m.group("kind"))
-    return found
-
-
 def main() -> int:
     """Check SubsessionKind string consistency and return 0 (ok) or 1 (violations)."""
     repo_root = Path(__file__).resolve().parent.parent
@@ -80,11 +55,7 @@ def main() -> int:
     index_html = repo_root / "src" / "robotsix_chat" / "ui" / "index.html"
     chat_js = repo_root / "src" / "robotsix_chat" / "ui" / "static" / "chat.js"
 
-    # ------------------------------------------------------------------
-    # Parse canonical constants
-    # ------------------------------------------------------------------
-    canonical = _parse_subsession_kinds(models_py)
-
+    canonical = parse_str_enum(models_py, _CLASS_HEADER_RE, _KIND_VALUE_RE)
     if not canonical:
         print(
             "ERROR: no SubsessionKind members found in"
@@ -93,50 +64,26 @@ def main() -> int:
         )
         return 1
 
-    canonical_values: set[str] = set(canonical.values())
-
-    # ------------------------------------------------------------------
-    # Collect kind-comparison strings from HTML
-    # ------------------------------------------------------------------
-    html_strings = _iter_html_kind_strings(index_html) + _iter_html_kind_strings(
-        chat_js
+    canonical_values = set(canonical.values())
+    html_strings = iter_matching_strings(index_html, _KIND_COMPARISON_RE) + (
+        iter_matching_strings(chat_js, _KIND_COMPARISON_RE)
     )
-    html_values: set[str] = set(html_strings)
+    html_values = set(html_strings)
 
-    violations = False
-
-    # ------------------------------------------------------------------
-    # Check 1: canonical value missing from HTML
-    # ------------------------------------------------------------------
-    missing_from_html = canonical_values - html_values
-    if missing_from_html:
-        violations = True
-        print(
-            "SubsessionKind values missing from index.html (.kind / kind comparisons):",
-            file=sys.stderr,
-        )
-        for val in sorted(missing_from_html):
-            names = [k for k, v in canonical.items() if v == val]
-            print(
-                f"  {val}  (Python constant: {', '.join(names)})",
-                file=sys.stderr,
-            )
-        print(file=sys.stderr)
-
-    # ------------------------------------------------------------------
-    # Check 2: HTML kind string not in canonical set
-    # ------------------------------------------------------------------
-    unrecognised = html_values - canonical_values
-    if unrecognised:
-        violations = True
-        print(
+    violations = run_consistency_checks(
+        canonical_values=canonical_values,
+        scanned_values=html_values,
+        missing_label=(
+            "SubsessionKind values missing from index.html (.kind / kind comparisons):"
+        ),
+        unrecognised_label=(
             "Unrecognised SubsessionKind strings in index.html"
-            " (.kind / kind comparisons — no matching Python constant):",
-            file=sys.stderr,
-        )
-        for val in sorted(unrecognised):
-            print(f"  {val}", file=sys.stderr)
-        print(file=sys.stderr)
+            " (.kind / kind comparisons — no matching Python constant):"
+        ),
+        report_names_for_value=lambda val: ", ".join(
+            k for k, v in canonical.items() if v == val
+        ),
+    )
 
     if violations:
         print(

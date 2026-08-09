@@ -305,6 +305,8 @@ async def _check_resume_status(
         if last_known is not None
         else "unknown"
     )
+    pr_url = ticket_data.get("pr_url")
+    pr_url_str = pr_url if isinstance(pr_url, str) and pr_url else None
 
     # Reset the blocked-resume counter when the ticket is NOT blocked —
     # the agent made progress (the ticket left the "blocked" state at
@@ -317,15 +319,28 @@ async def _check_resume_status(
 
     # Terminal → close the subsession.
     if current_state_str.lower() in _TICKET_STATE_TERMINAL:
+        pr_note = ""
+        checkpoint_pr = checkpoint.get("pr_number")
+        has_checkpoint_pr = isinstance(checkpoint_pr, int) and checkpoint_pr > 0
+        if not pr_url_str and not has_checkpoint_pr:
+            pr_note = (
+                "  WARNING: pr_url is null on the board ticket and no "
+                "pr_number is recorded in the checkpoint — this ticket "
+                "may have been closed without a merged PR."
+            )
         summary = (
             f"Ticket {ticket_id} reached terminal state "
             f"'{current_state_str}' during the outage. "
             f"Previous state was '{last_known_str}'."
+            f"{pr_note}"
+        )
+        close_reason = (
+            "ticket_terminal_without_pr" if pr_note else "ticket_terminal_on_resume"
         )
         closed = env.registry.mark_closed(
             sub_id,
             summary=summary,
-            reason="ticket_terminal_on_resume",
+            reason=close_reason,
             closed_by="system",
         )
         if closed is not None:

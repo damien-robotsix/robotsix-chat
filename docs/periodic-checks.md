@@ -37,17 +37,34 @@ blocking, completion, failure, or transitions requiring user action). After a co
 consecutive `NO_CHANGE` runs (`subsessions.auto_stop_no_change_runs`, default 3) the subsession
 closes itself.
 
-### Auto-stop and failure notifications
+### Auto-stop, auto-pause, and failure notifications
 
 When a periodic monitor auto-stops (e.g. after 3 consecutive no-change runs, or after hitting its
-`max_runs` limit) or fails with an API error, the assistant **immediately notifies you** in the
-conversation — you do not need to send a message to learn what happened. The notification is
-delivered via a synthetic reaction turn:
+`max_runs` limit), auto-pauses (after `max_idle_runs` consecutive no-change runs), or fails with an
+API error, the assistant **immediately notifies you** in the conversation — you do not need to send
+a message to learn what happened. The notification is delivered via a synthetic reaction turn:
+
+The system distinguishes **two terminal states** that are often conflated:
+
+- **Auto-stopped (closed/terminated).** The monitor reached its consecutive-no-change limit
+  (`subsessions.auto_stop_no_change_runs`, default 3) or its `max_runs` cap. The worker terminates
+  permanently — it will **not** reappear on its own. The assistant uses phrasing like *"No change —
+  monitor auto-stopped (closed)"*.
+- **Auto-paused (reversible, worker still alive).** The monitor reached its idle-run limit
+  (`subsessions.max_idle_runs`) and entered a `PAUSED` wait loop. The worker stays alive and can be
+  woken by a ticket state change or a parent message. The assistant uses phrasing like *"No change —
+  monitor auto-paused (will resume on message)"*.
+
+Both states publish an **SSE notification** (`type: notification`) to connected browsers, so the UI
+can show the status immediately — the pause notification includes the tracked ticket id, and the
+stop notification includes the same. The assistant's reaction turn then adds the conversational
+context explaining what happened and what to expect next.
 
 1. **Normal case** — the main agent runs a real LLM turn that processes the outcome and replies with
    a substantive message explaining what happened, what it means, and what you can do next (e.g.
    restart the monitor, check the ticket). The prompt instructs the agent to **not** just
-   acknowledge the outcome briefly — it must provide actionable context.
+   acknowledge the outcome briefly — it must provide actionable context, and to **never conflate**
+   auto-stop (closed) with auto-pause (reversible).
 2. **LLM API failure** — if the reaction turn itself fails (e.g. OpenRouter is unreachable), the
    system falls back to publishing a plain `agent_message` frame directly into the chat. You see a
    message like
@@ -61,8 +78,8 @@ delivered via a synthetic reaction turn:
    to acknowledge the subsession outcome as a note and continue without re-requesting approval or
    restarting planning. This prevents subsession notifications from derailing approved work.
 
-Internal reason codes (e.g. `"no_change_auto_stop"`, `"failed"`, `"ticket_terminal"`) are
-automatically translated to human-readable phrases in both the prompt and fallback messages.
+Internal reason codes (e.g. `"no_change_auto_stop"`, `"paused"`, `"failed"`, `"ticket_terminal"`)
+are automatically translated to human-readable phrases in both the prompt and fallback messages.
 
 **Stale-monitor suppression.** If the monitored ticket is already in a terminal state — that is, its
 `last_known_state` is `"closed"` or `"done"` — the auto-stop/auto-pause notification is silently
@@ -85,6 +102,32 @@ You can also call the REST API directly:
 GET /subsessions?session_id=<your-session-id>
 ```
 
+## Self-updating a periodic monitor
+
+A periodic subsession **cannot** spawn a new periodic child (the system rejects it with "periodic
+subsessions cannot spawn periodic children" to prevent runaway nesting). When a running periodic
+monitor needs to broaden its scope or change its tempo, the supported path is **self-update**: the
+monitor calls its own `self_update_subsession` tool to amend its instructions, interval, and/or
+max-run cap. Changes take effect on the **next scheduled tick**.
+
+The tool is only available to periodic subsession agents (not the main conversation agent, and not
+task or user_chat subsessions). Guardrails:
+
+- **Instructions** must be a string ≤ 8000 characters.
+- **Interval** must be at least the configured minimum (`subsessions.min_interval_seconds`).
+- **Max runs** can be raised or removed, but the run **counter is never reset** — a monitor cannot
+  bypass the max-run limit by self-updating.
+- At least one field must be provided; omitted fields are left unchanged.
+
+Example agent-side call (the agent does this autonomously — you don't need to issue this command):
+
+```text
+self_update_subsession(
+    instructions="Watch tickets T-42 and T-99; report any state change.",
+    interval_seconds=600,
+)
+```
+
 ## Steering or cancelling a check
 
 Ask:
@@ -105,9 +148,11 @@ POST /subsessions/{subsession_id}/close
 When a periodic monitor accumulates `subsessions.max_idle_runs` consecutive `NO_CHANGE` replies, the
 subsession enters a real `PAUSED` status (distinct from `CLOSED`) by calling
 `registry.mark_paused()` with reason `"paused"`. Unlike a closed subsession, a paused monitor's
-**worker stays alive**: it stops running agent turns and blocks on an event-driven inbox signal
-instead of terminating. The monitor resumes **when the monitored ticket's state changes** (or when
-it is explicitly reopened).
+**worker stays alive**: it stops running agent turns and blocks on its wait loop instead of
+terminating. The monitor resumes **when the monitored ticket's state changes** (or when it is
+explicitly reopened), waking either on an inbox **wake message** from the background watcher or —
+faster in the common case — by **directly long-polling** the mill for its tracked ticket's state at
+a short interval (see the config table below).
 
 A background **watcher** task (`watch_paused_monitors` in `subsessions/watcher.py`) runs for the
 lifetime of the server process. On every poll tick it:
@@ -145,9 +190,20 @@ deduplication set), so they are not spammed on every poll cycle.
 
 The poll interval is controlled by:
 
-| Config key                                         | Default | Description                                                                                                                         |
-| -------------------------------------------------- | ------- | ----------------------------------------------------------------------------------------------------------------------------------- |
-| `subsessions.paused_monitor_poll_interval_seconds` | `60.0`  | Seconds between watcher polls. Set to `0` to disable runtime polling; paused monitors then only resume on the next service restart. |
+| Config key                                              | Default | Description                                                                                                                                        |
+| ------------------------------------------------------- | ------- | -------------------------------------------------------------------------------------------------------------------------------------------------- |
+| `subsessions.paused_monitor_poll_interval_seconds`      | `60.0`  | Seconds between watcher polls. Set to `0` to disable runtime polling; paused monitors then only resume on the next service restart.                |
+| `subsessions.paused_monitor_long_poll_interval_seconds` | `15.0`  | Seconds between **direct** mill API polls by a paused monitor's own wait loop. Set to `0` to disable per-monitor long-polling (watcher-only wake). |
+
+**Per-monitor long-polling (wait-for-change).** While the watcher's `60 s` poll serves as a
+safety-net backup, each paused monitor also polls the mill API **directly** at the shorter
+`paused_monitor_long_poll_interval_seconds` interval (default `15 s`). Its wait loop therefore owns
+its own poll cadence rather than relying solely on the centralized watcher, reducing wake-up latency
+from up to 60s to ~15s. When the polled state differs from the checkpoint's `last_known_state`, the
+monitor resumes **immediately** — zero added latency. Long-polling requires `board_api_base_url` to
+be configured and a `ticket_id` with a `last_known_state` in the paused monitor's checkpoint; when
+those prerequisites are missing (or the long-poll interval is `0`), the monitor falls back to
+watcher-only wake.
 
 When no paused monitors exist, the watcher sleeps for 30 seconds before checking again (avoiding
 busy-wait). If the mill endpoint is unreachable during a poll tick, the watcher logs a debug message
@@ -349,6 +405,10 @@ run once and a transient failure would silently lose the work.
       Forbidden spawns are rejected **silently**: no `user_chat` or operator escalation is ever
       opened, the refusal is recorded in the audit log (attempted kind + reason), and the spawn tool
       returns a non-fatal error message so the periodic tick continues without crashing.
+    - **Periodic self-update.** Instead of spawning nested periodic children (which is forbidden), a
+      periodic monitor can call `self_update_subsession` to revise its own instructions, polling
+      interval, or max-run budget from within — the supported path for self-amendment when the
+      monitored scope or tempo evolves.
 
 06. **Terminal-state discipline (three-source verification + CI loop guard).** The sub-agent calls
     its `complete_subsession(summary)` tool as soon as the monitored condition reaches a verified
@@ -437,6 +497,12 @@ run once and a transient failure would silently lose the work.
     | -------------------------------------------- | ------- | ------------------------------------------------------------------------------------ |
     | `subsessions.human_approval_timeout_runs`    | `5`     | Consecutive `NO_CHANGE` runs in `human_issue_approval` state before auto-escalate.   |
     | `subsessions.human_approval_timeout_seconds` | `300.0` | Wall-clock seconds in `human_issue_approval` state before auto-escalate (5 minutes). |
+
+    > **Note on user-requested tickets.** This stuck-ticket gate applies to auto-filed chores and
+    > feedback tickets. A **user-requested ticket** (one the operator explicitly asked the agent to
+    > file) is pre-authorized at filing: the agent includes `kind: user-request` / `priority: high`
+    > markers and transitions it out of `draft` / `human_issue_approval` to `ready` in the same
+    > turn, so it should never stall at this gate waiting for operator direction.
 
 10. **Mill-recovery mode.** If the mill is unreachable, the monitor enters a recovery loop with
     exponential backoff (see [Mill-recovery behaviour](#mill-recovery-behaviour) above), probing the

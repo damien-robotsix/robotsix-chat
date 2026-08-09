@@ -7,8 +7,8 @@ masking, version history, rollback, and RFC 9457 error responses.
 from __future__ import annotations
 
 import json
+import stat
 from pathlib import Path
-from unittest.mock import AsyncMock, patch
 
 from starlette.testclient import TestClient
 
@@ -246,6 +246,30 @@ def test_write_and_read_roundtrip(tmp_path: Path) -> None:
     assert result == data
 
 
+def test_write_preserves_restrictive_mode(tmp_path: Path) -> None:
+    """A 0600 config stays 0600 across a save.
+
+    The write goes to a fresh temp file and renames over the target, so
+    without an explicit chmod the config — which holds API keys — comes back
+    world-readable at the process umask.
+    """
+    path = tmp_path / "config.json"
+    _write_config_json(path, {"a": 1})
+    path.chmod(0o600)
+
+    _write_config_json(path, {"a": 2})
+
+    assert stat.S_IMODE(path.stat().st_mode) == 0o600
+    assert _read_config_json(path) == {"a": 2}
+
+
+def test_write_defaults_to_owner_only_for_new_file(tmp_path: Path) -> None:
+    """A config created by the writer is never world-readable."""
+    path = tmp_path / "config.json"
+    _write_config_json(path, {"a": 1})
+    assert stat.S_IMODE(path.stat().st_mode) & 0o077 == 0
+
+
 # ---------------------------------------------------------------------------
 # Shared assertions for the standard GET /config response shape
 # ---------------------------------------------------------------------------
@@ -315,6 +339,160 @@ def test_get_config_includes_schema(tmp_path: Path) -> None:
     assert isinstance(schema, dict)
     # A valid JSON Schema has a top-level "type" or "properties" key.
     assert "properties" in schema or "type" in schema
+
+
+# ---------------------------------------------------------------------------
+# GET /config — default overlay (new fields appear even absent from file)
+# ---------------------------------------------------------------------------
+
+
+def test_get_config_includes_autonomous_sessions_when_absent(tmp_path: Path) -> None:
+    """``autonomous.sessions`` appears in GET /config when absent from file.
+
+    The default preset (``{"name": "default"}``) is overlaid from the
+    Settings model defaults.
+    """
+    config_path = tmp_path / "config.json"
+    _write_config(config_path, {"llmio_model_level": 3, "server_port": 8080})
+    client = _make_app(config_path)
+
+    resp = client.get("/config")
+    assert resp.status_code == 200
+    data = resp.json()
+
+    assert "autonomous" in data
+    autonomous = data["autonomous"]
+    assert "sessions" in autonomous
+    sessions = autonomous["sessions"]
+    assert isinstance(sessions, list)
+    assert len(sessions) == 1
+    assert sessions[0]["name"] == "default"
+    assert sessions[0]["enabled"] is True
+    # Other autonomous defaults should also be present.
+    assert "proposal_marker" in autonomous
+    assert autonomous["proposal_marker"] == "---PROPOSAL READY---"
+
+
+def test_get_config_overlay_preserves_file_values(tmp_path: Path) -> None:
+    """When the file sets a value, it takes precedence over the default."""
+    config_path = tmp_path / "config.json"
+    _write_config(
+        config_path,
+        {
+            "llmio_model_level": 3,
+            "autonomous": {
+                "proposal_marker": "---CUSTOM MARKER---",
+            },
+        },
+    )
+    client = _make_app(config_path)
+
+    resp = client.get("/config")
+    assert resp.status_code == 200
+    data = resp.json()
+
+    # File value wins.
+    assert data["autonomous"]["proposal_marker"] == "---CUSTOM MARKER---"
+    # Defaults fill in missing keys — sessions receives the built-in default preset.
+    sessions = data["autonomous"]["sessions"]
+    assert isinstance(sessions, list)
+    assert len(sessions) == 1
+    assert sessions[0]["name"] == "default"
+    assert data["autonomous"]["completion_marker"] == "---AUTONOMOUS COMPLETE---"
+
+
+# ---------------------------------------------------------------------------
+# Legacy key migration (approval_marker → proposal_marker)
+# ---------------------------------------------------------------------------
+
+
+def test_get_config_migrates_approval_marker(tmp_path: Path) -> None:
+    """A config file containing the legacy ``autonomous.approval_marker`` key.
+
+    Returns the value under ``proposal_marker`` and drops the old key.
+    """
+    config_path = tmp_path / "config.json"
+    _write_config(
+        config_path,
+        {
+            "llmio_model_level": 3,
+            "autonomous": {
+                "approval_marker": "---CUSTOM MARKER---",
+            },
+        },
+    )
+    client = _make_app(config_path)
+
+    resp = client.get("/config")
+    assert resp.status_code == 200
+    data = resp.json()
+
+    autonomous = data["autonomous"]
+    # Old key is gone.
+    assert "approval_marker" not in autonomous
+    # Value migrated.
+    assert autonomous["proposal_marker"] == "---CUSTOM MARKER---"
+
+
+def test_put_succeeds_when_file_has_approval_marker(tmp_path: Path) -> None:
+    """PUT /config succeeds when file has legacy ``autonomous.approval_marker``.
+
+    The persisted file is cleaned of the legacy key after save.
+    """
+    config_path = tmp_path / "config.json"
+    _write_config(
+        config_path,
+        {
+            "llmio_model_level": 3,
+            "autonomous": {
+                "approval_marker": "---CUSTOM---",
+            },
+        },
+    )
+    client = _make_app(config_path)
+
+    # Saving any unrelated field must succeed — the legacy key migration
+    # runs during validation.
+    resp = client.put("/config", json={"idle_timeout_minutes": 45})
+    assert resp.status_code == 200, resp.text
+
+    # The persisted file no longer contains the legacy key.
+    on_disk = _read_config_json(config_path)
+    assert "autonomous" in on_disk
+    assert "approval_marker" not in on_disk["autonomous"]
+    # The migrated value was preserved.
+    assert on_disk["autonomous"]["proposal_marker"] == "---CUSTOM---"
+    # The unrelated update landed.
+    assert on_disk["idle_timeout_minutes"] == 45
+
+
+def test_put_drops_unknown_autonomous_keys(tmp_path: Path) -> None:
+    """Unknown keys inside the ``autonomous`` sub-dict are dropped.
+
+    Validation runs ``extra="forbid"`` so unknown keys would brick the save
+    without this migration step.
+    """
+    config_path = tmp_path / "config.json"
+    _write_config(
+        config_path,
+        {
+            "llmio_model_level": 3,
+            "autonomous": {
+                "ghost_key": "should be removed",
+                "proposal_marker": "---CUSTOM---",
+            },
+        },
+    )
+    client = _make_app(config_path)
+
+    resp = client.put("/config", json={"server_port": 9000})
+    assert resp.status_code == 200, resp.text
+
+    on_disk = _read_config_json(config_path)
+    assert "autonomous" in on_disk
+    assert "ghost_key" not in on_disk["autonomous"]
+    # Known keys are preserved.
+    assert on_disk["autonomous"]["proposal_marker"] == "---CUSTOM---"
 
 
 # ---------------------------------------------------------------------------
@@ -733,225 +911,3 @@ def test_rollback_no_history(tmp_path: Path) -> None:
 
 
 # ---------------------------------------------------------------------------
-# POST /config/import
-# ---------------------------------------------------------------------------
-
-
-def test_import_not_enabled(tmp_path: Path) -> None:
-    """Import returns 400 when lifecycle.config_import_enabled is false (default)."""
-    config_path = tmp_path / "config.json"
-    _write_config(config_path, {"llmio_model_level": 3})
-    client = _make_app(config_path)
-
-    resp = client.post("/config/import", json={})
-    assert resp.status_code == 400
-    body = resp.json()
-    assert "config_import_enabled" in body["detail"]
-
-
-def test_import_no_service_name(tmp_path: Path) -> None:
-    """Import returns 400 when lifecycle is enabled for import but no service_name."""
-    config_path = tmp_path / "config.json"
-    _write_config(
-        config_path,
-        {
-            "llmio_model_level": 3,
-            "lifecycle": {
-                "enabled": True,
-                "config_import_enabled": True,
-                "base_url": "http://central-deploy:8100",
-                "api_key": "test-key",  # pragma: allowlist secret
-                "service_name": "",
-            },
-        },
-    )
-    client = _make_app(config_path)
-
-    resp = client.post("/config/import", json={})
-    assert resp.status_code == 400
-    body = resp.json()
-    assert "service_name" in body["detail"].lower()
-
-
-def test_import_no_base_url(tmp_path: Path) -> None:
-    """Import returns 400 when lifecycle is enabled but base_url is empty."""
-    config_path = tmp_path / "config.json"
-    _write_config(
-        config_path,
-        {
-            "llmio_model_level": 3,
-            "lifecycle": {
-                "enabled": True,
-                "config_import_enabled": True,
-                "base_url": "",
-                "api_key": "test-key",  # pragma: allowlist secret
-                "service_name": "test-service",
-            },
-        },
-    )
-    client = _make_app(config_path)
-
-    resp = client.post("/config/import", json={})
-    assert resp.status_code == 400
-    body = resp.json()
-    assert "base_url" in body["detail"].lower()
-
-
-def test_import_with_service_name_in_body(tmp_path: Path) -> None:
-    """Import uses service_name from request body when provided."""
-    config_path = tmp_path / "config.json"
-    _write_config(
-        config_path,
-        {
-            "llmio_model_level": 3,
-            "lifecycle": {
-                "enabled": True,
-                "config_import_enabled": True,
-                "base_url": "http://central-deploy:8100",
-                "api_key": "test-key",  # pragma: allowlist secret
-                "service_name": "",
-            },
-        },
-    )
-    client = _make_app(config_path)
-
-    # The import will fail (502) because central-deploy is not reachable,
-    # but the service_name from the body should be used.
-    resp = client.post("/config/import", json={"service_name": "my-service"})
-    # 502 expected (central-deploy unreachable), NOT 400 (missing service_name)
-    assert resp.status_code == 502
-
-
-# ---------------------------------------------------------------------------
-# POST /config/import — happy path and error branches (mocked LifecycleClient)
-# ---------------------------------------------------------------------------
-
-
-VALID_IMPORTED_CONFIG = {
-    "llmio_model_level": 4,
-    "log_level": "INFO",
-    "cors_allow_origins": [],
-}
-
-
-def test_import_happy_path_200(tmp_path: Path) -> None:
-    """Import succeeds: 200, config written to disk, version history bootstrapped."""
-    config_path = tmp_path / "config.json"
-    _write_config(
-        config_path,
-        {
-            "llmio_model_level": 3,
-            "lifecycle": {
-                "enabled": True,
-                "config_import_enabled": True,
-                "base_url": "http://central-deploy:8100",
-                "api_key": "test-key",  # pragma: allowlist secret
-                "service_name": "test-service",
-            },
-        },
-    )
-    client = _make_app(config_path)
-
-    mock_client = AsyncMock()
-    mock_client.import_service_config = AsyncMock(
-        return_value=json.dumps(VALID_IMPORTED_CONFIG)
-    )
-
-    with patch(
-        "robotsix_chat.chat.server.routes.config.LifecycleClient",
-        return_value=mock_client,
-    ):
-        resp = client.post("/config/import", json={})
-
-    assert resp.status_code == 200
-    body = resp.json()
-    assert body["status"] == "ok"
-    assert body["version"] == 1
-
-    # Config file was overwritten with the imported content.
-    written = json.loads(config_path.read_text(encoding="utf-8"))
-    assert written == VALID_IMPORTED_CONFIG
-
-    # Version history was bootstrapped.
-    versions_path = config_path.with_suffix(config_path.suffix + ".versions")
-    assert versions_path.exists()
-    versions_lines = versions_path.read_text(encoding="utf-8").strip().split("\n")
-    assert len(versions_lines) == 1
-    v1 = json.loads(versions_lines[0])
-    assert v1["version"] == 1
-    assert v1["changed_keys"] == ["initial"]
-
-
-def test_import_422_validation_failure(tmp_path: Path) -> None:
-    """Import returns 422 when the imported config fails Settings.model_validate."""
-    config_path = tmp_path / "config.json"
-    _write_config(
-        config_path,
-        {
-            "llmio_model_level": 3,
-            "lifecycle": {
-                "enabled": True,
-                "config_import_enabled": True,
-                "base_url": "http://central-deploy:8100",
-                "api_key": "test-key",  # pragma: allowlist secret
-                "service_name": "test-service",
-            },
-        },
-    )
-    client = _make_app(config_path)
-
-    mock_client = AsyncMock()
-    # Valid JSON but fails Settings.model_validate due to unknown key.
-    mock_client.import_service_config = AsyncMock(
-        return_value=json.dumps({"not_a_valid_setting": 123})
-    )
-
-    with patch(
-        "robotsix_chat.chat.server.routes.config.LifecycleClient",
-        return_value=mock_client,
-    ):
-        resp = client.post("/config/import", json={})
-
-    assert resp.status_code == 422
-    body = resp.json()
-    assert "validation" in body["detail"].lower()
-
-
-def test_import_500_write_failure(tmp_path: Path) -> None:
-    """Import returns 500 when writing the imported config to disk fails."""
-    config_path = tmp_path / "config.json"
-    _write_config(
-        config_path,
-        {
-            "llmio_model_level": 3,
-            "lifecycle": {
-                "enabled": True,
-                "config_import_enabled": True,
-                "base_url": "http://central-deploy:8100",
-                "api_key": "test-key",  # pragma: allowlist secret
-                "service_name": "test-service",
-            },
-        },
-    )
-    client = _make_app(config_path)
-
-    mock_client = AsyncMock()
-    mock_client.import_service_config = AsyncMock(
-        return_value=json.dumps(VALID_IMPORTED_CONFIG)
-    )
-
-    with (
-        patch(
-            "robotsix_chat.chat.server.routes.config.LifecycleClient",
-            return_value=mock_client,
-        ),
-        patch(
-            "robotsix_chat.chat.server.routes.config._write_config_json",
-            side_effect=OSError("disk full"),
-        ),
-    ):
-        resp = client.post("/config/import", json={})
-
-    assert resp.status_code == 500
-    body = resp.json()
-    assert "failed to write" in body["error"]

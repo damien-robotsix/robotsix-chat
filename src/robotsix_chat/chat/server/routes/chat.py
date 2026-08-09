@@ -33,6 +33,7 @@ from .constants import (
     SSE_HEARTBEAT_INTERVAL,
     SSE_TOKEN_TYPE,
 )
+from .errors import curated_stream_error
 
 logger = logging.getLogger(__name__)
 
@@ -114,6 +115,11 @@ class RunSerializer:
 # Per-session message coalescing — batches rapid-fire user messages
 # ---------------------------------------------------------------------------
 
+#: One queued SSE frame: ``(type, payload)``. The payload is the token text for
+#: ``SSE_TOKEN_TYPE``, ``None`` for ``SSE_DONE_TYPE``, and the curated error
+#: mapping (``code``/``message``/``correlation_id``) for ``SSE_ERROR_TYPE``.
+type SSEQueueFrame = tuple[str, str | dict[str, str] | None]
+
 
 @dataclasses.dataclass
 class _PendingMessage:
@@ -122,7 +128,7 @@ class _PendingMessage:
     message: str
     images: list[tuple[str, bytes]] | None
     message_id: str | None
-    response_queue: asyncio.Queue[tuple[str, str | None]]
+    response_queue: asyncio.Queue[SSEQueueFrame]
 
 
 class MessageCoalescer:
@@ -175,7 +181,7 @@ class MessageCoalescer:
         summary_agent: ChatAgent | None = None,
         autonomous_runner: Any = None,
         event_bus: Any = None,  # EventBus | None (lazy typing to avoid cycle)
-    ) -> asyncio.Queue[tuple[str, str | None]]:
+    ) -> asyncio.Queue[SSEQueueFrame]:
         """Submit a message for batching; return a queue of SSE frames.
 
         The caller reads ``(type, payload)`` tuples from the returned
@@ -186,7 +192,7 @@ class MessageCoalescer:
         /events channel (``chat_turn_started`` / ``chat_token`` /
         ``chat_turn_done``) so other views can re-attach live.
         """
-        response_queue: asyncio.Queue[tuple[str, str | None]] = asyncio.Queue()
+        response_queue: asyncio.Queue[SSEQueueFrame] = asyncio.Queue()
         pending = _PendingMessage(message, images, message_id, response_queue)
 
         async with self._guard:
@@ -410,10 +416,18 @@ class MessageCoalescer:
                     event_bus.end_turn(session_id, turn_id, error="cancelled")
                 raise
             except Exception as exc:
-                logger.exception("Agent stream error")
-                await self._fan_out(pending, SSE_ERROR_TYPE, str(exc))
+                # str(exc) stays server-side only: it routinely embeds paths,
+                # upstream URLs and provider error bodies, and both sinks below
+                # fan out to every client watching the session.
+                error = curated_stream_error(exc, fallback_id=turn_id)
+                logger.exception(
+                    "Agent stream error (code=%s correlation_id=%s)",
+                    error["code"],
+                    error["correlation_id"],
+                )
+                await self._fan_out(pending, SSE_ERROR_TYPE, error)
                 if publish_turn:
-                    event_bus.end_turn(session_id, turn_id, error=str(exc))
+                    event_bus.end_turn(session_id, turn_id, error=error["message"])
 
     async def _maybe_generate_title(
         self,
@@ -441,7 +455,7 @@ class MessageCoalescer:
     async def _fan_out(
         pending: list[_PendingMessage],
         event_type: str,
-        payload: str | None = None,
+        payload: str | dict[str, str] | None = None,
     ) -> None:
         """Put an SSE frame onto every pending response queue."""
         for p in pending:
@@ -854,7 +868,15 @@ async def chat_endpoint(
                     finished_normally = True
                     break
                 else:  # SSE_ERROR_TYPE
-                    yield _sse_frame({"type": SSE_ERROR_TYPE, "message": payload})
+                    # payload carries the curated code/message/correlation_id;
+                    # tolerate a bare string so an older producer degrades to
+                    # the pre-existing message-only frame instead of crashing.
+                    fields = (
+                        payload
+                        if isinstance(payload, dict)
+                        else {"message": payload or ""}
+                    )
+                    yield _sse_frame({"type": SSE_ERROR_TYPE, **fields})
                     finished_normally = True
                     break
         except asyncio.CancelledError:

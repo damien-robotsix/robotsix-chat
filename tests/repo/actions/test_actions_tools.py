@@ -62,20 +62,21 @@ def test_build_github_actions_tools_disabled() -> None:
     )
 
 
-def test_build_github_actions_tools_returns_four_tools() -> None:
-    """Enabled github_actions returns four tools.
+def test_build_github_actions_tools_returns_five_tools() -> None:
+    """Enabled github_actions returns five tools.
 
     set_actions_secret, dispatch_workflow, check_workflow_run,
-    and fetch_workflow_run_annotations.
+    fetch_workflow_run_annotations, and fetch_job_log.
     """
     tools = build_github_actions_tools(_actions_settings(), _direct_repo_settings())
-    assert len(tools) == 4
+    assert len(tools) == 5
     names = {getattr(f, "__name__", str(f)) for f in tools}
     assert names == {
         "set_actions_secret",
         "dispatch_workflow",
         "check_workflow_run",
         "fetch_workflow_run_annotations",
+        "fetch_job_log",
     }
 
 
@@ -719,3 +720,181 @@ async def test_fetch_annotations_success(
     assert "tests/test_foo.py:10-15" in result
     assert "pylint" in result
     assert "pytest" in result
+
+
+# ---------------------------------------------------------------------------
+# fetch_workflow_run_annotations — fallback to job logs on Checks API 403
+# ---------------------------------------------------------------------------
+
+
+@pytest.mark.asyncio
+async def test_fetch_annotations_fallback_on_checks_403(
+    respx_mock: respx.MockRouter,
+) -> None:
+    """When Checks API returns 403, fall back to raw job logs."""
+    dr = _direct_repo_settings()
+
+    respx_mock.get(
+        url__startswith=f"{dr.github_api_base_url}/installation/repositories"
+    ).respond(json={"repositories": [{"full_name": "damien-robotsix/test-repo"}]})
+    # Fallback: list jobs — register BEFORE the workflow run route so the
+    # more-specific /actions/runs/42/jobs pattern matches first.
+    respx_mock.get(
+        url__startswith=(
+            f"{dr.github_api_base_url}/repos/damien-robotsix/test-repo"
+            "/actions/runs/42/jobs"
+        )
+    ).respond(
+        json={
+            "jobs": [
+                {
+                    "id": 100,
+                    "name": "quality",
+                    "status": "completed",
+                    "conclusion": "failure",
+                },
+                {
+                    "id": 101,
+                    "name": "deploy",
+                    "status": "completed",
+                    "conclusion": "success",
+                },
+            ]
+        }
+    )
+    # Workflow run endpoint succeeds
+    respx_mock.get(
+        url__startswith=(
+            f"{dr.github_api_base_url}/repos/damien-robotsix/test-repo/actions/runs/42"
+        )
+    ).respond(
+        json={
+            "id": 42,
+            "name": "CI",
+            "status": "completed",
+            "conclusion": "failure",
+            "check_suite_id": 500,
+        }
+    )
+    # Check suite listing returns 403
+    respx_mock.get(
+        url__startswith=(
+            f"{dr.github_api_base_url}/repos/damien-robotsix/test-repo"
+            "/check-suites/500/check-runs"
+        )
+    ).respond(
+        status_code=403,
+        json={"message": "Resource not accessible by integration"},
+    )
+    # Fetch log for failed job
+    respx_mock.get(
+        url__startswith=(
+            f"{dr.github_api_base_url}/repos/damien-robotsix/test-repo"
+            "/actions/jobs/100/logs"
+        )
+    ).respond(text="Error: missing module 'foo'\nFAILED tests/test_bar.py::test_baz")
+
+    tools = build_github_actions_tools(_actions_settings(), dr)
+    fetch_annotations = tools[3]
+
+    result = await fetch_annotations("test-repo", 42)
+
+    # Should contain fallback notice
+    assert "403" in result
+    assert "checks: read" in result.lower()
+    # Should contain the job log content
+    assert "Error: missing module" in result
+    assert "test_baz" in result
+    # Should contain the failed job name
+    assert "quality" in result
+
+
+@pytest.mark.asyncio
+async def test_fetch_annotations_fallback_on_check_run_403(
+    respx_mock: respx.MockRouter,
+) -> None:
+    """When individual check-run annotation fetch returns 403, fall back."""
+    dr = _direct_repo_settings()
+
+    respx_mock.get(
+        url__startswith=f"{dr.github_api_base_url}/installation/repositories"
+    ).respond(json={"repositories": [{"full_name": "damien-robotsix/test-repo"}]})
+    # Fallback: list jobs — register BEFORE workflow run route.
+    respx_mock.get(
+        url__startswith=(
+            f"{dr.github_api_base_url}/repos/damien-robotsix/test-repo"
+            "/actions/runs/42/jobs"
+        )
+    ).respond(
+        json={
+            "jobs": [
+                {
+                    "id": 700,
+                    "name": "quality",
+                    "status": "completed",
+                    "conclusion": "failure",
+                },
+            ]
+        }
+    )
+    # Workflow run endpoint succeeds
+    respx_mock.get(
+        url__startswith=(
+            f"{dr.github_api_base_url}/repos/damien-robotsix/test-repo/actions/runs/42"
+        )
+    ).respond(
+        json={
+            "id": 42,
+            "name": "CI",
+            "status": "completed",
+            "conclusion": "failure",
+            "check_suite_id": 500,
+        }
+    )
+    # Check suite listing succeeds
+    respx_mock.get(
+        url__startswith=(
+            f"{dr.github_api_base_url}/repos/damien-robotsix/test-repo"
+            "/check-suites/500/check-runs"
+        )
+    ).respond(
+        json={
+            "check_runs": [
+                {
+                    "id": 700,
+                    "name": "quality",
+                    "conclusion": "failure",
+                    "annotations_count": 3,
+                },
+            ]
+        }
+    )
+    # Individual check-run annotation fetch returns 403
+    respx_mock.get(
+        url__startswith=(
+            f"{dr.github_api_base_url}/repos/damien-robotsix/test-repo"
+            "/check-runs/700/annotations"
+        )
+    ).respond(
+        status_code=403,
+        json={"message": "Resource not accessible by integration"},
+    )
+    # Fetch log for failed job
+    respx_mock.get(
+        url__startswith=(
+            f"{dr.github_api_base_url}/repos/damien-robotsix/test-repo"
+            "/actions/jobs/700/logs"
+        )
+    ).respond(text="Traceback (most recent call last):\n  ValueError: bad input")
+
+    tools = build_github_actions_tools(_actions_settings(), dr)
+    fetch_annotations = tools[3]
+
+    result = await fetch_annotations("test-repo", 42)
+
+    # Should contain fallback notice
+    assert "403" in result
+    assert "checks: read" in result.lower()
+    # Should contain the job log content
+    assert "Traceback" in result
+    assert "ValueError" in result

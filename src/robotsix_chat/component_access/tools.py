@@ -87,8 +87,10 @@ async def _component_request_impl(
     method: str,
     path: str,
     json_body: dict[str, Any] | None = None,
+    params: dict[str, str] | None = None,
     read_response_max_chars: int = _TRUNCATE_LENGTH,
     component_credentials: dict[str, Any] | None = None,
+    fallback_header_token: str = "",
 ) -> str:
     """Call *component_id*'s API at *method* *path*.
 
@@ -172,20 +174,21 @@ async def _component_request_impl(
             )
         auth = (username, password)
     elif auth_type == "header":
-        if creds is None:
-            return (
-                f"Error: component '{component_id}' requires header auth "
-                f"but no credentials are configured in "
-                f"central_deploy.component_credentials.{component_id}. "
-                "Add a ComponentCredentials entry for this component."
-            )
         header_name = auth_meta.get("header_name", "")
-        token = creds.header_token.get_secret_value()
+        # Components behind the deploy plane share one token: the deploy
+        # API token. A per-component entry is an override, so fall back to
+        # central_deploy.api_token when there isn't one. Duplicating that
+        # value per component is what made it fragile — each copy is a
+        # thing a config rewrite can silently drop, and repeatedly did.
+        token = creds.header_token.get_secret_value() if creds is not None else ""
+        if not token:
+            token = fallback_header_token
         if not (header_name and token):
             return (
                 f"Error: component '{component_id}' requires a "
-                f"{header_name or '?'} header but header_token is "
-                f"empty in central_deploy.component_credentials.{component_id}."
+                f"{header_name or '?'} header but no token is available — "
+                f"central_deploy.component_credentials.{component_id}."
+                "header_token is unset and central_deploy.api_token is empty."
             )
         headers[header_name] = token
 
@@ -213,7 +216,9 @@ async def _component_request_impl(
             if method_upper in ("GET", "HEAD")
             else _TRUNCATE_LENGTH
         )
-        if len(body_str) > limit:
+        if not body_str:
+            body_str = "(empty response body)"
+        elif len(body_str) > limit:
             body_str = body_str[:limit] + (
                 f"\n\n... (truncated at {limit} chars, original length {len(body_str)})"
             )
@@ -225,6 +230,7 @@ async def _component_request_impl(
             resp = await retry_client.request(
                 method_upper,
                 url,
+                params=params,
                 headers=headers,
                 json=json_body,
                 auth=auth_arg,
@@ -257,6 +263,7 @@ async def _component_request_impl(
                         resp = await client.request(
                             method_upper,
                             url,
+                            params=params,
                             headers=headers,
                             json=json_body,
                             auth=auth_arg,
@@ -330,7 +337,10 @@ async def _component_request_impl(
                 path,
                 exc,
             )
-            return f"Error calling {component_id} {method_upper} {path}: {exc}"
+            return (
+                f"Error calling {component_id} {method_upper} {path}: "
+                f"{str(exc) or type(exc).__name__}"
+            )
 
     # Success (2xx / 3xx).
     status = resp.status_code
@@ -372,6 +382,7 @@ def build_component_access_tools(
     # between calls.
     _state: dict[str, Any] = {"entries": []}
     _creds = settings.component_credentials
+    _fallback_token = settings.api_token.get_secret_value()
 
     async def _refresh() -> None:
         _state["entries"] = await fetch_roster(settings)
@@ -381,6 +392,7 @@ def build_component_access_tools(
         method: str,
         path: str,
         json_body: dict[str, Any] | None = None,
+        params: dict[str, str] | None = None,
         max_response_chars: int | None = None,
     ) -> str:
         """Call an external component's API.
@@ -395,6 +407,8 @@ def build_component_access_tools(
             path: The API path relative to the component's base URL
                 (e.g. "/tickets", "/chat/skill").
             json_body: Optional JSON body for POST/PUT/PATCH requests.
+            params: Optional query-string parameters as key/value pairs
+                (e.g. ``{"limit": "5", "state": "open"}``).
             max_response_chars: Optional per-call truncation limit for the
                 response body.  When omitted the configured default
                 (component_response_max_chars) is used.  Set to a small
@@ -420,8 +434,10 @@ def build_component_access_tools(
             method,
             path,
             json_body,
+            params=params,
             read_response_max_chars=limit,
             component_credentials=_creds,
+            fallback_header_token=_fallback_token,
         )
 
     return [component_request]

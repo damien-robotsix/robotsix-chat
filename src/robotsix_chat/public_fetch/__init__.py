@@ -8,7 +8,7 @@ per fetch.
 Safe by construction: only GET, SSRF protection blocks internal/private IP
 ranges, body read is size-capped, configurable domain allowlist, rate
 limiting, one request per call, short timeout.  Fleet-auth hosts (configured
-via ``fleet_auth.auth_hosts``) carry server-side Basic-Auth headers injected
+resolved from the central-deploy roster) are reached at their internal
 transparently — the agent never sees the credential.
 
 Exposes :func:`build_public_fetch_tools` — a factory returning the LLM tool.
@@ -30,14 +30,14 @@ from urllib.parse import urlparse
 import httpx
 
 from robotsix_chat.common.http_fetch import (
-    _build_fleet_auth_header,
     _check_hostname_allowlist,
     _host_is_private,
     _validate_url_scheme,
+    fleet_component_hosts,
 )
 
 if TYPE_CHECKING:
-    from robotsix_chat.config import PublicFetchSettings
+    from robotsix_chat.config import CentralDeploySettings, PublicFetchSettings
 
 __all__ = ["build_public_fetch_tools", "load_public_fetch_skill"]
 
@@ -86,11 +86,16 @@ def load_public_fetch_skill() -> str:
 
 def build_public_fetch_tools(
     settings: PublicFetchSettings,
+    central_deploy: CentralDeploySettings | None = None,
 ) -> list[Callable[..., Any]]:
     """Return the ``fetch_public_url`` tool, or an empty list when disabled.
 
     Args:
         settings: PublicFetch configuration.
+        central_deploy: Central-deploy connection settings, used to resolve
+            which fleet components the agent may reach. Components are
+            addressed at their internal container base_url, so no credential
+            is involved.
 
     Returns:
         A single-element list containing the ``fetch_public_url`` async
@@ -107,8 +112,6 @@ def build_public_fetch_tools(
 
     # Pre-compute the basic-auth header value when fleet-auth is
     # configured — the agent never sees the credential; it is injected
-    # server-side for matching hosts only.
-    fleet_auth_header, fleet_auth_hosts = _build_fleet_auth_header(settings.fleet_auth)
 
     async def fetch_public_url(url: str) -> str:
         """Fetch a public URL and return raw text contents with metadata.
@@ -162,12 +165,14 @@ def build_public_fetch_tools(
             return json.dumps(result, ensure_ascii=False)
 
         # --- Hostname allowlist check ---
-        # Fleet-auth hosts are implicitly allowed (the operator
-        # explicitly listed them in auth_hosts), so the agent can
-        # reach authenticated fleet UIs without duplicating every
-        # hostname in the main allowlist.
+        # Fleet components come from the central-deploy roster, so enabling
+        # chat access on a component is the only place that decision is made.
+        fleet_hosts = await fleet_component_hosts(central_deploy)
+        # Fleet components come from the central-deploy roster, so enabling
+        # chat access on a component is the only place that decision is made.
+        fleet_hosts = await fleet_component_hosts(central_deploy)
         allowlist_error = _check_hostname_allowlist(
-            hostname, allowed_hosts, fleet_auth_hosts, "public_fetch"
+            hostname, allowed_hosts, fleet_hosts, "public_fetch"
         )
         if allowlist_error is not None:
             result["error"] = allowlist_error
@@ -176,7 +181,7 @@ def build_public_fetch_tools(
 
         # --- SSRF check (initial hostname) ---
         # Fleet-auth hosts are trusted by the operator — skip SSRF check.
-        if hostname not in fleet_auth_hosts and _host_is_private(hostname):
+        if hostname not in fleet_hosts and _host_is_private(hostname):
             result["error"] = (
                 f"Hostname {hostname!r} resolves to a private/internal IP "
                 "address — SSRF protection blocked the request."
@@ -211,8 +216,7 @@ def build_public_fetch_tools(
                     current_host = parsed_current.hostname or ""
 
                     # SSRF check on every hop (redirect targets included).
-                    # Fleet-auth hosts are trusted by the operator — skip.
-                    if current_host not in fleet_auth_hosts and _host_is_private(
+                    if current_host not in fleet_hosts and _host_is_private(
                         current_host
                     ):
                         result["error"] = (
@@ -224,14 +228,7 @@ def build_public_fetch_tools(
                         _audit(result, "blocked:ssrf-redirect")
                         return json.dumps(result, ensure_ascii=False)
 
-                    # Build request headers — inject fleet-auth when
-                    # the target host is in the fleet_auth_hosts set.
                     request_headers: dict[str, str] = {}
-                    if (
-                        current_host in fleet_auth_hosts
-                        and fleet_auth_header is not None
-                    ):
-                        request_headers["Authorization"] = fleet_auth_header
 
                     async with client.stream(
                         "GET", current_url, headers=request_headers
@@ -294,12 +291,13 @@ def build_public_fetch_tools(
                         # Handle error status codes
                         if response.status_code >= 400:
                             if response.status_code in (401, 403):
-                                if current_host in fleet_auth_hosts:
+                                if current_host in fleet_hosts:
                                     result["error"] = (
                                         f"Server returned "
-                                        f"{response.status_code} — fleet-auth "
-                                        "credentials may need updating. Check "
-                                        "the fleet_auth configuration."
+                                        f"{response.status_code} — the "
+                                        "component rejected an internal "
+                                        "request; components should need no "
+                                        "credential."
                                     )
                                 else:
                                     result["error"] = (

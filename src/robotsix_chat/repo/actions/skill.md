@@ -95,7 +95,9 @@ Fetch recent workflow runs and diagnose common CI failure patterns. This is a re
 
 In particular, it detects **private-repo billing failures** — runs that complete with
 `conclusion: "failure"` but have zero jobs, or runs that never started (`run_started_at` is null).
-These signatures strongly indicate that GitHub Actions billing is not enabled for the repository.
+Before attributing the failure to billing, it cross-checks whether other workflow runs on the same
+commit completed successfully — if they did, the root cause is likely a trigger configuration
+mismatch (e.g. a workflow that only triggers on `push` to `main`, not on `pull_request`).
 
 **Read-only.** Does not modify any repository state. No confirmation gating — safe to call anytime
 to investigate a CI failure.
@@ -114,5 +116,52 @@ Takes a repository name and a workflow run id (the numeric id from the Actions t
 Markdown-formatted string with all annotations grouped by check run, or a diagnostic message when no
 annotations are found.
 
+### Permission fallback
+
+When the GitHub App installation token lacks the `checks: read` permission, the Checks API returns
+403 and annotations are unavailable. In that case the tool falls back to fetching raw job logs via
+the Actions API (`/actions/jobs/{job_id}/logs`) for every failed job in the run. The raw logs are
+returned as truncated Markdown code blocks — less structured than annotations, but often contain the
+same diagnostic output (linter errors, test failures, stack traces).
+
+If the Actions API also fails or the run has no failed jobs, the tool returns a diagnostic message
+explaining the gap. When you receive raw logs instead of annotations, note the permission gap and
+suggest the repo admin grant the `checks: read` permission on the GitHub App installation for richer
+diagnostics in the future.
+
 **Read-only.** Does not modify any repository state. No confirmation gating — safe to call anytime
 to investigate a CI failure.
+
+## Agent tool: `fetch_job_log`
+
+Fetch the raw plain-text log for a specific GitHub Actions job. This is a lower-level tool that
+retrieves the job's console output directly from the GitHub API (follows the 302 redirect to the
+signed log URL server-side).
+
+Use this as a **fallback** when `fetch_workflow_run_annotations` returns a permission error (403) or
+when the check-run annotations endpoint is unavailable — job logs use a different API endpoint
+(`/repos/{owner}/{repo}/actions/jobs/{job_id}/logs`) that may still be accessible even when the
+checks API is not.
+
+Long logs are automatically truncated at 8000 characters to fit within the agent's context window.
+
+**Read-only.** Does not modify any repository state. No confirmation gating — safe to call anytime
+to investigate a CI failure.
+
+### Fallback strategy for CI diagnosis
+
+When a CI run fails and you need to diagnose the root cause:
+
+1. **First**, call `fetch_workflow_run_annotations` to get inline annotations (linter errors, test
+   failures, etc.).
+2. **If that fails** (especially with a 403 permission error), `fetch_workflow_run_annotations`
+   automatically falls back to raw job logs for failed jobs. The returned message will include
+   whatever logs could be retrieved.
+3. **For a specific job's log**, call `fetch_job_log` directly with the job ID (found via
+   `check_workflow_run` or in the Actions tab URL).
+4. **If everything fails**, the tool will clearly state that logs are inaccessible and suggest
+   checking the GitHub Actions UI manually, including the direct URL to the workflow run.
+
+**Limitation:** When the GitHub App installation lacks both `checks: read` and `actions: read`
+permissions, neither annotations nor job logs are accessible. In this case, the user must check the
+logs manually at `https://github.com/{owner}/{repo}/actions/runs/{run_id}`.

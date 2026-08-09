@@ -930,3 +930,142 @@ body {
   color: #64748b; font-style: italic; padding: 1rem 0;
   text-align: center;
 }
+
+/* ---- Presets editor (autonomous.sessions) ---------------------------- */
+
+.presets-editor {
+  border: 1px solid var(--composer-border);
+  border-radius: 4px;
+  overflow: hidden;
+}
+
+.presets-editor-header {
+  display: flex; align-items: center; gap: 0.4rem;
+  padding: 0.4rem 0.6rem;
+  background: rgba(255,255,255,0.04);
+  font-weight: 600; font-size: 0.85rem;
+}
+
+.presets-editor-list {
+  padding: 0.4rem 0.6rem;
+  display: flex; flex-direction: column; gap: 0.3rem;
+}
+
+.preset-row {
+  display: flex; align-items: center; gap: 0.4rem;
+  padding: 0.3rem 0.5rem;
+  background: rgba(255,255,255,0.03);
+  border-radius: 3px;
+  flex-wrap: wrap;
+}
+
+.preset-summary {
+  flex: 1; min-width: 0;
+  font-size: 0.8rem; color: #e2e8f0;
+  overflow: hidden; text-overflow: ellipsis; white-space: nowrap;
+}
+
+.preset-summary .preset-name {
+  font-weight: 600;
+}
+
+.preset-summary .preset-detail {
+  color: #94a3b8; margin-left: 0.4rem;
+}
+
+.preset-row-buttons {
+  display: flex; gap: 0.25rem; flex-shrink: 0;
+}
+
+.preset-row-buttons button {
+  background: rgba(255,255,255,0.08); color: #94a3b8;
+  border: 1px solid var(--composer-border); border-radius: 3px;
+  padding: 0.15rem 0.5rem; font-size: 0.72rem; cursor: pointer;
+  font-family: inherit;
+}
+
+.preset-row-buttons button:hover {
+  background: rgba(255,255,255,0.15); color: #e2e8f0;
+}
+
+.preset-row-buttons .preset-delete-btn:hover {
+  background: rgba(239,68,68,0.2); border-color: rgba(239,68,68,0.4); color: #fca5a5;
+}
+
+/* ---- Preset edit form (inline) --------------------------------------- */
+
+.preset-form {
+  padding: 0.5rem 0.75rem;
+  background: rgba(255,255,255,0.02);
+  border-top: 1px solid var(--composer-border);
+  display: flex; flex-direction: column; gap: 0.4rem;
+}
+
+.preset-form-row {
+  display: flex; flex-direction: column; gap: 0.1rem;
+}
+
+.preset-form-row label {
+  font-size: 0.72rem; color: #94a3b8; font-weight: 500;
+}
+
+.preset-form-row input[type="text"],
+.preset-form-row input[type="number"],
+.preset-form-row textarea,
+.preset-form-row select {
+  background: var(--chat-bg); color: var(--text-fg);
+  border: 1px solid var(--composer-border); border-radius: 3px;
+  padding: 0.25rem 0.4rem; font-size: 0.78rem; font-family: inherit;
+  width: 100%;
+}
+
+.preset-form-row input[type="text"]:focus,
+.preset-form-row input[type="number"]:focus,
+.preset-form-row textarea:focus,
+.preset-form-row select:focus {
+  outline: none; border-color: #2563eb;
+}
+
+.preset-form-row input[type="checkbox"] {
+  margin-right: 0.3rem;
+}
+
+.preset-form-actions {
+  display: flex; gap: 0.4rem; margin-top: 0.3rem;
+}
+
+.preset-form-actions button {
+  background: rgba(255,255,255,0.08); color: #e2e8f0;
+  border: 1px solid var(--composer-border); border-radius: 3px;
+  padding: 0.25rem 0.75rem; font-size: 0.78rem; cursor: pointer;
+  font-family: inherit;
+}
+
+.preset-form-actions button:hover {
+  background: rgba(255,255,255,0.15);
+}
+
+.preset-form-actions .preset-save-btn {
+  background: var(--btn-primary-bg); color: var(--btn-primary-fg);
+  border-color: var(--btn-primary-bg);
+}
+
+.preset-form-actions .preset-save-btn:hover {
+  background: var(--btn-primary-hover);
+}
+
+.preset-add-btn {
+  background: rgba(255,255,255,0.04); color: #94a3b8;
+  border: 1px dashed var(--composer-border); border-radius: 3px;
+  padding: 0.3rem 0.6rem; font-size: 0.78rem; cursor: pointer;
+  font-family: inherit; width: 100%; margin-top: 0.3rem;
+}
+
+.preset-add-btn:hover {
+  background: rgba(255,255,255,0.08); color: #e2e8f0;
+}
+
+.preset-empty {
+  color: #64748b; font-size: 0.78rem; font-style: italic;
+  padding: 0.3rem 0; text-align: center;
+}

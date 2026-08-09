@@ -1137,6 +1137,97 @@ async def test_component_request_header_auth_missing_credentials() -> None:
 
 
 @pytest.mark.asyncio
+async def test_header_auth_falls_back_to_the_deploy_api_token(
+    respx_mock: respx.MockRouter,
+) -> None:
+    """No per-component entry → use central_deploy.api_token.
+
+    Components behind the deploy plane all authenticate with that one
+    token. Requiring a per-component copy meant every config rewrite that
+    dropped one silently removed access — it happened to `github` on
+    2026-08-08 and to both entries on 2026-07-30.
+    """
+    roster = [
+        {
+            "id": "github",
+            "base_url": "http://cd:8100",
+            "skill": "...",
+            "auth": {"type": "header", "header_name": "X-API-Key"},
+        }
+    ]
+    route = respx_mock.get("http://cd:8100/x").mock(
+        return_value=httpx.Response(200, json={})
+    )
+    result = await _component_request_impl(
+        roster, "github", "GET", "/x", fallback_header_token="deploy-tok"
+    )
+    assert "HTTP 200" in result
+    assert route.calls.last.request.headers["X-API-Key"] == "deploy-tok"
+
+
+@pytest.mark.asyncio
+async def test_explicit_header_token_overrides_the_fallback(
+    respx_mock: respx.MockRouter,
+) -> None:
+    """A per-component entry stays an override, not dead weight."""
+    roster = [
+        {
+            "id": "github",
+            "base_url": "http://cd:8100",
+            "skill": "...",
+            "auth": {"type": "header", "header_name": "X-API-Key"},
+        }
+    ]
+    route = respx_mock.get("http://cd:8100/x").mock(
+        return_value=httpx.Response(200, json={})
+    )
+    result = await _component_request_impl(
+        roster,
+        "github",
+        "GET",
+        "/x",
+        component_credentials={"github": _creds(header_token="per-component")},
+        fallback_header_token="deploy-tok",
+    )
+    assert "HTTP 200" in result
+    assert route.calls.last.request.headers["X-API-Key"] == "per-component"
+
+
+@pytest.mark.asyncio
+async def test_header_auth_errors_when_no_token_anywhere() -> None:
+    """Neither an entry nor an api_token — still a clear provisioning error."""
+    roster = [
+        {
+            "id": "deploy",
+            "base_url": "http://cd:8100",
+            "skill": "...",
+            "auth": {"type": "header", "header_name": "X-API-Key"},
+        }
+    ]
+    result = await _component_request_impl(roster, "deploy", "GET", "/x")
+    assert "Error" in result
+    assert "api_token" in result
+
+
+@pytest.mark.asyncio
+async def test_basic_auth_does_not_use_the_fallback() -> None:
+    """The fallback is a single token; Basic needs a user/password pair."""
+    roster = [
+        {
+            "id": "langfuse",
+            "base_url": "http://lf:3000",
+            "skill": "...",
+            "auth": {"type": "basic"},
+        }
+    ]
+    result = await _component_request_impl(
+        roster, "langfuse", "GET", "/x", fallback_header_token="deploy-tok"
+    )
+    assert "Error" in result
+    assert "component_credentials" in result
+
+
+@pytest.mark.asyncio
 async def test_component_request_no_auth_unchanged(
     respx_mock: respx.MockRouter,
 ) -> None:
@@ -1220,11 +1311,12 @@ async def test_retry_on_5xx_for_get(
 async def test_retry_on_empty_exception_message(
     respx_mock: respx.MockRouter,
 ) -> None:
-    """Exception("") is no longer considered transient by the library."""
+    """Exception("") is not transient, and the error falls back to Exception."""
     roster = [{"id": "mill", "base_url": "http://m:8080", "skill": "..."}]
     route = respx_mock.get("http://m:8080/tickets").mock(side_effect=Exception(""))
     result = await _component_request_impl(roster, "mill", "GET", "/tickets")
     assert "Error calling" in result
+    assert "Exception" in result
     assert route.call_count == 1
 
 

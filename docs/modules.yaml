@@ -58,7 +58,6 @@ modules:
       - src/robotsix_mill/stages/retrospect.py
       - src/robotsix_mill/stages/towncrier.py
       - tests/stages/**/*
-      - changelog.d/**/*
       - config/**/*
       - deploy/**/*
       - scripts/*
@@ -72,15 +71,27 @@ modules:
       - .pre-commit-config.yaml
       - .python-version
       - .secrets.baseline
+      - .trufflehog.yaml
       - AGENT.md
       - CHANGELOG.md
+      - changelog.d/20260801T100719Z-agent-md-direct-repo-tool-documentation-b0a2.doc.md
+      - changelog.d/20260801T113548Z-agent-md-testing-conventions-any-change-4441.doc.md
+      - changelog.d/20260801T104213Z-make-github-monitoring-subsessions-resil-601a.bugfix.md
+      - changelog.d/20260802T005236Z-improve-ci-startup-failure-diagnostics-t-93b9.bugfix.md
+      - changelog.d/20260802T005237Z-auto-prioritize-user-requested-tickets-t-46db.misc.md
+      - changelog.d/20260802T005450Z-correct-monitor-status-reporting-to-dist-a2ac.bugfix.md
+      - changelog.d/20260809T140000Z-roster-replaces-fleet-auth.feature.md
+      - changelog.d/20260802T143816Z-test-test-tool-docstrings-forbid-merge-r-f85c.misc.md
+      - changelog.d/20260809T014935Z-sanitize-sse-mid-stream-error-payload-st-0ede.bugfix.md
+      - changelog.d/20260809T014841Z-config-constants-py-remove-dead-level4-d-ce01.misc.md
+      - release-please-config.json
+      - .release-please-manifest.json
       - CONTRIBUTING.md
       - Dockerfile
       - LICENSE
       - Makefile
       - memory-ledger.json
       - package.json
-      - reserved
       - package-lock.json
       - README.md
       - SECURITY.md
@@ -88,9 +99,9 @@ modules:
       - mkdocs.yml
       - pyproject.toml
       - typos.toml
+      - vitest.config.js
       - uv.lock
       - vulture_whitelist.py
-      - changelog.d/.gitkeep
       - deploy/.env.example
 
   - id: autonomous
@@ -157,9 +168,11 @@ modules:
       - src/robotsix_chat/chat/server/routes/errors.py
       - src/robotsix_chat/chat/server/routes/events.py
       - src/robotsix_chat/chat/server/routes/github.py
+      - src/robotsix_chat/chat/server/routes/mill_events.py
       - src/robotsix_chat/chat/server/routes/sessions.py
       - src/robotsix_chat/chat/server/routes/subsessions.py
       - src/robotsix_chat/chat/server/routes/config.py
+      - src/robotsix_chat/chat/server/routes/chat_skill.py
       - src/robotsix_chat/chat/server/routes/diagnostics.py
       - src/robotsix_chat/chat/server/routes/draft.py
       - docs/chat/server.md
@@ -176,6 +189,7 @@ modules:
       - tests/chat/server/routes/__init__.py
       - tests/chat/server/routes/conftest.py
       - tests/chat/server/routes/test_admin.py
+      - tests/chat/server/routes/test_chat_skill.py
       - tests/chat/server/routes/test_shared.py
       - tests/chat/server/routes/test_config.py
       - tests/chat/server/routes/test_chat.py
@@ -222,7 +236,6 @@ modules:
       - tests/repo/direct/test_build_tools.py
       - tests/repo/direct/test_client.py
       - tests/repo/direct/test_direct_fix.py
-      - tests/repo/direct/test_direct_repo.py
       - tests/repo/direct/test_github_auth_dependency.py
       - tests/repo/direct/test_merge.py
       - tests/repo/direct/test_open_pr.py
@@ -364,6 +377,7 @@ modules:
       - src/robotsix_chat/sftp/client.py
       - tests/sftp/__init__.py
       - tests/sftp/test_client.py
+      - tests/sftp/test_init.py
 
   - id: feedback
     description: "Automated feedback analysis — runs at compaction and session-end boundaries, analyses the conversation, and files improvement tickets via POST /tickets/ingest."
@@ -379,7 +393,13 @@ modules:
       - src/robotsix_chat/ui/index.html
       - src/robotsix_chat/ui/static/chat.css
       - src/robotsix_chat/ui/static/chat.js
+      - src/robotsix_chat/ui/static/message-queue.js
+      - src/robotsix_chat/ui/static/reconnect-guard.js
+      - src/robotsix_chat/ui/static/sse-parser.js
       - docs/user-guide/settings-ui.md
+      - tests/js/message-queue.test.js
+      - tests/js/reconnect-guard.test.js
+      - tests/js/sse-parser.test.js
       - tests/ui/__init__.py
       - tests/ui/conftest.py
       - tests/ui/test_chat_integration.py

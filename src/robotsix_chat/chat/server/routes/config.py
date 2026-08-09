@@ -17,6 +17,7 @@ from __future__ import annotations
 
 import json
 import logging
+import stat
 from copy import deepcopy
 from datetime import datetime, timezone
 from pathlib import Path
@@ -27,9 +28,8 @@ from robotsix_config import resolve_config_path
 from starlette.requests import Request
 from starlette.responses import JSONResponse
 
-from robotsix_chat.config import LifecycleSettings, Settings
+from robotsix_chat.config import Settings
 from robotsix_chat.config.settings import ConfigValidationError
-from robotsix_chat.lifecycle.client import LifecycleClient
 
 from ._shared import _parse_json_body
 from .errors import _error_body
@@ -172,6 +172,11 @@ def _write_config_json(path: Path, data: dict[str, Any]) -> None:
 
     Uses a temp-file + rename strategy so a crash mid-write never
     leaves a truncated config.
+
+    The replacement carries the original file's permission bits. The temp
+    file is created fresh, so without this the config — which holds API keys
+    and other secrets — is left world-readable at the process umask after
+    every save, silently widening a 0600 file.
     """
     tmp = path.with_suffix(path.suffix + ".tmp")
     tmp.write_text(
@@ -179,6 +184,12 @@ def _write_config_json(path: Path, data: dict[str, Any]) -> None:
         json.dumps(data, indent=2, ensure_ascii=False) + "\n",
         encoding="utf-8",
     )
+    try:
+        tmp.chmod(stat.S_IMODE(path.stat().st_mode))
+    except OSError:
+        # No existing file to copy from (first write), or the mode could not
+        # be read — fall back to owner-only, never wider.
+        tmp.chmod(0o600)
     tmp.replace(path)
 
 
@@ -315,6 +326,12 @@ def _problem_response(status: int, title: str, detail: str) -> JSONResponse:
 async def config_get_endpoint(request: Request) -> JSONResponse:
     """Return the current on-disk config with secrets masked, plus version and schema.
 
+    The on-disk data is overlaid onto the full :class:`Settings` model
+    defaults — every schema key (including newly-added fields like
+    ``autonomous.sessions``) appears in the response even when absent from
+    the persisted config file.  Legacy keys are migrated during
+    validation (e.g. ``approval_marker`` → ``proposal_marker``).
+
     ``GET /config`` — no auth (gateway handles it).
     """
     config_path = _resolve_config_path_from_app(request)
@@ -323,8 +340,28 @@ async def config_get_endpoint(request: Request) -> JSONResponse:
     # Ensure version history is bootstrapped.
     version = _bootstrap_version_history(config_path, data)
 
+    # Overlay the on-disk config over Settings defaults so every schema
+    # key renders in the UI — new fields like autonomous.sessions appear
+    # even when absent from the persisted file.
+    defaults = Settings().model_dump(mode="json")
+    merged = _deep_merge(defaults, data)
+
+    # Validate through Settings to trigger migration of legacy keys
+    # (approval_marker → proposal_marker) and strip unknown fields.
+    # On failure, fall back to the unvalidated merge — the UI can still
+    # render what we have while the operator addresses validation errors.
+    try:
+        validated = Settings.model_validate(merged)
+        response_data = validated.model_dump(mode="json")
+    except ValidationError:
+        logger.warning(
+            "Config validation failed during GET /config; "
+            "returning unvalidated merge (legacy keys may be present)"
+        )
+        response_data = merged
+
     # Build the response: version + schema + (masked) config keys at top level.
-    masked = _mask_secrets(data)
+    masked = _mask_secrets(response_data)
     response: dict[str, Any] = {
         "version": version,
         "schema": _get_schema(),
@@ -524,142 +561,6 @@ async def config_rollback_endpoint(request: Request) -> JSONResponse:
         new_ver,
     )
     return JSONResponse({"version": new_ver, "status": "ok"})
-
-
-async def config_import_endpoint(request: Request) -> JSONResponse:
-    """Import config from central-deploy's one-time export endpoint.
-
-    ``POST /config/import`` — accepts an optional ``service_name`` in the
-    request body (defaults to ``lifecycle.service_name``).  Calls the
-    central-deploy config-export endpoint, writes the returned config to
-    the local config file, and bootstraps the version history.
-
-    Requires ``lifecycle.config_import_enabled`` to be ``true``.
-
-    Returns 200 with the new version on success.
-    Returns 400 when lifecycle is not configured for import.
-    Returns 502 when the central-deploy export endpoint is unreachable.
-    Returns 500 on local I/O failure.
-    """
-    config_path = _resolve_config_path_from_app(request)
-    body = await _parse_json_body(request)
-
-    # Resolve lifecycle settings from app state or load fresh.
-    lifecycle_settings: LifecycleSettings | None = getattr(
-        request.app.state, "lifecycle_settings", None
-    )
-    if lifecycle_settings is None:
-        # Fallback: load from the config file at the resolved path.
-        raw = _read_config_json(config_path)
-        try:
-            lifecycle_settings = Settings.model_validate(raw).lifecycle
-        except Exception:
-            lifecycle_settings = LifecycleSettings()
-
-    if not lifecycle_settings.enabled or not lifecycle_settings.config_import_enabled:
-        return _problem_response(
-            400,
-            "Config import not enabled",
-            "lifecycle.config_import_enabled must be true to use this endpoint. "
-            "Set lifecycle.enabled and lifecycle.config_import_enabled in the "
-            "config file and restart the server.",
-        )
-
-    service_name: str = body.get("service_name") or lifecycle_settings.service_name
-    if not service_name:
-        return _problem_response(
-            400,
-            "No service name",
-            "Provide a service_name in the request body or set "
-            "lifecycle.service_name in the config file.",
-        )
-
-    # Build the import URL — honour the explicit override if set.
-    if lifecycle_settings.config_import_url:
-        import_url = lifecycle_settings.config_import_url
-    else:
-        base = (
-            lifecycle_settings.base_url.rstrip("/")
-            if lifecycle_settings.base_url
-            else ""
-        )
-        if not base:
-            return _problem_response(
-                400,
-                "No lifecycle base URL",
-                "lifecycle.base_url must be set to use config import. "
-                "Set lifecycle.base_url to the central-deploy lifecycle API "
-                "address (e.g. http://central-deploy:8100).",
-            )
-        import_url = f"{base}/chat/services/{service_name}/config/export"
-
-    client = LifecycleClient(lifecycle_settings)
-    result = await client.import_service_config(service_name, url=import_url)
-
-    # The client returns error strings prefixed with "Lifecycle" on failure.
-    if result.startswith("Lifecycle"):
-        logger.warning("Config import failed: %s", result)
-        return _problem_response(
-            502,
-            "Config import failed",
-            f"Central-deploy export endpoint returned an error: {result}",
-        )
-
-    # Parse the imported config.
-    try:
-        imported: Any = json.loads(result)
-    except json.JSONDecodeError as exc:
-        logger.warning("Config import returned invalid JSON: %s", exc)
-        return _problem_response(
-            502,
-            "Invalid import response",
-            f"Central-deploy export endpoint returned invalid JSON: {exc}",
-        )
-    if not isinstance(imported, dict):
-        return _problem_response(
-            502,
-            "Invalid import response",
-            "Central-deploy export endpoint returned a non-object JSON value.",
-        )
-
-    # Validate the imported config against the current Settings model.
-    try:
-        Settings.model_validate(imported)
-    except ValidationError as exc:
-        logger.warning(
-            "Config import rejected: imported config fails validation: %s", exc
-        )
-        return _problem_response(
-            422,
-            "Imported config validation failed",
-            f"The imported config fails current Settings validation: {exc}",
-        )
-
-    # Persist the imported config.
-    try:
-        _write_config_json(config_path, imported)
-    except OSError as exc:
-        logger.exception("Failed to write imported config to %s", config_path)
-        return JSONResponse(
-            _error_body(f"failed to write imported config: {exc}"),
-            status_code=500,
-        )
-
-    # Bootstrap version history from the imported config.
-    version = _bootstrap_version_history(config_path, imported)
-
-    logger.info(
-        "Config imported from %s for service %s (version %d)",
-        import_url,
-        service_name,
-        version,
-    )
-    return JSONResponse({"version": version, "status": "ok"})
-
-
-# ---------------------------------------------------------------------------
-# Helper: resolve config path from app state or env
-# ---------------------------------------------------------------------------
 
 
 def _resolve_config_path_from_app(request: Request) -> Path:

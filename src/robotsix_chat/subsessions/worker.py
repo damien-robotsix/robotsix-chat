@@ -27,6 +27,7 @@ from collections.abc import Callable
 from dataclasses import dataclass, field
 from typing import TYPE_CHECKING
 
+import httpx
 from robotsix_llmio.openrouter import is_openrouter_transient
 
 from robotsix_chat.chat.events import SSE_NOTIFICATION_TYPE, subsession_result_frame
@@ -313,6 +314,7 @@ def spawn_subsession(
     checkpoint: dict[str, object] | None = None,
     dedup_key: str | None = None,
     retry_count: int = 0,
+    event_timeout_seconds: float | None = None,
 ) -> str:
     """Validate, register, and launch a subsession worker; return its id.
 
@@ -347,7 +349,7 @@ def spawn_subsession(
         # Cross-reference: an existing PERIODIC monitor may have been
         # spawned without a dedup_key but recorded the watched ticket_id
         # in its checkpoint after the first run.  Scan for that match.
-        if kind is SubsessionKind.PERIODIC:
+        if kind in (SubsessionKind.PERIODIC, SubsessionKind.WAIT_FOR_EVENT):
             cp_match = env.registry.find_active_periodic_by_ticket_id(dedup_key)
             if cp_match is not None:
                 return cp_match
@@ -364,21 +366,20 @@ def spawn_subsession(
     _validate_model_level(env.settings, model_level)
     if parent_id is not None:
         parent = env.registry.get(parent_id)
-        if parent is not None and parent.kind is SubsessionKind.PERIODIC:
-            if kind is SubsessionKind.PERIODIC:
+        if parent is not None and parent.kind in (
+            SubsessionKind.PERIODIC,
+            SubsessionKind.WAIT_FOR_EVENT,
+        ):
+            if kind in (SubsessionKind.PERIODIC, SubsessionKind.WAIT_FOR_EVENT):
                 logger.warning(
-                    "Subsession %s: periodic spawn of nested periodic child "
-                    "rejected (kind=%s).",
+                    "Subsession %s: periodic/wait_for_event spawn of nested "
+                    "periodic/wait_for_event child rejected (kind=%s).",
                     parent_id,
                     kind.value,
                 )
                 raise SubsessionPeriodicSpawnError(
-                    "periodic subsessions cannot spawn periodic children. "
-                    "Alternatives: (1) use a one-shot task subsession to "
-                    "spawn the periodic monitor, (2) modify the existing "
-                    "monitor's prompt to cover the additional scope, or "
-                    "(3) ask the operator to spawn a top-level periodic "
-                    "monitor."
+                    "periodic and wait_for_event subsessions cannot spawn "
+                    "periodic or wait_for_event children."
                 )
             if kind is SubsessionKind.ON_CLOSE:
                 logger.warning(
@@ -401,6 +402,8 @@ def spawn_subsession(
             raise SubsessionIntervalError(
                 f"periodic interval must be >= {cfg.min_interval_seconds} seconds"
             )
+    elif kind is SubsessionKind.WAIT_FOR_EVENT:
+        interval_seconds = None
     else:
         interval_seconds = None
 
@@ -426,8 +429,15 @@ def spawn_subsession(
             checkpoint=checkpoint,
             dedup_key=dedup_key,
             retry_count=retry_count,
+            event_timeout_seconds=event_timeout_seconds,
         )
     except SubsessionDedupError as exc:
+        logger.info(
+            "spawn_subsession: dedup_key %r already covered by subsession %s; "
+            "returning existing id (no new worker launched).",
+            dedup_key,
+            exc.existing_id,
+        )
         return exc.existing_id
     # spawn_subsession runs inside the parent agent's turn, so a plain
     # create_task would snapshot that turn's context — including the active
@@ -701,6 +711,31 @@ def _build_periodic_input(
     return "\n\n".join(parts)
 
 
+def _is_github_rate_limit_error(exc: BaseException) -> bool:
+    """Return ``True`` when *exc* is a GitHub API rate-limit error (403/429).
+
+    Inspects the exception's ``__cause__`` and ``__context__`` chain
+    for ``RuntimeError`` messages matching the pattern emitted by
+    :class:`~robotsix_chat.repo.direct.client.DirectRepoClient`.
+    """
+    seen: set[int] = set()
+    current: BaseException | None = exc
+    while current is not None:
+        exc_id = id(current)
+        if exc_id in seen:
+            break
+        seen.add(exc_id)
+        if isinstance(current, RuntimeError):
+            msg = str(current)
+            if "GitHub API" in msg and (
+                "error 429" in msg
+                or ("error 403" in msg and "rate limit" in msg.lower())
+            ):
+                return True
+        current = current.__cause__ or current.__context__
+    return False
+
+
 async def _run_turn_with_transient_retry(
     env: SubsessionEnv,
     agent: ChatAgent,
@@ -712,10 +747,10 @@ async def _run_turn_with_transient_retry(
     """Run one agent turn, retrying on transient API errors for periodic subsessions.
 
     For PERIODIC subsessions only: transient errors (e.g. OpenRouter
-    upstream hiccups) are retried with exponential backoff.  When all
-    retries are exhausted the function raises :class:`_TransientExhaustedError`
-    so the worker loop can skip the cycle gracefully instead of permanently
-    failing the subsession.
+    upstream hiccups, GitHub API rate-limit 403/429) are retried with
+    exponential backoff.  When all retries are exhausted the function
+    raises :class:`_TransientExhaustedError` so the worker loop can skip
+    the cycle gracefully instead of permanently failing the subsession.
 
     For TASK / USER_CHAT subsessions the error propagates unchanged —
     the outer handler will fail the subsession.
@@ -735,9 +770,14 @@ async def _run_turn_with_transient_retry(
             raise  # timeout is handled separately; never retried
         except Exception as exc:
             last_exc = exc
-            is_periodic = info.kind is SubsessionKind.PERIODIC
-            is_transient = is_openrouter_transient(exc)
-            if not is_periodic or not is_transient:
+            is_monitor = info.kind in (
+                SubsessionKind.PERIODIC,
+                SubsessionKind.WAIT_FOR_EVENT,
+            )
+            is_transient = is_openrouter_transient(exc) or (
+                is_monitor and _is_github_rate_limit_error(exc)
+            )
+            if not is_monitor or not is_transient:
                 raise
 
             if attempt < max_retries:
@@ -884,6 +924,57 @@ async def _run_user_chat_turn(env: SubsessionEnv, sub_id: str) -> list[InboxMess
 _PAUSED_WAIT_TIMEOUT_SECONDS: float = 300.0
 
 
+async def _query_mill_ticket_state(
+    board_url: str, ticket_id: str, sub_id: str
+) -> str | None:
+    """Return the current state string for *ticket_id*, or ``None`` on error.
+
+    A lightweight copy of :func:`watcher._query_ticket_state` used by
+    :func:`_paused_wait_loop` for per-monitor long-polling — avoids a
+    circular import from the watcher module.
+    """
+    try:
+        base = httpx.URL(board_url.rstrip("/"))
+        ticket_url = base.copy_with(path=f"/tickets/{ticket_id}")
+    except Exception:
+        logger.exception("Could not construct ticket URL for subsession %s", sub_id)
+        return None
+
+    try:
+        async with httpx.AsyncClient(timeout=httpx.Timeout(10.0)) as client:
+            response = await client.get(str(ticket_url))
+            response.raise_for_status()
+            ticket_data: dict[str, object] = response.json()
+    except httpx.HTTPStatusError as exc:
+        logger.debug(
+            "Long-poll: mill returned %d for ticket %s (subsession %s)",
+            exc.response.status_code,
+            ticket_id,
+            sub_id,
+        )
+        return None
+    except (httpx.TimeoutException, httpx.ConnectError, OSError) as exc:
+        logger.debug(
+            "Long-poll: mill unreachable for ticket %s (subsession %s): %s",
+            ticket_id,
+            sub_id,
+            exc,
+        )
+        return None
+    except Exception:
+        logger.exception(
+            "Long-poll: unexpected error querying mill for ticket %s (subsession %s)",
+            ticket_id,
+            sub_id,
+        )
+        return None
+
+    state = ticket_data.get("state")
+    return (
+        state if isinstance(state, str) else str(state) if state is not None else None
+    )
+
+
 async def _paused_wait_loop(
     env: SubsessionEnv,
     info: SubsessionInfo,
@@ -894,59 +985,543 @@ async def _paused_wait_loop(
     """Block until a ticket-state-change signal arrives or the worker is cancelled.
 
     Called after ``mark_paused`` — the worker stays alive and waits on
-    the inbox event.  When the watcher detects a state change and sends
-    a message, this returns ``(pending, previous_result, consecutive_no_change)``
-    so the worker can resume its normal periodic loop.  Returns ``None``
-    when the subsession was externally closed while paused.
+    the inbox event (watcher-sent wake messages) AND polls the mill API
+    directly at a shorter long-poll interval.  When either mechanism
+    detects a state change, this returns ``(pending, previous_result,
+    consecutive_no_change)`` so the worker can resume its normal periodic
+    loop.  Returns ``None`` when the subsession was externally closed
+    while paused.
     """
     registry = env.registry
-    while True:
-        woke = await registry.wait_for_inbox(
-            sub_id, timeout=_PAUSED_WAIT_TIMEOUT_SECONDS
-        )
-        if not woke:
-            # Timeout — re-verify the subsession is still paused.
-            current = registry.get(sub_id)
-            if current is None or current.status is not SubsessionStatus.PAUSED:
-                return None
-            continue
 
-        messages = registry.drain_inbox(sub_id)
-        for msg in messages:
-            if msg.role == "system" and "ticket state changed" in msg.text.lower():
+    # -- long-poll setup -------------------------------------------------
+    checkpoint = info.checkpoint or {}
+    ticket_id_raw = checkpoint.get("ticket_id")
+    ticket_id = ticket_id_raw if isinstance(ticket_id_raw, str) else ""
+    last_known_state = checkpoint.get("last_known_state")
+    last_known_str: str | None = (
+        (
+            last_known_state
+            if isinstance(last_known_state, str)
+            else str(last_known_state)
+        )
+        if last_known_state is not None
+        else None
+    )
+
+    direct_repo = getattr(env.settings, "direct_repo", None)
+    board_url: str = (
+        getattr(direct_repo, "board_api_base_url", "")
+        if direct_repo is not None
+        else ""
+    )
+    long_poll_interval: float = getattr(
+        env.settings.subsessions,
+        "paused_monitor_long_poll_interval_seconds",
+        15.0,
+    )
+    can_long_poll = bool(
+        board_url and ticket_id and last_known_str and long_poll_interval > 0
+    )
+    if can_long_poll:
+        logger.debug(
+            "Subsession %s: long-poll enabled for ticket %s "
+            "(interval=%.0fs, last_known=%s).",
+            sub_id,
+            ticket_id,
+            long_poll_interval,
+            last_known_str,
+        )
+    # --------------------------------------------------------------------
+
+    async def _try_resume(
+        reason: str,
+        pending: list[InboxMessage] | None = None,
+    ) -> tuple[list[InboxMessage], str | None, int] | None:
+        """Resume the subsession and publish an SSE notification.
+
+        *pending* — inbox messages to hand to the worker on its next
+        turn (e.g. the parent message that triggered the resume).
+        When ``None`` (long-poll wake), defaults to an empty list.
+        """
+        resumed = registry.resume(sub_id)
+        if resumed is None:
+            return None
+        if env.event_sink is not None:
+            env.event_sink.publish(
+                info.owner_session_id,
+                {
+                    "type": SSE_NOTIFICATION_TYPE,
+                    "title": f"Monitor resumed: {info.title}",
+                    "body": (
+                        f"Monitor {sub_id[:8]} tracking ticket {ticket_id} "
+                        f"resumed after {reason}."
+                    ),
+                    "urgency": "low",
+                    "link": ticket_id,
+                },
+            )
+        if pending is None:
+            pending = []
+        return pending, previous_result, consecutive_no_change
+
+    while True:
+        timeout = long_poll_interval if can_long_poll else _PAUSED_WAIT_TIMEOUT_SECONDS
+        woke = await registry.wait_for_inbox(sub_id, timeout=timeout)
+
+        # Verify the subsession is still paused.
+        current = registry.get(sub_id)
+        if current is None or current.status is not SubsessionStatus.PAUSED:
+            return None
+
+        if woke:
+            # ----------- inbox wake: any message resumes -------------
+            # The watcher sends system messages on ticket-state change;
+            # the parent agent sends parent messages via
+            # ``message_subsession`` to manually resume.  Both paths
+            # wake the monitor and hand the message through so the
+            # subsession agent sees it on its next turn.
+            messages = registry.drain_inbox(sub_id)
+            if messages:
                 logger.info(
-                    "Subsession %s: resume signal received — resuming.",
+                    "Subsession %s: resume signal received via inbox — resuming.",
                     sub_id,
                 )
-                resumed = registry.resume(sub_id)
-                if resumed is None:
-                    return None
-                # Publish an SSE notification for the UI.
-                if env.event_sink is not None:
-                    ticket_id_raw = (
-                        info.checkpoint.get("ticket_id") if info.checkpoint else ""
-                    )
-                    ticket_id = ticket_id_raw if isinstance(ticket_id_raw, str) else ""
-                    env.event_sink.publish(
-                        info.owner_session_id,
-                        {
-                            "type": SSE_NOTIFICATION_TYPE,
-                            "title": f"Monitor resumed: {info.title}",
-                            "body": (
-                                f"Monitor {sub_id[:8]} tracking ticket {ticket_id} "
-                                f"resumed after ticket state change."
-                            ),
-                            "urgency": "low",
-                            "link": ticket_id,
-                        },
-                    )
-                return [], previous_result, consecutive_no_change
+                return await _try_resume("inbox message", pending=messages)
 
-        # Message received but not a resume signal — loop and wait again.
-        logger.debug(
-            "Subsession %s: woke with non-resume messages; continuing wait.",
+            # Spurious wake (event set but inbox empty) — loop and wait
+            # again.
+            logger.debug(
+                "Subsession %s: spurious inbox wake; continuing wait.",
+                sub_id,
+            )
+        else:
+            # ----------- timeout: long-poll the mill directly -------------
+            if not can_long_poll:
+                # Safety-net timeout with long-poll disabled — just loop.
+                continue
+
+            if not ticket_id or not last_known_str:
+                # Defensive: can_long_poll should guarantee these are set,
+                # but if something mutated the checkpoint, fall through.
+                continue
+
+            current_state = await _query_mill_ticket_state(board_url, ticket_id, sub_id)
+            if current_state is not None and current_state != last_known_str:
+                logger.info(
+                    "Subsession %s: ticket %s state changed from '%s' to '%s' "
+                    "(detected via long-poll) — resuming.",
+                    sub_id,
+                    ticket_id,
+                    last_known_str,
+                    current_state,
+                )
+                return await _try_resume("ticket state change (long-poll)")
+
+            # State unchanged — loop back and wait again.
+            logger.debug(
+                "Subsession %s: ticket %s still '%s' (long-poll) — continuing wait.",
+                sub_id,
+                ticket_id,
+                current_state,
+            )
+
+
+def _build_wait_for_event_input(
+    info: SubsessionInfo,
+    previous_result: str | None,
+    steering: list[InboxMessage],
+    pre_authorized_patterns: list[str] | None = None,
+) -> str:
+    """Compose one event-driven monitor turn's input."""
+    parts = [info.prompt]
+    if info.include_previous_result and previous_result is not None:
+        parts.append(f"Previous run result:\n{previous_result}")
+    if steering:
+        parts.append(
+            "Event(s) received since the last run:\n" + _render_turn_input(steering)
+        )
+    parts.append(
+        "You are an event-driven monitor — you wake only when a mill "
+        "ticket state-change event arrives or when a safety-net timeout "
+        "fires.  You are operating exactly as designed.\n\n"
+        "CRITICAL — reporting contract: your replies are NOT delivered "
+        "to the parent conversation.  The only way to communicate with "
+        "the parent is by calling complete_subsession(summary).  "
+        "Intermediate progress — state transitions, status updates, "
+        "observations, commentary — stays inside this subsession and is "
+        "never seen by the parent.  Call complete_subsession ONLY when:\n"
+        "  1. A final, verified terminal state is reached (ticket done, "
+        "merged, closed), or\n"
+        "  2. User intervention is required (ticket blocked on a decision, "
+        "escalation needed, unrecoverable failure).\n"
+        "For all other runs — including state transitions that do not "
+        f"reach a terminal state — reply {_NO_CHANGE_SENTINEL} if nothing "
+        "changed, or reply with a concise acknowledgment if something did "
+        "change (the parent will not see it, but the transcript records "
+        "what you observed).\n\n"
+        "CRITICAL — summary formatting: when you call complete_subsession, "
+        "your summary will be shown directly to a human operator.  Write "
+        "in plain, user-facing language — omit ALL internal technical "
+        "details.  Never include block IDs, event numbers, state machine "
+        "transitions, spawn counters, internal timeout values, stack "
+        "traces, or raw API response fragments.  State the actionable "
+        "conclusion first, then any context the operator needs.  For "
+        "example, instead of 'event 35 triggered stall guard escalation "
+        "after spawn counter reset at block a3f2, history events 20-35,' "
+        "write 'Publishing workflow stalled because the ticket scope was "
+        "too broad — suggest splitting into a canary-only ticket.'  The "
+        "operator should understand the outcome without ever seeing an "
+        "internal identifier.\n\n"
+        "CRITICAL — strict verify-first policy: you are a read-only "
+        "monitor.  You MUST NOT infer, guess, or fabricate any state "
+        "change or outcome.  Before reporting ANY state change, transition, "
+        "or terminal outcome in a complete_subsession summary, you MUST do "
+        "a live GET of the ticket from the board API (e.g. fetch the ticket "
+        "endpoint, re-read the ticket description and comments) and compare "
+        "the live response against the previously verified state from the "
+        "prior run's result.  Only report what the live API returns — never "
+        "trust a state you only recall from an earlier turn or infer from "
+        "conversation context.  A state transition that happened between "
+        "polls (e.g. draft → ready → in_progress) MUST be detected from the "
+        "live query, not from your memory.  If the live API response "
+        "conflicts with your recollection, the live API response is "
+        "authoritative — report that, and discard the recollection.\n\n"
+        "Tool fallback: use the component_request tool to fetch ticket "
+        "state from the board API.  If component_request is not among "
+        "your tools, use the ticket_poll tool instead — it queries the "
+        "same board API directly.  If neither tool is available, call "
+        "complete_subsession with a summary recommending the monitor be "
+        "paused — do not silently loop.\n\n"
+        f"Reply with the single word {_NO_CHANGE_SENTINEL} — and nothing "
+        "else, no punctuation, no commentary — only if genuinely nothing "
+        "changed since the previous run: the live board state is identical "
+        "to the prior run's observed state. If any state transition occurred "
+        "(e.g. draft → implement_complete, in_progress → done, ready → "
+        "in_progress) but the ticket has NOT reached a terminal state, reply "
+        "with a concise acknowledgment of the change (the parent will not "
+        "see this — it is for the transcript only).  DO NOT reply NO_CHANGE "
+        "when a transition occurred.\n\n"
+    )
+    # Inject the PRE-AUTHORIZED instruction BEFORE the
+    # decision-blocked paragraph so it has priority — a monitor that
+    # sees both must follow the pre-authorized directive.
+    if pre_authorized_patterns:
+        ticket_id_raw = info.checkpoint.get("ticket_id") if info.checkpoint else None
+        ticket_id = ticket_id_raw if isinstance(ticket_id_raw, str) else ""
+        # Fall back to dedup_key when the checkpoint has not yet recorded
+        # the ticket_id — the dedup_key for ticket monitors is always the
+        # ticket id, so it is authoritative even on the first run.
+        if not ticket_id and info.dedup_key:
+            ticket_id = info.dedup_key
+        if ticket_id and _is_ticket_pre_authorized(ticket_id, pre_authorized_patterns):
+            parts.append(
+                "PRE-AUTHORIZED TICKET: this ticket has been pre-authorized "
+                "under a standing operator directive.  The "
+                "human_issue_approval gate does NOT apply — do not treat "
+                "this ticket as decision-blocked.  Continue monitoring "
+                "normally as if the approval were already granted.\n\n"
+            )
+    parts.append(
+        "Decision-blocked tickets: when the monitored ticket is awaiting an "
+        "operator decision — stuck in human_issue_approval, waiting on an "
+        '"Option A or B?" choice, or otherwise blocked on a human '
+        "direction — do NOT silently reply NO_CHANGE run after run.  "
+        "Instead, call complete_subsession with a summary that includes a "
+        "CONCRETE RECOMMENDATION: state whether you recommend approving or "
+        "closing the ticket and why (e.g. 'I recommend approving — this "
+        "is a standard pre-authorized rollout step' or 'I recommend closing "
+        "— the change is already covered by ticket X').  Explain what "
+        "decision is needed and set expectations: mention that the system "
+        "will auto-escalate after the human_approval_timeout window if no "
+        "decision is made.  This surfaces the blocker with actionable "
+        "guidance so the operator can act on it rather than waiting for "
+        "the auto-stop timeout.\n\n"
+    )
+    parts.append(
+        "Terminal-state double-check + loop guard: before calling "
+        "complete_subsession for a done or closed ticket, you MUST verify "
+        "from three independent sources — (1) a live GET of the ticket "
+        "endpoint confirming the terminal state, (2) a check of the PR/MR "
+        "endpoint (e.g. the ticket's linked PRs or the merge API) confirming "
+        "merge status, and (3) a check of the most recent CI workflow run "
+        "for the affected pipeline (e.g. the 'Publish Docker image' workflow "
+        "or the repo's primary deploy workflow).  "
+        "Do NOT claim a PR was created, merged, or auto-merged unless you "
+        "have confirmed it via the PR API — a terminal ticket state alone "
+        "does not prove a PR exists.  Your complete_subsession summary MUST "
+        "state which sources you checked and what each returned.  If a PR "
+        "was merged, say so with the PR number; if no PR was involved, say "
+        "'closed without a PR'; if the PR API is unreachable, say 'terminal "
+        "state confirmed via ticket API; PR status could not be verified'.  "
+        "\n\n"
+        "LOOP GUARD — CI workflow verification (source 3): after a ticket "
+        "closes, query the GitHub Actions API (via component_request or "
+        "the equivalent GitHub API tool) for the most recent run of the "
+        "repo's primary publish/deploy workflow.  The complete_subsession "
+        "tool has a PROGRAMMATIC GATE: it will REJECT any summary that "
+        "does not mention 'CI workflow', 'workflow run', 'pipeline', "
+        "'GitHub Actions', 'publish', 'deploy workflow', or 'could not be "
+        "verified'.  You must include at least one of these phrases in "
+        "your summary to pass the gate.  Simply stating the ticket is "
+        "closed without CI evidence will be rejected.\n\n"
+        "If the workflow run failed or is still in progress with failures "
+        "on prior runs, do NOT call complete_subsession with a success "
+        "summary — the fix did not actually resolve the pipeline failure.  "
+        "Instead:\n"
+        "  - If the workflow failed: call complete_subsession with a "
+        "summary that INCLUDES the workflow failure details (run id, "
+        "failure reason, and log excerpt if available).  The summary must "
+        "make clear that the ticket was closed but the CI pipeline is "
+        "still failing — this breaks the redraft loop.  Then, AFTER "
+        "complete_subsession returns, call spawn_subsession to file a "
+        "new diagnostic ticket with the workflow failure details so the "
+        "operator can see the pipeline is still broken.\n"
+        "  - If the workflow API is unreachable: try at least twice with "
+        "a 5-second pause between attempts.  If still unreachable, call "
+        "complete_subsession with a summary stating 'terminal state "
+        "confirmed via ticket API; CI workflow status could not be "
+        "verified' — do NOT silently skip the check.\n"
+        "  - If the workflow passed: proceed with complete_subsession "
+        "normally (the fix is confirmed effective).\n"
+        "Call complete_subsession only after all three checks are complete."
+    )
+    parts.append(
+        "CRITICAL — checkpoint PR tracking: whenever you detect or create "
+        "a PR associated with the monitored ticket (via open_direct_repo_pr "
+        "or by querying the GitHub API), store the PR number and repository "
+        "in this subsession's checkpoint using set_checkpoint with "
+        "'pr_number' (int) and 'repo_full_name' (str, e.g. "
+        "'owner/repo').  Include the existing checkpoint fields "
+        "(ticket_id, last_known_state, human_approval_since) alongside "
+        "the new PR fields — the checkpoint is replaced wholesale.  "
+        "This enables the background watcher to detect PR merges and "
+        "auto-resume the monitor after a merge event, even when the "
+        "board ticket state has not yet been updated.  If you previously "
+        "created a PR and it was later merged or closed, update the "
+        "checkpoint to remove stale PR information."
+    )
+    return "\n\n".join(parts)
+
+
+async def _event_wait_loop(
+    env: SubsessionEnv,
+    info: SubsessionInfo,
+    sub_id: str,
+    previous_result: str | None,
+    consecutive_no_change: int,
+) -> tuple[list[InboxMessage], str | None, int] | None:
+    """Block until a ticket-state-change event arrives or a safety-net timeout fires.
+
+    Returns ``(pending, previous_result, consecutive_no_change)`` when the
+    subsession should run a turn, or ``None`` when it was externally closed
+    while waiting.
+    """
+    registry = env.registry
+    checkpoint = info.checkpoint or {}
+    ticket_id_raw = checkpoint.get("ticket_id")
+    ticket_id = ticket_id_raw if isinstance(ticket_id_raw, str) else ""
+    # Fall back to dedup_key when the checkpoint has not yet recorded
+    # the ticket_id — the dedup_key for ticket monitors is always the
+    # ticket id, so it is authoritative even on the first run.
+    if not ticket_id and info.dedup_key:
+        ticket_id = info.dedup_key
+
+    if not ticket_id:
+        logger.error(
+            "Subsession %s: WAIT_FOR_EVENT subsession has no ticket_id in "
+            "checkpoint — cannot register for events.  Closing.",
             sub_id,
         )
+        closed = registry.mark_closed(
+            sub_id,
+            summary="No ticket_id in checkpoint — cannot wait for events.",
+            reason="missing_ticket_id",
+            closed_by="system",
+        )
+        if closed is not None:
+            await env.delivery.deliver_summary(
+                closed, "No ticket_id in checkpoint", "missing_ticket_id"
+            )
+        return None
+
+    timeout = info.event_timeout_seconds
+    if timeout is None:
+        timeout = env.settings.subsessions.event_driven_timeout_seconds
+
+    registry.register_event_waiter(sub_id, ticket_id)
+    try:
+        woke = await registry.wait_for_inbox(sub_id, timeout=timeout)
+    finally:
+        registry.unregister_event_waiter(sub_id, ticket_id)
+
+    # Verify subsession is still active.
+    current = registry.get(sub_id)
+    if current is None or not current.is_active:
+        return None
+
+    if woke:
+        pending = registry.drain_inbox(sub_id)
+        if pending:
+            return pending, previous_result, consecutive_no_change
+
+    # Timeout — create a safety-net message so the agent runs anyway.
+    pending = [
+        InboxMessage(
+            role="system",
+            text=(
+                "Safety-net timeout fired — no ticket state-change event "
+                "was received.  Perform a routine check of the monitored "
+                "ticket as you normally would."
+            ),
+            timestamp=registry.now(),
+        )
+    ]
+    return pending, previous_result, consecutive_no_change
+
+
+async def _run_wait_for_event_turn(
+    env: SubsessionEnv,
+    info: SubsessionInfo,
+    sub_id: str,
+    reply: str,
+    previous_result: str | None,
+    consecutive_no_change: int,
+) -> tuple[list[InboxMessage], str | None, int] | None:
+    """Handle WAIT_FOR_EVENT post-turn: update status, deliver, re-arm wait.
+
+    Does NOT auto-pause, auto-stop, or enforce max_runs — the subsession
+    runs only when events arrive.  Returns ``None`` on human_approval_timeout
+    closure, or ``([], previous_result, consecutive_no_change)`` to re-arm
+    the event wait.
+    """
+    registry = env.registry
+    suppressed = _is_no_change(reply) or _is_duplicate_reply(reply, previous_result)
+    consecutive_no_change = 0 if not _is_no_change(reply) else consecutive_no_change + 1
+    runs = info.runs + 1
+    registry.set_status(
+        sub_id,
+        SubsessionStatus.SLEEPING,
+        runs=runs,
+        last_result=reply,
+    )
+    if not suppressed and env.event_sink is not None:
+        env.event_sink.publish(
+            info.owner_session_id,
+            subsession_result_frame(
+                sub_id,
+                info.kind.value,
+                info.title,
+                runs,
+                reply,
+                info.parent_id,
+            ),
+        )
+    previous_result = reply
+
+    # Human-approval timeout logic (same as _run_periodic_turn).
+    checkpoint = info.checkpoint or {}
+    last_known = checkpoint.get("last_known_state", "")
+    if isinstance(last_known, str) and last_known.lower() == "human_issue_approval":
+        patterns = env.settings.subsessions.pre_authorized_ticket_patterns
+        ticket_id_raw = checkpoint.get("ticket_id")
+        ticket_id = ticket_id_raw if isinstance(ticket_id_raw, str) else ""
+        pre_authorized = _is_ticket_pre_authorized(ticket_id, patterns)
+
+        if pre_authorized and consecutive_no_change >= 1:
+            logger.info(
+                "Subsession %s: pre-authorized ticket %s in "
+                "human_issue_approval — auto-escalating immediately.",
+                sub_id,
+                ticket_id,
+            )
+            elapsed = _format_duration(registry.now() - info.created_at)
+            summary = (
+                f"Pre-authorized ticket {ticket_id} entered "
+                f"human_issue_approval — auto-escalating immediately "
+                f"under standing operator directive "
+                f"({elapsed} elapsed)."
+            )
+            closed = registry.mark_closed(
+                sub_id,
+                summary=summary,
+                reason="pre_authorized_approval",
+                closed_by="system",
+            )
+            if closed is not None:
+                await env.delivery.deliver_summary(
+                    closed, summary, "pre_authorized_approval"
+                )
+            return None
+
+        now = registry.now()
+        human_approval_since_raw = checkpoint.get("human_approval_since")
+        if isinstance(human_approval_since_raw, (int, float)):
+            human_approval_since = float(human_approval_since_raw)
+        else:
+            human_approval_since = now
+            checkpoint["human_approval_since"] = now
+            registry.update_checkpoint(sub_id, checkpoint)
+
+        human_approval_timeout_s = (
+            env.settings.subsessions.human_approval_timeout_seconds
+        )
+        if now - human_approval_since >= human_approval_timeout_s:
+            logger.warning(
+                "Subsession %s: auto-escalating after %.0f s in "
+                "human_issue_approval state (%.0f s total elapsed).",
+                sub_id,
+                now - human_approval_since,
+                now - info.created_at,
+            )
+            elapsed = _format_duration(now - info.created_at)
+            stuck_for = _format_duration(now - human_approval_since)
+            summary = (
+                f"Ticket has been stuck at human_issue_approval for "
+                f"{stuck_for} ({elapsed} total elapsed) — "
+                f"auto-escalating (wall-clock timeout)."
+            )
+            closed = registry.mark_closed(
+                sub_id,
+                summary=summary,
+                reason="human_approval_timeout",
+                closed_by="system",
+            )
+            if closed is not None:
+                await env.delivery.deliver_summary(
+                    closed, summary, "human_approval_timeout"
+                )
+            return None
+
+        human_approval_cap = env.settings.subsessions.human_approval_timeout_runs
+        if consecutive_no_change >= human_approval_cap:
+            logger.warning(
+                "Subsession %s: auto-escalating after %d consecutive "
+                "no-change runs in human_issue_approval state.",
+                sub_id,
+                consecutive_no_change,
+            )
+            elapsed = _format_duration(registry.now() - info.created_at)
+            summary = (
+                f"Ticket has been stuck at human_issue_approval for "
+                f"{human_approval_cap} consecutive no-change runs "
+                f"({elapsed} elapsed) — auto-escalating."
+            )
+            closed = registry.mark_closed(
+                sub_id,
+                summary=summary,
+                reason="human_approval_timeout",
+                closed_by="system",
+            )
+            if closed is not None:
+                await env.delivery.deliver_summary(
+                    closed, summary, "human_approval_timeout"
+                )
+            return None
+
+    # Re-arm the wait — no auto-pause, auto-stop, or max_runs for
+    # event-driven monitors.
+    return [], previous_result, consecutive_no_change
 
 
 async def _run_periodic_turn(
@@ -1113,16 +1688,15 @@ async def _run_periodic_turn(
     idle_cap = env.settings.subsessions.max_idle_runs
     if idle_cap > 0 and consecutive_no_change >= idle_cap:
         logger.info(
-            "Subsession %s: auto-pausing after %d consecutive no-change runs. "
-            "The monitor will wait for a ticket-state change and resume "
-            "automatically.",
+            "Subsession %s: auto-pausing after %d consecutive no-change runs.",
             sub_id,
             consecutive_no_change,
         )
         summary = (
             f"Auto-paused after {idle_cap} consecutive no-change runs. "
-            f"The monitor will resume automatically when the ticket state "
-            f"changes — no action needed until then."
+            f"To resume monitoring, send a message to this subsession "
+            f"via message_subsession — the monitor will wake and re-check "
+            f"the ticket state on its next run."
         )
         paused = registry.mark_paused(
             sub_id,
@@ -1188,6 +1762,20 @@ async def _run_periodic_turn(
         )
         if closed is not None:
             await env.delivery.deliver_summary(closed, summary, "no_change_auto_stop")
+        if env.event_sink is not None:
+            ticket_id_raw = checkpoint.get("ticket_id")
+            ticket_id = ticket_id_raw if isinstance(ticket_id_raw, str) else ""
+            last_known = checkpoint.get("last_known_state", "")
+            env.event_sink.publish(
+                info.owner_session_id,
+                {
+                    "type": SSE_NOTIFICATION_TYPE,
+                    "title": f"Monitor auto-stopped: {info.title}",
+                    "body": (f"Tracked ticket {ticket_id} ({last_known}) — {summary}"),
+                    "urgency": "low",
+                    "link": ticket_id,
+                },
+            )
         return None
 
     # Sleep until the next tick, waking early on a steering message.
@@ -1266,7 +1854,10 @@ async def _subsession_worker(env: SubsessionEnv, sub_id: str) -> None:
         # -- component_request availability check ----------------------
         _cd = getattr(env.settings, "central_deploy", None)
         _cd_url = getattr(_cd, "url", "") if _cd is not None else ""
-        if info.kind is SubsessionKind.PERIODIC and not _cd_url:
+        if (
+            info.kind in (SubsessionKind.PERIODIC, SubsessionKind.WAIT_FOR_EVENT)
+            and not _cd_url
+        ):
             logger.warning(
                 "Periodic subsession %s requires component_request but "
                 "central_deploy.url is not configured — the tool is not "
@@ -1299,6 +1890,19 @@ async def _subsession_worker(env: SubsessionEnv, sub_id: str) -> None:
                 return
 
             registry.set_status(sub_id, SubsessionStatus.RUNNING)
+
+            # -- WAIT_FOR_EVENT: pre-turn event wait ----------------------
+            if (
+                info.kind is SubsessionKind.WAIT_FOR_EVENT
+                and not first_turn
+                and not pending
+            ):
+                result = await _event_wait_loop(
+                    env, info, sub_id, previous_result, consecutive_no_change
+                )
+                if result is None:
+                    return
+                pending, previous_result, consecutive_no_change = result
 
             # -- on_close: wait for the parent session to close, then run
             #    as a one-shot task.  Polls is_session_closed every 5 s;
@@ -1343,6 +1947,28 @@ async def _subsession_worker(env: SubsessionEnv, sub_id: str) -> None:
                     steering,
                     pre_authorized_patterns=env.settings.subsessions.pre_authorized_ticket_patterns,
                 )
+            elif info.kind is SubsessionKind.WAIT_FOR_EVENT:
+                next_run = info.runs + 1
+                if not registry.claim_run(sub_id, next_run):
+                    logger.warning(
+                        "Run %d of subsession %s was already executed; "
+                        "skipping duplicate.",
+                        next_run,
+                        sub_id,
+                    )
+                    registry.set_status(
+                        sub_id,
+                        SubsessionStatus.RUNNING,
+                        runs=next_run,
+                    )
+                    continue
+                steering = pending
+                turn_input = _build_wait_for_event_input(
+                    info,
+                    previous_result,
+                    steering,
+                    pre_authorized_patterns=env.settings.subsessions.pre_authorized_ticket_patterns,
+                )
             elif first_turn:
                 turn_input = info.prompt
                 if info.kind is SubsessionKind.USER_CHAT:
@@ -1363,7 +1989,49 @@ async def _subsession_worker(env: SubsessionEnv, sub_id: str) -> None:
             except _RunTimeoutError:
                 # Periodic runs continue the schedule after a timeout;
                 # task / user_chat runs fail the whole subsession.
-                if info.kind is SubsessionKind.PERIODIC:
+                if info.kind in (
+                    SubsessionKind.PERIODIC,
+                    SubsessionKind.WAIT_FOR_EVENT,
+                ):
+                    if info.kind is SubsessionKind.WAIT_FOR_EVENT:
+                        logger.warning(
+                            "Wait-for-event subsession %s run %d timed out; "
+                            "continuing schedule.",
+                            sub_id,
+                            info.runs + 1,
+                        )
+                        registry.append_transcript(
+                            sub_id,
+                            "system",
+                            "Run timed out — the agent turn exceeded the"
+                            " per-run timeout.",
+                        )
+                        runs = info.runs + 1
+                        registry.set_status(
+                            sub_id,
+                            SubsessionStatus.SLEEPING,
+                            runs=runs,
+                            last_result="TIMEOUT",
+                        )
+                        if env.event_sink is not None:
+                            env.event_sink.publish(
+                                info.owner_session_id,
+                                subsession_result_frame(
+                                    sub_id,
+                                    info.kind.value,
+                                    info.title,
+                                    runs,
+                                    "TIMEOUT",
+                                    info.parent_id,
+                                ),
+                            )
+                        if not info.include_previous_result:
+                            previous_result = None
+                        consecutive_no_change += 1
+                        info.consecutive_no_change = consecutive_no_change
+                        # No sleep — the main loop re-enters the event wait.
+                        env.registry.reap_orphans()
+                        continue
                     logger.warning(
                         "Periodic subsession %s run %d timed out; continuing schedule.",
                         sub_id,
@@ -1415,7 +2083,49 @@ async def _subsession_worker(env: SubsessionEnv, sub_id: str) -> None:
                 # Periodic runs whose transient errors could not be cleared
                 # skip this cycle and continue the schedule instead of
                 # failing permanently.
-                if info.kind is SubsessionKind.PERIODIC:
+                if info.kind in (
+                    SubsessionKind.PERIODIC,
+                    SubsessionKind.WAIT_FOR_EVENT,
+                ):
+                    if info.kind is SubsessionKind.WAIT_FOR_EVENT:
+                        logger.warning(
+                            "Wait-for-event subsession %s run %d: transient errors "
+                            "exhausted; skipping this cycle.",
+                            sub_id,
+                            info.runs + 1,
+                        )
+                        registry.append_transcript(
+                            sub_id,
+                            "system",
+                            "Run skipped — transient API errors persisted "
+                            "across all retry attempts.",
+                        )
+                        runs = info.runs + 1
+                        registry.set_status(
+                            sub_id,
+                            SubsessionStatus.SLEEPING,
+                            runs=runs,
+                            last_result="TRANSIENT_ERROR",
+                        )
+                        if env.event_sink is not None:
+                            env.event_sink.publish(
+                                info.owner_session_id,
+                                subsession_result_frame(
+                                    sub_id,
+                                    info.kind.value,
+                                    info.title,
+                                    runs,
+                                    "TRANSIENT_ERROR",
+                                    info.parent_id,
+                                ),
+                            )
+                        if not info.include_previous_result:
+                            previous_result = None
+                        consecutive_no_change += 1
+                        info.consecutive_no_change = consecutive_no_change
+                        # No sleep — the main loop re-enters the event wait.
+                        env.registry.reap_orphans()
+                        continue
                     logger.warning(
                         "Periodic subsession %s run %d: transient errors "
                         "exhausted; skipping this cycle.",
@@ -1588,11 +2298,23 @@ async def _handle_kind_continuation(
         return (pending, None, 0)
 
     # PERIODIC
-    result = await _run_periodic_turn(
-        env, info, sub_id, reply, previous_result, consecutive_no_change
-    )
-    if result is None:
-        return None
-    pending, previous_result, consecutive_no_change = result
-    env.registry.reap_orphans()
-    return (pending, previous_result, consecutive_no_change)
+    if info.kind is SubsessionKind.PERIODIC:
+        result = await _run_periodic_turn(
+            env, info, sub_id, reply, previous_result, consecutive_no_change
+        )
+        if result is None:
+            return None
+        pending, previous_result, consecutive_no_change = result
+        env.registry.reap_orphans()
+        return (pending, previous_result, consecutive_no_change)
+
+    # WAIT_FOR_EVENT
+    if info.kind is SubsessionKind.WAIT_FOR_EVENT:
+        result = await _run_wait_for_event_turn(
+            env, info, sub_id, reply, previous_result, consecutive_no_change
+        )
+        if result is None:
+            return None
+        pending, previous_result, consecutive_no_change = result
+        env.registry.reap_orphans()
+        return (pending, previous_result, consecutive_no_change)

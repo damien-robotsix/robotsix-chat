@@ -44,18 +44,15 @@ def test_build_lifecycle_tools_disabled() -> None:
     assert build_lifecycle_tools(LifecycleSettings(enabled=False)) == []
 
 
-def test_build_lifecycle_tools_returns_nine_tools_including_mutations() -> None:
-    """Enabled lifecycle returns nine tools including mutation tools."""
+def test_build_lifecycle_tools_returns_six_tools_including_mutations() -> None:
+    """Enabled lifecycle returns six tools including mutation tools."""
     tools = build_lifecycle_tools(_settings())
     names = {t.__name__ for t in tools}
     assert names == {
         "list_lifecycle_services",
         "get_lifecycle_service_status",
-        "get_lifecycle_service_config",
         "get_lifecycle_service_env",
-        "watch_service_redeploy",
         "restart_lifecycle_service",
-        "update_lifecycle_service_config",
         "update_lifecycle_service_env",
         "self_restart",
     }
@@ -162,28 +159,6 @@ async def test_service_status_returns_json(
     out = await client.service_status("chat")
     assert "running" in out
     assert "health_checks" in out
-
-
-@pytest.mark.asyncio
-async def test_service_config_returns_masked_secrets(
-    respx_mock: respx.MockRouter,
-) -> None:
-    """get_lifecycle_service_config returns config with secrets masked."""
-    respx_mock.get("http://lifecycle:9000/services/chat/config").mock(
-        return_value=httpx.Response(
-            200,
-            json={
-                "server": {"port": 8080},
-                "api_key": "***",
-                "database_url": "***",
-            },
-        )
-    )
-
-    client = LifecycleClient(_settings())
-    out = await client.service_config("chat")
-    assert "***" in out
-    assert "8080" in out
 
 
 @pytest.mark.asyncio
@@ -373,22 +348,6 @@ async def test_self_restart_tool_calls_client_self_restart(
 
 
 @pytest.mark.asyncio
-async def test_update_service_config_success(
-    respx_mock: respx.MockRouter,
-) -> None:
-    """update_service_config sends PUT with JSON body and returns response."""
-    route = respx_mock.put("http://lifecycle:9000/services/chat/config").mock(
-        return_value=httpx.Response(200, json={"updated": ["log_level"]})
-    )
-
-    client = LifecycleClient(_settings())
-    out = await client.update_service_config("chat", {"log_level": "DEBUG"})
-    assert "log_level" in out
-    assert "updated" in out
-    assert route.calls.last.request.headers["x-api-key"] == "test-api-key"
-
-
-@pytest.mark.asyncio
 async def test_update_service_env_success(
     respx_mock: respx.MockRouter,
 ) -> None:
@@ -402,197 +361,6 @@ async def test_update_service_env_success(
     assert "MY_VAR" in out
     assert "updated" in out
     assert route.calls.last.request.headers["x-api-key"] == "test-api-key"
-
-
-@pytest.mark.asyncio
-async def test_update_service_config_403_returns_error_string(
-    respx_mock: respx.MockRouter,
-) -> None:
-    """A 403 on config-write is returned as an error string."""
-    respx_mock.put("http://lifecycle:9000/services/chat/config").mock(
-        return_value=httpx.Response(
-            403,
-            json={"error": 'Chat agent is not permitted to mutate service "chat".'},
-        )
-    )
-
-    client = LifecycleClient(_settings())
-    out = await client.update_service_config("chat", {"log_level": "DEBUG"})
-    assert "Lifecycle" in out
-    assert "403" in out
-
-
-# ---------------------------------------------------------------------------
-# watch_service_redeploy
-# ---------------------------------------------------------------------------
-
-
-@pytest.mark.asyncio
-async def test_watch_service_redeploy_detects_config_change(
-    respx_mock: respx.MockRouter,
-) -> None:
-    """Config change is detected and returned as a success summary."""
-    call_count = 0
-
-    def config_response(request: httpx.Request) -> httpx.Response:
-        nonlocal call_count
-        call_count += 1
-        if call_count == 1:
-            return httpx.Response(200, json={"image": "digest-aaa"})
-        if call_count == 2:
-            return httpx.Response(200, json={"image": "digest-aaa"})
-        # Third call — config changed (redeploy rolled out).
-        return httpx.Response(200, json={"image": "digest-bbb"})
-
-    def status_response(request: httpx.Request) -> httpx.Response:
-        return httpx.Response(200, json={"status": "running"})
-
-    respx_mock.get("http://lifecycle:9000/services/mill/config").mock(
-        side_effect=config_response
-    )
-    respx_mock.get("http://lifecycle:9000/services/mill/status").mock(
-        side_effect=status_response
-    )
-
-    client = LifecycleClient(_settings())
-    out = await client.watch_service_redeploy(
-        "mill", max_wait_seconds=30.0, poll_interval_seconds=5.0
-    )
-    assert "Redeploy detected" in out
-    assert "mill" in out
-    assert '"status": "running"' in out
-
-
-@pytest.mark.asyncio
-async def test_watch_service_redeploy_times_out(
-    respx_mock: respx.MockRouter,
-) -> None:
-    """When config never changes, the tool times out with a helpful message."""
-    respx_mock.get("http://lifecycle:9000/services/mill/config").mock(
-        return_value=httpx.Response(200, json={"image": "digest-aaa"})
-    )
-    respx_mock.get("http://lifecycle:9000/services/mill/status").mock(
-        return_value=httpx.Response(200, json={"status": "running"})
-    )
-
-    client = LifecycleClient(_settings())
-    out = await client.watch_service_redeploy(
-        "mill", max_wait_seconds=0.1, poll_interval_seconds=5.0
-    )
-    assert "Timeout" in out
-    assert "mill" in out
-    assert "manual redeploy" in out.lower()
-
-
-@pytest.mark.asyncio
-async def test_watch_service_redeploy_initial_failure_returns_error(
-    respx_mock: respx.MockRouter,
-) -> None:
-    """When the initial config fetch fails, an error message is returned."""
-    respx_mock.get("http://lifecycle:9000/services/mill/config").mock(
-        return_value=httpx.Response(500, json={"error": "internal"})
-    )
-    respx_mock.get("http://lifecycle:9000/services/mill/status").mock(
-        return_value=httpx.Response(200, json={"status": "running"})
-    )
-
-    client = LifecycleClient(_settings())
-    out = await client.watch_service_redeploy(
-        "mill", max_wait_seconds=30.0, poll_interval_seconds=5.0
-    )
-    assert "Could not reach" in out
-    assert "mill" in out
-
-
-@pytest.mark.asyncio
-async def test_watch_service_redeploy_recovers_from_intermittent_failure(
-    respx_mock: respx.MockRouter,
-) -> None:
-    """A transient poll failure is logged and retried — the tool continues."""
-    call_count = 0
-
-    def config_response(request: httpx.Request) -> httpx.Response:
-        nonlocal call_count
-        call_count += 1
-        if call_count == 1:
-            return httpx.Response(200, json={"image": "digest-aaa"})
-        if call_count == 2:
-            # Transient failure — should be retried.
-            return httpx.Response(503)
-        # Third call — redeploy detected.
-        return httpx.Response(200, json={"image": "digest-bbb"})
-
-    respx_mock.get("http://lifecycle:9000/services/mill/config").mock(
-        side_effect=config_response
-    )
-    respx_mock.get("http://lifecycle:9000/services/mill/status").mock(
-        return_value=httpx.Response(200, json={"status": "running"})
-    )
-
-    client = LifecycleClient(_settings())
-    out = await client.watch_service_redeploy(
-        "mill", max_wait_seconds=30.0, poll_interval_seconds=5.0
-    )
-    assert "Redeploy detected" in out
-
-
-@pytest.mark.asyncio
-async def test_watch_service_redeploy_clamps_poll_interval(
-    respx_mock: respx.MockRouter,
-) -> None:
-    """poll_interval_seconds below the minimum is clamped to 5 s."""
-    call_count = 0
-
-    def config_response(request: httpx.Request) -> httpx.Response:
-        nonlocal call_count
-        call_count += 1
-        if call_count == 1:
-            return httpx.Response(200, json={"image": "digest-aaa"})
-        return httpx.Response(200, json={"image": "digest-bbb"})
-
-    respx_mock.get("http://lifecycle:9000/services/mill/config").mock(
-        side_effect=config_response
-    )
-    respx_mock.get("http://lifecycle:9000/services/mill/status").mock(
-        return_value=httpx.Response(200, json={"status": "running"})
-    )
-
-    client = LifecycleClient(_settings())
-    # A sub-minimum interval should not break anything — the tool clamps
-    # it internally and still detects the redeploy.
-    out = await client.watch_service_redeploy(
-        "mill", max_wait_seconds=30.0, poll_interval_seconds=0.1
-    )
-    assert "Redeploy detected" in out
-
-
-@pytest.mark.asyncio
-async def test_watch_service_redeploy_non_json_status_is_raw_text(
-    respx_mock: respx.MockRouter,
-) -> None:
-    """A non-JSON status response on redeploy detection is returned as-is."""
-    call_count = 0
-
-    def config_response(request: httpx.Request) -> httpx.Response:
-        nonlocal call_count
-        call_count += 1
-        if call_count == 1:
-            return httpx.Response(200, json={"image": "digest-aaa"})
-        return httpx.Response(200, json={"image": "digest-bbb"})
-
-    respx_mock.get("http://lifecycle:9000/services/mill/config").mock(
-        side_effect=config_response
-    )
-    respx_mock.get("http://lifecycle:9000/services/mill/status").mock(
-        return_value=httpx.Response(200, text="status: healthy (plain text)")
-    )
-
-    client = LifecycleClient(_settings())
-    out = await client.watch_service_redeploy(
-        "mill", max_wait_seconds=30.0, poll_interval_seconds=5.0
-    )
-    assert "Redeploy detected" in out
-    assert "status: healthy (plain text)" in out
 
 
 # ---------------------------------------------------------------------------
@@ -1021,15 +789,6 @@ async def test_service_status_empty_base_url_returns_clear_message() -> None:
 
 
 @pytest.mark.asyncio
-async def test_service_config_empty_base_url_returns_clear_message() -> None:
-    """When base_url is empty, service_config returns a clear error message."""
-    client = LifecycleClient(_settings(base_url="", default_protocol="http"))
-    out = await client.service_config("chat")
-    assert "base url" in out.lower()
-    assert "http://central-deploy:8100" in out
-
-
-@pytest.mark.asyncio
 async def test_service_env_empty_base_url_returns_clear_message() -> None:
     """When base_url is empty, service_env returns a clear error message."""
     client = LifecycleClient(_settings(base_url="", default_protocol="http"))
@@ -1048,31 +807,12 @@ async def test_restart_service_empty_base_url_returns_clear_message() -> None:
 
 
 @pytest.mark.asyncio
-async def test_update_service_config_empty_base_url_returns_clear_message() -> None:
-    """When base_url is empty, update_service_config returns a clear error message."""
-    client = LifecycleClient(_settings(base_url="", default_protocol="http"))
-    out = await client.update_service_config("chat", {"log_level": "DEBUG"})
-    assert "base url" in out.lower()
-    assert "http://central-deploy:8100" in out
-
-
-@pytest.mark.asyncio
 async def test_update_service_env_empty_base_url_returns_clear_message() -> None:
     """When base_url is empty, update_service_env returns a clear error message."""
     client = LifecycleClient(_settings(base_url="", default_protocol="http"))
     out = await client.update_service_env("chat", {"MY_VAR": "val"})
     assert "base url" in out.lower()
     assert "http://central-deploy:8100" in out
-
-
-@pytest.mark.asyncio
-async def test_watch_service_redeploy_empty_base_url_returns_error() -> None:
-    """When base_url is empty, watch_service_redeploy returns an error message."""
-    client = LifecycleClient(_settings(base_url="", default_protocol="http"))
-    out = await client.watch_service_redeploy(
-        "mill", max_wait_seconds=5.0, poll_interval_seconds=5.0
-    )
-    assert "Could not reach" in out
 
 
 @pytest.mark.asyncio
@@ -1103,7 +843,13 @@ async def test_malformed_base_url_is_treated_as_empty_for_all_methods(
     out = await client.service_status("chat")
     assert "base url" in out.lower()
 
+    out = await client.service_env("chat")
+    assert "base url" in out.lower()
+
     out = await client.restart_service("chat")
+    assert "base url" in out.lower()
+
+    out = await client.update_service_env("chat", {"MY_VAR": "val"})
     assert "base url" in out.lower()
 
     # Also verify no HTTP call was attempted (respx_mock would fail

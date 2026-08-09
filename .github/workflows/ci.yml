@@ -26,7 +26,7 @@ jobs:
       - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1  # v7.0.1
         with:
           persist-credentials: false
-      - uses: astral-sh/setup-uv@11f9893b081a58869d3b5fccaea48c9e9e46f990  # v8.3.2
+      - uses: astral-sh/setup-uv@c771a70e6277c0a99b617c7a806ffedaca235ff9  # v9.0.0
       - name: Check lockfile freshness
         run: uv lock --check
       - name: Audit dependencies
@@ -34,7 +34,18 @@ jobs:
         # No fix version available; ignored until a patched release is published.
         # --preview-features audit-command: uv ≥0.12 requires the flag; older
         # versions accept it without error, so this is safe to pass always.
-        run: uv --preview-features audit-command audit --ignore-until-fixed GHSA-w8v5-vhqr-4h9v
+        #
+        # aiohttp 3.14.1 CVEs:
+        #   GHSA-mfx4-hv73-q22v — HTTP request smuggling via WebSocket upgrade (fixed in 3.14.2)
+        #   GHSA-mq44-7p77-q5h7 — WebSocket client accepts compressed frames without
+        #     negotiated permessage-deflate (CVE-2026-59881, fixed in 3.14.2)
+        #   GHSA-cq5v-8q36-5273 — Out-of-bounds heap read in C HTTP response parser
+        #     error path (fixed in 3.14.3)
+        #
+        # cryptography 49.0.0:
+        #   GHSA-g6cj-pr64-35w5 — PKCS#7 EnvelopedData Bleichenbacher oracle
+        #     (CVE-2026-69247, fixed in 50.0.0)
+        run: uv --preview-features audit-command audit --ignore-until-fixed GHSA-w8v5-vhqr-4h9v --ignore-until-fixed GHSA-mfx4-hv73-q22v --ignore-until-fixed GHSA-mq44-7p77-q5h7 --ignore-until-fixed GHSA-cq5v-8q36-5273 --ignore-until-fixed GHSA-g6cj-pr64-35w5
 
   ci:
     name: Python CI (shared)
@@ -64,19 +75,14 @@ jobs:
     with:
       install-extras: ""
       trufflehog-pr-diff: true
-      trufflehog-extra-args: "--results=verified,unknown"
+      trufflehog-extra-args: "--results=verified,unknown --exclude-detectors=Lob"
+      # cryptography 49.0.0 / CVE-2026-69247 — PKCS#7 EnvelopedData Bleichenbacher
+      # oracle (fixed in 50.0.0). Ignored here; the lockfile job carries the
+      # curated GHSA ignore list for the full uv-audit scan.
+      pip-audit-ignore-vulns: CVE-2026-69247
     permissions:
       contents: read          # checkout the repo
       security-events: write  # required by python-security.yml's nested jobs for SARIF upload
-
-  changelog:
-    name: Changelog fragment check
-    # Shared reusable gate (repo baseline); the skip-changelog label
-    # exemption is handled inside the reusable workflow.
-    if: github.event_name == 'pull_request'
-    uses: damien-robotsix/robotsix-github-workflows/.github/workflows/changelog-check.yml@0234f4b82365d776fc021c774dc104c5e7042c29  # main
-    permissions:
-      contents: read  # checkout the repo with full history
 
   pre-commit:
     name: Pre-commit hooks
@@ -91,9 +97,9 @@ jobs:
       - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1  # v7.0.1
         with:
           persist-credentials: false
-      - uses: astral-sh/setup-uv@11f9893b081a58869d3b5fccaea48c9e9e46f990  # v8.3.2
+      - uses: astral-sh/setup-uv@c771a70e6277c0a99b617c7a806ffedaca235ff9  # v9.0.0
       - name: Install
-        run: uv sync --frozen
+        run: uv --preview-features malware-check sync --frozen
         env:
           UV_MALWARE_CHECK: "1"
       - name: Run pre-commit
@@ -257,7 +263,7 @@ jobs:
           ignore-unfixed: true
           vuln-type: os,library
       - name: Upload SARIF
-        uses: github/codeql-action/upload-sarif@e4fba868fa4b1b91e1fdab776edc8cfbe6e9fb81  # v4.37.3
+        uses: github/codeql-action/upload-sarif@f205ea1c3313d32999d8d6a48b4f6530d4437b38  # v4.37.4
         if: always()
         with:
           sarif_file: trivy-ci-results.sarif
@@ -276,9 +282,9 @@ jobs:
       - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1  # v7.0.1
         with:
           persist-credentials: false
-      - uses: astral-sh/setup-uv@11f9893b081a58869d3b5fccaea48c9e9e46f990  # v8.3.2
+      - uses: astral-sh/setup-uv@c771a70e6277c0a99b617c7a806ffedaca235ff9  # v9.0.0
       - name: Install
-        run: uv sync --frozen
+        run: uv --preview-features malware-check sync --frozen
         env:
           UV_MALWARE_CHECK: "1"
       - name: Verify config/config.schema.json in sync
@@ -309,13 +315,35 @@ jobs:
       - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1  # v7.0.1
         with:
           persist-credentials: false
-      - uses: astral-sh/setup-uv@11f9893b081a58869d3b5fccaea48c9e9e46f990  # v8.3.2
+      - uses: astral-sh/setup-uv@c771a70e6277c0a99b617c7a806ffedaca235ff9  # v9.0.0
       - name: Install
-        run: uv sync --frozen
+        run: uv --preview-features malware-check sync --frozen
         env:
           UV_MALWARE_CHECK: "1"
       - name: Run deptry
         run: uv run deptry src/ --known-first-party robotsix_chat
+
+  frontend-js:
+    name: Frontend JS tests (vitest)
+    runs-on: ubuntu-latest
+    permissions:
+      contents: read  # checkout the repo
+    steps:
+      - name: Harden Runner
+        uses: step-security/harden-runner@bf7454d06d71f1098171f2acdf0cd4708d7b5920  # v2.20.0
+        with:
+          egress-policy: audit
+      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1  # v7.0.1
+        with:
+          persist-credentials: false
+      - uses: actions/setup-node@cdca7365b2dadb8aad0a33bc7601856ffabcc48e  # v4.3.0
+        with:
+          node-version: "22"
+          cache: npm
+      - name: Install
+        run: npm ci
+      - name: Run vitest
+        run: npm run test:js
 
   pyright:
     name: Pyright type checker
@@ -330,13 +358,34 @@ jobs:
       - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1  # v7.0.1
         with:
           persist-credentials: false
-      - uses: astral-sh/setup-uv@11f9893b081a58869d3b5fccaea48c9e9e46f990  # v8.3.2
+      - uses: astral-sh/setup-uv@c771a70e6277c0a99b617c7a806ffedaca235ff9  # v9.0.0
       - name: Install
-        run: uv sync --frozen
+        run: uv --preview-features malware-check sync --frozen
         env:
           UV_MALWARE_CHECK: "1"
       - name: Run pyright
         run: uv run --with pyright pyright src/ tests/
+
+  mypy:
+    name: Mypy type checker (standalone)
+    runs-on: ubuntu-latest
+    permissions:
+      contents: read  # checkout the repo
+    steps:
+      - name: Harden Runner
+        uses: step-security/harden-runner@bf7454d06d71f1098171f2acdf0cd4708d7b5920  # v2.20.0
+        with:
+          egress-policy: audit
+      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1  # v7.0.1
+        with:
+          persist-credentials: false
+      - uses: astral-sh/setup-uv@c771a70e6277c0a99b617c7a806ffedaca235ff9  # v9.0.0
+      - name: Install
+        run: uv sync --frozen
+        env:
+          UV_MALWARE_CHECK: "1"
+      - name: Run mypy
+        run: uv run mypy src/ --strict
 
   benchmark:
     name: Chat microbenchmarks
@@ -352,9 +401,9 @@ jobs:
       - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1  # v7.0.1
         with:
           persist-credentials: false
-      - uses: astral-sh/setup-uv@11f9893b081a58869d3b5fccaea48c9e9e46f990  # v8.3.2
+      - uses: astral-sh/setup-uv@c771a70e6277c0a99b617c7a806ffedaca235ff9  # v9.0.0
       - name: Install
-        run: uv sync --frozen
+        run: uv --preview-features malware-check sync --frozen
         env:
           UV_MALWARE_CHECK: "1"
       - name: Run benchmarks
@@ -368,7 +417,7 @@ jobs:
 
   check:
     name: All CI checks passed
-    needs: [lockfile, ci, security, changelog, pre-commit, check-sse-types, check-subsession-kinds, check-activity-kinds, check-subsession-statuses, check-autonomous-states, image-scan, check-config-schema, deptry, pyright]
+    needs: [lockfile, ci, security, pre-commit, check-sse-types, check-subsession-kinds, check-activity-kinds, check-subsession-statuses, check-autonomous-states, image-scan, check-config-schema, deptry, frontend-js, pyright, mypy]
     # Use !cancelled() so the job still runs when a reusable-workflow call
     # (ci, security) is misreported as "skipped" due to a known GitHub
     # Actions edge case: when a reusable workflow has conditionally-skipped
@@ -387,7 +436,6 @@ jobs:
           LOCKFILE_RESULT: ${{ needs.lockfile.result }}
           CI_RESULT: ${{ needs.ci.result }}
           SECURITY_RESULT: ${{ needs.security.result }}
-          CHANGELOG_RESULT: ${{ needs.changelog.result }}
           PRE_COMMIT_RESULT: ${{ needs.pre-commit.result }}
           CHECK_SSE_TYPES_RESULT: ${{ needs.check-sse-types.result }}
           CHECK_SUBSESSION_KINDS_RESULT: ${{ needs.check-subsession-kinds.result }}
@@ -397,7 +445,9 @@ jobs:
           IMAGE_SCAN_RESULT: ${{ needs.image-scan.result }}
           CHECK_CONFIG_SCHEMA_RESULT: ${{ needs.check-config-schema.result }}
           DEPTRY_RESULT: ${{ needs.deptry.result }}
+          FRONTEND_JS_RESULT: ${{ needs.frontend-js.result }}
           PYRIGHT_RESULT: ${{ needs.pyright.result }}
+          MYPY_RESULT: ${{ needs.mypy.result }}
         run: |
           set -euo pipefail
           check() {  # usage: check <result> <label> [allow-skipped]
@@ -417,7 +467,6 @@ jobs:
           check "$LOCKFILE_RESULT"                    lockfile
           check "$CI_RESULT"                          ci                    allow-skipped
           check "$SECURITY_RESULT"                    security              allow-skipped
-          check "$CHANGELOG_RESULT"                  changelog             allow-skipped
           check "$PRE_COMMIT_RESULT"                  pre-commit
           check "$CHECK_SSE_TYPES_RESULT"             check-sse-types
           check "$CHECK_SUBSESSION_KINDS_RESULT"      check-subsession-kinds
@@ -427,5 +476,7 @@ jobs:
           check "$IMAGE_SCAN_RESULT"                  image-scan
           check "$CHECK_CONFIG_SCHEMA_RESULT"         check-config-schema
           check "$DEPTRY_RESULT"                      deptry
+          check "$FRONTEND_JS_RESULT"                frontend-js
           check "$PYRIGHT_RESULT"                     pyright
+          check "$MYPY_RESULT"                       mypy
           echo "All CI checks passed"

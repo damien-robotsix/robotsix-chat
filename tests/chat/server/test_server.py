@@ -25,6 +25,7 @@ from robotsix_chat.chat.server import (
     run_server_from_config,
 )
 from robotsix_chat.chat.server.cli import _export_langfuse_env
+from robotsix_chat.chat.server.routes.errors import STREAM_ERROR_SERVER
 from robotsix_chat.config import LangfuseProjectCreds, LangfuseSettings, Settings
 from robotsix_chat.config.models import (
     DirectRepoSettings,
@@ -919,7 +920,35 @@ async def test_chat_endpoint_agent_raises() -> None:
 
     error_frames = [f for f in frames if f.get("type") == SSE_ERROR_TYPE]
     assert len(error_frames) == 1
-    assert error_frames[0]["message"] == "LLM went boom"
+    # The raw exception text must not reach the client — the frame carries a
+    # curated message plus a stable code and a correlation id instead.
+    assert "LLM went boom" not in error_frames[0]["message"]
+    assert error_frames[0]["code"] == STREAM_ERROR_SERVER
+    assert "correlation_id" in error_frames[0]
+
+    # A failing agent must not emit a "done" frame.
+    done_frames = [f for f in frames if f.get("type") == SSE_DONE_TYPE]
+    assert len(done_frames) == 0
+
+
+@pytest.mark.asyncio
+async def test_chat_endpoint_agent_raises_empty_message() -> None:
+    """SSE error frame stays curated and non-empty when str(exc) is empty."""
+    async with mock_app(error=RuntimeError("")) as f:
+        response = await f.client.post("/chat", json={"message": "hello"})
+
+    assert response.status_code == 200
+    assert SSE_CONTENT_TYPE in response.headers["content-type"]
+
+    frames = _parse_sse(response)
+
+    error_frames = [f for f in frames if f.get("type") == SSE_ERROR_TYPE]
+    assert len(error_frames) == 1
+    # The curated message is independent of str(exc), so an empty exception
+    # message still yields usable text — and never the exception class name.
+    assert error_frames[0]["message"]
+    assert "RuntimeError" not in error_frames[0]["message"]
+    assert error_frames[0]["code"] == STREAM_ERROR_SERVER
 
     # A failing agent must not emit a "done" frame.
     done_frames = [f for f in frames if f.get("type") == SSE_DONE_TYPE]
@@ -2475,6 +2504,42 @@ async def test_chat_turn_mirrored_to_event_bus() -> None:
             str(fr["content"]) for fr in frames if fr["type"] == SSE_CHAT_TOKEN_TYPE
         )
         assert content == "Hello world!"
+
+
+@pytest.mark.asyncio
+async def test_event_bus_turn_error_is_curated() -> None:
+    """The turn-error published to the bus carries no raw exception text.
+
+    ``end_turn(error=...)`` publishes to every subscriber of the session, so
+    this path is client-facing too — not an internal-only sink.
+    """
+    from robotsix_chat.chat.events import SSE_CHAT_TURN_ERROR_TYPE
+
+    secret = "/srv/app/.env token=sk-leaked https://upstream.internal/v1"
+    async with mock_app(error=RuntimeError(secret), message_coalesce_seconds=0.0) as f:
+        session_id = "s-error-bus"
+        q = f.app.state.event_bus.subscribe(session_id)
+
+        r = await f.client.post(
+            "/chat",
+            json={"message": "hi", "session_id": session_id, "owner_id": "o"},
+        )
+        assert r.status_code == 200
+
+        frames: list[dict[str, object]] = []
+        for _ in range(100):
+            while not q.empty():
+                frames.append(q.get_nowait())
+            if frames and frames[-1]["type"] == SSE_CHAT_TURN_ERROR_TYPE:
+                break
+            await asyncio.sleep(0.01)
+
+        error_frames = [fr for fr in frames if fr["type"] == SSE_CHAT_TURN_ERROR_TYPE]
+        assert len(error_frames) == 1
+        message = str(error_frames[0]["message"])
+        assert secret not in message
+        assert "sk-leaked" not in message
+        assert message
 
 
 @pytest.mark.asyncio

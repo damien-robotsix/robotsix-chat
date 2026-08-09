@@ -79,6 +79,7 @@ class ActionsClient:
         repo_full_name: str,
         *,
         branch: str | None = None,
+        head_sha: str | None = None,
         per_page: int = 10,
     ) -> list[dict[str, Any]]:
         """List recent workflow runs for a repository.
@@ -88,6 +89,8 @@ class ActionsClient:
         Args:
             repo_full_name: ``"owner/name"``.
             branch: Optional branch filter.
+            head_sha: Optional commit SHA filter — only returns runs
+                triggered by this commit.
             per_page: Results per page (default 10).
 
         Returns:
@@ -97,6 +100,8 @@ class ActionsClient:
         params = f"?per_page={min(max(per_page, 1), 100)}"
         if branch:
             params += f"&branch={branch}"
+        if head_sha:
+            params += f"&head_sha={head_sha}"
         try:
             data = await self._client._get_json(
                 f"/repos/{repo_full_name}/actions/runs{params}"
@@ -141,6 +146,17 @@ class ActionsClient:
 
     # -- workflow run annotations ------------------------------------------
 
+    @staticmethod
+    def _is_checks_permission_error(exc: RuntimeError) -> bool:
+        """Return ``True`` when *exc* is a 403 on the GitHub Checks API.
+
+        The Checks API returns 403 when the installation token lacks the
+        ``checks: read`` permission.  This is distinguishable from other
+        403 errors (e.g. rate-limiting) by the path prefix.
+        """
+        msg = str(exc)
+        return "error 403" in msg and ("/check-suites/" in msg or "/check-runs/" in msg)
+
     async def get_workflow_run_annotations(
         self,
         repo_full_name: str,
@@ -158,6 +174,10 @@ class ActionsClient:
         3. For each check run with annotations,
            ``GET /repos/{owner}/{repo}/check-runs/{check_run_id}/annotations``.
 
+        When the Checks API returns 403 (installation token lacks
+        ``checks: read`` permission), the method falls back to fetching raw
+        job logs via the Actions API instead.
+
         Returns a formatted Markdown string listing all annotations grouped
         by check run, or a diagnostic message when no annotations are found.
         """
@@ -174,11 +194,23 @@ class ActionsClient:
                 )
 
             # 2. List check runs for the check suite.
-            suite_data = await self._client._get_json(
-                f"/repos/{repo_full_name}/check-suites/{check_suite_id}"
-                f"/check-runs?per_page={min(max_check_runs, 100)}"
-                f"&filter=latest"
-            )
+            try:
+                suite_data = await self._client._get_json(
+                    f"/repos/{repo_full_name}/check-suites/{check_suite_id}"
+                    f"/check-runs?per_page={min(max_check_runs, 100)}"
+                    f"&filter=latest"
+                )
+            except RuntimeError as exc:
+                if self._is_checks_permission_error(exc):
+                    logger.info(
+                        "Checks API returned 403 for run %d on %s — "
+                        "falling back to raw job logs.",
+                        run_id,
+                        repo_full_name,
+                    )
+                    return await self._get_failed_job_logs(repo_full_name, run_id)
+                raise
+
             check_runs: list[dict[str, Any]] = suite_data.get("check_runs", [])
 
             if not check_runs:
@@ -216,6 +248,13 @@ class ActionsClient:
                             f"{len(annotations)} annotation(s))"
                         )
                 except RuntimeError as exc:
+                    if self._is_checks_permission_error(exc):
+                        logger.info(
+                            "Checks API returned 403 for check run %d — "
+                            "falling back to raw job logs.",
+                            cr_id,
+                        )
+                        return await self._get_failed_job_logs(repo_full_name, run_id)
                     logger.warning(
                         "Failed to fetch annotations for check run %d: %s",
                         cr_id,
@@ -268,14 +307,230 @@ class ActionsClient:
                     lines.append(f"  _Location: {loc}_")
                 lines.append("")
 
+        except RuntimeError as exc:
+            annotation_error = str(exc)
+        except Exception as exc:
+            annotation_error = str(exc)
+        else:
             return "\n".join(lines)
 
+        # -- fallback: fetch raw job logs ----------------------------------
+        return await self._fallback_job_logs(repo_full_name, run_id, annotation_error)
+
+    async def _fallback_job_logs(
+        self,
+        repo_full_name: str,
+        run_id: int,
+        annotation_error: str,
+    ) -> str:
+        """Fallback for ``get_workflow_run_annotations``: fetch raw job logs.
+
+        Called when the check-run / annotations API returns an error
+        (typically 403 — insufficient permissions).  Attempts to list
+        the workflow run's jobs and fetch raw logs for any that failed.
+
+        Returns a Markdown string with whatever logs could be retrieved,
+        plus explicit limitation messaging when everything is inaccessible.
+        """
+        run_url = f"https://github.com/{repo_full_name}/actions/runs/{run_id}"
+        permission_note = (
+            "The GitHub App installation may lack 'checks: read' permission "
+            "for this repository — check-run annotations require that scope."
+        )
+
+        try:
+            jobs_data = await self._client._get_json(
+                f"/repos/{repo_full_name}/actions/runs/{run_id}/jobs"
+            )
+            jobs: list[dict[str, Any]] = jobs_data.get("jobs", [])
         except RuntimeError as exc:
-            return f"Error fetching workflow run annotations: {exc}"
+            return (
+                f"Unable to diagnose workflow run {run_id} on {repo_full_name}.\n\n"
+                f"**Check-run annotations:** not accessible ({annotation_error})\n"
+                f"**Job listing:** also failed ({exc})\n\n"
+                f"{permission_note}\n\n"
+                f"**Suggestion:** check the logs manually at {run_url}"
+            )
         except Exception as exc:
-            return f"Error fetching workflow run annotations: {exc}"
+            return (
+                f"Unable to diagnose workflow run {run_id} on {repo_full_name}.\n\n"
+                f"**Check-run annotations:** not accessible ({annotation_error})\n"
+                f"**Job listing:** also failed ({exc})\n\n"
+                f"**Suggestion:** check the logs manually at {run_url}"
+            )
+
+        if not jobs:
+            return (
+                f"Workflow run {run_id} on {repo_full_name} has no jobs — "
+                f"this may indicate that GitHub Actions billing "
+                f"is not enabled for this private repository, or that the "
+                f"workflow trigger is misconfigured (e.g. only triggers on "
+                f"``push`` to ``main``, not on the event that created this "
+                f"run).  Check the workflow's ``on:`` trigger in "
+                f"``.github/workflows/``, and verify billing at "
+                f"Settings > Actions > General."
+            )
+
+        # Collect logs for failed / cancelled / timed-out jobs.
+        log_results: list[str] = []
+        failed_job_ids: list[str] = []
+        success_count = 0
+        failure_count = 0
+
+        for job in jobs:
+            job_id = job.get("id")
+            if job_id is None:
+                continue
+            job_name = job.get("name", str(job_id))
+            conclusion = job.get("conclusion", "")
+
+            if conclusion in ("failure", "cancelled", "timed_out"):
+                try:
+                    log = await self.get_job_log(repo_full_name, job_id)
+                    if len(log) > 8000:
+                        log = log[:8000] + "\n\n... [log truncated at 8000 chars]"
+                    log_results.append(
+                        f"### Job: {job_name} (id {job_id}, conclusion={conclusion})\n"
+                        f"\n```\n{log}\n```"
+                    )
+                    success_count += 1
+                except RuntimeError as exc:
+                    log_results.append(
+                        f"### Job: {job_name} (id {job_id}, conclusion={conclusion})\n"
+                        f"\n_Log unavailable: {exc}_"
+                    )
+                    failed_job_ids.append(str(job_id))
+                    failure_count += 1
+                except Exception as exc:
+                    log_results.append(
+                        f"### Job: {job_name} (id {job_id}, conclusion={conclusion})\n"
+                        f"\n_Log unavailable: {exc}_"
+                    )
+                    failed_job_ids.append(str(job_id))
+                    failure_count += 1
+
+        if not log_results:
+            return (
+                f"Workflow run {run_id} on {repo_full_name} has "
+                f"{len(jobs)} job(s) but none with a failed conclusion. "
+                f"Check-run annotations were not accessible "
+                f"({annotation_error})."
+            )
+
+        header = (
+            f"## Workflow run {run_id} ({repo_full_name})\n\n"
+            f"_Check-run annotations were not accessible — "
+            f"falling back to raw job logs._\n\n"
+            f"({success_count} log(s) retrieved"
+            + (f", {failure_count} unavailable" if failure_count else "")
+            + ")\n"
+        )
+
+        if failure_count > 0:
+            header += (
+                f"\n**Limitation:** could not retrieve logs for jobs "
+                f"{', '.join(failed_job_ids)}. "
+                f"{permission_note}\n"
+            )
+
+        header += f"\n**Manual check:** {run_url}\n"
+
+        return header + "\n\n".join(log_results)
 
     # -- job log retrieval -------------------------------------------------
+
+    async def _get_failed_job_logs(
+        self,
+        repo_full_name: str,
+        run_id: int,
+        *,
+        max_log_bytes: int = 32_000,
+    ) -> str:
+        """Fallback: fetch raw logs for failed jobs in a workflow run.
+
+        Used when the Checks API is inaccessible (e.g. the GitHub App token
+        lacks ``checks: read`` permission).  The Actions API endpoints
+        (``/actions/runs/{run_id}/jobs`` and ``/actions/jobs/{job_id}/logs``)
+        require ``actions: read`` scope, which is often granted separately.
+
+        Returns a formatted Markdown string with truncated log content for
+        each failed job, or a diagnostic message when no failed jobs are
+        found.
+        """
+        jobs = await self.get_workflow_run_jobs(repo_full_name, run_id)
+        if not jobs:
+            return (
+                f"Workflow run {run_id} on {repo_full_name} has no jobs — "
+                f"cannot fetch logs."
+            )
+
+        failed_jobs = [
+            j
+            for j in jobs
+            if j.get("conclusion") in ("failure", "timed_out", "cancelled")
+        ]
+        if not failed_jobs:
+            return (
+                f"Workflow run {run_id} on {repo_full_name} has "
+                f"{len(jobs)} job(s) but none with a failed conclusion — "
+                f"no failed-job logs to fetch."
+            )
+
+        lines: list[str] = [
+            f"## Workflow run {run_id} job logs ({repo_full_name})",
+            "",
+            f"_Annotations unavailable (Checks API returned 403 — the GitHub "
+            f"App token likely lacks the `checks: read` permission). "
+            f"Falling back to raw job logs for {len(failed_jobs)} failed "
+            f"job(s)._",
+            "",
+        ]
+
+        per_job_limit = max(max_log_bytes // max(len(failed_jobs), 1), 2000)
+
+        for j in failed_jobs:
+            job_id = j.get("id")
+            job_name = j.get("name", str(job_id))
+            job_conclusion = j.get("conclusion", "?")
+
+            lines.append(f"### {job_name} (conclusion={job_conclusion})")
+            lines.append("")
+
+            if job_id is None:
+                lines.append("_No job id available — cannot fetch log._")
+                lines.append("")
+                continue
+
+            try:
+                log_text = await self.get_job_log(repo_full_name, job_id)
+            except RuntimeError as exc:
+                lines.append(f"_Error fetching log: {exc}_")
+                lines.append("")
+                continue
+
+            if not log_text.strip():
+                lines.append("_(empty log)_")
+                lines.append("")
+                continue
+
+            # Truncate long logs to keep the agent context manageable.
+            if len(log_text) > per_job_limit:
+                truncated = log_text[-per_job_limit:]
+                lines.append(
+                    f"_Log truncated to last {per_job_limit} bytes "
+                    f"(full log is {len(log_text)} bytes)._"
+                )
+                lines.append("")
+                lines.append("```")
+                lines.append(truncated)
+                lines.append("```")
+            else:
+                lines.append("```")
+                lines.append(log_text)
+                lines.append("```")
+            lines.append("")
+
+        return "\n".join(lines)
 
     async def get_job_log(self, repo_full_name: str, job_id: int) -> str:
         """Fetch the plain-text log for a GitHub Actions job.
@@ -371,16 +626,119 @@ class ActionsClient:
         except Exception as exc:
             return f"Error setting secret: {exc}"
 
+    # -- zero-job workflow detection ---------------------------------------
+
+    async def check_latest_run_for_zero_jobs(
+        self,
+        repo_full_name: str,
+        branch: str,
+    ) -> str | None:
+        """Check if the latest workflow run on *branch* has zero jobs.
+
+        Returns a diagnostic string when zero jobs are detected — a CI
+        infrastructure failure where the workflow file parses correctly
+        but produces no job definitions (typically a misconfigured trigger,
+        invalid conditional, or billing issue).  Returns ``None`` when the
+        check passes, no runs exist, or an error occurs (errors are logged
+        at DEBUG level).
+        """
+        try:
+            runs = await self.list_workflow_runs(
+                repo_full_name, branch=branch, per_page=1
+            )
+        except Exception:
+            logger.debug(
+                "check_latest_run_for_zero_jobs: could not list runs for %s/%s",
+                repo_full_name,
+                branch,
+            )
+            return None
+
+        if not runs:
+            return None
+
+        latest = runs[0]
+        run_id = latest.get("id")
+        if not isinstance(run_id, int):
+            return None
+
+        try:
+            jobs = await self.get_workflow_run_jobs(repo_full_name, run_id)
+        except Exception:
+            logger.debug(
+                "check_latest_run_for_zero_jobs: could not fetch jobs for run %d on %s",
+                run_id,
+                repo_full_name,
+            )
+            return None
+
+        if jobs:
+            return None
+
+        run_name = latest.get("name", str(run_id))
+        return (
+            f"CI INFRASTRUCTURE FAILURE: workflow run '{run_name}' "
+            f"(id {run_id}) on {repo_full_name} branch '{branch}' "
+            f"has ZERO jobs — the CI workflow is not executing any jobs. "
+            f"This typically indicates a workflow configuration error "
+            f"(wrong trigger, invalid conditional) or a billing issue. "
+            f"PRs on this branch are not receiving CI coverage."
+        )
+
     # -- billing failure diagnosis -----------------------------------------
 
-    def _diagnose_billing_failure(
+    async def _other_workflows_succeeded_on_commit(
+        self,
+        repo_full_name: str,
+        head_sha: str,
+        exclude_run_id: int | None = None,
+    ) -> bool:
+        """Check whether any workflow run on *head_sha* completed successfully.
+
+        Excludes *exclude_run_id* (the run we are currently diagnosing).
+        Returns ``True`` when at least one other workflow run on the same
+        commit has ``conclusion="success"`` — this rules out a billing
+        issue because billing would block **all** workflows, not just one.
+
+        Returns ``False`` when the check cannot confirm a successful
+        sibling run (no other runs, all failed, or an API error).
+        """
+        try:
+            sibling_runs = await self.list_workflow_runs(
+                repo_full_name, head_sha=head_sha, per_page=30
+            )
+        except Exception:
+            logger.debug(
+                "Could not list sibling runs for head_sha %s on %s",
+                head_sha,
+                repo_full_name,
+            )
+            return False
+
+        for sibling in sibling_runs:
+            if exclude_run_id is not None and sibling.get("id") == exclude_run_id:
+                continue
+            if str(sibling.get("conclusion", "")).lower() == "success":
+                return True
+
+        return False
+
+    async def _diagnose_billing_failure(
         self,
         runs: list[dict[str, Any]],
+        repo_full_name: str,
     ) -> str | None:
         """Inspect recent workflow runs for a private-repo billing failure.
 
         Heuristic: a run whose ``run_started_at`` is ``null`` (never started)
         strongly suggests the repo has no GitHub Actions billing enabled.
+
+        **Cross-check:** before returning a billing diagnosis, this method
+        checks whether *other* workflow runs on the same commit completed
+        successfully.  If they did, the root cause is likely a trigger
+        configuration mismatch (e.g. a workflow that only triggers on
+        ``push`` to ``main``, not on ``pull_request``) rather than a
+        billing issue — billing would block all workflows, not just one.
 
         Note: zero-job detection is NOT attempted here because the
         ``/actions/runs`` endpoint does not include per-job run data.
@@ -396,8 +754,29 @@ class ActionsClient:
                 continue
             run_id = run.get("id")
             run_name = run.get("name", str(run_id))
-            # Runs that never started signal billing issues.
+            # Runs that never started signal a configuration or billing issue.
             if "run_started_at" in run and not run.get("run_started_at"):
+                head_sha = run.get("head_sha")
+                if isinstance(head_sha, str) and head_sha:
+                    other_succeeded = await self._other_workflows_succeeded_on_commit(
+                        repo_full_name, head_sha, exclude_run_id=run_id
+                    )
+                else:
+                    other_succeeded = False
+
+                if other_succeeded:
+                    return (
+                        f"Workflow run '{run_name}' (id {run_id}) for "
+                        f"{run.get('head_branch', '?')} never started, "
+                        f"but other workflows on the same commit ran "
+                        f"successfully — this rules out a billing issue. "
+                        f"The likely root cause is a trigger configuration "
+                        f"mismatch: the workflow may only trigger on "
+                        f"``push`` to ``main`` (or another branch), not on "
+                        f"the ``pull_request`` event that created this run. "
+                        f"Check the workflow's ``on:`` trigger in the "
+                        f"``.github/workflows/`` directory."
+                    )
                 return (
                     f"Workflow run '{run_name}' (id {run_id}) for "
                     f"{run.get('head_branch', '?')} never started — "

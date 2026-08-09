@@ -20,9 +20,6 @@ The settings panel is backed by HTTP endpoints on the chat server:
   each version.
 - **`POST /config/rollback`** — reverts to a previous version and creates a new version entry
   (history is append-only, never destructive).
-- **`POST /config/import`** — one-time config import from central-deploy's export endpoint. Pulls
-  the full runtime config (with real secret values) from the deploy plane and writes it to the local
-  config file. Requires `lifecycle.config_import_enabled` to be `true`.
 
 ### Deep-merge (non-destructive save)
 
@@ -114,6 +111,9 @@ data no longer validates.
    - **Number fields** — numeric input (step "1" for integers, "any" for floats).
    - **Boolean fields** — checkbox.
    - **Array fields** — text area containing JSON; edit the JSON directly.
+   - **Autonomous subsession presets** — the `autonomous.sessions` array renders as a dedicated
+     presets editor (see [Editing autonomous-session presets](#editing-autonomous-session-presets))
+     instead of a raw JSON text area.
    - **Secret fields** — password input; value shows as `"**********"`; leave unchanged to keep the
      current secret.
 4. Click **Save**.
@@ -125,6 +125,36 @@ data no longer validates.
 5. Close the panel with the **×** button, the **Escape** key, or by clicking the gear button again.
 
 The panel remembers its open/closed state in `localStorage` across page reloads.
+
+## Editing autonomous-session presets
+
+The `autonomous.sessions` array — the named autonomous-subsession presets — is rendered as a
+dedicated **presets editor** rather than a raw JSON text area. It lets operators view, create, edit,
+and delete presets without hand-editing JSON.
+
+Each enabled/disabled preset is shown as a row summarizing its **name**, **trigger type**
+(`periodic` or `on_close`), the **interval** (periodic only, shown in seconds), and whether it is
+**disabled**.
+
+- **Edit** — click **Edit** on a row to open an inline form. You can change the preset **name**, its
+  custom **prompt**, the **trigger** type, and, for `periodic` triggers, the **interval (s)**. The
+  interval field is hidden when the trigger is `on_close`. The **Enabled** checkbox toggles whether
+  the preset creates a session (unchecking disables it without deleting it). Click **Save** to
+  commit the change.
+- **Add** — click **+ Add Preset** to insert a new preset (defaults: `periodic` trigger, 45 s
+  interval, enabled). Fill in the fields and click **Add**.
+- **Delete** — click **Del** on a row to remove that preset.
+
+Like the rest of the settings form, the presets edits are only persisted when the panel's **Save**
+button is clicked. Saving sends the `autonomous.sessions` array back through `PUT /config`, which
+deep-merges it over the on-disk config and validates it against the `AutonomousSessionDefinition`
+model — so new, edited, and deleted presets are picked up by the backend on the next save without
+manual config-file edits. Note this editor configures the *presets* list only; the legacy
+`autonomous` block (completion marker, continue interval, initial task, max auto turns,
+pending-subsession wait, session color) remains separate and unchanged.
+
+See [Autonomous sessions](autonomous-sessions.md) for the full preset-key reference (`name`,
+`prompt`, `trigger_type`, `trigger_interval_seconds`, `enabled`).
 
 ## Endpoint details
 
@@ -288,72 +318,5 @@ validation (the schema may have changed since that version was recorded):
   "title": "Rollback validation failed",
   "status": 422,
   "detail": "version 1 fails current config validation: ..."
-}
-```
-
-### `POST /config/import`
-
-One-time config import from central-deploy's export endpoint. Pulls the full runtime config (with
-real, unmasked secret values) from the deploy plane and writes it to the local config file. This is
-the migration path for components that previously had their config managed by central-deploy.
-
-**Prerequisites:**
-
-- `lifecycle.enabled` must be `true`
-- `lifecycle.config_import_enabled` must be `true`
-- `lifecycle.base_url` must point to the central-deploy lifecycle API
-- `lifecycle.service_name` must match the component's registered name in central-deploy
-- `lifecycle.api_key` must be a valid API key for the central-deploy API
-
-**Request body** (JSON object, all fields optional):
-
-```json
-{
-  "service_name": "robotsix-chat"
-}
-```
-
-If `service_name` is omitted, `lifecycle.service_name` from the config file is used.
-
-**Response** `200 OK`:
-
-```json
-{
-  "version": 1,
-  "status": "ok"
-}
-```
-
-**Response** `400 Bad Request` — import not enabled or missing prerequisites:
-
-```json
-{
-  "type": "about:blank",
-  "title": "Config import not enabled",
-  "status": 400,
-  "detail": "lifecycle.config_import_enabled must be true to use this endpoint. ..."
-}
-```
-
-**Response** `422 Unprocessable Entity` — the imported config fails current `Settings` validation:
-
-```json
-{
-  "type": "about:blank",
-  "title": "Imported config validation failed",
-  "status": 422,
-  "detail": "The imported config fails current Settings validation: ..."
-}
-```
-
-**Response** `502 Bad Gateway` — the central-deploy export endpoint is unreachable or returned an
-error:
-
-```json
-{
-  "type": "about:blank",
-  "title": "Config import failed",
-  "status": 502,
-  "detail": "Central-deploy export endpoint returned an error: ..."
 }
 ```

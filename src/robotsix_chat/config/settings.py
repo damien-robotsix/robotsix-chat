@@ -63,7 +63,7 @@ class ConfigValidationError(ValueError):
 # Version stamp for the agent_instruction default literal.
 # Bump on every change to Settings.agent_instruction and update
 # docs/system_prompt_changelog.md with a new entry + SHA256.
-SYSTEM_PROMPT_VERSION = 85
+SYSTEM_PROMPT_VERSION = 91
 
 # Valid model levels, derived from llmio's tier enum (import-time constant so
 # the set is built once and can never drift from the tiers llmio ships).
@@ -87,6 +87,12 @@ class Settings(BaseModel):
         llmio_api_key: Provider API key, forwarded to llmio when the chosen
             level's provider needs one (e.g. ``openrouter``); unused
             by keyless providers like ``claudeSDK``.
+        chat_model_level: Optional override of ``llmio_model_level`` for the
+            main interactive chat agent.  When ``None`` (default), the chat
+            agent uses ``llmio_model_level``.  Set to a specific level to
+            route chat turns to a different tier (e.g. ``4`` for fable-5)
+            while other consumers (subsessions, autonomous, summary) still
+            use ``llmio_model_level`` or their own overrides.
         summary_model_level: Capability level used to generate the
             structured conversation summary (``POST /summary``, regenerated
             after every assistant turn). Defaults to the cheapest tier since
@@ -125,11 +131,19 @@ class Settings(BaseModel):
             image.  Default ``5_242_880`` (5 MiB).
         allowed_image_media_types: Media types accepted for image attachments.
             Default ``["image/png", "image/jpeg", "image/gif", "image/webp"]``.
+        low_risk_actions: Action names or descriptions that the agent may
+            perform without requesting human confirmation.  When non-empty,
+            the system prompt instructs the agent that these actions are
+            pre-authorized and any safety gates on them are lifted —
+            the agent should execute them without asking.  Default ``[]``.
 
     """
 
     llmio_model_level: int = 3
     llmio_api_key: SecretStr = SecretStr("")
+    chat_model_level: int | None = Field(
+        default=None, json_schema_extra={"advanced": True}
+    )
     summary_model_level: int = Field(default=1, json_schema_extra={"advanced": True})
     agent_instruction: str = Field(
         default=(
@@ -295,9 +309,8 @@ class Settings(BaseModel):
             "to a component, periodic subsessions must track deploy status "
             "alongside board status. After the PR merges, the fix is not yet "
             "live — the monitor must verify the component is running the new "
-            "image. Use get_lifecycle_service_config to check the running "
-            "image digest against the expected post-merge image, "
-            "get_lifecycle_service_status to confirm rollout completed, and "
+            "image. Use get_lifecycle_service_status to confirm rollout "
+            "completed, and "
             "component_request GET /health to verify the component is "
             "healthy. A merged PR whose image is not yet deployed is not a "
             "terminal state — keep the monitor open until deploy is "
@@ -403,12 +416,14 @@ class Settings(BaseModel):
             "    the full ticket description. Editing the description without\n"
             "    changing the spec text will NOT clear the guard — to vary\n"
             "    the fingerprint you must edit the spec itself.\n"
+            "  • reset_implement_spawn_counter may return HTTP 405 on some\n"
+            "    board builds — when it does, skip the reset and use\n"
+            "    resume-blocked as the standard fallback.\n"
             "  • GET /health — liveness probe; returns started_at\n"
             "– Deploy API (lifecycle tools):\n"
             "  • restart_lifecycle_service — restart any service "
             "(needs per-repo toggle)\n"
             "  • self_restart — restart the agent's own service (no toggle required)\n"
-            "  • update_lifecycle_service_config — update service configuration\n"
             "  • update_lifecycle_service_env — update service environment\n"
             "– Store these in a knowledge note (topic: endpoints) for future\n"
             "  sessions; update it when you discover new endpoints.\n"
@@ -507,6 +522,27 @@ class Settings(BaseModel):
             "(e.g. the SHA-1 of 'password'). A ticket that says 'reset the "
             "admin password' without stating the password is incomplete — "
             "include the password in the spec.\n"
+            "User-requested tickets: when the operator explicitly asks you "
+            "to file a ticket (e.g. 'file a ticket for X', 'create a task "
+            "to fix Y'), the resulting ticket is user-requested — it "
+            "represents the operator's own intent and carries higher "
+            "priority than auto-filed chores.  User-requested tickets "
+            "MUST include these markers in the body metadata block "
+            "(the '--- kind: ...' line folded into the body text after "
+            "the spec):\n"
+            "  • kind: user-request — distinguishes this ticket from "
+            "auto-filed chores and feedback tickets\n"
+            "  • priority: high — ensures the pipeline prioritises it "
+            "over routine auto-filed work\n"
+            "After filing a user-requested ticket, immediately transition "
+            "it out of draft / human_issue_approval to ready using the "
+            "board API — the operator's request to file the ticket "
+            "constitutes consent for both filing and approval.  Do NOT "
+            "leave a user-requested ticket sitting in draft waiting for "
+            "a separate approval cycle; approve it in the same turn you "
+            "file it.  Auto-filed chores and feedback tickets (which you "
+            "initiate on your own without an explicit operator request) "
+            "still go through the normal approval gate.\n"
             "  2. Monitor — immediately after filing, spawn a periodic subsession "
             "to track the ticket: 30-minute interval, max 60 runs, terminate after "
             "2 consecutive mill-unreachable failures. Set dedup_key to the ticket "
@@ -647,9 +683,9 @@ class Settings(BaseModel):
             "tickets, but these PRs are opened without auto-merge — the "
             "merge gate stays human. When a PR is approved and ready to "
             "merge and the ticket is in BLOCKED state, prefer "
-            "``merge_pr`` (direct-repo) — it merges the PR and returns "
+            "``merge_direct_repo_pr`` (direct-repo) — it merges the PR and returns "
             "the merge commit SHA. For pre-BLOCKED tickets or when "
-            "``merge_pr`` is unavailable, use the mill's merge endpoint "
+            "``merge_direct_repo_pr`` is unavailable, use the mill's merge endpoint "
             "via component_request (the mill API has merge-now and related "
             "endpoints for merging approved MRs). Do NOT claim you lack "
             "merge capability — you can merge through either path. Do NOT "
@@ -736,8 +772,8 @@ class Settings(BaseModel):
             "(GET /tickets/{id}) or check the PR on GitHub directly, rather "
             "than asking the user for confirmation. If the PR is not yet "
             "merged, explain the blocker clearly and offer to wait for the "
-            "merge or escalate. Only proceed with the deploy (restart or "
-            "watch_service_redeploy) after confirming the merge is complete.\n"
+            "merge or escalate. Only proceed with the deploy (restart) after "
+            "confirming the merge is complete.\n"
             "– Deploy preflight: before calling any deploy endpoint (POST\n"
             "  /chat/deploy, POST /onboard/*, or any lifecycle mutation), you\n"
             "  MUST:\n"
@@ -786,6 +822,23 @@ class Settings(BaseModel):
             "Efficiency:\n"
             "– If a required tool is missing, state it in one sentence and stop — "
             "do not explore alternatives, explain why, or narrate checking for it.\n"
+            '– Do NOT claim you have run out of "token budget," "response '
+            'budget," or any other AI-internal resource limit as a reason for '
+            "not performing an action — you have no such constraint visible to "
+            "you, and these claims are fabricated excuses that erode trust.  If "
+            "you can perform the action with the tools and information available, "
+            "do it.  If you cannot perform it for a real reason (missing tool, "
+            "insufficient permissions, incomplete information, a genuine API "
+            "error), state that specific reason — not a fabricated "
+            "resource-exhaustion claim.\n"
+            "– Proactively manage your call budget: before starting a multi-step "
+            "investigation, estimate whether the task fits within your available "
+            "call budget. When a full investigation would exceed it, prefer "
+            "breaking the work into smaller bounded sub-tasks that can each "
+            "complete in a single turn, or propose a simpler one-step diagnostic "
+            "that answers the core question. Do not start a sprawling "
+            "investigation and then abandon it mid-way — scope the work to fit "
+            "the budget you have.\n"
             "– When a tool call returns an error — especially an HTTP endpoint "
             "or API route — do NOT guess alternate endpoints or routes blindly. "
             "First consult your knowledge notes: search for the 'endpoints' "
@@ -1139,6 +1192,9 @@ class Settings(BaseModel):
         default_factory=lambda: ["image/png", "image/jpeg", "image/gif", "image/webp"],
         json_schema_extra={"advanced": True},
     )
+    low_risk_actions: list[str] = Field(
+        default_factory=list, json_schema_extra={"advanced": True}
+    )
 
     model_config = ConfigDict(extra="forbid")
 
@@ -1174,6 +1230,14 @@ class Settings(BaseModel):
                 f"{self.llmio_model_level} (its provider needs a key) — provide "
                 "it via the `llmio.api_key` field of your config file "
                 "(or use model_level 3, which is keyless)"
+            )
+        if (
+            self.chat_model_level is not None
+            and self.chat_model_level not in VALID_MODEL_LEVELS
+        ):
+            failures.append(
+                f"chat_model_level must be one of {sorted(VALID_MODEL_LEVELS)} "
+                f"or null, got {self.chat_model_level!r}"
             )
         if self.summary_model_level not in VALID_MODEL_LEVELS:
             failures.append(
@@ -1280,6 +1344,52 @@ class Settings(BaseModel):
 
         if failures:
             raise ConfigValidationError(failures)
+
+    # ------------------------------------------------------------------
+    # Legacy config key migration
+    # ------------------------------------------------------------------
+
+    @model_validator(mode="before")
+    @classmethod
+    def _migrate_legacy_keys(cls, data: Any) -> Any:
+        """Rename legacy config keys to their current names.
+
+        Handles:
+        - ``autonomous.approval_marker`` → ``autonomous.proposal_marker``
+
+        Also strips unknown keys from the ``autonomous`` sub-dict so
+        ``extra="forbid"`` validation on :class:`AutonomousSettings`
+        doesn't permanently brick saves on configs written by older
+        versions.
+        """
+        if not isinstance(data, dict):
+            return data
+
+        from robotsix_chat.config.models import AutonomousSettings
+
+        autonomous = data.get("autonomous")
+        if isinstance(autonomous, dict):
+            # approval_marker was renamed to proposal_marker.
+            # Always overwrite — the file value (from a legacy key)
+            # takes precedence over any default already present.
+            if "approval_marker" in autonomous:
+                autonomous["proposal_marker"] = autonomous["approval_marker"]
+                logger.info(
+                    "Migrated legacy key autonomous.approval_marker → "
+                    "autonomous.proposal_marker (value preserved)"
+                )
+                del autonomous["approval_marker"]
+
+            # Strip unknown keys so extra="forbid" passes
+            known_auto = set(AutonomousSettings.model_fields.keys())
+            for key in sorted(set(autonomous.keys()) - known_auto):
+                logger.info(
+                    "Dropping unknown key autonomous.%s (not in current schema)",
+                    key,
+                )
+                del autonomous[key]
+
+        return data
 
     # ------------------------------------------------------------------
     # Legacy config normalisation

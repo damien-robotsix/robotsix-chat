@@ -1,3 +1,5 @@
+import { processSSEStream } from "./sse-parser.js";
+
 (function () {
   "use strict";
 
@@ -1273,6 +1275,7 @@
   function subsKindLabel(kind) {
     if (kind === "task") return "⚙ task";
     if (kind === "periodic") return "⏱ periodic";
+    if (kind === "wait_for_event") return "⏳ event";
     if (kind === "user_chat") return "💬 chat";
     if (kind === "on_close") return "🔒 on-close";
     return "⚙ task";
@@ -2304,64 +2307,7 @@
     return div.innerHTML;
   }
 
-  // ---- SSE stream parser -----------------------------------------------
-  function processSSEStream(body, controller) {
-    // We use a ReadableStream to pipe fetch body chunks into an SSE line
-    // parser.  Each \n\n-terminated block is decoded and dispatched.
-    var reader = body.getReader();
-    var decoder = new TextDecoder();
-    var buffer = "";
-
-    function pump() {
-      reader.read().then(function (result) {
-        if (result.done) {
-          // Stream ended.  If we were still streaming (no "done" frame
-          // from /chat), treat as error.  Otherwise, if the controller
-          // provides an onDone callback (e.g. the /events channel), call
-          // it so the consumer can reconnect.
-          if (controller.onDone) {
-            controller.onDone();
-          } else if (state === "streaming") {
-            controller.error(new Error("Server closed the connection unexpectedly"));
-          }
-          return;
-        }
-
-        buffer += decoder.decode(result.value, { stream: true });
-        // Normalise \r\n → \n and strip stray \r for robustness.
-        buffer = buffer.replace(/\r\n/g, "\n").replace(/\r/g, "\n");
-        var lines = buffer.split("\n");
-        // Keep the last (possibly incomplete) segment in the buffer.
-        buffer = lines.pop();
-
-        var currentData = "";
-        for (var i = 0; i < lines.length; i++) {
-          var line = lines[i];
-          if (line.startsWith("data: ")) {
-            // Accumulate multi-line data fields (some SSE impls split
-            // JSON across several data: lines, though ours doesn't).
-            currentData += line.slice(6);
-          } else if (line === "data:") {
-            currentData += "";
-          } else if (line === "") {
-            // Empty line = end of event.  Process accumulated data.
-            if (currentData !== "") {
-              controller.onData(currentData);
-              currentData = "";
-            }
-          }
-          // Ignore lines with "event:", "id:", "retry:", or comments.
-        }
-
-        if (controller.onActivity) controller.onActivity();
-        return pump();
-      }).catch(function (err) {
-        controller.error(err);
-      });
-    }
-
-    return { start: pump };
-  }
+  // processSSEStream is now in sse-parser.js (imported at module top).
 
   // ---- Persistent /events SSE channel ----------------------------------
   function openEventStream() {
@@ -2853,6 +2799,20 @@
         state = "error";
         updateSendBusy();
         // Same as above: queued messages stay; next submit resumes draining.
+      },
+      // The SSE parser calls onDone when the stream ends gracefully (the
+      // ReadableStream's reader.read() resolves with done=true).  For the
+      // POST /chat path, an unexpected stream close while we are still
+      // "streaming" (no "done" frame from the server) is an error.
+      onDone: function () {
+        if (state === "streaming") {
+          clearPost();
+          hideTypingIndicator();
+          finaliseAssistantBubble();
+          showError("Server closed the connection unexpectedly");
+          state = "error";
+          updateSendBusy();
+        }
       }
     };
 
@@ -3505,6 +3465,9 @@
     wrap.appendChild(label);
 
     if (Array.isArray(value)) {
+      if (path === "autonomous.sessions") {
+        return renderPresetsEditor(path, value);
+      }
       var arrInput = document.createElement("textarea");
       arrInput.rows = Math.min(value.length + 1, 6);
       arrInput.value = JSON.stringify(value, null, 2);
@@ -3612,6 +3575,305 @@
 
   function formatFieldLabel(key) {
     return key.replace(/_/g, " ");
+  }
+
+  // ---- Presets editor (autonomous.sessions) ----------------------------
+
+  function renderPresetsEditor(path, presets) {
+    var container = document.createElement("div");
+    container.className = "presets-editor";
+
+    var header = document.createElement("div");
+    header.className = "presets-editor-header";
+    header.textContent = formatFieldLabel("sessions");
+    container.appendChild(header);
+
+    var list = document.createElement("div");
+    list.className = "presets-editor-list";
+    container.appendChild(list);
+
+    // Hidden textarea for serialization.
+    var hidden = document.createElement("textarea");
+    hidden.style.display = "none";
+    hidden.setAttribute("data-path", path);
+    hidden.setAttribute("data-type", "array");
+    hidden.value = JSON.stringify(presets, null, 2);
+    container.appendChild(hidden);
+
+    rebuildPresetRows(list, presets, path);
+
+    // Add button.
+    var addBtn = document.createElement("button");
+    addBtn.className = "preset-add-btn";
+    addBtn.textContent = "+ Add Preset";
+    addBtn.addEventListener("click", function () {
+      addPreset(container, path);
+    });
+    container.appendChild(addBtn);
+
+    return container;
+  }
+
+  function rebuildPresetRows(list, presets, path) {
+    list.innerHTML = "";
+    if (!presets || presets.length === 0) {
+      var empty = document.createElement("div");
+      empty.className = "preset-empty";
+      empty.textContent = "No presets configured.";
+      list.appendChild(empty);
+      return;
+    }
+    for (var i = 0; i < presets.length; i++) {
+      var row = renderPresetRow(presets[i], i, path);
+      list.appendChild(row);
+    }
+  }
+
+  function renderPresetRow(preset, index, path) {
+    var row = document.createElement("div");
+    row.className = "preset-row";
+    row.setAttribute("data-preset-index", index);
+
+    var summary = document.createElement("span");
+    summary.className = "preset-summary";
+
+    var nameEl = document.createElement("span");
+    nameEl.className = "preset-name";
+    nameEl.textContent = preset.name || "(unnamed)";
+    summary.appendChild(nameEl);
+
+    var detail = document.createElement("span");
+    detail.className = "preset-detail";
+    var intervalText = preset.trigger_type === "periodic"
+      ? ", " + preset.trigger_interval_seconds + "s"
+      : "";
+    detail.textContent = preset.trigger_type + intervalText
+      + (preset.enabled === false ? " (disabled)" : "");
+    summary.appendChild(detail);
+
+    row.appendChild(summary);
+
+    var buttons = document.createElement("span");
+    buttons.className = "preset-row-buttons";
+
+    var editBtn = document.createElement("button");
+    editBtn.textContent = "Edit";
+    editBtn.addEventListener("click", function () {
+      showPresetForm(row, preset, index, path);
+    });
+    buttons.appendChild(editBtn);
+
+    var delBtn = document.createElement("button");
+    delBtn.className = "preset-delete-btn";
+    delBtn.textContent = "Del";
+    delBtn.addEventListener("click", function () {
+      deletePreset(row, index, path);
+    });
+    buttons.appendChild(delBtn);
+
+    row.appendChild(buttons);
+
+    return row;
+  }
+
+  function showPresetForm(row, preset, index, path) {
+    // Remove any existing form first.
+    var existingForm = row.querySelector(".preset-form");
+    if (existingForm) {
+      existingForm.remove();
+      return; // toggle off
+    }
+
+    // Close any other open forms in the same editor.
+    var editor = row.closest(".presets-editor");
+    if (editor) {
+      var openForms = editor.querySelectorAll(".preset-form");
+      for (var f = 0; f < openForms.length; f++) {
+        openForms[f].remove();
+      }
+    }
+
+    var form = document.createElement("div");
+    form.className = "preset-form";
+
+    // Name
+    var nameRow = makeFormRow("Name");
+    var nameInput = document.createElement("input");
+    nameInput.type = "text";
+    nameInput.value = preset.name || "";
+    nameRow.appendChild(nameInput);
+    form.appendChild(nameRow);
+
+    // Prompt
+    var promptRow = makeFormRow("Prompt");
+    var promptInput = document.createElement("textarea");
+    promptInput.rows = 3;
+    promptInput.value = preset.prompt || "";
+    promptRow.appendChild(promptInput);
+    form.appendChild(promptRow);
+
+    // Trigger type
+    var triggerRow = makeFormRow("Trigger");
+    var triggerSelect = document.createElement("select");
+    var optPeriodic = document.createElement("option");
+    optPeriodic.value = "periodic";
+    optPeriodic.textContent = "periodic";
+    var optOnClose = document.createElement("option");
+    optOnClose.value = "on_close";
+    optOnClose.textContent = "on_close";
+    triggerSelect.appendChild(optPeriodic);
+    triggerSelect.appendChild(optOnClose);
+    triggerSelect.value = preset.trigger_type || "periodic";
+    triggerRow.appendChild(triggerSelect);
+    form.appendChild(triggerRow);
+
+    // Interval (shown when trigger is periodic)
+    var intervalRow = makeFormRow("Interval (s)");
+    var intervalInput = document.createElement("input");
+    intervalInput.type = "number";
+    intervalInput.step = "any";
+    intervalInput.min = "0";
+    intervalInput.value = preset.trigger_interval_seconds != null ? preset.trigger_interval_seconds : 45;
+    intervalRow.appendChild(intervalInput);
+    if (preset.trigger_type === "on_close") {
+      intervalRow.style.display = "none";
+    }
+    triggerSelect.addEventListener("change", function () {
+      intervalRow.style.display = triggerSelect.value === "periodic" ? "" : "none";
+    });
+    form.appendChild(intervalRow);
+
+    // Enabled
+    var enabledRow = makeFormRow("");
+    var enabledLabel = document.createElement("label");
+    enabledLabel.style.display = "inline-flex";
+    enabledLabel.style.alignItems = "center";
+    var enabledCheck = document.createElement("input");
+    enabledCheck.type = "checkbox";
+    enabledCheck.checked = preset.enabled !== false;
+    enabledLabel.appendChild(enabledCheck);
+    enabledLabel.appendChild(document.createTextNode(" Enabled"));
+    enabledRow.appendChild(enabledLabel);
+    form.appendChild(enabledRow);
+
+    // Actions
+    var actions = document.createElement("div");
+    actions.className = "preset-form-actions";
+
+    var saveBtn = document.createElement("button");
+    saveBtn.className = "preset-save-btn";
+    saveBtn.textContent = index < 0 ? "Add" : "Save";
+    saveBtn.addEventListener("click", function () {
+      var newPreset = {
+        name: nameInput.value.trim(),
+        prompt: promptInput.value,
+        trigger_type: triggerSelect.value,
+        trigger_interval_seconds: Number(intervalInput.value) || 45,
+        enabled: enabledCheck.checked
+      };
+      savePresetForm(row, path, index, newPreset);
+    });
+    actions.appendChild(saveBtn);
+
+    var cancelBtn = document.createElement("button");
+    cancelBtn.textContent = "Cancel";
+    cancelBtn.addEventListener("click", function () {
+      form.remove();
+      // If this was a new (unsaved) preset, remove the row too.
+      if (index < 0) {
+        row.remove();
+      }
+    });
+    actions.appendChild(cancelBtn);
+
+    form.appendChild(actions);
+    row.appendChild(form);
+  }
+
+  function makeFormRow(labelText) {
+    var r = document.createElement("div");
+    r.className = "preset-form-row";
+    if (labelText) {
+      var lbl = document.createElement("label");
+      lbl.textContent = labelText;
+      r.appendChild(lbl);
+    }
+    return r;
+  }
+
+  function savePresetForm(row, path, index, newPreset) {
+    // Find the presets editor container.
+    var container = row.closest(".presets-editor");
+    if (!container) return;
+
+    // Read current presets from the hidden textarea.
+    var hidden = container.querySelector("textarea[data-path=\"" + path + "\"]");
+    if (!hidden) return;
+
+    var presets;
+    try { presets = JSON.parse(hidden.value); }
+    catch (_) { presets = []; }
+    if (!Array.isArray(presets)) presets = [];
+
+    if (index >= 0) {
+      presets[index] = newPreset;
+    } else {
+      presets.push(newPreset);
+    }
+
+    // Update hidden textarea.
+    hidden.value = JSON.stringify(presets, null, 2);
+
+    // Rebuild the visual rows.
+    var list = container.querySelector(".presets-editor-list");
+    if (list) rebuildPresetRows(list, presets, path);
+  }
+
+  function deletePreset(row, index, path) {
+    var container = row.closest(".presets-editor");
+    if (!container) return;
+
+    var hidden = container.querySelector("textarea[data-path=\"" + path + "\"]");
+    if (!hidden) return;
+
+    var presets;
+    try { presets = JSON.parse(hidden.value); }
+    catch (_) { presets = []; }
+    if (!Array.isArray(presets)) presets = [];
+
+    presets.splice(index, 1);
+
+    hidden.value = JSON.stringify(presets, null, 2);
+
+    var list = container.querySelector(".presets-editor-list");
+    if (list) rebuildPresetRows(list, presets, path);
+  }
+
+  function addPreset(container, path) {
+    // Find the list.
+    var list = container.querySelector(".presets-editor-list");
+    if (!list) return;
+
+    // Create a temporary row for the new preset.
+    var row = document.createElement("div");
+    row.className = "preset-row";
+    row.setAttribute("data-preset-index", -1);
+
+    var summary = document.createElement("span");
+    summary.className = "preset-summary";
+    summary.textContent = "New preset";
+    row.appendChild(summary);
+
+    list.appendChild(row);
+
+    var emptyPreset = {
+      name: "",
+      prompt: "",
+      trigger_type: "periodic",
+      trigger_interval_seconds: 45,
+      enabled: true
+    };
+    showPresetForm(row, emptyPreset, -1, path);
   }
 
   // ---- Settings save ---------------------------------------------------

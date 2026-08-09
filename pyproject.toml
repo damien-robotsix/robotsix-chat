@@ -4,7 +4,7 @@ build-backend = "hatchling.build"
 
 [project]
 name = "robotsix-chat"
-version = "0.5.0"
+version = "0.8.0"
 description = "Browser + SSE chat server exposing an LLM agent to human users"
 readme = "README.md"
 requires-python = ">=3.14"
@@ -105,7 +105,6 @@ dev = [
     "respx",
     "robotsix-modules",
     "ruff",
-    "towncrier",
 ]
 docs = [
     "mkdocs-material",
@@ -120,49 +119,16 @@ packages = ["src/robotsix_chat"]
 # fleet pin-bump workflow advances them through reviewed PRs.
 [tool.uv.sources]
 robotsix-config = { git = "https://github.com/damien-robotsix/robotsix-config.git", rev = "424f8ec5140e14e9699b92d5c3755d929625b570" }  # pragma: allowlist secret
-robotsix-llmio = { git = "https://github.com/damien-robotsix/robotsix-llmio.git", rev = "27af25c626e9982bbd2efb5d05ba99942b2c97a9" }  # pragma: allowlist secret
+robotsix-llmio = { git = "https://github.com/damien-robotsix/robotsix-llmio.git", rev = "d11916a2f9a6b0109e9263560f8f7950bb8a5def" }  # pragma: allowlist secret
 # robotsix-modules: same SHA as robotsix-mill (coherent-set rule).
 robotsix-modules = { git = "https://github.com/damien-robotsix/robotsix-modules.git", rev = "d7c5e59980516de6e050db02ff54aef4e15ff5c3" }  # pragma: allowlist secret
 robotsix-http = { git = "https://github.com/damien-robotsix/robotsix-http.git", rev = "ba90d55ea2bcbd02f605f392e837cea7b485d73d" }  # pragma: allowlist secret
 robotsix-github-auth = { git = "https://github.com/damien-robotsix/robotsix-github-auth.git", rev = "e6214c41fd743120aa987bacb4e9b2bc88e73943" }  # pragma: allowlist secret
 
-[tool.towncrier]
-package = "robotsix_chat"
-package_dir = "src"
-filename = "CHANGELOG.md"
-directory = "changelog.d"
-title_format = "## [{version}] - {project_date}"
-issue_format = "[#{issue}](https://github.com/damien-robotsix/robotsix-chat/issues/{issue})"
-
-[[tool.towncrier.type]]
-directory = "feature"
-name = "Features"
-showcontent = true
-
-[[tool.towncrier.type]]
-directory = "bugfix"
-name = "Bugfixes"
-showcontent = true
-
-[[tool.towncrier.type]]
-directory = "doc"
-name = "Improved Documentation"
-showcontent = true
-
-[[tool.towncrier.type]]
-directory = "removal"
-name = "Deprecations and Removals"
-showcontent = true
-
-[[tool.towncrier.type]]
-directory = "misc"
-name = "Misc"
-showcontent = false
-
-[[tool.towncrier.type]]
-directory = "breaking"
-name = "Breaking Changes"
-showcontent = true
+# Force pypdf>=6.15.0 (transitive dep of cognee) to resolve GHSA-fwg2-594c-jp42.
+# Constraint-dependencies avoids making pypdf a direct (deptry-visible) dependency.
+[tool.uv]
+constraint-dependencies = ["pypdf>=6.15.0"]
 
 [tool.ruff]
 target-version = "py314"
@@ -214,7 +180,7 @@ select = ["E", "F", "I", "UP", "B", "SIM", "S", "D", "FURB", "ARG", "N", "RUF", 
 [tool.mypy]
 python_version = "3.14"
 strict = true
-exclude = ["vulture_whitelist.py", ".local-deps", "_stubs"]
+exclude = ["vulture_whitelist.py", ".local-deps", "_stubs", "src/robotsix_mill/"]
 
 # cognee (the optional `memory` extra) ships no type information.
 [[tool.mypy.overrides]]
@@ -332,7 +298,9 @@ pynacl = ["nacl"]
 # DEP002 ("defined but not used") is expected and intentional.
 # litellm is a transitive dependency of cognee (the memory extra); imported
 # for its Langfuse callback so cognee traffic lands in a separate project.
-DEP001 = ["litellm"]
+# `_check_common` is a workspace-local sibling module imported by the five
+# standalone scripts/check_*.py audit scripts; it is not an installable package.
+DEP001 = ["litellm", "_check_common"]
 DEP002 = ["transformers"]
 # `pydantic_ai` is robotsix-llmio's agent framework: `handle.run` already returns
 # its result objects, and the agent builds a multi-turn `message_history` from

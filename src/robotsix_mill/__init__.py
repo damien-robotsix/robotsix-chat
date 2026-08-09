@@ -65,7 +65,10 @@ _original_load_agent_definition = robotsix_mill.agents.yaml_loader.load_agent_de
 _LOCAL_AGENT_DEFINITIONS = str(_LOCAL_DIR / "agent_definitions")
 
 
-def _load_with_local_overrides(path: Path) -> object:
+from robotsix_mill.agents.yaml_loader import AgentDefinition  # noqa: E402
+
+
+def _load_with_local_overrides(path: Path) -> AgentDefinition:
     local_path = Path(_LOCAL_AGENT_DEFINITIONS) / path.name
     if local_path.is_file():
         return _original_load_agent_definition(local_path)

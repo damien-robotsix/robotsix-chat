@@ -34,13 +34,28 @@ logger = logging.getLogger(__name__)
 # ui/static/chat.js.
 BOOTSTRAP_OWNER = "autonomous"
 
-# Name of the default session definition — synthesized when the config's
-# ``sessions`` list is empty so the pre-existing single-session behavior is
-# preserved out of the box.
+# Name of the default session definition — used as a stable key to identify
+# the bare ``autonomous`` pseudo-owner when a preset is named "default".
+# (No longer auto-synthesized when ``sessions`` is empty — presets are the
+# sole enablement model.)
 DEFAULT_SESSION_NAME = "default"
 
 # Prefix for owner IDs derived from named session definitions.
 _OWNER_ID_PREFIX = "autonomous:"
+
+# Hardcoded disk-persistence path for autonomous session state.
+# Formerly ``autonomous.persist_path`` — now internal-only (not surfaced
+# to the settings panel).
+AUTONOMOUS_PERSIST_PATH = "/data/autonomous_sessions.json"
+
+# Hardcoded default trigger interval (seconds) for synthesized sessions
+# and fallback when a session definition lacks ``trigger_interval_seconds``.
+_DEFAULT_TRIGGER_INTERVAL = 45.0
+
+# Hardcoded pending-subsession wait timeout (seconds).
+# Formerly ``autonomous.pending_subsession_wait_timeout`` — removed from
+# the config model as not an operator-facing setting.
+_PENDING_SUBSESSION_WAIT_TIMEOUT = 600.0
 
 
 def _rejected_subjects_note(aq: AutonomousSession | None) -> str:
@@ -75,26 +90,18 @@ class AutonomousRunner:
         self._event_sink = event_sink
         self._subsession_registry = subsession_registry
         self._refinement_store = refinement_store
-        self._persist_path = Path(settings.autonomous.persist_path)
+        self._persist_path = Path(AUTONOMOUS_PERSIST_PATH)
         self._sessions: dict[str, AutonomousSession] = self._load_sessions()
         # Strong references to in-flight auto-continue tasks (see asyncio
         # docs warning on create_task and weak references).
         self._auto_tasks: set[asyncio.Task[None]] = set()
-        # Resolve session definitions: use the configured list, or synthesize
-        # a default preset when none are configured (backward compat).
+        # Resolve session definitions from the configured presets list.
+        # The settings model ships a default preset in its field default
+        # (``{"name": "default"}``), so a fresh config always has at least
+        # that definition — there is no hidden injection.
         self._definitions = self._resolve_definitions()
 
     # -- settings accessors -----------------------------------------------
-
-    @property
-    def max_auto_turns(self) -> int:
-        """Maximum number of autonomous turns before requiring approval."""
-        return self._settings.autonomous.max_auto_turns
-
-    @property
-    def session_color(self) -> str:
-        """Colour string for autonomous session UI badge."""
-        return self._settings.autonomous.session_color
 
     @property
     def bootstrap_owner(self) -> str:
@@ -165,36 +172,14 @@ class AutonomousRunner:
         )
         return sessions
 
-    # -- session definitions (config or synthesized) ------------------------
-
-    @staticmethod
-    def _synthesize_default_definition(
-        continue_interval_seconds: float,
-    ) -> dict[str, Any]:
-        """Return a single-entry dict with the legacy default definition.
-
-        This is the backward-compat path: when the config's ``sessions``
-        list is empty, the runner creates one default session definition
-        that mirrors the pre-existing single-session behavior exactly.
-        """
-        definition: dict[str, Any] = {
-            "name": DEFAULT_SESSION_NAME,
-            "prompt": "",
-            "trigger_type": "periodic",
-            "trigger_interval_seconds": continue_interval_seconds,
-            "enabled": True,
-            "self_refine": False,
-            "self_refine_require_approval": False,
-        }
-        return {DEFAULT_SESSION_NAME: definition}
+    # -- session definitions (config) --------------------------------------
 
     def _resolve_definitions(self) -> dict[str, Any]:
-        """Build the runtime definition registry from config or defaults.
+        """Build the runtime definition registry from config.
 
-        Returns a ``dict[name, definition_dict]``.  When the configured
-        ``sessions`` list is empty, a single default preset is synthesized
-        so the pre-existing single-session behavior is preserved out of
-        the box.  Only enabled definitions are included.
+        Returns a ``dict[name, definition_dict]``.  Only enabled definitions
+        are included.  When the configured ``sessions`` list is empty, no
+        sessions run — presets are the sole enablement model.
         """
         configured = self._settings.autonomous.sessions
         if configured and isinstance(configured, list):
@@ -206,6 +191,7 @@ class AutonomousRunner:
                     if hasattr(d.trigger_type, "value")
                     else d.trigger_type,
                     "trigger_interval_seconds": d.trigger_interval_seconds,
+                    "max_auto_turns": d.max_auto_turns,
                     "enabled": d.enabled,
                     "self_refine": d.self_refine,
                     "self_refine_require_approval": d.self_refine_require_approval,
@@ -213,9 +199,12 @@ class AutonomousRunner:
                 for d in configured
                 if d.enabled
             }
-        return self._synthesize_default_definition(
-            self._settings.autonomous.continue_interval_seconds
-        )
+        return {}
+
+    @property
+    def definition_count(self) -> int:
+        """Number of enabled session definitions currently loaded."""
+        return len(self._definitions)
 
     def _owner_id_for_definition(self, name: str) -> str:
         """Return the pseudo-owner ID for a session definition *name*."""
@@ -295,6 +284,9 @@ class AutonomousRunner:
         aq = self._sessions.get(session_id)
         if aq is None:
             return
+        # Resolve per-session max_auto_turns from the preset definition.
+        defn = self._definition_for_owner(aq.owner_id)
+        max_turns = defn.get("max_auto_turns", 20) if defn else 20
         self._event_sink.publish(
             session_id,
             autonomous_state_frame(
@@ -302,8 +294,7 @@ class AutonomousRunner:
                 state=aq.state.value,
                 plan_text=aq.plan_text,
                 auto_turn_count=aq.auto_turn_count,
-                max_auto_turns=self._settings.autonomous.max_auto_turns,
-                session_color=self._settings.autonomous.session_color,
+                max_auto_turns=max_turns,
             ),
         )
 
@@ -478,9 +469,9 @@ class AutonomousRunner:
             delay = 0.0
         else:
             interval = (
-                defn.get("trigger_interval_seconds", 45.0)
+                defn.get("trigger_interval_seconds", _DEFAULT_TRIGGER_INTERVAL)
                 if defn
-                else self._settings.autonomous.continue_interval_seconds
+                else _DEFAULT_TRIGGER_INTERVAL
             )
             delay = max(0.0, float(interval))
         try:
@@ -866,21 +857,12 @@ class AutonomousRunner:
                         )
                     prompt = f"{restart_notice}{effective}{rejected_note}"
                 else:
-                    initial_task = self._settings.autonomous.initial_task
-                    if initial_task:
-                        prompt = (
-                            f"{restart_notice}"
-                            "Begin a new autonomous session. "
-                            f"Initial task: {initial_task}"
-                            f"{rejected_note}"
-                        )
-                    else:
-                        prompt = (
-                            f"{restart_notice}"
-                            "Begin a new autonomous session. "
-                            "Pick a subject and draft a plan."
-                            f"{rejected_note}"
-                        )
+                    prompt = (
+                        f"{restart_notice}"
+                        "Begin a new autonomous session. "
+                        "Pick a subject and draft a plan."
+                        f"{rejected_note}"
+                    )
                 reply_parts: list[str] = []
                 async for token in agent.stream(
                     prompt,
@@ -967,7 +949,7 @@ class AutonomousRunner:
         cancellable (``asyncio.sleep`` propagates ``CancelledError``).
         """
         interval = max(0.0, self._settings.autonomous.continue_interval_seconds)
-        timeout = max(0.0, self._settings.autonomous.pending_subsession_wait_timeout)
+        timeout = _PENDING_SUBSESSION_WAIT_TIMEOUT
         step = interval if interval > 0 else 5.0
         if interval > 0:
             await asyncio.sleep(interval)
@@ -989,7 +971,8 @@ class AutonomousRunner:
             return
 
         owner_id = aq.owner_id
-        max_turns = self._settings.autonomous.max_auto_turns
+        defn = self._definition_for_owner(owner_id)
+        max_turns = defn.get("max_auto_turns", 20) if defn else 20
 
         try:
             while True:

@@ -3,10 +3,12 @@
 Exposes :func:`build_lifecycle_tools` — a factory returning LLM tools
 that let the chat agent inspect and (when permitted) mutate the
 central-deploy lifecycle server: list services, check service status and
-health, read configuration and environment, restart services, and update
-service configuration and environment (secrets are masked server-side on
-reads).  Returns no tools when the lifecycle integration is disabled, so
-the chat runs exactly as before.
+health, read environment, restart services, and update service
+environment (secrets are masked server-side on reads).  Configuration
+management is owned by each component internally — no tools are provided
+for reading or writing service configuration through central-deploy.
+Returns no tools when the lifecycle integration is disabled, so the chat
+runs exactly as before.
 
 Also exposes :func:`load_lifecycle_skill` which returns the component skill
 markdown — a description of the lifecycle API surface, allowed operations,
@@ -14,8 +16,8 @@ and mutation endpoints that require the deploy server's per-repo access
 toggle.  Inject this into the agent's system prompt so the LLM knows what
 the tools can and cannot do.
 
-Mutation endpoints (restart, config/env write) are available as tools
-and succeed or fail based on the deploy server's per-repo access toggle
+Mutation endpoints (restart, env write) are available as tools and
+succeed or fail based on the deploy server's per-repo access toggle
 for the calling component.
 """
 
@@ -89,24 +91,6 @@ def build_lifecycle_tools(
         """
         return await client.service_status(service_name)
 
-    async def get_lifecycle_service_config(service_name: str) -> str:
-        """Read the current configuration of a managed service.
-
-        Returns a snapshot of the service's live configuration.  Secret
-        values are already masked as ``***`` server-side — this endpoint
-        never exposes credentials.
-
-        Args:
-            service_name: The service identifier as returned by
-                ``list_lifecycle_services``.
-
-        Returns:
-            The service's configuration (secrets redacted), or an error
-            message.
-
-        """
-        return await client.service_config(service_name)
-
     async def get_lifecycle_service_env(service_name: str) -> str:
         """Read the environment variables of a managed service.
 
@@ -124,45 +108,6 @@ def build_lifecycle_tools(
 
         """
         return await client.service_env(service_name)
-
-    async def watch_service_redeploy(
-        service_name: str,
-        max_wait_seconds: float = 300.0,
-        poll_interval_seconds: float = 15.0,
-    ) -> str:
-        """Watch a lifecycle-managed service until a redeploy is detected.
-
-        Takes a snapshot of the service configuration and polls every
-        *poll_interval_seconds* until the config changes (indicating a
-        redeploy) or *max_wait_seconds* elapses.  Use this after a fix
-        is merged into a component's repo — call it to block until the
-        redeploy completes so you do not keep retrying against the stale
-        deployment.
-
-        This tool will block the agent's turn for up to
-        *max_wait_seconds* — only call it when waiting for a redeploy is
-        the right next action.  If the timeout expires without a change,
-        the tool returns a message suggesting the operator trigger a
-        manual redeploy via the central-deploy dashboard.
-
-        Args:
-            service_name: The lifecycle-registered service to watch
-                (e.g. ``"robotsix-mill"``).
-            max_wait_seconds: Maximum time to wait (default 300 s).
-                The tool returns early as soon as a redeploy is detected.
-            poll_interval_seconds: Seconds between config polls
-                (default 15 s, minimum 5 s).
-
-        Returns:
-            A summary: redeploy detected (with current status), or a
-            timeout message with the recommended next action.
-
-        """
-        return await client.watch_service_redeploy(
-            service_name,
-            max_wait_seconds=max_wait_seconds,
-            poll_interval_seconds=poll_interval_seconds,
-        )
 
     async def restart_lifecycle_service(service_name: str) -> str:
         """Restart a lifecycle-managed service.
@@ -204,31 +149,6 @@ def build_lifecycle_tools(
         """
         return await client.self_restart()
 
-    async def update_lifecycle_service_config(
-        service_name: str, config: dict[str, Any]
-    ) -> str:
-        """Update the configuration of a lifecycle-managed service.
-
-        Sends new configuration values to the deploy server.  Secrets
-        are handled server-side — never pass plaintext credentials.
-        The update is permitted only when the deploy server's per-repo
-        access toggle is enabled for this component — otherwise the
-        call returns a 403 error.
-
-        Args:
-            service_name: The service identifier as returned by
-                ``list_lifecycle_services`` (e.g. ``"chat"``).
-            config: A dictionary of configuration key/value pairs to
-                update (not a full replacement — only the provided
-                keys are changed).
-
-        Returns:
-            The update result or an error message (including 403 when
-            the per-repo access toggle is not enabled).
-
-        """
-        return await client.update_service_config(service_name, config)
-
     async def update_lifecycle_service_env(
         service_name: str, env: dict[str, Any]
     ) -> str:
@@ -257,11 +177,8 @@ def build_lifecycle_tools(
     return [
         list_lifecycle_services,
         get_lifecycle_service_status,
-        get_lifecycle_service_config,
         get_lifecycle_service_env,
-        watch_service_redeploy,
         restart_lifecycle_service,
-        update_lifecycle_service_config,
         update_lifecycle_service_env,
         self_restart,
     ]

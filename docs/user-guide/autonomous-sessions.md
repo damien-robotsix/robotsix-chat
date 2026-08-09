@@ -5,18 +5,18 @@ step-by-step plan, presents the plan to the operator for review, then — once t
 on the plan — executes it through tool calls. Sessions stay open after completion; the operator
 explicitly closes them.
 
-**Named session definitions** let you configure multiple autonomous sessions with distinct prompts
-and restart triggers. Out of the box, a single `"default"` session is synthesized that matches the
-pre-existing single-session behavior exactly — no configuration is required to get started.
+**Session presets in `autonomous.sessions` are the sole enablement model.** A preset that exists and
+has `"enabled": true` IS the enablement — there is no separate master switch. When the sessions list
+is empty, no autonomous sessions run. Define at least one preset to get started.
 
 ______________________________________________________________________
 
 ## Overview
 
-When autonomous mode is enabled (`autonomous.enabled=true`), each configured session runs an
-independent loop over its own pseudo-owner (`autonomous` for the `"default"` preset,
-`autonomous:<name>` for named sessions). A session cannot overlap with itself: a new run does not
-start while the previous run of the same session is active.
+Each configured session preset in `autonomous.sessions` runs an independent loop over its own
+pseudo-owner (`autonomous` for the `"default"` preset, `autonomous:<name>` for named sessions). A
+session cannot overlap with itself: a new run does not start while the previous run of the same
+session is active.
 
 ### Lifecycle
 
@@ -43,16 +43,31 @@ ______________________________________________________________________
 
 ## Getting started (default preset)
 
-If you change nothing, the runner synthesizes a single session named `"default"`:
+Add a session preset named `"default"` to `autonomous.sessions` to start the simplest autonomous
+session:
 
-- **Prompt**: the standard "Pick a subject and draft a plan" prompt (or `autonomous.initial_task`
-  when set).
-- **Trigger**: `periodic` — it restarts `autonomous.continue_interval_seconds` (default 45 s) after
-  completion.
+```json
+"autonomous": {
+  "sessions": [
+    {
+      "name": "default",
+      "prompt": "",
+      "trigger_type": "periodic",
+      "trigger_interval_seconds": 45.0,
+      "max_auto_turns": 20,
+      "enabled": true
+    }
+  ]
+}
+```
+
+- **Prompt**: the standard "Pick a subject and draft a plan" prompt.
+- **Trigger**: `periodic` — it restarts after the configured `trigger_interval_seconds` (default 45
+  s) after completion.
 - **Owner**: `autonomous`.
 
-This preserves the pre-existing behavior exactly — the `GET /sessions?owner_id=autonomous` endpoint
-and the `[AUTONOMOUS]` badge keep working.
+This gives you a single periodic autonomous session surfacing under the `[AUTONOMOUS]` badge at
+`GET /sessions?owner_id=autonomous`.
 
 ______________________________________________________________________
 
@@ -127,7 +142,13 @@ ______________________________________________________________________
 - **Dedup / lock** — a session cannot overlap with itself. A manual trigger returns `409` while a
   run of the same definition is active.
 - **Confirmation gating** — confirmation-gated mutations remain gated inside autonomous runs; the
-  agent still drafts a plan and awaits operator approval before executing tool calls.
+  agent still drafts a plan and awaits operator approval before executing tool calls. The one
+  exception: a **user-requested ticket** (one the operator explicitly asks the agent to file, e.g.
+  "file a ticket for X") is treated as pre-authorized — the agent includes `kind: user-request` and
+  `priority: high` markers in the ticket metadata and immediately approves it out of
+  draft/`human_issue_approval` in the same turn, since the filing request constitutes consent for
+  both filing and approval. Auto-filed chores and feedback tickets still flow through the normal
+  approval gate.
 - **Auditability** — each run records its definition name, trigger reason, start/end and summary, so
   autonomous activity is traceable.
 

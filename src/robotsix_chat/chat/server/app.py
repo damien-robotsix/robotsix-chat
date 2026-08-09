@@ -81,8 +81,8 @@ from .routes import (
     autonomous_refinements_reset_endpoint,
     cancel_queued_endpoint,
     chat_endpoint,
+    chat_skill_endpoint,
     config_get_endpoint,
-    config_import_endpoint,
     config_rollback_endpoint,
     config_save_endpoint,
     config_versions_endpoint,
@@ -100,6 +100,7 @@ from .routes import (
     health_endpoint,
     history_endpoint,
     http_exception_handler,
+    mill_events_endpoint,
     not_found_handler,
     prune_endpoint,
     server_error_handler,
@@ -405,6 +406,7 @@ def create_app(
         Route("/health", health_endpoint, methods=["GET"]),
         Route("/admin/disk", disk_usage_endpoint, methods=["GET"]),
         Route("/admin/prune", prune_endpoint, methods=["POST"]),
+        Route("/mill-events", mill_events_endpoint, methods=["POST"]),
         Route("/chat", chat_endpoint, methods=["POST"]),
         Route("/chat/queue/cancel", cancel_queued_endpoint, methods=["POST"]),
         Route("/events", events_endpoint, methods=["GET"]),
@@ -504,11 +506,11 @@ def create_app(
             github_job_log_endpoint,
             methods=["GET"],
         ),
+        Route("/chat-skill", chat_skill_endpoint, methods=["GET"]),
         Route("/config", config_get_endpoint, methods=["GET"]),
         Route("/config", config_save_endpoint, methods=["PUT"]),
         Route("/config/versions", config_versions_endpoint, methods=["GET"]),
         Route("/config/rollback", config_rollback_endpoint, methods=["POST"]),
-        Route("/config/import", config_import_endpoint, methods=["POST"]),
         Route(
             "/diagnostics/events",
             diagnostics_create_endpoint,
@@ -684,6 +686,22 @@ def _inject_skills(
     if style:
         instruction = f"{instruction}\n\n{style}"
 
+    # Pre-authorized low-risk actions — injected early so they take
+    # precedence over the base instruction's default gating rules.
+    if settings.low_risk_actions:
+        actions_list = "\n".join(
+            f"    – {action}" for action in settings.low_risk_actions
+        )
+        instruction = (
+            f"{instruction}\n\n"
+            "Pre-authorized low-risk actions:\n"
+            "– The following actions are pre-authorized by the operator and "
+            "do NOT require confirmation — execute them without asking:\n"
+            f"{actions_list}\n"
+            "– For these pre-authorized actions, the default "
+            "ask-before-acting gate is lifted.  Act on them proactively."
+        )
+
     if bare:
         return instruction
 
@@ -693,7 +711,8 @@ def _inject_skills(
             f"{instruction}\n\n"
             "Component access:\n"
             "– You have one generic tool for calling external components: "
-            "component_request(component_id, method, path, json_body=None). "
+            "component_request(component_id, method, path, json_body=None, "
+            "params=None). "
             "Each component declares its own API surface as a skill — read "
             "the skill descriptions below for allowed operations.\n"
             "– Obey each component skill's safety section. When a skill marks "
@@ -767,7 +786,11 @@ def _build_static_tools(
         *build_mail_tools(settings.mail),
         *build_component_tools(settings.component_client),
         *build_refdocs_tools(settings.refdocs, settings.direct_repo),
-        *build_repo_study_tools(settings.repo_study, settings.direct_repo),
+        *build_repo_study_tools(
+            settings.repo_study,
+            settings.direct_repo,
+            diagnostic_store=diagnostic_store,
+        ),
         *build_direct_repo_tools(
             settings.direct_repo, component_request=component_request
         ),
@@ -779,9 +802,9 @@ def _build_static_tools(
         *build_version_check_tools(settings.version_check, settings.direct_repo),
         *build_lifecycle_tools(settings.lifecycle),
         *build_render_url_tools(settings.render_url),
-        *build_http_probe_tools(settings.http_probe),
+        *build_http_probe_tools(settings.http_probe, settings.central_deploy),
         *build_docker_digest_tools(settings.docker_digest),
-        *build_public_fetch_tools(settings.public_fetch),
+        *build_public_fetch_tools(settings.public_fetch, settings.central_deploy),
         *build_langfuse_inspect_tools(settings.langfuse_inspect, settings.langfuse),
         *build_sftp_tools(settings.sftp),
         *build_ticket_poll_tools(settings, component_request=component_request),

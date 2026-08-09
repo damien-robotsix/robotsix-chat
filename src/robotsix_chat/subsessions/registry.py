@@ -330,6 +330,9 @@ class SubsessionRegistry:
         # dedup_key → sub_id for active subsessions — prevents
         # duplicate side-chats for the same known global issue.
         self._active_dedup_keys: dict[str, str] = {}
+        # ticket_id -> set of sub_ids for WAIT_FOR_EVENT subsessions
+        # currently blocked in the event wait loop.
+        self._event_waiters: dict[str, set[str]] = defaultdict(set)
 
         # Extracted collaborators.
         self._store = RegistryStore(
@@ -368,6 +371,7 @@ class SubsessionRegistry:
         checkpoint: dict[str, object] | None = None,
         dedup_key: str | None = None,
         retry_count: int = 0,
+        event_timeout_seconds: float | None = None,
     ) -> SubsessionInfo:
         """Register a new subsession and publish ``subsession_started``.
 
@@ -392,8 +396,28 @@ class SubsessionRegistry:
         if sub_id is not None and sub_id in self._subs:
             return self._subs[sub_id]
         now = self._clock()
+        resolved_id = sub_id or self._id_factory()
+        # Run dedup checks BEFORE inserting the entry so a failure
+        # (e.g. self-match on a resumed periodic with
+        # dedup_key == checkpoint.ticket_id) does not leave a
+        # half-registered RUNNING entry with no worker task attached.
+        if dedup_key is not None:
+            existing_id = self._active_dedup_keys.get(dedup_key)
+            if existing_id is not None:
+                existing_info = self._subs.get(existing_id)
+                if existing_info is not None and existing_info.is_active:
+                    raise SubsessionDedupError(existing_id)
+                # Stale entry — clean up proactively.
+                self._active_dedup_keys.pop(dedup_key, None)
+            # Cross-reference: a PERIODIC subsession may have been
+            # created without a dedup_key but recorded the watched
+            # ticket_id in its checkpoint after the first run.
+            if kind in (SubsessionKind.PERIODIC, SubsessionKind.WAIT_FOR_EVENT):
+                cp_match = self.find_active_periodic_by_ticket_id(dedup_key)
+                if cp_match is not None:
+                    raise SubsessionDedupError(cp_match)
         info = SubsessionInfo(
-            id=sub_id or self._id_factory(),
+            id=resolved_id,
             kind=kind,
             owner_session_id=owner_session_id,
             parent_id=parent_id,
@@ -413,26 +437,13 @@ class SubsessionRegistry:
             checkpoint=checkpoint,
             dedup_key=dedup_key,
             retry_count=retry_count,
+            event_timeout_seconds=event_timeout_seconds,
         )
         self._subs[info.id] = info
         self._inboxes[info.id] = deque()
         self._wake_events[info.id] = asyncio.Event()
         self._by_owner[owner_session_id].add(info.id)
         if dedup_key is not None:
-            existing_id = self._active_dedup_keys.get(dedup_key)
-            if existing_id is not None:
-                existing_info = self._subs.get(existing_id)
-                if existing_info is not None and existing_info.is_active:
-                    raise SubsessionDedupError(existing_id)
-                # Stale entry — clean up proactively.
-                self._active_dedup_keys.pop(dedup_key, None)
-            # Cross-reference: a PERIODIC subsession may have been
-            # created without a dedup_key but recorded the watched
-            # ticket_id in its checkpoint after the first run.
-            if kind is SubsessionKind.PERIODIC:
-                cp_match = self.find_active_periodic_by_ticket_id(dedup_key)
-                if cp_match is not None:
-                    raise SubsessionDedupError(cp_match)
             self._active_dedup_keys[dedup_key] = info.id
         self._store.prune_terminal()
         self._publish(owner_session_id, subsession_started_frame(info.snapshot()))
@@ -935,42 +946,35 @@ class SubsessionRegistry:
         self._store.persist()
         return True
 
-    def update_prompt(self, sub_id: str, new_prompt: str) -> bool:
-        """Replace the prompt for *sub_id* and persist.
+    def update_periodic_config(
+        self,
+        sub_id: str,
+        *,
+        prompt: str | None = None,
+        interval_seconds: float | None = None,
+        max_runs: int | None = None,
+    ) -> bool:
+        """Update the run configuration of an active periodic subsession.
+
+        Only *prompt* (instructions), *interval_seconds*, and *max_runs*
+        are accepted — the run counter is never reset, so self-update
+        cannot bypass max-run limits.  Fields left at ``None`` are not
+        touched.
 
         Returns ``True`` when the update was applied; ``False`` when the
-        subsession is unknown or no longer active.
+        subsession is unknown or not an active periodic.
         """
         info = self._subs.get(sub_id)
         if info is None or not info.is_active:
             return False
-        info.prompt = new_prompt
-        self._store.persist()
-        return True
-
-    def update_interval(self, sub_id: str, new_interval: float) -> bool:
-        """Replace the interval_seconds for *sub_id* and persist.
-
-        Returns ``True`` when the update was applied; ``False`` when the
-        subsession is unknown or no longer active.
-        """
-        info = self._subs.get(sub_id)
-        if info is None or not info.is_active:
+        if info.kind is not SubsessionKind.PERIODIC:
             return False
-        info.interval_seconds = new_interval
-        self._store.persist()
-        return True
-
-    def update_max_runs(self, sub_id: str, new_max_runs: int) -> bool:
-        """Replace the max_runs for *sub_id* and persist.
-
-        Returns ``True`` when the update was applied; ``False`` when the
-        subsession is unknown or no longer active.
-        """
-        info = self._subs.get(sub_id)
-        if info is None or not info.is_active:
-            return False
-        info.max_runs = new_max_runs
+        if prompt is not None:
+            info.prompt = prompt
+        if interval_seconds is not None:
+            info.interval_seconds = interval_seconds
+        if max_runs is not None:
+            info.max_runs = max_runs
         self._store.persist()
         return True
 
@@ -993,21 +997,30 @@ class SubsessionRegistry:
         return sub_id
 
     def find_active_periodic_by_ticket_id(self, ticket_id: str) -> str | None:
-        """Return the id of an active PERIODIC sub whose checkpoint carries *ticket_id*.
+        """Return the id of an active PERIODIC or WAIT_FOR_EVENT.
+
+        subsession whose checkpoint carries *ticket_id*.
 
         Returns ``None`` when no match is found.
 
-        This is a cross-reference complement to ``is_dedup_key_active``:
-        a periodic monitor may have been spawned without a dedup_key (the
-        agent forgot), but after its first run the checkpoint records the
-        watched ``ticket_id``.  When a new spawn arrives WITH a dedup_key,
-        this method catches the match that ``is_dedup_key_active`` misses
-        because the original dedup_key was never set.
+        This is a cross-reference complement to
+        ``is_dedup_key_active``: a monitor may have been
+        spawned without a dedup_key (the agent forgot), but
+        after its first run the checkpoint records the
+        watched ``ticket_id``.  When a new spawn arrives
+        WITH a dedup_key, this method catches the match
+        that ``is_dedup_key_active`` misses because the
+        original dedup_key was never set.
         """
-        from .models import SubsessionKind as _SubsessionKind
-
         for info in self._subs.values():
-            if info.kind is not _SubsessionKind.PERIODIC or not info.is_active:
+            if (
+                info.kind
+                not in (
+                    SubsessionKind.PERIODIC,
+                    SubsessionKind.WAIT_FOR_EVENT,
+                )
+                or not info.is_active
+            ):
                 continue
             cp = info.checkpoint
             if cp is None:
@@ -1016,6 +1029,59 @@ class SubsessionRegistry:
             if isinstance(cp_ticket_id, str) and cp_ticket_id == ticket_id:
                 return info.id
         return None
+
+    def register_event_waiter(self, sub_id: str, ticket_id: str) -> None:
+        """Register *sub_id* as waiting for events on *ticket_id*."""
+        self._event_waiters[ticket_id].add(sub_id)
+
+    def unregister_event_waiter(self, sub_id: str, ticket_id: str) -> None:
+        """Remove *sub_id* from the event-waiter set for *ticket_id*."""
+        waiters = self._event_waiters.get(ticket_id)
+        if waiters is not None:
+            waiters.discard(sub_id)
+            if not waiters:
+                del self._event_waiters[ticket_id]
+
+    def route_mill_event(self, ticket_id: str, event_payload: dict[str, object]) -> int:
+        """Route an incoming mill state-change event to waiting monitors."""
+        waiters = self._event_waiters.get(ticket_id)
+        if not waiters:
+            return 0
+
+        old_state = event_payload.get("old_state", "")
+        new_state = event_payload.get("new_state", "")
+        timestamp = event_payload.get("timestamp", "")
+        event_text = (
+            f"Mill event: ticket {ticket_id} state changed from "
+            f"'{old_state}' to '{new_state}' at {timestamp}. "
+            f"This event was pushed from the mill — you MUST verify "
+            f"the current state via a live GET of the ticket API "
+            f"before acting on it."
+        )
+
+        woken = 0
+        for sub_id in list(waiters):
+            if self.enqueue_message(sub_id, "system", event_text):
+                woken += 1
+            else:
+                waiters.discard(sub_id)
+
+        if not waiters:
+            del self._event_waiters[ticket_id]
+
+        if woken:
+            logger.info(
+                "Routed mill event for ticket %s to %d monitor(s).",
+                ticket_id,
+                woken,
+            )
+        else:
+            logger.debug(
+                "Mill event for ticket %s had no active waiters — ignored.",
+                ticket_id,
+            )
+
+        return woken
 
     def is_duplicate_ticket_terminal(self, ticket_id: str, exclude_sub_id: str) -> bool:
         """Check for a duplicate terminal report for *ticket_id*.

@@ -23,6 +23,12 @@ import re
 import sys
 from pathlib import Path
 
+from _check_common import (
+    iter_matching_strings,
+    parse_str_enum,
+    run_consistency_checks,
+)
+
 # ---------------------------------------------------------------------------
 # Step 1 — extract canonical SubsessionStatus values from models.py
 # ---------------------------------------------------------------------------
@@ -32,26 +38,6 @@ _STATUS_VALUE_RE = re.compile(r'^\s+(\w+)\s*=\s*"(?P<value>[^"]+)"')
 
 # Matches the start of the SubsessionStatus class.
 _CLASS_HEADER_RE = re.compile(r"^class SubsessionStatus\(StrEnum\):")
-
-
-def _parse_subsession_statuses(models_path: Path) -> dict[str, str]:
-    """Return {constant_name: value} for every SubsessionStatus member."""
-    lines = models_path.read_text(encoding="utf-8").splitlines()
-    in_class = False
-    canonical: dict[str, str] = {}
-    for line in lines:
-        if _CLASS_HEADER_RE.match(line.rstrip()):
-            in_class = True
-            continue
-        if in_class:
-            # Class body ended — dedented or next class.
-            if line and not line[0].isspace():
-                break
-            m = _STATUS_VALUE_RE.match(line.rstrip())
-            if m:
-                canonical[m.group(1)] = m.group("value")
-    return canonical
-
 
 # ---------------------------------------------------------------------------
 # Step 2 — find SubsessionStatus-looking string literals in chat.js
@@ -66,28 +52,13 @@ _STATUS_COMPARISON_RE = re.compile(
 _STATUS_FALLBACK_RE = re.compile(r'sub\.status\s*\|\|\s*"(?P<status>[a-z_][a-z_0-9]*)"')
 
 
-def _iter_js_status_strings(js_path: Path) -> list[str]:
-    """Yield every sub.status comparison / fallback string literal in the JS."""
-    text = js_path.read_text(encoding="utf-8")
-    found: list[str] = []
-    for m in _STATUS_COMPARISON_RE.finditer(text):
-        found.append(m.group("status"))
-    for m in _STATUS_FALLBACK_RE.finditer(text):
-        found.append(m.group("status"))
-    return found
-
-
 def main() -> int:
     """Check SubsessionStatus string consistency and return 0 (ok) or 1 (violations)."""
     repo_root = Path(__file__).resolve().parent.parent
     models_py = repo_root / "src" / "robotsix_chat" / "subsessions" / "models.py"
     chat_js = repo_root / "src" / "robotsix_chat" / "ui" / "static" / "chat.js"
 
-    # ------------------------------------------------------------------
-    # Parse canonical constants
-    # ------------------------------------------------------------------
-    canonical = _parse_subsession_statuses(models_py)
-
+    canonical = parse_str_enum(models_py, _CLASS_HEADER_RE, _STATUS_VALUE_RE)
     if not canonical:
         print(
             "ERROR: no SubsessionStatus members found in"
@@ -96,31 +67,21 @@ def main() -> int:
         )
         return 1
 
-    canonical_values: set[str] = set(canonical.values())
+    canonical_values = set(canonical.values())
+    js_values = set(
+        iter_matching_strings(chat_js, _STATUS_COMPARISON_RE, _STATUS_FALLBACK_RE)
+    )
 
-    # ------------------------------------------------------------------
-    # Collect status-comparison strings from chat.js
-    # ------------------------------------------------------------------
-    js_strings = _iter_js_status_strings(chat_js)
-    js_values: set[str] = set(js_strings)
-
-    violations = False
-
-    # ------------------------------------------------------------------
-    # Check: JS status string not in canonical set
-    # ------------------------------------------------------------------
-    unrecognised = js_values - canonical_values
-    if unrecognised:
-        violations = True
-        print(
+    violations = run_consistency_checks(
+        canonical_values=canonical_values,
+        scanned_values=js_values,
+        missing_label=None,
+        unrecognised_label=(
             "Unrecognised SubsessionStatus strings in chat.js"
             " (sub.status comparisons / fallback defaults —"
-            " no matching Python constant):",
-            file=sys.stderr,
-        )
-        for val in sorted(unrecognised):
-            print(f"  {val}", file=sys.stderr)
-        print(file=sys.stderr)
+            " no matching Python constant):"
+        ),
+    )
 
     if violations:
         print(

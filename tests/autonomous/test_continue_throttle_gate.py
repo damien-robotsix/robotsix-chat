@@ -12,13 +12,10 @@ from robotsix_chat.autonomous.runner import AutonomousRunner
 from robotsix_chat.chat.conversation import ConversationStore
 
 
-def _runner(
-    registry: object | None, interval: float = 1.0, timeout: float = 5.0
-) -> AutonomousRunner:
+def _runner(registry: object | None, interval: float = 1.0) -> AutonomousRunner:
     settings = MagicMock()
-    settings.autonomous.persist_path = "/tmp/does-not-exist-autonomous.json"  # noqa: S108
+    settings.autonomous.persist_path = "/does-not-exist-autonomous.json"
     settings.autonomous.continue_interval_seconds = interval
-    settings.autonomous.pending_subsession_wait_timeout = timeout
     return AutonomousRunner(
         settings=settings,
         conversation_store=ConversationStore(),
@@ -165,7 +162,7 @@ async def test_wait_before_continue_gates_until_clear(
         [SimpleNamespace(is_active=False, kind="task")],
     ]
     monkeypatch.setattr("robotsix_chat.autonomous.runner.asyncio.sleep", fake_sleep)
-    await _runner(reg, interval=1.0, timeout=100.0)._wait_before_continue("s1")
+    await _runner(reg, interval=1.0)._wait_before_continue("s1")
     # 1 throttle sleep + 2 gate sleeps while pending
     assert len(slept) == 3
 
@@ -180,25 +177,34 @@ async def test_wait_before_continue_bounded_by_timeout(
     async def fake_sleep(d: float) -> None:
         slept.append(d)
 
+    monkeypatch.setattr(
+        "robotsix_chat.autonomous.runner._PENDING_SUBSESSION_WAIT_TIMEOUT", 3.0
+    )
+
     reg = MagicMock()
     reg.list_for_owner.return_value = [
         SimpleNamespace(is_active=True, kind="task")  # never clears
     ]
     monkeypatch.setattr("robotsix_chat.autonomous.runner.asyncio.sleep", fake_sleep)
-    await _runner(reg, interval=1.0, timeout=3.0)._wait_before_continue("s1")
+    await _runner(reg, interval=1.0)._wait_before_continue("s1")
     # throttle(1) + gate sleeps until waited >= timeout(3): total sleeps bounded
     assert sum(slept) >= 3.0
     assert len(slept) <= 5  # bounded, not infinite
 
 
 @pytest.mark.asyncio
-async def test_auto_continue_suppressed_for_active_periodic_subsession() -> None:
+async def test_auto_continue_suppressed_for_active_periodic_subsession(
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
     """Auto-continue skips the turn when a periodic subsession is sleeping.
 
     A periodic monitor between ticks (status SLEEPING) is still active,
     so the auto-continue loop must suppress the "Continue." prompt and
     wait for the subsession to clear before proceeding.
     """
+    monkeypatch.setattr(
+        "robotsix_chat.autonomous.runner._PENDING_SUBSESSION_WAIT_TIMEOUT", 0.0
+    )
     store = ConversationStore()
     settings = MagicMock()
     settings.autonomous.max_auto_turns = 20

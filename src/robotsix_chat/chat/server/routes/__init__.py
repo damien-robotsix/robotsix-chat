@@ -19,9 +19,11 @@ from .chat import (
     cancel_queued_endpoint,
     chat_endpoint,
 )
+from .chat_skill import (
+    chat_skill_endpoint,
+)
 from .config import (
     config_get_endpoint,
-    config_import_endpoint,
     config_rollback_endpoint,
     config_save_endpoint,
     config_versions_endpoint,
@@ -57,6 +59,9 @@ from .github import (
     github_job_log_endpoint,
     github_repo_create_endpoint,
     github_settings_endpoint,
+)
+from .mill_events import (
+    mill_events_endpoint,
 )
 from .sessions import (
     _cleanup_session,
@@ -108,8 +113,8 @@ __all__ = [
     "autonomous_refinements_reset_endpoint",
     "cancel_queued_endpoint",
     "chat_endpoint",
+    "chat_skill_endpoint",
     "config_get_endpoint",
-    "config_import_endpoint",
     "config_rollback_endpoint",
     "config_save_endpoint",
     "config_versions_endpoint",
@@ -127,6 +132,7 @@ __all__ = [
     "health_endpoint",
     "history_endpoint",
     "http_exception_handler",
+    "mill_events_endpoint",
     "not_found_handler",
     "prune_endpoint",
     "server_error_handler",

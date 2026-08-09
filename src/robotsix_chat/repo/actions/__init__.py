@@ -182,10 +182,13 @@ def build_github_actions_tools(
             if not jobs:
                 return (
                     f"Workflow run {run_id} on {repo_full_name} has no jobs — "
-                    f"this is a strong signal that GitHub Actions billing "
-                    f"is not enabled for this private repository. "
-                    f"Check the repo's Settings > Actions > General, "
-                    f"or verify billing at the organisation level."
+                    f"this may indicate that GitHub Actions billing "
+                    f"is not enabled for this private repository, or that the "
+                    f"workflow trigger is misconfigured (e.g. only triggers on "
+                    f"``push`` to ``main``, not on the event that created this "
+                    f"run).  Check the workflow's ``on:`` trigger in "
+                    f"``.github/workflows/``, and verify billing at "
+                    f"Settings > Actions > General."
                 )
             lines: list[str] = [
                 f"Workflow run {run_id} on {repo_full_name} — {len(jobs)} job(s):"
@@ -210,7 +213,7 @@ def build_github_actions_tools(
             )
 
         # Check for billing-failure signature first
-        billing_diag = actions._diagnose_billing_failure(runs)
+        billing_diag = await actions._diagnose_billing_failure(runs, repo_full_name)
         if billing_diag:
             return billing_diag
 
@@ -265,9 +268,56 @@ def build_github_actions_tools(
 
         return await actions.get_workflow_run_annotations(repo_full_name, run_id)
 
+    async def fetch_job_log(
+        repo_name: str,
+        job_id: int,
+    ) -> str:
+        """Fetch the raw plain-text log for a GitHub Actions job.
+
+        The GitHub API returns a 302 redirect to a signed URL; this tool
+        follows it server-side and returns the log content directly.
+        Long logs are truncated at 8000 characters.
+
+        Use this as a fallback when ``fetch_workflow_run_annotations``
+        returns a permission error (403) — job logs use a different API
+        endpoint that may still be accessible.
+
+        **Read-only.**  Does not modify any repository state.
+
+        Args:
+            repo_name: Repository name (not owner/name) — the org is
+                configured server-side (default ``damien-robotsix``).
+            job_id: The GitHub Actions job ID (integer, found in the
+                Actions tab URL or from ``check_workflow_run`` output).
+
+        Returns:
+            The raw job log text (possibly truncated), or an error message.
+
+        """
+        repo_full_name = f"{org}/{repo_name}"
+
+        if scope_error := await client.check_installation_scope(repo_full_name):
+            return scope_error
+
+        try:
+            log = await actions.get_job_log(repo_full_name, job_id)
+        except RuntimeError as exc:
+            return (
+                f"Error fetching job log for job {job_id} on "
+                f"{repo_full_name}: {exc}\n\n"
+                f"**Suggestion:** check the logs manually at "
+                f"https://github.com/{repo_full_name}"
+                f"/actions/runs?query=job_id%3A{job_id}"
+            )
+
+        if len(log) > 8000:
+            log = log[:8000] + "\n\n... [log truncated at 8000 chars]"
+        return log
+
     return [
         set_actions_secret,
         dispatch_workflow,
         check_workflow_run,
         fetch_workflow_run_annotations,
+        fetch_job_log,
     ]
