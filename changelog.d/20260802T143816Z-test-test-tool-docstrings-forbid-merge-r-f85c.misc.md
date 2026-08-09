@@ -1,0 +1,1 @@
+Remove a dead guard clause and a stale docstring reference to the non-existent `merge_pr` tool in `test_tool_docstrings_forbid_merge`; the real merge tools (`merge_direct_repo_pr`, `arm_direct_repo_auto_merge`) were already handled by `merge_tool_names`, per the AGENT.md rule that agent-facing docs name exported tools, never internal client methods.
