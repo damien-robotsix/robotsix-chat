@@ -1762,6 +1762,20 @@ async def _run_periodic_turn(
         )
         if closed is not None:
             await env.delivery.deliver_summary(closed, summary, "no_change_auto_stop")
+        if env.event_sink is not None:
+            ticket_id_raw = checkpoint.get("ticket_id")
+            ticket_id = ticket_id_raw if isinstance(ticket_id_raw, str) else ""
+            last_known = checkpoint.get("last_known_state", "")
+            env.event_sink.publish(
+                info.owner_session_id,
+                {
+                    "type": SSE_NOTIFICATION_TYPE,
+                    "title": f"Monitor auto-stopped: {info.title}",
+                    "body": (f"Tracked ticket {ticket_id} ({last_known}) — {summary}"),
+                    "urgency": "low",
+                    "link": ticket_id,
+                },
+            )
         return None
 
     # Sleep until the next tick, waking early on a steering message.
