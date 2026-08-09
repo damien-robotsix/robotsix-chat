@@ -411,7 +411,9 @@ class MessageCoalescer:
                 raise
             except Exception as exc:
                 logger.exception("Agent stream error")
-                await self._fan_out(pending, SSE_ERROR_TYPE, str(exc))
+                await self._fan_out(
+                    pending, SSE_ERROR_TYPE, str(exc) or type(exc).__name__
+                )
                 if publish_turn:
                     event_bus.end_turn(session_id, turn_id, error=str(exc))
 

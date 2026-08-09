@@ -1311,11 +1311,12 @@ async def test_retry_on_5xx_for_get(
 async def test_retry_on_empty_exception_message(
     respx_mock: respx.MockRouter,
 ) -> None:
-    """Exception("") is no longer considered transient by the library."""
+    """Exception("") is not transient, and the error falls back to Exception."""
     roster = [{"id": "mill", "base_url": "http://m:8080", "skill": "..."}]
     route = respx_mock.get("http://m:8080/tickets").mock(side_effect=Exception(""))
     result = await _component_request_impl(roster, "mill", "GET", "/tickets")
     assert "Error calling" in result
+    assert "Exception" in result
     assert route.call_count == 1
 
 
