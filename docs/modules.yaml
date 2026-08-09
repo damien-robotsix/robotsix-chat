@@ -77,6 +77,7 @@ modules:
       - changelog.d/20260801T100719Z-agent-md-direct-repo-tool-documentation-b0a2.doc.md
       - changelog.d/20260801T113548Z-agent-md-testing-conventions-any-change-4441.doc.md
       - changelog.d/20260801T104213Z-make-github-monitoring-subsessions-resil-601a.bugfix.md
+      - changelog.d/20260802T005236Z-improve-ci-startup-failure-diagnostics-t-93b9.bugfix.md
       - changelog.d/20260802T005237Z-auto-prioritize-user-requested-tickets-t-46db.misc.md
       - changelog.d/20260802T005450Z-correct-monitor-status-reporting-to-dist-a2ac.bugfix.md
       - release-please-config.json

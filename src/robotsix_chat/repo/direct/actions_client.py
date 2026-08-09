@@ -79,6 +79,7 @@ class ActionsClient:
         repo_full_name: str,
         *,
         branch: str | None = None,
+        head_sha: str | None = None,
         per_page: int = 10,
     ) -> list[dict[str, Any]]:
         """List recent workflow runs for a repository.
@@ -88,6 +89,8 @@ class ActionsClient:
         Args:
             repo_full_name: ``"owner/name"``.
             branch: Optional branch filter.
+            head_sha: Optional commit SHA filter — only returns runs
+                triggered by this commit.
             per_page: Results per page (default 10).
 
         Returns:
@@ -97,6 +100,8 @@ class ActionsClient:
         params = f"?per_page={min(max(per_page, 1), 100)}"
         if branch:
             params += f"&branch={branch}"
+        if head_sha:
+            params += f"&head_sha={head_sha}"
         try:
             data = await self._client._get_json(
                 f"/repos/{repo_full_name}/actions/runs{params}"
@@ -357,10 +362,13 @@ class ActionsClient:
         if not jobs:
             return (
                 f"Workflow run {run_id} on {repo_full_name} has no jobs — "
-                f"this is a strong signal that GitHub Actions billing "
-                f"is not enabled for this private repository. "
-                f"Check the repo's Settings > Actions > General, "
-                f"or verify billing at the organisation level."
+                f"this may indicate that GitHub Actions billing "
+                f"is not enabled for this private repository, or that the "
+                f"workflow trigger is misconfigured (e.g. only triggers on "
+                f"``push`` to ``main``, not on the event that created this "
+                f"run).  Check the workflow's ``on:`` trigger in "
+                f"``.github/workflows/``, and verify billing at "
+                f"Settings > Actions > General."
             )
 
         # Collect logs for failed / cancelled / timed-out jobs.
@@ -679,14 +687,58 @@ class ActionsClient:
 
     # -- billing failure diagnosis -----------------------------------------
 
-    def _diagnose_billing_failure(
+    async def _other_workflows_succeeded_on_commit(
+        self,
+        repo_full_name: str,
+        head_sha: str,
+        exclude_run_id: int | None = None,
+    ) -> bool:
+        """Check whether any workflow run on *head_sha* completed successfully.
+
+        Excludes *exclude_run_id* (the run we are currently diagnosing).
+        Returns ``True`` when at least one other workflow run on the same
+        commit has ``conclusion="success"`` — this rules out a billing
+        issue because billing would block **all** workflows, not just one.
+
+        Returns ``False`` when the check cannot confirm a successful
+        sibling run (no other runs, all failed, or an API error).
+        """
+        try:
+            sibling_runs = await self.list_workflow_runs(
+                repo_full_name, head_sha=head_sha, per_page=30
+            )
+        except Exception:
+            logger.debug(
+                "Could not list sibling runs for head_sha %s on %s",
+                head_sha,
+                repo_full_name,
+            )
+            return False
+
+        for sibling in sibling_runs:
+            if exclude_run_id is not None and sibling.get("id") == exclude_run_id:
+                continue
+            if str(sibling.get("conclusion", "")).lower() == "success":
+                return True
+
+        return False
+
+    async def _diagnose_billing_failure(
         self,
         runs: list[dict[str, Any]],
+        repo_full_name: str,
     ) -> str | None:
         """Inspect recent workflow runs for a private-repo billing failure.
 
         Heuristic: a run whose ``run_started_at`` is ``null`` (never started)
         strongly suggests the repo has no GitHub Actions billing enabled.
+
+        **Cross-check:** before returning a billing diagnosis, this method
+        checks whether *other* workflow runs on the same commit completed
+        successfully.  If they did, the root cause is likely a trigger
+        configuration mismatch (e.g. a workflow that only triggers on
+        ``push`` to ``main``, not on ``pull_request``) rather than a
+        billing issue — billing would block all workflows, not just one.
 
         Note: zero-job detection is NOT attempted here because the
         ``/actions/runs`` endpoint does not include per-job run data.
@@ -702,8 +754,29 @@ class ActionsClient:
                 continue
             run_id = run.get("id")
             run_name = run.get("name", str(run_id))
-            # Runs that never started signal billing issues.
+            # Runs that never started signal a configuration or billing issue.
             if "run_started_at" in run and not run.get("run_started_at"):
+                head_sha = run.get("head_sha")
+                if isinstance(head_sha, str) and head_sha:
+                    other_succeeded = await self._other_workflows_succeeded_on_commit(
+                        repo_full_name, head_sha, exclude_run_id=run_id
+                    )
+                else:
+                    other_succeeded = False
+
+                if other_succeeded:
+                    return (
+                        f"Workflow run '{run_name}' (id {run_id}) for "
+                        f"{run.get('head_branch', '?')} never started, "
+                        f"but other workflows on the same commit ran "
+                        f"successfully — this rules out a billing issue. "
+                        f"The likely root cause is a trigger configuration "
+                        f"mismatch: the workflow may only trigger on "
+                        f"``push`` to ``main`` (or another branch), not on "
+                        f"the ``pull_request`` event that created this run. "
+                        f"Check the workflow's ``on:`` trigger in the "
+                        f"``.github/workflows/`` directory."
+                    )
                 return (
                     f"Workflow run '{run_name}' (id {run_id}) for "
                     f"{run.get('head_branch', '?')} never started — "

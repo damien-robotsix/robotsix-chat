@@ -630,7 +630,8 @@ async def test_get_workflow_run_annotations_api_error(
 # ---------------------------------------------------------------------------
 
 
-def test_diagnose_billing_failure_never_started() -> None:
+@pytest.mark.asyncio
+async def test_diagnose_billing_failure_never_started() -> None:
     """Run with no run_started_at → never-started diagnostic."""
     from tests.repo.direct.conftest import _settings
 
@@ -645,13 +646,14 @@ def test_diagnose_billing_failure_never_started() -> None:
             "run_started_at": None,
         }
     ]
-    diag = client._diagnose_billing_failure(runs)
+    diag = await client._diagnose_billing_failure(runs, "org/repo")
     assert diag is not None
     assert "billing" in diag.lower()
     assert "never started" in diag.lower()
 
 
-def test_diagnose_billing_failure_no_match() -> None:
+@pytest.mark.asyncio
+async def test_diagnose_billing_failure_no_match() -> None:
     """Successful runs → no billing diagnostic."""
     from tests.repo.direct.conftest import _settings
 
@@ -665,11 +667,12 @@ def test_diagnose_billing_failure_no_match() -> None:
             "head_branch": "main",
         }
     ]
-    diag = client._diagnose_billing_failure(runs)
+    diag = await client._diagnose_billing_failure(runs, "org/repo")
     assert diag is None
 
 
-def test_diagnose_billing_failure_in_progress_skipped() -> None:
+@pytest.mark.asyncio
+async def test_diagnose_billing_failure_in_progress_skipped() -> None:
     """In-progress runs are not misdiagnosed as billing failures."""
     from tests.repo.direct.conftest import _settings
 
@@ -683,17 +686,58 @@ def test_diagnose_billing_failure_in_progress_skipped() -> None:
             "head_branch": "main",
         }
     ]
-    diag = client._diagnose_billing_failure(runs)
+    diag = await client._diagnose_billing_failure(runs, "org/repo")
     assert diag is None
 
 
-def test_diagnose_billing_failure_empty_runs() -> None:
+@pytest.mark.asyncio
+async def test_diagnose_billing_failure_empty_runs() -> None:
     """Empty run list → None (no diagnostic)."""
     from tests.repo.direct.conftest import _settings
 
     client = ActionsClient(_settings())
-    diag = client._diagnose_billing_failure([])
+    diag = await client._diagnose_billing_failure([], "org/repo")
     assert diag is None
+
+
+@pytest.mark.asyncio
+async def test_diagnose_billing_failure_trigger_config_cross_check(
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    """Never-started run with successful sibling → trigger config, not billing."""
+    from unittest.mock import AsyncMock
+
+    from tests.repo.direct.conftest import _settings
+
+    client = ActionsClient(_settings())
+
+    # Mock the cross-check to return True (other workflows succeeded)
+    mock_cross_check = AsyncMock(return_value=True)
+    monkeypatch.setattr(
+        client,
+        "_other_workflows_succeeded_on_commit",
+        mock_cross_check,
+    )
+
+    runs: list[dict[str, object]] = [
+        {
+            "id": 5,
+            "name": "Deploy",
+            "status": "completed",
+            "conclusion": "failure",
+            "head_branch": "feature/x",
+            "head_sha": "abc123",
+            "run_started_at": None,
+        }
+    ]
+    diag = await client._diagnose_billing_failure(runs, "org/repo")
+    assert diag is not None
+    assert "rules out a billing issue" in diag.lower()
+    assert "trigger" in diag.lower()
+    # Must NOT mention billing as the cause
+    assert "no github actions billing" not in diag.lower()
+    # Verify the cross-check was called with the right args
+    mock_cross_check.assert_awaited_once_with("org/repo", "abc123", exclude_run_id=5)
 
 
 # ---------------------------------------------------------------------------

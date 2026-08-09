@@ -182,10 +182,13 @@ def build_github_actions_tools(
             if not jobs:
                 return (
                     f"Workflow run {run_id} on {repo_full_name} has no jobs — "
-                    f"this is a strong signal that GitHub Actions billing "
-                    f"is not enabled for this private repository. "
-                    f"Check the repo's Settings > Actions > General, "
-                    f"or verify billing at the organisation level."
+                    f"this may indicate that GitHub Actions billing "
+                    f"is not enabled for this private repository, or that the "
+                    f"workflow trigger is misconfigured (e.g. only triggers on "
+                    f"``push`` to ``main``, not on the event that created this "
+                    f"run).  Check the workflow's ``on:`` trigger in "
+                    f"``.github/workflows/``, and verify billing at "
+                    f"Settings > Actions > General."
                 )
             lines: list[str] = [
                 f"Workflow run {run_id} on {repo_full_name} — {len(jobs)} job(s):"
@@ -210,7 +213,7 @@ def build_github_actions_tools(
             )
 
         # Check for billing-failure signature first
-        billing_diag = actions._diagnose_billing_failure(runs)
+        billing_diag = await actions._diagnose_billing_failure(runs, repo_full_name)
         if billing_diag:
             return billing_diag
 
