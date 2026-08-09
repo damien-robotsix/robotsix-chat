@@ -544,6 +544,7 @@ async def test_complete_subsession_rejects_periodic_without_ci_evidence() -> Non
         kind=SubsessionKind.PERIODIC,
         interval_seconds=60.0,
         checkpoint={"ticket_id": "abc123"},
+        runs=1,
     )
     close_state = CloseState()
     tools = build_subsession_tools(
@@ -568,6 +569,7 @@ async def test_complete_subsession_accepts_periodic_with_ci_evidence() -> None:
         kind=SubsessionKind.PERIODIC,
         interval_seconds=60.0,
         checkpoint={"ticket_id": "abc123"},
+        runs=1,
     )
     close_state = CloseState()
     tools = build_subsession_tools(
@@ -594,6 +596,7 @@ async def test_complete_subsession_accepts_periodic_with_unreachable_ci() -> Non
         kind=SubsessionKind.PERIODIC,
         interval_seconds=60.0,
         checkpoint={"ticket_id": "abc123"},
+        runs=1,
     )
     close_state = CloseState()
     tools = build_subsession_tools(
@@ -652,6 +655,34 @@ async def test_complete_subsession_no_guard_for_task_subsession() -> None:
     result = await complete("Ticket closed.")
     assert "REJECTED" not in result
     assert "Close requested" in result
+
+
+@pytest.mark.asyncio
+async def test_complete_subsession_rejects_below_min_runs() -> None:
+    """A periodic ticket monitor with zero completed runs is rejected."""
+    env = build_env()
+    _register(
+        env,
+        sub_id="sub-min-runs-1",
+        kind=SubsessionKind.PERIODIC,
+        interval_seconds=60.0,
+        checkpoint={"ticket_id": "abc123"},
+        runs=0,
+    )
+    close_state = CloseState()
+    tools = build_subsession_tools(
+        env,
+        ctx=_ctx(subsession_id="sub-min-runs-1", depth=1),
+        close_state=close_state,
+    )
+    complete = _by_name(tools, "complete_subsession")
+
+    result = await complete(
+        "Ticket abc123 closed. CI workflow run #1 passed — pipeline is green."
+    )
+    assert "REJECTED" in result
+    assert "minimum runs not met" in result
+    assert close_state.requested is False
 
 
 # ---------------------------------------------------------------------------

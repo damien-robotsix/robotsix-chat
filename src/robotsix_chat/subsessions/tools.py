@@ -263,13 +263,17 @@ def _build_spawn_and_control_tools(
                     is not None
                 )
 
-        # Pre-populate the checkpoint with ticket_id for event-driven
-        # monitors — the dedup_key is always the ticket id for monitors,
-        # so writing it into the checkpoint at spawn time avoids an
-        # intermittent startup failure where the first agent turn fails
-        # to record the id before the event-wait loop needs it.
+        # Pre-populate the checkpoint with ticket_id for ticket monitors
+        # (periodic and event-driven) — the dedup_key is always the
+        # ticket id for monitors, so writing it into the checkpoint at
+        # spawn time activates the CI-verification guard from the first
+        # run and prevents the monitor from closing before it verifies
+        # CI workflow results.
         checkpoint: dict[str, object] | None = None
-        if kind_enum is SubsessionKind.WAIT_FOR_EVENT and dedup_key is not None:
+        if dedup_key is not None and kind_enum in (
+            SubsessionKind.PERIODIC,
+            SubsessionKind.WAIT_FOR_EVENT,
+        ):
             checkpoint = {"ticket_id": dedup_key}
 
         try:
@@ -419,6 +423,31 @@ def _build_complete_tool(
             return (
                 f"Error: subsession {sub_id} is no longer active — its tree "
                 "record may have been lost. Cannot complete."
+            )
+
+        # -- minimum-runs guard: prevent one-and-done monitors ---------
+        # Periodic ticket monitors must complete at least one run before
+        # they are allowed to self-close.  Without this guard a monitor
+        # that detects a transient milestone (e.g. a PR merge) on its
+        # very first tick calls complete_subsession and exits before it
+        # ever verifies CI results — the user then finds no monitor
+        # running and misses downstream failures.
+        if (
+            info.kind == SubsessionKind.PERIODIC
+            and info.checkpoint
+            and "ticket_id" in info.checkpoint
+            and info.runs < 1
+        ):
+            return (
+                "REJECTED: minimum runs not met.  This periodic monitor "
+                "has not completed any runs yet — it must observe at "
+                "least one full tick before calling complete_subsession, "
+                "to ensure the monitored condition is genuinely terminal "
+                "and not a transient milestone.  Continue monitoring: "
+                "reply NO_CHANGE if the ticket state has not changed "
+                "since the last run, or report the current state if it "
+                "has changed.  Call complete_subsession on a subsequent "
+                "run once the terminal condition is confirmed."
             )
 
         # -- loop guard: require CI workflow verification for ticket monitors --
