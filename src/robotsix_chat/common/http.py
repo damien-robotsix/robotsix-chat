@@ -82,11 +82,37 @@ async def safe_http_request(
 
     """
     method_upper = method.upper()
+
+    def _read_text(response: httpx.Response) -> str:
+        """Read ``response.text``, falling back to empty string on any error.
+
+        Catches zlib decompression errors caused by proxies that forward
+        a ``Content-Encoding: gzip`` header on an already-decompressed body.
+        """
+        try:
+            return response.text
+        except Exception:
+            logger.warning(
+                "%s response body read failed for %s %s — "
+                "may be a Content-Encoding mismatch (proxy double-decompression)",
+                label,
+                method_upper,
+                url,
+                exc_info=True,
+            )
+            return ""
+
     try:
         async with httpx.AsyncClient(
             timeout=timeout, follow_redirects=follow_redirects
         ) as client:
-            kwargs: dict[str, Any] = {"headers": headers}
+            kwargs: dict[str, Any] = {
+                "headers": dict(headers or {}),
+            }
+            # Prevent transparent gzip/deflate on the response so that
+            # proxies which already decompress the body but forward a
+            # Content-Encoding header don't trigger zlib errors.
+            kwargs["headers"].setdefault("Accept-Encoding", "identity")
             if params is not None:
                 kwargs["params"] = params
             if method_upper in ("POST", "PUT", "PATCH"):
@@ -100,24 +126,15 @@ async def safe_http_request(
             if not follow_redirects and 300 <= response.status_code < 400:
                 # Caller opted out of redirect-following and got a redirect
                 # response — treat as success so they can inspect the status.
-                try:
-                    body_text = response.text
-                except Exception:
-                    body_text = ""
-                return HttpResult(text=body_text, status_code=response.status_code)
+                return HttpResult(
+                    text=_read_text(response), status_code=response.status_code
+                )
             response.raise_for_status()
-            # Defensive: mocked responses in tests may lack ``.text``.
-            try:
-                body_text = response.text
-            except Exception:
-                body_text = ""
-            return HttpResult(text=body_text, status_code=response.status_code)
+            return HttpResult(
+                text=_read_text(response), status_code=response.status_code
+            )
     except httpx.HTTPStatusError as exc:
-        # Defensive: mocked responses in tests may lack ``.text``.
-        try:
-            raw = exc.response.text
-        except Exception:
-            raw = ""
+        raw = _read_text(exc.response)
         body = raw[:500] if raw else "(empty body)"
         status = exc.response.status_code
         logger.warning("%s returned %d for %s", label, status, url)
