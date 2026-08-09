@@ -120,6 +120,7 @@ def test_merge_tools_returned() -> None:
     assert sorted(names) == [
         "apply_patch_to_file",
         "arm_direct_repo_auto_merge",
+        "check_direct_repo_auto_merge",
         "check_pr_merge_conflict",
         "merge_direct_repo_pr",
         "open_direct_repo_pr",
