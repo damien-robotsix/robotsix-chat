@@ -136,6 +136,12 @@ def _truncate(text: str, max_len: int) -> str:
 # Reply sentinel a periodic subsession uses to report "nothing changed".
 _NO_CHANGE_SENTINEL = "NO_CHANGE"
 
+# Reply sentinel a periodic subsession uses to report that the monitored
+# ticket is queued (waiting for implementation / in a non-terminal
+# pipeline stage) — the monitor should enter event-driven wait instead of
+# burning no-change quota.
+_QUEUED_SENTINEL = "QUEUED"
+
 
 # Prompt fragment prepended when a user_chat / task subsession is retried
 # after a failure.  The agent sees the original error so it can diagnose
@@ -190,6 +196,19 @@ _NO_CHANGE_PHRASES: tuple[str, ...] = (
     "NO MEANINGFUL CHANGE",
 )
 
+# Phrases that, when they appear at the start of a periodic reply,
+# indicate the agent found the ticket is queued (waiting for
+# implementation) — the monitor should switch to event-driven wait.
+_QUEUED_PHRASES: tuple[str, ...] = (
+    "QUEUED",
+    "QUEUED FOR IMPLEMENTATION",
+    "WAITING FOR IMPLEMENTATION",
+    "IN QUEUE",
+    "IMPLEMENTATION QUEUED",
+    "AWAITING IMPLEMENTATION",
+    "PENDING IMPLEMENTATION",
+)
+
 
 def _format_duration(seconds: float) -> str:
     """Return a human-readable duration string for *seconds*."""
@@ -214,6 +233,19 @@ def _is_no_change(reply: str) -> bool:
     if cleaned.startswith(_NO_CHANGE_SENTINEL):
         return True
     return cleaned.startswith(_NO_CHANGE_PHRASES)
+
+
+def _is_queued(reply: str) -> bool:
+    """Whether *reply* is the queued sentinel or a common paraphrase.
+
+    The agent uses this when the monitored ticket is waiting for
+    implementation — the worker should switch to event-driven wait
+    instead of counting this as a no-change run.
+    """
+    cleaned = reply.strip().upper()
+    if cleaned.startswith(_QUEUED_SENTINEL):
+        return True
+    return cleaned.startswith(_QUEUED_PHRASES)
 
 
 def _is_duplicate_reply(reply: str, previous: str | None) -> bool:
@@ -568,6 +600,19 @@ def _build_periodic_input(
         "changed, or reply with a concise acknowledgment if something did "
         "change (the parent will not see it, but the transcript records "
         "what you observed).\n\n"
+        "QUEUED TICKETS — when the monitored ticket is in a queue state "
+        "(waiting for implementation, i.e. the ticket is in 'ready', "
+        "'in_progress', 'implement', or any non-terminal pipeline stage "
+        "where no agent is actively working on it), do NOT reply "
+        f"{_NO_CHANGE_SENTINEL} run after run — that causes the monitor "
+        "to auto-pause after a few cycles.  Instead, reply "
+        f"{_QUEUED_SENTINEL} (and nothing else).  The system will then "
+        "switch to event-driven waiting: it will stop burning your "
+        "no-change quota and will long-poll the board API for a state "
+        "change, waking you the moment the ticket leaves the queue.  "
+        "You MUST use the queued sentinel for tickets stuck in the "
+        "implementation queue — NOT for tickets that are actively "
+        "progressing through a pipeline stage.\n\n"
         "CRITICAL — summary formatting: when you call complete_subsession, "
         "your summary will be shown directly to a human operator.  Write "
         "in plain, user-facing language — omit ALL internal technical "
@@ -1149,6 +1194,181 @@ async def _paused_wait_loop(
             )
 
 
+async def _queued_wait_loop(
+    env: SubsessionEnv,
+    info: SubsessionInfo,
+    sub_id: str,
+    previous_result: str | None,
+    consecutive_no_change: int,
+) -> tuple[list[InboxMessage], str | None, int] | None:
+    """Block until the queued ticket changes state or the worker is cancelled.
+
+    Called when a periodic monitor detects the monitored ticket is queued
+    (waiting for implementation).  The worker stays alive and long-polls
+    the mill API — no auto-pause notification is sent because the monitor
+    proactively chose this wait rather than being forced into it.
+
+    When a state change is detected this returns ``(pending,
+    previous_result, consecutive_no_change)`` so the worker resumes its
+    normal periodic loop.  Returns ``None`` when the subsession was
+    externally closed while waiting.
+    """
+    registry = env.registry
+
+    # -- long-poll setup -------------------------------------------------
+    checkpoint = info.checkpoint or {}
+    ticket_id_raw = checkpoint.get("ticket_id")
+    ticket_id = ticket_id_raw if isinstance(ticket_id_raw, str) else ""
+    last_known_state = checkpoint.get("last_known_state")
+    last_known_str: str | None = (
+        (
+            last_known_state
+            if isinstance(last_known_state, str)
+            else str(last_known_state)
+        )
+        if last_known_state is not None
+        else None
+    )
+
+    direct_repo = getattr(env.settings, "direct_repo", None)
+    board_url: str = (
+        getattr(direct_repo, "board_api_base_url", "")
+        if direct_repo is not None
+        else ""
+    )
+    # Reuse the paused-monitor long-poll interval — the queued wait has
+    # the same mechanics (poll the mill for ticket state changes).
+    long_poll_interval: float = getattr(
+        env.settings.subsessions,
+        "paused_monitor_long_poll_interval_seconds",
+        15.0,
+    )
+    # Auto-resume after this many seconds to prevent a stale queued wait
+    # from hanging forever (e.g. if the ticket state changed but the
+    # long-poll missed it).  Shorter than the paused auto-resume because
+    # the monitor is actively queued, not abandoned.
+    auto_resume_seconds: float = getattr(
+        env.settings.subsessions,
+        "paused_monitor_auto_resume_seconds",
+        1800.0,
+    )
+    can_long_poll = bool(
+        board_url and ticket_id and last_known_str and long_poll_interval > 0
+    )
+    if can_long_poll:
+        logger.debug(
+            "Subsession %s: queued long-poll enabled for ticket %s "
+            "(interval=%.0fs, last_known=%s).",
+            sub_id,
+            ticket_id,
+            long_poll_interval,
+            last_known_str,
+        )
+    # --------------------------------------------------------------------
+
+    async def _wake_from_queued(
+        reason: str,
+        pending: list[InboxMessage] | None = None,
+    ) -> tuple[list[InboxMessage], str | None, int] | None:
+        """Wake from the queued wait — set SLEEPING and publish a quiet event."""
+        current = registry.get(sub_id)
+        if current is None or not current.is_active:
+            return None
+        registry.set_status(
+            sub_id,
+            SubsessionStatus.SLEEPING,
+            runs=current.runs,
+            next_run_at=registry.now() + (info.interval_seconds or 60.0),
+        )
+        if env.event_sink is not None:
+            env.event_sink.publish(
+                info.owner_session_id,
+                {
+                    "type": SSE_NOTIFICATION_TYPE,
+                    "title": f"Monitor unqueued: {info.title}",
+                    "body": (
+                        f"Monitor {sub_id[:8]} tracking ticket {ticket_id} "
+                        f"woke from queued wait ({reason})."
+                    ),
+                    "urgency": "low",
+                    "link": ticket_id,
+                },
+            )
+        if pending is None:
+            pending = []
+        return pending, previous_result, consecutive_no_change
+
+    queued_at = time.monotonic()
+    while True:
+        timeout = long_poll_interval if can_long_poll else _PAUSED_WAIT_TIMEOUT_SECONDS
+        # Cap the per-iteration timeout so the auto-resume check fires on time.
+        if auto_resume_seconds > 0:
+            remaining = auto_resume_seconds - (time.monotonic() - queued_at)
+            if remaining <= 0:
+                logger.info(
+                    "Subsession %s: queued for %.0fs (limit %.0fs) — auto-resuming.",
+                    sub_id,
+                    time.monotonic() - queued_at,
+                    auto_resume_seconds,
+                )
+                return await _wake_from_queued(
+                    "auto-resume timeout",
+                    pending=registry.drain_inbox(sub_id),
+                )
+            timeout = min(timeout, remaining)
+        woke = await registry.wait_for_inbox(sub_id, timeout=timeout)
+
+        # Verify the subsession is still active.
+        current = registry.get(sub_id)
+        if current is None or not current.is_active:
+            return None
+
+        if woke:
+            # ----------- inbox wake: any message resumes -------------
+            messages = registry.drain_inbox(sub_id)
+            if messages:
+                logger.info(
+                    "Subsession %s: resume signal received while queued — waking.",
+                    sub_id,
+                )
+                return await _wake_from_queued("inbox message", pending=messages)
+
+            # Spurious wake (event set but inbox empty) — loop and wait
+            # again.
+            logger.debug(
+                "Subsession %s: spurious inbox wake while queued; continuing wait.",
+                sub_id,
+            )
+        else:
+            # ----------- timeout: long-poll the mill directly -------------
+            if not can_long_poll:
+                continue
+
+            if not ticket_id or not last_known_str:
+                continue
+
+            current_state = await _query_mill_ticket_state(board_url, ticket_id, sub_id)
+            if current_state is not None and current_state != last_known_str:
+                logger.info(
+                    "Subsession %s: ticket %s state changed from '%s' to '%s' "
+                    "(detected via long-poll while queued) — waking.",
+                    sub_id,
+                    ticket_id,
+                    last_known_str,
+                    current_state,
+                )
+                return await _wake_from_queued("ticket state change (long-poll)")
+
+            # State unchanged — loop back and wait again.
+            logger.debug(
+                "Subsession %s: ticket %s still '%s' (queued long-poll) — "
+                "continuing wait.",
+                sub_id,
+                ticket_id,
+                current_state,
+            )
+
+
 def _build_wait_for_event_input(
     info: SubsessionInfo,
     previous_result: str | None,
@@ -1595,6 +1815,43 @@ async def _run_periodic_turn(
     to continue.
     """
     registry = env.registry
+    # -- queued detection: the agent found the ticket is waiting for
+    #    implementation — switch to event-driven wait instead of burning
+    #    no-change quota.
+    if _is_queued(reply):
+        runs = info.runs + 1
+        registry.set_status(
+            sub_id,
+            SubsessionStatus.SLEEPING,
+            runs=runs,
+            next_run_at=registry.now() + (info.interval_seconds or 60.0),
+            last_result=reply,
+        )
+        if env.event_sink is not None:
+            env.event_sink.publish(
+                info.owner_session_id,
+                subsession_result_frame(
+                    sub_id,
+                    info.kind.value,
+                    info.title,
+                    runs,
+                    reply,
+                    info.parent_id,
+                ),
+            )
+        previous_result = reply
+        result = await _queued_wait_loop(
+            env,
+            info,
+            sub_id,
+            previous_result,
+            0,
+        )
+        if result is None:
+            return None
+        pending, previous_result, _ = result
+        return pending, previous_result, 0  # reset consecutive_no_change
+
     suppressed = _is_no_change(reply) or _is_duplicate_reply(reply, previous_result)
     consecutive_no_change = 0 if not _is_no_change(reply) else consecutive_no_change + 1
     runs = info.runs + 1

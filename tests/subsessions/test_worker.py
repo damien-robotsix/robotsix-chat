@@ -36,6 +36,7 @@ from robotsix_chat.subsessions.worker import (
     _format_worker_error,
     _is_duplicate_reply,
     _is_no_change,
+    _is_queued,
     _run_wait_for_event_turn,
     _truncate,
 )
@@ -2808,6 +2809,30 @@ async def test_reset_mill_failure_counter_noop_when_already_zero():
 def test_is_no_change(reply: str, expected: bool) -> None:
     """``_is_no_change`` recognises the sentinel and common paraphrases."""
     assert _is_no_change(reply) == expected
+
+
+@pytest.mark.parametrize(
+    "reply,expected",
+    [
+        ("QUEUED", True),
+        ("QUEUED ", True),
+        ("queued", True),
+        ("QUEUED.", True),  # startswith catches trailing punctuation
+        ("Queued for implementation", True),
+        ("Waiting for implementation", True),
+        ("In queue", True),
+        ("Implementation queued", True),
+        ("Awaiting implementation", True),
+        ("Pending implementation", True),
+        ("  queued  ", True),
+        ("NO_CHANGE", False),
+        ("Ticket #123 is queued and waiting", False),  # must start with sentinel
+        ("Something actually happened", False),
+    ],
+)
+def test_is_queued(reply: str, expected: bool) -> None:
+    """``_is_queued`` recognises the queued sentinel and common paraphrases."""
+    assert _is_queued(reply) == expected
 
 
 def test_is_duplicate_reply_none_previous() -> None:
