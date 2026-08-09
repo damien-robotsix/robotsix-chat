@@ -20,12 +20,8 @@ from robotsix_llmio.config import (
     LEVEL1_DEFAULT,
     LEVEL2_DEFAULT,
     LEVEL3_DEFAULT,
+    LEVEL4_DEFAULT,
 )
-
-try:
-    from robotsix_llmio.config import LEVEL4_DEFAULT
-except ImportError:
-    LEVEL4_DEFAULT = LEVEL3_DEFAULT  # fallback when llmio doesn't ship level 4 yet
 
 __all__ = [
     "level_needs_api_key",
