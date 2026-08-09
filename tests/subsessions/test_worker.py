@@ -7,6 +7,7 @@ import contextlib
 import contextvars
 import threading
 from collections.abc import AsyncIterator
+from pathlib import Path
 from types import SimpleNamespace
 from typing import Any
 from unittest.mock import AsyncMock, MagicMock, patch
@@ -24,6 +25,7 @@ from robotsix_chat.subsessions import (
     SubsessionPeriodicSpawnError,
     SubsessionRegistry,
     SubsessionStatus,
+    resume_subsessions,
     spawn_subsession,
 )
 from robotsix_chat.subsessions.worker import (
@@ -34,6 +36,7 @@ from robotsix_chat.subsessions.worker import (
     _format_worker_error,
     _is_duplicate_reply,
     _is_no_change,
+    _run_wait_for_event_turn,
     _truncate,
 )
 from robotsix_chat.subsessions.worker_mill import (
@@ -3018,3 +3021,135 @@ async def test_periodic_transient_error_transcript_recorded() -> None:
     assert any("TRANSIENT_ERROR" in (e.text or "") for e in system_entries) or any(
         "transient" in (e.text or "").lower() for e in system_entries
     )
+
+
+# ---------------------------------------------------------------------------
+# wait_for_event checkpoint repair
+# ---------------------------------------------------------------------------
+
+
+@pytest.mark.asyncio
+async def test_wait_for_event_turn_repairs_checkpoint_ticket_id() -> None:
+    """After a set_checkpoint call wipes ticket_id, the turn handler restores it.
+
+    The agent may call set_checkpoint with only ``last_known_state``,
+    replacing the spawn-time checkpoint and losing the ticket_id.
+    ``_run_wait_for_event_turn`` must recover it from the dedup_key
+    and persist it so the subsession survives a restart.
+    """
+    agent = FakeAgent(["NO_CHANGE"])
+    env = build_env(agent=agent)
+
+    sub_id = spawn_subsession(
+        env=env,
+        kind=SubsessionKind.WAIT_FOR_EVENT,
+        owner_session_id=OWNER,
+        parent_id=None,
+        depth=1,
+        title="watch ticket abc",
+        prompt="monitor the ticket",
+        model_level=3,
+        dedup_key="abc-123",
+        checkpoint={"ticket_id": "abc-123", "last_known_state": "open"},
+    )
+    info = env.registry.get(sub_id)
+    assert info is not None
+    assert info.dedup_key == "abc-123"
+
+    # Simulate the agent calling set_checkpoint to record a state
+    # transition — this replaces the checkpoint, dropping ticket_id.
+    env.registry.update_checkpoint(sub_id, {"last_known_state": "in_progress"})
+    info = env.registry.get(sub_id)
+    assert info is not None
+    assert info.checkpoint == {"last_known_state": "in_progress"}
+    assert "ticket_id" not in (info.checkpoint or {})
+
+    # Run the post-turn handler — it should repair the checkpoint.
+    result = await _run_wait_for_event_turn(env, info, sub_id, "NO_CHANGE", None, 0)
+    assert result is not None  # not closed
+
+    # After repair, ticket_id must be back in the checkpoint.
+    info = env.registry.get(sub_id)
+    assert info is not None
+    assert info.checkpoint is not None
+    assert info.checkpoint.get("ticket_id") == "abc-123"
+    assert info.checkpoint.get("last_known_state") == "in_progress"
+
+
+@pytest.mark.asyncio
+async def test_wait_for_event_turn_repair_noop_when_ticket_id_present() -> None:
+    """When ticket_id is already in checkpoint, the turn handler leaves it."""
+    agent = FakeAgent(["NO_CHANGE"])
+    env = build_env(agent=agent)
+
+    sub_id = spawn_subsession(
+        env=env,
+        kind=SubsessionKind.WAIT_FOR_EVENT,
+        owner_session_id=OWNER,
+        parent_id=None,
+        depth=1,
+        title="watch ticket xyz",
+        prompt="monitor the ticket",
+        model_level=3,
+        dedup_key="xyz-456",
+        checkpoint={"ticket_id": "xyz-456", "last_known_state": "open"},
+    )
+    info = env.registry.get(sub_id)
+    assert info is not None
+
+    result = await _run_wait_for_event_turn(env, info, sub_id, "NO_CHANGE", None, 0)
+    assert result is not None
+
+    info = env.registry.get(sub_id)
+    assert info is not None
+    assert info.checkpoint is not None
+    assert info.checkpoint.get("ticket_id") == "xyz-456"
+
+
+@pytest.mark.asyncio
+async def test_wait_for_event_checkpoint_survives_resume(
+    tmp_path: Path,
+) -> None:
+    """A wait_for_event subsession with ticket_id in checkpoint resumes cleanly.
+
+    Simulates a restart: the checkpoint is persisted, a fresh registry
+    loads it, and resume_subsessions re-spawns the monitor.  The resumed
+    subsession must carry the ticket_id forward.
+    """
+    store_path = tmp_path / "subsessions.json"
+    registry1 = SubsessionRegistry(store_path=store_path)
+    wfe = registry1.create(
+        kind=SubsessionKind.WAIT_FOR_EVENT,
+        owner_session_id=OWNER,
+        parent_id=None,
+        depth=1,
+        title="watch ticket def",
+        prompt="monitor the ticket",
+        model_level=3,
+        checkpoint={"ticket_id": "def-789", "last_known_state": "open"},
+        dedup_key="def-789",
+        event_timeout_seconds=3600.0,
+    )
+    registry1.set_status(wfe.id, SubsessionStatus.SLEEPING, runs=1)
+
+    registry2 = SubsessionRegistry(store_path=store_path)
+    env = build_env(
+        agent=FakeAgent(["ok"]),
+        registry=registry2,
+    )
+    resume_subsessions(env)
+
+    resumed = registry2.get(wfe.id)
+    assert resumed is not None
+    assert resumed.status is SubsessionStatus.RUNNING
+    assert resumed.checkpoint is not None
+    assert resumed.checkpoint.get("ticket_id") == "def-789"
+    assert resumed.checkpoint.get("last_known_state") == "open"
+    assert resumed.dedup_key == "def-789"
+
+    # Clean up the worker.
+    worker = registry2._running.get(wfe.id)
+    registry2.cancel_and_close(wfe.id, reason="teardown", closed_by="system")
+    if worker is not None:
+        with contextlib.suppress(asyncio.CancelledError):
+            await asyncio.wait_for(worker, 2.0)

@@ -1326,22 +1326,44 @@ async def _event_wait_loop(
     # ticket id, so it is authoritative even on the first run.
     if not ticket_id and info.dedup_key:
         ticket_id = info.dedup_key
+        # Repair the checkpoint so the ticket_id survives agent
+        # set_checkpoint calls that may have cleared it.  Without
+        # this write-back, a restart would lose the id and the
+        # dedup_key fallback might not be available on resume if
+        # the dedup_key was also not persisted.
+        checkpoint["ticket_id"] = ticket_id
+        registry.update_checkpoint(sub_id, checkpoint)
+        logger.debug(
+            "Subsession %s: ticket_id %r recovered from dedup_key; "
+            "written to checkpoint.",
+            sub_id,
+            ticket_id,
+        )
 
     if not ticket_id:
         logger.error(
-            "Subsession %s: WAIT_FOR_EVENT subsession has no ticket_id in "
-            "checkpoint — cannot register for events.  Closing.",
+            "Subsession %s: WAIT_FOR_EVENT subsession has no ticket_id — "
+            "the checkpoint is missing the key and no dedup_key is set.  "
+            "Closing.",
             sub_id,
         )
         closed = registry.mark_closed(
             sub_id,
-            summary="No ticket_id in checkpoint — cannot wait for events.",
+            summary=(
+                f"Wait-for-event monitor '{info.title}' has no recoverable "
+                f"ticket_id — the checkpoint is missing the ticket_id key "
+                f"and no dedup_key is set.  This monitor cannot operate "
+                f"without a target ticket; respawn it with a valid "
+                f"dedup_key (ticket id)."
+            ),
             reason="missing_ticket_id",
             closed_by="system",
         )
         if closed is not None:
             await env.delivery.deliver_summary(
-                closed, "No ticket_id in checkpoint", "missing_ticket_id"
+                closed,
+                f"No recoverable ticket_id for monitor '{info.title}'",
+                "missing_ticket_id",
             )
         return None
 
@@ -1421,6 +1443,18 @@ async def _run_wait_for_event_turn(
 
     # Human-approval timeout logic (same as _run_periodic_turn).
     checkpoint = info.checkpoint or {}
+    # Repair the checkpoint: if the agent called set_checkpoint without
+    # including ticket_id (replacing the spawn-time entry), recover it
+    # from the dedup_key so the monitor survives restarts.
+    if "ticket_id" not in checkpoint and info.dedup_key:
+        checkpoint["ticket_id"] = info.dedup_key
+        registry.update_checkpoint(sub_id, checkpoint)
+        logger.debug(
+            "Subsession %s: ticket_id %r recovered from dedup_key "
+            "after agent turn; written to checkpoint.",
+            sub_id,
+            info.dedup_key,
+        )
     last_known = checkpoint.get("last_known_state", "")
     if isinstance(last_known, str) and last_known.lower() == "human_issue_approval":
         patterns = env.settings.subsessions.pre_authorized_ticket_patterns
