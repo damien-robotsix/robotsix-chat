@@ -76,7 +76,7 @@ modules:
       - CHANGELOG.md
       - changelog.d/20260801T100719Z-agent-md-direct-repo-tool-documentation-b0a2.doc.md
       - changelog.d/20260801T113548Z-agent-md-testing-conventions-any-change-4441.doc.md
-      - changelog.d/20260801T104213Z-make-github-monitoring-subsessions-resil-601a.bugfix.md
+      - changelog.d/20260801T124303Z-system-prompt-references-nonexistent-too-410c.doc.md
       - changelog.d/20260802T005236Z-improve-ci-startup-failure-diagnostics-t-93b9.bugfix.md
       - changelog.d/20260802T005237Z-auto-prioritize-user-requested-tickets-t-46db.misc.md
       - changelog.d/20260802T005450Z-correct-monitor-status-reporting-to-dist-a2ac.bugfix.md
@@ -84,6 +84,7 @@ modules:
       - changelog.d/20260802T143816Z-test-test-tool-docstrings-forbid-merge-r-f85c.misc.md
       - changelog.d/20260809T014935Z-sanitize-sse-mid-stream-error-payload-st-0ede.bugfix.md
       - changelog.d/20260809T014841Z-config-constants-py-remove-dead-level4-d-ce01.misc.md
+      - changelog.d/20260801T104213Z-make-github-monitoring-subsessions-resil-601a.bugfix.md
       - release-please-config.json
       - .release-please-manifest.json
       - CONTRIBUTING.md
