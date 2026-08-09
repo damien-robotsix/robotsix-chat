@@ -3,6 +3,23 @@
 Governed artifact: `Settings.agent_instruction` default literal in
 `src/robotsix_chat/config/settings.py`. Version stamp: `SYSTEM_PROMPT_VERSION` in the same module.
 
+## v90 — 2026-08-08 — add-positive-token-budget-management-strategy-a867
+
+**Summary:** Add a positive token budget management strategy to the Efficiency section.
+The new directive instructs the agent to proactively manage its call budget: before starting
+a multi-step investigation, estimate whether the task fits within the available call budget;
+when it would exceed it, break the work into smaller bounded sub-tasks that each complete in
+a single turn, or propose a simpler one-step diagnostic. This complements the v86 prohibition
+on fabricated token-exhaustion claims by giving the agent a constructive alternative.
+
+**Rationale:** The v86 Efficiency directive only prohibited fabricated token-exhaustion claims
+but provided no positive strategy for managing call budget. Without a constructive alternative,
+the agent lacked guidance on how to handle genuinely large tasks — the new directive fills
+that gap by instructing the agent to estimate, decompose, or simplify before committing to a
+sprawling investigation.
+
+**SHA256:** `f119e375d16d9913c692d43d4c5fe090c620268d92c45cec9585afe03145074c`
+
 ## v89 — 2026-08-02 — auto-prioritize-user-requested-tickets-46db
 
 **Summary:** Add user-requested-ticket guidance to the ticket-filing rules. When the operator
