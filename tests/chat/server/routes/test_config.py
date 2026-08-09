@@ -376,7 +376,7 @@ def test_get_config_overlay_preserves_file_values(tmp_path: Path) -> None:
         {
             "llmio_model_level": 3,
             "autonomous": {
-                "max_auto_turns": 100,
+                "proposal_marker": "---CUSTOM MARKER---",
             },
         },
     )
@@ -387,10 +387,10 @@ def test_get_config_overlay_preserves_file_values(tmp_path: Path) -> None:
     data = resp.json()
 
     # File value wins.
-    assert data["autonomous"]["max_auto_turns"] == 100
+    assert data["autonomous"]["proposal_marker"] == "---CUSTOM MARKER---"
     # Defaults fill in missing keys.
     assert data["autonomous"]["sessions"] == []
-    assert data["autonomous"]["proposal_marker"] == "---PROPOSAL READY---"
+    assert data["autonomous"]["completion_marker"] == "---AUTONOMOUS COMPLETE---"
 
 
 # ---------------------------------------------------------------------------
@@ -471,7 +471,7 @@ def test_put_drops_unknown_autonomous_keys(tmp_path: Path) -> None:
             "llmio_model_level": 3,
             "autonomous": {
                 "ghost_key": "should be removed",
-                "max_auto_turns": 42,
+                "proposal_marker": "---CUSTOM---",
             },
         },
     )
@@ -484,7 +484,7 @@ def test_put_drops_unknown_autonomous_keys(tmp_path: Path) -> None:
     assert "autonomous" in on_disk
     assert "ghost_key" not in on_disk["autonomous"]
     # Known keys are preserved.
-    assert on_disk["autonomous"]["max_auto_turns"] == 42
+    assert on_disk["autonomous"]["proposal_marker"] == "---CUSTOM---"
 
 
 # ---------------------------------------------------------------------------

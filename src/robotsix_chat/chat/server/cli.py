@@ -337,58 +337,58 @@ def run_server_from_config(agent: ChatAgent | None = None) -> None:
 
     # -- autonomous runner -------------------------------------------------
     autonomous_runner: AutonomousRunner | None = None
-    if settings.autonomous.enabled:
-        # Refinement agent: a lighter, tool-less agent for the prompt-
-        # refinement step.  Uses the same model level as the feedback runner
-        # for consistency — a cheaper tier than the main autonomous agent.
-        from robotsix_chat.autonomous.refinement import RefinementStore
+    # The runner is always initialised — session presets in
+    # ``autonomous.sessions`` are the sole enablement model.  An empty
+    # sessions list means no autonomous sessions run.
+    from robotsix_chat.autonomous import AUTONOMOUS_PERSIST_PATH
+    from robotsix_chat.autonomous.refinement import RefinementStore
 
-        refinement_agent_factory: Callable[[], LlmioChatAgent] | None = None
-        refinement_store: RefinementStore | None = None
-        try:
-            refinement_agent = create_agent_from_settings(
-                settings=settings,
-                conversation_store=conversation_store,
-                model_level=settings.llmio_model_level,
-                bare=True,
-                diagnostic_store=diagnostic_store,
-                knowledge_store=knowledge_store,
-            )
-
-            def _refinement_agent_factory() -> LlmioChatAgent:
-                return refinement_agent
-
-            refinement_agent_factory = _refinement_agent_factory
-            refinement_persist_path = str(
-                Path(settings.autonomous.persist_path).parent
-                / "autonomous_refinements.json"
-            )
-            refinement_store = RefinementStore(
-                persist_path=refinement_persist_path,
-                agent_factory=refinement_agent_factory,
-            )
-        except Exception:
-            logger.warning(
-                "Failed to create refinement agent — self-refinement "
-                "will be unavailable for autonomous presets",
-                exc_info=True,
-            )
-
-        autonomous_runner = AutonomousRunner(
+    refinement_agent_factory: Callable[[], LlmioChatAgent] | None = None
+    refinement_store: RefinementStore | None = None
+    try:
+        refinement_agent = create_agent_from_settings(
             settings=settings,
             conversation_store=conversation_store,
-            agent_factory=_autonomous_agent_factory,
-            run_serializer=run_serializer,
-            event_sink=event_bus,
-            subsession_registry=subsession_registry,
-            refinement_store=refinement_store,
+            model_level=settings.llmio_model_level,
+            bare=True,
+            diagnostic_store=diagnostic_store,
+            knowledge_store=knowledge_store,
         )
+
+        def _refinement_agent_factory() -> LlmioChatAgent:
+            return refinement_agent
+
+        refinement_agent_factory = _refinement_agent_factory
+        refinement_persist_path = str(
+            Path(AUTONOMOUS_PERSIST_PATH).parent / "autonomous_refinements.json"
+        )
+        refinement_store = RefinementStore(
+            persist_path=refinement_persist_path,
+            agent_factory=refinement_agent_factory,
+        )
+    except Exception:
+        logger.warning(
+            "Failed to create refinement agent — self-refinement "
+            "will be unavailable for autonomous presets",
+            exc_info=True,
+        )
+
+    autonomous_runner = AutonomousRunner(
+        settings=settings,
+        conversation_store=conversation_store,
+        agent_factory=_autonomous_agent_factory,
+        run_serializer=run_serializer,
+        event_sink=event_bus,
+        subsession_registry=subsession_registry,
+        refinement_store=refinement_store,
+    )
+    if autonomous_runner.definition_count > 0:
         logger.info(
-            "Autonomous sessions enabled (max_auto_turns=%d)",
-            settings.autonomous.max_auto_turns,
+            "Autonomous runner initialised (%d session preset(s))",
+            autonomous_runner.definition_count,
         )
     else:
-        logger.info("Autonomous sessions disabled (autonomous.enabled=false)")
+        logger.info("Autonomous runner initialised (no session presets configured)")
 
     # Wire the autonomous runner into ParentDelivery now that both exist
     # (see ParentDelivery.set_autonomous_runner for why this can't happen

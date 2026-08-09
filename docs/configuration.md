@@ -498,24 +498,18 @@ checks.
 Autonomous sessions that pick a subject, draft a plan for operator review, then execute after the
 operator comments. Sessions stay open after completion — the operator must explicitly close them.
 
-Multiple *named session definitions* can be configured in `autonomous.sessions`, each with its own
-prompt and trigger. When the list is empty, a single default preset matching the pre-existing
-behavior is synthesized at runtime — backward compatible out of the box.
+Session presets in `autonomous.sessions` are the **sole enablement model** — a preset that exists
+and is enabled IS the enablement. There is no separate master switch. When the sessions list is
+empty, no autonomous sessions run.
 
-| JSON key                                          | Type      | Default                            | Description                                                                                                                                                                                                                         |
-| ------------------------------------------------- | --------- | ---------------------------------- | ----------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- |
-| `autonomous.enabled`                              | `boolean` | `true`                             | Master switch.                                                                                                                                                                                                                      |
-| `autonomous.proposal_marker`                      | `string`  | `"---PROPOSAL READY---"`           | Marker string the agent emits after drafting a plan to signal it is ready for operator review. The session enters the `proposal` state.                                                                                             |
-| `autonomous.completion_marker`                    | `string`  | `"---AUTONOMOUS COMPLETE---"`      | Marker string the agent emits when the plan is complete. The session stays open after completion.                                                                                                                                   |
-| `autonomous.max_auto_turns`                       | `integer` | `20`                               | Maximum automatic agent turns during the execution phase before reverting to `proposal`.                                                                                                                                            |
-| `autonomous.max_idle_auto_turns`                  | `integer` | `5`                                | Maximum number of consecutive NO_CHANGE / idle auto-continue turns before the loop halts (reverts to `proposal`). Set to `0` to disable the idle cap and only rely on `max_auto_turns`.                                             |
-| `autonomous.persist_path`                         | `string`  | `"/data/autonomous_sessions.json"` | Path to the autonomous-session persistence file.                                                                                                                                                                                    |
-| `autonomous.session_color`                        | `string`  | `""`                               | Optional CSS color string for a visual accent on autonomous session rows (e.g. `"#ef4444"`).                                                                                                                                        |
-| `autonomous.initial_task`                         | `string`  | `""`                               | Optional description of the first task to spawn. When empty, the agent picks its own subject.                                                                                                                                       |
-| `autonomous.continue_interval_seconds`            | `number`  | `45.0`                             | Pacing interval (seconds) between auto-continue loop iterations.                                                                                                                                                                    |
-| `autonomous.pending_subsession_wait_timeout`      | `number`  | `600.0`                            | Maximum time (seconds) the auto-continue loop waits for pending non-periodic subsessions to complete before giving up and continuing.                                                                                               |
-| `autonomous.stale_monitor_runs_before_completion` | `integer` | `3`                                | Number of consecutive `NO_CHANGE` cycles after which a periodic monitor is considered "stale" — the agent may declare the autonomous session complete even while the monitor is still running. Monitors continue in the background. |
-| `autonomous.sessions`                             | `array`   | `[]`                               | List of named autonomous session definitions (see below). When empty, a single default preset is synthesized.                                                                                                                       |
+| JSON key                                          | Type      | Default                       | Description                                                                                                                                                                                                                         |
+| ------------------------------------------------- | --------- | ----------------------------- | ----------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- |
+| `autonomous.proposal_marker`                      | `string`  | `"---PROPOSAL READY---"`      | Marker string the agent emits after drafting a plan to signal it is ready for operator review. The session enters the `proposal` state.                                                                                             |
+| `autonomous.completion_marker`                    | `string`  | `"---AUTONOMOUS COMPLETE---"` | Marker string the agent emits when the plan is complete. The session stays open after completion.                                                                                                                                   |
+| `autonomous.continue_interval_seconds`            | `number`  | `45.0`                        | Minimum pacing interval (seconds) between auto-continue loop iterations.                                                                                                                                                            |
+| `autonomous.max_idle_auto_turns`                  | `integer` | `5`                           | Maximum number of consecutive NO_CHANGE / idle auto-continue turns before the loop halts (reverts to `proposal`). Set to `0` to disable the idle cap and only rely on per-preset `max_auto_turns`.                                  |
+| `autonomous.stale_monitor_runs_before_completion` | `integer` | `3`                           | Number of consecutive `NO_CHANGE` cycles after which a periodic monitor is considered "stale" — the agent may declare the autonomous session complete even while the monitor is still running. Monitors continue in the background. |
+| `autonomous.sessions`                             | `array`   | `[]`                          | List of named autonomous session definitions (see below). An empty list means no autonomous sessions run.                                                                                                                           |
 
 Each entry in `autonomous.sessions` is an `AutonomousSessionDefinition` object:
 
@@ -525,17 +519,14 @@ Each entry in `autonomous.sessions` is an `AutonomousSessionDefinition` object:
 | `prompt`                   | `string`  | `""`         | Custom kickoff prompt. When empty, the standard "Pick a subject and draft a plan" prompt is used.   |
 | `trigger_type`             | `string`  | `"periodic"` | Restart strategy: `"periodic"` (wait `trigger_interval_seconds`) or `"on_close"` (continuous mode). |
 | `trigger_interval_seconds` | `number`  | `45.0`       | Delay between completion and restart for `"periodic"` trigger. Ignored for `"on_close"`.            |
+| `max_auto_turns`           | `integer` | `20`         | Maximum automatic agent turns during the execution phase before reverting to `proposal`.            |
 | `enabled`                  | `boolean` | `true`       | When `false`, the definition is skipped — no session is created for it.                             |
 
-**Default preset.** When `autonomous.sessions` is empty (the default), the runner synthesizes a
-single session definition named `"default"` with a periodic trigger at `continue_interval_seconds`.
-This preserves the pre-existing single-session behavior exactly — the
-`GET /sessions?owner_id=autonomous` endpoint and the `[AUTONOMOUS]` UI badge continue to work.
-
-**Named sessions.** Adding entries to `autonomous.sessions` enables multiple concurrent autonomous
-sessions. Each definition maps to a distinct pseudo-owner (`autonomous:<name>`), so sessions cannot
-overlap with themselves (the per-owner dedup invariant applies). Session runs are logged and
-auditable — each run records the definition name, trigger reason, start/end time, and summary.
+**Named sessions.** Each entry in `autonomous.sessions` enables one autonomous session. Each
+definition maps to a distinct pseudo-owner (`autonomous:<name>`, or `autonomous` for the `"default"`
+preset), so sessions cannot overlap with themselves (the per-owner dedup invariant applies). Session
+runs are logged and auditable — each run records the definition name, trigger reason, start/end
+time, and summary.
 
 **API.** The management surface is served at:
 
@@ -547,19 +538,20 @@ auditable — each run records the definition name, trigger reason, start/end ti
 
 ```json
 "autonomous": {
-  "enabled": true,
   "sessions": [
     {
       "name": "default",
       "prompt": "",
       "trigger_type": "periodic",
       "trigger_interval_seconds": 45.0,
+      "max_auto_turns": 20,
       "enabled": true
     },
     {
       "name": "continuous-triage",
       "prompt": "Begin an autonomous triage session.  Scan open tickets and investigate the oldest unassigned item.",
       "trigger_type": "on_close",
+      "max_auto_turns": 30,
       "enabled": true
     }
   ]

@@ -258,8 +258,6 @@ async def test_sessions_list_endpoint_autonomous_annotations() -> None:
     mock_runner = MagicMock()
     mock_runner.is_autonomous.side_effect = lambda sid: sid == "auto-1"
     mock_runner.get_state.return_value = AutonomousState.executing
-    mock_runner.max_auto_turns = 50
-    mock_runner.session_color = "#ff0000"
 
     fake_session = MagicMock()
     fake_session.plan_text = "Do stuff"
@@ -277,8 +275,6 @@ async def test_sessions_list_endpoint_autonomous_annotations() -> None:
     assert body["sessions"][0][SSE_AUTONOMOUS_STATE_TYPE] == "executing"
     assert body["sessions"][0]["autonomous_plan_text"] == "Do stuff"
     assert body["sessions"][0]["autonomous_turn_count"] == 5
-    assert body["sessions"][0]["autonomous_max_turns"] == 50
-    assert body["sessions"][0]["autonomous_session_color"] == "#ff0000"
     # Manual session should remain unannotated.
     assert "autonomous" not in body["sessions"][1]
 
