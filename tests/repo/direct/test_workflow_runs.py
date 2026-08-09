@@ -183,7 +183,8 @@ async def test_get_workflow_run_jobs_returns_empty_on_error(
 # ---------------------------------------------------------------------------
 
 
-def test_diagnose_billing_failure_never_started() -> None:
+@pytest.mark.asyncio
+async def test_diagnose_billing_failure_never_started() -> None:
     """Run with no run_started_at → never-started diagnostic."""
     client = ActionsClient(_settings())
     runs: list[dict[str, object]] = [
@@ -196,13 +197,14 @@ def test_diagnose_billing_failure_never_started() -> None:
             "run_started_at": None,
         }
     ]
-    diag = client._diagnose_billing_failure(runs)
+    diag = await client._diagnose_billing_failure(runs, "org/repo")
     assert diag is not None
     assert "billing" in diag.lower()
     assert "never started" in diag.lower()
 
 
-def test_diagnose_billing_failure_no_match() -> None:
+@pytest.mark.asyncio
+async def test_diagnose_billing_failure_no_match() -> None:
     """Successful runs → no billing diagnostic."""
     client = ActionsClient(_settings())
     runs: list[dict[str, object]] = [
@@ -214,11 +216,12 @@ def test_diagnose_billing_failure_no_match() -> None:
             "head_branch": "main",
         }
     ]
-    diag = client._diagnose_billing_failure(runs)
+    diag = await client._diagnose_billing_failure(runs, "org/repo")
     assert diag is None
 
 
-def test_diagnose_billing_failure_in_progress_skipped() -> None:
+@pytest.mark.asyncio
+async def test_diagnose_billing_failure_in_progress_skipped() -> None:
     """In-progress runs are not misdiagnosed as billing failures."""
     client = ActionsClient(_settings())
     runs: list[dict[str, object]] = [
@@ -230,12 +233,13 @@ def test_diagnose_billing_failure_in_progress_skipped() -> None:
             "head_branch": "main",
         }
     ]
-    diag = client._diagnose_billing_failure(runs)
+    diag = await client._diagnose_billing_failure(runs, "org/repo")
     assert diag is None
 
 
-def test_diagnose_billing_failure_empty_runs() -> None:
+@pytest.mark.asyncio
+async def test_diagnose_billing_failure_empty_runs() -> None:
     """Empty run list → None (no diagnostic)."""
     client = ActionsClient(_settings())
-    diag = client._diagnose_billing_failure([])
+    diag = await client._diagnose_billing_failure([], "org/repo")
     assert diag is None

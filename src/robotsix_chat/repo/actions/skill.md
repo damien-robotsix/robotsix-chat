@@ -95,7 +95,9 @@ Fetch recent workflow runs and diagnose common CI failure patterns. This is a re
 
 In particular, it detects **private-repo billing failures** — runs that complete with
 `conclusion: "failure"` but have zero jobs, or runs that never started (`run_started_at` is null).
-These signatures strongly indicate that GitHub Actions billing is not enabled for the repository.
+Before attributing the failure to billing, it cross-checks whether other workflow runs on the same
+commit completed successfully — if they did, the root cause is likely a trigger configuration
+mismatch (e.g. a workflow that only triggers on `push` to `main`, not on `pull_request`).
 
 **Read-only.** Does not modify any repository state. No confirmation gating — safe to call anytime
 to investigate a CI failure.
