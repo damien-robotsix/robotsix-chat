@@ -1271,6 +1271,11 @@ class AutonomousSettings(BaseModel):
     list.  Each preset carries its own prompt, trigger type, max turns, and
     enabled flag — there are no legacy single-session keys.
 
+    The built-in default preset ``{"name": "default"}`` ships in the schema
+    defaults (the field default) and in the committed config template so it
+    is always visible in the UI.  The runner reads only the configured
+    presets list — there is no hidden or implicit fallback session.
+
     Attributes:
         proposal_marker: Marker string the agent emits after drafting a plan
             to signal the plan is ready for operator review.  The session
@@ -1286,10 +1291,10 @@ class AutonomousSettings(BaseModel):
             auto-continue turns before the loop halts (reverts to proposal).
         stale_monitor_runs_before_completion: Number of consecutive NO_CHANGE
             cycles after which a periodic monitor is considered 'stale'.
-        sessions: List of named autonomous session definitions.  When empty,
-            no autonomous sessions run — presets are the sole enablement model.
-            Each entry defines a prompt, trigger, max turns, and enabled flag
-            for one autonomous session.
+        sessions: List of named autonomous session definitions.  When
+            explicitly cleared, no autonomous sessions run — presets are the
+            sole enablement model.  Each entry defines a prompt, trigger, max
+            turns, and enabled flag for one autonomous session.
 
     """
 
@@ -1317,12 +1322,15 @@ class AutonomousSettings(BaseModel):
         ),
     )
     sessions: list[AutonomousSessionDefinition] = Field(
-        default_factory=list,
+        default_factory=lambda: [AutonomousSessionDefinition(name="default")],
         description=(
-            "Named autonomous session definitions.  When empty, no autonomous "
-            "sessions run — presets are the sole enablement model.  Each entry "
-            "defines a prompt, trigger, max turns, and enabled flag for one "
-            "autonomous session."
+            "Named autonomous session definitions.  The built-in default "
+            'preset ``{"name": "default"}`` ships in the schema defaults '
+            "and in the committed config template so it is always visible.  "
+            "When the list is explicitly cleared, no autonomous sessions run "
+            "— presets are the sole enablement model.  Each entry defines a "
+            "prompt, trigger, max turns, and enabled flag for one autonomous "
+            "session."
         ),
     )
     model_config = ConfigDict(extra="forbid")
@@ -1335,6 +1343,12 @@ class AutonomousSettings(BaseModel):
         Legacy keys ``enabled``, ``initial_task``, ``session_color``,
         ``persist_path``, and ``pending_subsession_wait_timeout`` are
         stripped silently — they have no equivalent in the preset model.
+
+        The built-in default preset (``{"name": "default"}``) is now carried
+        in the ``sessions`` field default (schema default), not injected here.
+        Existing deployments that lack a ``sessions`` key receive the default
+        from the field default; deployments that explicitly clear the list
+        run no autonomous sessions.
 
         The global ``max_auto_turns`` value is migrated into every session
         preset that does not already define its own ``max_auto_turns``,
