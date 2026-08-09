@@ -1554,6 +1554,71 @@ adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 
 <!-- towncrier release notes start -->
 
+## [0.7.0](https://github.com/damien-robotsix/robotsix-chat/compare/v0.6.0...v0.7.0) (2026-08-09)
+
+
+### ⚠ BREAKING CHANGES
+
+* **config:** move http_probe.fleet_auth / render_url.fleet_auth / public_fetch.fleet_auth to the top-level fleet_auth. The old keys are rejected.
+* **config:** adopt the canonical langfuse.projects credential block ([#1124](https://github.com/damien-robotsix/robotsix-chat/issues/1124))
+
+### Features
+
+* **autonomous:** add auto_approve + default autonomy capabilities on ([#854](https://github.com/damien-robotsix/robotsix-chat/issues/854)) ([c4b8774](https://github.com/damien-robotsix/robotsix-chat/commit/c4b8774287610f8a01ce7a1bb1c8e456ef11d38b))
+* **autonomous:** throttle continues + gate on pending subsessions ([#780](https://github.com/damien-robotsix/robotsix-chat/issues/780)) ([e866a43](https://github.com/damien-robotsix/robotsix-chat/commit/e866a43bd2752b436879d81437b8ade04717a024))
+* **chat-skill:** serve this component's own skill document ([#1224](https://github.com/damien-robotsix/robotsix-chat/issues/1224)) ([fd49c13](https://github.com/damien-robotsix/robotsix-chat/commit/fd49c1322bc27e7c6b0cb1c3477bb518f2e66577))
+* **chat:** live re-attach an in-progress turn when switching sessions ([#826](https://github.com/damien-robotsix/robotsix-chat/issues/826)) ([7fe1a99](https://github.com/damien-robotsix/robotsix-chat/commit/7fe1a99f0f8dc61cfead43813729672f6ef67b6e))
+* **component-access:** fall back to the deploy api_token for header auth ([#1226](https://github.com/damien-robotsix/robotsix-chat/issues/1226)) ([ed6081f](https://github.com/damien-robotsix/robotsix-chat/commit/ed6081f1d565c2fd81257a7b500c566941660b25))
+* **config:** adopt the canonical langfuse.projects credential block ([#1124](https://github.com/damien-robotsix/robotsix-chat/issues/1124)) ([a12d7b4](https://github.com/damien-robotsix/robotsix-chat/commit/a12d7b469ac69f9899a1ddf749a66d1d9ffe2e52))
+* **llm:** give chat agents and subsessions web access ([#1199](https://github.com/damien-robotsix/robotsix-chat/issues/1199)) ([496b1ce](https://github.com/damien-robotsix/robotsix-chat/commit/496b1ce0e0cf20593e2f66ec0a058f5a431fd101))
+* **memory:** cheap automatic recall + on-demand deep search_memory tool ([#1104](https://github.com/damien-robotsix/robotsix-chat/issues/1104)) ([66130fc](https://github.com/damien-robotsix/robotsix-chat/commit/66130fc3bc216e3042e218c6048aa8036f9470d5))
+* **memory:** let background agents recall without cognifying ([#1108](https://github.com/damien-robotsix/robotsix-chat/issues/1108)) ([a6620a1](https://github.com/damien-robotsix/robotsix-chat/commit/a6620a1ba675044e77f8d3e92a94b001b55bee7d))
+* **mill:** enable the credit_balance and data_dir_gc periodic passes ([#1218](https://github.com/damien-robotsix/robotsix-chat/issues/1218)) ([05b2281](https://github.com/damien-robotsix/robotsix-chat/commit/05b2281a80a1da45e5464b93e7a0a757f617ce01))
+* **release:** adopt release-please, retire towncrier ([#1229](https://github.com/damien-robotsix/robotsix-chat/issues/1229)) ([1a65ca5](https://github.com/damien-robotsix/robotsix-chat/commit/1a65ca545d10551b4b54411ed867debb198678a3))
+* **repo:** wire release automation when creating a fleet repo ([#1206](https://github.com/damien-robotsix/robotsix-chat/issues/1206)) ([e8c3dc5](https://github.com/damien-robotsix/robotsix-chat/commit/e8c3dc5b23e80b7bddf126ddc02aa0c69cf23f63))
+
+
+### Bug Fixes
+
+* **autonomous:** keep one live run + make autonomous sessions closable ([#949](https://github.com/damien-robotsix/robotsix-chat/issues/949)) ([b13dd66](https://github.com/damien-robotsix/robotsix-chat/commit/b13dd668619a87b29976b65f54ec4e1491eb2469))
+* **autonomous:** register autonomous sessions in the conversation store so the UI lists them ([#857](https://github.com/damien-robotsix/robotsix-chat/issues/857)) ([8f0d4af](https://github.com/damien-robotsix/robotsix-chat/commit/8f0d4af0e824115ca789bac00c973fe8d919b2ad))
+* **ci:** grant the weekly rescan every permission its callee declares ([#1149](https://github.com/damien-robotsix/robotsix-chat/issues/1149)) ([6d415d3](https://github.com/damien-robotsix/robotsix-chat/commit/6d415d3d7caf0ecd3d00b433a89d3a52fc3494d8))
+* **config:** preserve the config file's mode across PUT /config ([#1223](https://github.com/damien-robotsix/robotsix-chat/issues/1223)) ([f386250](https://github.com/damien-robotsix/robotsix-chat/commit/f3862503c167981449d72162ada30c610829a2e7))
+* **deps:** bump robotsix-llmio past the task_budget fixes ([#1196](https://github.com/damien-robotsix/robotsix-chat/issues/1196)) ([0676c31](https://github.com/damien-robotsix/robotsix-chat/commit/0676c31ec71e49ad0ce9f7fbe3eb61d39985ae97))
+* **feedback:** use the configured deploy URL for the repo roster ([#1197](https://github.com/damien-robotsix/robotsix-chat/issues/1197)) ([d0fc2ab](https://github.com/damien-robotsix/robotsix-chat/commit/d0fc2abea47e437101cb2478c123aea431447046))
+* **lifecycle:** repair cognee auto-recovery self-restart (wrong path + empty base_url) ([#827](https://github.com/damien-robotsix/robotsix-chat/issues/827)) ([d27f3e3](https://github.com/damien-robotsix/robotsix-chat/commit/d27f3e3ba4f9d6a25c7ad4c38de7c712a0c01533))
+* **llm:** degrade to another tier when the Claude credential dies ([#1148](https://github.com/damien-robotsix/robotsix-chat/issues/1148)) ([ba0c6f6](https://github.com/damien-robotsix/robotsix-chat/commit/ba0c6f6b3ffd1d15c1da333cd9a126c6992c5a34))
+* **memory:** bound recall concurrency to stop the startup thundering herd ([#1150](https://github.com/damien-robotsix/robotsix-chat/issues/1150)) ([2f475df](https://github.com/damien-robotsix/robotsix-chat/commit/2f475dfb6e4e88a2b6e8d29888e33babc8de7a0d))
+* **memory:** default cognee LLM to cheap gpt-5-mini, not expensive Haiku ([#832](https://github.com/damien-robotsix/robotsix-chat/issues/832)) ([edcf3b0](https://github.com/damien-robotsix/robotsix-chat/commit/edcf3b0398a120ca3f51e0e4fd62c666c0b1e86a))
+* **memory:** disable cognee session cache (CACHING=false) ([#1202](https://github.com/damien-robotsix/robotsix-chat/issues/1202)) ([7d34f60](https://github.com/damien-robotsix/robotsix-chat/commit/7d34f600470d716ae058ef02577648a506022606)), closes [#1201](https://github.com/damien-robotsix/robotsix-chat/issues/1201)
+* **memory:** gate cognee memory off for unattended background agents ([#892](https://github.com/damien-robotsix/robotsix-chat/issues/892)) ([5cd0e0b](https://github.com/damien-robotsix/robotsix-chat/commit/5cd0e0b7e3f7aa802d023e39514def1c31baf591))
+* **memory:** make the recall bound process-wide, not per-instance ([#1153](https://github.com/damien-robotsix/robotsix-chat/issues/1153)) ([c4dd66a](https://github.com/damien-robotsix/robotsix-chat/commit/c4dd66a198f4ce9ecd43ddb554bb61326a9299de))
+* **memory:** retry writes with backoff and raise the attempt timeout to 900s ([#1107](https://github.com/damien-robotsix/robotsix-chat/issues/1107)) ([e718503](https://github.com/damien-robotsix/robotsix-chat/commit/e718503b2057673f2eb98121097880d35113e56c))
+* **memory:** share one cognee backend across agents; cancellation-safe setup ([#1194](https://github.com/damien-robotsix/robotsix-chat/issues/1194)) ([7518624](https://github.com/damien-robotsix/robotsix-chat/commit/7518624c8033d28f520664e281d199e9d58cdf61))
+* **memory:** stop the cognee self-heal wiping the knowledge graph on every startup ([#1099](https://github.com/damien-robotsix/robotsix-chat/issues/1099)) ([5382e80](https://github.com/damien-robotsix/robotsix-chat/commit/5382e801ca51d47648742f11427e0be07bd756fc))
+* **memory:** warm cognee at startup so the first turns aren't billed for it ([#1152](https://github.com/damien-robotsix/robotsix-chat/issues/1152)) ([b9e879a](https://github.com/damien-robotsix/robotsix-chat/commit/b9e879abcbe2aac65d77580a8180799c8d2c795d))
+* **repo-study:** accept `path` in list_repo_files ([#1057](https://github.com/damien-robotsix/robotsix-chat/issues/1057)) ([7436029](https://github.com/damien-robotsix/robotsix-chat/commit/74360297335bf4591045145d690cc047944f056c))
+* **sessions:** serve one shared session pool from every access point ([#1151](https://github.com/damien-robotsix/robotsix-chat/issues/1151)) ([543bc9c](https://github.com/damien-robotsix/robotsix-chat/commit/543bc9c7e39b8c279b1ef6508db130433afb4240))
+* **ticket_poll:** distinguish 404 from outage in board API errors ([#1220](https://github.com/damien-robotsix/robotsix-chat/issues/1220)) ([92886a7](https://github.com/damien-robotsix/robotsix-chat/commit/92886a72c126c607ceddb8ce804e96557c28c803))
+* **ui:** error messages hidden behind summary + spurious "operation was aborted" ([#830](https://github.com/damien-robotsix/robotsix-chat/issues/830)) ([2488482](https://github.com/damien-robotsix/robotsix-chat/commit/2488482bd2afec55ec17577b0967e1ebaa2a2c3c))
+* **ui:** surface and interact with autonomous sessions in the chat UI ([#925](https://github.com/damien-robotsix/robotsix-chat/issues/925)) ([242cb65](https://github.com/damien-robotsix/robotsix-chat/commit/242cb65ceb8c7fbb06a76ada599e5ab963ff020d))
+
+
+### Reverts
+
+* **repo:** drop the auto-release bootstrap — wrong mechanism ([#1207](https://github.com/damien-robotsix/robotsix-chat/issues/1207)) ([c0d9b29](https://github.com/damien-robotsix/robotsix-chat/commit/c0d9b29c92ff5ca59955be6378e07bbb564126be))
+
+
+### Documentation
+
+* **config:** drop stale refdocs/version_check github_token rows ([#1222](https://github.com/damien-robotsix/robotsix-chat/issues/1222)) ([b4420de](https://github.com/damien-robotsix/robotsix-chat/commit/b4420de1f59af5ef7786f2756d57d0faf881c0fe))
+* drop the decommissioned DEPLOY_API_KEY env var ([#1127](https://github.com/damien-robotsix/robotsix-chat/issues/1127)) ([643d529](https://github.com/damien-robotsix/robotsix-chat/commit/643d5295d4cf0ad0cdb18913a8f77e1ea6991ecc))
+
+
+### Code Refactoring
+
+* **config:** one top-level fleet_auth setting ([#1225](https://github.com/damien-robotsix/robotsix-chat/issues/1225)) ([7e79f71](https://github.com/damien-robotsix/robotsix-chat/commit/7e79f7114ac9279c2e22c1caf967f0112ee4970e))
+
 ## [0.6.0] - 2026-08-09
 
 ### Features
