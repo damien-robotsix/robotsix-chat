@@ -1,1 +1,0 @@
-Document resume-blocked fallback when reset_implement_spawn_counter returns 405
