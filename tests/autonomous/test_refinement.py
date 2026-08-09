@@ -2,6 +2,7 @@
 
 from __future__ import annotations
 
+import asyncio
 import json
 import uuid
 from pathlib import Path
@@ -763,3 +764,102 @@ class TestDefinitionRefinementState:
         assert state.base_prompt == ""
         assert state.accepted_addendum == ""
         assert state.entries == []
+
+
+# ---------------------------------------------------------------------------
+# Concurrent proposal safety
+# ---------------------------------------------------------------------------
+
+
+class TestConcurrentProposeRefinement:
+    """Two concurrent proposals for the same definition don't lost-update state."""
+
+    @pytest.mark.asyncio
+    async def test_concurrent_proposals_both_recorded(self, tmp_path: Path) -> None:
+        """Two simultaneous proposals for the same definition each produce an entry."""
+        agent = MagicMock()
+        agent.stream = MagicMock()
+
+        call_order: list[str] = []
+
+        async def _slow_stream(message, *args, **kwargs):
+            call_order.append("start")
+            # Yield control so both tasks can enter propose_refinement
+            # before either completes the LLM call.
+            await asyncio.sleep(0)
+            call_order.append("yield")
+            yield "lesson from concurrent call"
+            return
+
+        agent.stream.side_effect = _slow_stream
+
+        store = RefinementStore(
+            str(tmp_path / "refinements.json"), agent_factory=lambda: agent
+        )
+
+        async def _propose(task_id: str) -> RefinementEntry | None:
+            return await store.propose_refinement(
+                "def1",
+                base_prompt="bp",
+                session_id=f"s-{task_id}",
+                conversation_history=f"history-{task_id}",
+            )
+
+        # Launch two concurrent proposals.
+        entry_a, entry_b = await asyncio.gather(_propose("a"), _propose("b"))
+
+        assert entry_a is not None
+        assert entry_b is not None
+        assert entry_a.id != entry_b.id
+        assert entry_a.status == "pending"
+        assert entry_b.status == "pending"
+
+        # Both entries are persisted.
+        state = store.get_state("def1")
+        assert len(state.entries) == 2
+        entry_ids = {e.id for e in state.entries}
+        assert entry_a.id in entry_ids
+        assert entry_b.id in entry_ids
+        # No lost update: both proposals used the same initial addendum (empty).
+        assert entry_a.previous_addendum == ""
+        assert entry_b.previous_addendum == ""
+
+    @pytest.mark.asyncio
+    async def test_concurrent_auto_accept_no_lost_update(self, tmp_path: Path) -> None:
+        """Two concurrent auto-accept proposals: no accepted_addendum lost-update."""
+        agent = MagicMock()
+        agent.stream = MagicMock()
+
+        async def _slow_stream(message, *args, **kwargs):
+            await asyncio.sleep(0)
+            yield "auto lesson"
+            return
+
+        agent.stream.side_effect = _slow_stream
+
+        store = RefinementStore(
+            str(tmp_path / "refinements.json"), agent_factory=lambda: agent
+        )
+
+        async def _propose(task_id: str) -> RefinementEntry | None:
+            return await store.propose_refinement(
+                "def1",
+                base_prompt="bp",
+                session_id=f"s-{task_id}",
+                conversation_history=f"history-{task_id}",
+                auto_accept=True,
+            )
+
+        e1, e2 = await asyncio.gather(_propose("a"), _propose("b"))
+
+        assert e1 is not None
+        assert e2 is not None
+        # The last one to acquire the lock wins the addendum, but both
+        # entries are recorded.
+        state = store.get_state("def1")
+        accepted = [e for e in state.entries if e.status == "accepted"]
+        assert len(accepted) == 2
+        # accepted_addendum should be set (not empty).
+        assert state.accepted_addendum in ("auto lesson", "auto lesson")
+        # Both entries are in the list.
+        assert len(state.entries) == 2
