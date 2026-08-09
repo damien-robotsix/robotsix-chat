@@ -10,7 +10,7 @@ if TYPE_CHECKING:
 # Version stamp for the autonomous appendix (build_autonomous_instruction).
 # Bump on every change to the instruction text and update
 # docs/system_prompt_changelog.md with a new AUTONOMOUS entry + SHA256.
-AUTONOMOUS_PROMPT_VERSION = 3
+AUTONOMOUS_PROMPT_VERSION = 4
 
 
 def build_autonomous_instruction(settings: Settings) -> str:
@@ -23,6 +23,11 @@ def build_autonomous_instruction(settings: Settings) -> str:
     proposal_marker = settings.autonomous.proposal_marker
     completion_marker = settings.autonomous.completion_marker
     stale_threshold = settings.autonomous.stale_monitor_runs_before_completion
+    auto_approve = settings.autonomy.auto_approve_self_authored
+    allowlist = settings.autonomy.auto_approve_repo_allowlist
+    suppress_no_change = settings.autonomy.suppress_no_change_monitors
+
+    allowlist_str = ", ".join(allowlist) if allowlist else "(none)"
 
     return (
         "\n\n"
@@ -127,6 +132,47 @@ def build_autonomous_instruction(settings: Settings) -> str:
         "The session will stay open after completion — the operator will "
         "close it when ready.  Do not start a new session on your own.\n"
         "\n"
+        "\n"
+        "AUTONOMY TIER — the operator has configured an autonomy setting that "
+        "reduces interruptions for low-risk, mechanical decisions.  This is an "
+        "explicit, documented exception to the default confirmation gate — "
+        "treat it as a standing directive, not a silent override.\n"
+        "\n"
+        f"Current tier: auto_approve_self_authored={'ON' if auto_approve else 'OFF'}, "
+        f"allowlist=[{allowlist_str}], "
+        f"suppress_no_change_monitors={'ON' if suppress_no_change else 'OFF'}.\n"
+        "\n"
+        "AUTO-APPROVAL RULES (when auto_approve_self_authored is ON):\n"
+        "  - You MAY auto-approve a human_issue_approval ticket when ALL of:\n"
+        "    1. You (or a chat-agent feedback source) authored the ticket.\n"
+        "    2. The target repo is listed in the allowlist.\n"
+        "    3. The spec has verified acceptance criteria.\n"
+        "    4. The change is non-destructive and reversible (no deletions, "
+        "no sensitive-path modifications).\n"
+        "  - You MUST NOT auto-approve when ANY of these non-negotiable "
+        "gates are triggered:\n"
+        "    * The ticket touches a security-sensitive path "
+        "(.github/workflows/**, secrets/**, .env*, credentials, auth).\n"
+        "    * The ticket deletes files, directories, or tracked data.\n"
+        "    * The ticket changes priority/scope with broad blast radius.\n"
+        "    * The agent cannot independently verify the change is safe.\n"
+        "    * The ticket's author is not verifiably the agent or a "
+        "chat-agent feedback source.\n"
+        "    * The target repo is NOT in the allowlist.\n"
+        "  - When in doubt, gate — the non-negotiable list is a floor, not "
+        "a ceiling.  Treat any ambiguous mutation as gated.\n"
+        "\n"
+        "MONITOR OUTCOME SUPPRESSION (when suppress_no_change_monitors is ON):\n"
+        "  - Do NOT surface periodic/event monitor outcomes that carry no "
+        "actionable delta: NO_CHANGE runs, completed-normally closures, "
+        "auto-pause notices, routine state transitions.\n"
+        "  - Only escalate: blockers, decisions that fail auto-approval "
+        "criteria, terminal failures, and outcomes that require operator "
+        "action.\n"
+        "  - A single sentence like 'All monitors report no change.' is "
+        "sufficient only when suppress_no_change_monitors is OFF; when ON, "
+        "omit no-change outcomes entirely from operator-facing turns.\n"
+        "\n"
         "MUTATION AUTHORIZATION — Some actions change external state and "
         "must not be performed without the operator's explicit go-ahead.  "
         "Mutating actions include (but are not limited to):\n"
@@ -172,7 +218,10 @@ def build_autonomous_instruction(settings: Settings) -> str:
         "MUST NOT auto-approve it unless the operator has explicitly "
         "authorized that specific ticket (by ID) or the gate (by name) in "
         "the current turn, OR the ticket was filed in the same turn at "
-        "the operator's direct request (a user-requested ticket).  "
+        "the operator's direct request (a user-requested ticket), OR "
+        "the AUTONOMY TIER rules (above) permit auto-approval for this "
+        "ticket — self-authored, target repo in the allowlist, "
+        "non-destructive, no sensitive paths.  "
         "User-requested tickets filed at the operator's explicit "
         "instruction are pre-authorized: approve them after filing "
         "without waiting for separate gate-level consent.  "
