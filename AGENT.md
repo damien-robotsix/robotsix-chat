@@ -53,6 +53,18 @@ deployed config files still carry the legacy key (serialized before the removal)
 types, defaults, and descriptions — mirror an existing section (e.g. `### SFTP`) and keep it in the
 same PR. A settings model without a config-doc section is incomplete.
 
+**Rule:** Every field added to a Pydantic config model in `src/robotsix_chat/config/models.py` must
+appear as a row in the model's `###` table in `docs/configuration.md` — even when the field is
+appended to an existing model. A field declared and consumed but missing from its config-doc table
+is an incomplete change.
+
+**Rationale:** The existing rule covers new settings models requiring a `###` section, but not
+fields added to existing models. The completeness_check epic found six separate fields that shipped
+added to existing models with no matching table row (feedback.deploy_api_key, memory
+recovery/subsession/autonomous-cluster fields, subsessions.user_chat_max_retries,
+autonomous.max_idle_auto_turns, render_url.fleet_auth, http_probe.fleet_auth; the trigger ticket
+fixed feedback.deploy_api_key in PR #1100).
+
 ## Deploy stack structure
 
 Two compose files with different jobs (component standard):
