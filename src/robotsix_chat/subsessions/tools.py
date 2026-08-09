@@ -172,7 +172,8 @@ def _build_spawn_and_control_tools(
         interval_seconds (minimum applies) and max_runs are
         for kind="periodic" only.
 
-        dedup_key is for kind="user_chat" and kind="periodic": a short,
+        dedup_key is for kind="user_chat", kind="periodic", and
+        kind="wait_for_event": a short,
         stable string that identifies a known issue or ticket (e.g. the
         exact error message prefix, like "asyncio.run() cannot be called",
         or a ticket id like "5f1c"). When set and a subsession with the
@@ -194,6 +195,17 @@ def _build_spawn_and_control_tools(
             return f"Unknown kind {kind!r} — expected one of: {_KIND_VALUES}."
         if env.conversation_store.is_session_closed(ctx.owner_session_id):
             return "This session is closed — no new subsessions can be started."
+
+        # Reject wait_for_event spawns without a dedup_key synchronously —
+        # the ticket_id is required for event filtering and cannot be
+        # reliably extracted from the instructions alone.
+        if kind_enum is SubsessionKind.WAIT_FOR_EVENT and not dedup_key:
+            return (
+                "wait_for_event subsessions require a dedup_key "
+                "(the ticket id) — pass the ticket id returned by the "
+                "filing endpoint as dedup_key.  Without it the monitor "
+                "cannot filter incoming events and will fail to start."
+            )
 
         # Periodic/monitor sibling spawning and forbidden-kind pre-check.
         # When the spawning agent is a periodic or wait_for_event subsession:

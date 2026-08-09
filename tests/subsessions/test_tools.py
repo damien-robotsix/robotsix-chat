@@ -863,6 +863,68 @@ async def test_spawn_tool_dedup_key_non_user_chat_deduplicated() -> None:
 
 
 # ---------------------------------------------------------------------------
+# wait_for_event + dedup_key: synchronous rejection when ticket_id missing
+# ---------------------------------------------------------------------------
+
+
+@pytest.mark.asyncio
+async def test_spawn_wait_for_event_without_dedup_key_rejected() -> None:
+    """wait_for_event without dedup_key is rejected synchronously."""
+    env = build_env()
+    spawn = _by_name(build_subsession_tools(env, ctx=_ctx()), "spawn_subsession")
+
+    result = await spawn(
+        "wait_for_event",
+        "ticket monitor",
+        "monitor ticket foo",
+        model_level=3,
+    )
+
+    assert "require a dedup_key" in result
+    assert "wait_for_event" in result.lower()
+
+
+@pytest.mark.asyncio
+async def test_spawn_wait_for_event_with_dedup_key_populates_checkpoint() -> None:
+    """wait_for_event with dedup_key pre-populates checkpoint with ticket_id."""
+    env = build_env()
+    spawn = _by_name(build_subsession_tools(env, ctx=_ctx()), "spawn_subsession")
+
+    result = await spawn(
+        "wait_for_event",
+        "ticket monitor",
+        "monitor ticket abc",
+        dedup_key="abc-123",
+        model_level=3,
+    )
+
+    assert result.startswith("Started wait_for_event subsession ")
+    # Result format: "Started wait_for_event subsession <id> ('<title>')."
+    sub_id = result.split(" (")[0].rsplit(" ", 1)[-1]
+    info = env.registry.get(sub_id)
+    assert info is not None
+    assert info.checkpoint == {"ticket_id": "abc-123"}
+    assert info.dedup_key == "abc-123"
+
+
+@pytest.mark.asyncio
+async def test_spawn_wait_for_event_empty_dedup_key_rejected() -> None:
+    """wait_for_event with an empty dedup_key string is rejected."""
+    env = build_env()
+    spawn = _by_name(build_subsession_tools(env, ctx=_ctx()), "spawn_subsession")
+
+    result = await spawn(
+        "wait_for_event",
+        "ticket monitor",
+        "monitor ticket bar",
+        dedup_key="",
+        model_level=3,
+    )
+
+    assert "require a dedup_key" in result
+
+
+# ---------------------------------------------------------------------------
 # Periodic sibling spawning & forbidden-kind pre-check
 # ---------------------------------------------------------------------------
 
