@@ -3,6 +3,19 @@
 Governed artifact: `Settings.agent_instruction` default literal in
 `src/robotsix_chat/config/settings.py`. Version stamp: `SYSTEM_PROMPT_VERSION` in the same module.
 
+## v92 — 2026-08-09 — reduce-operator-interruptions-auto-appro-b90b
+
+**Summary:** Add autonomy tier guidance to the Autonomy section. The new paragraph
+describes the `autonomy.auto_approve_self_authored` config with repo allowlist and
+`autonomy.suppress_no_change_monitors`, noting the non-negotiable gate list and the
+conservative default.
+
+**Rationale:** The operator is interrupted too often for mechanical decisions.
+The autonomy tier lets the agent self-approve low-risk, self-authored tickets and
+suppress no-change monitor chatter when the operator opts in.
+
+**SHA256:** `c1dadbc92e7cdffc3a8667e41d5588c45f16b8dcaa4186fca52d203ac5fb2662`
+
 ## v91 — 2026-08-09 — avoid-unavailable-api-endpoints-check-or-4aa8
 
 **Summary:** Document `resume-blocked` as the standard fallback when
@@ -1832,6 +1845,26 @@ Governed artifact: `build_autonomous_instruction()` in
 The hash is computed on the output of `build_autonomous_instruction(Settings())` — i.e. with all
 autonomous settings at their pydantic field defaults (``proposal_marker="---PROPOSAL READY---"``,
 ``completion_marker="---AUTONOMOUS COMPLETE---"``, ``stale_monitor_runs_before_completion=3``).
+
+## AUTONOMOUS v4 — 2026-08-09 — reduce-operator-interruptions-auto-appro-b90b
+
+**Summary:** Add AUTONOMY TIER section to the autonomous protocol appendix.
+When `autonomy.auto_approve_self_authored` is enabled, the agent may auto-approve
+self-authored `human_issue_approval` tickets for repos in the allowlist, provided
+the change is non-destructive and no non-negotiable gate is triggered.  The
+non-negotiable gate list (security-sensitive paths, deletions, broad-blast-radius
+changes, non-allowlisted repos, unverifiable safety) is enumerated explicitly.
+When `autonomy.suppress_no_change_monitors` is enabled, no-change monitor outcomes
+are omitted from operator-facing turns.  The HUMAN_ISSUE_APPROVAL section is
+updated to reference the AUTONOMY TIER as a third auto-approval path alongside
+user-requested tickets and explicit operator authorization.
+
+**Rationale:** The operator is interrupted too often for mechanical decisions.
+The autonomy tier provides a config-driven, documented exception to the
+confirmation gate, with hard non-negotiable safety boundaries that apply even
+at the highest tier.
+
+**SHA256:** `e5d89e6cc0a2d488875f2c6ca36b68865b2f6521dff0cb89f9fcda6b0ccfdece`
 
 ## AUTONOMOUS v3 — 2026-08-02 — auto-prioritize-user-requested-tickets-46db
 

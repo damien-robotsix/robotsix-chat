@@ -83,7 +83,7 @@ ______________________________________________________________________
 | `llmio_api_key`             | `string` (secret)   | `""`                                                  | OpenRouter API key. Required for levels 1–2; ignored for 3–4.                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                            |
 | `chat_model_level`          | `integer` or `null` | `null`                                                | Optional override of `llmio_model_level` for the main interactive chat agent. When `null` (default), the chat agent uses `llmio_model_level`. Set to a specific level (e.g. `4` for fable-5) to route chat turns to a different tier while other consumers (subsessions, autonomous, summary) still use `llmio_model_level` or their own overrides.                                                                                                                                                                                                                                                      |
 | `summary_model_level`       | `integer`           | `1`                                                   | LLM capability level used to regenerate `POST /summary`'s structured extraction after each turn.                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                         |
-| `agent_instruction`         | `string`            | (long default)                                        | System instruction for the agent. Governed by the code default in `src/robotsix_chat/config/settings.py` (currently v91). Intentionally absent from `config/config.json` — the code default is the single source of truth. Operators who need to override it can add `"agent_instruction"` to their local or deployed config file; doing so bypasses the code default entirely. The agent's reply style is governed separately by [`docs/prompt-style.md`](prompt-style.md) — that file is automatically injected into every system prompt build and is the single source of truth for reply formatting. |
+| `agent_instruction`         | `string`            | (long default)                                        | System instruction for the agent. Governed by the code default in `src/robotsix_chat/config/settings.py` (currently v92). Intentionally absent from `config/config.json` — the code default is the single source of truth. Operators who need to override it can add `"agent_instruction"` to their local or deployed config file; doing so bypasses the code default entirely. The agent's reply style is governed separately by [`docs/prompt-style.md`](prompt-style.md) — that file is automatically injected into every system prompt build and is the single source of truth for reply formatting. |
 | `max_images_per_message`    | `integer`           | `8`                                                   | Maximum images per chat message.                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                         |
 | `max_image_bytes`           | `integer`           | `5242880`                                             | Maximum image size in bytes (5 MiB).                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                     |
 | `allowed_image_media_types` | `array[string]`     | `["image/png","image/jpeg","image/gif","image/webp"]` | Allowed image MIME types.                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                |
@@ -556,6 +556,35 @@ time, and summary.
       "enabled": true
     }
   ]
+}
+```
+______________________________________________________________________
+
+### Autonomy
+
+Operator-configurable autonomy tier that reduces interruptions for low-risk, mechanical decisions.
+The default is conservative — every action is gated, so behaviour only changes when the operator
+explicitly opts in.
+
+Even at the highest tier these actions remain **hard-gated**: merges touching
+`.github/workflows/**`, `secrets/**`, `.env*`, or any security-sensitive path; deletions of tracked
+files or directories; priority/scope changes with broad blast radius; ambiguous or novel mutation
+types; and any action whose safety the agent cannot independently verify.
+
+| JSON key                                  | Type      | Default | Description                                                                                                                                                                                      |
+| ----------------------------------------- | --------- | ------- | ------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------ |
+| `autonomy.auto_approve_self_authored`     | `boolean` | `false` | When `true`, the agent may auto-approve `human_issue_approval` tickets it (or a chat-agent feedback source) authored, provided the target repo is in `auto_approve_repo_allowlist` and the change is non-destructive / reversible. |
+| `autonomy.auto_approve_repo_allowlist`    | `array`   | `[]`    | Repository names (e.g. `"robotsix-chat"`) eligible for auto-approval when `auto_approve_self_authored` is enabled. Tickets targeting repos not listed here are always gated.                     |
+| `autonomy.suppress_no_change_monitors`    | `boolean` | `false` | When `true`, periodic and event monitor outcomes that carry no actionable delta (NO_CHANGE, completed normally, auto-paused) do not generate an operator-facing turn. Only blockers and terminal failures are surfaced. |
+
+**Example** — enabling auto-approval for self-authored tickets on the `robotsix-chat` repo,
+with no-change monitor suppression:
+
+```json
+"autonomy": {
+  "auto_approve_self_authored": true,
+  "auto_approve_repo_allowlist": ["robotsix-chat"],
+  "suppress_no_change_monitors": true
 }
 ```
 

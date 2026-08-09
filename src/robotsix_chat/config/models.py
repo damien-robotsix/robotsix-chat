@@ -1354,6 +1354,65 @@ class AutonomousSettings(BaseModel):
         return data
 
 
+class AutonomySettings(BaseModel):
+    """Operator-configurable autonomy tier for reducing interruptions.
+
+    When enabled, the chat agent can self-authorize certain low-risk
+    actions that would normally require operator approval.  The default
+    is conservative — every action is gated so behaviour only changes
+    when the operator explicitly opts in.
+
+    Even at the highest tier these actions remain HARD-GATED:
+    merges touching ``.github/workflows/**``, ``secrets/**``, ``.env*``
+    or any security-sensitive path; deletions of tracked files or
+    directories; priority/scope changes with broad blast radius;
+    ambiguous or novel mutation types; and any action whose safety the
+    agent cannot independently verify.
+
+    Attributes:
+        auto_approve_self_authored: When ``True``, the agent may
+            auto-approve ``human_issue_approval`` tickets that it
+            (or a chat-agent feedback source) authored, provided the
+            target repo is in ``auto_approve_repo_allowlist`` and the
+            change is non-destructive / reversible.
+        auto_approve_repo_allowlist: Repository names (e.g.
+            ``"robotsix-chat"``) eligible for auto-approval when
+            ``auto_approve_self_authored`` is enabled.  Tickets
+            targeting repos not listed here are always gated.
+        suppress_no_change_monitors: When ``True``, periodic and event
+            monitor outcomes that carry no actionable delta
+            (NO_CHANGE, completed normally, auto-paused) do not
+            generate an operator-facing turn.  Only blockers, decisions
+            that fail auto-approval criteria, and terminal failures
+            are surfaced.
+
+    """
+
+    model_config = ConfigDict(extra="forbid")
+
+    auto_approve_self_authored: bool = Field(
+        default=False,
+        description=(
+            "When True, auto-approve self-authored human_issue_approval "
+            "tickets for repos in the allowlist."
+        ),
+    )
+    auto_approve_repo_allowlist: list[str] = Field(
+        default_factory=list,
+        description=(
+            "Repos eligible for auto-approval when "
+            "auto_approve_self_authored is enabled."
+        ),
+    )
+    suppress_no_change_monitors: bool = Field(
+        default=False,
+        description=(
+            "When True, suppress operator-facing turns for monitor "
+            "outcomes with no actionable delta."
+        ),
+    )
+
+
 class ComponentCredentials(BaseModel):
     """Stored credentials for a single roster component.
 

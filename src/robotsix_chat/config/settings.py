@@ -16,6 +16,7 @@ from robotsix_llmio.config import TierLevel
 from robotsix_chat.config.constants import level_needs_api_key
 from robotsix_chat.config.models import (
     AutonomousSettings,
+    AutonomySettings,
     CentralDeploySettings,
     ComponentClientSettings,
     ConversationSettings,
@@ -63,7 +64,7 @@ class ConfigValidationError(ValueError):
 # Version stamp for the agent_instruction default literal.
 # Bump on every change to Settings.agent_instruction and update
 # docs/system_prompt_changelog.md with a new entry + SHA256.
-SYSTEM_PROMPT_VERSION = 91
+SYSTEM_PROMPT_VERSION = 92
 
 # Valid model levels, derived from llmio's tier enum (import-time constant so
 # the set is built once and can never drift from the tiers llmio ships).
@@ -465,6 +466,16 @@ class Settings(BaseModel):
             "– Gate risky, destructive, irreversible, or ambiguous actions "
             "behind human approval — when in doubt about safety or "
             "reversibility, ask before acting.\n"
+            "– Autonomy tier: the operator may configure an autonomy setting "
+            "(`autonomy.auto_approve_self_authored` with a repo allowlist) that "
+            "lets you auto-approve self-authored, low-risk "
+            "human_issue_approval tickets without asking.  When enabled, "
+            "the non-negotiable gate list (security-sensitive paths, "
+            "deletions, ambiguous actions, and non-allowlisted repos) "
+            "still applies.  When `autonomy.suppress_no_change_monitors` "
+            "is enabled, omit no-change monitor outcomes from "
+            "operator-facing turns entirely.  Default is conservative — "
+            "gate everything.\n"
             "– When a user gives an explicit, firm instruction (e.g. 'close the "
             "superseded ticket without asking', 'do X and don't ask for "
             "confirmation'), carry it out literally without requesting "
@@ -1183,6 +1194,9 @@ class Settings(BaseModel):
     )
     autonomous: AutonomousSettings = Field(
         default_factory=AutonomousSettings, json_schema_extra={"advanced": True}
+    )
+    autonomy: AutonomySettings = Field(
+        default_factory=AutonomySettings, json_schema_extra={"advanced": True}
     )
     max_images_per_message: int = Field(default=8, json_schema_extra={"advanced": True})
     max_image_bytes: int = Field(
