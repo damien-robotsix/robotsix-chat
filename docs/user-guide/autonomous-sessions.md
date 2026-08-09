@@ -5,16 +5,16 @@ step-by-step plan, presents the plan to the operator for review, then — once t
 on the plan — executes it through tool calls. Sessions stay open after completion; the operator
 explicitly closes them.
 
-**Session presets in ``autonomous.sessions`` are the sole enablement model.**  A preset that exists
-and has ``"enabled": true`` IS the enablement — there is no separate master switch.  When the
-sessions list is empty, no autonomous sessions run.  Define at least one preset to get started.
+**Session presets in `autonomous.sessions` are the sole enablement model.** A preset that exists
+and has `"enabled": true` IS the enablement — there is no separate master switch. When the
+sessions list is empty, no autonomous sessions run. Define at least one preset to get started.
 
 ______________________________________________________________________
 
 ## Overview
 
-Each configured session preset in ``autonomous.sessions`` runs an independent loop over its own
-pseudo-owner (``autonomous`` for the ``"default"`` preset, ``autonomous:<name>`` for named
+Each configured session preset in `autonomous.sessions` runs an independent loop over its own
+pseudo-owner (`autonomous` for the `"default"` preset, `autonomous:<name>` for named
 sessions). A session cannot overlap with itself: a new run does not start while the previous run of
 the same session is active.
 
@@ -23,14 +23,14 @@ the same session is active.
 Each session run follows the same flow:
 
 1. **Spawn** — the runner kicks off an initial agent turn with the session's kickoff prompt.
-2. **Plan & propose** — the agent picks a subject and drafts a plan, then emits the proposal marker
+1. **Plan & propose** — the agent picks a subject and drafts a plan, then emits the proposal marker
    (`---PROPOSAL READY---` by default). The session enters the `proposal` state and waits for the
    operator.
-3. **Execute** — when the operator comments on the plan, the session enters the `executing` state
+1. **Execute** — when the operator comments on the plan, the session enters the `executing` state
    and auto-cycles through tool calls.
-4. **Complete** — when the agent emits the completion marker (`---AUTONOMOUS COMPLETE---` by
+1. **Complete** — when the agent emits the completion marker (`---AUTONOMOUS COMPLETE---` by
    default), the session is marked `completed`, but stays open. The operator explicitly closes it.
-5. **Re-trigger** — depending on the session's trigger, a fresh run is scheduled after completion
+1. **Re-trigger** — depending on the session's trigger, a fresh run is scheduled after completion
    (see [Triggers](#triggers)).
 
 ### The `[AUTONOMOUS]` badge
@@ -43,7 +43,7 @@ ______________________________________________________________________
 
 ## Getting started (default preset)
 
-Add a session preset named ``"default"`` to ``autonomous.sessions`` to start the simplest
+Add a session preset named `"default"` to `autonomous.sessions` to start the simplest
 autonomous session:
 
 ```json
@@ -62,12 +62,12 @@ autonomous session:
 ```
 
 - **Prompt**: the standard "Pick a subject and draft a plan" prompt.
-- **Trigger**: ``periodic`` — it restarts after the configured ``trigger_interval_seconds``
+- **Trigger**: `periodic` — it restarts after the configured `trigger_interval_seconds`
   (default 45 s) after completion.
-- **Owner**: ``autonomous``.
+- **Owner**: `autonomous`.
 
-This gives you a single periodic autonomous session surfacing under the ``[AUTONOMOUS]`` badge at
-``GET /sessions?owner_id=autonomous``.
+This gives you a single periodic autonomous session surfacing under the `[AUTONOMOUS]` badge at
+`GET /sessions?owner_id=autonomous`.
 
 ______________________________________________________________________
 

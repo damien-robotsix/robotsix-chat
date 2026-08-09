@@ -367,11 +367,11 @@ Feedback tickets are filed against a set of allowed target repos. The set is res
 
 1. **Deploy roster** — `GET http://central-deploy:8100/chat/components` fetches the list of
    currently deployed chat components. Each component's `id` becomes a candidate target repo.
-2. **Mill repo registry** — `GET http://mill:8077/repos` fetches the list of registered repos from
+1. **Mill repo registry** — `GET http://mill:8077/repos` fetches the list of registered repos from
    the mill board.
-3. **Intersection** — only repos present in *both* the deploy roster *and* the mill repo registry
+1. **Intersection** — only repos present in *both* the deploy roster *and* the mill repo registry
    are allowed. A repo that is registered but not deployed (or vice versa) cannot receive tickets.
-4. **Fallback** — if either service is unreachable, returns an empty response, or the intersection
+1. **Fallback** — if either service is unreachable, returns an empty response, or the intersection
    is empty, the runner falls back to `["robotsix-chat"]` and logs a warning so the feedback
    pipeline continues to function in a degraded state.
 
@@ -498,20 +498,20 @@ checks.
 Autonomous sessions that pick a subject, draft a plan for operator review, then execute after the
 operator comments. Sessions stay open after completion — the operator must explicitly close them.
 
-Session presets in ``autonomous.sessions`` are the **sole enablement model** — a preset that exists
-and is enabled IS the enablement.  There is no separate master switch.  When the sessions list is
+Session presets in `autonomous.sessions` are the **sole enablement model** — a preset that exists
+and is enabled IS the enablement. There is no separate master switch. When the sessions list is
 empty, no autonomous sessions run.
 
-| JSON key                                          | Type      | Default                          | Description                                                                                                                                                                                                                         |
-| ------------------------------------------------- | --------- | -------------------------------- | ----------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- |
-| `autonomous.proposal_marker`                      | `string`  | `"---PROPOSAL READY---"`         | Marker string the agent emits after drafting a plan to signal it is ready for operator review. The session enters the `proposal` state.                                                                                             |
-| `autonomous.completion_marker`                    | `string`  | `"---AUTONOMOUS COMPLETE---"`    | Marker string the agent emits when the plan is complete. The session stays open after completion.                                                                                                                                   |
-| `autonomous.continue_interval_seconds`            | `number`  | `45.0`                           | Minimum pacing interval (seconds) between auto-continue loop iterations.                                                                                                                                                            |
-| `autonomous.max_idle_auto_turns`                  | `integer` | `5`                              | Maximum number of consecutive NO_CHANGE / idle auto-continue turns before the loop halts (reverts to `proposal`). Set to `0` to disable the idle cap and only rely on per-preset `max_auto_turns`.                                  |
-| `autonomous.stale_monitor_runs_before_completion` | `integer` | `3`                              | Number of consecutive `NO_CHANGE` cycles after which a periodic monitor is considered "stale" — the agent may declare the autonomous session complete even while the monitor is still running. Monitors continue in the background. |
-| `autonomous.sessions`                             | `array`   | `[]`                             | List of named autonomous session definitions (see below). An empty list means no autonomous sessions run.                                                                                                                           |
+| JSON key                                          | Type      | Default                       | Description                                                                                                                                                                                                                         |
+| ------------------------------------------------- | --------- | ----------------------------- | ----------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- |
+| `autonomous.proposal_marker`                      | `string`  | `"---PROPOSAL READY---"`      | Marker string the agent emits after drafting a plan to signal it is ready for operator review. The session enters the `proposal` state.                                                                                             |
+| `autonomous.completion_marker`                    | `string`  | `"---AUTONOMOUS COMPLETE---"` | Marker string the agent emits when the plan is complete. The session stays open after completion.                                                                                                                                   |
+| `autonomous.continue_interval_seconds`            | `number`  | `45.0`                        | Minimum pacing interval (seconds) between auto-continue loop iterations.                                                                                                                                                            |
+| `autonomous.max_idle_auto_turns`                  | `integer` | `5`                           | Maximum number of consecutive NO_CHANGE / idle auto-continue turns before the loop halts (reverts to `proposal`). Set to `0` to disable the idle cap and only rely on per-preset `max_auto_turns`.                                  |
+| `autonomous.stale_monitor_runs_before_completion` | `integer` | `3`                           | Number of consecutive `NO_CHANGE` cycles after which a periodic monitor is considered "stale" — the agent may declare the autonomous session complete even while the monitor is still running. Monitors continue in the background. |
+| `autonomous.sessions`                             | `array`   | `[]`                          | List of named autonomous session definitions (see below). An empty list means no autonomous sessions run.                                                                                                                           |
 
-Each entry in ``autonomous.sessions`` is an ``AutonomousSessionDefinition`` object:
+Each entry in `autonomous.sessions` is an `AutonomousSessionDefinition` object:
 
 | JSON key                   | Type      | Default      | Description                                                                                         |
 | -------------------------- | --------- | ------------ | --------------------------------------------------------------------------------------------------- |
@@ -522,9 +522,9 @@ Each entry in ``autonomous.sessions`` is an ``AutonomousSessionDefinition`` obje
 | `max_auto_turns`           | `integer` | `20`         | Maximum automatic agent turns during the execution phase before reverting to `proposal`.            |
 | `enabled`                  | `boolean` | `true`       | When `false`, the definition is skipped — no session is created for it.                             |
 
-**Named sessions.** Each entry in ``autonomous.sessions`` enables one autonomous session.  Each
-definition maps to a distinct pseudo-owner (``autonomous:<name>``, or ``autonomous`` for the
-``"default"`` preset), so sessions cannot overlap with themselves (the per-owner dedup invariant
+**Named sessions.** Each entry in `autonomous.sessions` enables one autonomous session. Each
+definition maps to a distinct pseudo-owner (`autonomous:<name>`, or `autonomous` for the
+`"default"` preset), so sessions cannot overlap with themselves (the per-owner dedup invariant
 applies). Session runs are logged and auditable — each run records the definition name, trigger
 reason, start/end time, and summary.
 
