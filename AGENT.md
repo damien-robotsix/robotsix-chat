@@ -307,6 +307,22 @@ direct-repo tool, use the exported callable name from `build_direct_repo_tools` 
 settings.py:597-599) to reference `merge_pr`, which exists only as an internal client method; the
 exported agent tool is `merge_direct_repo_pr`.
 
+## Prompt governance
+
+**Rule:** Every edit to the `build_autonomous_instruction()` return text in
+`src/robotsix_chat/autonomous/prompts.py` MUST bump `AUTONOMOUS_PROMPT_VERSION` in the same module,
+add a new `## AUTONOMOUS v<N> — <YYYY-MM-DD> — <ticket-id>` entry at the top of the
+`## Autonomous Prompt Changelog` section in `docs/system_prompt_changelog.md`, and record the SHA256
+of the live output (`sha256(build_autonomous_instruction(Settings()).encode())`).
+`tests/config/test_system_prompt_governance.py` enforces this, so skipping the bump wastes a CI
+cycle.
+
+**Rationale:** Ticket 20260804T004152Z-e556 (PR #1169) extended the existing SYSTEM_PROMPT
+governance to the autonomous appendix after two prompt edits (#1157, #1165) shipped silent.
+Documenting the convention in AGENT.md prevents future contributors from wasting a fixing_ci cycle
+discovering the governance test, matching the style of the CI-enforced rules already in the
+config/module-registration sections.
+
 ## Task tracking
 
 Persistent, human-readable task tracking lives under `tasks/` at the repo root:
