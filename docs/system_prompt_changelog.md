@@ -3,6 +3,29 @@
 Governed artifact: `Settings.agent_instruction` default literal in
 `src/robotsix_chat/config/settings.py`. Version stamp: `SYSTEM_PROMPT_VERSION` in the same module.
 
+## v95 — 2026-08-10 — distinguish-between-no-openrouter-api-ke-5aa9
+
+**Summary:** Rewrite the OpenRouter API key guidance in the "Model Policy" bullet
+under Subsessions. The agent is now instructed to never claim the key is missing
+outright, to retry at level 3 (keyless) on spawn failures, and to recommend the
+operator verify `llmio.api_key` in the server's JSON config file. The previous
+wording assumed the server could inspect environment variables and secrets, which
+it cannot — the server only reads its own config file. The same guidance is
+mirrored in `_validate_model_level` (worker.py) and `spawn_subsession_tool`'s
+docstring (tools.py).
+
+**Rationale:** The agent repeatedly told users their OpenRouter key was missing
+because it wasn't found in env or secrets, but the key was actually set — just in
+a location the server does not read (e.g. an external secret store or environment
+variable invisible to the mill worker). The agent now communicates its limitations
+clearly instead of making definitive claims it cannot verify.  (The ticket's
+alternative approach — runtime verification via a minimal LLM call — was not
+implemented because `_validate_model_level` is a synchronous pre-flight check that
+runs before any LLM handle is available; the chosen approach of clear communication
+of limitations is simpler and avoids adding latency to every spawn.)
+
+**SHA256:** `d4175763f0dee83568d417ab3697b79c4d384ae64fcd5ab9598ffda891d19c2c`
+
 ## v94 — 2026-08-03 — fix-false-token-exhaustion-punts-and-ret-b73c
 
 **Summary:** Strengthen anti-punt instruction in the Efficiency section: removed
