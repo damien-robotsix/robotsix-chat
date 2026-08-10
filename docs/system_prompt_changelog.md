@@ -1867,6 +1867,26 @@ The hash is computed on the output of `build_autonomous_instruction(Settings())`
 autonomous settings at their pydantic field defaults (``proposal_marker="---PROPOSAL READY---"``,
 ``completion_marker="---AUTONOMOUS COMPLETE---"``, ``stale_monitor_runs_before_completion=3``).
 
+## AUTONOMOUS v7 — 2026-08-11 — assistant-cannot-explain-how-to-configur-78b0
+
+**Summary:** Add `OPERATOR CONFIGURATION GUIDANCE` section to the autonomous
+protocol. When the operator asks how to configure autonomous sessions, the
+assistant now has baked-in instructions: point the operator to the chat UI
+settings panel (⚙ Settings → autonomous section) or the server's JSON config
+file, list the relevant config keys (`name`, `prompt`, `trigger_type`,
+`trigger_interval_seconds`, `enabled`), give an example JSON snippet, and
+mention the inspection/trigger API endpoints (`GET /autonomous/definitions`,
+`POST /autonomous/definitions/{name}/run`). The section also reminds the
+assistant that modifying config is a mutation requiring authorization.
+
+**Rationale:** The operator asked how to configure autonomous sessions from
+the settings panel, but the assistant had no documented guidance and could
+not access the live config due to a DNS failure. Baking the configuration
+instructions into the autonomous protocol lets the assistant answer this
+question offline, without depending on live service availability.
+
+**SHA256:** `15668a76a3f8f1acae044a61ae35c61a5f552779a16d20aaa404df8448dfa5aa`
+
 ## AUTONOMOUS v6 — 2026-08-07 — incorporate-ui-design-patterns-when-prop-ef53
 
 **Summary:** Add `UI-RELATED TICKETS` guidance to the PLAN DRAFTING step (2).
