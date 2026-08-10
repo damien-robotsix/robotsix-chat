@@ -66,7 +66,6 @@ from robotsix_chat.repo.security import build_github_security_tools, load_github
 from robotsix_chat.repo.study import build_repo_study_tools
 from robotsix_chat.selfreview import build_recent_activity_tools
 from robotsix_chat.sftp import build_sftp_tools
-from robotsix_chat.subsessions import load_subsessions_skill
 from robotsix_chat.ticket_poll import (
     build_merge_pull_request_tool,
     build_prioritize_all_open_tickets_tool,
@@ -823,6 +822,8 @@ def _inject_skills(
         skill_prompt = build_skill_prompt(roster)
         if skill_prompt:
             instruction = f"{instruction}\n\n{skill_prompt}"
+
+    from robotsix_chat.subsessions import load_subsessions_skill
 
     _skill_entries: list[tuple[bool, str, Callable[[], str]]] = [
         (True, "subsessions", load_subsessions_skill),
