@@ -832,6 +832,30 @@ class SubsessionsSettings(BaseModel):
             "until a state change or manual message arrives)."
         ),
     )
+    paused_monitor_max_reblock_resumes: int = Field(
+        default=3,
+        description=(
+            "Maximum number of consecutive BLOCKED-on-resume events "
+            "before a paused periodic monitor is closed with reason "
+            "``repeated_blocked``.  When a ticket is BLOCKED on every "
+            "resume (the agent keeps hitting the same failure without "
+            "making progress), auto-retry is futile — the monitor is "
+            "closed so the operator can intervene.  Default ``3``."
+        ),
+    )
+    paused_monitor_reblock_notify_threshold: int = Field(
+        default=2,
+        description=(
+            "Number of consecutive BLOCKED-on-resume events before an "
+            "SSE notification is sent to the parent conversation "
+            "alerting the operator that the monitor is re-blocking.  "
+            "This surfaces silent auto-resume→re-block loops so the "
+            "operator can decide whether to rebase the branch, revert "
+            "problematic files, or take other action before the "
+            "``paused_monitor_max_reblock_resumes`` cap is reached.  "
+            "Set to ``0`` to disable notifications.  Default ``2``."
+        ),
+    )
     event_driven_timeout_seconds: float = Field(
         default=900.0,
         description=(
