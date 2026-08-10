@@ -1867,6 +1867,23 @@ The hash is computed on the output of `build_autonomous_instruction(Settings())`
 autonomous settings at their pydantic field defaults (``proposal_marker="---PROPOSAL READY---"``,
 ``completion_marker="---AUTONOMOUS COMPLETE---"``, ``stale_monitor_runs_before_completion=3``).
 
+## AUTONOMOUS v8 — 2026-08-12 — approval-prompts-should-avoid-re-stating-794a
+
+**Summary:** Add `ACTIVE-CONTEXT SHORTENING` guidance to the
+`HUMAN_ISSUE_APPROVAL` section. When the operator is already engaged in the
+current conversation about a ticket being surfaced for approval, the assistant
+must provide a concise prompt stating only the decision needed (e.g. "Approve
+the Docker digest fix (a950)?" or "Close the stale triage ticket (b123)?")
+without re-summarizing the ticket's full background. Full detail is reserved
+for tickets the operator has not seen in the current conversation.
+
+**Rationale:** A monitor re-summarized an entire ticket's history (why needed,
+low risk, why approve) when the operator had just been told about the issue
+and was waiting for a decision prompt. Repeated re-explanation of already-shared
+context wastes the operator's attention and clutters the conversation.
+
+**SHA256:** `b6cf7df288a8a445842d5c2e12b6b87829f444717bfd15fe407e1face08c9f63`
+
 ## AUTONOMOUS v7 — 2026-08-11 — assistant-cannot-explain-how-to-configur-78b0
 
 **Summary:** Add `OPERATOR CONFIGURATION GUIDANCE` section to the autonomous

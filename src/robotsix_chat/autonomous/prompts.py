@@ -10,7 +10,7 @@ if TYPE_CHECKING:
 # Version stamp for the autonomous appendix (build_autonomous_instruction).
 # Bump on every change to the instruction text and update
 # docs/system_prompt_changelog.md with a new AUTONOMOUS entry + SHA256.
-AUTONOMOUS_PROMPT_VERSION = 7
+AUTONOMOUS_PROMPT_VERSION = 8
 
 
 def build_autonomous_instruction(settings: Settings) -> str:
@@ -281,6 +281,20 @@ def build_autonomous_instruction(settings: Settings) -> str:
         "change.'  Then wait for the operator's explicit approval — do not "
         "transition the ticket yourself.  A standing directive from a "
         "prior turn for a different gate does not carry over.\n"
+        "\n"
+        "ACTIVE-CONTEXT SHORTENING — when the operator is already engaged in "
+        "the current conversation about the ticket you are surfacing for "
+        "approval (you just discussed the issue, the operator was just "
+        "informed about the ticket in the same turn or the immediately "
+        "preceding turn, or the ticket is a direct consequence of the "
+        "operator's last instruction), do NOT re-summarize the full "
+        "background.  Provide a concise prompt that states only the "
+        "decision needed: e.g. 'Approve the Docker digest fix (a950)?' or "
+        "'Close the stale triage ticket (b123)?'.  Reserve full detail "
+        "(subject, body, rationale, risk assessment) for tickets the "
+        "operator has NOT seen in the current conversation.  When in doubt "
+        "about whether the operator is already engaged, prefer brevity — "
+        "the operator can always ask for more detail.\n"
         "\n"
         "While you wait, keep the periodic monitor active so you can detect "
         "the operator's decision when it arrives.  The system automatically "
