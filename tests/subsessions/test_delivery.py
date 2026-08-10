@@ -102,6 +102,7 @@ def _fake_agent(chunks: list[str]) -> MagicMock:
         client_id=None,
         images=None,
         trace_metadata=None,
+        trace_name=None,
     ):
         for chunk in chunks:
             yield chunk
@@ -122,6 +123,7 @@ def _raising_agent(exc: Exception) -> MagicMock:
         client_id=None,
         images=None,
         trace_metadata=None,
+        trace_name=None,
     ):
         raise exc
         yield  # pragma: no cover — makes this an async generator

@@ -105,24 +105,28 @@ def _trace_session(
     context — used for parent/owner lineage so the trace tree mirrors the
     subsession tree in observability.
     """
-    if not session_id:
-        yield
-        return
     try:
         from robotsix_llmio.core.tracing import langfuse_session, start_trace
     except ImportError:
         yield
         return
+
     if trace_name is not None:
+        # A named trace: always create one, even without session_id.
+        # start_trace accepts session_id=None — the trace still gets the
+        # given name, just not grouped under a session.
         with start_trace(trace_name, session_id=session_id):
             if trace_metadata:
                 _stamp_trace_metadata(trace_metadata)
             yield
-    else:
+    elif session_id:
+        # No custom name — use session-based grouping (existing behavior).
         with langfuse_session(session_id):
             if trace_metadata:
                 _stamp_trace_metadata(trace_metadata)
             yield
+    else:
+        yield
 
 
 def _stamp_trace_metadata(metadata: dict[str, str]) -> None:
