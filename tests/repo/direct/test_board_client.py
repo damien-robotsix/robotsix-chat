@@ -310,10 +310,19 @@ async def test_count_implement_cycles_api_failure_returns_none(
 async def test_create_ticket_returns_id_on_201(
     respx_mock: respx.MockRouter,
 ) -> None:
-    """Successful ticket creation returns the ticket id."""
+    """Successful ticket creation returns the ticket id after verification."""
     respx_mock.post("http://127.0.0.1:8077/tickets").mock(
         return_value=httpx.Response(
             201,
+            text=json.dumps(
+                {"id": "new-ticket-1", "title": "Test ticket", "state": "draft"}
+            ),
+        )
+    )
+    # The verification GET must also be mocked.
+    respx_mock.get("http://127.0.0.1:8077/tickets/new-ticket-1").mock(
+        return_value=httpx.Response(
+            200,
             text=json.dumps(
                 {"id": "new-ticket-1", "title": "Test ticket", "state": "draft"}
             ),
@@ -366,4 +375,24 @@ async def test_create_ticket_returns_none_when_missing_id(
     )
     client = _client()
     ticket_id = await client.create_ticket(title="Missing id")
+    assert ticket_id is None
+
+
+@pytest.mark.asyncio
+async def test_create_ticket_returns_none_when_verification_fails(
+    respx_mock: respx.MockRouter,
+) -> None:
+    """A 201 that returns an ID but whose GET verification 404s returns None."""
+    respx_mock.post("http://127.0.0.1:8077/tickets").mock(
+        return_value=httpx.Response(
+            201,
+            text=json.dumps({"id": "phantom-1", "title": "Ghost"}),
+        )
+    )
+    # Verification GET returns 404 — ticket never persisted.
+    respx_mock.get("http://127.0.0.1:8077/tickets/phantom-1").mock(
+        return_value=httpx.Response(404)
+    )
+    client = _client()
+    ticket_id = await client.create_ticket(title="Phantom ticket")
     assert ticket_id is None
