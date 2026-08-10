@@ -336,14 +336,28 @@ the conversation at compaction and session-end boundaries, then files improvemen
 board's `POST /tickets/ingest` endpoint. Tickets flow through the normal human-approval workflow —
 the feedback run never auto-approves. Disabled by default.
 
-| JSON key                   | Type              | Default | Description                                                                |
-| -------------------------- | ----------------- | ------- | -------------------------------------------------------------------------- |
-| `feedback.enabled`         | `boolean`         | `false` | Master switch.                                                             |
-| `feedback.model_level`     | `integer`         | `1`     | llmio capability level for the feedback-analysis agent (cheap extraction). |
-| `feedback.board_url`       | `string`          | `""`    | Base URL of the board HTTP API (no trailing slash). Required when enabled. |
-| `feedback.board_api_token` | `string` (secret) | `""`    | Optional Bearer token for the board API.                                   |
-| `feedback.deploy_api_key`  | `string` (secret) | `""`    | Bearer / X-API-Key token for the central-deploy roster endpoint.           |
-| `feedback.timeout`         | `number`          | `60.0`  | Per-request HTTP timeout (seconds) for ingest calls.                       |
+| JSON key                      | Type              | Default | Description                                                                |
+| ----------------------------- | ----------------- | ------- | -------------------------------------------------------------------------- |
+| `feedback.enabled`            | `boolean`         | `false` | Master switch.                                                             |
+| `feedback.model_level`        | `integer`         | `1`     | llmio capability level for the feedback-analysis agent (cheap extraction). |
+| `feedback.board_url`          | `string`          | `""`    | Base URL of the board HTTP API (no trailing slash). Required when enabled. |
+| `feedback.board_api_token`    | `string` (secret) | `""`    | Optional Bearer token for the board API.                                   |
+| `feedback.deploy_api_key`     | `string` (secret) | `""`    | Bearer / X-API-Key token for the central-deploy roster endpoint.           |
+| `feedback.timeout`            | `number`          | `60.0`  | Per-request HTTP timeout (seconds) for ingest calls.                       |
+| `feedback.max_tickets_per_run` | `integer`         | `3`     | Ceiling on tickets filed by one feedback run. ``0`` disables filing.       |
+| `feedback.dedup_window_seconds` | `number`          | `60.0`  | Seconds to suppress duplicate runs (per session) and duplicate titles.     |
+
+**Deduplication.** Two guards prevent near-simultaneous feedback runs from filing duplicate tickets:
+
+1. **Session-level debounce** — when a feedback run is scheduled for a session that already had a
+   run start within `dedup_window_seconds`, the new run is skipped. This prevents multiple
+   compactions or session-end triggers (from concurrent subsessions) from spawning overlapping
+   analyses of the same transcript.
+2. **Title-level dedup** — before POSTing a ticket, the runner checks whether a ticket with the
+   same normalised title (lowercased, stripped) was filed within `dedup_window_seconds`. This
+   catches cross-session duplicates that the session-level debounce cannot guard.
+
+Both caches are in-process only (no persistence), so a server restart resets them.
 
 #### Observability (Langfuse traces)
 

@@ -614,6 +614,36 @@ class TestFeedbackRunnerSchedule:
                 _ = await t
         assert len(tasks) == 0
 
+    @pytest.mark.asyncio
+    async def test_dedup_skips_duplicate_schedule(self) -> None:
+        """Second schedule() call for same session within dedup window is skipped."""
+        settings = _settings(board_url="http://board", dedup_window_seconds=60.0)
+        runner = _make_runner(settings)
+        runner.schedule("compaction", "sess-4", [("hi", "hello")])
+        tasks: set[Any] = getattr(runner, "_background_tasks", set())
+        assert len(tasks) == 1
+        runner.schedule("session_end", "sess-4", [("hi", "hello")])
+        # Second call should have been dedup-skipped — no new task created.
+        assert len(tasks) == 1
+        for t in list(tasks):
+            if not t.done():
+                _ = await t
+
+    @pytest.mark.asyncio
+    async def test_dedup_allows_after_window_expires(self) -> None:
+        """schedule() for same session after window expiry creates a new task."""
+        settings = _settings(board_url="http://board", dedup_window_seconds=0.0)
+        runner = _make_runner(settings)
+        runner.schedule("compaction", "sess-5", [])
+        tasks: set[Any] = getattr(runner, "_background_tasks", set())
+        assert len(tasks) == 1
+        runner.schedule("compaction", "sess-5", [])
+        # Zero-second window — second call is NOT deduped.
+        assert len(tasks) == 2
+        for t in list(tasks):
+            if not t.done():
+                _ = await t
+
 
 # ---------------------------------------------------------------------------
 # FeedbackRunner — _collect_subsession_summaries
@@ -1024,6 +1054,85 @@ class TestFileTickets:
         # Loop completed; the ticket was counted as failed.
         assert filed == 0
         assert failed == 1
+
+    @pytest.mark.asyncio
+    async def test_title_dedup_skips_duplicate(
+        self, respx_mock: respx.MockRouter
+    ) -> None:
+        """Second ticket with same normalised title within dedup window is skipped."""
+        route = respx_mock.post("http://test-board/tickets/ingest").mock(
+            return_value=httpx.Response(201)
+        )
+        settings = _settings(dedup_window_seconds=60.0)
+        runner = _make_runner(settings)
+        ticket = {
+            "title": "Fix CI pipeline",
+            "description": "The CI pipeline is broken.",
+            "kind": "code",
+            "target_repo": "robotsix-chat",
+        }
+        filed, failed = await runner._file_tickets(
+            [ticket, ticket],
+            trigger_type="compaction",
+            session_id="s1",
+        )
+        assert filed == 2  # dedup returns True (intentionally skipped, not failed)
+        assert failed == 0
+        assert route.call_count == 1
+
+    @pytest.mark.asyncio
+    async def test_title_dedup_normalises_whitespace_and_case(
+        self, respx_mock: respx.MockRouter
+    ) -> None:
+        """Titles differing only in case and surrounding whitespace are deduped."""
+        route = respx_mock.post("http://test-board/tickets/ingest").mock(
+            return_value=httpx.Response(201)
+        )
+        settings = _settings(dedup_window_seconds=60.0)
+        runner = _make_runner(settings)
+        tickets = [
+            {
+                "title": "  Fix CI Pipeline  ",
+                "description": "Broken.",
+                "kind": "code",
+                "target_repo": "robotsix-chat",
+            },
+            {
+                "title": "fix ci pipeline",
+                "description": "Also broken.",
+                "kind": "code",
+                "target_repo": "robotsix-chat",
+            },
+        ]
+        filed, failed = await runner._file_tickets(
+            tickets, trigger_type="compaction", session_id="s1"
+        )
+        assert filed == 2  # dedup returns True
+        assert route.call_count == 1
+
+    @pytest.mark.asyncio
+    async def test_title_dedup_allows_after_window_expires(
+        self, respx_mock: respx.MockRouter
+    ) -> None:
+        """Same title after window expiry is filed (not deduped)."""
+        route = respx_mock.post("http://test-board/tickets/ingest").mock(
+            return_value=httpx.Response(201)
+        )
+        settings = _settings(dedup_window_seconds=0.0)
+        runner = _make_runner(settings)
+        ticket = {
+            "title": "Fix CI pipeline",
+            "description": "Broken.",
+            "kind": "code",
+            "target_repo": "robotsix-chat",
+        }
+        filed, failed = await runner._file_tickets(
+            [ticket, ticket],
+            trigger_type="compaction",
+            session_id="s1",
+        )
+        assert filed == 2
+        assert route.call_count == 2
 
 
 # FeedbackRunner — _run (integration-style)
