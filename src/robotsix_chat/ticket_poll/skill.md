@@ -44,21 +44,22 @@ method and path below. **Never guess or fabricate paths** — every mutating ope
 a documented endpoint. Guessing a wrong method (e.g. `PATCH`) or a wrong path (e.g. `/prioritize`)
 causes 4xx errors and wastes turns.
 
-| Operation               | Method | Path                                  | Notes                                                                   |
-| ----------------------- | ------ | ------------------------------------- | ----------------------------------------------------------------------- |
-| Toggle priority         | POST   | `/tickets/{id}/priority`              | Set or clear a ticket's priority flag.                                  |
-| Resume blocked          | POST   | `/tickets/{id}/resume-blocked`        | Body: `{"justification": "why this ticket can safely resume now"}`.     |
-| Mark done               | POST   | `/tickets/{id}/mark-done`             | Transition a ticket to the terminal `done` state.                       |
-| Merge PR                | POST   | `/tickets/{id}/merge-now`             | Prefer the dedicated `merge_pull_request` tool.                         |
-| File a new ticket       | POST   | `/tickets/ingest`                     | Submit a ticket spec for ingestion into the board.                      |
-| Read ticket state       | GET    | `/tickets/{id}`                       | Prefer the dedicated `ticket_poll` / `ticket_poll_batch` tools.         |
-| List tickets            | GET    | `/tickets`                            | Query parameters: `state`, `limit`, etc.                                |
+| Operation         | Method | Path                           | Notes                                                               |
+| ----------------- | ------ | ------------------------------ | ------------------------------------------------------------------- |
+| Toggle priority   | POST   | `/tickets/{id}/priority`       | Set or clear a ticket's priority flag.                              |
+| Resume blocked    | POST   | `/tickets/{id}/resume-blocked` | Body: `{"justification": "why this ticket can safely resume now"}`. |
+| Mark done         | POST   | `/tickets/{id}/mark-done`      | Transition a ticket to the terminal `done` state.                   |
+| Merge PR          | POST   | `/tickets/{id}/merge-now`      | Prefer the dedicated `merge_pull_request` tool.                     |
+| File a new ticket | POST   | `/tickets/ingest`              | Submit a ticket spec for ingestion into the board.                  |
+| Read ticket state | GET    | `/tickets/{id}`                | Prefer the dedicated `ticket_poll` / `ticket_poll_batch` tools.     |
+| List tickets      | GET    | `/tickets`                     | Query parameters: `state`, `limit`, etc.                            |
 
-All mutation endpoints require authorization — the `component_request` tool applies the correct
-auth headers from the roster automatically. However, **mutations must still be authorized by the
+All mutation endpoints require authorization — the `component_request` tool applies the correct auth
+headers from the roster automatically. However, **mutations must still be authorized by the
 operator** before you call them (see the main prompt's MUTATION AUTHORIZATION section).
 
 **Anti-patterns — do NOT do these:**
+
 - `PATCH /tickets/{id}` — there is no PATCH endpoint for tickets; use POST with the specific path.
 - `POST /prioritize` or `POST /tickets/prioritize` — the correct path is `/tickets/{id}/priority`.
 - Guessing a path from an operation name — always consult this table first.
