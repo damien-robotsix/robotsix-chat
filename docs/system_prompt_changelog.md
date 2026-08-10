@@ -459,23 +459,6 @@ ______________________________________________________________________
 
 ______________________________________________________________________
 
-## v70 — 2026-07-28 — require-concrete-operator-blocker-instructions-0ce2
-
-**Summary:** Added a new operator-facing blocker instructions bullet in the Autonomy section.
-When the assistant surfaces a hard server-side blocker to the operator (configuration deadlock,
-service registration not enabled, missing credential, permission gap, or any block requiring
-operator action), it must now provide a concrete, copy-paste-ready instruction — exact env variable
-name, config file path, restart command, or endpoint URL — rather than a vague directive. It must
-also store common remediation recipes in a knowledge note (topic: `operator-remediation-recipes`).
-
-**Rationale:** Vague instructions like "flip the toggle" or "enable the feature" without specific
-keys, paths, or commands force the operator to guess and cause back-and-forth. Concrete, executable
-instructions eliminate ambiguity and let the operator act immediately.
-
-**SHA256:** `7dcf9364ea1d0dcfd3eaffbd3d6bed9871435e833714348f25b0f636dd7bd616`
-
-______________________________________________________________________
-
 ## v69 — 2026-07-28 — avoid-duplicate-ticket-creation-by-check-7b0b
 
 **Summary:** Tighten the ticket-creation deduplication rule in the Initiate step (1) of the ticket
@@ -492,28 +475,6 @@ deduplication check more prescriptive and specifically calls out CI/periodic-age
 source of pre-existing tickets.
 
 **SHA256:** `e9180114668b01ee6c6e91d826521e8542681d6ab8af1dfc3826485ec01ce72b`
-
-______________________________________________________________________
-
-## v70 — 2026-07-28 — add-loop-guard-to-periodic-monitors-checking-ci-workflow-runs
-
-**Summary:** Add a "LOOP GUARD — CI workflow verification" section to the periodic subsession system
-prompt supplement (`_build_periodic_input` in `worker.py`). Before calling `complete_subsession`,
-periodic monitors watching a ticket (checkpoint has `ticket_id`) must now verify from **three
-independent sources**: (1) the ticket endpoint confirming terminal state, (2) the PR/MR endpoint
-confirming merge status, and (3) the most recent CI workflow run (e.g. "Publish Docker image").
-If the workflow failed, the agent documents the failure in the summary and spawns a new diagnostic
-ticket. A programmatic gate in `complete_subsession` rejects summaries that lack CI workflow
-keywords, breaking the redraft loop where monitors reported success despite a still-failing publish
-pipeline.
-
-**Rationale:** The deployment pipeline entered a redraft loop where consecutive tickets each fixed
-one TypeScript error but left others, and the "Publish Docker image" workflow kept failing. A
-monitor that only checks ticket state (closed) is insufficient — it must also verify the actual CI
-workflow outcome before reporting success. The programmatic gate ensures the agent cannot bypass
-this check.
-
-**SHA256:** (not yet deployed — changelog fragment at `changelog.d/20260728T210856Z-add-loop-guard-to-periodic-monitors-chec-5679.misc.md`)
 
 ______________________________________________________________________
 
@@ -597,7 +558,7 @@ cascades and routes the operator directly to a categorized triage decision.
 
 **SHA256:** `5d4c331db3f3338b25d5330f0306671898a640e67e506bab7c8476229b4a6c40`
 
-## v65 — 2026-07-28 — add-failure-mode-classification-to-bulk-0839
+## v65-b — 2026-07-28 — add-failure-mode-classification-to-bulk-0839
 
 **Summary:** Add a "Bulk-resume failure-mode classification" bullet to the ticket lifecycle's
 Remediate step (3). Before bulk-resuming multiple blocked tickets, the assistant must now query each
@@ -723,7 +684,7 @@ respect explicit user directives without weakening safety for ambiguous cases.
 
 ______________________________________________________________________
 
-## v59 — 2026-07-27 — validate-proposed-solutions-against-live-7756
+## v59-b — 2026-07-27 — validate-proposed-solutions-against-live-7756
 
 **Summary:** Add a mandatory live-deploy-state pre-check to the "Hand-authoring PRs as a
 mill-failure escape hatch" section. Before proposing any mill-targeting fix (hand-authored PR,
@@ -798,7 +759,7 @@ target field(s) before creating tickets for UI formatting changes.
 
 **SHA256:** `4bd5ab4250ce43ac588970ee4faa9ebe83bccdd6868dac304cae36a227e7455d`
 
-## v56 — 2026-07-26 — require-live-endpoint-verification-before-closing-monitor-754d
+## v56-b — 2026-07-26 — require-live-endpoint-verification-before-closing-monitor-754d
 
 **Summary:** Add live-verification requirements to the ticket lifecycle policy so monitors do not
 close prematurely when a ticket reaches "done/closed" on the board but the change is not yet live.
@@ -1017,7 +978,7 @@ behavior so the LLM stops trying to spawn children from periodic subsessions.
 
 **SHA256:** `e352f343aa6b97a38f6ebe92bee37ab1eb6bb2896fef08bfd9bc27fb609a4196`
 
-## v46 — 2026-07-23 — prevent-duplicate-subsession-creation-wh-de78
+## v46-b — 2026-07-23 — prevent-duplicate-subsession-creation-wh-de78
 
 **Summary:** Add two subsession deduplication rules. (1) A periodic subsession must NOT spawn task
 subsessions to perform its own monitoring work — the periodic subsession's instructions execute on
@@ -1035,7 +996,7 @@ existing periodic monitor by spawning a one-shot task.
 
 **SHA256:** `237cb86b37b138470a13383ac3859ebcb7c4c2db315463045e5a0fbee27361a3`
 
-## v46 — 2026-07-22 — prevent-child-launch-tasks-for-periodic-monitors-24b0
+## v46-c — 2026-07-22 — prevent-child-launch-tasks-for-periodic-monitors-24b0
 
 **Summary:** Add a bullet instructing the assistant to spawn periodic monitors directly from its own
 context rather than creating a child task subsession whose only job is to call
@@ -1048,7 +1009,7 @@ identified as such. This guidance prevents that class of waste at the source.
 
 **SHA256:** `21a47f67fd08bd2df25880c99c66a5e5189992f5e3beba9109dc006302ed948b`
 
-## v46 — 2026-07-22 — improve-terminal-state-notification-conc-70aa
+## v46-d — 2026-07-22 — improve-terminal-state-notification-conc-70aa
 
 **Summary:** Add a conciseness rule for periodic subsession terminal-state notifications. When a
 periodic subsession reaches a verified terminal state and delivers its summary to the main
@@ -1065,7 +1026,7 @@ confirmation, not a recap opportunity.
 
 **SHA256:** `b0eb495d432cbaabd2873e705ba240edf19f8b6f692cf87c3c169c6784e95fa9`
 
-## v46 — 2026-07-22 — add-guidance-to-system-prompt-for-handli-8e03
+## v46-e — 2026-07-22 — add-guidance-to-system-prompt-for-handli-8e03
 
 **Summary:** Add a "Repo creation bootstrap" paragraph to the Autonomy section. When creating a new
 repository or working with a freshly created empty repo, tool-chains that require an existing commit
@@ -1082,7 +1043,7 @@ must always include seeding an initial commit to prevent this class of bootstrap
 
 **SHA256:** `fba320e778a0a6a8d9399334b6f10dc5a8c07901822ca36d1f0cd097fb8b9cdb`
 
-## v46 — 2026-07-22 — add-cross-session-persistent-knowledge-r-b5bb
+## v46-f — 2026-07-22 — add-cross-session-persistent-knowledge-r-b5bb
 
 **Summary:** Add `search_knowledge_notes` to the knowledge-base tool list in the system prompt. The
 knowledge store now exposes a search tool that finds notes by querying their topic and content
@@ -1097,11 +1058,7 @@ missing from its context. The new search capability eliminates the fragile-id-re
 periodic monitors from spawning redundant child monitor-launch tasks
 (20260722T135418Z-prevent-periodic-monitors-from-spawning-24b0))
 
-## v46 — 2026-07-23 — introduce-model-policy-abstraction-for-d-42d5
-
-> **Note:** Version v46 is also claimed by three entries above (2026-07-22); these are parallel
-> branches that landed at the same version stamp. The PR author should bump to a fresh version
-> number and update the SHA256 hash before merge.
+## v46-g — 2026-07-23 — introduce-model-policy-abstraction-for-d-42d5
 
 **Summary:** Add a "Model Policy" section defining named tier labels for the existing model levels
 (1 = 'cheap-high-perf', 2 = 'default', 3 = 'strong-reasoning', 4 = 'primary-frontier'). Update the
@@ -1157,7 +1114,7 @@ attempt.
 
 **SHA256:** `42ae1073840159a89621a4d53ee009d9e69d2fc53449d653d546801370e1d5c4`
 
-## v44 — 2026-07-21 — always-verify-server-side-capability-by-2bbd
+## v44-b — 2026-07-21 — always-verify-server-side-capability-by-2bbd
 
 **Summary:** Add a "Server-side capability probes" bullet to the Verification section. When checking
 whether a new server-side capability (e.g. POST /chat/deploy) is available, the agent must probe the
@@ -1246,7 +1203,7 @@ instructions exactly as given, especially when they are clear and firm.
 
 **SHA256:** `02f4d83677e7e8a0721c7fa7ab0ed9649fef35d6c3ee26e67dac122bfb832384`
 
-## v40 — 2026-07-21 — incorporate-user-statements-as-ground-truth-86d1 / avoid-filing-tickets-for-issues-that-do-6fe3
+## v40-b — 2026-07-21 — incorporate-user-statements-as-ground-truth-86d1 / avoid-filing-tickets-for-issues-that-do-6fe3
 
 **Summary (user statements as ground truth):** Add a "user statements as ground truth" bullet to the
 Verification section. When the user states a concrete fact (e.g. "the secrets have been provided"),
@@ -1293,7 +1250,7 @@ clean standalone addition.
 
 ______________________________________________________________________
 
-## v39 — 2026-07-20 — add-deploy-server-restart-capability-for-144c
+## v39-b — 2026-07-20 — add-deploy-server-restart-capability-for-144c
 
 **Summary:** Add `self_restart` to the Deploy API quick-reference bullet list and update the Reload
 step (step 6 of the ticket lifecycle) to reference `self_restart()` instead of
@@ -1564,6 +1521,15 @@ cancel the predecessor's monitor subsession so only one monitor runs for the sam
 ______________________________________________________________________
 
 ## v24 — 2026-07-19 — improve-clarity-of-system-notices-for-re-1d76
+
+______________________________________________________________________
+
+## v23 — skipped
+
+> **Note:** Version v23 was skipped — no prompt change was recorded under this version number.
+> The sequence jumps from v24 directly to v22. This entry exists to document the gap and prevent
+> future ambiguity. If the original v23 changelog entry is recovered from git history, it should
+> be inserted here.
 
 ______________________________________________________________________
 
