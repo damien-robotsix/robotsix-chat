@@ -496,6 +496,19 @@ Read-only HTTP uptime/render-probe tool for the agent. Enabled by default.
 | `http_probe.max_body_bytes` | `integer`       | `2048`                                 | Maximum bytes of the response body to return (~2 KB).                        |
 | `http_probe.max_redirects`  | `integer`       | `5`                                    | Maximum number of redirects to follow.                                       |
 
+### Docker Digest
+
+Read-only Docker Registry v2 digest-resolution tool for the agent. When enabled, the agent gains a
+`resolve_docker_digest` tool that resolves a Docker image reference (e.g. `python:3.14-slim`) and
+target platform to its immutable `sha256:...` content digest. Enabled by default.
+
+| JSON key                       | Type      | Default                     | Description                                                                                 |
+| ------------------------------ | --------- | --------------------------- | ------------------------------------------------------------------------------------------- |
+| `docker_digest.enabled`        | `boolean` | `true`                      | Master switch. When `false`, no `resolve_docker_digest` tool is offered.                    |
+| `docker_digest.timeout`        | `number`  | `30.0`                      | Per-request HTTP timeout in seconds.                                                        |
+| `docker_digest.registry_host`  | `string`  | `"registry-1.docker.io"`    | Docker Registry v2 hostname for manifest lookups (Docker Hub).                              |
+| `docker_digest.auth_url`       | `string`  | `"https://auth.docker.io/token"` | Token-authentication endpoint for bearer tokens (Docker Hub's auth service).           |
+
 ## Reaching fleet components
 
 There is no credential setting. The tools that make outbound HTTP requests (`http_probe`,
