@@ -49,7 +49,7 @@ jobs:
 
   ci:
     name: Python CI (shared)
-    uses: damien-robotsix/robotsix-github-workflows/.github/workflows/python-ci.yml@0234f4b82365d776fc021c774dc104c5e7042c29  # main
+    uses: damien-robotsix/robotsix-github-workflows/.github/workflows/python-ci.yml@454851ccfdba26ba4d08f3effea09258dfc3fe2f  # main
     with:
       python-version: "3.14"
       cov-package: "robotsix_chat"
@@ -71,7 +71,7 @@ jobs:
 
   security:
     name: Security scan (shared)
-    uses: damien-robotsix/robotsix-github-workflows/.github/workflows/python-security.yml@0234f4b82365d776fc021c774dc104c5e7042c29  # main
+    uses: damien-robotsix/robotsix-github-workflows/.github/workflows/python-security.yml@454851ccfdba26ba4d08f3effea09258dfc3fe2f  # main
     with:
       install-extras: ""
       trufflehog-pr-diff: true
