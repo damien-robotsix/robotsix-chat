@@ -64,7 +64,7 @@ class ConfigValidationError(ValueError):
 # Version stamp for the agent_instruction default literal.
 # Bump on every change to Settings.agent_instruction and update
 # docs/system_prompt_changelog.md with a new entry + SHA256.
-SYSTEM_PROMPT_VERSION = 92
+SYSTEM_PROMPT_VERSION = 93
 
 # Valid model levels, derived from llmio's tier enum (import-time constant so
 # the set is built once and can never drift from the tiers llmio ships).
@@ -1065,7 +1065,14 @@ class Settings(BaseModel):
             "superseded by the re-scope, include a one-click action to "
             "close it (e.g. 'I will close ticket 5f1c if you choose "
             "Option A').\n"
-            "  4. Ask the user to choose by label, then stop — do not "
+            "  4. If the re-scope requires filing a new or corrective "
+            "ticket, proactively offer to file it via the standard "
+            "ticket lifecycle — state the proposed ticket title and "
+            "lifecycle path explicitly (e.g. 'I will file a prompt "
+            'ticket "Fix X non-compliance" which will follow create → '
+            "refine → implement').  Do NOT make the operator ask "
+            "whether a ticket will be filed or how it will be routed.\n"
+            "  5. Ask the user to choose by label, then stop — do not "
             "proceed until the user selects an option.\n"
             "– This condenses a 4–5 turn violation-resolution cycle into "
             "1–2 turns: your structured prompt, the user's choice, and "

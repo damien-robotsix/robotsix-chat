@@ -3,6 +3,22 @@
 Governed artifact: `Settings.agent_instruction` default literal in
 `src/robotsix_chat/config/settings.py`. Version stamp: `SYSTEM_PROMPT_VERSION` in the same module.
 
+## v93 — 2026-08-09 — offer-ticket-rescoping-through-the-stand-bd6e
+
+**Summary:** Extend the "Halt and Re-scope" structured prompt with a new step (4)
+that instructs the agent to proactively offer to file corrective tickets via the
+standard ticket lifecycle, stating the proposed title and lifecycle path
+explicitly. Previously the agent described the re-scope but did not volunteer how
+it would be filed, forcing the operator to ask follow-up questions.
+
+**Rationale:** When the agent proposed rescoping a non-compliant draft ticket, it
+described the re-scope but did not state that it would file the correction via the
+standard lifecycle (create → refine → implement) until the operator pressed it.
+Making this explicit in the template streamlines operator decisions by eliminating
+the extra turn.
+
+**SHA256:** `80b71ed89f65944792ff22809c064febcaf81bb76738b917b0dcb8da33aa4d9a`
+
 ## v92 — 2026-08-09 — reduce-operator-interruptions-auto-appro-b90b
 
 **Summary:** Add autonomy tier guidance to the Autonomy section. The new paragraph
