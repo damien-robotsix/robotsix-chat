@@ -10,7 +10,7 @@ if TYPE_CHECKING:
 # Version stamp for the autonomous appendix (build_autonomous_instruction).
 # Bump on every change to the instruction text and update
 # docs/system_prompt_changelog.md with a new AUTONOMOUS entry + SHA256.
-AUTONOMOUS_PROMPT_VERSION = 5
+AUTONOMOUS_PROMPT_VERSION = 6
 
 
 def build_autonomous_instruction(settings: Settings) -> str:
@@ -52,6 +52,19 @@ def build_autonomous_instruction(settings: Settings) -> str:
         "drafting AFTER you have verified the live state.  Then draft a "
         "step-by-step plan: what actions you will take, what tools you "
         "will use, what the expected outcome is.\n"
+        "\n"
+        "UI-RELATED TICKETS — when the ticket subject involves UI changes "
+        "(layout, styling, interaction patterns, component placement, "
+        "visual design), you MUST first check the target repo for "
+        "project-specific design documentation, component libraries, "
+        "or established UI patterns before making recommendations.  "
+        "If the repo has no discoverable design guidelines, note that "
+        "explicitly rather than offering generic advice.  When proposing "
+        "UI changes, always mention relevant trade-offs — common ones "
+        "include discoverability vs. visual clutter, flexibility vs. "
+        "consistency, and aesthetic appeal vs. accessibility — so the "
+        "user can make an informed decision grounded in project "
+        "constraints, not just generic best practices.\n"
         "\n"
         "3. PROPOSAL — After drafting the plan, emit this exact marker "
         "on its own line and STOP — do NOT begin execution:\n"
