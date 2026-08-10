@@ -6,13 +6,13 @@ parent conversation continues.
 
 ## Subsession kinds
 
-| Kind              | Behaviour                                                                                            |
-| ----------------- | ---------------------------------------------------------------------------------------------------- |
-| `task`            | One-shot background job — runs to completion and reports a summary back.                             |
-| `periodic`        | Re-runs its instructions on a fixed interval until closed — for monitoring, polling, and CI-watch.  |
-| `wait_for_event`  | Event-driven ticket monitor — wakes on mill push events (ticket state changes) instead of polling.  |
-| `user_chat`       | Side-chat with the operator — for discussions or decisions without blocking the parent conversation.|
-| `on_close`        | One-shot task that fires when the parent session is **closed** — for post-conversation work.        |
+| Kind             | Behaviour                                                                                            |
+| ---------------- | ---------------------------------------------------------------------------------------------------- |
+| `task`           | One-shot background job — runs to completion and reports a summary back.                             |
+| `periodic`       | Re-runs its instructions on a fixed interval until closed — for monitoring, polling, and CI-watch.   |
+| `wait_for_event` | Event-driven ticket monitor — wakes on mill push events (ticket state changes) instead of polling.   |
+| `user_chat`      | Side-chat with the operator — for discussions or decisions without blocking the parent conversation. |
+| `on_close`       | One-shot task that fires when the parent session is **closed** — for post-conversation work.         |
 
 ## Agent tools — spawn and control from any session
 
@@ -25,8 +25,8 @@ Start a background subsession and return its id immediately. Required: `kind`, `
 `instructions`. Optional: `model_level`, `interval_seconds`, `max_runs`, `include_previous_result`,
 `inherit_context`, `dedup_key`.
 
-- `model_level` picks capability 1 (cheapest) to 4 (frontier). Levels 1-2 need an OpenRouter API key;
-  if a spawn errors with an API key message, retry at level 3 (keyless).
+- `model_level` picks capability 1 (cheapest) to 4 (frontier). Levels 1-2 need an OpenRouter API
+  key; if a spawn errors with an API key message, retry at level 3 (keyless).
 - `interval_seconds` (minimum enforced) and `max_runs` are for `periodic` only.
 - `dedup_key` prevents duplicate `user_chat`, `periodic`, and `wait_for_event` subsessions — use the
   ticket id as the dedup key for monitors. Always check `list_subsessions` first.
@@ -68,11 +68,12 @@ completion criteria, consecutive-failure counters.
 
 ### `self_update_subsession`
 
-Update THIS periodic subsession's own run configuration — the natural alternative to spawning a
-new periodic child (which is not allowed from within a periodic context). Changes take effect on the
+Update THIS periodic subsession's own run configuration — the natural alternative to spawning a new
+periodic child (which is not allowed from within a periodic context). Changes take effect on the
 next scheduled tick.
 
 Parameters (at least one required):
+
 - `instructions` (string, ≤ 8000 chars) — rewrite or extend the instruction text this subsession
   executes each tick.
 - `interval_seconds` (number, ≥ configured minimum) — change the polling interval.
@@ -84,12 +85,12 @@ were changed.
 
 ## Lifecycle
 
-| Status       | Meaning                                                        |
-| ------------ | -------------------------------------------------------------- |
-| `running`    | An agent turn is in flight.                                    |
-| `waiting`    | Idle, waiting for an inbox message (user_chat).                |
-| `sleeping`   | Periodic, waiting for the next scheduled run.                  |
-| `paused`     | Periodic, auto-paused by the idle-guard — retains worker.      |
-| `closed`     | Finished normally, summary delivered.                          |
-| `failed`     | Terminated with an error.                                      |
-| `interrupted`| Server restarted while work was live — resumes on restart.     |
+| Status        | Meaning                                                    |
+| ------------- | ---------------------------------------------------------- |
+| `running`     | An agent turn is in flight.                                |
+| `waiting`     | Idle, waiting for an inbox message (user_chat).            |
+| `sleeping`    | Periodic, waiting for the next scheduled run.              |
+| `paused`      | Periodic, auto-paused by the idle-guard — retains worker.  |
+| `closed`      | Finished normally, summary delivered.                      |
+| `failed`      | Terminated with an error.                                  |
+| `interrupted` | Server restarted while work was live — resumes on restart. |
