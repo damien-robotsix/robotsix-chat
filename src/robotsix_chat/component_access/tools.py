@@ -91,6 +91,7 @@ async def _component_request_impl(
     read_response_max_chars: int = _TRUNCATE_LENGTH,
     component_credentials: dict[str, Any] | None = None,
     fallback_header_token: str = "",
+    component_fallbacks: dict[str, str] | None = None,
 ) -> str:
     """Call *component_id*'s API at *method* *path*.
 
@@ -362,9 +363,76 @@ async def _component_request_impl(
                 path,
                 exc,
             )
+
+            # DNS / connection failure — try a baked-in fallback URL if one
+            # is configured for this component.  This keeps CI diagnostics
+            # and other critical call paths working when central-deploy's
+            # internal compose network is unreachable.
+            is_connection_error = isinstance(
+                exc,
+                (
+                    httpx.ConnectError,
+                    httpx.ConnectTimeout,
+                ),
+            ) or "Name or service not known" in str(exc)
+            fallback_base = (component_fallbacks or {}).get(component_id, "")
+            if is_connection_error and fallback_base:
+                fallback_url = f"{fallback_base.rstrip('/')}/{path.lstrip('/')}"
+                logger.info(
+                    "component_request %s connection failed, retrying with fallback %s",
+                    component_id,
+                    fallback_base,
+                )
+                try:
+                    async with httpx.AsyncClient(
+                        timeout=30.0, follow_redirects=True
+                    ) as fallback_client:
+                        fallback_resp = await fallback_client.request(
+                            method_upper,
+                            fallback_url,
+                            params=params,
+                            headers=headers,
+                            json=json_body,
+                            auth=auth_arg,
+                        )
+                    fallback_status = fallback_resp.status_code
+                    try:
+                        fallback_body = fallback_resp.json()
+                        fallback_body_str = json.dumps(fallback_body)
+                    except Exception:
+                        fallback_body_str = _safe_text(fallback_resp)
+                    logger.info(
+                        "component_request %s %s %s → %d (ok, via fallback)",
+                        component_id,
+                        method_upper,
+                        path,
+                        fallback_status,
+                    )
+                    return _format_body(fallback_status, fallback_body_str)
+                except Exception as fallback_exc:
+                    logger.warning(
+                        "component_request %s fallback retry also failed: %s",
+                        component_id,
+                        fallback_exc,
+                    )
+
+            # Build a hint for DNS / connection failures so the agent
+            # knows to try direct tools that bypass central-deploy.
+            hint = ""
+            if is_connection_error:
+                hint = (
+                    "\n\nThis component is unreachable via central-deploy "
+                    "(DNS / connection error). If direct tools are available "
+                    "for this component (e.g. fetch_job_log, "
+                    "fetch_workflow_run_annotations, check_workflow_run for "
+                    "GitHub API operations), prefer those — they bypass "
+                    "central-deploy and use the GitHub App installation token "
+                    "directly."
+                )
+
             return (
                 f"Error calling {component_id} {method_upper} {path}: "
-                f"{str(exc) or type(exc).__name__}"
+                f"{str(exc) or type(exc).__name__}{hint}"
             )
 
     # Success (2xx / 3xx).
@@ -463,6 +531,7 @@ def build_component_access_tools(
             read_response_max_chars=limit,
             component_credentials=_creds,
             fallback_header_token=_fallback_token,
+            component_fallbacks=settings.component_fallbacks,
         )
 
     return [component_request]

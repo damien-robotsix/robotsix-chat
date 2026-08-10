@@ -883,6 +883,65 @@ async def test_component_request_timeout(
 
 
 @pytest.mark.asyncio
+async def test_component_request_connection_error_fallback_success(
+    respx_mock: respx.MockRouter,
+) -> None:
+    """DNS/connection error with a configured fallback → retry succeeds."""
+    roster = [{"id": "mill", "base_url": "http://m:8080", "skill": "..."}]
+    respx_mock.get("http://m:8080/tickets").mock(
+        side_effect=httpx.ConnectError("Name or service not known")
+    )
+    respx_mock.get("http://fallback:9090/tickets").mock(
+        return_value=httpx.Response(200, json={"ok": True})
+    )
+    result = await _component_request_impl(
+        roster,
+        "mill",
+        "GET",
+        "/tickets",
+        component_fallbacks={"mill": "http://fallback:9090"},
+    )
+    assert "ok" in result
+
+
+@pytest.mark.asyncio
+async def test_component_request_connection_error_fallback_fails(
+    respx_mock: respx.MockRouter,
+) -> None:
+    """DNS/connection error with a configured fallback → both fail."""
+    roster = [{"id": "mill", "base_url": "http://m:8080", "skill": "..."}]
+    respx_mock.get("http://m:8080/tickets").mock(
+        side_effect=httpx.ConnectError("Name or service not known")
+    )
+    respx_mock.get("http://fallback:9090/tickets").mock(
+        side_effect=httpx.ConnectError("connection refused")
+    )
+    result = await _component_request_impl(
+        roster,
+        "mill",
+        "GET",
+        "/tickets",
+        component_fallbacks={"mill": "http://fallback:9090"},
+    )
+    assert "Error calling" in result
+    assert "Name or service not known" in result
+
+
+@pytest.mark.asyncio
+async def test_component_request_connection_error_hint(
+    respx_mock: respx.MockRouter,
+) -> None:
+    """DNS/connection error without a fallback → hint in error message."""
+    roster = [{"id": "mill", "base_url": "http://m:8080", "skill": "..."}]
+    respx_mock.get("http://m:8080/tickets").mock(
+        side_effect=httpx.ConnectError("Name or service not known")
+    )
+    result = await _component_request_impl(roster, "mill", "GET", "/tickets")
+    assert "Error calling" in result
+    assert "unreachable via central-deploy" in result
+
+
+@pytest.mark.asyncio
 async def test_component_request_truncates_long_response(
     respx_mock: respx.MockRouter,
 ) -> None:
