@@ -678,21 +678,7 @@ files when diagnostics detect they are missing. Disabled by default.
 | `sftp.known_hosts`            | `string`          | `""`    | OpenSSH-format known-hosts entries for host key verification. When empty, host key verification is skipped. |
 | `sftp.remote_root`            | `string`          | `""`    | Optional base directory on the remote server to restrict all operations under (e.g. `/var/www`).            |
 
-### Docker Digest
 
-Docker image digest resolution tool for the agent. When enabled, the agent gains a
-`resolve_docker_digest` tool that resolves a Docker image reference (e.g. `python:3.14-slim`) and
-target platform to its immutable `sha256:...` content digest by querying the Docker Registry v2 HTTP
-API. Used by tooling that needs pinned image digests (e.g. CI workflows, Dockerfiles).
-
-| JSON key                      | Type      | Default                          | Description                                                                  |
-| ----------------------------- | --------- | -------------------------------- | ---------------------------------------------------------------------------- |
-| `docker_digest.enabled`       | `boolean` | `true`                           | Master switch. When `false`, no docker_digest tool is offered to the agent.  |
-| `docker_digest.timeout`       | `number`  | `30.0`                           | Per-request HTTP timeout in seconds for registry API calls.                  |
-| `docker_digest.registry_host` | `string`  | `"registry-1.docker.io"`         | Docker Registry v2 hostname for manifest lookups.                            |
-| `docker_digest.auth_url`      | `string`  | `"https://auth.docker.io/token"` | Token-authentication endpoint for bearer tokens (Docker Hub's auth service). |
-
-______________________________________________________________________
 
 ## Schema
 
