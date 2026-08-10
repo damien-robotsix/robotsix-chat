@@ -69,6 +69,48 @@ Everything below predates the release-please migration and was
 maintained by hand or by towncrier. It is kept verbatim; new entries
 are added above by release-please.
 
+## [0.9.0](https://github.com/damien-robotsix/robotsix-chat/compare/v0.8.0...v0.9.0) (2026-08-10)
+
+
+### ⚠ BREAKING CHANGES
+
+* the top-level fleet_auth setting is removed; a config still carrying it is rejected. Probe fleet components at the base_url the roster gives, not at their public hostname. Components without chat access enabled are no longer reachable by these tools.
+
+### Features
+
+* Autonomous session runner: add lifecycle logging + verify/fix periodic-at-startup firing (20260809T200324Z-autonomous-session-runner-add-lifecycle-ee61) ([#1261](https://github.com/damien-robotsix/robotsix-chat/issues/1261)) ([fd93656](https://github.com/damien-robotsix/robotsix-chat/commit/fd936563e5610f6520735e2e67dcbcbeaebe4eca))
+* Fix periodic monitor resumption: auto-paused monitors should self-resume after a timeout (20260809T100704Z-fix-periodic-monitor-resumption-auto-pau-96b2) ([#1256](https://github.com/damien-robotsix/robotsix-chat/issues/1256)) ([9ff5d73](https://github.com/damien-robotsix/robotsix-chat/commit/9ff5d73c52be5f6871fe58435ad6028ead815eaf))
+* Investigate and handle standards ticket closed from draft (20260802T195514Z-investigate-and-handle-standards-ticket-7003) ([#1266](https://github.com/damien-robotsix/robotsix-chat/issues/1266)) ([ff97c3b](https://github.com/damien-robotsix/robotsix-chat/commit/ff97c3b7eedd548669fc57c3fde19c15d436b90d))
+* Periodic monitors should not auto-pause on no-change when ticket is in a long queue (20260809T110321Z-periodic-monitors-should-not-auto-pause-0512) ([#1259](https://github.com/damien-robotsix/robotsix-chat/issues/1259)) ([78e3d6c](https://github.com/damien-robotsix/robotsix-chat/commit/78e3d6c7ec463a2ac89dea6fe3c29c31046bf42e))
+* reach fleet components by roster, not by public URL with credentials ([#1244](https://github.com/damien-robotsix/robotsix-chat/issues/1244)) ([8f85aba](https://github.com/damien-robotsix/robotsix-chat/commit/8f85aba4c60b18003e9536d8fac8217ca47f1097))
+* Reduce operator interruptions: auto-approve low-risk self-diagnosed tickets and only escalate genuine blockers (20260809T123416Z-reduce-operator-interruptions-auto-appro-b90b) ([#1258](https://github.com/damien-robotsix/robotsix-chat/issues/1258)) ([d4167ad](https://github.com/damien-robotsix/robotsix-chat/commit/d4167ade346aa3d52f7f2028c95d7331a9870a51))
+* Show autonomous sessions in the main session list, color-coded (20260809T133315Z-show-autonomous-sessions-in-the-main-ses-a8c8) ([#1257](https://github.com/damien-robotsix/robotsix-chat/issues/1257)) ([b91326b](https://github.com/damien-robotsix/robotsix-chat/commit/b91326b6604bccf23f3daa470f344ac176de5e0c))
+
+
+### Bug Fixes
+
+* Fix monitor self-termination after a single run (20260802T010450Z-fix-monitor-self-termination-after-a-sin-f4ba) ([#1251](https://github.com/damien-robotsix/robotsix-chat/issues/1251)) ([296789a](https://github.com/damien-robotsix/robotsix-chat/commit/296789a98f37ef3d66eaa24f2543a82d5f142b81))
+* Fix zlib decompression error in component_request for Langfuse proxy responses (20260809T060815Z-fix-zlib-decompression-error-in-componen-4631) ([#1255](https://github.com/damien-robotsix/robotsix-chat/issues/1255)) ([971360b](https://github.com/damien-robotsix/robotsix-chat/commit/971360b74a573eb6a2816e48c2c532725e744645))
+* GET /tickets fails with empty error whenever any query parameter is supplied (20260808T072820Z-get-tickets-fails-with-empty-error-whene-49b6) ([#1243](https://github.com/damien-robotsix/robotsix-chat/issues/1243)) ([0fd73b2](https://github.com/damien-robotsix/robotsix-chat/commit/0fd73b22a3eb199e814b343631b1f066651dc08e))
+* Improve CI startup-failure diagnostics to avoid billing misdiagnosis (20260802T005236Z-improve-ci-startup-failure-diagnostics-t-93b9) ([#1235](https://github.com/damien-robotsix/robotsix-chat/issues/1235)) ([26a0e4e](https://github.com/damien-robotsix/robotsix-chat/commit/26a0e4edea645b3d8d9d6eb09e84428e56c3ed36))
+* Refactor autonomous config schema: drop legacy single-session keys, make presets the only model (20260808T204337Z-refactor-autonomous-config-schema-drop-l-e5a5) ([#1242](https://github.com/damien-robotsix/robotsix-chat/issues/1242)) ([e5f0c4b](https://github.com/damien-robotsix/robotsix-chat/commit/e5f0c4bff061701357adfaee606aa67222c6e248))
+* **release:** don't fail lock-sync when the release branch is gone ([#1240](https://github.com/damien-robotsix/robotsix-chat/issues/1240)) ([2466d05](https://github.com/damien-robotsix/robotsix-chat/commit/2466d053b773fdcc8f45851cd115d8aeb811af3b))
+* Settings panel: render schema defaults (autonomous.sessions) + migrate stale on-disk config (20260808T193821Z-settings-panel-render-schema-defaults-au-2211) ([#1239](https://github.com/damien-robotsix/robotsix-chat/issues/1239)) ([ed3d225](https://github.com/damien-robotsix/robotsix-chat/commit/ed3d22537945d1cdaf7da1bb6de7b16b77b8ea41))
+* stop broadcasting raw exception text on mid-stream chat failures ([#1247](https://github.com/damien-robotsix/robotsix-chat/issues/1247)) ([415667f](https://github.com/damien-robotsix/robotsix-chat/commit/415667f67ca637aafa709b0d7b41f77a84577fa3))
+* UI: session list omits per-preset autonomous sessions (autonomous:&lt;preset&gt; owner scopes) (20260809T215045Z-ui-session-list-omits-per-preset-autonom-1e4e) ([#1263](https://github.com/damien-robotsix/robotsix-chat/issues/1263)) ([d0b7fde](https://github.com/damien-robotsix/robotsix-chat/commit/d0b7fde7251c8eb026772d1a28ac6f7574e4a60e))
+* wait_for_event subsessions lose ticket_id from their checkpoint (missing_ticket_id failures) (20260808T205738Z-wait-for-event-subsessions-lose-ticket-i-b40b) ([#1246](https://github.com/damien-robotsix/robotsix-chat/issues/1246)) ([fb3a12f](https://github.com/damien-robotsix/robotsix-chat/commit/fb3a12f612a51f8745d6c71f09cd7831c7c07a03))
+* wait_for_event ticket monitor loses ticket_id on restart (empty checkpoint → missing_ticket_id) (20260809T095601Z-wait-for-event-ticket-monitor-loses-tick-bc17) ([#1254](https://github.com/damien-robotsix/robotsix-chat/issues/1254)) ([1303ee6](https://github.com/damien-robotsix/robotsix-chat/commit/1303ee659465ef20de057c381da4ddd20060b6b7))
+
+
+### Reverts
+
+* **ci:** do not auto-merge release-please PRs ([#1253](https://github.com/damien-robotsix/robotsix-chat/issues/1253)) ([c4b5d60](https://github.com/damien-robotsix/robotsix-chat/commit/c4b5d60a9491b33fbd66a6d8eeb91eae32a8d2e6))
+
+
+### Documentation
+
+* Add autocomplete for known ticket transition and priority endpoints (20260802T191411Z-add-autocomplete-for-known-ticket-transi-5554) ([#1265](https://github.com/damien-robotsix/robotsix-chat/issues/1265)) ([8452239](https://github.com/damien-robotsix/robotsix-chat/commit/845223908bc146f3c23068c6267b89fb4fe1c81f))
+
 ## [0.8.0](https://github.com/damien-robotsix/robotsix-chat/compare/v0.7.0...v0.8.0) (2026-08-09)
 
 
