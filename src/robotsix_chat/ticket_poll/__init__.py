@@ -219,6 +219,66 @@ async def _resolve_ticket_ids(
     return result
 
 
+# ---------------------------------------------------------------------------
+# Unexpected-terminal-state detection
+# ---------------------------------------------------------------------------
+
+# Board API states that indicate the ticket was in active work (picked up
+# by an agent or reviewer), not sitting unexamined in draft/pre-review.
+_ACTIVE_WORK_STATES = frozenset({"APPROVED", "IN_PROGRESS", "BLOCKED"})
+
+# States that tell us the ticket reached a terminal outcome.
+_TERMINAL_STATES = frozenset({"CLOSED", "DONE"})
+
+
+def _check_unexpected_terminal(data: dict[str, Any]) -> str | None:
+    """Check whether *data* shows an unexpected path to a terminal state.
+
+    Returns a diagnostic string when the ticket is ``CLOSED`` or ``DONE``
+    yet the ``events`` / ``history`` arrays show no sign that the ticket
+    was ever picked up for implementation, review, or triage — suggesting
+    it was closed prematurely (e.g.  ``DRAFT → CLOSED`` without approval).
+    Returns ``None`` when the transition looks normal or when the data
+    carries insufficient history to decide (no false positives).
+
+    This is a pure function — no I/O.  Callers supply the parsed JSON
+    body from a ``GET /tickets/{id}`` response.
+    """
+    state = data.get("state")
+    if not isinstance(state, str) or state.upper() not in _TERMINAL_STATES:
+        return None
+
+    # 1. Check history entries for a prior active-work state.
+    history: list[dict[str, Any]] = data.get("history", [])
+    if isinstance(history, list):
+        for entry in history:
+            if not isinstance(entry, dict):
+                continue
+            prior = str(entry.get("state", entry.get("to", ""))).upper()
+            if prior in _ACTIVE_WORK_STATES:
+                return None  # Ticket reached an active state — normal.
+
+    # 2. Check events for implement / unblock / resume activity.
+    events: list[dict[str, Any]] = data.get("events", [])
+    if isinstance(events, list):
+        for ev in events:
+            if not isinstance(ev, dict):
+                continue
+            ev_type = str(ev.get("type", ev.get("action", ""))).lower()
+            if any(
+                keyword in ev_type for keyword in ("implement", "unblock", "resume")
+            ):
+                return None  # Implementation activity — normal.
+
+    # 3. No active-work evidence found — flag the transition.
+    return (
+        f"Ticket reached {state} without ever entering an active work "
+        f"state (APPROVED, IN_PROGRESS, or BLOCKED).  "
+        f"This may indicate the ticket was closed from a draft or "
+        f"pre-review state without approval."
+    )
+
+
 def load_ticket_poll_skill() -> str:
     """Return the ticket-poll component skill markdown.
 
@@ -473,7 +533,10 @@ def build_ticket_poll_tools(
 
         Returns:
             A JSON string with ``ticket_id``, ``state`` (or ``null`` when
-            the field is absent), and ``error`` (empty on success).
+            the field is absent), ``error`` (empty on success), and
+            ``unexpected_terminal`` — a diagnostic string when the ticket
+            reached a terminal state (``CLOSED`` / ``DONE``) without ever
+            passing through an active-work state, or ``null`` otherwise.
 
         """
         # Resolve paraphrased / abbreviated IDs against the live board
@@ -491,8 +554,14 @@ def build_ticket_poll_tools(
                 data, parse_error = _parse_json_body(body)
                 if not parse_error and data is not None:
                     state = data.get("state")
+                    unexpected = _check_unexpected_terminal(data)
                     return json.dumps(
-                        {"ticket_id": effective_id, "state": state, "error": ""},
+                        {
+                            "ticket_id": effective_id,
+                            "state": state,
+                            "error": "",
+                            "unexpected_terminal": unexpected,
+                        },
                         ensure_ascii=False,
                     )
             logger.info(
@@ -520,11 +589,14 @@ def build_ticket_poll_tools(
                 },
                 ensure_ascii=False,
             )
+        state = data.get("state")
+        unexpected = _check_unexpected_terminal(data)
         return json.dumps(
             {
                 "ticket_id": ticket_id,
-                "state": data.get("state"),
+                "state": state,
                 "error": "",
+                "unexpected_terminal": unexpected,
             },
             ensure_ascii=False,
         )
@@ -616,6 +688,7 @@ def build_ticket_poll_tools(
                         "state": data.get("state"),
                         "data": data,
                         "error": "",
+                        "unexpected_terminal": _check_unexpected_terminal(data),
                     }
 
             gathered = await asyncio.gather(
@@ -638,6 +711,7 @@ def build_ticket_poll_tools(
                     "state": data.get("state"),
                     "data": data,
                     "error": "",
+                    "unexpected_terminal": _check_unexpected_terminal(data),
                 }
 
         gathered = await asyncio.gather(

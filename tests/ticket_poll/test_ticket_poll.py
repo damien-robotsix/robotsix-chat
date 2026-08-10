@@ -16,6 +16,7 @@ import respx
 
 from robotsix_chat.config import DirectRepoSettings, Settings
 from robotsix_chat.ticket_poll import (
+    _check_unexpected_terminal,
     build_merge_pull_request_tool,
     build_ticket_poll_tools,
     load_ticket_poll_skill,
@@ -992,3 +993,146 @@ async def test_merge_pull_request_resolves_paraphrased_id(
     assert route.called
     assert "merged" in result
     assert "abc123" in result
+
+
+# ============================================================================
+# _check_unexpected_terminal
+# ============================================================================
+
+
+def test_unexpected_terminal_null_for_active_state() -> None:
+    """Ticket in IN_PROGRESS — not terminal, returns None."""
+    result = _check_unexpected_terminal({"state": "IN_PROGRESS"})
+    assert result is None
+
+
+def test_unexpected_terminal_null_for_unknown_state() -> None:
+    """Ticket with no state field — returns None (no false positives)."""
+    result = _check_unexpected_terminal({})
+    assert result is None
+
+
+def test_unexpected_terminal_null_with_history_active_state() -> None:
+    """CLOSED ticket that was previously BLOCKED — transition is normal."""
+    data: dict[str, Any] = {
+        "state": "CLOSED",
+        "history": [
+            {"state": "DRAFT"},
+            {"state": "BLOCKED"},
+            {"state": "CLOSED"},
+        ],
+    }
+    assert _check_unexpected_terminal(data) is None
+
+
+def test_unexpected_terminal_null_with_implement_events() -> None:
+    """CLOSED ticket with implement events — transition is normal."""
+    data: dict[str, Any] = {
+        "state": "CLOSED",
+        "events": [
+            {"type": "implement_started"},
+            {"type": "implement_complete"},
+        ],
+    }
+    assert _check_unexpected_terminal(data) is None
+
+
+def test_unexpected_terminal_null_with_unblock_events() -> None:
+    """DONE ticket with unblock event — transition is normal."""
+    data: dict[str, Any] = {
+        "state": "DONE",
+        "events": [{"type": "unblock"}],
+    }
+    assert _check_unexpected_terminal(data) is None
+
+
+def test_unexpected_terminal_detects_draft_to_closed() -> None:
+    """CLOSED ticket with only DRAFT history — flag as unexpected."""
+    data: dict[str, Any] = {
+        "state": "CLOSED",
+        "history": [
+            {"state": "DRAFT"},
+            {"state": "CLOSED"},
+        ],
+    }
+    result = _check_unexpected_terminal(data)
+    assert result is not None
+    assert "CLOSED" in result
+    assert "active work" in result.lower()
+
+
+def test_unexpected_terminal_detects_no_history() -> None:
+    """CLOSED ticket with no history or events — flag as unexpected."""
+    data: dict[str, Any] = {"state": "CLOSED"}
+    result = _check_unexpected_terminal(data)
+    assert result is not None
+    assert "CLOSED" in result
+
+
+def test_unexpected_terminal_detects_ready_to_closed() -> None:
+    """CLOSED ticket that was READY but never entered active work — flag."""
+    data: dict[str, Any] = {
+        "state": "CLOSED",
+        "history": [
+            {"state": "DRAFT"},
+            {"state": "READY"},
+            {"state": "CLOSED"},
+        ],
+    }
+    result = _check_unexpected_terminal(data)
+    assert result is not None
+
+
+def test_unexpected_terminal_null_for_approved() -> None:
+    """CLOSED with APPROVED in history — APPROVED is an active-work state."""
+    data: dict[str, Any] = {
+        "state": "CLOSED",
+        "history": [
+            {"state": "DRAFT"},
+            {"state": "APPROVED"},
+            {"state": "CLOSED"},
+        ],
+    }
+    assert _check_unexpected_terminal(data) is None
+
+
+def test_unexpected_terminal_case_insensitive_state() -> None:
+    """State comparison is case-insensitive."""
+    data: dict[str, Any] = {
+        "state": "closed",
+        "history": [{"state": "draft"}, {"state": "closed"}],
+    }
+    result = _check_unexpected_terminal(data)
+    assert result is not None
+
+
+def test_unexpected_terminal_uses_to_field_in_history() -> None:
+    """History entries may use 'to' instead of 'state'."""
+    data: dict[str, Any] = {
+        "state": "CLOSED",
+        "history": [
+            {"to": "DRAFT"},
+            {"to": "IN_PROGRESS"},
+            {"to": "CLOSED"},
+        ],
+    }
+    assert _check_unexpected_terminal(data) is None
+
+
+def test_unexpected_terminal_uses_action_field_in_events() -> None:
+    """Events may use 'action' instead of 'type'."""
+    data: dict[str, Any] = {
+        "state": "DONE",
+        "events": [{"action": "resume"}],
+    }
+    assert _check_unexpected_terminal(data) is None
+
+
+def test_unexpected_terminal_skips_non_dict_entries() -> None:
+    """Non-dict entries in history/events are safely skipped."""
+    data: dict[str, Any] = {
+        "state": "CLOSED",
+        "history": ["not a dict", None, {"state": "BLOCKED"}],
+        "events": [None, "also not a dict"],
+    }
+    assert _check_unexpected_terminal(data) is None
