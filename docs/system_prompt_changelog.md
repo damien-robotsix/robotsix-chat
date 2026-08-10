@@ -1867,6 +1867,26 @@ The hash is computed on the output of `build_autonomous_instruction(Settings())`
 autonomous settings at their pydantic field defaults (``proposal_marker="---PROPOSAL READY---"``,
 ``completion_marker="---AUTONOMOUS COMPLETE---"``, ``stale_monitor_runs_before_completion=3``).
 
+## AUTONOMOUS v6 — 2026-08-07 — incorporate-ui-design-patterns-when-prop-ef53
+
+**Summary:** Add `UI-RELATED TICKETS` guidance to the PLAN DRAFTING step (2).
+When a ticket subject involves UI changes, the agent must first check the
+target repo for project-specific design documentation, component libraries,
+or established UI patterns before making recommendations.  If no design
+guidelines are discoverable, the agent must note that explicitly.  When
+proposing UI changes, the agent must mention relevant trade-offs
+(discoverability vs. visual clutter, flexibility vs. consistency, aesthetic
+appeal vs. accessibility) so the user can make an informed decision grounded
+in project constraints.
+
+**Rationale:** The agent agreed with a user's suggestion to reduce add-account
+entry points without consulting any project-specific UI design guidelines or
+mentioning trade-offs, producing a generic recommendation blind to existing
+conventions.  The new guidance ensures UI advice is grounded in repo-specific
+patterns and accompanied by trade-off analysis.
+
+**SHA256:** `9b7e01a95c60fe60ab5205864ac2b82206172da8184e598afba92ed865e4dee3`
+
 ## AUTONOMOUS v5 — 2026-08-02 — require-empirical-verification-before-es-8208
 
 **Summary:** Add `INFRASTRUCTURE DIAGNOSIS — EMPIRICAL VERIFICATION REQUIRED` section
