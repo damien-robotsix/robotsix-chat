@@ -154,12 +154,12 @@ When a CI run fails and you need to diagnose the root cause:
 
 1. **First**, call `fetch_workflow_run_annotations` to get inline annotations (linter errors, test
    failures, etc.).
-1. **If that fails** (especially with a 403 permission error), `fetch_workflow_run_annotations`
+2. **If that fails** (especially with a 403 permission error), `fetch_workflow_run_annotations`
    automatically falls back to raw job logs for failed jobs. The returned message will include
    whatever logs could be retrieved.
-1. **For a specific job's log**, call `fetch_job_log` directly with the job ID (found via
+3. **For a specific job's log**, call `fetch_job_log` directly with the job ID (found via
    `check_workflow_run` or in the Actions tab URL).
-1. **If everything fails**, the tool will clearly state that logs are inaccessible and suggest
+4. **If everything fails**, the tool will clearly state that logs are inaccessible and suggest
    checking the GitHub Actions UI manually, including the direct URL to the workflow run.
 
 **Limitation:** When the GitHub App installation lacks both `checks: read` and `actions: read`
