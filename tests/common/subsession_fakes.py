@@ -52,6 +52,7 @@ class FakeAgent:
         client_id: str | None = None,
         images: list[tuple[str, bytes]] | None = None,
         trace_metadata: dict[str, str] | None = None,
+        trace_name: str | None = None,
     ) -> AsyncIterator[str]:
         """Record the call, optionally wait on the gate, yield one reply."""
         self.calls.append(

@@ -18,7 +18,7 @@ from robotsix_chat.chat.server.app import create_app
 class _DummyAgent:
     """Minimal agent stub — ``stream`` is the only method the app calls."""
 
-    async def stream(self, message: str):
+    async def stream(self, message: str, **kwargs: object):
         yield "ok"
         return
 

@@ -84,11 +84,21 @@ def _build_message_history(history: list[Turn] | None) -> list[Any] | None:
 def _trace_session(
     session_id: str | None,
     trace_metadata: dict[str, str] | None = None,
+    trace_name: str | None = None,
 ) -> Iterator[None]:
     """Group the enclosed agent run under *session_id* in Langfuse.
 
     A no-op when *session_id* is falsy or llmio's tracing extra is absent, so
     callers can wrap unconditionally.
+
+    When *trace_name* is supplied a named root trace is created via
+    :func:`robotsix_llmio.core.tracing.start_trace` so the trace is
+    distinguishable in Langfuse (e.g. ``"chat-turn"`` vs ``"subsession-turn"``).
+    Without it only ``langfuse_session`` is used — which groups spans under
+    the session but leaves the trace name at whatever default the caller's
+    outer context already established.  This lets an existing named trace
+    (e.g. the feedback runner's ``feedback-<type>``) continue owning the
+    root while the inner agent spans are grouped under it.
 
     When *trace_metadata* is supplied, each key-value pair is stamped as a
     span attribute on the current recording span (if any) inside the session
@@ -99,14 +109,20 @@ def _trace_session(
         yield
         return
     try:
-        from robotsix_llmio.core.tracing import langfuse_session
+        from robotsix_llmio.core.tracing import langfuse_session, start_trace
     except ImportError:
         yield
         return
-    with langfuse_session(session_id):
-        if trace_metadata:
-            _stamp_trace_metadata(trace_metadata)
-        yield
+    if trace_name is not None:
+        with start_trace(trace_name, session_id=session_id):
+            if trace_metadata:
+                _stamp_trace_metadata(trace_metadata)
+            yield
+    else:
+        with langfuse_session(session_id):
+            if trace_metadata:
+                _stamp_trace_metadata(trace_metadata)
+            yield
 
 
 def _stamp_trace_metadata(metadata: dict[str, str]) -> None:
@@ -324,6 +340,7 @@ class LlmioChatAgent:
         client_id: str | None = None,
         images: list[tuple[str, bytes]] | None = None,
         trace_metadata: dict[str, str] | None = None,
+        trace_name: str | None = None,
     ) -> AsyncIterator[str]:
         """Yield the assistant's reply to *message* as a single block.
 
@@ -336,8 +353,16 @@ class LlmioChatAgent:
         optional list of ``(media_type, raw_bytes)`` pairs (e.g.
         ``[("image/png", b"...")]``) — when non-empty the prompt is built as a
         multimodal sequence so a vision-capable LLM can see the attachments.
+        *trace_name* is an optional human-readable label for the Langfuse
+        trace (e.g. ``"chat-turn"``, ``"subsession-turn"``) so cost can be
+        attributed by function.  When ``None`` the trace inherits whatever
+        name the calling context set (if any); this keeps the feedback
+        runner's ``feedback-<type>`` trace name from being overwritten.
         All keyword arguments are optional — with none, the agent behaves as a
         single stateless query.
+
+        *trace_metadata* is stamped as span attributes for observability
+        (parent/owner lineage, subsession ids, etc.).
 
         Transient upstream errors (OpenRouter provider failures, 5xx, network
         blips) are retried up to :data:`_MAX_RUN_ATTEMPTS` before surfacing.
@@ -417,6 +442,15 @@ class LlmioChatAgent:
         on_activity = self._activity_callback(session_id)
         result: Any = None
 
+        # Stamp model_level as trace metadata so by-model cost breakdowns
+        # are usable in Langfuse — the trace_metadata dict from the caller
+        # (if any) is merged in so caller keys win on collision.
+        effective_trace_metadata: dict[str, str] = {
+            "model_level": str(self._model_level),
+        }
+        if trace_metadata:
+            effective_trace_metadata.update(trace_metadata)
+
         # Build a fresh handle per attempt so each try starts from a clean
         # state.  transient detection is delegated to is_openrouter_transient
         # so the retry loop only reacts to OpenRouter-level blips; non-transient
@@ -436,7 +470,9 @@ class LlmioChatAgent:
             )
             try:
                 with (
-                    _trace_session(session_id, trace_metadata),
+                    _trace_session(
+                        session_id, effective_trace_metadata, trace_name=trace_name
+                    ),
                     _activity_context(on_activity),
                 ):
                     return await handle.run(prompt, message_history=message_history)
@@ -473,7 +509,8 @@ class LlmioChatAgent:
                 message_history,
                 tools_arg,
                 session_id,
-                trace_metadata,
+                effective_trace_metadata,
+                trace_name=trace_name,
                 credential_is_dead=isinstance(exc, ClaudeSDKAuthError),
             )
 
@@ -493,6 +530,7 @@ class LlmioChatAgent:
         session_id: str | None,
         trace_metadata: dict[str, str] | None = None,
         *,
+        trace_name: str | None = None,
         credential_is_dead: bool = False,
     ) -> Any:
         """Retry the same turn at a different tier when this one cannot serve.
@@ -562,7 +600,9 @@ class LlmioChatAgent:
                 )
                 try:
                     with (
-                        _trace_session(session_id, trace_metadata),
+                        _trace_session(
+                            session_id, trace_metadata, trace_name=trace_name
+                        ),
                         _activity_context(on_activity),
                     ):
                         return await fallback_handle.run(

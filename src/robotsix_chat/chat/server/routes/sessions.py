@@ -354,6 +354,7 @@ async def summary_endpoint(request: Request) -> JSONResponse:
             history=None,
             session_id=None,
             client_id=None,
+            trace_name="session-summary",
         ):
             reply_parts.append(token)
     except Exception:

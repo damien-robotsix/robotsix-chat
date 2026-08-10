@@ -64,6 +64,7 @@ class _FakeAgent:
         client_id: str | None = None,
         images: list[tuple[str, bytes]] | None = None,
         trace_metadata: dict[str, str] | None = None,
+        trace_name: str | None = None,
     ) -> AsyncIterator[str]:
         """Yield tokens or raise the configured error."""
         self.call_count += 1

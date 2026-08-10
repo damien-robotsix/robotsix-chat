@@ -527,6 +527,7 @@ class ParentDelivery:
                             session_id=session_id,
                             client_id=session_id,
                             trace_metadata={"subsession_id": info.id},
+                            trace_name="subsession-reaction",
                         )
                     ]
                 except Exception:
