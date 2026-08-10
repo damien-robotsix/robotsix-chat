@@ -687,6 +687,14 @@ class ConversationStore:
         browser client).
         """
         owner_id = canonical_owner_id(owner_id)
+
+        # When querying the bootstrap autonomous owner, also surface
+        # sessions from every per-preset sub-scope (autonomous:mail-check,
+        # autonomous:cost-review, ...) so the UI session list shows them
+        # all inline instead of only the default preset.
+        if owner_id == _AUTONOMOUS_OWNER:
+            return self._list_autonomous_sessions(create_default=create_default)
+
         owner = self._owners.get(owner_id)
         if owner is None:
             if not create_default:
@@ -717,6 +725,55 @@ class ConversationStore:
         # Sort by last_active descending.
         result.sort(key=lambda s: s["last_active"], reverse=True)  # type: ignore[arg-type,return-value]
         return result, owner.active_session_id
+
+    def _list_autonomous_sessions(
+        self, *, create_default: bool
+    ) -> tuple[list[dict[str, object]], str]:
+        """Merge sessions from all autonomous owner scopes into a single sorted list.
+
+        Only the bootstrap owner is eligible for lazy default creation;
+        per-preset sub-scopes are managed by the runner and are never
+        lazily created here.
+        """
+        result: list[dict[str, object]] = []
+        active_id = ""
+
+        # Bootstrap autonomous owner.
+        owner = self._owners.get(_AUTONOMOUS_OWNER)
+        if owner is not None:
+            active_id = owner.active_session_id
+            for sid in owner.session_ids:
+                sess = self._sessions.get(sid)
+                if sess is not None:
+                    result.append(_session_metadata(sess))
+        elif create_default:
+            sid = self._session_factory()
+            new_session = Session(
+                session_id=sid,
+                wall_last_active=self._wall_clock(),
+            )
+            self._sessions[sid] = new_session
+            self._owners[_AUTONOMOUS_OWNER] = _OwnerState(
+                active_session_id=sid,
+                session_ids={sid},
+            )
+            self._evict_overflow()
+            self._persist()
+            result.append(_session_metadata(new_session))
+            active_id = sid
+
+        # Per-preset sub-scopes (autonomous:mail-check, etc.).
+        # Never create defaults for these — they are owned by the runner.
+        for owner_key, owner_state in self._owners.items():
+            if not owner_key.startswith(_AUTONOMOUS_OWNER_PREFIX):
+                continue
+            for sid in owner_state.session_ids:
+                sess = self._sessions.get(sid)
+                if sess is not None:
+                    result.append(_session_metadata(sess))
+
+        result.sort(key=lambda s: s["last_active"], reverse=True)  # type: ignore[arg-type,return-value]
+        return result, active_id
 
     def register_session(
         self,
