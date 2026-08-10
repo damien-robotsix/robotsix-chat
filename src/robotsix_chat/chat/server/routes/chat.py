@@ -64,6 +64,7 @@ class ChatAgent(Protocol):
         client_id: str | None = None,
         images: list[tuple[str, bytes]] | None = None,
         trace_metadata: dict[str, str] | None = None,
+        trace_name: str | None = None,
     ) -> AsyncIterator[str]:
         """Yield tokens from the LLM in response to ``message``.
 
@@ -72,6 +73,9 @@ class ChatAgent(Protocol):
         *trace_metadata* is an optional dict of key-value attributes
         stamped onto the Langfuse trace span for observability (e.g.
         ``{"parent_session_id": "..."}``).
+        *trace_name* is an optional human-readable label for the Langfuse
+        trace (e.g. ``"chat-turn"``, ``"subsession-turn"``) so cost can be
+        attributed by function.
         """
 
 
@@ -367,6 +371,7 @@ class MessageCoalescer:
                     session_id=session_id,
                     client_id=session_id,
                     images=combined_images,
+                    trace_name="chat-turn",
                 ):
                     reply_parts.append(token)
                     for p in pending:
@@ -538,7 +543,11 @@ async def _stream_summary(agent: ChatAgent, prompt: str, error_msg: str) -> str:
     try:
         reply_parts: list[str] = []
         async for token in agent.stream(
-            prompt, history=None, session_id=None, client_id=None
+            prompt,
+            history=None,
+            session_id=None,
+            client_id=None,
+            trace_name="chat-summary",
         ):
             reply_parts.append(token)
         return "".join(reply_parts).strip()

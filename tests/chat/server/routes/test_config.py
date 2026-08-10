@@ -29,7 +29,7 @@ from robotsix_chat.chat.server.routes.config import (
 class _DummyAgent:
     """Minimal agent stub — only ``stream`` is called by the chat endpoint."""
 
-    async def stream(self, message: str):
+    async def stream(self, message: str, **kwargs: object):
         yield "ok"
         return
 

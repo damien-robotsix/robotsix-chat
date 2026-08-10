@@ -871,6 +871,7 @@ async def _run_turn(
     sub_id: str,
     *,
     trace_metadata: dict[str, str] | None = None,
+    trace_name: str | None = None,
 ) -> str:
     """Run one agent turn and return the reply text."""
     parts = [
@@ -881,6 +882,7 @@ async def _run_turn(
             session_id=sub_id,
             client_id=sub_id,
             trace_metadata=trace_metadata,
+            trace_name=trace_name,
         )
     ]
     return "".join(parts)
@@ -917,6 +919,7 @@ async def _run_turn_with_timeout(
                     "owner_session_id": info.owner_session_id,
                     "parent_session_id": info.parent_id or info.owner_session_id,
                 },
+                trace_name="subsession-turn",
             )
     except TimeoutError:
         logger.warning(

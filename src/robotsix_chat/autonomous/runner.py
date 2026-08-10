@@ -966,6 +966,7 @@ class AutonomousRunner:
                     history=[],
                     session_id=session_id,
                     client_id=session_id,
+                    trace_name="autonomous-init",
                 ):
                     reply_parts.append(token)
                     if self._event_sink is not None:
@@ -1161,6 +1162,7 @@ class AutonomousRunner:
                             history=history,
                             session_id=session_id,
                             client_id=session_id,
+                            trace_name="autonomous-continue",
                         ):
                             reply_parts.append(token)
                             if self._event_sink is not None:

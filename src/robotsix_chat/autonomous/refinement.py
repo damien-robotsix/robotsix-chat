@@ -277,6 +277,7 @@ class RefinementStore:
                 history=None,
                 session_id=session_id,
                 client_id=None,
+                trace_name="autonomous-refinement",
             ):
                 reply_parts.append(token)
             proposed_addendum = "".join(reply_parts).strip()
