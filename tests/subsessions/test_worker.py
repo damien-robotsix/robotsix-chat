@@ -1319,6 +1319,47 @@ async def test_non_periodic_parent_can_spawn_periodic_child() -> None:
 
 
 # ---------------------------------------------------------------------------
+# periodic tick with no condition → no sibling spawn (AC 5, ticket 20260801T151631Z)
+# ---------------------------------------------------------------------------
+
+
+@pytest.mark.asyncio
+async def test_periodic_no_condition_tick_performs_no_sibling_spawn() -> None:
+    """A periodic tick that detects no condition does not initiate any sibling spawn.
+
+    The worker's periodic loop never calls spawn_subsession on a tick —
+    spawning is purely agent/LLM-driven via the spawn_subsession tool.
+    This test proves that a NO_CHANGE tick leaves the registry with no
+    new children.
+    """
+    agent = FakeAgent(["NO_CHANGE"])
+    env = build_env(agent=agent)
+
+    sub_id = _spawn(
+        env,
+        kind=SubsessionKind.PERIODIC,
+        interval_seconds=0.02,
+        max_runs=1,
+        title="monitor",
+    )
+    await _await_worker(env, sub_id)
+
+    # The periodic parent completed its one tick.
+    info = env.registry.get(sub_id)
+    assert info is not None
+    assert info.status is SubsessionStatus.CLOSED
+    assert info.runs == 1
+
+    # No sibling subsession was spawned — the agent's NO_CHANGE reply
+    # does not trigger any spawn_subsession path.
+    children = env.registry.list_descendants(sub_id)
+    assert children == [], f"expected no children, got {len(children)}"
+
+    # Only one agent call — no extra turns or tool invocations.
+    assert len(agent.calls) == 1
+
+
+# ---------------------------------------------------------------------------
 # idempotent spawn
 # ---------------------------------------------------------------------------
 
