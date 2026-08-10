@@ -65,6 +65,14 @@ uv run robotsix-chat
          ├─ Creates Starlette app
          ├─ Registers routes + middleware
          └─ Stores singletons in app.state
+
+      _resume_autonomous()     (async lifespan hook, runs after the app starts)
+         ├─ check_component_connectivity()     probes GET /health on every rostered
+         │                                      component; logs WARNING per unreachable
+         │                                      entry (non-fatal — startup continues)
+         ├─ _start_memory_warmup()             background cognee cold start
+         ├─ autonomous_runner.resume_sessions() restore persisted autonomous sessions
+         └─ _start_watcher()                   background paused-monitor watcher
 ```
 
 ______________________________________________________________________
