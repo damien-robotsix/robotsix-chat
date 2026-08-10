@@ -501,8 +501,14 @@ def _validate_model_level(settings: Settings, model_level: int) -> None:
         and not settings.llmio_api_key.get_secret_value()
     ):
         raise SubsessionLevelError(
-            f"model level {model_level} needs an API key which is not "
-            "configured — use level 3 or 4"
+            f"model level {model_level} requires an OpenRouter API key "
+            "but the server could not find one in its configuration. "
+            "The key may not be set in the config file, or may be set "
+            "but stored in a location the server does not read — "
+            "the server only reads the `llmio.api_key` field in its "
+            "JSON config file, not environment variables or external "
+            "secret stores.  Retry at level 3 (keyless) or have the "
+            "operator verify the API key is set in the config file."
         )
 
 

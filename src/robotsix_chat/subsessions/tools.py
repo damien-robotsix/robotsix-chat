@@ -167,8 +167,14 @@ def _build_spawn_and_control_tools(
         it to difficulty: 1 for trivial polling/extraction, 2 for
         general work (the default choice unless the task needs stronger
         reasoning), 3 for reasoning 2 struggles with, 4 only for
-        genuinely hard reasoning. Levels 1-2 need an OpenRouter API key;
-        if a spawn errors for a missing key, retry at level 3.
+        genuinely hard reasoning. Levels 1-2 need an OpenRouter API key.
+        If a spawn errors with an API key message, retry at level 3
+        (keyless) and tell the user the key could not be found by the
+        server's config file — do NOT claim the key is missing outright:
+        you cannot inspect the environment or secrets to confirm, and the
+        key may be set in a location the server does not read.
+        Recommend the operator verify the `llmio.api_key` field in the
+        server's JSON config file.
         interval_seconds (minimum applies) and max_runs are
         for kind="periodic" only.
 
