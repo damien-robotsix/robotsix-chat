@@ -216,7 +216,9 @@
     "board_url": "",
     "board_api_token": "",
     "deploy_api_key": "",
-    "timeout": 60.0
+    "timeout": 60.0,
+    "max_tickets_per_run": 3,
+    "dedup_window_seconds": 60.0
   },
   "autonomous": {
     "proposal_marker": "---PROPOSAL READY---",

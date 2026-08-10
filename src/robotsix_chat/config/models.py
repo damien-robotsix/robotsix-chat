@@ -1076,6 +1076,15 @@ class FeedbackSettings(BaseModel):
             tickets, mean 3.08, peaking at 9 from a single run. Excess
             tickets are dropped with a warning naming each one. ``0``
             disables filing while leaving analysis on.
+        dedup_window_seconds: Time window (in seconds) for suppressing
+            duplicate feedback runs and duplicate ticket titles.  When
+            two feedback runs for the same session are scheduled within
+            this window, the second is skipped.  Similarly, when two
+            tickets with the same normalized title (lowercased, stripped)
+            are filed within this window, the second is skipped.  Default
+            ``60.0`` balances promptness against the risk of near-
+            simultaneous duplicate creation during concurrent monitor
+            runs.
 
     """
 
@@ -1086,6 +1095,7 @@ class FeedbackSettings(BaseModel):
     deploy_api_key: SecretStr = SecretStr("")
     timeout: float = 60.0
     max_tickets_per_run: int = 3
+    dedup_window_seconds: float = 60.0
     model_config = ConfigDict(extra="forbid")
 
 

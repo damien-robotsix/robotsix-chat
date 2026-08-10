@@ -281,6 +281,14 @@ class FeedbackRunner:
         self._board_token = settings.board_api_token.get_secret_value()
         self._timeout = settings.timeout
         self._max_tickets_per_run = settings.max_tickets_per_run
+        self._dedup_window = settings.dedup_window_seconds
+
+        # In-process dedup caches: (key → monotonic timestamp of last event).
+        # Shared across ALL sessions — a single FeedbackRunner instance
+        # services the whole server lifetime, so these naturally debounce
+        # both intra- and inter-session duplicates.
+        self._last_run_at: dict[str, float] = {}
+        self._last_filed_at: dict[str, float] = {}
 
     # ------------------------------------------------------------------
     # Public entry points — schedule the run as a background task
@@ -296,6 +304,11 @@ class FeedbackRunner:
 
         *trigger_type* is ``"compaction"`` or ``"session_end"``.
         Errors are logged; the task is never awaited by the caller.
+
+        If a feedback run for *session_id* was already scheduled within
+        ``dedup_window_seconds``, the new run is silently skipped to
+        prevent duplicate ticket creation from near-simultaneous
+        compactions or session-end triggers.
         """
         if not self._board_url:
             logger.warning(
@@ -303,6 +316,19 @@ class FeedbackRunner:
                 session_id,
             )
             return
+
+        now = time.monotonic()
+        last = self._last_run_at.get(session_id)
+        if last is not None and (now - last) < self._dedup_window:
+            logger.debug(
+                "Feedback run skipped — dedup (session=%s, last=%.1fs ago,"
+                " window=%.1fs)",
+                session_id,
+                now - last,
+                self._dedup_window,
+            )
+            return
+        self._last_run_at[session_id] = now
 
         task = asyncio.create_task(
             self._run(trigger_type, session_id, turns),
@@ -593,6 +619,22 @@ class FeedbackRunner:
         client: httpx.AsyncClient,
     ) -> bool:
         """POST a single ticket; return True when the server responds 2xx."""
+        # Title-level dedup: skip when the same normalized title was
+        # filed within the dedup window (catches cross-session duplicates
+        # that the session-level debounce in schedule() cannot guard).
+        title_key = ticket["title"].strip().lower()
+        now = time.monotonic()
+        last = self._last_filed_at.get(title_key)
+        if last is not None and (now - last) < self._dedup_window:
+            logger.debug(
+                "Feedback ticket skipped — title dedup (title=%r,"
+                " last=%.1fs ago, window=%.1fs)",
+                ticket["title"],
+                now - last,
+                self._dedup_window,
+            )
+            return True  # intentionally skipped, not a failure
+
         # Fold runner-level metadata into the body so it survives
         # the mill ingest round-trip even though mill's TicketIngest
         # only carries repo_id / title / body / source_tag.
@@ -619,6 +661,7 @@ class FeedbackRunner:
                 if _span is not None:
                     _span.set_attribute("http.status_code", resp.status_code)
             if 200 <= resp.status_code < 300:
+                self._last_filed_at[title_key] = time.monotonic()
                 logger.debug(
                     "Feedback ticket filed: %s (HTTP %d)",
                     ticket["title"],
