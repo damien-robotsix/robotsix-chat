@@ -116,7 +116,7 @@ module.exports = async ({github, context, core}) => {
   }
 
   const failed = others.filter(
-    (r) => r.conclusion !== 'success' && r.conclusion !== 'skipped'
+    (r) => r.conclusion !== 'success' && r.conclusion !== 'skipped' && r.conclusion !== 'cancelled'
   );
   if (failed.length > 0) {
     core.setFailed(
