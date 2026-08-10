@@ -33,7 +33,7 @@ jobs:
     with:
       run-actionlint: false  # run locally below to avoid Checks API dependency
       run-zizmor: true
-      sarif-workflows: "python-ci.yml scan-container.yml"
+      sarif-workflows: "ci.yml scan-container.yml"
 
   actionlint:
     name: lint-workflows / actionlint
