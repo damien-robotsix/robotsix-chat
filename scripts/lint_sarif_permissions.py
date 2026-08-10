@@ -32,6 +32,7 @@ def _has_security_events_write(path: Path) -> bool:
 
 
 def main() -> int:
+    """Entry point: check SARIF workflow permissions and exit."""
     sarif_workflows = os.environ.get("SARIF_WORKFLOWS", "").split()
     if not sarif_workflows:
         print("No SARIF workflows configured; nothing to check.")
@@ -55,9 +56,7 @@ def main() -> int:
             print(f"ERROR: {error}", file=sys.stderr)
         return 1
 
-    print(
-        "All SARIF workflows have security-events: write permission."
-    )
+    print("All SARIF workflows have security-events: write permission.")
     return 0
 
 
