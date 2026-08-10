@@ -808,9 +808,7 @@ class TestFileTickets:
             side_effect=[
                 httpx.Response(
                     201,
-                    text=json.dumps(
-                        {"id": "t-1", "title": "Fix X", "state": "draft"}
-                    ),
+                    text=json.dumps({"id": "t-1", "title": "Fix X", "state": "draft"}),
                 ),
                 httpx.Response(
                     201,
@@ -823,17 +821,13 @@ class TestFileTickets:
         verify_get_1 = respx_mock.get("http://test-board/tickets/t-1").mock(
             return_value=httpx.Response(
                 200,
-                text=json.dumps(
-                    {"id": "t-1", "title": "Fix X", "state": "draft"}
-                ),
+                text=json.dumps({"id": "t-1", "title": "Fix X", "state": "draft"}),
             )
         )
         verify_get_2 = respx_mock.get("http://test-board/tickets/t-2").mock(
             return_value=httpx.Response(
                 200,
-                text=json.dumps(
-                    {"id": "t-2", "title": "Improve Y", "state": "draft"}
-                ),
+                text=json.dumps({"id": "t-2", "title": "Improve Y", "state": "draft"}),
             )
         )
         runner = _make_runner()
@@ -990,7 +984,7 @@ class TestFileTickets:
     async def test_verify_ingested_ticket_exception_logs_warning(
         self, respx_mock: respx.MockRouter, caplog: pytest.LogCaptureFixture
     ) -> None:
-        """Verification GET connection error logs a warning but does not change filed count."""
+        """Verification GET error logs warning; filed count unchanged."""
         respx_mock.post("http://test-board/tickets/ingest").mock(
             return_value=httpx.Response(
                 201,
@@ -1025,7 +1019,7 @@ class TestFileTickets:
     async def test_verify_ingested_ticket_handles_non_json_body(
         self, respx_mock: respx.MockRouter, caplog: pytest.LogCaptureFixture
     ) -> None:
-        """When the ingest response body is not valid JSON the verification step is skipped without error."""
+        """Non-JSON ingest body: verification step is skipped without error."""
         respx_mock.post("http://test-board/tickets/ingest").mock(
             return_value=httpx.Response(201, text="<html>OK</html>")
         )
