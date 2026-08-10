@@ -78,6 +78,12 @@ async def mill_events_endpoint(request: Request) -> JSONResponse:
 
     woken = registry.route_mill_event(ticket_id, event_payload)
 
+    # Populate the ticket-state cache so the agent can surface last-known
+    # state when the board API is unreachable.
+    from robotsix_chat.ticket_poll.cache import ticket_state_cache
+
+    ticket_state_cache.put_from_mill_event(event_payload)
+
     logger.info(
         "mill-events: ticket %s state %s → %s — woken %d monitor(s).",
         ticket_id,
