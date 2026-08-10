@@ -526,6 +526,11 @@ def build_ticket_poll_tools(
         live board before making the request — pass a hash suffix or slug
         substring and it will be mapped to the full ticket ID.
 
+        When the board API is unreachable, falls back to the last-known
+        state from the ticket-state cache (populated by mill push events
+        and prior successful polls), surfacing the cached state with a
+        clear staleness caveat.
+
         Args:
             ticket_id: The ticket identifier (e.g. "20250101T120000Z-my-ticket-a1b2").
                 Paraphrased / abbreviated IDs are resolved via hash-suffix
@@ -537,8 +542,12 @@ def build_ticket_poll_tools(
             ``unexpected_terminal`` — a diagnostic string when the ticket
             reached a terminal state (``CLOSED`` / ``DONE``) without ever
             passing through an active-work state, or ``null`` otherwise.
+            When the board is unreachable and a cached entry exists, the
+            ``cache_caveat`` field carries a staleness note.
 
         """
+        from robotsix_chat.ticket_poll.cache import ticket_state_cache
+
         # Resolve paraphrased / abbreviated IDs against the live board
         # before making the request.  This prevents 404 failures when an
         # ID was derived from narrative text rather than from a board API
@@ -555,22 +564,37 @@ def build_ticket_poll_tools(
                 if not parse_error and data is not None:
                     state = data.get("state")
                     unexpected = _check_unexpected_terminal(data)
-                    return json.dumps(
-                        {
-                            "ticket_id": effective_id,
-                            "state": state,
-                            "error": "",
-                            "unexpected_terminal": unexpected,
-                        },
-                        ensure_ascii=False,
-                    )
+                    result: dict[str, Any] = {
+                        "ticket_id": effective_id,
+                        "state": state,
+                        "error": "",
+                        "unexpected_terminal": unexpected,
+                    }
+                    # Populate the cache on every successful fetch so the
+                    # fallback path always has a recent entry.
+                    ticket_state_cache.put_from_poll(effective_id, result)
+                    return json.dumps(result, ensure_ascii=False)
             logger.info(
                 "ticket_poll roster path failed for %s; "
                 "falling back to direct board API",
                 effective_id,
             )
 
-        return await _ticket_poll_direct(effective_id)
+        direct_result = await _ticket_poll_direct(effective_id)
+        direct_data = json.loads(direct_result)
+        if direct_data.get("error"):
+            # Board API unreachable — try the cache.
+            cached, caveat = ticket_state_cache.get(effective_id)
+            if cached is not None:
+                cached["cache_caveat"] = caveat
+                # Preserve the original error so the caller sees both
+                # that the live lookup failed AND the cached state.
+                cached["error"] = direct_data["error"]
+                return json.dumps(cached, ensure_ascii=False)
+        else:
+            # Successful direct fetch — populate the cache.
+            ticket_state_cache.put_from_poll(effective_id, direct_data)
+        return direct_result
 
     async def _ticket_poll_direct(ticket_id: str) -> str:
         """Poll the mill board for a ticket's current state.
@@ -683,13 +707,18 @@ def build_ticket_poll_tools(
                             "data": None,
                             "error": "Empty parsed response from board API",
                         }
-                    return {
+                    result: dict[str, Any] = {
                         "ticket_id": ticket_id,
                         "state": data.get("state"),
                         "data": data,
                         "error": "",
                         "unexpected_terminal": _check_unexpected_terminal(data),
                     }
+                    # Populate cache on every successful batch fetch.
+                    from robotsix_chat.ticket_poll.cache import ticket_state_cache
+
+                    ticket_state_cache.put_from_poll(ticket_id, result)
+                    return result
 
             gathered = await asyncio.gather(
                 *(_fetch_one_via_component(tid) for tid in effective_ids)
@@ -706,13 +735,18 @@ def build_ticket_poll_tools(
                         "data": None,
                         "error": reason or "Board API request failed",
                     }
-                return {
+                result: dict[str, Any] = {
                     "ticket_id": ticket_id,
                     "state": data.get("state"),
                     "data": data,
                     "error": "",
                     "unexpected_terminal": _check_unexpected_terminal(data),
                 }
+                # Populate cache on every successful batch fetch.
+                from robotsix_chat.ticket_poll.cache import ticket_state_cache
+
+                ticket_state_cache.put_from_poll(ticket_id, result)
+                return result
 
         gathered = await asyncio.gather(
             *(_fetch_one_direct(tid) for tid in effective_ids)
