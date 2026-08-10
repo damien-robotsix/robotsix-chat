@@ -7,6 +7,7 @@ changelog entry, version bump, and SHA256 update — no silent drift.
 
 from __future__ import annotations
 
+import contextlib
 import hashlib
 import re
 from pathlib import Path
@@ -340,4 +341,83 @@ def test_autonomous_sha256_matches_live_output() -> None:
         f"changed without a corresponding changelog update.  Bump "
         f"AUTONOMOUS_PROMPT_VERSION, add a new AUTONOMOUS entry to "
         f"docs/system_prompt_changelog.md, and record the new hash."
+    )
+
+
+# ---------------------------------------------------------------------------
+# Version-number integrity: no duplicate versions, no unexpected gaps
+# ---------------------------------------------------------------------------
+
+
+def _parse_all_version_headers(text: str) -> list[str]:
+    """Return every ``## v<N>`` version string found in *text*, in file order.
+
+    Returns the raw version strings (e.g. ``"65"``, ``"65-b"``).
+    """
+    return [
+        m.group(1) for m in re.finditer(r"^## v(\d+(?:-[b-g])?) ", text, re.MULTILINE)
+    ]
+
+
+def test_no_duplicate_version_numbers() -> None:
+    """No version number may appear more than once in the changelog.
+
+    The governance policy states: "never reuse a version number."
+    """
+    changelog = _read_changelog()
+    versions = _parse_all_version_headers(changelog)
+    seen: dict[str, list[int]] = {}
+    for idx, v in enumerate(versions, start=1):
+        seen.setdefault(v, []).append(idx)
+    duplicates = {v: positions for v, positions in seen.items() if len(positions) > 1}
+    assert not duplicates, (
+        f"Duplicate version numbers found in changelog: "
+        f"{ {v: f'occurrences at positions {pos}' for v, pos in duplicates.items()} }. "
+        f"Each version number must be unique — bump the later entries to fresh numbers."
+    )
+
+
+def test_no_unexpected_gaps_in_version_sequence() -> None:
+    """The version sequence must not have gaps (except documented skips).
+
+    A gap is a missing integer between the highest and lowest version.
+    Known, documented skips (e.g. v23) are excluded from the check.
+
+    Suffixed versions (v65-b, etc.) are excluded from the integer-sequence
+    check — they are collocated near their base version and not gaps.
+    """
+    # Known skips — version numbers that were intentionally not used.
+    # Document each with a short rationale.
+    known_skips: dict[int, str] = {
+        23: "v23 was skipped — documented in changelog",
+        70: "v70 superseded by v71 (merge of two v70-branch changes)",
+    }
+
+    changelog = _read_changelog()
+    version_strings = _parse_all_version_headers(changelog)
+
+    # Extract pure integer versions (no suffix) for gap detection.
+    integer_versions: list[int] = []
+    for vs in version_strings:
+        with contextlib.suppress(ValueError):
+            integer_versions.append(int(vs))
+
+    integer_versions = sorted(set(integer_versions), reverse=True)
+
+    if len(integer_versions) < 2:
+        return  # nothing to check
+
+    highest = integer_versions[0]
+    lowest = integer_versions[-1]
+
+    gaps: list[int] = []
+    for expected in range(highest, lowest - 1, -1):
+        if expected not in integer_versions and expected not in known_skips:
+            gaps.append(expected)
+
+    assert not gaps, (
+        f"Gaps found in version sequence: {gaps}. "
+        f"Expected every integer from {highest} down to {lowest}. "
+        f"If a version was intentionally skipped, add it to KNOWN_SKIPS "
+        f"in this test with a rationale."
     )
