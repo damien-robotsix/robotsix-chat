@@ -77,8 +77,8 @@ A JSON string with these fields:
 - `unexpected_terminal` — a human-readable diagnostic string when the ticket reached a terminal
   state (`CLOSED` or `DONE`) without ever passing through an active-work state (`APPROVED`,
   `IN_PROGRESS`, or `BLOCKED`); `null` when the transition looks normal or when the data carries
-  insufficient history to decide.  Use this to detect tickets that were closed prematurely — e.g.
-  a `DRAFT → CLOSED` transition without approval — and alert the operator.
+  insufficient history to decide. Use this to detect tickets that were closed prematurely — e.g. a
+  `DRAFT → CLOSED` transition without approval — and alert the operator.
 
 ### `ticket_poll_batch`
 
