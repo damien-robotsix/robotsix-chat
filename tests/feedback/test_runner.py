@@ -798,9 +798,43 @@ class TestFileTickets:
     async def test_posts_tickets_successfully(
         self, respx_mock: respx.MockRouter
     ) -> None:
-        """Each ticket is POSTed; the count of successful posts is returned."""
-        route = respx_mock.post("http://test-board/tickets/ingest").mock(
-            return_value=httpx.Response(201)
+        """Each ticket is POSTed; the count of successful posts is returned.
+
+        The ingest response includes a ticket ``id``, and the runner
+        immediately GET-verifies it.  Both the POST and the verification
+        GET must be called for each ticket.
+        """
+        ingest_route = respx_mock.post("http://test-board/tickets/ingest").mock(
+            side_effect=[
+                httpx.Response(
+                    201,
+                    text=json.dumps(
+                        {"id": "t-1", "title": "Fix X", "state": "draft"}
+                    ),
+                ),
+                httpx.Response(
+                    201,
+                    text=json.dumps(
+                        {"id": "t-2", "title": "Improve Y", "state": "draft"}
+                    ),
+                ),
+            ]
+        )
+        verify_get_1 = respx_mock.get("http://test-board/tickets/t-1").mock(
+            return_value=httpx.Response(
+                200,
+                text=json.dumps(
+                    {"id": "t-1", "title": "Fix X", "state": "draft"}
+                ),
+            )
+        )
+        verify_get_2 = respx_mock.get("http://test-board/tickets/t-2").mock(
+            return_value=httpx.Response(
+                200,
+                text=json.dumps(
+                    {"id": "t-2", "title": "Improve Y", "state": "draft"}
+                ),
+            )
         )
         runner = _make_runner()
         tickets = [
@@ -822,7 +856,9 @@ class TestFileTickets:
         )
         assert filed == 2
         assert failed == 0
-        assert route.call_count == 2
+        assert ingest_route.call_count == 2
+        assert verify_get_1.call_count == 1
+        assert verify_get_2.call_count == 1
 
     @pytest.mark.asyncio
     async def test_payload_includes_metadata(
@@ -913,6 +949,105 @@ class TestFileTickets:
         assert filed == 0
         assert failed == 1
         assert "returned 400" in caplog.text
+
+    @pytest.mark.asyncio
+    async def test_verify_ingested_ticket_404_logs_warning(
+        self, respx_mock: respx.MockRouter, caplog: pytest.LogCaptureFixture
+    ) -> None:
+        """Verification GET 404 logs a warning but does not change filed count."""
+        respx_mock.post("http://test-board/tickets/ingest").mock(
+            return_value=httpx.Response(
+                201,
+                text=json.dumps(
+                    {"id": "phantom-1", "title": "Ghost ticket", "state": "draft"}
+                ),
+            )
+        )
+        respx_mock.get("http://test-board/tickets/phantom-1").mock(
+            return_value=httpx.Response(404)
+        )
+        runner = _make_runner()
+        with caplog.at_level(logging.WARNING):
+            filed, failed = await runner._file_tickets(
+                [
+                    {
+                        "title": "Ghost ticket",
+                        "description": "Should be filed but not retrievable",
+                        "kind": "code",
+                        "target_repo": "robotsix-chat",
+                    }
+                ],
+                trigger_type="compaction",
+                session_id="s1",
+            )
+        # Verification failures don't change the filed/failed count.
+        assert filed == 1
+        assert failed == 0
+        assert "not retrievable" in caplog.text
+        assert "phantom-1" in caplog.text
+
+    @pytest.mark.asyncio
+    async def test_verify_ingested_ticket_exception_logs_warning(
+        self, respx_mock: respx.MockRouter, caplog: pytest.LogCaptureFixture
+    ) -> None:
+        """Verification GET connection error logs a warning but does not change filed count."""
+        respx_mock.post("http://test-board/tickets/ingest").mock(
+            return_value=httpx.Response(
+                201,
+                text=json.dumps(
+                    {"id": "net-fail-1", "title": "Network flake", "state": "draft"}
+                ),
+            )
+        )
+        respx_mock.get("http://test-board/tickets/net-fail-1").mock(
+            side_effect=httpx.ConnectError("connection refused")
+        )
+        runner = _make_runner()
+        with caplog.at_level(logging.WARNING):
+            filed, failed = await runner._file_tickets(
+                [
+                    {
+                        "title": "Network flake",
+                        "description": "Verification request fails entirely",
+                        "kind": "code",
+                        "target_repo": "robotsix-chat",
+                    }
+                ],
+                trigger_type="compaction",
+                session_id="s1",
+            )
+        assert filed == 1
+        assert failed == 0
+        assert "verification request failed" in caplog.text
+        assert "net-fail-1" in caplog.text
+
+    @pytest.mark.asyncio
+    async def test_verify_ingested_ticket_handles_non_json_body(
+        self, respx_mock: respx.MockRouter, caplog: pytest.LogCaptureFixture
+    ) -> None:
+        """When the ingest response body is not valid JSON the verification step is skipped without error."""
+        respx_mock.post("http://test-board/tickets/ingest").mock(
+            return_value=httpx.Response(201, text="<html>OK</html>")
+        )
+        runner = _make_runner()
+        with caplog.at_level(logging.WARNING):
+            filed, failed = await runner._file_tickets(
+                [
+                    {
+                        "title": "HTML ticket",
+                        "description": "Ingest returns HTML instead of JSON",
+                        "kind": "code",
+                        "target_repo": "robotsix-chat",
+                    }
+                ],
+                trigger_type="compaction",
+                session_id="s1",
+            )
+        assert filed == 1
+        assert failed == 0
+        # No warning about verification — non-JSON body causes early return.
+        assert "not retrievable" not in caplog.text
+        assert "verification request failed" not in caplog.text
 
     @pytest.mark.asyncio
     async def test_http_exception_logs_and_continues(

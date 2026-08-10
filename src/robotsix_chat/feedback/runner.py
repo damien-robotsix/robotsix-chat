@@ -742,7 +742,7 @@ class FeedbackRunner:
         # Parse the response body for a ticket ID.
         try:
             body = resp.json()
-        except json.JSONDecodeError, ValueError:
+        except (json.JSONDecodeError, ValueError):
             body = {}
         if not isinstance(body, dict):
             return
@@ -771,6 +771,12 @@ class FeedbackRunner:
                     "Feedback ticket %r filed but verification returned HTTP %d for %s",
                     ticket_title,
                     verify_resp.status_code,
+                    ticket_id,
+                )
+            else:
+                logger.debug(
+                    "Feedback ticket %r verified retrievable at %s",
+                    ticket_title,
                     ticket_id,
                 )
         except Exception:
