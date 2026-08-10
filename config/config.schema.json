@@ -505,6 +505,7 @@
         },
         "check_interval_seconds": {
           "default": 300.0,
+          "exclusiveMinimum": 0,
           "title": "Check Interval Seconds",
           "type": "number"
         }

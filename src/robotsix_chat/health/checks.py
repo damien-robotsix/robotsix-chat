@@ -12,7 +12,7 @@ from __future__ import annotations
 
 import logging
 import time
-from typing import Any
+from typing import Any, cast
 
 from robotsix_chat.health.models import CheckResult, CheckSeverity
 
@@ -44,7 +44,7 @@ async def check_memory(state: Any) -> CheckResult:
                 details={"backend": type(memory).__name__},
             )
 
-        snapshot: dict[str, Any] = status_fn()
+        snapshot = cast("dict[str, Any]", status_fn())
         if not isinstance(snapshot, dict):
             return CheckResult(
                 name="memory",
