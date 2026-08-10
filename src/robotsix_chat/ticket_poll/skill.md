@@ -74,6 +74,11 @@ A JSON string with these fields:
 - `state` — the ticket's current state string (e.g. `"BLOCKED"`, `"IN_PROGRESS"`, `"DONE"`), or
   `null` when the state could not be determined
 - `error` — empty string on success, or a diagnostic message on failure
+- `unexpected_terminal` — a human-readable diagnostic string when the ticket reached a terminal
+  state (`CLOSED` or `DONE`) without ever passing through an active-work state (`APPROVED`,
+  `IN_PROGRESS`, or `BLOCKED`); `null` when the transition looks normal or when the data carries
+  insufficient history to decide.  Use this to detect tickets that were closed prematurely — e.g.
+  a `DRAFT → CLOSED` transition without approval — and alert the operator.
 
 ### `ticket_poll_batch`
 
@@ -84,6 +89,7 @@ A JSON string with a `tickets` array. Each element has:
 - `data` — the full JSON response from `GET /tickets/{id}` (includes events, history, comments,
   cycle metadata)
 - `error` — empty string on success, or a diagnostic message on failure
+- `unexpected_terminal` — same semantics as in `ticket_poll` above
 
 ### `merge_pull_request`
 
