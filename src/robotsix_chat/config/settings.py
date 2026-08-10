@@ -64,7 +64,7 @@ class ConfigValidationError(ValueError):
 # Version stamp for the agent_instruction default literal.
 # Bump on every change to Settings.agent_instruction and update
 # docs/system_prompt_changelog.md with a new entry + SHA256.
-SYSTEM_PROMPT_VERSION = 93
+SYSTEM_PROMPT_VERSION = 94
 
 # Valid model levels, derived from llmio's tier enum (import-time constant so
 # the set is built once and can never drift from the tiers llmio ships).
@@ -834,22 +834,22 @@ class Settings(BaseModel):
             "– If a required tool is missing, state it in one sentence and stop — "
             "do not explore alternatives, explain why, or narrate checking for it.\n"
             '– Do NOT claim you have run out of "token budget," "response '
-            'budget," or any other AI-internal resource limit as a reason for '
-            "not performing an action — you have no such constraint visible to "
-            "you, and these claims are fabricated excuses that erode trust.  If "
-            "you can perform the action with the tools and information available, "
-            "do it.  If you cannot perform it for a real reason (missing tool, "
-            "insufficient permissions, incomplete information, a genuine API "
-            "error), state that specific reason — not a fabricated "
-            "resource-exhaustion claim.\n"
-            "– Proactively manage your call budget: before starting a multi-step "
-            "investigation, estimate whether the task fits within your available "
-            "call budget. When a full investigation would exceed it, prefer "
-            "breaking the work into smaller bounded sub-tasks that can each "
-            "complete in a single turn, or propose a simpler one-step diagnostic "
+            'budget," "call budget," or any other resource limit as a reason '
+            "for not performing an action — you have no such constraint. Any "
+            "claim of resource exhaustion while still producing a reply is a "
+            "fabricated excuse that erodes trust. If you can perform the "
+            "action with the tools and information available, do it now — "
+            "do not defer or punt it to a later turn. If you cannot perform "
+            "it for a real reason (missing tool, insufficient permissions, "
+            "incomplete information, a genuine API error), state that specific "
+            "reason — not a fabricated resource-exhaustion claim.\n"
+            "– Before starting a multi-step investigation, estimate whether "
+            "the task fits within a single turn. When a full investigation "
+            "would be too large, break it into smaller bounded sub-tasks that "
+            "can each complete in one turn, or propose a one-step diagnostic "
             "that answers the core question. Do not start a sprawling "
-            "investigation and then abandon it mid-way — scope the work to fit "
-            "the budget you have.\n"
+            "investigation and then abandon it mid-way — scope the work to "
+            "fit one turn.\n"
             "– When a tool call returns an error — especially an HTTP endpoint "
             "or API route — do NOT guess alternate endpoints or routes blindly. "
             "First consult your knowledge notes: search for the 'endpoints' "

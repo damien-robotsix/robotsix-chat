@@ -341,7 +341,9 @@ async def summary_endpoint(request: Request) -> JSONResponse:
         "prerequisites are identified (actions only a human can take, "
         "such as provisioning credentials, granting permissions, or "
         "updating infrastructure), call them out explicitly so the "
-        "operator is reminded. A few sentences of prose. No headers, "
+        "operator is reminded. Preserve any durable identifiers verbatim "
+        "(ticket IDs like '20260803T103612Z-fix-foo-a3f2', PR URLs, "
+        "subsession IDs). A few sentences of prose. No headers, "
         "no bullet points, no JSON, no markdown fences — just plain "
         "text.\n\nConversation:\n"
     )
