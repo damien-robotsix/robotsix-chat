@@ -1847,6 +1847,23 @@ The hash is computed on the output of `build_autonomous_instruction(Settings())`
 autonomous settings at their pydantic field defaults (``proposal_marker="---PROPOSAL READY---"``,
 ``completion_marker="---AUTONOMOUS COMPLETE---"``, ``stale_monitor_runs_before_completion=3``).
 
+## AUTONOMOUS v5 — 2026-08-02 — require-empirical-verification-before-es-8208
+
+**Summary:** Add `INFRASTRUCTURE DIAGNOSIS — EMPIRICAL VERIFICATION REQUIRED` section
+to the autonomous protocol. When background agents detect that infrastructure credentials
+appear missing or service state is 'unknown', they must perform at least one empirical
+verification step (check actual ticket block reasons, test a resume canary, verify service
+status through a dedicated health endpoint, or cross-reference recent ticket history) before
+escalating to the operator. The section explicitly documents the empty env-store snapshot
+as a known red herring — credentials may be wired through a different path.
+
+**Rationale:** Multiple subsessions reported a total credential wipe based solely on reading
+the mill's env store (showing only DOCKER_HOST), and the assistant initially accepted that
+diagnosis before disproving it via live state checks. Requiring empirical verification
+before escalation reduces false alarms and prevents wasted operator attention.
+
+**SHA256:** `899229c5eb7619becec08cdbf094fe28d748356683bb728f47a397b7e1b3ac5f`
+
 ## AUTONOMOUS v4 — 2026-08-09 — reduce-operator-interruptions-auto-appro-b90b
 
 **Summary:** Add AUTONOMY TIER section to the autonomous protocol appendix.

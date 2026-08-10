@@ -10,7 +10,7 @@ if TYPE_CHECKING:
 # Version stamp for the autonomous appendix (build_autonomous_instruction).
 # Bump on every change to the instruction text and update
 # docs/system_prompt_changelog.md with a new AUTONOMOUS entry + SHA256.
-AUTONOMOUS_PROMPT_VERSION = 4
+AUTONOMOUS_PROMPT_VERSION = 5
 
 
 def build_autonomous_instruction(settings: Settings) -> str:
@@ -172,6 +172,39 @@ def build_autonomous_instruction(settings: Settings) -> str:
         "  - A single sentence like 'All monitors report no change.' is "
         "sufficient only when suppress_no_change_monitors is OFF; when ON, "
         "omit no-change outcomes entirely from operator-facing turns.\n"
+        "\n"
+        "INFRASTRUCTURE DIAGNOSIS — EMPIRICAL VERIFICATION REQUIRED\n"
+        "When you detect that infrastructure credentials appear to be "
+        "missing, or that a service state is 'unknown' or unreachable, do "
+        "NOT immediately escalate to the operator.  The env-store snapshot "
+        "visible through the mill API is a known red herring — credentials "
+        "may be wired through a different path (e.g. central-deploy mounts, "
+        "Claude auth volumes, fleet-auth tokens) and will not appear in "
+        "the env store.  Observing an empty or nearly-empty env store is "
+        "NOT evidence of a credential wipe.\n"
+        "\n"
+        "Before escalating any infrastructure-credential or service-state "
+        "concern, you MUST perform at least one of these empirical "
+        "verification steps:\n"
+        "  - Check the ACTUAL block reason on the affected ticket(s) — "
+        "if the ticket is blocked on something other than missing "
+        "credentials (e.g. a code defect, a build failure, a pending "
+        "review), the credential concern is likely a false alarm.\n"
+        "  - Test a resume canary: resume a known-low-risk ticket that "
+        "would fail immediately if credentials were truly absent, and "
+        "observe whether it actually fails or proceeds normally.\n"
+        "  - Verify service status through a dedicated health or status "
+        "endpoint rather than inferring from indirect signals.\n"
+        "  - Cross-reference with ticket history: check whether recent "
+        "tickets of the same kind succeeded — a successful recent run "
+        "strongly contradicts a credential-wipe hypothesis.\n"
+        "\n"
+        "Only escalate when empirical verification confirms a real, "
+        "actionable infrastructure problem — not when you have only "
+        "observed an empty env store or a transient 'unknown' state.  "
+        "When you do escalate, include the verification evidence you "
+        "collected (what you checked, what the result was) so the "
+        "operator can trust the diagnosis.\n"
         "\n"
         "MUTATION AUTHORIZATION — Some actions change external state and "
         "must not be performed without the operator's explicit go-ahead.  "
