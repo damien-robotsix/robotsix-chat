@@ -16,6 +16,8 @@ from typing import TYPE_CHECKING
 import httpx
 from robotsix_http import RetryConfig
 
+from robotsix_chat.chat.events import SSE_NOTIFICATION_TYPE
+
 from .models import SubsessionInfo, SubsessionStatus
 
 if TYPE_CHECKING:
@@ -34,14 +36,6 @@ _MAX_MILL_FAILURES = 2
 # changed since the last resume — the worker was never redeployed, so
 # any fix PRs merged since the ticket was blocked cannot be present.
 _MAX_STALE_WORKER_RESUMES = 2
-
-# Consecutive blocked-on-resume events before the subsession is closed.
-# When a ticket is BLOCKED on every resume (the agent keeps hitting the
-# same failure without making progress), auto-retry is futile — close
-# the monitor so the operator can intervene (e.g. manually revert
-# footprint-violating files rather than re-running the same dead-end
-# implement loop).
-_MAX_BLOCKED_RESUMES = 3
 
 # Ticket states recognised by the resume status check.
 _TICKET_STATE_TERMINAL = frozenset({"closed", "done"})
@@ -383,8 +377,56 @@ async def _check_resume_status(
             # Stale-worker cap reached — subsession already closed.
             return (False, stale_context)
 
+        # Resolve the reblock caps from settings (with sensible defaults
+        # for backward compatibility with config files that predate
+        # these keys).
+        max_reblock = getattr(
+            env.settings.subsessions, "paused_monitor_max_reblock_resumes", 3
+        )
+        notify_threshold = getattr(
+            env.settings.subsessions, "paused_monitor_reblock_notify_threshold", 2
+        )
+
+        # -- SSE notification: surface reblock loops to the operator --
+        # When the blocked count reaches the notify threshold and an
+        # event sink is available, publish a notification so the
+        # operator can decide whether to rebase / revert / intervene
+        # before the max_reblock cap is hit.
+        if (
+            notify_threshold > 0
+            and blocked_count >= notify_threshold
+            and env.event_sink is not None
+        ):
+            remaining = max_reblock - blocked_count if max_reblock > 0 else "?"
+            env.event_sink.publish(
+                info.owner_session_id,
+                {
+                    "type": SSE_NOTIFICATION_TYPE,
+                    "title": f"Monitor reblocking: {info.title}",
+                    "body": (
+                        f"Monitor {sub_id[:8]} tracking ticket {ticket_id} "
+                        f"has been BLOCKED on resume {blocked_count} "
+                        f"consecutive times "
+                        f"({remaining} remaining before auto-close).  "
+                        f"Consider rebasing the branch, reverting "
+                        f"problematic files, or manually intervening "
+                        f"if the same failure keeps recurring."
+                    ),
+                    "urgency": "medium",
+                    "link": ticket_id,
+                },
+            )
+            logger.info(
+                "Subsession %s (ticket %s): reblock notify threshold "
+                "(%d) reached at count %d — SSE notification sent.",
+                sub_id,
+                ticket_id,
+                notify_threshold,
+                blocked_count,
+            )
+
         # Check the blocked-resume cap (independent of stale-worker).
-        if blocked_count >= _MAX_BLOCKED_RESUMES:
+        if max_reblock > 0 and blocked_count >= max_reblock:
             summary = (
                 f"Ticket {ticket_id} has been BLOCKED on every resume "
                 f"for {blocked_count} consecutive attempts.  The agent "
@@ -430,11 +472,11 @@ async def _check_resume_status(
                 f"them to the operator immediately via user_chat.]"
             )
 
-        if blocked_count > 1:
-            remaining = _MAX_BLOCKED_RESUMES - blocked_count
+        if blocked_count > 1 and max_reblock > 0:
+            remaining = max_reblock - blocked_count
             context += (
                 f"\n\n[Repeated block: this is blocked-resume attempt "
-                f"{blocked_count}/{_MAX_BLOCKED_RESUMES} "
+                f"{blocked_count}/{max_reblock} "
                 f"({remaining} remaining before auto-close).  "
                 f"If the same failure keeps recurring, stop auto-retrying "
                 f"and escalate to the operator.]"
@@ -446,7 +488,7 @@ async def _check_resume_status(
             sub_id,
             ticket_id,
             blocked_count,
-            _MAX_BLOCKED_RESUMES,
+            max_reblock,
         )
         return (True, context)
 

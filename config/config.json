@@ -117,6 +117,8 @@
     "paused_monitor_poll_interval_seconds": 60.0,
     "paused_monitor_long_poll_interval_seconds": 15.0,
     "paused_monitor_auto_resume_seconds": 1800.0,
+    "paused_monitor_max_reblock_resumes": 3,
+    "paused_monitor_reblock_notify_threshold": 2,
     "periodic_max_interval_seconds": 3600.0,
     "periodic_max_total_runs": 100,
     "user_chat_max_retries": 3,
