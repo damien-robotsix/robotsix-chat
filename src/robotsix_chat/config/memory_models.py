@@ -25,6 +25,14 @@ class MemoryLlmSettings(BaseModel):
     extraction/consolidation LLM call per message, so an expensive default
     silently burns credits whenever the config is reset or clobbered. Do
     not default this to a frontier/expensive model.
+
+    Attributes:
+        provider: litellm provider name (e.g. ``"custom"`` for OpenRouter).
+        model: litellm model string including provider prefix
+            (e.g. ``"openrouter/openai/gpt-5-nano"``).
+        endpoint: Base URL of the LLM API endpoint.
+        max_completion_tokens: Maximum tokens for the extraction LLM call.
+
     """
 
     provider: str = "custom"
@@ -48,6 +56,19 @@ class MemoryEmbeddingSettings(BaseModel):
     name); ``endpoint`` (e.g. ``http://host:11434/v1``) is required when memory
     is enabled. ``dimensions`` is sticky — changing it invalidates stored
     vectors.
+
+    Attributes:
+        provider: Embedding provider name.  Must be ``"openai_compatible"``
+            for self-hosted Ollama endpoints.
+        model: Embedding model name (e.g. ``"bge-m3"``).
+        endpoint: Base URL of the embedding server (e.g.
+            ``"http://host:11434/v1"``).  Required when memory is enabled.
+        dimensions: Embedding vector dimensions.  Sticky — changing it
+            invalidates stored vectors.
+        api_key: API key for the embedding server.  Default ``"ollama"``
+            (Ollama's placeholder).
+        huggingface_tokenizer: HuggingFace tokenizer name for the model.
+
     """
 
     provider: str = "openai_compatible"
