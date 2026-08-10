@@ -15,6 +15,7 @@ from unittest.mock import AsyncMock, MagicMock, patch
 import httpx
 import pytest
 
+from robotsix_chat.chat.conversation import ConversationStore
 from robotsix_chat.chat.events import SSE_NOTIFICATION_TYPE, SSE_SUBSESSION_RESULT_TYPE
 from robotsix_chat.subsessions import (
     SubsessionCapacityError,
@@ -3215,3 +3216,137 @@ async def test_wait_for_event_checkpoint_survives_resume(
     if worker is not None:
         with contextlib.suppress(asyncio.CancelledError):
             await asyncio.wait_for(worker, 2.0)
+
+
+# ---------------------------------------------------------------------------
+# on_close kind
+# ---------------------------------------------------------------------------
+
+
+@pytest.mark.asyncio
+async def test_on_close_parent_already_closed_runs_immediately() -> None:
+    """When the parent session is already closed, ON_CLOSE runs right away."""
+    agent = FakeAgent(["cleanup complete"])
+    store = ConversationStore()
+    store.is_session_closed = lambda session_id: True  # type: ignore[method-assign]
+    env = build_env(agent=agent, store=store)
+
+    sub_id = _spawn(env, kind=SubsessionKind.ON_CLOSE, prompt="do the cleanup")
+    await _await_worker(env, sub_id)
+
+    info = env.registry.get(sub_id)
+    assert info is not None
+    assert info.status is SubsessionStatus.CLOSED
+    assert info.close_reason == "completed"
+    assert info.summary == "cleanup complete"
+    assert len(agent.calls) == 1
+    assert agent.calls[0]["message"] == "do the cleanup"
+
+
+@pytest.mark.asyncio
+async def test_on_close_waits_until_parent_closes() -> None:
+    """ON_CLOSE polls until the parent closes, then runs the one-shot task."""
+    agent = FakeAgent(["cleanup done"])
+    parent_closed = [False]  # mutable closure
+
+    store = ConversationStore()
+    store.is_session_closed = lambda session_id: parent_closed[0]  # type: ignore[method-assign]
+    env = build_env(agent=agent, store=store)
+
+    with patch("asyncio.sleep", new_callable=AsyncMock):
+        sub_id = _spawn(env, kind=SubsessionKind.ON_CLOSE, prompt="cleanup")
+
+        # The worker spins in the close-waiting loop (sleep mocked to
+        # return immediately).  Give it a few iterations.
+        await asyncio.sleep(0.05)
+        assert len(agent.calls) == 0, "agent must not be called while parent is open"
+
+        # Simulate parent closing.
+        parent_closed[0] = True
+
+        await _await_worker(env, sub_id)
+
+    assert len(agent.calls) == 1
+    info = env.registry.get(sub_id)
+    assert info is not None
+    assert info.status is SubsessionStatus.CLOSED
+    assert info.close_reason == "completed"
+    assert info.summary == "cleanup done"
+
+
+@pytest.mark.asyncio
+async def test_on_close_external_close_during_wait_exits_cleanly() -> None:
+    """Subsession externally closed while waiting — worker exits without running."""
+    agent = FakeAgent(["should not run"])
+
+    store = ConversationStore()
+    store.is_session_closed = lambda session_id: False  # type: ignore[method-assign]
+    env = build_env(agent=agent, store=store)
+
+    with patch("asyncio.sleep", new_callable=AsyncMock):
+        sub_id = _spawn(env, kind=SubsessionKind.ON_CLOSE, prompt="cleanup")
+
+        # Let the worker enter the close-waiting loop.
+        await asyncio.sleep(0.05)
+
+        # Externally close the subsession while it's waiting.
+        env.registry.cancel_and_close(sub_id, reason="cancelled", closed_by="user")
+
+        # The worker task is cancelled by cancel_and_close;
+        # suppress CancelledError when awaiting it.
+        with contextlib.suppress(asyncio.CancelledError):
+            await _await_worker(env, sub_id)
+
+    # The agent must never have been called.
+    assert len(agent.calls) == 0
+
+    info = env.registry.get(sub_id)
+    assert info is not None
+    assert info.status is SubsessionStatus.CLOSED
+
+
+@pytest.mark.asyncio
+async def test_on_close_child_of_periodic_is_rejected() -> None:
+    """Spawning an ON_CLOSE child under a PERIODIC parent raises an error."""
+    env = build_env()
+    # Register a periodic parent without spawning a worker (same pattern as
+    # test_periodic_parent_cannot_spawn_periodic_or_on_close_child).
+    parent = env.registry.create(
+        kind=SubsessionKind.PERIODIC,
+        owner_session_id=OWNER,
+        parent_id=None,
+        depth=1,
+        title="parent periodic",
+        prompt="monitor",
+        model_level=3,
+        interval_seconds=10.0,
+    )
+
+    with pytest.raises(SubsessionPeriodicSpawnError, match="on_close"):
+        _spawn(
+            env,
+            kind=SubsessionKind.ON_CLOSE,
+            parent_id=parent.id,
+            depth=2,
+            title="cleanup",
+            prompt="clean up on close",
+        )
+
+
+@pytest.mark.asyncio
+async def test_on_close_retries_up_to_user_chat_max_retries() -> None:
+    """ON_CLOSE uses ``user_chat_max_retries`` when the agent fails."""
+    agent = FakeAgent(error=RuntimeError("kaboom"))
+    store = ConversationStore()
+    store.is_session_closed = lambda session_id: True  # type: ignore[method-assign]
+    env = build_env(agent=agent, store=store)
+
+    sub_id = _spawn(env, kind=SubsessionKind.ON_CLOSE, prompt="cleanup")
+    await _await_worker(env, sub_id)
+
+    info = env.registry.get(sub_id)
+    assert info is not None
+    assert info.status is SubsessionStatus.FAILED
+    # user_chat_max_retries defaults to 3 in make_settings.
+    assert info.retry_count == 3
+    assert "[RuntimeError] kaboom" in (info.error or "")

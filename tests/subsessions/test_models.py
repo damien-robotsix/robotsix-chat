@@ -129,6 +129,18 @@ def test_transcript_entry_as_dict() -> None:
     }
 
 
+def test_on_close_enum_value() -> None:
+    """``SubsessionKind.ON_CLOSE`` has the string value ``"on_close"``."""
+    assert SubsessionKind.ON_CLOSE.value == "on_close"
+    assert isinstance(SubsessionKind.ON_CLOSE.value, str)
+
+
+def test_snapshot_on_close_serialises_kind() -> None:
+    """``ON_CLOSE`` kind is serialised as ``"on_close"`` in snapshots."""
+    snapshot = _info(kind=SubsessionKind.ON_CLOSE).snapshot()
+    assert snapshot["kind"] == "on_close"
+
+
 def test_is_active_matches_active_statuses() -> None:
     """``is_active`` is True exactly for the ``ACTIVE_STATUSES`` members."""
     for status in SubsessionStatus:
