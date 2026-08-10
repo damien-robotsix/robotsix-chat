@@ -1572,5 +1572,5 @@ class HealthSettings(BaseModel):
     """
 
     enabled: bool = True
-    check_interval_seconds: float = 300.0
+    check_interval_seconds: float = Field(default=300.0, gt=0)
     model_config = ConfigDict(extra="forbid")

@@ -11,6 +11,7 @@ from __future__ import annotations
 import asyncio
 import contextlib
 import logging
+import time
 from typing import Any
 
 from robotsix_chat.health.checks import CHECKS
@@ -99,6 +100,7 @@ class HealthScheduler:
 
         status = HealthStatus(
             checks=results,
+            last_run=time.monotonic(),
             overall=worst,
         )
 
@@ -133,11 +135,11 @@ class HealthScheduler:
     # ------------------------------------------------------------------
 
     async def _loop(self) -> None:
-        """Run checks forever on *interval_seconds* cadence."""
+        """Run checks forever, starting immediately then sleeping on interval."""
         while True:
             try:
-                await asyncio.sleep(self.interval_seconds)
                 await self.run_once()
+                await asyncio.sleep(self.interval_seconds)
             except asyncio.CancelledError:
                 raise
             except Exception:
