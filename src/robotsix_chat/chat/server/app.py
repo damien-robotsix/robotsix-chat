@@ -826,34 +826,43 @@ def _build_static_tools(
     component_access_tools = build_component_access_tools(settings.central_deploy)
     component_request = component_access_tools[0] if component_access_tools else None
 
+    from robotsix_chat.llm.tool_utils import require_args
+
     return [
-        *component_access_tools,
-        *build_mail_tools(settings.mail),
-        *build_component_tools(settings.component_client),
-        *build_refdocs_tools(settings.refdocs, settings.direct_repo),
-        *build_repo_study_tools(
-            settings.repo_study,
-            settings.direct_repo,
-            diagnostic_store=diagnostic_store,
-        ),
-        *build_direct_repo_tools(
-            settings.direct_repo, component_request=component_request
-        ),
-        *build_github_security_tools(settings.github_security, settings.direct_repo),
-        *build_github_actions_tools(settings.github_actions, settings.direct_repo),
-        *build_knowledge_tools(settings.knowledge, store=knowledge_store),
-        *build_diagnostics_tools(settings.diagnostics, store=diagnostic_store),
-        *build_recent_activity_tools(settings.self_review, conversation_store),
-        *build_version_check_tools(settings.version_check, settings.direct_repo),
-        *build_lifecycle_tools(settings.lifecycle),
-        *build_render_url_tools(settings.render_url),
-        *build_http_probe_tools(settings.http_probe, settings.central_deploy),
-        *build_docker_digest_tools(settings.docker_digest),
-        *build_public_fetch_tools(settings.public_fetch, settings.central_deploy),
-        *build_langfuse_inspect_tools(settings.langfuse_inspect, settings.langfuse),
-        *build_sftp_tools(settings.sftp),
-        *build_ticket_poll_tools(settings, component_request=component_request),
-        *build_merge_pull_request_tool(settings, component_request=component_request),
+        require_args(t)
+        for t in (
+            *component_access_tools,
+            *build_mail_tools(settings.mail),
+            *build_component_tools(settings.component_client),
+            *build_refdocs_tools(settings.refdocs, settings.direct_repo),
+            *build_repo_study_tools(
+                settings.repo_study,
+                settings.direct_repo,
+                diagnostic_store=diagnostic_store,
+            ),
+            *build_direct_repo_tools(
+                settings.direct_repo, component_request=component_request
+            ),
+            *build_github_security_tools(
+                settings.github_security, settings.direct_repo
+            ),
+            *build_github_actions_tools(settings.github_actions, settings.direct_repo),
+            *build_knowledge_tools(settings.knowledge, store=knowledge_store),
+            *build_diagnostics_tools(settings.diagnostics, store=diagnostic_store),
+            *build_recent_activity_tools(settings.self_review, conversation_store),
+            *build_version_check_tools(settings.version_check, settings.direct_repo),
+            *build_lifecycle_tools(settings.lifecycle),
+            *build_render_url_tools(settings.render_url),
+            *build_http_probe_tools(settings.http_probe, settings.central_deploy),
+            *build_docker_digest_tools(settings.docker_digest),
+            *build_public_fetch_tools(settings.public_fetch, settings.central_deploy),
+            *build_langfuse_inspect_tools(settings.langfuse_inspect, settings.langfuse),
+            *build_sftp_tools(settings.sftp),
+            *build_ticket_poll_tools(settings, component_request=component_request),
+            *build_merge_pull_request_tool(
+                settings, component_request=component_request
+            ),
+        )
     ]
 
 
@@ -903,10 +912,12 @@ def _build_request_tools_factory(
         return None
 
     def _compose(session_id: str) -> list[Any]:
+        from robotsix_chat.llm.tool_utils import require_args
+
         result: list[Any] = []
         for f in req_factories:
             result.extend(f(session_id))
-        return result
+        return [require_args(t) for t in result]
 
     return _compose
 
