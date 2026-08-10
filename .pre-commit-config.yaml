@@ -34,7 +34,7 @@ repos:
       - id: mypy
         name: mypy
         entry: mypy src/ --strict
-        language: system
+        language: unsupported
         types: [python]
         pass_filenames: false
         require_serial: true
@@ -44,7 +44,7 @@ repos:
       - id: pyright
         name: pyright
         entry: pyright src/ tests/
-        language: system
+        language: unsupported
         types: [python]
         pass_filenames: false
         require_serial: true
@@ -59,7 +59,7 @@ repos:
       - id: zizmor
         name: zizmor
         entry: uv tool run zizmor
-        language: system
+        language: unsupported
         args: ["."]
         types: [yaml]
         pass_filenames: false
@@ -84,7 +84,7 @@ repos:
             "--ignore-until-fixed", "GHSA-cq5v-8q36-5273",
             "--ignore-until-fixed", "GHSA-g6cj-pr64-35w5",
           ]
-        language: system
+        language: unsupported
         pass_filenames: false
         files: ^uv\.lock$
 
@@ -107,7 +107,7 @@ repos:
         # dunders on built tool functions, pydantic model fields) that are
         # false positives; genuine dead code reports at 90%+.
         entry: vulture --ignore-decorators "@field_validator,@model_validator" src/ vulture_whitelist.py --min-confidence 80
-        language: system
+        language: unsupported
         pass_filenames: false
 
   - repo: local
@@ -119,7 +119,7 @@ repos:
           module in docs/modules.yaml — catches newly created files
           that were not registered before commit.
         entry: uv run robotsix-modules check-registration docs/modules.yaml --root .
-        language: system
+        language: unsupported
         pass_filenames: false
 
   - repo: local
@@ -127,7 +127,7 @@ repos:
       - id: regenerate-config-schema
         name: regenerate config schema
         entry: bash -c "uv run scripts/regenerate_schema.py && git add config/config.schema.json"
-        language: system
+        language: unsupported
         files: ^src/robotsix_chat/config/settings\.py$
         pass_filenames: false
         fail_fast: true
@@ -137,7 +137,7 @@ repos:
       - id: update-changelog-sha256
         name: update changelog SHA256
         entry: bash -c "uv run scripts/update_changelog_sha256.py && git add docs/system_prompt_changelog.md"
-        language: system
+        language: unsupported
         files: ^src/robotsix_chat/config/settings\.py$
         pass_filenames: false
         fail_fast: true
