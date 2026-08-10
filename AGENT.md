@@ -271,6 +271,19 @@ waste a cycle on the drift. Run
 `uv run robotsix-modules check-registration docs/modules.yaml --root .` to verify locally before
 committing.
 
+## Enum / UI surface sync
+
+**Rule:** When adding a new `SubsessionKind` member in `src/robotsix_chat/subsessions/models.py`,
+add a matching `kind === "<value>"` case to the `subsKindLabel` function in
+`src/robotsix_chat/ui/static/chat.js` in the same commit. The CI `SubsessionKind audit` job
+(`scripts/check_subsession_kinds.py`) scans `chat.js`/`index.html` for these string-literal
+comparisons and fails CI when a canonical kind value lacks a frontend case.
+
+**Rationale:** PR #1138 (ticket 20260802T101159Z, `SubsessionKind.ON_CLOSE`) tripped the audit in a
+`fixing_ci` cycle because the enum member was added in `models.py` without the corresponding
+`kind === "on_close"` label in `subsKindLabel`; the fix then shipped as a separate CI-fix commit
+(b0f0f87).
+
 ## Direct repo tooling
 
 **Rule:** When adding a tool to `src/robotsix_chat/repo/direct/`, document it in
