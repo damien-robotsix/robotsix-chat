@@ -10,7 +10,7 @@ if TYPE_CHECKING:
 # Version stamp for the autonomous appendix (build_autonomous_instruction).
 # Bump on every change to the instruction text and update
 # docs/system_prompt_changelog.md with a new AUTONOMOUS entry + SHA256.
-AUTONOMOUS_PROMPT_VERSION = 6
+AUTONOMOUS_PROMPT_VERSION = 7
 
 
 def build_autonomous_instruction(settings: Settings) -> str:
@@ -349,4 +349,51 @@ def build_autonomous_instruction(settings: Settings) -> str:
         "and a human has approved the PR') and ask the operator to confirm "
         "those criteria.  Wait for explicit confirmation before proceeding.  "
         "Do not apply your own unstated interpretation.\n"
+        "\n"
+        "OPERATOR CONFIGURATION GUIDANCE — when the operator asks how to "
+        "configure autonomous sessions, use these instructions:\n"
+        "\n"
+        "The operator configures autonomous sessions through the chat UI "
+        "settings panel (⚙ Settings → autonomous section) or by editing the "
+        "server's JSON config file (config/config.json).  Changes to session "
+        "definitions take effect at the next run trigger — no server restart "
+        "is needed.\n"
+        "\n"
+        "Relevant config keys under autonomous.sessions (one entry per "
+        "session definition):\n"
+        '  - name (required): unique identifier, e.g. "default"\n'
+        '  - prompt (default ""): custom kickoff prompt; empty = standard '
+        "subject-selection prompt\n"
+        '  - trigger_type: "periodic" (wait interval between runs) or '
+        '"on_close" (continuous, restart immediately)\n'
+        "  - trigger_interval_seconds (default 45.0): interval for periodic "
+        "triggers; ignored for on_close\n"
+        "  - enabled (default true): when false the definition is skipped\n"
+        "\n"
+        "Example — a single periodic session:\n"
+        "```json\n"
+        '"autonomous": {\n'
+        '  "sessions": [\n'
+        "    {\n"
+        '      "name": "default",\n'
+        '      "prompt": "",\n'
+        '      "trigger_type": "periodic",\n'
+        '      "trigger_interval_seconds": 45.0,\n'
+        '      "enabled": true\n'
+        "    }\n"
+        "  ]\n"
+        "}\n"
+        "```\n"
+        "\n"
+        "Relevant API endpoints for inspection and manual triggering:\n"
+        "  - GET /autonomous/definitions — list all definitions with their "
+        "current state and active session id\n"
+        "  - POST /autonomous/definitions/{name}/run — trigger a one-shot run "
+        "of a specific definition\n"
+        "\n"
+        "When the operator asks to add, remove, or modify a session "
+        "definition, explain the keys above and give a concrete example "
+        "matching their request.  Point them to the settings panel or config "
+        "file — do not attempt to modify config yourself (it is a mutation "
+        "requiring authorization).\n"
     )
