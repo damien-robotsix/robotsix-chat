@@ -457,11 +457,11 @@ run once and a transient failure would silently lose the work.
     still BLOCKED, the subsession's checkpoint tracks a `blocked_resume_count`. If the ticket stays
     blocked across **3 consecutive resume attempts** (controlled by
     `subsessions.paused_monitor_max_reblock_resumes`, default 3), the subsession is automatically
-    closed with `close_reason="repeated_blocked"`
-    and a diagnostic summary is delivered to the parent conversation. This prevents the agent from
-    cycling through a dead-end implement→blocked→resume loop — e.g. config-standard footprint
-    violations that the assistant cannot fix on its own (the implement step fails to revert
-    base-branch files, re-blocking the ticket on every attempt).
+    closed with `close_reason="repeated_blocked"` and a diagnostic summary is delivered to the
+    parent conversation. This prevents the agent from cycling through a dead-end
+    implement→blocked→resume loop — e.g. config-standard footprint violations that the assistant
+    cannot fix on its own (the implement step fails to revert base-branch files, re-blocking the
+    ticket on every attempt).
 
     - The counter **resets to 0** any time the ticket transitions to a non-blocked state between
       resumes, meaning the agent made progress.
