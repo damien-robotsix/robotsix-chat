@@ -24,7 +24,7 @@ implemented because `_validate_model_level` is a synchronous pre-flight check th
 runs before any LLM handle is available; the chosen approach of clear communication
 of limitations is simpler and avoids adding latency to every spawn.)
 
-**SHA256:** `d4175763f0dee83568d417ab3697b79c4d384ae64fcd5ab9598ffda891d19c2c`
+**SHA256:** `4d9b72f6586ac61474522102dfeb4f207a7ad2d97ab2be1c903ce4859ec76f92`
 
 ## v94 — 2026-08-03 — fix-false-token-exhaustion-punts-and-ret-b73c
 
