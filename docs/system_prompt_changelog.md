@@ -3,6 +3,21 @@
 Governed artifact: `Settings.agent_instruction` default literal in
 `src/robotsix_chat/config/settings.py`. Version stamp: `SYSTEM_PROMPT_VERSION` in the same module.
 
+## v94 — 2026-08-03 — fix-false-token-exhaustion-punts-and-ret-b73c
+
+**Summary:** Strengthen anti-punt instruction in the Efficiency section: removed
+"call budget" language (which the agent was conflating with token budget exhaustion),
+added "call budget" to the list of forbidden resource-exhaustion claims, and added
+explicit "do not defer or punt" directive. Replaced "call budget" wording with
+"single turn" scoping to avoid planting the budget concept.
+
+**Rationale:** The agent was repeatedly claiming it was "out of token budget" and
+deferring work while still emitting a reply — a self-contradictory fabricated excuse
+that eroded operator trust. The existing instruction already forbade "token budget"
+claims but the adjacent "call budget" paragraph was being conflated with it.
+
+**SHA256:** `cfdaba03c108a956e06da3b065f31d3140cfc0ec7bbf1dcbc14c3343a77c2b9c`
+
 ## v93 — 2026-08-09 — offer-ticket-rescoping-through-the-stand-bd6e
 
 **Summary:** Extend the "Halt and Re-scope" structured prompt with a new step (4)

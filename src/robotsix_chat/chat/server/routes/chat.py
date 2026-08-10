@@ -639,9 +639,11 @@ async def _generate_carryover_summary(
         "tasks, blocked items waiting for input, and any multi-step "
         "processes in progress. This will be shown to the assistant at "
         "the start of the next session, so make it actionable and "
-        "concrete — include task IDs, ticket IDs, file paths, and next "
-        "steps the assistant should pick up. Plain text only, no markdown "
-        "fences, no JSON.\n\nConversation:\n"
+        "concrete — include task IDs, ticket IDs, PR URLs, subsession IDs, "
+        "file paths, and next steps the assistant should pick up. "
+        "Preserve these identifiers verbatim so they can be used directly "
+        "without re-deriving them. Plain text only, no markdown fences, "
+        "no JSON.\n\nConversation:\n"
         f"{transcript}\n\nAction-plan summary:"
     )
 
