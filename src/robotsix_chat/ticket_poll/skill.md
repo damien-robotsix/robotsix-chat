@@ -81,8 +81,8 @@ A JSON string with these fields:
   `DRAFT → CLOSED` transition without approval — and alert the operator.
 - `cache_caveat` — *(present only when the board API was unreachable and the response was served
   from the ticket-state cache)* a human-readable staleness note, e.g.
-  `[last-known state — board API unreachable; showing cached state from 120s ago]`.
-  Entries older than 1 hour are flagged as `stale`.
+  `[last-known state — board API unreachable; showing cached state from 120s ago]`. Entries older
+  than 1 hour are flagged as `stale`.
 
 ### `ticket_poll_batch`
 
@@ -137,13 +137,13 @@ attempted (which may surface a 404).
   monitor," or any other conclusion about the ticket. When a call fails, report the failure honestly
   (e.g. "could not reach the board API — will retry") and do not fabricate state from the absence of
   data. Only state facts about a ticket when you have a successful response containing those facts.
-- **Graceful degradation via ticket-state cache.** When the board API is unreachable,
-  `ticket_poll` falls back to the last-known state from an in-memory cache (populated by
-  mill push events and prior successful polls). The cached response includes a `cache_caveat`
-  field with a staleness note (e.g. `[last-known state — board API unreachable; showing cached
-  state from 120s ago]`). Use this to surface last-known state with an honest caveat rather
-  than saying "I can't confirm." Entries older than 1 hour are flagged as `stale`. Only state
-  facts about a ticket when you have a successful response containing those facts.
+- **Graceful degradation via ticket-state cache.** When the board API is unreachable, `ticket_poll`
+  falls back to the last-known state from an in-memory cache (populated by mill push events and
+  prior successful polls). The cached response includes a `cache_caveat` field with a staleness note
+  (e.g. `[last-known state — board API unreachable; showing cached state from 120s ago]`). Use this
+  to surface last-known state with an honest caveat rather than saying "I can't confirm." Entries
+  older than 1 hour are flagged as `stale`. Only state facts about a ticket when you have a
+  successful response containing those facts.
 
 ## Example calls
 
