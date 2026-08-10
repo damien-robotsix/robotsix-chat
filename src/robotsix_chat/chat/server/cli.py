@@ -22,6 +22,7 @@ from robotsix_chat.config.constants import level_needs_api_key
 from robotsix_chat.diagnostics import DiagnosticStore
 from robotsix_chat.knowledge.store import KnowledgeStore
 from robotsix_chat.llm import LlmioChatAgent
+from robotsix_chat.startup_checks import check_component_connectivity
 
 from .app import create_agent_from_settings, create_app
 from .routes import ChatAgent, RunSerializer
@@ -523,6 +524,7 @@ def run_server_from_config(agent: ChatAgent | None = None) -> None:
     # -- resume autonomous sessions on restart -----------------------------
     async def _resume_autonomous() -> None:
         """Auto-close completed autonomous sessions and resume executing ones."""
+        await check_component_connectivity(settings.central_deploy)
         _start_memory_warmup()
         if autonomous_runner is not None:
             await autonomous_runner.resume_sessions()
