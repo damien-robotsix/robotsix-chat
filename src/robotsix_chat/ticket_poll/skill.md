@@ -23,12 +23,12 @@ as the primary path for checking ticket state and merging approved PRs.
 
 ## Allowed operations
 
-| Tool                 | Description                                                                 |
-| -------------------- | --------------------------------------------------------------------------- |
-| `ticket_poll`                  | HTTP GET to the board API; returns the ticket's current state.              |
-| `ticket_poll_batch`            | Concurrent HTTP GETs for multiple tickets; returns full details for triage. |
-| `merge_pull_request`           | HTTP POST to merge the approved PR associated with a ticket.                |
-| `prioritize_all_open_tickets`  | Lists all open, unflagged tickets and sets priority on every one in a batch. |
+| Tool                          | Description                                                                  |
+| ----------------------------- | ---------------------------------------------------------------------------- |
+| `ticket_poll`                 | HTTP GET to the board API; returns the ticket's current state.               |
+| `ticket_poll_batch`           | Concurrent HTTP GETs for multiple tickets; returns full details for triage.  |
+| `merge_pull_request`          | HTTP POST to merge the approved PR associated with a ticket.                 |
+| `prioritize_all_open_tickets` | Lists all open, unflagged tickets and sets priority on every one in a batch. |
 
 The tool signatures are:
 
@@ -114,14 +114,14 @@ A JSON string with these fields:
 - `total_open` — total number of open tickets considered (prioritized + skipped)
 - `results` — an array of per-ticket outcome objects, each with `ticket_id`, `state`, `ok`
   (boolean), and `error` (empty on success)
-- `note` — *(present when there were no tickets to prioritize)* a human-readable message
-  (e.g. "No open, unflagged tickets to prioritize.")
-- `error` — *(present only on a listing failure)* a diagnostic message when the board ticket
-  list could not be fetched
+- `note` — *(present when there were no tickets to prioritize)* a human-readable message (e.g. "No
+  open, unflagged tickets to prioritize.")
+- `error` — *(present only on a listing failure)* a diagnostic message when the board ticket list
+  could not be fetched
 
 This tool replaces the manual sequence of listing tickets, identifying unflagged ones, and toggling
-priority on each individually.  Call it when the user asks to "prioritize tickets" or "prioritize
-all open tickets."
+priority on each individually. Call it when the user asks to "prioritize tickets" or "prioritize all
+open tickets."
 
 ## ID resolution
 
@@ -143,11 +143,11 @@ attempted (which may surface a 404).
 
 - **`ticket_poll` / `ticket_poll_batch` are read-only** — GET only; no state mutation is possible
   through these two tools.
-- **`merge_pull_request` and `prioritize_all_open_tickets` are mutating** — they issue POST
-  requests that alter ticket state.  Only call them when the preconditions are met:
-  `merge_pull_request` requires an approved PR in `waiting_auto_merge` or `human_mr_approval`
-  state; `prioritize_all_open_tickets` should be called when the operator asks to prioritize
-  tickets.  Do not call either speculatively.
+- **`merge_pull_request` and `prioritize_all_open_tickets` are mutating** — they issue POST requests
+  that alter ticket state. Only call them when the preconditions are met: `merge_pull_request`
+  requires an approved PR in `waiting_auto_merge` or `human_mr_approval` state;
+  `prioritize_all_open_tickets` should be called when the operator asks to prioritize tickets. Do
+  not call either speculatively.
 - **Roster-first routing** — prefers the component roster (`component_request`) when available;
   falls back to the direct board API when the roster is absent. This means the tools share the same
   connectivity path as `component_request` and are equally reliable.

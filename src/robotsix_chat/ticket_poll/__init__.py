@@ -499,7 +499,7 @@ def build_prioritize_all_open_tickets_tool(
                 try:
                     status_code = int(status_line.split()[1])
                 except IndexError, ValueError:
-                    return None, f"Unparseable status: {status_line!r}"
+                    return None, f"Unparsable status: {status_line!r}"
                 if status_code >= 400:
                     return None, f"Board API returned HTTP {status_code}"
                 data, parse_error = _parse_json_body(body_str)
@@ -567,7 +567,7 @@ def build_prioritize_all_open_tickets_tool(
                 try:
                     status_code = int(status_line.split()[1])
                 except IndexError, ValueError:
-                    return False, f"Unparseable status: {status_line!r}"
+                    return False, f"Unparsable status: {status_line!r}"
                 if status_code >= 400:
                     return False, f"Board API returned HTTP {status_code}"
                 return True, ""
