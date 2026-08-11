@@ -176,9 +176,9 @@ def test_check_hostname_allowlist_non_allowed_host_fails() -> None:
         tool_name="test-tool",
     )
     assert result is not None
-    assert "evil.com" in result
+    assert "'evil.com'" in result
     assert "test-tool" in result
-    assert "example.com" in result
+    assert "'example.com'" in result
 
 
 def test_check_hostname_allowlist_fleet_host_implicit_pass() -> None:
@@ -213,7 +213,7 @@ def test_check_hostname_allowlist_fleet_host_in_error_message() -> None:
     )
     assert result is not None
     assert "fleet.local" in result
-    assert "example.com" in result
+    assert "'example.com'" in result
 
 
 # ---------------------------------------------------------------------------
