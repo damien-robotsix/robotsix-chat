@@ -279,6 +279,7 @@ class TestRunServer:
             diagnostic_store=None,
             knowledge_store=None,
             health_settings=None,
+            continuation_store=None,
         )
 
 
