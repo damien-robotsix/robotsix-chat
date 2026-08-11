@@ -498,7 +498,7 @@ def build_prioritize_all_open_tickets_tool(
                     return None, f"Unexpected status line: {status_line}"
                 try:
                     status_code = int(status_line.split()[1])
-                except IndexError, ValueError:
+                except (IndexError, ValueError):
                     return None, f"Unparseable status: {status_line!r}"
                 if status_code >= 400:
                     return None, f"Board API returned HTTP {status_code}"
@@ -557,6 +557,19 @@ def build_prioritize_all_open_tickets_tool(
                 "mill", "POST", f"/tickets/{ticket_id}/priority"
             )
             if not resp.startswith("Error:"):
+                try:
+                    newline = resp.index("\n")
+                    status_line = resp[:newline]
+                except ValueError:
+                    return False, "Unexpected response format from /priority"
+                if not status_line.startswith("HTTP "):
+                    return False, f"Unexpected status line: {status_line}"
+                try:
+                    status_code = int(status_line.split()[1])
+                except (IndexError, ValueError):
+                    return False, f"Unparseable status: {status_line!r}"
+                if status_code >= 400:
+                    return False, f"Board API returned HTTP {status_code}"
                 return True, ""
             logger.info(
                 "prioritize_all_open_tickets: roster path failed for %s; "
@@ -762,7 +775,7 @@ def build_ticket_poll_tools(
             )
         try:
             status_code = int(status_line.split()[1])
-        except IndexError, ValueError:
+        except (IndexError, ValueError):
             return (
                 0,
                 None,
