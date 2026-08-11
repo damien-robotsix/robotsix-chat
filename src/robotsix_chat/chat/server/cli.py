@@ -19,6 +19,7 @@ from robotsix_chat.chat.conversation import ConversationStore
 from robotsix_chat.chat.events import EventBus
 from robotsix_chat.config import PROJECT_MAIN, Settings
 from robotsix_chat.config.constants import level_needs_api_key
+from robotsix_chat.continuation.store import ContinuationStore
 from robotsix_chat.diagnostics import DiagnosticStore
 from robotsix_chat.knowledge.store import KnowledgeStore
 from robotsix_chat.llm import LlmioChatAgent
@@ -64,6 +65,7 @@ def run_server(
     diagnostic_store: Any = None,
     knowledge_store: Any = None,
     health_settings: Any = None,
+    continuation_store: Any = None,
 ) -> None:
     """Start the chat SSE server on ``host:port``.
 
@@ -100,6 +102,7 @@ def run_server(
         diagnostic_store=diagnostic_store,
         knowledge_store=knowledge_store,
         health_settings=health_settings,
+        continuation_store=continuation_store,
     )
     uvicorn.run(app, host=host, port=port)
 
@@ -270,6 +273,13 @@ def run_server_from_config(agent: ChatAgent | None = None) -> None:
     # session-lifecycle handlers (carryover persistence) use the same instance.
     knowledge_store = KnowledgeStore(settings.knowledge.path)
 
+    # Continuation store — shared instance so the startup hook and the
+    # agent tool read/write the same pending-continuation state.
+    continuation_store = ContinuationStore(
+        path=settings.continuation.store_path,
+        max_consecutive=settings.continuation.max_consecutive,
+    )
+
     subsession_registry = SubsessionRegistry(
         event_sink=event_bus,
         store_path=Path(settings.subsessions.store_path),
@@ -409,6 +419,7 @@ def run_server_from_config(agent: ChatAgent | None = None) -> None:
             event_sink=event_bus,
             diagnostic_store=diagnostic_store,
             knowledge_store=knowledge_store,
+            continuation_store=continuation_store,
         )
     # Wire the main agent into ParentDelivery now that both exist (see
     # ParentDelivery.set_agent for why this can't happen at construction
@@ -530,6 +541,74 @@ def run_server_from_config(agent: ChatAgent | None = None) -> None:
             await autonomous_runner.resume_sessions()
         # Start the paused-monitor watcher.
         await _start_watcher()
+        # Fire any pending post-restart continuation.
+        await _fire_continuation()
+
+    async def _fire_continuation() -> None:
+        """Check for a pending continuation and fire it if present.
+
+        The continuation is one-shot (consumed on use) and guarded by
+        ``max_consecutive``.  When a continuation fires, the stored prompt
+        is injected into the target session as if the operator had sent it,
+        and the agent's reply is recorded in the conversation history.
+
+        Failures are logged but never crash startup — a continuation that
+        cannot fire (e.g. the session was deleted) is silently dropped.
+        """
+        if not settings.continuation.enabled:
+            return
+
+        sid, prompt = continuation_store.consume_pending()
+        if sid is None:
+            return
+
+        logger.info(
+            "Firing continuation: session_id=%s prompt_preview=%r",
+            sid,
+            prompt[:80] if prompt else "",
+        )
+
+        # Fire as a background task so it does not block startup readiness.
+        async def _run() -> None:
+            try:
+                # Ensure the session exists in the store and resolve its owner.
+                store_session = conversation_store.get_session(sid)
+                if store_session is None:
+                    logger.warning(
+                        "Continuation target session %s not found — dropping",
+                        sid,
+                    )
+                    return
+                owner_id = conversation_store.owner_for_session(sid) or "operator"
+                # prompt is guaranteed non-None when sid is non-None.
+                if prompt is None:
+                    logger.warning("Continuation prompt is None — dropping")
+                    return
+                async with run_serializer.for_owner(owner_id):
+                    reply_parts: list[str] = []
+                    async for token in agent.stream(
+                        prompt,
+                        history=[],
+                        session_id=sid,
+                        client_id=sid,
+                        trace_name="continuation",
+                    ):
+                        reply_parts.append(token)
+                    full_reply = "".join(reply_parts)
+                    conversation_store.record(sid, owner_id, prompt, full_reply)
+                    logger.info(
+                        "Continuation fired successfully: session_id=%s reply_chars=%d",
+                        sid,
+                        len(full_reply),
+                    )
+            except asyncio.CancelledError:
+                logger.debug("Continuation task cancelled for session %s", sid)
+            except Exception:
+                logger.exception("Continuation failed for session %s — dropping", sid)
+
+        task = asyncio.create_task(_run())
+        env._tasks.add(task)
+        task.add_done_callback(env._tasks.discard)
 
     # -- flush pending traces on shutdown ----------------------------------
     async def _flush_traces() -> None:
@@ -585,4 +664,5 @@ def run_server_from_config(agent: ChatAgent | None = None) -> None:
         diagnostic_store=diagnostic_store,
         knowledge_store=knowledge_store,
         health_settings=settings.health,
+        continuation_store=continuation_store,
     )

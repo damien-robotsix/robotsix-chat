@@ -247,6 +247,30 @@
       "title": "ComponentTarget",
       "type": "object"
     },
+    "ContinuationSettings": {
+      "additionalProperties": false,
+      "description": "Post-restart continuation \u2014 auto-resume a conversation after a restart.\n\nWhen enabled, the agent gains tools to schedule a continuation that\nfires automatically on the next boot, so work-in-progress resumes\nwithout human intervention.  The primary use case is a self-restart\nto pick up a newly-deployed capability: before calling\n``self_restart``, the agent schedules a continuation with the current\nsession id and a resume prompt.\n\nAttributes:\n    enabled: Master switch.  Default ``False``.\n    store_path: Path to the JSON persistence file.  Must be on a\n        persistent volume so the continuation survives container\n        recreation.  Default ``/data/continuation.json``.\n    max_consecutive: Maximum number of consecutive auto-continuations\n        before the guardrail blocks further automatic firing.  This\n        prevents a restart\u2192continue\u2192restart\u2192continue loop from running\n        indefinitely.  Default ``3``.",
+      "properties": {
+        "enabled": {
+          "default": false,
+          "title": "Enabled",
+          "type": "boolean"
+        },
+        "store_path": {
+          "default": "/data/continuation.json",
+          "title": "Store Path",
+          "type": "string"
+        },
+        "max_consecutive": {
+          "default": 3,
+          "minimum": 1,
+          "title": "Max Consecutive",
+          "type": "integer"
+        }
+      },
+      "title": "ContinuationSettings",
+      "type": "object"
+    },
     "ConversationSettings": {
       "additionalProperties": false,
       "description": "Multi-session conversation continuity for the browser chat.\n\nThe server groups conversations by a per-browser ``owner_id`` and addresses\nindividual sessions by ``session_id``. Each owner can have multiple named\nsessions with independent turn histories. History is **never** wiped on\nidle \u2014 sessions are persistent when ``persist_path`` is configured.\n\nAttributes:\n    max_history_turns: Most recent user/assistant turns kept per\n        session and replayed to the agent (bounds prompt size).\n    max_conversations: Maximum number of distinct sessions tracked at once\n        (LRU-evicted); bounds the in-memory store.\n    persist_path: Path to the JSON persistence file. Default\n        ``/data/conversations.json``. Set to an empty string to disable.",
@@ -1560,6 +1584,10 @@
     },
     "autonomy": {
       "$ref": "#/$defs/AutonomySettings",
+      "advanced": true
+    },
+    "continuation": {
+      "$ref": "#/$defs/ContinuationSettings",
       "advanced": true
     },
     "max_images_per_message": {

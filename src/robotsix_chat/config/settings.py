@@ -19,6 +19,7 @@ from robotsix_chat.config.models import (
     AutonomySettings,
     CentralDeploySettings,
     ComponentClientSettings,
+    ContinuationSettings,
     ConversationSettings,
     DiagnosticsSettings,
     DirectRepoSettings,
@@ -1229,6 +1230,9 @@ class Settings(BaseModel):
     autonomy: AutonomySettings = Field(
         default_factory=AutonomySettings, json_schema_extra={"advanced": True}
     )
+    continuation: ContinuationSettings = Field(
+        default_factory=ContinuationSettings, json_schema_extra={"advanced": True}
+    )
     max_images_per_message: int = Field(default=8, json_schema_extra={"advanced": True})
     max_image_bytes: int = Field(
         default=5_242_880, json_schema_extra={"advanced": True}
@@ -1495,6 +1499,7 @@ class Settings(BaseModel):
             "public_fetch",
             "feedback",
             "autonomous",
+            "continuation",
             "docker_digest",
         )
         for key in _object_keys:
