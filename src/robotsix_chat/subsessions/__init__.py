@@ -6,6 +6,8 @@ kinds and lifecycle, :mod:`.worker` for the turn loop, and :mod:`.tools`
 for the agent-facing tool factory.
 """
 
+from pathlib import Path
+
 from .delivery import ParentDelivery
 from .models import (
     ACTIVE_STATUSES,
@@ -33,6 +35,25 @@ from .worker import (
     spawn_subsession,
 )
 
+
+def load_subsessions_skill() -> str:
+    """Return the subsessions component skill markdown.
+
+    Reads ``skill.md`` (shipped next to this module) and returns it as a
+    string suitable for appending to the agent's system prompt.  Returns
+    an empty string when the file is missing, so a missing skill document
+    never prevents the agent from starting.
+
+    """
+    skill_path = Path(__file__).parent / "skill.md"
+    try:
+        return skill_path.read_text(encoding="utf-8")
+    except FileNotFoundError:
+        return ""
+    except OSError:
+        return ""
+
+
 __all__ = [
     "ACTIVE_STATUSES",
     "CloseState",
@@ -53,6 +74,7 @@ __all__ = [
     "SubsessionUserChatSpawnError",
     "TranscriptEntry",
     "build_subsession_tools",
+    "load_subsessions_skill",
     "resume_subsessions",
     "spawn_subsession",
     "watch_paused_monitors",

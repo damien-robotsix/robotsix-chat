@@ -349,14 +349,15 @@ modules:
     description: "Unified subsession system — background agents (task / periodic / user_chat) spawned from chat sessions, with per-subsession model levels, depth-limited nesting, inbox steering, and parent summary delivery."
     paths:
       - src/robotsix_chat/subsessions/__init__.py
+      - src/robotsix_chat/subsessions/delivery.py
       - src/robotsix_chat/subsessions/models.py
       - src/robotsix_chat/subsessions/registry.py
-      - src/robotsix_chat/subsessions/delivery.py
-      - src/robotsix_chat/subsessions/worker.py
-      - src/robotsix_chat/subsessions/worker_mill.py
       - src/robotsix_chat/subsessions/resume.py
+      - src/robotsix_chat/subsessions/skill.md
       - src/robotsix_chat/subsessions/tools.py
       - src/robotsix_chat/subsessions/watcher.py
+      - src/robotsix_chat/subsessions/worker.py
+      - src/robotsix_chat/subsessions/worker_mill.py
       - tests/subsessions/__init__.py
       - tests/subsessions/test_delivery.py
       - tests/subsessions/test_models.py

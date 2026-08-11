@@ -823,7 +823,10 @@ def _inject_skills(
         if skill_prompt:
             instruction = f"{instruction}\n\n{skill_prompt}"
 
+    from robotsix_chat.subsessions import load_subsessions_skill
+
     _skill_entries: list[tuple[bool, str, Callable[[], str]]] = [
+        (True, "subsessions", load_subsessions_skill),
         (settings.lifecycle.enabled, "lifecycle", load_lifecycle_skill),
         (settings.notification.enabled, "notification", load_notification_skill),
         (settings.http_probe.enabled, "http_probe", load_http_probe_skill),
