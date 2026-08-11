@@ -3,6 +3,29 @@
 Governed artifact: `Settings.agent_instruction` default literal in
 `src/robotsix_chat/config/settings.py`. Version stamp: `SYSTEM_PROMPT_VERSION` in the same module.
 
+## v99 — 2026-08-10 — reduce-chat-agent-claude-weekly-cap-cons-df0f
+
+**Summary:** Rebalance the model-tier guidance in the Subsessions "Model Policy"
+section and the corresponding `spawn_subsession_tool` docstring to keep ALL
+routine work on the Claude subscription (levels 3-4) by default.  Level 4
+(fable-5, primary-frontier) is now presented as the first/default choice for
+general work; level 3 (opus, strong-reasoning) for reasoning fable-5 struggles
+with; levels 1-2 (OpenRouter) are reserved for when Claude tiers are exhausted
+or unavailable.  The "Never spawn at level 4 for routine checks" instruction is
+inverted to "Spawn at level 4 for routine checks."  Retry-on-API-key-error now
+targets level 4 instead of level 3.  The "Model Policy" table is reordered
+descending (4,3,2,1) so the Claude tiers appear first.
+
+**Rationale:** The prior guidance presented level 2 (OpenRouter, real cash) as
+the default and level 4 (Claude subscription) as "only for genuinely hard
+reasoning."  This steered the LLM toward pay-as-you-go OpenRouter spend, which
+is contrary to the fleet cost strategy of maximizing Claude subscription
+cap-headroom utilization and minimizing real cash burn.  The defaults in
+`config/config.json` were already correct (`subsessions.default_model_level: 4`,
+`autonomous.model_level: 4`) — the prompt text just needed to align.
+
+**SHA256:** `cc31f2c6348965c7044e3af525342c3a031a968617ce5eb9adf84408463407ea`
+
 ## v98 — 2026-08-09 — enforce-filtering-of-internal-subsession-3196
 
 **Summary:** Reinforce the subsession-outcome filtering rule as a hard prohibition
