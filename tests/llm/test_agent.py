@@ -3,11 +3,19 @@
 from __future__ import annotations
 
 import asyncio
+import re
+import uuid
 from unittest.mock import AsyncMock, MagicMock, call, patch
 
 import pytest
 
 from robotsix_chat.llm import LlmioChatAgent
+from robotsix_chat.llm.agent import _sdk_session_uuid
+
+# The exact shape the Claude CLI accepts for ``--session-id``.
+_CANONICAL_UUID_RE = re.compile(
+    r"^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$"
+)
 
 
 class _RecordingMemory:
@@ -1108,3 +1116,26 @@ async def test_keyed_primary_level_still_receives_the_api_key() -> None:
         level=2,
         api_key="or-key",  # pragma: allowlist secret
     )
+
+
+class TestSdkSessionUuid:
+    """The Claude CLI rejects a ``--session-id`` that is not a canonical UUID.
+
+    Chat session ids are ``uuid4().hex`` (no dashes) and autonomous sessions
+    use bare names, so the raw id can never be forwarded as-is.
+    """
+
+    def test_hex_session_id_becomes_canonical_uuid(self) -> None:
+        """A dashless ``uuid4().hex`` id is mapped to a form the CLI accepts."""
+        raw = uuid.uuid4().hex  # what ConversationStore generates
+        assert _CANONICAL_UUID_RE.match(raw) is None  # precondition: CLI rejects
+        assert _CANONICAL_UUID_RE.match(_sdk_session_uuid(raw)) is not None
+
+    def test_non_uuid_session_name_becomes_canonical_uuid(self) -> None:
+        """Autonomous sessions are named, not hex, and must map too."""
+        assert _CANONICAL_UUID_RE.match(_sdk_session_uuid("default")) is not None
+
+    def test_is_deterministic(self) -> None:
+        """Stability is what makes the CLI reuse its session cache."""
+        assert _sdk_session_uuid("session-one") == _sdk_session_uuid("session-one")
+        assert _sdk_session_uuid("session-one") != _sdk_session_uuid("session-two")

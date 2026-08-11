@@ -164,21 +164,17 @@ def _build_spawn_and_control_tools(
         child does not start from scratch — useful when spawning from a
         subsession that itself runs a focused sub-task. model_level picks
         capability 1 (cheapest) to 4 (frontier, most expensive) — match
-        it to difficulty: 4 (fable-5, Claude subscription) is the default
-        choice for all routine work — use it unless the task genuinely
-        needs stronger reasoning (no API key needed, no per-token billing),
-        3 (opus, Claude subscription) for reasoning fable-5 struggles with,
-        2 for general work when Claude tiers are exhausted or unavailable,
-        1 for trivial polling/extraction when cost is critical. Levels 1-2
-        need an OpenRouter API key and incur real cash costs — reserve them
-        for cases where the Claude subscription tiers are exhausted or
-        unavailable. If a spawn errors with an API key message, retry at
-        level 4 (keyless, Claude subscription) and tell the user the key
-        could not be found by the server's config file — do NOT claim the
-        key is missing outright: you cannot inspect the environment or
-        secrets to confirm, and the key may be set in a location the
-        server does not read. Recommend the operator verify the
-        `llmio.api_key` field in the server's JSON config file.
+        it to difficulty: 1 for trivial polling/extraction, 2 for
+        general work (the default choice unless the task needs stronger
+        reasoning), 3 for reasoning 2 struggles with, 4 only for
+        genuinely hard reasoning. Levels 1-2 need an OpenRouter API key.
+        If a spawn errors with an API key message, retry at level 3
+        (keyless) and tell the user the key could not be found by the
+        server's config file — do NOT claim the key is missing outright:
+        you cannot inspect the environment or secrets to confirm, and the
+        key may be set in a location the server does not read.
+        Recommend the operator verify the `llmio.api_key` field in the
+        server's JSON config file.
         interval_seconds (minimum applies) and max_runs are
         for kind="periodic" only.
 

@@ -3,6 +3,27 @@
 Governed artifact: `Settings.agent_instruction` default literal in
 `src/robotsix_chat/config/settings.py`. Version stamp: `SYSTEM_PROMPT_VERSION` in the same module.
 
+## v101 — 2026-08-11 — revert-tier-rebalance-to-cheaper-default
+
+**Summary:** Revert the v99 model-tier rebalance.  The Subsessions "Model
+Policy" section and the `spawn_subsession_tool` docstring return to level 2
+(`default`) as the general-work choice, level 3 (`strong-reasoning`, keyless)
+for reasoning level 2 struggles with, and level 4 (`primary-frontier`) only for
+genuinely hard reasoning.  "Spawn at level 4 for routine checks" is restored to
+"Never spawn at level 4 for routine checks", retry-on-API-key-error targets
+level 3 again, and the tier table is listed ascending (1,2,3,4) once more.
+
+**Rationale:** v99 made level 4 the default for all routine work.  Level 4 is
+`claudeSDK-claude-fable-5` — the frontier tier, and the most capable and most
+expensive model available to the fleet (roughly 2x level 3's `claudeSDK-opus`
+per token).  Routing monitoring, polling and routine checks through it is the
+most expensive way to do the cheapest work, and it also inverted the capability
+ladder: v99 told the agent to escalate *down* to level 3 "for reasoning fable-5
+struggles with".  Reverting restores tier ordering that matches the level table
+in `robotsix_chat/config/constants.py`.
+
+**SHA256:** `f17c5a6047806a12019261a63b91360ec7f410aab187c852db6dd5f70bcf3e10`
+
 ## v100 — 2026-08-10 — standards-enforcement-bootstrap-pr-lacke-34f4
 
 **Summary:** Expand the "Repo creation bootstrap" instruction in
