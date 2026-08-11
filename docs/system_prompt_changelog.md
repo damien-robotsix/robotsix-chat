@@ -1977,6 +1977,23 @@ The hash is computed on the output of `build_autonomous_instruction(Settings())`
 autonomous settings at their pydantic field defaults (``proposal_marker="---PROPOSAL READY---"``,
 ``completion_marker="---AUTONOMOUS COMPLETE---"``, ``stale_monitor_runs_before_completion=3``).
 
+## AUTONOMOUS v11 — 2026-08-07 — require-operator-approval-before-filing-5833
+
+**Summary:** Add `OPTIMIZATION TICKETS — REQUIRED OPERATOR SIGN-OFF` section to
+the autonomous protocol. Before filing any optimization ticket (cost reduction,
+performance tuning, resource right-sizing), the assistant must first summarize
+the proposed changes to the operator and ask for explicit sign-off. The ticket
+must not be filed until the operator confirms. This prevents premature actions
+and aligns with user expectations for control over optimization decisions.
+
+**Rationale:** During session 5851f345, the assistant filed a cost-optimization
+ticket directly without presenting the proposed improvements to the user for
+approval. The user explicitly stated they wanted to approve improvements first.
+The assistant acknowledged the issue and adjusted behavior, but the prompt
+should enforce this as a required step.
+
+**SHA256:** `a68c8aaba09a6ac8b4289f89285af576b298b974088c2d4522fe48587c4b38ea`
+
 ## AUTONOMOUS v10 — 2026-08-12 — track-ticket-resume-failures-before-re-7f2c
 
 **Summary:** Add `TICKET RESUMPTION DISCIPLINE` section to the autonomous
