@@ -307,6 +307,21 @@ direct-repo tool, use the exported callable name from `build_direct_repo_tools` 
 settings.py:597-599) to reference `merge_pr`, which exists only as an internal client method; the
 exported agent tool is `merge_direct_repo_pr`.
 
+## Prompt engineering conventions
+
+**Rule:** When constructing prompts that include internal metadata, scaffolding, or subsession
+summaries (e.g. in `feedback/runner.py:_build_feedback_prompt`), fence the metadata section with
+clear boundary markers like `=== INTERNAL METADATA — NOT part of the conversation ===` and append
+an explicit rule telling the downstream model the block was never shown to the user. Never
+concatenate metadata directly after the transcript without a boundary.
+
+**Rationale:** Ticket 20260809T061049Z identified that the feedback analyzer's prompt builder in
+`_build_feedback_prompt` concatenated subsession summary rows directly after the conversation
+transcript with only a blank line separator. The downstream LLM read the block as trailing assistant
+output, generating 12 false-positive tickets. The fix (fenced metadata section + explicit rule) is
+drafted, but the convention should be documented in AGENT.md so future prompt builders follow the
+same pattern.
+
 ## Prompt governance
 
 **Rule:** Every edit to the `build_autonomous_instruction()` return text in
