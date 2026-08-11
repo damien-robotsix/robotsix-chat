@@ -73,6 +73,9 @@ def build_subsession_tools(
                 ctx.subsession_id, env.registry, env.settings.subsessions
             )
         )
+        tools.append(
+            _build_spawn_continuation_tool(env, ctx.subsession_id, close_state)
+        )
     return tools
 
 
@@ -624,6 +627,121 @@ def _build_set_checkpoint_tool(sub_id: str, registry: SubsessionRegistry) -> Any
         return f"Checkpoint updated ({len(cleaned)} keys)."
 
     return set_checkpoint
+
+
+def _build_spawn_continuation_tool(
+    env: SubsessionEnv,
+    sub_id: str,
+    close_state: CloseState,
+) -> Any:
+    """Build the ``spawn_continuation`` tool bound to *sub_id*.
+
+    Returns a callable that lets a subsession agent re-launch itself as a
+    fresh TASK subsession carrying a continuation cursor, then close the
+    current subsession.  This is the escape hatch for long-running batch
+    operations (ticket triage, remediation sweeps) that would otherwise
+    exhaust their run budget — the agent checkpoints its progress,
+    spawns a sibling continuation, and exits.
+    """
+
+    async def spawn_continuation(
+        summary: str,
+        resume_instructions: str,
+    ) -> str:
+        """Close this subsession and spawn a sibling continuation.
+
+        Use this when you have processed a batch of work but cannot
+        finish the full backlog within your run budget — it checkpoints
+        your progress and re-launches the task so the next subsession
+        picks up where you left off.
+
+        summary is a concise, self-contained account of what was
+        accomplished so far (delivered to the parent conversation).
+        resume_instructions tells the continuation agent exactly where
+        to resume — be specific: "continue listing tickets from
+        ticket ID X", "resume triage at page 3", etc.  The continuation
+        receives your original instructions PLUS this context.
+
+        After this call the current subsession closes immediately and
+        its worker stops.  The new subsession starts as a sibling (same
+        parent, same tree depth) with the same title and model level.
+        Your checkpoint data (set via set_checkpoint) is carried forward
+        automatically.
+        """
+        registry = env.registry
+        info = registry.get(sub_id)
+        if info is None or not info.is_active:
+            return (
+                "spawn_continuation: this subsession is no longer active — "
+                "cannot spawn a continuation."
+            )
+
+        # -- build continuation prompt --------------------------------
+        # Preserve the original prompt (stripped of any retry-notice
+        # prefix that the worker loop may have prepended) so the
+        # continuation starts from the real instructions, not a
+        # retry-error preamble.
+        original_prompt: str = info.prompt
+        retry_marker = "[RETRY "
+        if retry_marker in original_prompt:
+            original_prompt = original_prompt.split("]\n\n", 1)[-1]
+
+        continuation_prompt = (
+            f"{original_prompt}\n\n"
+            f"=== CONTINUATION CONTEXT ===\n"
+            f"This subsession is a continuation of a prior run "
+            f"({sub_id}) that processed a batch but did not finish.  "
+            f"The prior run's summary:\n{summary}\n\n"
+            f"Resume instructions:\n{resume_instructions}\n\n"
+            f"IMPORTANT: Do NOT re-process work that was already "
+            f"completed.  Start from the point described in the "
+            f"resume instructions above."
+        )
+
+        # -- close current subsession BEFORE spawning the continuation,
+        #    so any dedup_key the current subsession holds does not
+        #    collide with the new spawn.
+        registry.mark_closed(
+            sub_id, summary=summary, reason="continued", closed_by="agent"
+        )
+        close_state.requested = True
+        close_state.summary = summary
+        close_state.delivery_done = True
+        # Fire-and-forget delivery (errors are logged, never surfaced).
+        await env.delivery.deliver_summary(info, summary, "continued")
+
+        # -- spawn the continuation as a sibling (same parent + depth)
+        try:
+            new_id = spawn_subsession(
+                env=env,
+                kind=SubsessionKind.TASK,
+                owner_session_id=info.owner_session_id,
+                parent_id=info.parent_id,
+                depth=info.depth,
+                title=info.title,
+                prompt=continuation_prompt,
+                model_level=info.model_level,
+                checkpoint=info.checkpoint,
+            )
+        except (
+            SubsessionCapacityError,
+            SubsessionDepthError,
+            SubsessionLevelError,
+        ) as exc:
+            return (
+                f"spawn_continuation: this subsession is closed but the "
+                f"continuation could not be spawned: {exc}\n"
+                f"The parent conversation will receive the summary — "
+                f"the operator can manually re-launch from the checkpoint."
+            )
+
+        return (
+            f"Continuation spawned as subsession {new_id} — "
+            f"this subsession ({sub_id}) is now closed.  "
+            f"The new subsession will pick up from the resume point above."
+        )
+
+    return spawn_continuation
 
 
 def _build_self_update_tool(
