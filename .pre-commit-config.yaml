@@ -97,7 +97,7 @@ repos:
     rev: v3.96.0
     hooks:
       - id: trufflehog
-        args: ["--config=.trufflehog.yaml"]
+        args: ["--exclude-detectors=Lob"]
 
   - repo: local
     hooks:
