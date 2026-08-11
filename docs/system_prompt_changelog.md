@@ -3,6 +3,24 @@
 Governed artifact: `Settings.agent_instruction` default literal in
 `src/robotsix_chat/config/settings.py`. Version stamp: `SYSTEM_PROMPT_VERSION` in the same module.
 
+## v100 — 2026-08-10 — standards-enforcement-bootstrap-pr-lacke-34f4
+
+**Summary:** Expand the "Repo creation bootstrap" instruction in
+`agent_instruction` to require all `repo-baseline.md` files in the initial
+commit: SECURITY.md, AGENT.md, README.md (with a robotsix-standards link),
+.gitignore, .github/dependabot.yml (github-actions + language ecosystem), and
+.github/workflows/ci.yml with a top-level `permissions: read-all` block.  The
+prior instruction only mentioned "a README.md, .gitignore, or a minimal
+template file" — new repos bootstrapped from that guidance shipped without
+SECURITY.md, AGENT.md, dependabot.yml, or a permissions block, generating
+follow-up standards-enforcement tickets for each missing file.
+
+**Rationale:** An audit of robotsix-chat-mobile (PR #1) found 5 blocking
+deviations from repo-baseline.md.  Seeding all baseline files in the bootstrap
+commit prevents the drift and eliminates the follow-up ticket churn.
+
+**SHA256:** `229844e0674b6529c5c41ef0f616903893836db4301e5e328336bd2cb7528b72`
+
 ## v99 — 2026-08-10 — reduce-chat-agent-claude-weekly-cap-cons-df0f
 
 **Summary:** Rebalance the model-tier guidance in the Subsessions "Model Policy"
