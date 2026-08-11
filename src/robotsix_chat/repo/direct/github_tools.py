@@ -814,6 +814,53 @@ def build_github_tools(
             result += f"\nPR: {pr_title}\nBranches: {head_base_branches}"
         return result
 
+    async def close_direct_repo_pr(
+        repo_full_name: str,
+        pr_number: int,
+        pr_title: str,
+        head_base_branches: str,
+    ) -> str:
+        """Close a pull request without merging it.
+
+        **This is a confirmation-gated mutation.**  Before calling this tool
+        you MUST obtain explicit operator approval in the conversation.
+        State the exact repo, PR number, PR title, and head/base branches
+        and wait for the operator to confirm before proceeding.  Never close
+        a PR without the operator's explicit consent in-chat.
+
+        Closing a PR preserves the branch — it can be re-opened or a new
+        PR created from it later.  Closing is irreversible without
+        re-opening the PR.
+
+        **Scope:** *repo_full_name* must be within the robotsix-mill GitHub
+        App's current installation scope (checked dynamically at call time).
+
+        Args:
+            repo_full_name: GitHub ``owner/name`` (e.g.
+                ``"robotsix/robotsix-chat"``).
+            pr_number: The PR number to close.
+            pr_title: The PR title — used for the confirmation echo.
+            head_base_branches: Description of head/base branches
+                (e.g. ``"fix/ticket → main"``) — used for the
+                confirmation echo.
+
+        Returns:
+            A status message confirming the closure, or an actionable error
+            message (already closed, already merged, not in scope, etc.).
+
+        """
+        if error := await assert_in_scope(client, repo_full_name):
+            return error
+
+        result = await client.close_pr(
+            repo_full_name=repo_full_name,
+            pr_number=pr_number,
+        )
+        # Include confirmation context in the result for auditability
+        if "has been closed" in result.lower():
+            result += f"\nPR: {pr_title}\nBranches: {head_base_branches}"
+        return result
+
     async def check_direct_repo_auto_merge(
         repo_full_name: str,
     ) -> str:
@@ -1318,6 +1365,7 @@ def build_github_tools(
         check_direct_repo_auto_merge,
         list_open_prs,
         merge_direct_repo_pr,
+        close_direct_repo_pr,
         arm_direct_repo_auto_merge,
         enable_repo_pages,
         reset_implement_spawn_counter,

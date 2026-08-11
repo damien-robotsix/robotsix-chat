@@ -181,6 +181,39 @@ given. The endpoint modifies live repository state.
 
 ______________________________________________________________________
 
+| Repo not in installation scope    | `The robotsix-mill GitHub App is not installed on 'owner/name'`           |
+
+______________________________________________________________________
+
+## Agent tool: `close_direct_repo_pr`
+
+Close a pull request without merging it. The close is performed using the GitHub App installation
+token — the credential never leaves the server.
+
+**This is a confirmation-gated mutation.** Before calling, state the exact repo, PR number, PR
+title, and head/base branches in-chat and obtain explicit operator approval. Never close a PR
+without the operator's explicit consent in the conversation — the endpoint modifies live repository
+state.
+
+Closing a PR preserves the branch — it can be re-opened or a new PR created from it later. This is
+the appropriate tool for cleaning up abandoned or superseded PRs where merging is not desired.
+
+### Preconditions (enforced server-side)
+
+- PR must be open (not already closed or merged).
+- Repository must be within the GitHub App installation scope.
+
+### Error responses
+
+| Condition                       | Message                                                         |
+| ------------------------------- | --------------------------------------------------------------- |
+| PR already closed (merged)      | `is already closed (merged)`                                    |
+| PR already closed (unmerged)    | `is already closed (unmerged)`                                  |
+| PR not found                    | `Error fetching PR #N in owner/name` (HTTP 404)                 |
+| Repo not in installation scope  | `The robotsix-mill GitHub App is not installed on 'owner/name'` |
+
+______________________________________________________________________
+
 ## Agent tool: `check_direct_repo_auto_merge`
 
 Check whether a repository has auto-merge enabled at the repository level. Reads the

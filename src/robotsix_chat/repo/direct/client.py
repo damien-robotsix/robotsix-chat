@@ -1083,6 +1083,62 @@ class DirectRepoClient:
             f"{message or 'unknown reason'} (SHA: {sha})"
         )
 
+    async def close_pr(
+        self,
+        *,
+        repo_full_name: str,
+        pr_number: int,
+    ) -> str:
+        """Close a pull request without merging.
+
+        Calls ``PATCH /repos/{owner}/{repo}/pulls/{pull_number}`` with
+        ``{"state": "closed"}``.
+
+        Before attempting the close the method fetches the PR to surface
+        actionable diagnostics when the PR is already closed or merged.
+
+        Args:
+            repo_full_name: ``"owner/name"``.
+            pr_number: The PR number to close.
+
+        Returns:
+            A success message, or an error message.
+
+        Never raises — returns an error string on any failure.
+
+        """
+        try:
+            pr = await self.get_pr(repo_full_name=repo_full_name, pr_number=pr_number)
+        except RuntimeError as exc:
+            return f"Error fetching PR #{pr_number} in {repo_full_name}: {exc}"
+
+        state = pr.get("state", "unknown")
+        if state == "closed":
+            if pr.get("merged"):
+                return (
+                    f"PR #{pr_number} in {repo_full_name} is already "
+                    f"closed (merged).  No action needed."
+                )
+            return (
+                f"PR #{pr_number} in {repo_full_name} is already closed "
+                f"(unmerged).  No action needed."
+            )
+
+        try:
+            await self._patch_json(
+                f"/repos/{repo_full_name}/pulls/{pr_number}",
+                {"state": "closed"},
+            )
+        except RuntimeError as exc:
+            msg = str(exc)
+            return f"Error closing PR #{pr_number} in {repo_full_name}: {msg}"
+
+        return (
+            f"PR #{pr_number} in {repo_full_name} has been closed.  "
+            f"The branch is preserved — it can be re-opened or a new PR "
+            f"created from it later."
+        )
+
     async def check_auto_merge_enabled(
         self,
         *,
