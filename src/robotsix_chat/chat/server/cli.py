@@ -337,7 +337,7 @@ def run_server_from_config(agent: ChatAgent | None = None) -> None:
             instruction=instruction,
             settings=settings,
             conversation_store=conversation_store,
-            model_level=settings.llmio_model_level,
+            model_level=settings.autonomous.model_level,
             subsession_env=env,
             event_sink=event_bus,
             # Autonomous auto-continue turns run unattended; long-term cognee
@@ -362,7 +362,7 @@ def run_server_from_config(agent: ChatAgent | None = None) -> None:
         refinement_agent = create_agent_from_settings(
             settings=settings,
             conversation_store=conversation_store,
-            model_level=settings.llmio_model_level,
+            model_level=settings.autonomous.model_level,
             bare=True,
             diagnostic_store=diagnostic_store,
             knowledge_store=knowledge_store,
