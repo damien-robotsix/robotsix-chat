@@ -311,9 +311,9 @@ exported agent tool is `merge_direct_repo_pr`.
 
 **Rule:** When constructing prompts that include internal metadata, scaffolding, or subsession
 summaries (e.g. in `feedback/runner.py:_build_feedback_prompt`), fence the metadata section with
-clear boundary markers like `=== INTERNAL METADATA — NOT part of the conversation ===` and append
-an explicit rule telling the downstream model the block was never shown to the user. Never
-concatenate metadata directly after the transcript without a boundary.
+clear boundary markers like `=== INTERNAL METADATA — NOT part of the conversation ===` and append an
+explicit rule telling the downstream model the block was never shown to the user. Never concatenate
+metadata directly after the transcript without a boundary.
 
 **Rationale:** Ticket 20260809T061049Z identified that the feedback analyzer's prompt builder in
 `_build_feedback_prompt` concatenated subsession summary rows directly after the conversation
