@@ -642,16 +642,18 @@ types; and any action whose safety the agent cannot independently verify.
 | `autonomy.auto_approve_repo_allowlist`              | `array`   | `[]`    | Repository names (e.g. `"robotsix-chat"`) eligible for auto-approval when `auto_approve_self_authored` is enabled. Tickets targeting repos not listed here are always gated.                                                                                                                                                                                                                     |
 | `autonomy.auto_approve_routine_secret_provisioning` | `boolean` | `false` | When `true`, the agent may auto-approve routine secret provisioning tickets even when they touch security-sensitive paths (`secrets/**`, `credentials`), provided the change has no code modifications, no destructive operations, and is limited to credential/secret/token provisioning. Covers standard operations like adding API keys, rotating credentials, or provisioning access tokens. |
 | `autonomy.suppress_no_change_monitors`              | `boolean` | `false` | When `true`, periodic and event monitor outcomes that carry no actionable delta (NO_CHANGE, completed normally, auto-paused) do not generate an operator-facing turn. Only blockers and terminal failures are surfaced.                                                                                                                                                                          |
+| `autonomy.auto_self_restart`                        | `boolean` | `false` | When `true`, the agent may call `self_restart` without operator approval after deploying capability changes (code changes, component roster updates) that affect the agent's own behaviour. The agent announces the restart with a brief delay so the operator can interrupt if needed.                                                                                                            |
 
 **Example** — enabling auto-approval for self-authored tickets on the `robotsix-chat` repo, with
-no-change monitor suppression and routine secret provisioning:
+no-change monitor suppression, routine secret provisioning, and auto-self-restart:
 
 ```json
 "autonomy": {
   "auto_approve_self_authored": true,
   "auto_approve_repo_allowlist": ["robotsix-chat"],
   "auto_approve_routine_secret_provisioning": true,
-  "suppress_no_change_monitors": true
+  "suppress_no_change_monitors": true,
+  "auto_self_restart": true
 }
 ```
 
