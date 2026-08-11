@@ -498,7 +498,7 @@ def build_prioritize_all_open_tickets_tool(
                     return None, f"Unexpected status line: {status_line}"
                 try:
                     status_code = int(status_line.split()[1])
-                except (IndexError, ValueError):
+                except IndexError, ValueError:
                     return None, f"Unparseable status: {status_line!r}"
                 if status_code >= 400:
                     return None, f"Board API returned HTTP {status_code}"
@@ -566,7 +566,7 @@ def build_prioritize_all_open_tickets_tool(
                     return False, f"Unexpected status line: {status_line}"
                 try:
                     status_code = int(status_line.split()[1])
-                except (IndexError, ValueError):
+                except IndexError, ValueError:
                     return False, f"Unparseable status: {status_line!r}"
                 if status_code >= 400:
                     return False, f"Board API returned HTTP {status_code}"
@@ -775,7 +775,7 @@ def build_ticket_poll_tools(
             )
         try:
             status_code = int(status_line.split()[1])
-        except (IndexError, ValueError):
+        except IndexError, ValueError:
             return (
                 0,
                 None,
