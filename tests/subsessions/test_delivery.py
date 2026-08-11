@@ -13,6 +13,8 @@ from robotsix_chat.subsessions.delivery import (
     _REACT_PROMPT_ACTIVE_PLAN_TEMPLATE,
     _REACT_PROMPT_TEMPLATE,
     ParentDelivery,
+    _sanitize_reaction_reply,
+    _strip_inline_metadata,
 )
 from robotsix_chat.subsessions.models import (
     SubsessionInfo,
@@ -1199,3 +1201,209 @@ def test_active_plan_react_prompt_forbids_reemitting_already_shown_payload() -> 
     text = _REACT_PROMPT_ACTIVE_PLAN_TEMPLATE.lower()
     assert "delta" in text
     assert "already presented" in text
+
+
+# ---------------------------------------------------------------------------
+# _sanitize_reaction_reply — stripping internal metadata from reaction output
+# ---------------------------------------------------------------------------
+
+
+class TestSanitizeReactionReply:
+    """Unit tests for ``_sanitize_reaction_reply`` and ``_strip_inline_metadata``."""
+
+    # -- lines that are purely metadata → dropped entirely -------------------
+
+    def test_strips_bare_kind_status_line(self) -> None:
+        """Lines like '0 kind=periodic status=closed' are dropped entirely."""
+        result = _sanitize_reaction_reply("0 kind=periodic status=closed")
+        assert "kind=" not in result
+        assert "status=" not in result
+        assert "nothing new to report" in result
+
+    def test_strips_bracketed_kind_status_line(self) -> None:
+        """Lines like '[1] kind=periodic status=closed' are dropped."""
+        result = _sanitize_reaction_reply("[1] kind=periodic status=closed")
+        assert "kind=" not in result
+        assert "status=" not in result
+
+    def test_strips_no_ticket_id_line(self) -> None:
+        """Lines containing 'No ticket_id in checkpoint' are dropped."""
+        result = _sanitize_reaction_reply("No ticket_id in checkpoint for T-123")
+        assert "ticket_id" not in result
+
+    def test_strips_sub_id_line(self) -> None:
+        """Lines starting with 'sub_id' followed by an identifier are dropped."""
+        result = _sanitize_reaction_reply("sub_id abc12345: all done")
+        assert "sub_id" not in result
+
+    def test_strips_multiple_metadata_lines(self) -> None:
+        """Multiple metadata-only lines are all dropped."""
+        result = _sanitize_reaction_reply(
+            "0 kind=periodic status=closed\n"
+            "[1] kind=periodic status=closed\n"
+            "No ticket_id in checkpoint"
+        )
+        assert "kind=" not in result
+        assert "ticket_id" not in result
+        assert "nothing new to report" in result
+
+    # -- valid content passes through ---------------------------------------
+
+    def test_preserves_valid_content(self) -> None:
+        """Normal user-facing text passes through unchanged."""
+        reply = (
+            "Tracking complete for ticket T-123 — it was resolved.\nNo action needed."
+        )
+        result = _sanitize_reaction_reply(reply)
+        assert result == reply
+
+    def test_preserves_kind_word_without_equals(self) -> None:
+        """The word 'kind' without '=' is not metadata — passes through."""
+        reply = "What kind of ticket is this? It looks like a bug."
+        result = _sanitize_reaction_reply(reply)
+        assert "kind of ticket" in result
+
+    def test_preserves_status_word_without_equals(self) -> None:
+        """The word 'status' without '=' is not metadata — passes through."""
+        reply = "The current status is that everything is working."
+        result = _sanitize_reaction_reply(reply)
+        assert "current status" in result
+
+    # -- mixed content: metadata stripped, valid content kept --------------
+
+    def test_strips_inline_kind_status_from_mixed_line(self) -> None:
+        """Inline 'kind=X status=Y' is stripped from otherwise valid lines."""
+        reply = "The monitor kind=periodic status=closed has finished."
+        result = _sanitize_reaction_reply(reply)
+        assert "The monitor" in result
+        assert "has finished." in result
+        assert "kind=" not in result
+        assert "status=" not in result
+
+    def test_strips_parenthetical_metadata(self) -> None:
+        """Parenthetical metadata like '(0 kind=periodic status=closed)' is stripped."""
+        reply = "The periodic check (0 kind=periodic status=closed) found no changes."
+        result = _sanitize_reaction_reply(reply)
+        assert "The periodic check" in result
+        assert "found no changes." in result
+        assert "kind=" not in result
+        assert "status=" not in result
+
+    def test_strips_bracket_prefix_from_mixed_line(self) -> None:
+        """'[0]' prefix patterns are stripped from mixed lines."""
+        reply = "[0] The ticket T-123 was resolved."
+        result = _sanitize_reaction_reply(reply)
+        assert result.startswith("The ticket T-123 was resolved.")
+
+    # -- empty / whitespace -------------------------------------------------
+
+    def test_empty_reply_returns_empty(self) -> None:
+        """An empty string stays empty (no fallback injection)."""
+        result = _sanitize_reaction_reply("")
+        assert result == ""
+
+    def test_whitespace_only_returns_unchanged(self) -> None:
+        """A whitespace-only string is returned as-is (no metadata to strip)."""
+        result = _sanitize_reaction_reply("   \n  ")
+        assert result == "   \n  "
+
+    # -- integration: reaction turn with leaking agent ----------------------
+
+    @pytest.mark.asyncio
+    async def test_reaction_sanitizes_leaked_metadata_before_record(self) -> None:
+        """Sanitize leaked metadata before recording and publishing.
+
+        When the agent leaks raw metadata, the sanitizer cleans it before
+        the reply is recorded and published.
+        """
+        store = MagicMock()
+        store.history.return_value = []
+        registry = MagicMock()
+        # Agent that outputs raw internal metadata despite prompt instructions.
+        agent = _fake_agent(
+            [
+                "0 kind=periodic status=closed\n",
+                "No ticket_id in checkpoint\n",
+                "The monitor tracked T-456 and found no changes.",
+            ]
+        )
+        event_sink = MagicMock()
+        delivery = _build_delivery(
+            store=store, registry=registry, agent=agent, event_sink=event_sink
+        )
+        info = _make_info(parent_id=None)
+
+        await delivery.deliver_summary(info, "monitor check done", "paused")
+        await _await_reaction_tasks(delivery)
+
+        # The recorded reply must be sanitized.
+        store.record_for_session.assert_called_once()
+        _args, kwargs = store.record_for_session.call_args
+        recorded_reply = _args[2] if len(_args) >= 3 else kwargs.get("reply", "")
+        assert "kind=" not in recorded_reply
+        assert "ticket_id" not in recorded_reply
+        assert "T-456" in recorded_reply
+        assert "found no changes" in recorded_reply
+
+        # The published frame must also be sanitized.
+        if event_sink.publish.called:
+            _session_id, frame = event_sink.publish.call_args[0]
+            assert "kind=" not in frame["text"]
+            assert "ticket_id" not in frame["text"]
+
+    @pytest.mark.asyncio
+    async def test_reaction_all_metadata_yields_fallback(self) -> None:
+        """When the agent outputs ONLY metadata, the fallback message is used."""
+        store = MagicMock()
+        store.history.return_value = []
+        registry = MagicMock()
+        agent = _fake_agent(
+            ["0 kind=periodic status=closed\n", "[1] kind=task status=running\n"]
+        )
+        delivery = _build_delivery(store=store, registry=registry, agent=agent)
+        info = _make_info(parent_id=None)
+
+        await delivery.deliver_summary(info, "monitor done", "completed")
+        await _await_reaction_tasks(delivery)
+
+        store.record_for_session.assert_called_once()
+        _args, kwargs = store.record_for_session.call_args
+        recorded_reply = _args[2] if len(_args) >= 3 else kwargs.get("reply", "")
+        assert "nothing new to report" in recorded_reply
+        assert "kind=" not in recorded_reply
+
+
+class TestStripInlineMetadata:
+    """Unit tests for ``_strip_inline_metadata``."""
+
+    def test_removes_parenthetical_metadata(self) -> None:
+        """'(0 kind=periodic status=closed)' is removed from the line."""
+        result = _strip_inline_metadata(
+            "Monitor (0 kind=periodic status=closed) finished."
+        )
+        assert result == "Monitor finished."
+
+    def test_removes_bare_kind_status(self) -> None:
+        """Bare 'kind=periodic status=closed' is stripped."""
+        result = _strip_inline_metadata("Monitor kind=periodic status=closed done.")
+        assert result == "Monitor done."
+
+    def test_removes_bracket_prefix(self) -> None:
+        """'[0] ' prefix is stripped."""
+        result = _strip_inline_metadata("[0] Ticket resolved.")
+        assert result == "Ticket resolved."
+
+    def test_cleans_double_spaces(self) -> None:
+        """Multiple spaces are collapsed to one."""
+        result = _strip_inline_metadata("The   monitor    finished.")
+        assert result == "The monitor finished."
+
+    def test_cleans_empty_parens(self) -> None:
+        """Empty parentheses artifacts are removed."""
+        result = _strip_inline_metadata("Monitor () finished.")
+        assert result == "Monitor finished."
+
+    def test_preserves_normal_text(self) -> None:
+        """Normal text without metadata patterns passes through unchanged."""
+        result = _strip_inline_metadata("The ticket T-123 was resolved.")
+        assert result == "The ticket T-123 was resolved."
