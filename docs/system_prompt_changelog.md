@@ -3,6 +3,22 @@
 Governed artifact: `Settings.agent_instruction` default literal in
 `src/robotsix_chat/config/settings.py`. Version stamp: `SYSTEM_PROMPT_VERSION` in the same module.
 
+## v97 — 2026-08-09 — automatically-prioritize-all-newly-filed-effb
+
+**Summary:** Add a standing rule that all tickets filed by the assistant must
+include `priority: high` in the body metadata block.  The assistant must apply
+this automatically to every ticket it creates without asking for permission.
+The user-requested tickets section is adjusted to focus on `kind: user-request`
+as the distinguishing marker (priority is now universal).
+
+**Rationale:** The user had to explicitly instruct the assistant to prioritize
+tickets, and later had to correct the assistant for asking for permission.
+Setting `priority: high` on all assistant-filed tickets is a standard
+operational expectation; the assistant should not gate this behind user
+approval.
+
+**SHA256:** `dbf51dec8f614319d77c634ea7616e51dff70445b7b2da4e569d10db3e0a79ca`
+
 ## v96 — 2026-08-11 — auto-close-superseded-draft-tickets-4416
 
 **Summary:** Add a "Superseded ticket auto-close" rule to the autonomy gate section.

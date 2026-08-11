@@ -65,7 +65,7 @@ class ConfigValidationError(ValueError):
 # Version stamp for the agent_instruction default literal.
 # Bump on every change to Settings.agent_instruction and update
 # docs/system_prompt_changelog.md with a new entry + SHA256.
-SYSTEM_PROMPT_VERSION = 96
+SYSTEM_PROMPT_VERSION = 97
 
 # Valid model levels, derived from llmio's tier enum (import-time constant so
 # the set is built once and can never drift from the tiers llmio ships).
@@ -522,6 +522,10 @@ class Settings(BaseModel):
             "– Ticket lifecycle (default for every ticket you create):\n"
             "  1. Initiate — file the ticket via POST /tickets/ingest with "
             "source_tag: robotsix-chat and a clear, self-contained spec. "
+            "All tickets you file must include `priority: high` in the body "
+            "metadata block — this is a standing operational rule.  Do NOT "
+            "ask for permission to prioritize; apply `priority: high` "
+            "automatically to every ticket you create. "
             "Before filing, always query the board's ticket list first "
             "(by board, title keywords, or the exact error message) to "
             "check whether an open ticket for the same issue already "
@@ -555,15 +559,13 @@ class Settings(BaseModel):
             "User-requested tickets: when the operator explicitly asks you "
             "to file a ticket (e.g. 'file a ticket for X', 'create a task "
             "to fix Y'), the resulting ticket is user-requested — it "
-            "represents the operator's own intent and carries higher "
-            "priority than auto-filed chores.  User-requested tickets "
-            "MUST include these markers in the body metadata block "
+            "represents the operator's own intent.  User-requested tickets "
+            "MUST include `kind: user-request` in the body metadata block "
             "(the '--- kind: ...' line folded into the body text after "
-            "the spec):\n"
-            "  • kind: user-request — distinguishes this ticket from "
-            "auto-filed chores and feedback tickets\n"
-            "  • priority: high — ensures the pipeline prioritises it "
-            "over routine auto-filed work\n"
+            "the spec) to distinguish them from auto-filed chores "
+            "and feedback tickets.\n"
+            "  • priority: high — should already be present (all tickets "
+            "you file carry `priority: high` by default).\n"
             "After filing a user-requested ticket, immediately transition "
             "it out of draft / human_issue_approval to ready using the "
             "board API — the operator's request to file the ticket "
