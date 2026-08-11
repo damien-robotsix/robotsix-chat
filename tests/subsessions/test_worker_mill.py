@@ -1,4 +1,6 @@
-"""Tests for mill-board resume status — _check_resume_status, _handle_mill_unreachable,
+"""Tests for mill-board resume status.
+
+Covers _check_resume_status, _handle_mill_unreachable,
 _reset_mill_failure_counter, and _get_mill_started_at.
 """
 
