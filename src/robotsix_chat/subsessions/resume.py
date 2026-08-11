@@ -146,7 +146,7 @@ def _entry_to_common_kwargs(entry: Mapping[str, object]) -> _CommonEntryKwargs:
         "depth": _entry_int(entry, "depth", 1),
         "title": _entry_str(entry, "title"),
         "prompt": _entry_str(entry, "prompt"),
-        "model_level": _entry_int(entry, "model_level", 4),
+        "model_level": _entry_int(entry, "model_level", 3),
         "interval_seconds": _entry_opt_float(entry, "interval_seconds"),
         "include_previous_result": bool(entry.get("include_previous_result")),
     }

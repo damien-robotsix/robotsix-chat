@@ -26,6 +26,7 @@ from __future__ import annotations
 import asyncio
 import contextlib
 import logging
+import uuid
 from collections.abc import AsyncIterator, Callable, Iterator
 from typing import Any
 
@@ -54,6 +55,22 @@ _USAGE_FALLBACK_DEPTH = 1
 
 # A prior conversation turn replayed to the agent: ``(user, assistant)``.
 Turn = tuple[str, str]
+
+
+def _sdk_session_uuid(session_id: str) -> str:
+    """Canonical-UUID form of *session_id* for the Claude SDK.
+
+    The SDK forwards ``ClaudeAgentOptions.session_id`` to the CLI as
+    ``--session-id``, which rejects anything that is not a canonical UUID
+    ("Invalid session ID. Must be a valid UUID.").  Chat session ids are
+    ``uuid4().hex`` — 32 hex chars with no dashes — and autonomous sessions
+    use bare names like ``default``, so neither form can be passed through.
+
+    ``uuid5`` is deterministic: the same chat session maps to the same SDK
+    session on every turn, which is what lets the CLI reuse its session cache
+    instead of re-sending the static prompt prefix.
+    """
+    return str(uuid.uuid5(uuid.NAMESPACE_URL, f"robotsix-chat:session:{session_id}"))
 
 
 def _build_message_history(history: list[Turn] | None) -> list[Any] | None:
@@ -484,7 +501,7 @@ class LlmioChatAgent:
 
                     def _build_with_session(sp: str) -> Any:
                         opts = _orig_build(sp)
-                        opts.session_id = session_id
+                        opts.session_id = _sdk_session_uuid(session_id)
                         return opts
 
                     handle._build_options = _build_with_session  # type: ignore[attr-defined]
@@ -627,7 +644,7 @@ class LlmioChatAgent:
 
                         def _fb_build(sp: str) -> Any:
                             opts = _fb_orig(sp)
-                            opts.session_id = session_id
+                            opts.session_id = _sdk_session_uuid(session_id)
                             return opts
 
                         fallback_handle._build_options = _fb_build  # type: ignore[attr-defined]
