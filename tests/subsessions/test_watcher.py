@@ -277,10 +277,18 @@ def _make_paused_monitor(env, ticket_id="TICKET-1", last_known="open", title="mo
     return info
 
 
-def _mock_ticket_client(*, state="open"):
-    """Build a mock ``httpx.AsyncClient`` returning the given ticket state."""
+def _mock_ticket_client(*, state="open", pr_url=None):
+    """Build a mock ``httpx.AsyncClient`` returning the given ticket state.
+
+    When *pr_url* is provided it is included in the JSON response;
+    when ``None`` (the default) the key is absent.
+    """
+    body: dict[str, Any] = {"state": state}
+    if pr_url is not None:
+        body["pr_url"] = pr_url
+
     mock_response = MagicMock()
-    mock_response.json.return_value = {"state": state}
+    mock_response.json.return_value = body
     mock_response.raise_for_status.return_value = None
 
     mock_client = MagicMock()
@@ -971,6 +979,131 @@ async def test_watcher_no_alarm_on_closed_unmerged_terminal_ticket() -> None:
         if "closed without being merged" in str(frame["body"])
     ]
     assert len(closed_unmerged_notifications) == 0
+
+
+# -- Terminal-state guard branches (watch_paused_monitors) ------------------
+
+
+@pytest.mark.asyncio
+async def test_watcher_terminal_pr_merged_resumes() -> None:
+    """Branch 1: checkpoint has pr_number, PR is merged, terminal ticket → resume."""
+    settings = _settings_with_direct_repo(
+        board_api_token=type("_st", (), {"get_secret_value": lambda: ""})(),
+        timeout=10.0,
+    )
+    sink = RecordingSink()
+    env = build_env(settings=settings, event_sink=sink)
+
+    info = _make_paused_monitor_with_pr(env, ticket_id="T-PR", last_known="in_progress")
+
+    mock_ticket_client = _mock_ticket_client(state="done")
+    mock_gh = _mock_direct_repo_client(merged=True)
+
+    watcher_task = asyncio.create_task(watch_paused_monitors(env))
+
+    with (
+        patch(
+            "robotsix_chat.repo.direct.client.DirectRepoClient",
+            MagicMock(return_value=mock_gh),
+        ),
+        patch("httpx.AsyncClient", mock_ticket_client),
+    ):
+        await asyncio.sleep(0.20)
+
+    watcher_task.cancel()
+    with pytest.raises(asyncio.CancelledError):
+        _ = await watcher_task
+
+    reopened = env.registry.get(info.id)
+    assert reopened is not None
+    # The monitor was resumed from pause; the worker then detected the
+    # terminal ticket and closed it with a terminal reason.
+    assert reopened.close_reason != "paused"
+
+
+@pytest.mark.asyncio
+async def test_watcher_terminal_github_unreachable_keeps_paused() -> None:
+    """Branch 2: checkpoint pr_number, GitHub unreachable, terminal → keep paused."""
+    settings = _settings_with_direct_repo(enabled=False)
+    sink = RecordingSink()
+    env = build_env(settings=settings, event_sink=sink)
+
+    info = _make_paused_monitor_with_pr(env, ticket_id="T-PR", last_known="in_progress")
+
+    mock_ticket_client = _mock_ticket_client(state="closed")
+
+    watcher_task = asyncio.create_task(watch_paused_monitors(env))
+
+    with patch("httpx.AsyncClient", mock_ticket_client):
+        await asyncio.sleep(0.20)
+
+    watcher_task.cancel()
+    with pytest.raises(asyncio.CancelledError):
+        _ = await watcher_task
+
+    reopened = env.registry.get(info.id)
+    assert reopened is not None
+    assert not reopened.is_active
+
+
+@pytest.mark.asyncio
+async def test_watcher_terminal_no_pr_number_board_pr_url_resumes() -> None:
+    """Branch 4: no checkpoint pr_number, board pr_url present, terminal → resume."""
+    settings = _settings_with_direct_repo(
+        board_api_token=type("_st", (), {"get_secret_value": lambda: ""})(),
+        timeout=10.0,
+    )
+    sink = RecordingSink()
+    env = build_env(settings=settings, event_sink=sink)
+
+    info = _make_paused_monitor(env, ticket_id="T-1", last_known="in_progress")
+
+    mock_ticket_client = _mock_ticket_client(
+        state="done", pr_url="https://github.com/org/repo/pull/1"
+    )
+
+    watcher_task = asyncio.create_task(watch_paused_monitors(env))
+
+    with patch("httpx.AsyncClient", mock_ticket_client):
+        await asyncio.sleep(0.20)
+
+    watcher_task.cancel()
+    with pytest.raises(asyncio.CancelledError):
+        _ = await watcher_task
+
+    reopened = env.registry.get(info.id)
+    assert reopened is not None
+    # The monitor was resumed from pause; the worker then detected the
+    # terminal ticket and closed it with a terminal reason.
+    assert reopened.close_reason != "paused"
+
+
+@pytest.mark.asyncio
+async def test_watcher_terminal_no_pr_evidence_keeps_paused() -> None:
+    """Branch 5: no checkpoint pr_number, no board pr_url, terminal → keep paused."""
+    settings = _settings_with_direct_repo(
+        board_api_token=type("_st", (), {"get_secret_value": lambda: ""})(),
+        timeout=10.0,
+    )
+    sink = RecordingSink()
+    env = build_env(settings=settings, event_sink=sink)
+
+    info = _make_paused_monitor(env, ticket_id="T-1", last_known="in_progress")
+
+    mock_ticket_client = _mock_ticket_client(state="closed")
+
+    watcher_task = asyncio.create_task(watch_paused_monitors(env))
+
+    with patch("httpx.AsyncClient", mock_ticket_client):
+        await asyncio.sleep(0.20)
+
+    watcher_task.cancel()
+    with pytest.raises(asyncio.CancelledError):
+        _ = await watcher_task
+
+    reopened = env.registry.get(info.id)
+    assert reopened is not None
+    assert not reopened.is_active
 
 
 @pytest.mark.asyncio
