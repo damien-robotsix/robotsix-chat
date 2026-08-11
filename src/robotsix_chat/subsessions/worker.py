@@ -1035,7 +1035,6 @@ async def _paused_wait_loop(
     info: SubsessionInfo,
     sub_id: str,
     previous_result: str | None,
-    consecutive_no_change: int,
 ) -> tuple[list[InboxMessage], str | None, int] | None:
     """Block until a ticket-state-change signal arrives or the worker is cancelled.
 
@@ -1123,7 +1122,11 @@ async def _paused_wait_loop(
             )
         if pending is None:
             pending = []
-        return pending, previous_result, consecutive_no_change
+        # Reset the no-change counter on resume: the monitor was
+        # explicitly woken (inbox message, state change, or timeout)
+        # and should get a fresh evaluation cycle rather than
+        # immediately re-triggering the auto-pause threshold.
+        return pending, previous_result, 0
 
     paused_at = time.monotonic()
     while True:
@@ -2044,9 +2047,7 @@ async def _run_periodic_turn(
                     },
                 )
             # -- paused wait loop: block on inbox, wake on resume signal --
-            return await _paused_wait_loop(
-                env, info, sub_id, previous_result, consecutive_no_change
-            )
+            return await _paused_wait_loop(env, info, sub_id, previous_result)
         return None
 
     no_change_cap = env.settings.subsessions.auto_stop_no_change_runs
@@ -2165,9 +2166,7 @@ async def _subsession_worker(env: SubsessionEnv, sub_id: str) -> None:
                 "Subsession %s: restored in PAUSED state — entering wait loop.",
                 sub_id,
             )
-            result = await _paused_wait_loop(
-                env, info, sub_id, previous_result, consecutive_no_change
-            )
+            result = await _paused_wait_loop(env, info, sub_id, previous_result)
             if result is None:
                 return
             pending, previous_result, consecutive_no_change = result
