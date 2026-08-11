@@ -199,6 +199,26 @@ class TestBuildFeedbackPrompt:
         assert "[1] kind=periodic status=failed" in result
         assert "timeout" in result
 
+    def test_subsession_summaries_fenced(self) -> None:
+        """Subsession summaries are inside INTERNAL METADATA fence markers."""
+        summaries: list[dict[str, Any]] = [
+            {"kind": "periodic", "status": "closed", "summary": "no change"},
+        ]
+        result = _build_feedback_prompt(
+            "compaction", "s4", [], summaries, ["robotsix-chat"]
+        )
+        # Fence markers must surround the subsession block
+        assert "=== INTERNAL METADATA" in result
+        assert "=== END INTERNAL METADATA ===" in result
+        # Metadata must appear AFTER the transcript boundary
+        idx_transcript_end = result.index("=== TRANSCRIPT END ===")
+        idx_metadata_start = result.index("=== INTERNAL METADATA")
+        assert idx_transcript_end < idx_metadata_start, (
+            "subsession metadata must be fenced and appear after transcript end"
+        )
+        # Metadata rule must be present
+        assert "METADATA RULE:" in result
+
     def test_subsession_missing_fields(self) -> None:
         """Missing kind/status/summary get sensible defaults."""
         summaries: list[dict[str, Any]] = [{}]

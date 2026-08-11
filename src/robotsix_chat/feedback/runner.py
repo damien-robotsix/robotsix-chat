@@ -225,18 +225,35 @@ def _build_feedback_prompt(
             summary = s.get("summary", "") or "(no summary)"
             status = s.get("status", "unknown")
             parts.append(f"  [{i}] kind={kind} status={status}\n      {summary}")
-        subsession_text = "Subsession summaries:\n" + "\n".join(parts)
+        subsession_text = (
+            "=== INTERNAL METADATA — NOT part of the conversation, NEVER shown "
+            "to the user ===\n"
+            "Subsession summaries:\n"
+            + "\n".join(parts)
+            + "\n=== END INTERNAL METADATA ==="
+        )
     else:
-        subsession_text = "Subsession summaries: (none)"
+        subsession_text = (
+            "=== INTERNAL METADATA — NOT part of the conversation ===\n"
+            "Subsession summaries: (none)\n"
+            "=== END INTERNAL METADATA ==="
+        )
 
     valid_repos = ", ".join(repo_ids)
 
     return (
         f"Trigger: {trigger_type}\n"
         f"Session ID: {session_id}\n\n"
-        f"Conversation transcript:\n{transcript}\n\n"
+        f"Conversation transcript:\n{transcript}\n"
+        f"=== TRANSCRIPT END ===\n\n"
         f"{subsession_text}\n\n"
         f"Valid target repos: {valid_repos}\n\n"
+        "METADATA RULE: The `=== INTERNAL METADATA` block above was assembled "
+        "by the feedback system, NOT by the assistant.  It was never printed "
+        "to the user.  Do NOT file tickets claiming the assistant emitted raw "
+        "subsession identifiers, `kind=… status=…` lines, or metadata headers "
+        "unless those patterns appear inside the `Conversation transcript` "
+        "section itself.\n\n"
         "Output the JSON analysis now."
     )
 
