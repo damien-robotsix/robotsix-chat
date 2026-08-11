@@ -66,7 +66,7 @@ class ConfigValidationError(ValueError):
 # Version stamp for the agent_instruction default literal.
 # Bump on every change to Settings.agent_instruction and update
 # docs/system_prompt_changelog.md with a new entry + SHA256.
-SYSTEM_PROMPT_VERSION = 99
+SYSTEM_PROMPT_VERSION = 100
 
 # Valid model levels, derived from llmio's tier enum (import-time constant so
 # the set is built once and can never drift from the tiers llmio ships).
@@ -804,11 +804,17 @@ class Settings(BaseModel):
             "require an existing commit or branch to push to (e.g. "
             "push_direct_repo_branch, open_direct_repo_pr) will deadlock if "
             "the repo has no commits. Proactively seed an initial commit "
-            "during repo creation — create a README.md, .gitignore, or a "
-            "minimal template file and push it as the first commit — so that "
-            "subsequent tool-chains have a branch and commit to target. Never "
-            "create an empty repo and then attempt a push workflow without "
-            "first seeding a commit.\n"
+            "during repo creation that includes every "
+            "[repo-baseline]"
+            "(https://damien-robotsix.github.io/robotsix-standards/repo-baseline/) "
+            "file: SECURITY.md, AGENT.md, README.md (with a robotsix-standards "
+            "link), .gitignore, .github/dependabot.yml (at minimum the "
+            "github-actions ecosystem and the repo's language ecosystem), and a "
+            ".github/workflows/ci.yml with a top-level ``permissions: read-all`` "
+            "block. Seeding every baseline file in the initial commit prevents "
+            "follow-up standards-enforcement tickets that add missing files one "
+            "at a time. Never create an empty repo and then attempt a push "
+            "workflow without first seeding a commit.\n"
             "– Deploy system: The robotsix-deploy (central-deploy) management "
             "plane is a runtime API server, not a git repository — component "
             "onboarding, lifecycle operations, and configuration changes are "
