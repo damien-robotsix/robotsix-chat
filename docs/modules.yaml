@@ -199,6 +199,7 @@ modules:
       - tests/chat/server/routes/test_chat.py
       - tests/chat/server/routes/test_events.py
       - tests/chat/server/routes/test_github.py
+      - tests/chat/server/routes/test_mill_events.py
       - tests/chat/server/routes/test_draft.py
       - tests/chat/server/routes/test_errors.py
       - tests/chat/server/routes/test_sessions.py
