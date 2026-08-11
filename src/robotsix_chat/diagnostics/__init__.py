@@ -308,7 +308,7 @@ def build_diagnostics_tools(
                 )
                 try:
                     ts = datetime.fromisoformat(str(ts_raw))
-                except (ValueError, TypeError):
+                except ValueError, TypeError:
                     # cannot parse timestamp — include the event
                     pass
                 else:
