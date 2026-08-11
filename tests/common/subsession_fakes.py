@@ -155,6 +155,7 @@ def make_settings(
     transient_error_backoff_base: float = 0.01,
     transient_error_backoff_cap: float = 30.0,
     paused_monitor_auto_resume_seconds: float = 1800.0,
+    max_runs_escalation_threshold: int = 3,
     llmio_api_key: str = "",
 ) -> SimpleNamespace:
     """Build a settings stand-in with test-friendly (tiny) intervals.
@@ -194,6 +195,7 @@ def make_settings(
             paused_monitor_poll_interval_seconds=60.0,
             paused_monitor_long_poll_interval_seconds=15.0,
             paused_monitor_auto_resume_seconds=paused_monitor_auto_resume_seconds,
+            max_runs_escalation_threshold=max_runs_escalation_threshold,
         ),
         central_deploy=SimpleNamespace(url="https://central-deploy.example.com"),
         llmio_api_key=SecretStr(llmio_api_key),

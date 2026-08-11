@@ -722,7 +722,8 @@ class SubsessionRegistry:
 
         Accepts records whose status is ``CLOSED`` or ``PAUSED``, kind is
         ``PERIODIC``, and ``close_reason`` is ``"paused"``,
-        ``"human_approval_timeout"``, or ``"pre_authorized_approval"``.
+        ``"human_approval_timeout"``, ``"pre_authorized_approval"``, or
+        ``"max_runs"``.
         Other records are left untouched.  Returns the updated record or
         ``None`` when the subsession is unknown, not in a reopenable
         state, or already active (excluding PAUSED).
@@ -738,13 +739,29 @@ class SubsessionRegistry:
             info.status not in (SubsessionStatus.CLOSED, SubsessionStatus.PAUSED)
             or info.kind is not SubsessionKind.PERIODIC
             or info.close_reason
-            not in ("paused", "human_approval_timeout", "pre_authorized_approval")
+            not in (
+                "paused",
+                "human_approval_timeout",
+                "pre_authorized_approval",
+                "max_runs",
+            )
         ):
             return None
         info.status = SubsessionStatus.RUNNING
         info.last_activity_at = self._clock()
+        # When reopening a max_runs-exhausted monitor, reset the run
+        # counter so the monitor gets a fresh budget rather than
+        # immediately hitting the limit again.  Capture the reason
+        # before we clear it below.
+        _was_max_runs = info.close_reason == "max_runs"
+        _has_escalation_count = (
+            info.checkpoint is not None
+            and info.checkpoint.get("max_runs_exhausted_count") is not None
+        )
         info.close_reason = None
         info.summary = None
+        if _was_max_runs or _has_escalation_count:
+            info.runs = 0
         # Reset the human_approval_since timestamp so the reopened
         # monitor does not immediately time out again.
         if info.checkpoint is not None:
@@ -768,7 +785,8 @@ class SubsessionRegistry:
         Includes monitors in ``PAUSED`` status (auto-paused by
         ``max_idle_runs`` — worker is alive, waiting on an inbox signal),
         and monitors closed with reason ``"paused"``,
-        ``"human_approval_timeout"``, or ``"pre_authorized_approval"``
+        ``"human_approval_timeout"``, ``"pre_authorized_approval"``, or
+        ``"max_runs"``
         (legacy records from before the ``PAUSED`` status existed).
         All are waiting for a ticket-state change — typically a PR merge
         or an operator action — before they can safely resume.
@@ -780,7 +798,12 @@ class SubsessionRegistry:
             if info.status is SubsessionStatus.PAUSED or (
                 info.status is SubsessionStatus.CLOSED
                 and info.close_reason
-                in ("paused", "human_approval_timeout", "pre_authorized_approval")
+                in (
+                    "paused",
+                    "human_approval_timeout",
+                    "pre_authorized_approval",
+                    "max_runs",
+                )
             ):
                 result.append(info)
         return result

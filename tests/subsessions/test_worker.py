@@ -472,6 +472,119 @@ async def test_periodic_run_delivers_result_frame_only() -> None:
 
 
 @pytest.mark.asyncio
+async def test_periodic_max_runs_escalation_threshold_reached() -> None:
+    """Monitor closes with 'max_runs_escalated' when threshold is reached."""
+    sink = RecordingSink()
+    agent = FakeAgent(["report 1"])
+    settings = make_settings(max_runs_escalation_threshold=2)
+    env = build_env(agent=agent, event_sink=sink, settings=settings)
+
+    sub_id = _spawn(
+        env,
+        kind=SubsessionKind.PERIODIC,
+        interval_seconds=0.02,
+        max_runs=1,
+        title="watch",
+        checkpoint={
+            "ticket_id": "ticket-1",
+            "max_runs_exhausted_count": 1,
+        },
+    )
+    await _await_worker(env, sub_id)
+
+    info = env.registry.get(sub_id)
+    assert info is not None
+    assert info.status is SubsessionStatus.CLOSED
+    assert info.close_reason == "max_runs_escalated"
+    assert info.runs == 1
+    assert "consecutive time" in (info.summary or "")
+
+
+@pytest.mark.asyncio
+async def test_periodic_max_runs_below_escalation_threshold() -> None:
+    """Below threshold, closes with 'max_runs' and persists incremented count."""
+    sink = RecordingSink()
+    agent = FakeAgent(["report 1"])
+    settings = make_settings(max_runs_escalation_threshold=3)
+    env = build_env(agent=agent, event_sink=sink, settings=settings)
+
+    sub_id = _spawn(
+        env,
+        kind=SubsessionKind.PERIODIC,
+        interval_seconds=0.02,
+        max_runs=1,
+        title="watch",
+        checkpoint={
+            "ticket_id": "ticket-1",
+            "max_runs_exhausted_count": 1,
+        },
+    )
+    await _await_worker(env, sub_id)
+
+    info = env.registry.get(sub_id)
+    assert info is not None
+    assert info.status is SubsessionStatus.CLOSED
+    assert info.close_reason == "max_runs"
+    assert info.runs == 1
+    # The checkpoint should have been updated with the incremented count.
+    assert info.checkpoint is not None
+    assert info.checkpoint.get("max_runs_exhausted_count") == 2
+
+
+@pytest.mark.asyncio
+async def test_periodic_max_runs_escalation_disabled_when_threshold_zero() -> None:
+    """A threshold of 0 disables escalation entirely."""
+    sink = RecordingSink()
+    agent = FakeAgent(["report 1"])
+    settings = make_settings(max_runs_escalation_threshold=0)
+    env = build_env(agent=agent, event_sink=sink, settings=settings)
+
+    sub_id = _spawn(
+        env,
+        kind=SubsessionKind.PERIODIC,
+        interval_seconds=0.02,
+        max_runs=1,
+        title="watch",
+        checkpoint={
+            "ticket_id": "ticket-1",
+            "max_runs_exhausted_count": 5,
+        },
+    )
+    await _await_worker(env, sub_id)
+
+    info = env.registry.get(sub_id)
+    assert info is not None
+    assert info.status is SubsessionStatus.CLOSED
+    assert info.close_reason == "max_runs"
+
+
+@pytest.mark.asyncio
+async def test_periodic_max_runs_escalation_no_checkpoint() -> None:
+    """No checkpoint: count starts at 1, below threshold."""
+    sink = RecordingSink()
+    agent = FakeAgent(["report 1"])
+    settings = make_settings(max_runs_escalation_threshold=2)
+    env = build_env(agent=agent, event_sink=sink, settings=settings)
+
+    sub_id = _spawn(
+        env,
+        kind=SubsessionKind.PERIODIC,
+        interval_seconds=0.02,
+        max_runs=1,
+        title="watch",
+    )
+    await _await_worker(env, sub_id)
+
+    info = env.registry.get(sub_id)
+    assert info is not None
+    assert info.status is SubsessionStatus.CLOSED
+    # No checkpoint → count starts at 0 → incremented to 1 < threshold.
+    assert info.close_reason == "max_runs"
+    assert info.checkpoint is not None
+    assert info.checkpoint.get("max_runs_exhausted_count") == 1
+
+
+@pytest.mark.asyncio
 async def test_periodic_no_change_reply_is_suppressed() -> None:
     """A NO_CHANGE run produces no delivery and no result frame."""
     sink = RecordingSink()

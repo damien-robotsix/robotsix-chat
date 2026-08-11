@@ -1366,7 +1366,9 @@ def test_reopen_returns_none_for_non_paused_closed() -> None:
     """``reopen`` returns None when closed with an unrecognised reason."""
     registry = SubsessionRegistry(store_path=None)
     info = _create(registry, kind=SubsessionKind.PERIODIC, interval_seconds=60.0)
-    registry.mark_closed(info.id, summary="done", reason="max_runs", closed_by="system")
+    registry.mark_closed(
+        info.id, summary="done", reason="completed", closed_by="system"
+    )
 
     assert registry.reopen(info.id) is None
 
@@ -1528,6 +1530,89 @@ def test_reopen_pre_authorized_approval() -> None:
     assert reopened.status is SubsessionStatus.RUNNING
     assert reopened.close_reason is None
     # Second reopen is a no-op (already active).
+    assert registry.reopen(info.id) is None
+
+
+def test_reopen_max_runs_resets_run_counter() -> None:
+    """``reopen`` resets runs to 0 for a max_runs-closed monitor."""
+    registry = SubsessionRegistry(store_path=None)
+    info = _create(
+        registry,
+        kind=SubsessionKind.PERIODIC,
+        interval_seconds=60.0,
+        title="max-runs-monitor",
+    )
+    # Simulate 60 runs then max_runs close.
+    info.runs = 60
+    registry.mark_closed(
+        info.id,
+        summary="Reached the 60-run limit.",
+        reason="max_runs",
+        closed_by="system",
+    )
+    reopened = registry.reopen(info.id)
+    assert reopened is not None
+    assert reopened.status is SubsessionStatus.RUNNING
+    assert reopened.close_reason is None
+    assert reopened.runs == 0
+
+
+def test_reopen_max_runs_with_escalation_count_resets_run_counter() -> None:
+    """``reopen`` resets runs when checkpoint carries max_runs_exhausted_count."""
+    registry = SubsessionRegistry(store_path=None)
+    info = _create(
+        registry,
+        kind=SubsessionKind.PERIODIC,
+        interval_seconds=60.0,
+        title="escalation-monitor",
+    )
+    info.runs = 60
+    info.checkpoint = {"max_runs_exhausted_count": 2}
+    registry.mark_closed(
+        info.id,
+        summary="paused after idle",
+        reason="paused",
+        closed_by="system",
+    )
+    reopened = registry.reopen(info.id)
+    assert reopened is not None
+    assert reopened.runs == 0
+
+
+def test_find_paused_periodic_includes_max_runs() -> None:
+    """``find_paused_periodic`` returns monitors closed with reason 'max_runs'."""
+    registry = SubsessionRegistry(store_path=None)
+    info = _create(
+        registry,
+        kind=SubsessionKind.PERIODIC,
+        interval_seconds=60.0,
+        title="max-runs-monitor",
+    )
+    registry.mark_closed(
+        info.id,
+        summary="Reached the 60-run limit.",
+        reason="max_runs",
+        closed_by="system",
+    )
+    paused = registry.find_paused_periodic()
+    ids = [p.id for p in paused]
+    assert info.id in ids
+
+
+def test_reopen_returns_none_for_max_runs_escalated() -> None:
+    """``reopen`` returns None for 'max_runs_escalated' — no auto-reopen."""
+    registry = SubsessionRegistry(store_path=None)
+    info = _create(
+        registry,
+        kind=SubsessionKind.PERIODIC,
+        interval_seconds=60.0,
+    )
+    registry.mark_closed(
+        info.id,
+        summary="escalated after repeated budget exhaustion",
+        reason="max_runs_escalated",
+        closed_by="system",
+    )
     assert registry.reopen(info.id) is None
 
 

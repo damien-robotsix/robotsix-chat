@@ -202,7 +202,7 @@ async def test_resume_paused_monitor_noop_for_non_paused() -> None:
         interval_seconds=60.0,
     )
     env.registry.mark_closed(
-        info.id, summary="done", reason="max_runs", closed_by="system"
+        info.id, summary="done", reason="completed", closed_by="system"
     )
 
     await _resume_paused_monitor(env, info.id)

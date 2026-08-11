@@ -124,7 +124,8 @@
     "user_chat_max_retries": 3,
     "transient_error_max_retries": 3,
     "transient_error_backoff_base": 1.0,
-    "transient_error_backoff_cap": 30.0
+    "transient_error_backoff_cap": 30.0,
+    "max_runs_escalation_threshold": 3
   },
   "direct_repo": {
     "enabled": false,
