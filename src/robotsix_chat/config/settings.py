@@ -26,6 +26,7 @@ from robotsix_chat.config.models import (
     FeedbackSettings,
     GitHubActionsSettings,
     GitHubSecuritySettings,
+    HealthSettings,
     HttpProbeSettings,
     KnowledgeSettings,
     LangfuseInspectSettings,
@@ -1206,6 +1207,9 @@ class Settings(BaseModel):
     )
     feedback: FeedbackSettings = Field(
         default_factory=FeedbackSettings, json_schema_extra={"advanced": True}
+    )
+    health: HealthSettings = Field(
+        default_factory=HealthSettings, json_schema_extra={"advanced": True}
     )
     autonomous: AutonomousSettings = Field(
         default_factory=AutonomousSettings, json_schema_extra={"advanced": True}

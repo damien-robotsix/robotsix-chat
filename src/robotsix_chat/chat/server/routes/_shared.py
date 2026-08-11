@@ -109,25 +109,43 @@ def _get_session_id(request: Request) -> str:
 
 
 async def health_endpoint(request: Request) -> JSONResponse:
-    """Liveness probe — 200 ``{"status": "ok", "memory": {...}}``.
+    """Liveness probe — 200 ``{"status": "ok", "memory": {...}, "health": {...}}``.
 
-    Stays ``status: ok`` (a memory freeze must not fail the liveness probe and
-    have the orchestrator kill the container — the store's own guarded
-    self-restart handles recovery), but embeds the memory backend's health so a
-    frozen store is externally observable (``memory.degraded``).
+    Stays ``status: ok`` (a subsystem freeze must not fail the liveness probe
+    and have the orchestrator kill the container), but embeds the memory
+    backend's health and the periodic health-check snapshot so degradation is
+    externally observable.
     """
     payload: dict[str, object] = {"status": "ok"}
+    # Memory backend status (existing).
     try:
         memory = getattr(request.app.state, "memory", None)
         status_fn = getattr(memory, "status", None)
         if callable(status_fn):
             snapshot = status_fn()
-            # Only embed a real (JSON-serialisable) status mapping — guards
-            # against a mock/None backend serialising into a 500.
             if isinstance(snapshot, dict):
                 payload["memory"] = snapshot
-    except Exception:  # never let health reporting raise (probe must stay 200)
+    except Exception:
         logger.debug("health: memory status unavailable", exc_info=True)
+    # Periodic health-check snapshot (new).
+    try:
+        health_status = getattr(request.app.state, "health_status", None)
+        if health_status is not None:
+            payload["health"] = {
+                "overall": health_status.overall.value,
+                "last_run": health_status.last_run,
+                "checks": [
+                    {
+                        "name": c.name,
+                        "status": c.status.value,
+                        "message": c.message,
+                        "details": c.details,
+                    }
+                    for c in health_status.checks
+                ],
+            }
+    except Exception:
+        logger.debug("health: health status unavailable", exc_info=True)
     return JSONResponse(payload)
 
 

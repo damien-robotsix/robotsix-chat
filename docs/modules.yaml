@@ -392,6 +392,18 @@ modules:
       - tests/feedback/__init__.py
       - tests/feedback/test_runner.py
 
+  - id: health
+    description: "Periodic health checks for critical subsystems — verifies memory, knowledge store, feedback runner, and diagnostics store are active and producing expected output."
+    paths:
+      - src/robotsix_chat/health/__init__.py
+      - src/robotsix_chat/health/models.py
+      - src/robotsix_chat/health/checks.py
+      - src/robotsix_chat/health/scheduler.py
+      - tests/health/__init__.py
+      - tests/health/test_models.py
+      - tests/health/test_checks.py
+      - tests/health/test_scheduler.py
+
   - id: ui
     description: "Browser chat UI — self-contained HTML frontend served at /."
     paths:

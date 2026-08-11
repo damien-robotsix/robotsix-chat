@@ -278,6 +278,7 @@ class TestRunServer:
             config_path=None,
             diagnostic_store=None,
             knowledge_store=None,
+            health_settings=None,
         )
 
 

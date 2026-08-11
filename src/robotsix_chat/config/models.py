@@ -1553,3 +1553,24 @@ class SftpSettings(BaseModel):
     private_key_passphrase: SecretStr = SecretStr("")
     known_hosts: str = ""
     remote_root: str = ""
+
+
+class HealthSettings(BaseModel):
+    """Periodic health-check settings.
+
+    When enabled, a background scheduler runs every *check_interval_seconds*
+    (default 300 s / 5 min) and verifies that critical subsystems are
+    reachable and producing expected output:
+    memory (cognee recall), knowledge store, feedback runner, and
+    diagnostics store.  Results are exposed via ``GET /health`` and logged.
+
+    Attributes:
+        enabled: Master switch.  When ``False``, no health checks run.
+        check_interval_seconds: Seconds between scheduled health-check
+            cycles.  Default ``300`` (5 minutes).
+
+    """
+
+    enabled: bool = True
+    check_interval_seconds: float = Field(default=300.0, gt=0)
+    model_config = ConfigDict(extra="forbid")

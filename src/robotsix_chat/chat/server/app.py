@@ -30,6 +30,7 @@ from robotsix_chat.chat.events import EventBus, EventSink
 from robotsix_chat.component_access import build_component_access_tools
 from robotsix_chat.component_client import build_component_tools
 from robotsix_chat.config import Settings
+from robotsix_chat.config.models import HealthSettings
 from robotsix_chat.diagnostics import build_diagnostics_tools
 from robotsix_chat.docker_digest import (
     build_docker_digest_tools,
@@ -206,10 +207,24 @@ async def _make_lifespan(
             await on_startup_async()
         except Exception:
             logger.exception("Async startup hook failed — continuing")
+    # Start the health-check scheduler if attached (created in create_app).
+    if app is not None:
+        scheduler = getattr(app.state, "health_scheduler", None)
+        if scheduler is not None:
+            try:
+                scheduler.start()
+            except Exception:
+                logger.exception("Health scheduler start failed — continuing")
     try:
         yield
     finally:
         if app is not None:
+            scheduler = getattr(app.state, "health_scheduler", None)
+            if scheduler is not None:
+                try:
+                    await scheduler.stop()
+                except Exception:
+                    logger.exception("Health scheduler stop failed")
             coalescer = getattr(app.state, "message_coalescer", None)
             if coalescer is not None:
                 try:
@@ -253,6 +268,7 @@ SHARED_PARAMS: frozenset[str] = frozenset(
         "config_path",
         "diagnostic_store",
         "knowledge_store",
+        "health_settings",
     }
 )
 
@@ -289,6 +305,7 @@ def create_app(
     draft_store_dir: str | None = None,
     diagnostic_store: Any = None,
     knowledge_store: Any = None,
+    health_settings: HealthSettings | None = None,
 ) -> Starlette:
     """Return a Starlette ASGI app wired to ``agent``.
 
@@ -400,6 +417,10 @@ def create_app(
         knowledge_store: Shared :class:`~robotsix_chat.knowledge.KnowledgeStore`
             instance used for session carryover persistence.  When ``None``
             (default), carryover is disabled.
+        health_settings: Optional
+            :class:`~robotsix_chat.config.models.HealthSettings` controlling
+            the periodic health-check scheduler.  When ``None`` (default),
+            the default settings are used (enabled, 300 s interval).
 
     """
     routes: list[Route | Mount] = [
@@ -595,6 +616,19 @@ def create_app(
     app.state.autonomous_runner = autonomous_runner  # may be None
     app.state.diagnostic_store = diagnostic_store  # may be None
     app.state.knowledge_store = knowledge_store  # may be None
+    # Health-check scheduler — created here so it has access to the fully
+    # populated app.state, then started during the lifespan async phase.
+    _hs = health_settings or HealthSettings()
+    if _hs.enabled:
+        from robotsix_chat.health import HealthScheduler
+
+        app.state.health_scheduler = HealthScheduler(
+            interval_seconds=_hs.check_interval_seconds,
+            state=app.state,
+        )
+    else:
+        app.state.health_scheduler = None
+    app.state.health_status = None  # populated after first check cycle
     if config_path is not None:
         app.state.config_path = config_path
     if draft_store_dir is not None:

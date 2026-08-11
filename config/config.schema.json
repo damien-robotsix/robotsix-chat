@@ -494,6 +494,25 @@
       "title": "GitHubSecuritySettings",
       "type": "object"
     },
+    "HealthSettings": {
+      "additionalProperties": false,
+      "description": "Periodic health-check settings.\n\nWhen enabled, a background scheduler runs every *check_interval_seconds*\n(default 300 s / 5 min) and verifies that critical subsystems are\nreachable and producing expected output:\nmemory (cognee recall), knowledge store, feedback runner, and\ndiagnostics store.  Results are exposed via ``GET /health`` and logged.\n\nAttributes:\n    enabled: Master switch.  When ``False``, no health checks run.\n    check_interval_seconds: Seconds between scheduled health-check\n        cycles.  Default ``300`` (5 minutes).",
+      "properties": {
+        "enabled": {
+          "default": true,
+          "title": "Enabled",
+          "type": "boolean"
+        },
+        "check_interval_seconds": {
+          "default": 300.0,
+          "exclusiveMinimum": 0,
+          "title": "Check Interval Seconds",
+          "type": "number"
+        }
+      },
+      "title": "HealthSettings",
+      "type": "object"
+    },
     "HttpProbeSettings": {
       "additionalProperties": false,
       "description": "Read-only HTTP uptime/render-probe tool for the agent.\n\nWhen enabled, the agent gains an ``http_probe`` tool that performs a\nplain HTTPS GET to a public URL (follows redirects, short timeout)\nand returns the HTTP status, final URL, response time, Content-Type,\nresponse size, and a snippet of the body text with optional content\nassertions.\n\nAttributes:\n    enabled: Master switch.  When ``False``, no http_probe tool is offered.\n    timeout: Per-request HTTP timeout in seconds (default 10 s).\n    allowlist: Hostnames (no protocol, no path) that the tool is permitted to\n        probe.  At minimum must include ``www.robotsix.net`` and\n        ``robotsix.net``.  When empty, the tool permits any public hostname.\n    max_body_bytes: Maximum bytes of the response body to read and\n        return to the agent (default 2048 \u2014 ~2 KB).\n    max_redirects: Maximum number of redirects to follow (default 5).",
@@ -1512,6 +1531,10 @@
     },
     "feedback": {
       "$ref": "#/$defs/FeedbackSettings",
+      "advanced": true
+    },
+    "health": {
+      "$ref": "#/$defs/HealthSettings",
       "advanced": true
     },
     "autonomous": {
