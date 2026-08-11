@@ -242,6 +242,7 @@ Failure capture and systemic fix surfacing. Enabled by default.
 | `diagnostics.recurrence_threshold`    | `integer` | `3`                                      | Occurrences within the window to trigger a recurrence alert. |
 | `diagnostics.recurrence_window_days`  | `integer` | `30`                                     | Look-back window in days for recurrence detection.           |
 | `diagnostics.observation_window_days` | `integer` | `30`                                     | Days after a fix to wait before an effectiveness report.     |
+| `diagnostics.mill_events_path`        | `string`  | `"/data/robotsix-mill/diagnostic_events.jsonl"` | Path to the mill's JSONL event store for read_diagnostic_events. |
 
 ### Reference Docs (refdocs)
 

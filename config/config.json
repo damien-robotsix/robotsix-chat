@@ -69,7 +69,8 @@
     "effectiveness_path": "/data/diagnostics_effectiveness.json",
     "recurrence_threshold": 3,
     "recurrence_window_days": 30,
-    "observation_window_days": 30
+    "observation_window_days": 30,
+    "mill_events_path": "/data/robotsix-mill/diagnostic_events.jsonl"
   },
   "refdocs": {
     "enabled": false,
