@@ -41,6 +41,7 @@ if TYPE_CHECKING:
 
 __all__ = [
     "build_merge_pull_request_tool",
+    "build_prioritize_all_open_tickets_tool",
     "build_ticket_poll_tools",
     "load_ticket_poll_skill",
 ]
@@ -428,6 +429,272 @@ def build_merge_pull_request_tool(
             return f"Error merging PR for ticket {effective_id}: {exc}"
 
     return [merge_pull_request]
+
+
+def build_prioritize_all_open_tickets_tool(
+    settings: Settings,
+    *,
+    component_request: Callable[..., Any] | None = None,
+) -> list[Callable[..., Any]]:
+    """Return the ``prioritize_all_open_tickets`` tool.
+
+    The tool lists all open, non-prioritized tickets from the mill board
+    and sets priority on every one of them in a single call.  It routes
+    through *component_request* (roster-based connectivity) when available,
+    falling back to the direct ``board_api_base_url`` otherwise.
+
+    Use this when the operator asks to "prioritize tickets" or "prioritize
+    all open tickets" — it replaces the manual sequence of listing tickets,
+    identifying unflagged ones, and toggling priority on each individually.
+
+    Args:
+        settings: Full application settings.
+        component_request: The roster-based request callable, or ``None``
+            when the component roster is unavailable.
+
+    Returns:
+        A one-element list containing the ``prioritize_all_open_tickets``
+        async callable, or ``[]`` when neither *component_request* nor
+        ``board_api_base_url`` are available.
+
+    """
+    conn = _board_connection(settings, component_request)
+    if conn is None:
+        return []
+    board_url, board_token, timeout = conn
+
+    # States that indicate a ticket is still open (not terminal).
+    _open_states = frozenset(
+        {
+            "DRAFT",
+            "REFINING",
+            "APPROVED",
+            "BLOCKED",
+            "IN_PROGRESS",
+            "IMPLEMENT_COMPLETE",
+            "REVIEW",
+            "WAITING_AUTO_MERGE",
+            "HUMAN_MR_APPROVAL",
+            "AWAITING_USER_REPLY",
+        }
+    )
+
+    async def _list_all_tickets() -> tuple[list[dict[str, Any]] | None, str]:
+        """Fetch the full ticket list from the board API.
+
+        Returns ``(tickets, error)`` — *tickets* is a list of dicts on
+        success, or ``None`` on failure (with *error* set).
+        """
+        if component_request is not None:
+            resp = await component_request("mill", "GET", "/tickets")
+            if not resp.startswith("Error:"):
+                try:
+                    newline = resp.index("\n")
+                    status_line = resp[:newline]
+                    body_str = resp[newline + 1 :]
+                except ValueError:
+                    return None, "Unexpected response format from /tickets"
+                if not status_line.startswith("HTTP "):
+                    return None, f"Unexpected status line: {status_line}"
+                try:
+                    status_code = int(status_line.split()[1])
+                except IndexError, ValueError:
+                    return None, f"Unparsable status: {status_line!r}"
+                if status_code >= 400:
+                    return None, f"Board API returned HTTP {status_code}"
+                data, parse_error = _parse_json_body(body_str)
+                if parse_error:
+                    return None, parse_error
+                if data is None:
+                    return None, "Empty parsed response from board API"
+                # The board may return a list or {"tickets": [...]}.
+                if isinstance(data, list):
+                    return data, ""
+                if isinstance(data, dict):
+                    tickets = data.get("tickets", [])
+                    if isinstance(tickets, list):
+                        return tickets, ""
+                    return None, "Unexpected /tickets response format"
+                return None, "Unexpected /tickets response format"
+            logger.info(
+                "prioritize_all_open_tickets: roster path failed; "
+                "falling back to direct board API"
+            )
+
+        # Direct fallback.
+        url = f"{board_url}/tickets"
+        headers: dict[str, str] = {"Accept": "application/json"}
+        if board_token:
+            headers["Authorization"] = f"Bearer {board_token}"
+        try:
+            async with httpx.AsyncClient(timeout=timeout) as client:
+                retry_client = RetryClient(client, config=_TICKET_POLL_RETRY_CONFIG)
+                response = await retry_client.get(url, headers=headers)
+                response.raise_for_status()
+                data = response.json()
+        except httpx.HTTPStatusError as exc:
+            return None, f"Board API returned HTTP {exc.response.status_code}"
+        except httpx.ConnectError, httpx.ConnectTimeout, httpx.TimeoutException:
+            return None, f"Board API request timed out after {timeout}s"
+        except Exception as exc:
+            logger.warning("prioritize_all_open_tickets direct list failed: %s", exc)
+            return None, f"Board API unreachable: {exc}"
+        if isinstance(data, list):
+            return data, ""
+        if isinstance(data, dict):
+            tickets = data.get("tickets", [])
+            if isinstance(tickets, list):
+                return tickets, ""
+        return None, "Unexpected /tickets response format"
+
+    async def _set_priority(ticket_id: str) -> tuple[bool, str]:
+        """Set priority on a single ticket via ``POST /tickets/{id}/priority``.
+
+        Returns ``(ok, error)``.
+        """
+        if component_request is not None:
+            resp = await component_request(
+                "mill", "POST", f"/tickets/{ticket_id}/priority"
+            )
+            if not resp.startswith("Error:"):
+                try:
+                    newline = resp.index("\n")
+                    status_line = resp[:newline]
+                except ValueError:
+                    return False, "Unexpected response format from /priority"
+                if not status_line.startswith("HTTP "):
+                    return False, f"Unexpected status line: {status_line}"
+                try:
+                    status_code = int(status_line.split()[1])
+                except IndexError, ValueError:
+                    return False, f"Unparsable status: {status_line!r}"
+                if status_code >= 400:
+                    return False, f"Board API returned HTTP {status_code}"
+                return True, ""
+            logger.info(
+                "prioritize_all_open_tickets: roster path failed for %s; "
+                "falling back to direct board API",
+                ticket_id,
+            )
+
+        url = f"{board_url}/tickets/{ticket_id}/priority"
+        headers: dict[str, str] = {"Accept": "application/json"}
+        if board_token:
+            headers["Authorization"] = f"Bearer {board_token}"
+        try:
+            async with httpx.AsyncClient(timeout=timeout) as client:
+                retry_client = RetryClient(client, config=_TICKET_POLL_RETRY_CONFIG)
+                response = await retry_client.post(url, headers=headers)
+                if response.status_code < 400:
+                    return True, ""
+                return False, f"HTTP {response.status_code}"
+        except httpx.ConnectError, httpx.ConnectTimeout, httpx.TimeoutException:
+            return False, f"Request timed out after {timeout}s"
+        except Exception as exc:
+            logger.warning(
+                "prioritize_all_open_tickets set-priority failed for %s: %s",
+                ticket_id,
+                exc,
+            )
+            return False, str(exc)
+
+    async def prioritize_all_open_tickets() -> str:
+        """Set priority on all open, non-prioritized tickets.
+
+        Fetches the full ticket list from the mill board API, filters to
+        tickets in a non-terminal state that are not already prioritized,
+        and sets priority on every one.  Returns a summary with counts and
+        per-ticket results.
+
+        Use this when the user asks to "prioritize tickets" or
+        "prioritize all open tickets" — it replaces the manual sequence
+        of listing, filtering, and toggling priority individually.
+
+        Returns:
+            A JSON string with ``prioritized`` (count), ``skipped``
+            (count), ``errors`` (count), ``total_open`` (count), and a
+            ``results`` array of per-ticket outcome objects.
+
+        """
+        tickets, list_error = await _list_all_tickets()
+        if list_error or tickets is None:
+            return json.dumps(
+                {
+                    "error": list_error,
+                    "prioritized": 0,
+                    "skipped": 0,
+                    "errors": 0,
+                    "total_open": 0,
+                    "results": [],
+                },
+                ensure_ascii=False,
+            )
+
+        # Classify each ticket: skip terminal/prioritized, prioritize the rest.
+        to_prioritize: list[dict[str, Any]] = []
+        skipped = 0
+        for t in tickets:
+            if not isinstance(t, dict):
+                continue
+            tid = t.get("ticket_id")
+            if not isinstance(tid, str) or not tid:
+                continue
+            state = str(t.get("state", "")).upper()
+            # Skip terminal (closed/done) tickets.
+            if state not in _open_states:
+                continue
+            # Skip already-prioritized tickets (check both field names).
+            if t.get("priority") is True or t.get("flagged") is True:
+                skipped += 1
+                continue
+            to_prioritize.append(t)
+
+        total_open = len(to_prioritize) + skipped
+
+        if not to_prioritize:
+            return json.dumps(
+                {
+                    "prioritized": 0,
+                    "skipped": skipped,
+                    "errors": 0,
+                    "total_open": total_open,
+                    "results": [],
+                    "note": "No open, unflagged tickets to prioritize.",
+                },
+                ensure_ascii=False,
+            )
+
+        # Set priority on each matching ticket concurrently (up to 10).
+        sem = asyncio.Semaphore(10)
+
+        async def _prioritize_one(t: dict[str, Any]) -> dict[str, Any]:
+            tid = t["ticket_id"]
+            async with sem:
+                ok, error = await _set_priority(tid)
+            return {
+                "ticket_id": tid,
+                "state": t.get("state"),
+                "ok": ok,
+                "error": error,
+            }
+
+        gathered = await asyncio.gather(*(_prioritize_one(t) for t in to_prioritize))
+
+        prioritized = sum(1 for r in gathered if r["ok"])
+        error_count = sum(1 for r in gathered if not r["ok"])
+
+        return json.dumps(
+            {
+                "prioritized": prioritized,
+                "skipped": skipped,
+                "errors": error_count,
+                "total_open": total_open,
+                "results": gathered,
+            },
+            ensure_ascii=False,
+        )
+
+    return [prioritize_all_open_tickets]
 
 
 def build_ticket_poll_tools(

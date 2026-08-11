@@ -23,11 +23,12 @@ as the primary path for checking ticket state and merging approved PRs.
 
 ## Allowed operations
 
-| Tool                 | Description                                                                 |
-| -------------------- | --------------------------------------------------------------------------- |
-| `ticket_poll`        | HTTP GET to the board API; returns the ticket's current state.              |
-| `ticket_poll_batch`  | Concurrent HTTP GETs for multiple tickets; returns full details for triage. |
-| `merge_pull_request` | HTTP POST to merge the approved PR associated with a ticket.                |
+| Tool                          | Description                                                                  |
+| ----------------------------- | ---------------------------------------------------------------------------- |
+| `ticket_poll`                 | HTTP GET to the board API; returns the ticket's current state.               |
+| `ticket_poll_batch`           | Concurrent HTTP GETs for multiple tickets; returns full details for triage.  |
+| `merge_pull_request`          | HTTP POST to merge the approved PR associated with a ticket.                 |
+| `prioritize_all_open_tickets` | Lists all open, unflagged tickets and sets priority on every one in a batch. |
 
 The tool signatures are:
 
@@ -35,6 +36,7 @@ The tool signatures are:
 ticket_poll(ticket_id: str) -> str
 ticket_poll_batch(ticket_ids: list[str]) -> str
 merge_pull_request(ticket_id: str) -> str
+prioritize_all_open_tickets() -> str
 ```
 
 ## Lifecycle and priority mutation endpoints (via `component_request`)
@@ -102,6 +104,25 @@ the merge failed (e.g. the PR is not approved, conflicts exist, or required stat
 passed). The tool routes through the component roster when available, falling back to the direct
 board API on any failure.
 
+### `prioritize_all_open_tickets`
+
+A JSON string with these fields:
+
+- `prioritized` — number of tickets whose priority was successfully set
+- `skipped` — number of tickets already prioritized (no action taken)
+- `errors` — number of tickets where the priority toggle failed
+- `total_open` — total number of open tickets considered (prioritized + skipped)
+- `results` — an array of per-ticket outcome objects, each with `ticket_id`, `state`, `ok`
+  (boolean), and `error` (empty on success)
+- `note` — *(present when there were no tickets to prioritize)* a human-readable message (e.g. "No
+  open, unflagged tickets to prioritize.")
+- `error` — *(present only on a listing failure)* a diagnostic message when the board ticket list
+  could not be fetched
+
+This tool replaces the manual sequence of listing tickets, identifying unflagged ones, and toggling
+priority on each individually. Call it when the user asks to "prioritize tickets" or "prioritize all
+open tickets."
+
 ## ID resolution
 
 Both `ticket_poll` and `ticket_poll_batch` resolve paraphrased / abbreviated ticket IDs against the
@@ -122,10 +143,11 @@ attempted (which may surface a 404).
 
 - **`ticket_poll` / `ticket_poll_batch` are read-only** — GET only; no state mutation is possible
   through these two tools.
-- **`merge_pull_request` is mutating** — it issues a POST that merges the approved PR associated
-  with a ticket. Only call it when the ticket is in `waiting_auto_merge` or `human_mr_approval`
-  state and the associated PR has been approved by a human reviewer. Do not call it speculatively or
-  for tickets in other states.
+- **`merge_pull_request` and `prioritize_all_open_tickets` are mutating** — they issue POST requests
+  that alter ticket state. Only call them when the preconditions are met: `merge_pull_request`
+  requires an approved PR in `waiting_auto_merge` or `human_mr_approval` state;
+  `prioritize_all_open_tickets` should be called when the operator asks to prioritize tickets. Do
+  not call either speculatively.
 - **Roster-first routing** — prefers the component roster (`component_request`) when available;
   falls back to the direct board API when the roster is absent. This means the tools share the same
   connectivity path as `component_request` and are equally reliable.
@@ -169,4 +191,8 @@ ticket_poll_batch(
 # Merge an approved PR when a ticket is in waiting_auto_merge or human_mr_approval
 merge_pull_request("20250101T120000Z-my-ticket-a1b2")
 # → "HTTP 200\n{\"status\": \"merged\", ...}"
+
+# Prioritize all open, unflagged tickets in a single call
+prioritize_all_open_tickets()
+# → {"prioritized": 5, "skipped": 2, "errors": 0, "total_open": 7, "results": [...]}
 ```
