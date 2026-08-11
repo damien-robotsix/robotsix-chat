@@ -581,7 +581,9 @@ def run_server_from_config(agent: ChatAgent | None = None) -> None:
                     return
                 owner_id = conversation_store.owner_for_session(sid) or "operator"
                 # prompt is guaranteed non-None when sid is non-None.
-                assert prompt is not None
+                if prompt is None:
+                    logger.warning("Continuation prompt is None — dropping")
+                    return
                 async with run_serializer.for_owner(owner_id):
                     reply_parts: list[str] = []
                     async for token in agent.stream(

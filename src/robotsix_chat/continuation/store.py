@@ -260,7 +260,7 @@ class ContinuationStore:
             audit = raw.get("audit_log")
             if isinstance(audit, list):
                 self._state.audit_log = audit
-        except (json.JSONDecodeError, OSError, ValueError):
+        except json.JSONDecodeError, OSError, ValueError:
             logger.warning(
                 "Could not read continuation store %s; starting empty",
                 self._path,

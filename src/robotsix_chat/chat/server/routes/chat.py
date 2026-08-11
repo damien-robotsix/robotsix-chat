@@ -696,9 +696,7 @@ async def chat_endpoint(
 
     # Reset the continuation guardrail counter on every operator-initiated
     # message so auto-continuations do not accumulate across normal sessions.
-    continuation_store = getattr(
-        request.app.state, "continuation_store", None
-    )
+    continuation_store = getattr(request.app.state, "continuation_store", None)
     if continuation_store is not None:
         continuation_store.reset_consecutive()
 
