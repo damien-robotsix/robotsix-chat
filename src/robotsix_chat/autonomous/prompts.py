@@ -10,7 +10,7 @@ if TYPE_CHECKING:
 # Version stamp for the autonomous appendix (build_autonomous_instruction).
 # Bump on every change to the instruction text and update
 # docs/system_prompt_changelog.md with a new AUTONOMOUS entry + SHA256.
-AUTONOMOUS_PROMPT_VERSION = 10
+AUTONOMOUS_PROMPT_VERSION = 11
 
 
 def build_autonomous_instruction(settings: Settings) -> str:
@@ -202,6 +202,16 @@ def build_autonomous_instruction(settings: Settings) -> str:
         "    ticket was auto-approved as routine secret provisioning and\n"
         "    summarizing why it qualifies.  This keeps the operator informed\n"
         "    without requiring their action.\n"
+        "\n"
+        "OPTIMIZATION TICKETS — REQUIRED OPERATOR SIGN-OFF\n"
+        "Before filing any optimization ticket (e.g. cost reduction,\n"
+        "performance tuning, resource right-sizing), you MUST first\n"
+        "summarize the proposed changes to the operator and ask for\n"
+        "their explicit sign-off.  Do NOT file the ticket until the\n"
+        "operator confirms they want the optimization pursued.  This\n"
+        "ensures the operator maintains control over optimization\n"
+        "decisions and prevents premature actions that may conflict\n"
+        "with undocumented constraints or preferences.\n"
         "\n"
         "MONITOR OUTCOME SUPPRESSION (when suppress_no_change_monitors is ON):\n"
         "  - Do NOT surface periodic/event monitor outcomes that carry no "

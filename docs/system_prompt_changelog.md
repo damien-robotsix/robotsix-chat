@@ -1999,6 +1999,23 @@ operator confusion.
 
 **SHA256:** `4ae7c091f9840dc2c485cabed2224247db84b0978a34ffce3ef24cbfc73f1ef4`
 
+## AUTONOMOUS v11 — 2026-08-07 — require-operator-approval-before-filing-5833
+
+**Summary:** Add `OPTIMIZATION TICKETS — REQUIRED OPERATOR SIGN-OFF` section to
+the autonomous protocol. Before filing any optimization ticket (cost reduction,
+performance tuning, resource right-sizing), the assistant must first summarize
+the proposed changes to the operator and ask for explicit sign-off. The ticket
+must not be filed until the operator confirms. This prevents premature actions
+and aligns with user expectations for control over optimization decisions.
+
+**Rationale:** During session 5851f345, the assistant filed a cost-optimization
+ticket directly without presenting the proposed improvements to the user for
+approval. The user explicitly stated they wanted to approve improvements first.
+The assistant acknowledged the issue and adjusted behavior, but the prompt
+should enforce this as a required step.
+
+**SHA256:** `a68c8aaba09a6ac8b4289f89285af576b298b974088c2d4522fe48587c4b38ea`
+
 ## AUTONOMOUS v9 — 2026-08-11 — add-autonomous-approval-capability-for-r-afd3
 
 **Summary:** Add `auto_approve_routine_secret_provisioning` autonomy setting and
