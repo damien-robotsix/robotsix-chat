@@ -220,6 +220,7 @@ modules:
       - tests/common/__init__.py
       - tests/common/subsession_fakes.py
       - tests/common/test_github_auth.py
+      - tests/common/test_http_fetch.py
       - tests/common/test_http.py
       - tests/common/test_json_store.py
       - tests/common/test_unified_diff.py
