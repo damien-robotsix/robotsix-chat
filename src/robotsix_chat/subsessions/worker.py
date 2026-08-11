@@ -258,6 +258,23 @@ def _is_duplicate_reply(reply: str, previous: str | None) -> bool:
     return reply.strip().casefold() == previous.strip().casefold()
 
 
+def _ordinal_suffix(n: int) -> str:
+    """Return the ordinal suffix for *n*.
+
+    E.g. ``"st"``, ``"nd"``, ``"rd"``, ``"th"``.
+    """
+    if 11 <= (n % 100) <= 13:
+        return "th"
+    last = n % 10
+    if last == 1:
+        return "st"
+    if last == 2:
+        return "nd"
+    if last == 3:
+        return "rd"
+    return "th"
+
+
 def _is_ticket_pre_authorized(
     ticket_id: str,
     patterns: list[str],
@@ -1891,6 +1908,95 @@ async def _run_periodic_turn(
     previous_result = reply
 
     if info.max_runs is not None and runs >= info.max_runs:
+        # -- max_runs escalation: track how many consecutive times this
+        #    monitor has exhausted its run budget.  When the count
+        #    reaches the configured threshold, auto-create a follow-up
+        #    ticket on the board so the operator can review / respawn
+        #    with a longer interval or budget.
+        escalation_threshold = env.settings.subsessions.max_runs_escalation_threshold
+        checkpoint = info.checkpoint or {}
+        exhausted_count_raw = checkpoint.get("max_runs_exhausted_count")
+        exhausted_count = (
+            exhausted_count_raw if isinstance(exhausted_count_raw, int) else 0
+        )
+        exhausted_count += 1
+
+        if escalation_threshold > 0 and exhausted_count >= escalation_threshold:
+            # Threshold reached — escalate with a follow-up ticket.
+            logger.warning(
+                "Subsession %s: max_runs exhausted %d consecutive times "
+                "(threshold=%d) — auto-escalating with follow-up ticket.",
+                sub_id,
+                exhausted_count,
+                escalation_threshold,
+            )
+            # Build a follow-up ticket for the operator.
+            ticket_id_raw = checkpoint.get("ticket_id")
+            ticket_id = ticket_id_raw if isinstance(ticket_id_raw, str) else ""
+            monitor_title = info.title or sub_id[:8]
+            followup_title = (
+                f"Monitor '{monitor_title}' exhausted run budget "
+                f"{exhausted_count} times"
+            )
+            followup_desc = (
+                f"Periodic monitor **{monitor_title}** (subsession "
+                f"`{sub_id}`) tracking ticket `{ticket_id}` has "
+                f"exhausted its `max_runs` limit ({info.max_runs} runs) "
+                f"**{exhausted_count} consecutive times**.\n\n"
+                f"Last result: {reply}\n\n"
+                f"Consider respawning with a longer polling interval "
+                f"or a higher run budget, or reviewing whether this "
+                f"ticket still needs active monitoring."
+            )
+            # Try to create the follow-up ticket — best-effort.
+            try:
+                from robotsix_chat.repo.direct.board_client import BoardClient
+
+                direct_repo_settings = getattr(env.settings, "direct_repo", None)
+                if direct_repo_settings is not None:
+                    board = BoardClient(direct_repo_settings)
+                    followup_id = await board.create_ticket(
+                        title=followup_title,
+                        description=followup_desc,
+                        kind="task",
+                        source="agent",
+                    )
+                    if followup_id:
+                        logger.info(
+                            "Worker: created escalation ticket %s for "
+                            "subsession %s (max_runs exhausted %d times).",
+                            followup_id,
+                            sub_id,
+                            exhausted_count,
+                        )
+                        followup_desc += f"\n\nFollow-up ticket: {followup_id}"
+            except Exception:
+                logger.debug(
+                    "Worker: could not create escalation ticket for "
+                    "subsession %s (board may be unreachable).",
+                    sub_id,
+                )
+
+            summary = (
+                f"Reached the {info.max_runs}-run limit for the "
+                f"{exhausted_count}{_ordinal_suffix(exhausted_count)} "
+                f"consecutive time — auto-escalated. Last: {reply}"
+            )
+            closed = registry.mark_closed(
+                sub_id,
+                summary=summary,
+                reason="max_runs_escalated",
+                closed_by="system",
+            )
+            if closed is not None:
+                await env.delivery.deliver_summary(
+                    closed, summary, "max_runs_escalated"
+                )
+            return None
+
+        # Below threshold — persist the updated count and close normally.
+        checkpoint["max_runs_exhausted_count"] = exhausted_count
+        registry.update_checkpoint(sub_id, checkpoint)
         summary = f"Reached the {info.max_runs}-run limit. Last: {reply}"
         closed = registry.mark_closed(
             sub_id, summary=summary, reason="max_runs", closed_by="system"

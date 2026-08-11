@@ -764,6 +764,13 @@ class SubsessionsSettings(BaseModel):
         transient_error_backoff_cap: Maximum backoff in seconds for
             transient-error retries.  Default ``30.0``.
             Env override: ``SUBSESSIONS_TRANSIENT_ERROR_BACKOFF_CAP``.
+        max_runs_escalation_threshold: Number of consecutive times a
+            periodic subsession can hit its ``max_runs`` limit before
+            auto-escalating with a follow-up ticket.  When the threshold
+            is reached, a follow-up ticket is created on the board and
+            the monitor closes with reason ``max_runs_escalated``.
+            Set to ``0`` to disable escalation.  Default ``3``.
+            Env override: ``SUBSESSIONS_MAX_RUNS_ESCALATION_THRESHOLD``.
 
     """
 
@@ -885,6 +892,17 @@ class SubsessionsSettings(BaseModel):
     transient_error_max_retries: int = 3
     transient_error_backoff_base: float = 1.0
     transient_error_backoff_cap: float = 30.0
+    max_runs_escalation_threshold: int = Field(
+        default=3,
+        description=(
+            "Number of consecutive times a periodic subsession can "
+            "hit its ``max_runs`` limit before auto-escalating with a "
+            "follow-up ticket.  When the threshold is reached, a "
+            "follow-up ticket is created on the board and the monitor "
+            "closes with reason ``max_runs_escalated``.  Set to ``0`` "
+            "to disable escalation.  Default ``3``."
+        ),
+    )
     model_config = ConfigDict(extra="forbid")
 
 
