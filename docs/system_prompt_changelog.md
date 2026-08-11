@@ -3,6 +3,22 @@
 Governed artifact: `Settings.agent_instruction` default literal in
 `src/robotsix_chat/config/settings.py`. Version stamp: `SYSTEM_PROMPT_VERSION` in the same module.
 
+## v96 — 2026-08-11 — auto-close-superseded-draft-tickets-4416
+
+**Summary:** Add a "Superseded ticket auto-close" rule to the autonomy gate section.
+When the assistant discovers that a draft or open ticket is superseded by another
+ticket that is already CLOSED or DONE, it should close the superseded ticket as a
+duplicate without waiting for operator confirmation. The superseding ticket's
+terminal state is unambiguous evidence that the superseded work is obsolete.
+
+**Rationale:** Previously the assistant would ask for confirmation before closing
+superseded tickets (e.g. "I will close ticket 5f1c if you choose Option A"),
+requiring an extra operator turn. When the superseding ticket is already terminal,
+the superseded ticket is unambiguously obsolete — the extra confirmation turn is
+pure overhead that clutters the ticket board with stale drafts.
+
+**SHA256:** `9f6c146cb62ae93f4751f01da9f1e94a0beff74aa0600f065093e9e79534553d`
+
 ## v95 — 2026-08-10 — distinguish-between-no-openrouter-api-ke-5aa9
 
 **Summary:** Rewrite the OpenRouter API key guidance in the "Model Policy" bullet

@@ -65,7 +65,7 @@ class ConfigValidationError(ValueError):
 # Version stamp for the agent_instruction default literal.
 # Bump on every change to Settings.agent_instruction and update
 # docs/system_prompt_changelog.md with a new entry + SHA256.
-SYSTEM_PROMPT_VERSION = 95
+SYSTEM_PROMPT_VERSION = 96
 
 # Valid model levels, derived from llmio's tier enum (import-time constant so
 # the set is built once and can never drift from the tiers llmio ships).
@@ -490,6 +490,16 @@ class Settings(BaseModel):
             "confirmation'), carry it out literally without requesting "
             "additional confirmation. An explicit instruction overrides the "
             "default ask-before-acting gate — execute it and report the result.\n"
+            "– Superseded ticket auto-close: when you discover that a draft or "
+            "open ticket is superseded by another ticket that is already CLOSED "
+            "or DONE, close the superseded ticket as a duplicate without waiting "
+            "for operator confirmation.  The superseding ticket's terminal state "
+            "is unambiguous evidence that the superseded work is obsolete — use "
+            "`component_request('mill', 'POST', '/tickets/{id}/mark-done')` to "
+            "close it, then report the closure.  When a ticket spec explicitly "
+            "declares a predecessor (e.g. 'supersedes ticket abc1') and the "
+            "superseding ticket is terminal, the predecessor should be closed "
+            "in the same turn.\n"
             "– Operator consent propagation: when the operator provides "
             "credentials (a password, API key, or token), explicitly approves a "
             "change, or authorizes a specific operation by name, that consent "
