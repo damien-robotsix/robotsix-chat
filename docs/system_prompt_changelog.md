@@ -1867,6 +1867,29 @@ The hash is computed on the output of `build_autonomous_instruction(Settings())`
 autonomous settings at their pydantic field defaults (``proposal_marker="---PROPOSAL READY---"``,
 ``completion_marker="---AUTONOMOUS COMPLETE---"``, ``stale_monitor_runs_before_completion=3``).
 
+## AUTONOMOUS v9 — 2026-08-11 — add-autonomous-approval-capability-for-r-afd3
+
+**Summary:** Add `auto_approve_routine_secret_provisioning` autonomy setting and
+`AUTO-APPROVAL RULES — ROUTINE SECRET PROVISIONING` section to the autonomous
+protocol. When enabled, the agent may auto-approve routine secret provisioning
+tickets (Langfuse credentials, API keys, token rotations) even when they touch
+security-sensitive paths, provided the change has no code modifications, no
+destructive operations, and is limited to credential/secret/token provisioning.
+The `SECURITY-SENSITIVE APPROVAL` section now includes an explicit exception
+for routine secret provisioning when the setting is on. When auto-approving
+under this rule, the agent must include a brief system notice in its
+operator-facing message.
+
+**Rationale:** The agent repeatedly deferred to the operator for approval of
+routine Langfuse-credential provisioning tickets even though the change was
+standard (no code changes, no destructive operations) and the agent's own
+recommendation was to approve. The operator explicitly prioritized the ticket
+but still had to be interrupted. Adding a configurable threshold lets operators
+opt in to automatic approval of routine secret provisioning, reducing
+unnecessary interruptions while keeping genuinely risky security changes gated.
+
+**SHA256:** `418f1602544aae4360db02490e32f233b66beae66a1e62ca2382bbaf914971cb`
+
 ## AUTONOMOUS v8 — 2026-08-12 — approval-prompts-should-avoid-re-stating-794a
 
 **Summary:** Add `ACTIVE-CONTEXT SHORTENING` guidance to the
