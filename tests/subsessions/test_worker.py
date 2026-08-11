@@ -20,6 +20,7 @@ from robotsix_chat.chat.events import SSE_NOTIFICATION_TYPE, SSE_SUBSESSION_RESU
 from robotsix_chat.subsessions import (
     SubsessionCapacityError,
     SubsessionDepthError,
+    SubsessionInfo,
     SubsessionIntervalError,
     SubsessionKind,
     SubsessionLevelError,
@@ -34,6 +35,7 @@ from robotsix_chat.subsessions.worker import (
     SubsessionContext,
     SubsessionEnv,
     _build_periodic_input,
+    _event_wait_loop,
     _format_worker_error,
     _is_duplicate_reply,
     _is_no_change,
@@ -3545,3 +3547,149 @@ async def test_on_close_retries_up_to_user_chat_max_retries() -> None:
     # user_chat_max_retries defaults to 3 in make_settings.
     assert info.retry_count == 3
     assert "[RuntimeError] kaboom" in (info.error or "")
+
+
+# ---------------------------------------------------------------------------
+# _event_wait_loop — dedup_key fallback
+# ---------------------------------------------------------------------------
+
+
+@pytest.mark.asyncio
+async def test_event_wait_loop_dedup_fallback_checkpoint_none() -> None:
+    """When checkpoint is None, the dedup_key is used as ticket_id and written back."""
+    env = build_env()
+    sub_id = "sub-wfe-none"
+
+    info = SubsessionInfo(
+        id=sub_id,
+        kind=SubsessionKind.WAIT_FOR_EVENT,
+        owner_session_id=OWNER,
+        parent_id=None,
+        depth=1,
+        title="event monitor",
+        prompt="monitor ticket foo",
+        model_level=3,
+        status=SubsessionStatus.RUNNING,
+        created_at=1000.0,
+        last_activity_at=1000.0,
+        dedup_key="ticket-abc-123",
+        checkpoint=None,
+        event_timeout_seconds=5.0,
+    )
+    env.registry._subs[sub_id] = info
+
+    with (
+        patch.object(
+            env.registry, "wait_for_inbox", new_callable=AsyncMock
+        ) as mock_wait,
+        patch.object(
+            env.registry, "update_checkpoint", wraps=env.registry.update_checkpoint
+        ) as mock_update,
+        patch.object(env.registry, "drain_inbox", return_value=[]) as _mock_drain,
+    ):
+        mock_wait.return_value = True
+
+        result = await _event_wait_loop(
+            env, info, sub_id, previous_result=None, consecutive_no_change=0
+        )
+
+    # The checkpoint should have been repaired via update_checkpoint.
+    mock_update.assert_called_once_with(sub_id, {"ticket_id": "ticket-abc-123"})
+    # The in-memory info should now carry the repaired checkpoint.
+    assert info.checkpoint == {"ticket_id": "ticket-abc-123"}
+    # The function should return a tuple (not None), meaning it didn't close.
+    assert result is not None
+    pending, prev, cn_change = result
+    assert prev is None
+    assert cn_change == 0
+
+
+@pytest.mark.asyncio
+async def test_event_wait_loop_dedup_fallback_no_ticket_id() -> None:
+    """When checkpoint has no ticket_id key, dedup_key fills the gap."""
+    env = build_env()
+    sub_id = "sub-wfe-missing"
+
+    info = SubsessionInfo(
+        id=sub_id,
+        kind=SubsessionKind.WAIT_FOR_EVENT,
+        owner_session_id=OWNER,
+        parent_id=None,
+        depth=1,
+        title="event monitor",
+        prompt="monitor ticket bar",
+        model_level=3,
+        status=SubsessionStatus.RUNNING,
+        created_at=1000.0,
+        last_activity_at=1000.0,
+        dedup_key="ticket-xyz-789",
+        checkpoint={"last_known_state": "open"},
+        event_timeout_seconds=5.0,
+    )
+    env.registry._subs[sub_id] = info
+
+    with (
+        patch.object(
+            env.registry, "wait_for_inbox", new_callable=AsyncMock
+        ) as mock_wait,
+        patch.object(
+            env.registry, "update_checkpoint", wraps=env.registry.update_checkpoint
+        ) as mock_update,
+        patch.object(env.registry, "drain_inbox", return_value=[]) as _mock_drain,
+    ):
+        mock_wait.return_value = True
+
+        result = await _event_wait_loop(
+            env, info, sub_id, previous_result="last ok", consecutive_no_change=2
+        )
+
+    # update_checkpoint should merge ticket_id into the existing checkpoint.
+    mock_update.assert_called_once_with(
+        sub_id, {"last_known_state": "open", "ticket_id": "ticket-xyz-789"}
+    )
+    assert info.checkpoint == {
+        "last_known_state": "open",
+        "ticket_id": "ticket-xyz-789",
+    }
+    assert result is not None
+    pending, prev, cn_change = result
+    assert prev == "last ok"
+    assert cn_change == 2
+
+
+@pytest.mark.asyncio
+async def test_event_wait_loop_closes_when_no_ticket_id_and_no_dedup_key() -> None:
+    """When both checkpoint and dedup_key lack a ticket_id, the subsession is closed."""
+    env = build_env()
+    sub_id = "sub-wfe-noid"
+
+    info = SubsessionInfo(
+        id=sub_id,
+        kind=SubsessionKind.WAIT_FOR_EVENT,
+        owner_session_id=OWNER,
+        parent_id=None,
+        depth=1,
+        title="broken monitor",
+        prompt="monitor ticket baz",
+        model_level=3,
+        status=SubsessionStatus.RUNNING,
+        created_at=1000.0,
+        last_activity_at=1000.0,
+        dedup_key=None,
+        checkpoint=None,
+        event_timeout_seconds=5.0,
+    )
+    env.registry._subs[sub_id] = info
+
+    result = await _event_wait_loop(
+        env, info, sub_id, previous_result=None, consecutive_no_change=0
+    )
+
+    # The function returns None when the subsession is closed.
+    assert result is None
+    # The subsession should be marked closed.
+    refreshed = env.registry.get(sub_id)
+    assert refreshed is not None
+    assert refreshed.status is SubsessionStatus.CLOSED
+    assert refreshed.close_reason == "missing_ticket_id"
+    assert "no recoverable ticket_id" in (refreshed.summary or "").lower()
