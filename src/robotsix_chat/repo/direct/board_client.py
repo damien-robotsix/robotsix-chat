@@ -425,9 +425,27 @@ class BoardClient:
         ticket_id = data.get("id")
         if isinstance(ticket_id, str) and ticket_id:
             logger.info(
-                "BoardClient: created ticket %s (%s)",
+                "BoardClient: created ticket %s (%s) — verifying persistence",
                 ticket_id,
                 title[:80],
+            )
+            # Immediately verify the ticket is retrievable — the board API
+            # may return an ID that never actually persisted (phantom ticket).
+            verify_data, verify_reason = await self._fetch_ticket(
+                ticket_id, "create-verify"
+            )
+            if verify_data is None:
+                logger.warning(
+                    "BoardClient: created ticket %s but verification failed: "
+                    "%s — the ticket may not have persisted; treating as "
+                    "failure",
+                    ticket_id,
+                    verify_reason,
+                )
+                return None
+            logger.info(
+                "BoardClient: verified ticket %s is retrievable",
+                ticket_id,
             )
             return ticket_id
         logger.warning(

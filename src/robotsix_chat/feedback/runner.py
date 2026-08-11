@@ -684,6 +684,14 @@ class FeedbackRunner:
                     ticket["title"],
                     resp.status_code,
                 )
+                # Verify persistence: the ingest endpoint may accept the
+                # payload but never actually create a retrievable ticket.
+                # Immediately GET the returned ID to confirm it exists.
+                await self._verify_ingested_ticket(
+                    resp=resp,
+                    ticket_title=ticket["title"],
+                    client=client,
+                )
                 return True
             else:
                 logger.warning(
@@ -714,6 +722,70 @@ class FeedbackRunner:
                         exc_info=True,
                     )
             return False
+
+    async def _verify_ingested_ticket(
+        self,
+        *,
+        resp: httpx.Response,
+        ticket_title: str,
+        client: httpx.AsyncClient,
+    ) -> None:
+        """Immediately verify that an ingested ticket is retrievable.
+
+        The board's ``/tickets/ingest`` endpoint may accept a payload
+        but never actually persist the ticket (phantom ticket).  Parse
+        the response for a returned ticket ID and GET it to confirm.
+        A verification failure is logged as a warning — it does not
+        change the filed/failed count since the server already
+        acknowledged the ingest.
+        """
+        # Parse the response body for a ticket ID.
+        try:
+            body = resp.json()
+        except json.JSONDecodeError, ValueError:
+            body = {}
+        if not isinstance(body, dict):
+            return
+
+        ticket_id: str | None = body.get("id") or body.get("ticket_id")
+        if not ticket_id or not isinstance(ticket_id, str):
+            return
+
+        verify_url = f"{self._board_url}/tickets/{ticket_id}"
+        verify_headers: dict[str, str] = {"Accept": "application/json"}
+        if self._board_token:
+            verify_headers["Authorization"] = f"Bearer {self._board_token}"
+
+        try:
+            verify_resp = await client.get(verify_url, headers=verify_headers)
+            if verify_resp.status_code == 404:
+                logger.warning(
+                    "Feedback ticket %r filed but not retrievable "
+                    "(HTTP 404 for %s) — phantom ticket may have "
+                    "been created",
+                    ticket_title,
+                    ticket_id,
+                )
+            elif verify_resp.status_code >= 400:
+                logger.warning(
+                    "Feedback ticket %r filed but verification returned HTTP %d for %s",
+                    ticket_title,
+                    verify_resp.status_code,
+                    ticket_id,
+                )
+            else:
+                logger.debug(
+                    "Feedback ticket %r verified retrievable at %s",
+                    ticket_title,
+                    ticket_id,
+                )
+        except Exception:
+            logger.warning(
+                "Feedback ticket %r filed but verification request failed for %s",
+                ticket_title,
+                ticket_id,
+                exc_info=True,
+            )
 
     def _apply_cap(
         self,
