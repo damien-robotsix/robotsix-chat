@@ -1236,6 +1236,19 @@ class TestSanitizeReactionReply:
         result = _sanitize_reaction_reply("sub_id abc12345: all done")
         assert "sub_id" not in result
 
+    def test_strips_subsession_summaries_header(self) -> None:
+        """Lines containing 'Subsession summaries:' header are dropped."""
+        result = _sanitize_reaction_reply(
+            "Subsession summaries:\n"
+            "[0] kind=periodic status=paused\n"
+            "  Monitor reported no change."
+        )
+        assert "Subsession summaries" not in result
+        assert "kind=" not in result
+        assert "status=" not in result
+        # Valid content after metadata survives.
+        assert "Monitor reported no change" in result
+
     def test_strips_multiple_metadata_lines(self) -> None:
         """Multiple metadata-only lines are all dropped."""
         result = _sanitize_reaction_reply(

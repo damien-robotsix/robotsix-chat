@@ -59,7 +59,8 @@ _REACT_PROMPT_TEMPLATE = (
     "you were not actively conversing with the user. Outcome:\n\n{outcome}\n\n"
     "FORMAT PROHIBITION (hard rule — violation will confuse the user): "
     "NEVER output any of these patterns: 'kind=', 'status=', '[N] kind=', "
-    "'sub_id', raw bullet enumerations like '[1] kind=periodic status=closed', "
+    "'sub_id', 'Subsession summaries:', raw bullet enumerations like "
+    "'[1] kind=periodic status=closed', "
     "or any line that looks like a dump of internal subsession metadata.  "
     "These read as debug output — users want to know what happened and what "
     "to do, not how the system works internally.\n\n"
@@ -142,7 +143,8 @@ _REACT_PROMPT_ACTIVE_PLAN_TEMPLATE = (
     "task, acknowledge it in one sentence and move on.  This is a note, not "
     "a blocker: stay on your plan and continue from where you left off.\n\n"
     "FORMAT PROHIBITION: NEVER output patterns like 'kind=', 'status=', "
-    "'[N] kind=', or raw bullet enumerations of subsession metadata.  "
+    "'[N] kind=', 'Subsession summaries:', or raw bullet enumerations of "
+    "subsession metadata.  "
     "These read as debug output.\n\n"
     "CONSOLIDATION: Scan the conversation above for other subsession outcomes "
     "you have acknowledged.  If ANY exist, you MUST synthesize ALL of them — "
@@ -203,6 +205,7 @@ _RAW_METADATA_LINE_RE = re.compile(
     r"|status=\w+"  # status=closed
     r"|No ticket_id"  # "No ticket_id in checkpoint"
     r"|sub_id\s"  # sub_id followed by identifier
+    r"|Subsession summaries:"  # feedback-system metadata header
     r")",
     re.IGNORECASE,
 )
