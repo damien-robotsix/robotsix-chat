@@ -230,7 +230,6 @@ class ContinuationStore:
             self._path.parent.mkdir(parents=True, exist_ok=True)
         except OSError:
             logger.warning("Could not create parent dir for %s", self._path)
-            return
 
         data: dict[str, Any] = {
             "pending_session_id": self._state.pending_session_id,
@@ -261,7 +260,7 @@ class ContinuationStore:
             audit = raw.get("audit_log")
             if isinstance(audit, list):
                 self._state.audit_log = audit
-        except json.JSONDecodeError, OSError, ValueError:
+        except (json.JSONDecodeError, OSError, ValueError):
             logger.warning(
                 "Could not read continuation store %s; starting empty",
                 self._path,

@@ -1335,6 +1335,10 @@ async def test_run_server_from_config_creates_agent_from_settings(
         from robotsix_chat.knowledge.store import KnowledgeStore
 
         assert isinstance(knowledge_store, KnowledgeStore)
+        continuation_store = call_args[1].pop("continuation_store")
+        from robotsix_chat.continuation.store import ContinuationStore
+
+        assert isinstance(continuation_store, ContinuationStore)
         from robotsix_chat.config.models import HealthSettings
 
         assert call_args[1] == {

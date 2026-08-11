@@ -274,6 +274,7 @@ SHARED_PARAMS: frozenset[str] = frozenset(
         "diagnostic_store",
         "knowledge_store",
         "health_settings",
+        "continuation_store",
     }
 )
 
@@ -311,6 +312,7 @@ def create_app(
     diagnostic_store: Any = None,
     knowledge_store: Any = None,
     health_settings: HealthSettings | None = None,
+    continuation_store: Any = None,
 ) -> Starlette:
     """Return a Starlette ASGI app wired to ``agent``.
 
@@ -426,6 +428,11 @@ def create_app(
             :class:`~robotsix_chat.config.models.HealthSettings` controlling
             the periodic health-check scheduler.  When ``None`` (default),
             the default settings are used (enabled, 300 s interval).
+        continuation_store: Shared
+            :class:`~robotsix_chat.continuation.store.ContinuationStore`
+            instance for pending post-restart continuations.  When
+            ``None`` (default), the chat endpoint does not reset the
+            consecutive-continuation guardrail counter on operator messages.
 
     """
     routes: list[Route | Mount] = [
@@ -634,6 +641,7 @@ def create_app(
     else:
         app.state.health_scheduler = None
     app.state.health_status = None  # populated after first check cycle
+    app.state.continuation_store = continuation_store  # may be None
     if config_path is not None:
         app.state.config_path = config_path
     if draft_store_dir is not None:

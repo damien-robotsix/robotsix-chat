@@ -694,6 +694,14 @@ async def chat_endpoint(
     if not message:
         message = ""
 
+    # Reset the continuation guardrail counter on every operator-initiated
+    # message so auto-continuations do not accumulate across normal sessions.
+    continuation_store = getattr(
+        request.app.state, "continuation_store", None
+    )
+    if continuation_store is not None:
+        continuation_store.reset_consecutive()
+
     # Resolve session identity — accept session_id + owner_id (new) or
     # client_id (legacy fallback: client_id becomes both owner and session).
     session_id = body.get("session_id")
