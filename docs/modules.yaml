@@ -355,6 +355,7 @@ modules:
       - tests/subsessions/test_tools.py
       - tests/subsessions/test_watcher.py
       - tests/subsessions/test_worker.py
+      - tests/subsessions/test_worker_mill.py
 
   - id: refdocs
     description: "Read-only reference-docs tool — lets the chat agent read team repos."
