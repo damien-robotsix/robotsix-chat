@@ -386,7 +386,7 @@ the feedback run never auto-approves. Disabled by default.
    run start within `dedup_window_seconds`, the new run is skipped. This prevents multiple
    compactions or session-end triggers (from concurrent subsessions) from spawning overlapping
    analyses of the same transcript.
-2. **Title-level dedup** — before POSTing a ticket, the runner checks whether a ticket with the same
+1. **Title-level dedup** — before POSTing a ticket, the runner checks whether a ticket with the same
    normalised title (lowercased, stripped) was filed within `dedup_window_seconds`. This catches
    cross-session duplicates that the session-level debounce cannot guard.
 
@@ -417,11 +417,11 @@ Feedback tickets are filed against a set of allowed target repos. The set is res
 
 1. **Deploy roster** — `GET http://central-deploy:8100/chat/components` fetches the list of
    currently deployed chat components. Each component's `id` becomes a candidate target repo.
-2. **Mill repo registry** — `GET http://mill:8077/repos` fetches the list of registered repos from
+1. **Mill repo registry** — `GET http://mill:8077/repos` fetches the list of registered repos from
    the mill board.
-3. **Intersection** — only repos present in *both* the deploy roster *and* the mill repo registry
+1. **Intersection** — only repos present in *both* the deploy roster *and* the mill repo registry
    are allowed. A repo that is registered but not deployed (or vice versa) cannot receive tickets.
-4. **Fallback** — if either service is unreachable, returns an empty response, or the intersection
+1. **Fallback** — if either service is unreachable, returns an empty response, or the intersection
    is empty, the runner falls back to `["robotsix-chat"]` and logs a warning so the feedback
    pipeline continues to function in a degraded state.
 
