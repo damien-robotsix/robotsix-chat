@@ -502,12 +502,12 @@ Read-only Docker Registry v2 digest-resolution tool for the agent. When enabled,
 `resolve_docker_digest` tool that resolves a Docker image reference (e.g. `python:3.14-slim`) and
 target platform to its immutable `sha256:...` content digest. Enabled by default.
 
-| JSON key                       | Type      | Default                     | Description                                                                                 |
-| ------------------------------ | --------- | --------------------------- | ------------------------------------------------------------------------------------------- |
-| `docker_digest.enabled`        | `boolean` | `true`                      | Master switch. When `false`, no `resolve_docker_digest` tool is offered.                    |
-| `docker_digest.timeout`        | `number`  | `30.0`                      | Per-request HTTP timeout in seconds.                                                        |
-| `docker_digest.registry_host`  | `string`  | `"registry-1.docker.io"`    | Docker Registry v2 hostname for manifest lookups (Docker Hub).                              |
-| `docker_digest.auth_url`       | `string`  | `"https://auth.docker.io/token"` | Token-authentication endpoint for bearer tokens (Docker Hub's auth service).           |
+| JSON key                      | Type      | Default                          | Description                                                                  |
+| ----------------------------- | --------- | -------------------------------- | ---------------------------------------------------------------------------- |
+| `docker_digest.enabled`       | `boolean` | `true`                           | Master switch. When `false`, no `resolve_docker_digest` tool is offered.     |
+| `docker_digest.timeout`       | `number`  | `30.0`                           | Per-request HTTP timeout in seconds.                                         |
+| `docker_digest.registry_host` | `string`  | `"registry-1.docker.io"`         | Docker Registry v2 hostname for manifest lookups (Docker Hub).               |
+| `docker_digest.auth_url`      | `string`  | `"https://auth.docker.io/token"` | Token-authentication endpoint for bearer tokens (Docker Hub's auth service). |
 
 ## Reaching fleet components
 
@@ -677,8 +677,6 @@ files when diagnostics detect they are missing. Disabled by default.
 | `sftp.private_key_passphrase` | `string` (secret) | `""`    | Passphrase for `private_key`, if the key is encrypted.                                                      |
 | `sftp.known_hosts`            | `string`          | `""`    | OpenSSH-format known-hosts entries for host key verification. When empty, host key verification is skipped. |
 | `sftp.remote_root`            | `string`          | `""`    | Optional base directory on the remote server to restrict all operations under (e.g. `/var/www`).            |
-
-
 
 ## Schema
 
