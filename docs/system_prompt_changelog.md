@@ -1915,6 +1915,28 @@ The hash is computed on the output of `build_autonomous_instruction(Settings())`
 autonomous settings at their pydantic field defaults (``proposal_marker="---PROPOSAL READY---"``,
 ``completion_marker="---AUTONOMOUS COMPLETE---"``, ``stale_monitor_runs_before_completion=3``).
 
+## AUTONOMOUS v10 — 2026-08-12 — track-ticket-resume-failures-before-re-7f2c
+
+**Summary:** Add `TICKET RESUMPTION DISCIPLINE` section to the autonomous
+protocol. Before resuming a blocked ticket via POST /tickets/{id}/resume-blocked,
+the agent must check whether the ticket has already been auto-resumed and
+blocked again with the same error. Repeatedly resuming a ticket with the same
+underlying cause wastes operator attention and produces conflicting analyses —
+each resume cycle may surface a different proximate symptom while the root cause
+remains unaddressed. The new section instructs the agent to check ticket history
+before resuming, decline re-resumption when the error pattern repeats, and
+deliver a single consistent diagnosis rather than changing the root-cause
+explanation across cycles.
+
+**Rationale:** The assistant resumed a chat-access ticket during disk-space
+recovery, but the ticket had already been auto-resumed and failed again with
+the same clone error — leading to a contradiction where the recovery summary
+claimed disk space while a subsequent priority task identified a GitHub App
+scope issue. Tracking prior resume outcomes prevents conflicting analyses and
+operator confusion.
+
+**SHA256:** `4ae7c091f9840dc2c485cabed2224247db84b0978a34ffce3ef24cbfc73f1ef4`
+
 ## AUTONOMOUS v9 — 2026-08-11 — add-autonomous-approval-capability-for-r-afd3
 
 **Summary:** Add `auto_approve_routine_secret_provisioning` autonomy setting and
