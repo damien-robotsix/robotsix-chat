@@ -73,7 +73,14 @@ class ComponentAgentClient:
         :func:`safe_http_request` and returned as user-facing strings
         — these are interactive inspect/configure tools, not durable writes.
         """
-        endpoint = "monitor" if kind == "monitor" else "config"
+        _endpoint_map = {
+            "monitor": "monitor",
+            "config-get": "config",
+            "config-set": "config",
+        }
+        endpoint = _endpoint_map.get(kind)
+        if endpoint is None:
+            return f"Error: unknown component-agent kind '{kind}'"
         url = f"{base_url.rstrip('/')}/api/component-agent/{endpoint}"
         result = await safe_http_request(
             "POST",
