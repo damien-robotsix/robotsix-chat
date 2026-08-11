@@ -472,6 +472,23 @@ class LlmioChatAgent:
                 # "sources fetched, all empty" rather than "I cannot search".
                 web_tools=True,
             )
+            # -----------------------------------------------------------------
+            # Inject session_id into the Claude SDK handle so the CLI reuses
+            # its session cache rather than re-sending the system prompt on
+            # every turn.  Without this the 24.6:1 input:output ratio on
+            # fable-5 is almost entirely static-prefix re-billing — pure
+            # cap-headroom waste on the Claude subscription.
+            if session_id:
+                _orig_build = getattr(handle, "_build_options", None)
+                if _orig_build is not None:
+
+                    def _build_with_session(sp: str) -> Any:
+                        opts = _orig_build(sp)
+                        opts.session_id = session_id
+                        return opts
+
+                    handle._build_options = _build_with_session  # type: ignore[attr-defined]
+            # -----------------------------------------------------------------
             try:
                 with (
                     _trace_session(
@@ -602,6 +619,18 @@ class LlmioChatAgent:
                     builtin_tools=False,
                     web_tools=True,  # see the primary handle above
                 )
+                # Same session_id injection as the primary handle path
+                # (see _attempt above for rationale).
+                if session_id:
+                    _fb_orig = getattr(fallback_handle, "_build_options", None)
+                    if _fb_orig is not None:
+
+                        def _fb_build(sp: str) -> Any:
+                            opts = _fb_orig(sp)
+                            opts.session_id = session_id
+                            return opts
+
+                        fallback_handle._build_options = _fb_build  # type: ignore[attr-defined]
                 try:
                     with (
                         _trace_session(

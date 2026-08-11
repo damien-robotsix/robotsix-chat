@@ -82,6 +82,12 @@
           "title": "Stale Monitor Runs Before Completion",
           "type": "integer"
         },
+        "model_level": {
+          "default": 4,
+          "description": "llmio capability level for autonomous auto-continue turns.  Default ``4`` (claudeSDK-claude-fable-5, keyless).  Env override: ``AUTONOMOUS_MODEL_LEVEL``.",
+          "title": "Model Level",
+          "type": "integer"
+        },
         "sessions": {
           "description": "Named autonomous session definitions.  The built-in default preset ``{\"name\": \"default\"}`` ships in the schema defaults and in the committed config template so it is always visible.  When the list is explicitly cleared, no autonomous sessions run \u2014 presets are the sole enablement model.  Each entry defines a prompt, trigger, max turns, and enabled flag for one autonomous session.",
           "items": {
@@ -1201,7 +1207,7 @@
           "type": "integer"
         },
         "default_model_level": {
-          "default": 2,
+          "default": 4,
           "title": "Default Model Level",
           "type": "integer"
         },
