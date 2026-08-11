@@ -742,7 +742,7 @@ class FeedbackRunner:
         # Parse the response body for a ticket ID.
         try:
             body = resp.json()
-        except (json.JSONDecodeError, ValueError):
+        except json.JSONDecodeError, ValueError:
             body = {}
         if not isinstance(body, dict):
             return

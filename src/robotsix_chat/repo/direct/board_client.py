@@ -137,7 +137,7 @@ class BoardClient:
             return None, f"Board API unreachable: {exc}"
         try:
             data = json.loads(text)
-        except (json.JSONDecodeError, TypeError):
+        except json.JSONDecodeError, TypeError:
             logger.warning(
                 "Non-JSON response for ticket %s: %s",
                 ticket_id,
