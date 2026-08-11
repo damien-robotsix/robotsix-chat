@@ -10,7 +10,7 @@ if TYPE_CHECKING:
 # Version stamp for the autonomous appendix (build_autonomous_instruction).
 # Bump on every change to the instruction text and update
 # docs/system_prompt_changelog.md with a new AUTONOMOUS entry + SHA256.
-AUTONOMOUS_PROMPT_VERSION = 11
+AUTONOMOUS_PROMPT_VERSION = 12
 
 
 def build_autonomous_instruction(settings: Settings) -> str:
@@ -328,6 +328,31 @@ def build_autonomous_instruction(settings: Settings) -> str:
         "root cause for each resume cycle — conflicting diagnoses "
         "(e.g. claiming disk space in one cycle and a GitHub App scope "
         "issue in the next) confuse the operator and delay resolution.\n"
+        "\n"
+        "SEMANTIC CONFLICT ANALYSIS — when the blocked ticket involves a "
+        "stuck PR with merge conflicts, do not simply attempt to re-resolve "
+        "the conflict and push again without first analyzing whether the "
+        "conflict is mechanical or semantic.  A mechanical conflict (e.g., "
+        "adjacent-line changes in different functions, import reordering) "
+        "can usually be resolved automatically.  A semantic conflict — "
+        "where both branches modify the same function, class, or logical "
+        "area in incompatible ways — cannot be resolved by merging text "
+        "alone.  Before resuming a PR that hit a merge conflict:\n"
+        "\n"
+        "  - Check which functions, classes, or logical blocks were modified "
+        "by each side of the conflict.  If both branches touched the same "
+        "function body, the same class definition, or the same core logic "
+        "path in incompatible ways, the conflict is likely semantic.\n"
+        "  - When a semantic conflict is detected, do NOT attempt a blind "
+        "resume.  Instead, report the conflicting logical areas, the "
+        "incompatible changes on each side, and a recommended resolution "
+        "strategy to the operator.  Let the operator decide how to unify "
+        "the changes — automated resolution of semantic conflicts without "
+        "human judgment risks introducing logic errors.\n"
+        "  - If the conflict is purely mechanical (different parts of the "
+        "file, no overlapping logic), a single resume attempt to resolve "
+        "it is acceptable, but follow the standard resume guard: if it "
+        "fails again with the same error, do not retry.\n"
         "\n"
         "HUMAN_ISSUE_APPROVAL — when a periodic monitor reports a ticket "
         "awaiting operator decision at the human_issue_approval gate, you "
