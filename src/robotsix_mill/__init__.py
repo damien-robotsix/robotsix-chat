@@ -52,6 +52,34 @@ if _LOCAL_STAGES not in robotsix_mill.stages.__path__:
     robotsix_mill.stages.__path__.insert(0, _LOCAL_STAGES)
 
 # ---------------------------------------------------------------------------
+# 4.5.  Eagerly import ``agents.runners`` and inject our local override
+#       directory at the front of its ``__path__`` so
+#       ``diagnostic_events.py`` is loaded from our local copy.  Must
+#       happen BEFORE any code imports
+#       ``robotsix_mill.agents.runners.diagnostic_events``.
+#
+#       The ``agents`` package eagerly imports ``runners`` (and
+#       ``runners`` eagerly imports ``diagnostic_events``), so by the
+#       time we reach this point ``diagnostic_events`` is already
+#       cached in ``sys.modules`` from the site-packages copy.  We
+#       eject the cached module and re-import after injecting the
+#       local path so our shadow is used instead.
+# ---------------------------------------------------------------------------
+_LOCAL_AGENTS_RUNNERS = str(_LOCAL_DIR / "agents" / "runners")
+
+# The ``agents`` package load above (via ``import robotsix_mill``) already
+# pulled in ``runners`` → ``diagnostic_events``.  Force our local path into
+# ``__path__`` and then reload ``diagnostic_events`` from the shadow.
+import robotsix_mill.agents.runners  # noqa: E402
+
+if _LOCAL_AGENTS_RUNNERS not in robotsix_mill.agents.runners.__path__:
+    robotsix_mill.agents.runners.__path__.insert(0, _LOCAL_AGENTS_RUNNERS)
+
+if "robotsix_mill.agents.runners.diagnostic_events" in sys.modules:
+    del sys.modules["robotsix_mill.agents.runners.diagnostic_events"]
+import robotsix_mill.agents.runners.diagnostic_events  # noqa: E402
+
+# ---------------------------------------------------------------------------
 # 5.  Patch ``load_agent_definition`` to prefer local overrides in
 #     ``agent_definitions/``.  When a YAML file exists under our local
 #     ``src/robotsix_mill/agent_definitions/`` directory, use it instead
