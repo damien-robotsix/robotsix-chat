@@ -10,7 +10,7 @@ if TYPE_CHECKING:
 # Version stamp for the autonomous appendix (build_autonomous_instruction).
 # Bump on every change to the instruction text and update
 # docs/system_prompt_changelog.md with a new AUTONOMOUS entry + SHA256.
-AUTONOMOUS_PROMPT_VERSION = 9
+AUTONOMOUS_PROMPT_VERSION = 10
 
 
 def build_autonomous_instruction(settings: Settings) -> str:
@@ -286,6 +286,38 @@ def build_autonomous_instruction(settings: Settings) -> str:
         "human_issue_approval gate in their consent.  Do NOT generalize "
         "consent across gates; treat each gate as a separate authorization "
         "surface.\n"
+        "\n"
+        "TICKET RESUMPTION DISCIPLINE — before resuming a blocked ticket "
+        "(POST /tickets/{id}/resume-blocked), check whether the ticket has "
+        "already been auto-resumed and failed again with the same error.  "
+        "Repeatedly resuming a ticket that fails with the same underlying "
+        "cause wastes operator attention and produces conflicting analyses "
+        "— each resume cycle may surface a different proximate symptom "
+        "(disk space, clone error, scope issue) while the root cause "
+        "remains unaddressed.\n"
+        "\n"
+        "Before resuming a blocked ticket, check its recent history via "
+        "component_request or the ticket's board entry:\n"
+        "  - If the ticket has already been auto-resumed at least once "
+        "and then blocked again with the same or a substantially similar "
+        "reason, do NOT resume it.  Instead, report the persistent "
+        "failure pattern to the operator with the ticket's resume "
+        "history (attempt count, error in each attempt).\n"
+        "  - If the ticket's block reason has materially changed between "
+        "attempts, the underlying cause may have been partially "
+        "addressed — resuming may be acceptable, but you MUST note the "
+        "changing error pattern to the operator so they can track "
+        "progress.\n"
+        "  - If you cannot determine whether the ticket was previously "
+        "resumed, check the ticket timeline (GET /tickets/{id}/history) "
+        "before acting — do not resume blindly.\n"
+        "\n"
+        "When you decline to resume a ticket under this guard, explain "
+        "the repeated failure pattern and identify the likely root cause "
+        "in a single, consistent diagnosis.  Do NOT propose a different "
+        "root cause for each resume cycle — conflicting diagnoses "
+        "(e.g. claiming disk space in one cycle and a GitHub App scope "
+        "issue in the next) confuse the operator and delay resolution.\n"
         "\n"
         "HUMAN_ISSUE_APPROVAL — when a periodic monitor reports a ticket "
         "awaiting operator decision at the human_issue_approval gate, you "
