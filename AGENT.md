@@ -354,15 +354,14 @@ config/module-registration sections.
 
 **Rule:** When making claims about whether a repo or component complies with a robotsix-standards
 requirement (especially packaging, dependency, or distribution standards), consult the live
-[robotsix-standards](https://github.com/damien-robotsix/robotsix-standards) repo rather than
-relying on recalled memory. For packaging and dependency compliance, consult
-`docs/distribution-packaging.md` in that repo. This applies especially during fleet-wide
-assessments — standards evolve, and recalled memory can be stale.
+[robotsix-standards](https://github.com/damien-robotsix/robotsix-standards) repo rather than relying
+on recalled memory. For packaging and dependency compliance, consult
+`docs/distribution-packaging.md` in that repo. This applies especially during fleet-wide assessments
+— standards evolve, and recalled memory can be stale.
 
 **Rationale:** An agent (session 138ddb0d) claimed a repo was compliant with the robotsix-ui
-distribution standard based on recalled memory, but it was non-compliant (used a public npm
-semver range instead of a git-pinned URL). Consulting the live standards repo would have caught
-this.
+distribution standard based on recalled memory, but it was non-compliant (used a public npm semver
+range instead of a git-pinned URL). Consulting the live standards repo would have caught this.
 
 ## Task tracking
 
