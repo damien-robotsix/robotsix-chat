@@ -589,6 +589,47 @@ async def test_paused_periodic_resumes_on_parent_message() -> None:
 
 
 @pytest.mark.asyncio
+async def test_paused_periodic_resume_resets_no_change_counter() -> None:
+    """Resume resets consecutive_no_change; monitor not immediately re-paused."""
+    # 5 NO_CHANGE replies: 3 to trigger auto-pause, then 2 more after
+    # resume to prove the counter was reset (otherwise the 4th would
+    # re-pause and the 5th would never happen).
+    agent = FakeAgent(["NO_CHANGE"] * 5)
+    env = build_env(
+        agent=agent,
+        settings=make_settings(max_idle_runs=3, auto_stop_no_change_runs=10),
+    )
+
+    sub_id = _spawn(env, kind=SubsessionKind.PERIODIC, interval_seconds=0.02)
+
+    # Wait for the worker to auto-pause after 3 consecutive NO_CHANGE runs.
+    await wait_until(lambda: len(agent.calls) >= 3)
+    await asyncio.sleep(0.15)
+
+    info = env.registry.get(sub_id)
+    assert info is not None
+    assert info.status is SubsessionStatus.PAUSED
+
+    # Send a parent message to resume.
+    env.registry.enqueue_message(sub_id, "parent", "resume please")
+
+    # The worker resumes.  The 4th call is the resumed turn; the 5th
+    # proves the counter was reset — without the fix the 4th NO_CHANGE
+    # would re-pause the monitor immediately and the 5th would never run.
+    await wait_until(lambda: len(agent.calls) >= 5, timeout=3.0)
+
+    # Clean up.
+    task = env.registry._running.get(sub_id)
+    if task is not None and not task.done():
+        task.cancel()
+    await asyncio.sleep(0.05)
+
+    info = env.registry.get(sub_id)
+    assert info is not None
+    assert len(agent.calls) >= 5
+
+
+@pytest.mark.asyncio
 async def test_paused_periodic_auto_resumes_on_timeout() -> None:
     """A paused periodic monitor auto-resumes after the configured timeout."""
     agent = FakeAgent(
