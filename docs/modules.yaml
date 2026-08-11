@@ -154,6 +154,15 @@ modules:
       - tests/config/test_system_prompt_governance.py
       - tests/config/test_config_hypothesis.py
 
+  - id: continuation
+    description: "Post-restart continuation — auto-resume a conversation after a restart so work-in-progress continues without human intervention."
+    paths:
+      - src/robotsix_chat/continuation/__init__.py
+      - src/robotsix_chat/continuation/store.py
+      - src/robotsix_chat/continuation/skill.md
+      - tests/continuation/__init__.py
+      - tests/continuation/test_continuation.py
+
   - id: chat
     description: "Chat SSE server — HTTP + Server-Sent Events bridge for human-to-agent chat."
     paths:

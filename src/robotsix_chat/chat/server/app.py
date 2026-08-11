@@ -31,6 +31,10 @@ from robotsix_chat.component_access import build_component_access_tools
 from robotsix_chat.component_client import build_component_tools
 from robotsix_chat.config import Settings
 from robotsix_chat.config.models import HealthSettings
+from robotsix_chat.continuation import (
+    build_continuation_tools,
+    load_continuation_skill,
+)
 from robotsix_chat.diagnostics import build_diagnostics_tools
 from robotsix_chat.docker_digest import (
     build_docker_digest_tools,
@@ -817,6 +821,11 @@ def _inject_skills(
         (settings.http_probe.enabled, "http_probe", load_http_probe_skill),
         (settings.docker_digest.enabled, "docker_digest", load_docker_digest_skill),
         (
+            settings.continuation.enabled,
+            "continuation",
+            load_continuation_skill,
+        ),
+        (
             settings.langfuse_inspect.enabled,
             "langfuse_inspect",
             load_langfuse_inspect_skill,
@@ -850,6 +859,7 @@ def _build_static_tools(
     conversation_store: ConversationStore | None = None,
     diagnostic_store: Any = None,
     knowledge_store: Any = None,
+    continuation_store: Any = None,
 ) -> list[Any]:
     """Return the static (non-per-request) tool suite gated by *settings*.
 
@@ -883,6 +893,9 @@ def _build_static_tools(
             ),
             *build_github_actions_tools(settings.github_actions, settings.direct_repo),
             *build_knowledge_tools(settings.knowledge, store=knowledge_store),
+            *build_continuation_tools(
+                settings.continuation, continuation_store=continuation_store
+            ),
             *build_diagnostics_tools(settings.diagnostics, store=diagnostic_store),
             *build_recent_activity_tools(settings.self_review, conversation_store),
             *build_version_check_tools(settings.version_check, settings.direct_repo),
@@ -975,6 +988,7 @@ def create_agent_from_settings(
     event_sink: EventSink | None = None,
     diagnostic_store: Any = None,
     knowledge_store: Any = None,
+    continuation_store: Any = None,
 ) -> LlmioChatAgent:
     """Build an :class:`LlmioChatAgent` wired from *settings*.
 
@@ -1039,6 +1053,7 @@ def create_agent_from_settings(
         conversation_store=conversation_store,
         diagnostic_store=diagnostic_store,
         knowledge_store=knowledge_store,
+        continuation_store=continuation_store,
     )
     if tool_wrapper is not None:
         tools = tool_wrapper(tools)

@@ -1597,6 +1597,34 @@ class SftpSettings(BaseModel):
     remote_root: str = ""
 
 
+class ContinuationSettings(BaseModel):
+    """Post-restart continuation — auto-resume a conversation after a restart.
+
+    When enabled, the agent gains tools to schedule a continuation that
+    fires automatically on the next boot, so work-in-progress resumes
+    without human intervention.  The primary use case is a self-restart
+    to pick up a newly-deployed capability: before calling
+    ``self_restart``, the agent schedules a continuation with the current
+    session id and a resume prompt.
+
+    Attributes:
+        enabled: Master switch.  Default ``False``.
+        store_path: Path to the JSON persistence file.  Must be on a
+            persistent volume so the continuation survives container
+            recreation.  Default ``/data/continuation.json``.
+        max_consecutive: Maximum number of consecutive auto-continuations
+            before the guardrail blocks further automatic firing.  This
+            prevents a restart→continue→restart→continue loop from running
+            indefinitely.  Default ``3``.
+
+    """
+
+    enabled: bool = False
+    store_path: str = "/data/continuation.json"
+    max_consecutive: int = Field(default=3, ge=1)
+    model_config = ConfigDict(extra="forbid")
+
+
 class HealthSettings(BaseModel):
     """Periodic health-check settings.
 

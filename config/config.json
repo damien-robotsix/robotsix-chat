@@ -240,6 +240,11 @@
     "auto_approve_routine_secret_provisioning": false,
     "suppress_no_change_monitors": false
   },
+  "continuation": {
+    "enabled": false,
+    "store_path": "/data/continuation.json",
+    "max_consecutive": 3
+  },
   "max_images_per_message": 8,
   "max_image_bytes": 5242880,
   "allowed_image_media_types": [
