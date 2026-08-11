@@ -16,9 +16,9 @@ ticket plan.
 
 ## Allowed operations
 
-| Tool              | Description                                                             |
-| ----------------- | ----------------------------------------------------------------------- |
-| `decompose_epic`  | Fetch epic data + history; return a structured decomposition plan.      |
+| Tool             | Description                                                        |
+| ---------------- | ------------------------------------------------------------------ |
+| `decompose_epic` | Fetch epic data + history; return a structured decomposition plan. |
 
 The tool signature is:
 
@@ -40,10 +40,10 @@ A JSON string with these fields:
 - `implement_cycles` — how many implement cycles have run against this epic.
 - `spawn_exhausted` — `true` when 3 or more implement cycles have run (the spawn limit).
 - `existing_children` — a list of existing child tickets, each with `id`, `title`, and
-  `state`.  May be empty when no children exist.
+  `state`. May be empty when no children exist.
 - `existing_children_error` — empty on success, or a diagnostic string when the child-list
   fetch failed.
-- `decomposition_plan` — a list of suggested child tickets (see below).  Empty when the epic
+- `decomposition_plan` — a list of suggested child tickets (see below). Empty when the epic
   already has children covering its scope.
 - `error` — empty on success, or a diagnostic message on failure (e.g. epic not found).
 
@@ -59,7 +59,7 @@ The `decomposition_plan` is a list of suggested child ticket objects, each with:
   the first ticket.
 
 **The plan is a skeleton — you MUST populate it with concrete titles and scopes derived from
-the epic description before creating child tickets.**  The tool provides the structural
+the epic description before creating child tickets.** The tool provides the structural
 analysis (spawn exhaustion, event history, existing children); you provide the domain
 judgment.
 
@@ -67,7 +67,7 @@ judgment.
 
 After calling `decompose_epic`, create each child ticket in dependency order via:
 
-```
+```json
 component_request("mill", "POST", "/tickets/ingest", json_body={
     "title": "...",
     "description": "...",
@@ -77,5 +77,5 @@ component_request("mill", "POST", "/tickets/ingest", json_body={
 })
 ```
 
-The board assigns a ticket ID automatically.  Use the epic's `ticket_id` as the `epic_id`
+The board assigns a ticket ID automatically. Use the epic's `ticket_id` as the `epic_id`
 field so the children are linked to the parent epic.
