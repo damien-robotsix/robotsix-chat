@@ -23,6 +23,7 @@ modules:
     paths:
       - src/robotsix_chat/__init__.py
       - src/robotsix_chat/py.typed
+      - src/robotsix_chat/startup_checks.py
       - tests/__init__.py
       - tests/conftest.py
       - tests/common/test_smoke.py
@@ -82,6 +83,7 @@ modules:
       - changelog.d/20260802T005237Z-auto-prioritize-user-requested-tickets-t-46db.misc.md
       - changelog.d/20260802T005450Z-correct-monitor-status-reporting-to-dist-a2ac.bugfix.md
       - changelog.d/20260809T140000Z-roster-replaces-fleet-auth.feature.md
+      - changelog.d/20260809T165000Z-startup-connectivity-check-for-compone-dbcb.feature.md
       - changelog.d/20260802T143816Z-test-test-tool-docstrings-forbid-merge-r-f85c.misc.md
       - changelog.d/20260809T014935Z-sanitize-sse-mid-stream-error-payload-st-0ede.bugfix.md
       - changelog.d/20260809T014841Z-config-constants-py-remove-dead-level4-d-ce01.misc.md
