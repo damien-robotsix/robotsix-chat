@@ -34,6 +34,7 @@ from __future__ import annotations
 
 import asyncio
 import logging
+import re
 import time
 from collections.abc import Sequence
 from typing import TYPE_CHECKING
@@ -186,6 +187,99 @@ _REASON_PHRASES: dict[str, str] = {
 # depth reaches this limit, further closures degrade to passive records so
 # a broken tool loop can't chain-react unboundedly.
 _MAX_REACTION_DEPTH = 3
+
+
+# -- patterns for sanitizing reaction replies --------------------------------
+
+# Lines that are entirely or predominantly internal subsession metadata.
+# Matches e.g. "0 kind=periodic status=closed", "[1] kind=periodic status=closed",
+# "No ticket_id in checkpoint".
+_RAW_METADATA_LINE_RE = re.compile(
+    r"^\s*"
+    r"(\[\d+\]\s*)?"  # optional [N] prefix
+    r"\d*\s*"  # optional bare digit prefix (0, 1, ...)
+    r"("
+    r"kind=\w+"  # kind=periodic
+    r"|status=\w+"  # status=closed
+    r"|No ticket_id"  # "No ticket_id in checkpoint"
+    r"|sub_id\s"  # sub_id followed by identifier
+    r")",
+    re.IGNORECASE,
+)
+
+# Parenthetical inline metadata: "(kind=periodic status=closed)"
+_INLINE_PAREN_METADATA_RE = re.compile(
+    r"\(\s*"
+    r"(\d+\s*)?"  # optional numeric prefix
+    r"((kind|status)=\w+\s*)+"  # one or more kind=/status= pairs
+    r"\)",
+    re.IGNORECASE,
+)
+
+# Bare inline "kind=X status=Y" clusters (no surrounding parens).
+_INLINE_KIND_STATUS_RE = re.compile(
+    r"\b(kind|status)=\w+(\s+(kind|status)=\w+)*\s*",
+    re.IGNORECASE,
+)
+
+# "[N]" bracket prefix patterns used as internal IDs.
+_INLINE_BRACKET_PREFIX_RE = re.compile(r"\[\d+\]\s*")
+
+# Multiple spaces → single space.
+_MULTI_SPACE_RE = re.compile(r"\s{2,}")
+
+# Comma cleanup: ", ," → ",", trailing/leading commas.
+_COMMA_CLEANUP_RE = re.compile(r",\s*,+")
+
+
+def _sanitize_reaction_reply(reply: str) -> str:
+    """Strip internal subsession metadata that the agent may have leaked.
+
+    The reaction prompt already instructs the agent not to output patterns
+    like ``kind=``, ``status=``, ``[N] kind=``, or raw system notices
+    (e.g. ``No ticket_id in checkpoint``).  When the LLM ignores those
+    instructions this function serves as a programmatic safety net so the
+    user never sees raw internal identifiers.
+
+    Returns a generic acknowledgment when the entire reply collapses to
+    empty after sanitization.
+    """
+    if not reply.strip():
+        return reply
+
+    lines = reply.splitlines()
+    cleaned: list[str] = []
+    for line in lines:
+        stripped = line.strip()
+        # Drop lines that are purely internal metadata noise.
+        if _RAW_METADATA_LINE_RE.match(stripped):
+            continue
+        # Strip inline metadata patterns from remaining lines.
+        cleaned.append(_strip_inline_metadata(line))
+
+    result = "\n".join(cleaned).strip()
+    # Remove blank lines that may result from stripping entire lines.
+    result = re.sub(r"\n{3,}", "\n\n", result)
+    if not result:
+        result = "I received a status update, but there is nothing new to report."
+    return result
+
+
+def _strip_inline_metadata(line: str) -> str:
+    """Remove inline ``kind=`` / ``status=`` / ``[N]`` patterns from *line*."""
+    # Parenthetical metadata: "(0 kind=periodic status=closed)" → ""
+    line = _INLINE_PAREN_METADATA_RE.sub("", line)
+    # Bare "kind=X status=Y" clusters.
+    line = _INLINE_KIND_STATUS_RE.sub("", line)
+    # "[0]" / "[1]" prefix patterns.
+    line = _INLINE_BRACKET_PREFIX_RE.sub("", line)
+    # Clean up artifacts like "( )", "()" before collapsing spaces.
+    line = line.replace("( )", "").replace("()", "")
+    # Clean up ", ," → "," and leading/trailing commas.
+    line = _COMMA_CLEANUP_RE.sub(",", line).strip(", ")
+    # Collapse multiple spaces.
+    line = _MULTI_SPACE_RE.sub(" ", line)
+    return line.strip()
 
 
 def _extract_ticket_id(info: SubsessionInfo) -> str | None:
@@ -589,6 +683,7 @@ class ParentDelivery:
                         )
                     return
                 reply = "".join(parts)
+                reply = _sanitize_reaction_reply(reply)
                 self._store.record_for_session(session_id, prompt, reply)
                 if reply and self._event_sink is not None:
                     self._event_sink.publish(
