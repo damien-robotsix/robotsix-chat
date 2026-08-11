@@ -55,10 +55,11 @@ if TYPE_CHECKING:
 logger = logging.getLogger(__name__)
 
 _REACT_PROMPT_TEMPLATE = (
-    "CONSOLIDATION RULE (apply FIRST — this overrides all other instructions "
-    "below): Scan the conversation above for other subsession outcomes you "
-    "have reported.  If ANY exist, you MUST synthesize ALL of them — this "
-    "new one PLUS the earlier ones — into ONE cohesive narrative paragraph. "
+    "MANDATORY CONSOLIDATION GATE — STOP.  Before writing ANY response, "
+    "apply this rule: Scan the conversation above for other subsession "
+    "outcomes you have reported.  If ANY exist, you MUST synthesize ALL "
+    "of them — this new one PLUS the earlier ones — into ONE cohesive "
+    "narrative paragraph. "
     "Group by theme (what was checked, what changed, what is recommended), "
     "NOT by subsession id.  Omit trivial NO_CHANGE runs entirely — mention "
     "only outcomes with real progress, blockers, or decisions for the user. "

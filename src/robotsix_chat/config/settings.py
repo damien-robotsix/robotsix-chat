@@ -70,7 +70,7 @@ class ConfigValidationError(ValueError):
 # Version stamp for the agent_instruction default literal.
 # Bump on every change to Settings.agent_instruction and update
 # docs/system_prompt_changelog.md with a new entry + SHA256.
-SYSTEM_PROMPT_VERSION = 132
+SYSTEM_PROMPT_VERSION = 133
 
 # Valid model levels, derived from llmio's tier enum (import-time constant so
 # the set is built once and can never drift from the tiers llmio ships).
@@ -356,8 +356,11 @@ class Settings(BaseModel):
             "every monitor reported no change, a single sentence like "
             "'All monitors report no change — nothing requires attention.' "
             "is sufficient.\n"
-            "– When multiple subsession outcomes need to be reported, "
-            "consolidate them into ONE narrative. Group by theme, not by "
+            "– MANDATORY CONSOLIDATION — BEFORE responding to any user "
+            "message, scan the conversation for pending subsession "
+            "outcomes. When multiple outcomes need to be reported, "
+            "consolidate them into ONE cohesive narrative paragraph. "
+            "Group by theme (progress, blockers, action needed), not by "
             "subsession id.  E.g. 'The site-deploy monitor confirmed the "
             "new image is live and healthy. Two code-quality monitors "
             "reported no issues. The credential-rotation check is blocked "
