@@ -1413,6 +1413,16 @@ class AutonomySettings(BaseModel):
             ``"robotsix-chat"``) eligible for auto-approval when
             ``auto_approve_self_authored`` is enabled.  Tickets
             targeting repos not listed here are always gated.
+        auto_approve_routine_secret_provisioning: When ``True``, the
+            agent may auto-approve routine secret provisioning
+            ``human_issue_approval`` tickets even when they touch
+            security-sensitive paths (``secrets/**``, ``credentials``),
+            provided the change has no code modifications, no
+            destructive operations, and is limited to
+            credential/secret/token provisioning.  This covers standard
+            operations like adding API keys, rotating credentials, or
+            provisioning access tokens where the agent's own assessment
+            confirms the change is routine and non-destructive.
         suppress_no_change_monitors: When ``True``, periodic and event
             monitor outcomes that carry no actionable delta
             (NO_CHANGE, completed normally, auto-paused) do not
@@ -1436,6 +1446,16 @@ class AutonomySettings(BaseModel):
         description=(
             "Repos eligible for auto-approval when "
             "auto_approve_self_authored is enabled."
+        ),
+    )
+    auto_approve_routine_secret_provisioning: bool = Field(
+        default=False,
+        description=(
+            "When True, the agent may auto-approve routine secret "
+            "provisioning human_issue_approval tickets even when they "
+            "touch security-sensitive paths — provided the change has "
+            "no code modifications, no destructive operations, and is "
+            "limited to credential/secret/token provisioning."
         ),
     )
     suppress_no_change_monitors: bool = Field(

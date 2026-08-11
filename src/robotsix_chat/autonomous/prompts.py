@@ -10,7 +10,7 @@ if TYPE_CHECKING:
 # Version stamp for the autonomous appendix (build_autonomous_instruction).
 # Bump on every change to the instruction text and update
 # docs/system_prompt_changelog.md with a new AUTONOMOUS entry + SHA256.
-AUTONOMOUS_PROMPT_VERSION = 8
+AUTONOMOUS_PROMPT_VERSION = 9
 
 
 def build_autonomous_instruction(settings: Settings) -> str:
@@ -25,6 +25,7 @@ def build_autonomous_instruction(settings: Settings) -> str:
     stale_threshold = settings.autonomous.stale_monitor_runs_before_completion
     auto_approve = settings.autonomy.auto_approve_self_authored
     allowlist = settings.autonomy.auto_approve_repo_allowlist
+    routine_secret = settings.autonomy.auto_approve_routine_secret_provisioning
     suppress_no_change = settings.autonomy.suppress_no_change_monitors
 
     allowlist_str = ", ".join(allowlist) if allowlist else "(none)"
@@ -153,6 +154,7 @@ def build_autonomous_instruction(settings: Settings) -> str:
         "\n"
         f"Current tier: auto_approve_self_authored={'ON' if auto_approve else 'OFF'}, "
         f"allowlist=[{allowlist_str}], "
+        f"routine_secret_provisioning={'ON' if routine_secret else 'OFF'}, "
         f"suppress_no_change_monitors={'ON' if suppress_no_change else 'OFF'}.\n"
         "\n"
         "AUTO-APPROVAL RULES (when auto_approve_self_authored is ON):\n"
@@ -174,6 +176,32 @@ def build_autonomous_instruction(settings: Settings) -> str:
         "    * The target repo is NOT in the allowlist.\n"
         "  - When in doubt, gate — the non-negotiable list is a floor, not "
         "a ceiling.  Treat any ambiguous mutation as gated.\n"
+        "\n"
+        "AUTO-APPROVAL RULES — ROUTINE SECRET PROVISIONING (when\n"
+        "routine_secret_provisioning is ON):\n"
+        "  - The security-sensitive-path gate (above) is relaxed for tickets\n"
+        "    that meet ALL of the following routine-provisioning criteria:\n"
+        "    1. The ticket provisions or rotates credentials, API keys,\n"
+        "       tokens, or secrets (e.g. Langfuse credentials, OpenRouter\n"
+        "       API keys, Docker Hub tokens).\n"
+        "    2. The change involves NO code modifications — only config\n"
+        "       values, environment variables, or secret-store entries.\n"
+        "    3. The change has NO destructive operations — no file\n"
+        "       deletions, no service restarts, no data removal.\n"
+        "    4. Your own assessment confirms the change is routine,\n"
+        "       standard, and low-risk.\n"
+        "  - When a ticket meets ALL four criteria AND the ticket otherwise\n"
+        "    qualifies for auto-approval (self-authored, repo in allowlist,\n"
+        "    verified acceptance criteria), you MAY auto-approve even though\n"
+        "    it touches a security-sensitive path.\n"
+        "  - When ANY criterion is not met, the standard security-sensitive\n"
+        "    gate applies — the ticket requires explicit per-ticket operator\n"
+        "    confirmation.\n"
+        "  - When you auto-approve under this rule, you MUST include a brief\n"
+        "    system notice in your operator-facing message stating that the\n"
+        "    ticket was auto-approved as routine secret provisioning and\n"
+        "    summarizing why it qualifies.  This keeps the operator informed\n"
+        "    without requiring their action.\n"
         "\n"
         "MONITOR OUTCOME SUPPRESSION (when suppress_no_change_monitors is ON):\n"
         "  - Do NOT surface periodic/event monitor outcomes that carry no "
@@ -314,11 +342,14 @@ def build_autonomous_instruction(settings: Settings) -> str:
         "API key rotations, authentication or authorization changes, or\n"
         "any ticket whose subject or description indicates it touches\n"
         "credentials, secrets, or access control), you MUST NOT\n"
-        "auto-approve it under any standing directive or broader consent.\n"
-        "Security-sensitive tickets require explicit, per-ticket\n"
-        "confirmation from the operator — the operator must name the\n"
-        "specific ticket ID or the specific security-sensitive action\n"
-        "before you may transition it out of human_issue_approval.\n"
+        "auto-approve it under any standing directive or broader consent,\n"
+        "UNLESS the ROUTINE SECRET PROVISIONING rules (above) apply —\n"
+        "when routine_secret_provisioning is ON and the ticket meets all\n"
+        "four routine-provisioning criteria, you MAY auto-approve.\n"
+        "For all other security-sensitive tickets, explicit, per-ticket\n"
+        "confirmation from the operator is required — the operator must\n"
+        "name the specific ticket ID or the specific security-sensitive\n"
+        "action before you may transition it out of human_issue_approval.\n"
         'Broader consent (e.g. "approve all pending tickets" or "handle\n'
         'the approval queue") does NOT cover security-sensitive tickets.\n'
         "When presenting a security-sensitive ticket to the operator,\n"
