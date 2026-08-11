@@ -3,6 +3,22 @@
 Governed artifact: `Settings.agent_instruction` default literal in
 `src/robotsix_chat/config/settings.py`. Version stamp: `SYSTEM_PROMPT_VERSION` in the same module.
 
+## v98 — 2026-08-09 — enforce-filtering-of-internal-subsession-3196
+
+**Summary:** Reinforce the subsession-outcome filtering rule as a hard prohibition
+("HARD FILTERING RULE") with explicit banned patterns including the
+`Subsession summaries:` header, `kind=`/`status=` metadata, bracketed `[N] kind=`
+enumerations, and tool-output-style dumps.  The previous instruction ("NEVER
+output a raw enumeration") was too soft — the assistant leaked a raw
+`Subsession summaries: [0] kind=periodic status=paused ...` line during a
+compaction-triggered turn.  The revised rule is emphatic, lists banned patterns
+explicitly, and covers every context (compacted sessions, active conversations,
+summaries, and single-turn replies).  The `Subsession summaries:` header is
+also added to the programmatic sanitizer regex (`_RAW_METADATA_LINE_RE`) and to
+the FORMAT PROHIBITION blocks in both reaction prompt templates in `delivery.py`.
+
+**SHA256:** `d16121a8aea32a42e449938491d90d1ae6b34ef81cbf305c8edb6725bc81ffbd`
+
 ## v97 — 2026-08-09 — automatically-prioritize-all-newly-filed-effb
 
 **Summary:** Add a standing rule that all tickets filed by the assistant must
