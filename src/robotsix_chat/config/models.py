@@ -457,6 +457,9 @@ class DiagnosticsSettings(BaseModel):
         observation_window_days: Days after a fix is applied to wait before
             generating an effectiveness report.  The pre-fix and post-fix
             windows are both this many days.  Default ``30``.
+        mill_events_path: Path to the mill's JSONL diagnostic event store,
+            used by ``read_diagnostic_events`` to inspect events emitted
+            by the mill.  Default ``/data/robotsix-mill/diagnostic_events.jsonl``.
 
     """
 
@@ -467,6 +470,7 @@ class DiagnosticsSettings(BaseModel):
     recurrence_threshold: int = 3
     recurrence_window_days: int = 30
     observation_window_days: int = 30
+    mill_events_path: str = "/data/robotsix-mill/diagnostic_events.jsonl"
     model_config = ConfigDict(extra="forbid")
 
 

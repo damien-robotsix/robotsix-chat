@@ -272,7 +272,7 @@
     },
     "DiagnosticsSettings": {
       "additionalProperties": false,
-      "description": "Diagnostics capture and systemic fix surfacing.\n\nWhen enabled, the agent captures diagnostic bundles for failure events\nand can detect recurring failure categories.  When a category crosses\nthe recurrence threshold a ``FixProposal`` is auto-generated (but NOT\nauto-applied) for agent or human review.\n\nApplied fixes are tracked in the effectiveness store; after the\nobservation window elapses a ``FixEffectivenessReport`` is generated\ncomparing pre-fix and post-fix recurrence counts.\n\nAttributes:\n    enabled: Master switch.  Default ``True``.\n    store_path: Path to the diagnostic-event JSON persistence file.\n        Default ``/data/diagnostics.json``.\n    proposals_path: Path to the fix-proposal JSON persistence file.\n        Default ``/data/fix_proposals.json``.\n    effectiveness_path: Path to the effectiveness-report JSON\n        persistence file.  Default ``/data/diagnostics_effectiveness.json``.\n    recurrence_threshold: Minimum number of occurrences within the\n        window to trigger a recurrence alert.  Default ``3``.\n    recurrence_window_days: Look-back window in days for recurrence\n        detection.  Default ``30``.\n    observation_window_days: Days after a fix is applied to wait before\n        generating an effectiveness report.  The pre-fix and post-fix\n        windows are both this many days.  Default ``30``.",
+      "description": "Diagnostics capture and systemic fix surfacing.\n\nWhen enabled, the agent captures diagnostic bundles for failure events\nand can detect recurring failure categories.  When a category crosses\nthe recurrence threshold a ``FixProposal`` is auto-generated (but NOT\nauto-applied) for agent or human review.\n\nApplied fixes are tracked in the effectiveness store; after the\nobservation window elapses a ``FixEffectivenessReport`` is generated\ncomparing pre-fix and post-fix recurrence counts.\n\nAttributes:\n    enabled: Master switch.  Default ``True``.\n    store_path: Path to the diagnostic-event JSON persistence file.\n        Default ``/data/diagnostics.json``.\n    proposals_path: Path to the fix-proposal JSON persistence file.\n        Default ``/data/fix_proposals.json``.\n    effectiveness_path: Path to the effectiveness-report JSON\n        persistence file.  Default ``/data/diagnostics_effectiveness.json``.\n    recurrence_threshold: Minimum number of occurrences within the\n        window to trigger a recurrence alert.  Default ``3``.\n    recurrence_window_days: Look-back window in days for recurrence\n        detection.  Default ``30``.\n    observation_window_days: Days after a fix is applied to wait before\n        generating an effectiveness report.  The pre-fix and post-fix\n        windows are both this many days.  Default ``30``.\n    mill_events_path: Path to the mill's JSONL diagnostic event store,\n        used by ``read_diagnostic_events`` to inspect events emitted\n        by the mill.  Default ``/data/robotsix-mill/diagnostic_events.jsonl``.",
       "properties": {
         "enabled": {
           "default": true,
@@ -308,6 +308,11 @@
           "default": 30,
           "title": "Observation Window Days",
           "type": "integer"
+        },
+        "mill_events_path": {
+          "default": "/data/robotsix-mill/diagnostic_events.jsonl",
+          "title": "Mill Events Path",
+          "type": "string"
         }
       },
       "title": "DiagnosticsSettings",

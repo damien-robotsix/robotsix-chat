@@ -375,7 +375,7 @@ class TestBuildDiagnosticsTools:
         tools = build_diagnostics_tools(settings)
         assert tools == []
 
-    def test_enabled_returns_six_tools(self, tmp_path) -> None:
+    def test_enabled_returns_seven_tools(self, tmp_path) -> None:
         settings = DiagnosticsSettings(
             enabled=True,
             store_path=str(tmp_path / "diag.json"),
@@ -383,7 +383,7 @@ class TestBuildDiagnosticsTools:
             effectiveness_path=str(tmp_path / "eff.json"),
         )
         tools = build_diagnostics_tools(settings)
-        assert len(tools) == 6
+        assert len(tools) == 7
 
     @pytest.mark.anyio
     async def test_list_diagnostic_events(self, tmp_path) -> None:
@@ -611,3 +611,229 @@ class TestDiagnosticStore:
         path.write_text("garbage")
         store = DiagnosticStore(path)
         assert store.list_events() == []
+
+
+# ---------------------------------------------------------------------------
+# read_diagnostic_events tool
+# ---------------------------------------------------------------------------
+
+
+class TestReadDiagnosticEvents:
+    """Smoke tests for the ``read_diagnostic_events`` agent tool."""
+
+    @pytest.mark.anyio
+    async def test_missing_file(self, tmp_path) -> None:
+        """Returns a clear message when the mill events file does not exist."""
+        settings = DiagnosticsSettings(
+            enabled=True,
+            store_path=str(tmp_path / "diag.json"),
+            proposals_path=str(tmp_path / "prop.json"),
+            effectiveness_path=str(tmp_path / "eff.json"),
+            mill_events_path=str(tmp_path / "nonexistent.jsonl"),
+        )
+        tools = build_diagnostics_tools(settings)
+        read_events = tools[6]
+
+        result = await read_events()
+        assert "No mill diagnostic events file found" in result
+
+    @pytest.mark.anyio
+    async def test_empty_file(self, tmp_path) -> None:
+        """Empty JSONL file returns a no-match message."""
+        events_path = tmp_path / "events.jsonl"
+        events_path.write_text("")
+
+        settings = DiagnosticsSettings(
+            enabled=True,
+            store_path=str(tmp_path / "diag.json"),
+            proposals_path=str(tmp_path / "prop.json"),
+            effectiveness_path=str(tmp_path / "eff.json"),
+            mill_events_path=str(events_path),
+        )
+        tools = build_diagnostics_tools(settings)
+        read_events = tools[6]
+
+        result = await read_events()
+        assert "No matching diagnostic events found" in result
+
+    @pytest.mark.anyio
+    async def test_happy_path_no_filter(self, tmp_path) -> None:
+        """Valid JSONL returns all events."""
+        events_path = tmp_path / "events.jsonl"
+        ts = "2025-06-15T12:00:00+00:00"
+        events_path.write_text(
+            f'{{"category": "CI_FAILURE", "timestamp": "{ts}",'
+            f' "message": "ci fail"}}\n'
+            f'{{"category": "CLONE_TARGET", "timestamp": "{ts}",'
+            f' "message": "clone fail"}}\n'
+        )
+
+        settings = DiagnosticsSettings(
+            enabled=True,
+            store_path=str(tmp_path / "diag.json"),
+            proposals_path=str(tmp_path / "prop.json"),
+            effectiveness_path=str(tmp_path / "eff.json"),
+            mill_events_path=str(events_path),
+        )
+        tools = build_diagnostics_tools(settings)
+        read_events = tools[6]
+
+        result = await read_events()
+        assert "CI_FAILURE" in result
+        assert "CLONE_TARGET" in result
+        assert "ci fail" in result
+        assert "clone fail" in result
+
+    @pytest.mark.anyio
+    async def test_filter_by_event_type(self, tmp_path) -> None:
+        """event_type filter matches against category/type/event_type fields."""
+        events_path = tmp_path / "events.jsonl"
+        ts = "2025-06-15T12:00:00+00:00"
+        events_path.write_text(
+            f'{{"category": "CI_FAILURE", "timestamp": "{ts}",'
+            f' "message": "ci 1"}}\n'
+            f'{{"type": "CLONE_TARGET", "timestamp": "{ts}",'
+            f' "message": "clone"}}\n'
+            f'{{"event_type": "CI_FAILURE", "timestamp": "{ts}",'
+            f' "message": "ci 2"}}\n'
+        )
+
+        settings = DiagnosticsSettings(
+            enabled=True,
+            store_path=str(tmp_path / "diag.json"),
+            proposals_path=str(tmp_path / "prop.json"),
+            effectiveness_path=str(tmp_path / "eff.json"),
+            mill_events_path=str(events_path),
+        )
+        tools = build_diagnostics_tools(settings)
+        read_events = tools[6]
+
+        result = await read_events(event_type="CI_FAILURE")
+        assert "ci 1" in result
+        assert "ci 2" in result
+        assert "clone" not in result
+
+    @pytest.mark.anyio
+    async def test_time_range_filtering(self, tmp_path) -> None:
+        """since/until ISO-8601 timestamps filter correctly."""
+        events_path = tmp_path / "events.jsonl"
+        events_path.write_text(
+            '{"category":"EVENT","timestamp":"2025-06-10T12:00:00+00:00","message":"old"}\n'
+            '{"category":"EVENT","timestamp":"2025-06-15T12:00:00+00:00","message":"mid"}\n'
+            '{"category":"EVENT","timestamp":"2025-06-20T12:00:00+00:00","message":"new"}\n'
+        )
+
+        settings = DiagnosticsSettings(
+            enabled=True,
+            store_path=str(tmp_path / "diag.json"),
+            proposals_path=str(tmp_path / "prop.json"),
+            effectiveness_path=str(tmp_path / "eff.json"),
+            mill_events_path=str(events_path),
+        )
+        tools = build_diagnostics_tools(settings)
+        read_events = tools[6]
+
+        result = await read_events(
+            since="2025-06-14T00:00:00+00:00",
+            until="2025-06-16T00:00:00+00:00",
+        )
+        assert "mid" in result
+        assert "old" not in result
+        assert "new" not in result
+
+    @pytest.mark.anyio
+    async def test_invalid_timestamp_graceful(self, tmp_path) -> None:
+        """Invalid ISO-8601 in since/until returns an error message."""
+        events_path = tmp_path / "events.jsonl"
+        ts = "2025-06-15T12:00:00+00:00"
+        events_path.write_text(
+            f'{{"category":"EVENT","timestamp":"{ts}","message":"hello"}}\n'
+        )
+
+        settings = DiagnosticsSettings(
+            enabled=True,
+            store_path=str(tmp_path / "diag.json"),
+            proposals_path=str(tmp_path / "prop.json"),
+            effectiveness_path=str(tmp_path / "eff.json"),
+            mill_events_path=str(events_path),
+        )
+        tools = build_diagnostics_tools(settings)
+        read_events = tools[6]
+
+        result = await read_events(since="not-a-timestamp")
+        assert "Invalid ISO-8601 timestamp" in result
+
+    @pytest.mark.anyio
+    async def test_limit_truncation(self, tmp_path) -> None:
+        """Results are truncated to *limit*."""
+        events_path = tmp_path / "events.jsonl"
+        ts = "2025-06-15T12:00:00+00:00"
+        lines = "\n".join(
+            f'{{"category":"EVENT","timestamp":"{ts}","message":"evt {i}"}}'
+            for i in range(10)
+        )
+        events_path.write_text(lines + "\n")
+
+        settings = DiagnosticsSettings(
+            enabled=True,
+            store_path=str(tmp_path / "diag.json"),
+            proposals_path=str(tmp_path / "prop.json"),
+            effectiveness_path=str(tmp_path / "eff.json"),
+            mill_events_path=str(events_path),
+        )
+        tools = build_diagnostics_tools(settings)
+        read_events = tools[6]
+
+        result = await read_events(limit=3)
+        assert "evt 0" in result
+        assert "evt 2" in result
+        assert "truncated to 3 events" in result
+        assert "evt 3" not in result
+
+    @pytest.mark.anyio
+    async def test_skips_malformed_lines(self, tmp_path) -> None:
+        """Non-JSON lines are silently skipped."""
+        events_path = tmp_path / "events.jsonl"
+        ts = "2025-06-15T12:00:00+00:00"
+        events_path.write_text(
+            f'{{"category":"EVENT","timestamp":"{ts}","message":"good"}}\n'
+            "this is not json\n"
+            f'{{"category":"EVENT","timestamp":"{ts}","message":"also good"}}\n'
+        )
+
+        settings = DiagnosticsSettings(
+            enabled=True,
+            store_path=str(tmp_path / "diag.json"),
+            proposals_path=str(tmp_path / "prop.json"),
+            effectiveness_path=str(tmp_path / "eff.json"),
+            mill_events_path=str(events_path),
+        )
+        tools = build_diagnostics_tools(settings)
+        read_events = tools[6]
+
+        result = await read_events()
+        assert "good" in result
+        assert "also good" in result
+        assert "[3]" not in result  # only 2 events shown, malformed line ignored
+
+    @pytest.mark.anyio
+    async def test_unparsable_timestamp_included(self, tmp_path) -> None:
+        """Events whose timestamp cannot be parsed are still included."""
+        events_path = tmp_path / "events.jsonl"
+        events_path.write_text(
+            '{"category":"EVENT","timestamp":"not-a-date","message":"bad ts"}\n'
+        )
+
+        settings = DiagnosticsSettings(
+            enabled=True,
+            store_path=str(tmp_path / "diag.json"),
+            proposals_path=str(tmp_path / "prop.json"),
+            effectiveness_path=str(tmp_path / "eff.json"),
+            mill_events_path=str(events_path),
+        )
+        tools = build_diagnostics_tools(settings)
+        read_events = tools[6]
+
+        result = await read_events(since="2025-01-01T00:00:00+00:00")
+        # unparsable timestamp → included (since we can't compare)
+        assert "bad ts" in result
