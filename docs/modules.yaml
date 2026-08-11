@@ -88,6 +88,8 @@ modules:
       - changelog.d/20260802T143816Z-test-test-tool-docstrings-forbid-merge-r-f85c.misc.md
       - changelog.d/20260809T014935Z-sanitize-sse-mid-stream-error-payload-st-0ede.bugfix.md
       - changelog.d/20260809T014841Z-config-constants-py-remove-dead-level4-d-ce01.misc.md
+      - changelog.d/20260811T213813Z-fix-claude-sdk-session-id-uuid.bugfix.md
+      - changelog.d/20260811T213813Z-revert-subsession-tier-rebalance.misc.md
       - changelog.d/20260801T104213Z-make-github-monitoring-subsessions-resil-601a.bugfix.md
       - release-please-config.json
       - .release-please-manifest.json

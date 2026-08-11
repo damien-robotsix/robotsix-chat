@@ -780,7 +780,7 @@ class SubsessionsSettings(BaseModel):
 
     max_concurrent: int = 8
     max_depth: int = 3
-    default_model_level: int = 4
+    default_model_level: int = 2
     min_interval_seconds: float = 60.0
     auto_stop_no_change_runs: int = 3
     max_idle_runs: int = 3
@@ -1352,14 +1352,6 @@ class AutonomousSettings(BaseModel):
             "autonomous session complete even while the monitor is still "
             "running.  Monitors continue in the background.  "
             "Env override: ``AUTONOMOUS_STALE_MONITOR_RUNS_BEFORE_COMPLETION``."
-        ),
-    )
-    model_level: int = Field(
-        default=4,
-        description=(
-            "llmio capability level for autonomous auto-continue turns.  "
-            "Default ``4`` (claudeSDK-claude-fable-5, keyless).  "
-            "Env override: ``AUTONOMOUS_MODEL_LEVEL``."
         ),
     )
     sessions: list[AutonomousSessionDefinition] = Field(
