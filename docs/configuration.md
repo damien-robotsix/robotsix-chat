@@ -233,15 +233,15 @@ Direct HTTP access to the mill's board API for listing, reading, and creating ti
 
 Failure capture and systemic fix surfacing. Enabled by default.
 
-| JSON key                              | Type      | Default                                  | Description                                                  |
-| ------------------------------------- | --------- | ---------------------------------------- | ------------------------------------------------------------ |
-| `diagnostics.enabled`                 | `boolean` | `true`                                   | Master switch.                                               |
-| `diagnostics.store_path`              | `string`  | `"/data/diagnostics.json"`               | Diagnostic-event JSON persistence path.                      |
-| `diagnostics.proposals_path`          | `string`  | `"/data/fix_proposals.json"`             | Fix-proposal JSON persistence path.                          |
-| `diagnostics.effectiveness_path`      | `string`  | `"/data/diagnostics_effectiveness.json"` | Effectiveness-report JSON persistence path.                  |
-| `diagnostics.recurrence_threshold`    | `integer` | `3`                                      | Occurrences within the window to trigger a recurrence alert. |
-| `diagnostics.recurrence_window_days`  | `integer` | `30`                                     | Look-back window in days for recurrence detection.           |
-| `diagnostics.observation_window_days` | `integer` | `30`                                     | Days after a fix to wait before an effectiveness report.     |
+| JSON key                              | Type      | Default                                         | Description                                                      |
+| ------------------------------------- | --------- | ----------------------------------------------- | ---------------------------------------------------------------- |
+| `diagnostics.enabled`                 | `boolean` | `true`                                          | Master switch.                                                   |
+| `diagnostics.store_path`              | `string`  | `"/data/diagnostics.json"`                      | Diagnostic-event JSON persistence path.                          |
+| `diagnostics.proposals_path`          | `string`  | `"/data/fix_proposals.json"`                    | Fix-proposal JSON persistence path.                              |
+| `diagnostics.effectiveness_path`      | `string`  | `"/data/diagnostics_effectiveness.json"`        | Effectiveness-report JSON persistence path.                      |
+| `diagnostics.recurrence_threshold`    | `integer` | `3`                                             | Occurrences within the window to trigger a recurrence alert.     |
+| `diagnostics.recurrence_window_days`  | `integer` | `30`                                            | Look-back window in days for recurrence detection.               |
+| `diagnostics.observation_window_days` | `integer` | `30`                                            | Days after a fix to wait before an effectiveness report.         |
 | `diagnostics.mill_events_path`        | `string`  | `"/data/robotsix-mill/diagnostic_events.jsonl"` | Path to the mill's JSONL event store for read_diagnostic_events. |
 
 ### Reference Docs (refdocs)

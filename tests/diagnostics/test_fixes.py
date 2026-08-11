@@ -817,7 +817,7 @@ class TestReadDiagnosticEvents:
         assert "[3]" not in result  # only 2 events shown, malformed line ignored
 
     @pytest.mark.anyio
-    async def test_unparseable_timestamp_included(self, tmp_path) -> None:
+    async def test_unparsable_timestamp_included(self, tmp_path) -> None:
         """Events whose timestamp cannot be parsed are still included."""
         events_path = tmp_path / "events.jsonl"
         events_path.write_text(
@@ -835,5 +835,5 @@ class TestReadDiagnosticEvents:
         read_events = tools[6]
 
         result = await read_events(since="2025-01-01T00:00:00+00:00")
-        # unparseable timestamp → included (since we can't compare)
+        # unparsable timestamp → included (since we can't compare)
         assert "bad ts" in result
