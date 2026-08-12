@@ -1126,13 +1126,15 @@ are added above by release-please.
 - Documentation site workflow.
 ### 0.0.0 (unreleased, pre-release-please)
 
+- Added `verify_pr_ci_status` direct-repo tool: fetches live PR state and CI workflow run status from
+  GitHub. The agent must call this before asserting PR/CI success — never rely on cached or inferred data.
 - Fix transient uv sync segfault in CI by adding `--preview-features malware-check` flag alongside `UV_MALWARE_CHECK: "1"` in all CI jobs that use the malware check.
 - **Post-deploy defacement detection:** add `scripts/http_probe_cli.py`, a standalone CLI that probes a live URL and exits non-zero when known defacement indicators (attacker signatures, unexpected CMS installs, AI-generated spam pages) are found. Designed as a zero-dependency-beyond-httpx post-deploy gate for any CI pipeline. The `http_probe` skill document now lists defacement-specific `expect_absent` patterns.
 - **CI health check:** The paused-monitor watcher now detects zero-job
   CI workflow runs on tracked PRs and emits a high-urgency SSE
   notification when the CI infrastructure is broken (workflow file parses
   but produces no jobs — typically a misconfigured trigger, invalid
-  conditional, or billing issue).  Previously, silently-broken CI could
+  condition, or billing issue).  Previously, silently-broken CI could
   persist for extended periods, allowing code issues to accumulate
   undetected before surfacing all at once when CI was eventually fixed.
 - Add `chat_model_level` config (default `null`) to override the LLM model level for the main interactive chat agent independently of `llmio_model_level`. This enables tier rebalancing — e.g. routing chat to `claude-fable-5` (level 4) while subsession/autonomous agents stay at their configured levels. Bump `robotsix-llmio` to latest main.
