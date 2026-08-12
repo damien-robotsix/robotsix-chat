@@ -75,3 +75,20 @@ shown — no extra fields, no missing fields.
 2. **Cut** the entire task section (heading + bullets) out of `TASKS.md`.
 3. **Paste** it at the bottom of `tasks/ARCHIVE.md` (below any existing archive entries).
 4. The active list stays focused; the history is preserved.
+
+## Feature request checklist
+
+Feature requests are tasks (`T-NNNN`) whose scope is new behaviour. Before a feature request is
+marked ready to implement, its `notes` must cover at least the first two items below — a request
+that skips them is a design gap, not a spec detail.
+
+- [ ] **Preconditions and edge cases** — define what happens when preconditions are not met (e.g.
+  a meeting already exists, a required field is empty, or a dependency is unavailable). State
+  whether the action blocks, overrides, or degrades gracefully.
+- [ ] **User-facing feedback for all states** — specify the visible response for every state the
+  user can reach (idle, in-progress, blocked, success, failure): a disabled or relabelled button,
+  a spinner, an error message, a confirmation. No state may be silent.
+- [ ] **Activation path** — for flag-gated features, the exact config keys and values that turn it
+  on, plus a live-proof step (see `AGENT.md` → *Feature flags and activation*).
+- [ ] **Definition of done** — a concrete check a reviewer can run to confirm the feature fires and
+  behaves as specified in production.
