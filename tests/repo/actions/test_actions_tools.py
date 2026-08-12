@@ -280,6 +280,51 @@ async def test_check_workflow_run_detects_never_started_run(
     assert "67890" in result
 
 
+@pytest.mark.asyncio
+async def test_check_workflow_run_detects_never_started_run_public_repo(
+    respx_mock: respx.MockRouter,
+) -> None:
+    """Never-started run on a public repo → no billing, trigger guidance."""
+    dr = _direct_repo_settings()
+
+    respx_mock.get(
+        url__startswith=f"{dr.github_api_base_url}/installation/repositories"
+    ).respond(json={"repositories": [{"full_name": "damien-robotsix/test-repo"}]})
+    respx_mock.get(
+        url__startswith=(
+            f"{dr.github_api_base_url}/repos/damien-robotsix/test-repo/actions/runs"
+        )
+    ).respond(
+        json={
+            "workflow_runs": [
+                {
+                    "id": 67890,
+                    "name": "Deploy",
+                    "status": "completed",
+                    "conclusion": "failure",
+                    "head_branch": "main",
+                    "event": "workflow_dispatch",
+                    "run_started_at": None,
+                }
+            ]
+        }
+    )
+    # Mock repo visibility check → public repo
+    respx_mock.get(
+        url=f"{dr.github_api_base_url}/repos/damien-robotsix/test-repo"
+    ).respond(json={"private": False})
+
+    tools = build_github_actions_tools(_actions_settings(), dr)
+    check_run = tools[2]
+
+    result = await check_run("test-repo")
+    assert "public" in result.lower()
+    assert "billing is not the issue" in result.lower()
+    assert "reusable workflow" in result.lower()
+    assert "never started" in result.lower()
+    assert "67890" in result
+
+
 # ---------------------------------------------------------------------------
 # check_workflow_run — healthy runs (no billing diagnostic)
 # ---------------------------------------------------------------------------
@@ -438,6 +483,40 @@ async def test_check_workflow_run_specific_run_no_jobs_public_repo(
     assert "public" in result.lower()
     assert "billing is not the issue" in result.lower()
     assert "reusable workflow" in result.lower()
+    assert "99" in result
+    assert "no jobs" in result.lower()
+
+
+@pytest.mark.asyncio
+async def test_check_workflow_run_specific_run_no_jobs_visibility_none(
+    respx_mock: respx.MockRouter,
+) -> None:
+    """Specific run_id with zero jobs and visibility check failing → neutral."""
+    dr = _direct_repo_settings()
+
+    respx_mock.get(
+        url__startswith=f"{dr.github_api_base_url}/installation/repositories"
+    ).respond(json={"repositories": [{"full_name": "damien-robotsix/test-repo"}]})
+    respx_mock.get(
+        url__startswith=(
+            f"{dr.github_api_base_url}/repos/damien-robotsix/test-repo"
+            "/actions/runs/99/jobs"
+        )
+    ).respond(json={"jobs": []})
+    # Mock repo visibility check → error (returns None)
+    respx_mock.get(
+        url=f"{dr.github_api_base_url}/repos/damien-robotsix/test-repo"
+    ).respond(status_code=500, json={"error": "Server Error"})
+
+    tools = build_github_actions_tools(_actions_settings(), dr)
+    check_run = tools[2]
+
+    result = await check_run("test-repo", run_id=99)
+    # Must NOT claim repo is public
+    assert "public repository" not in result.lower()
+    assert "billing is not the issue" not in result.lower()
+    # Neutral fallback: mentions billing as a possibility
+    assert "billing" in result.lower()
     assert "99" in result
     assert "no jobs" in result.lower()
 

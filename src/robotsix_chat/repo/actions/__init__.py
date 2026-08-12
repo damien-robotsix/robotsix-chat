@@ -155,8 +155,11 @@ def build_github_actions_tools(
 
         Use this to investigate a CI failure that has no obvious cause.
         The tool inspects recent workflow runs and detects known failure
-        signatures — in particular, private-repo billing failures where
-        GitHub Actions jobs never start.
+        signatures — including zero-job runs and never-started runs.
+        The diagnosis is visibility-aware: for public repos, billing is
+        never suggested as a cause; guidance focuses on trigger
+        misconfigurations, missing reusable workflow files, and
+        input-contract mismatches instead.
 
         **Read-only.**  Does not modify any repository state.
 

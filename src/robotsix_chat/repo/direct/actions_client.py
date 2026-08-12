@@ -360,16 +360,39 @@ class ActionsClient:
             )
 
         if not jobs:
-            return (
-                f"Workflow run {run_id} on {repo_full_name} has no jobs — "
-                f"this may indicate that GitHub Actions billing "
-                f"is not enabled for this private repository, or that the "
-                f"workflow trigger is misconfigured (e.g. only triggers on "
-                f"``push`` to ``main``, not on the event that created this "
-                f"run).  Check the workflow's ``on:`` trigger in "
-                f"``.github/workflows/``, and verify billing at "
-                f"Settings > Actions > General."
-            )
+            is_private = await self.check_repo_visibility(repo_full_name)
+            if is_private is True:
+                return (
+                    f"Workflow run {run_id} on {repo_full_name} has no jobs — "
+                    f"this may indicate that GitHub Actions billing "
+                    f"is not enabled for this private repository, or that the "
+                    f"workflow trigger is misconfigured (e.g. only triggers on "
+                    f"``push`` to ``main``, not on the event that created this "
+                    f"run).  Check the workflow's ``on:`` trigger in "
+                    f"``.github/workflows/``, and verify billing at "
+                    f"Settings > Actions > General."
+                )
+            elif is_private is False:
+                return (
+                    f"Workflow run {run_id} on {repo_full_name} has no jobs. "
+                    f"Since {repo_full_name} is a public repository, billing "
+                    f"is not the issue.  The likely causes are a missing "
+                    f"reusable workflow file (``.github/workflows/``), an "
+                    f"input-contract mismatch (e.g. a required "
+                    f"``workflow_call`` input not provided), or a "
+                    f"misconfigured trigger in the workflow's ``on:`` block."
+                )
+            else:
+                return (
+                    f"Workflow run {run_id} on {repo_full_name} has no jobs — "
+                    f"this may indicate that GitHub Actions billing "
+                    f"is not enabled for this private repository, or that the "
+                    f"workflow trigger is misconfigured (e.g. only triggers on "
+                    f"``push`` to ``main``, not on the event that created this "
+                    f"run).  Check the workflow's ``on:`` trigger in "
+                    f"``.github/workflows/``, and verify billing at "
+                    f"Settings > Actions > General."
+                )
 
         # Collect logs for failed / cancelled / timed-out jobs.
         log_results: list[str] = []
@@ -706,7 +729,7 @@ class ActionsClient:
                 f"or a missing reusable workflow file. "
                 f"PRs on this branch are not receiving CI coverage."
             )
-        else:
+        elif is_private is False:
             return (
                 f"CI INFRASTRUCTURE FAILURE: workflow run '{run_name}' "
                 f"(id {run_id}) on {repo_full_name} branch '{branch}' "
@@ -718,6 +741,17 @@ class ActionsClient:
                 f"mismatch (e.g. a required ``workflow_call`` input not "
                 f"provided by the caller). "
                 f"PRs on this branch are not receiving CI coverage."
+            )
+        else:
+            return (
+                f"CI INFRASTRUCTURE FAILURE: workflow run '{run_name}' "
+                f"(id {run_id}) on {repo_full_name} branch '{branch}' "
+                f"has ZERO jobs — the CI workflow is not executing any jobs. "
+                f"This may indicate a workflow configuration error "
+                f"(wrong trigger, invalid conditional), a billing issue, "
+                f"a missing reusable workflow file, or an input-contract "
+                f"mismatch.  PRs on this branch are not receiving CI "
+                f"coverage."
             )
 
     # -- billing failure diagnosis -----------------------------------------
