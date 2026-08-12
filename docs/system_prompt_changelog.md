@@ -1998,6 +1998,25 @@ The hash is computed on the output of `build_autonomous_instruction(Settings())`
 autonomous settings at their pydantic field defaults (``proposal_marker="---PROPOSAL READY---"``,
 ``completion_marker="---AUTONOMOUS COMPLETE---"``, ``stale_monitor_runs_before_completion=3``).
 
+## AUTONOMOUS v13 — 2026-08-13 — improve-diagnosis-of-persistent-git-clon-9b74
+
+**Summary:** Add `CLONE / WORKSPACE FETCH FAILURE DIAGNOSIS` section after
+`TICKET RESUMPTION DISCIPLINE`.  Teaches the assistant to categorise repo
+fetch failures as transient (disk space, network timeouts, 5xx) or persistent
+permission (403/404 with authenticated token, token exchange failures) BEFORE
+retrying or resuming.  When a clone failure repeats across retries — even with
+different proximate error messages — the assistant must flag it as a likely
+GitHub App installation scope gap and prompt the operator to check the
+installation scope, rather than proposing a different transient cause each cycle.
+
+**Rationale:** During session b2841a7c, the assistant attributed a persistent
+auto-mail repo clone failure to disk space (transient), but the root cause was
+a GitHub App installation scope issue.  The assistant retried the clone across
+multiple resume cycles, each time proposing a different transient diagnosis.
+Explicit failure-categorisation rules prevent this misdiagnosis loop.
+
+**SHA256:** `943c81892643f48c19c5469e9845a3a302dd48d46be49d2798dc40de7221f378`
+
 ## AUTONOMOUS v12 — 2026-08-09 — improve-conflict-detection-to-include-se-7d38
 
 **Summary:** Add `SEMANTIC CONFLICT ANALYSIS` section to the `TICKET RESUMPTION

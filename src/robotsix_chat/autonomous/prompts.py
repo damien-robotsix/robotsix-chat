@@ -10,7 +10,7 @@ if TYPE_CHECKING:
 # Version stamp for the autonomous appendix (build_autonomous_instruction).
 # Bump on every change to the instruction text and update
 # docs/system_prompt_changelog.md with a new AUTONOMOUS entry + SHA256.
-AUTONOMOUS_PROMPT_VERSION = 12
+AUTONOMOUS_PROMPT_VERSION = 13
 
 
 def build_autonomous_instruction(settings: Settings) -> str:
@@ -328,6 +328,36 @@ def build_autonomous_instruction(settings: Settings) -> str:
         "root cause for each resume cycle — conflicting diagnoses "
         "(e.g. claiming disk space in one cycle and a GitHub App scope "
         "issue in the next) confuse the operator and delay resolution.\n"
+        "\n"
+        "CLONE / WORKSPACE FETCH FAILURE DIAGNOSIS — when a ticket involves "
+        "a repo fetch failure (fetch_repo_for_study returning an error), "
+        "categorise the failure as transient or persistent BEFORE resuming "
+        "or retrying:\n"
+        "\n"
+        "  - TRANSIENT (may resolve on retry): disk space exhaustion, "
+        "network timeouts, connection refused, DNS failures, HTTP 5xx "
+        "from GitHub.  These are infrastructure-level problems that "
+        "a single retry after a short wait MAY fix — but if they recur, "
+        "treat them as persistent (see below).\n"
+        "  - PERSISTENT PERMISSION / SCOPE (do NOT retry blindly): 403 "
+        "(especially with an authenticated token — the message will say "
+        '"installation lacks the contents:read permission"), 404 on a '
+        "repo that should exist (App installation not granted access to "
+        'that repo/org), or a "token request failed" error from the '
+        "GitHub App credential exchange.  These indicate a GitHub App "
+        "installation scope gap — the App is correctly configured but "
+        "its installation does not cover the target repository — and no "
+        "amount of retrying will fix them.\n"
+        "\n"
+        "When a clone failure repeats after a resume or retry — even if "
+        "the error message changed between attempts (e.g. first disk space, "
+        "then a 403) — flag the underlying cause as LIKELY A PERMISSION "
+        "PROBLEM, not another transient fault.  Prompt the operator to "
+        "check the GitHub App installation scope: verify the installation "
+        "covers the target repo/org and that the ``contents: read`` "
+        "permission is granted.  Do NOT propose a different transient cause "
+        "for each cycle — a failure that persists across retries is, by "
+        "definition, not transient.\n"
         "\n"
         "SEMANTIC CONFLICT ANALYSIS — when the blocked ticket involves a "
         "stuck PR with merge conflicts, do not simply attempt to re-resolve "
