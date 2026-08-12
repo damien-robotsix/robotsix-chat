@@ -1528,6 +1528,18 @@ class AutonomySettings(BaseModel):
             "outcomes with no actionable delta."
         ),
     )
+    auto_self_restart: bool = Field(
+        default=False,
+        description=(
+            "When True, the agent may call self_restart without operator "
+            "approval after deploying capability changes (code changes, "
+            "component roster updates) that affect the agent's own "
+            "behaviour.  The agent must announce the restart with a brief "
+            "delay (e.g. 30 seconds) so the operator can interrupt if "
+            "needed.  Self-restart for any other reason still requires "
+            "explicit operator authorization."
+        ),
+    )
 
 
 class ComponentCredentials(BaseModel):

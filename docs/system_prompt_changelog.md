@@ -2082,6 +2082,26 @@ The hash is computed on the output of `build_autonomous_instruction(Settings())`
 autonomous settings at their pydantic field defaults (``proposal_marker="---PROPOSAL READY---"``,
 ``completion_marker="---AUTONOMOUS COMPLETE---"``, ``stale_monitor_runs_before_completion=3``).
 
+## AUTONOMOUS v20 — 2026-08-13 — automate-self-restart-after-capability-a-3ab1
+
+**Summary:** Add `AUTO SELF-RESTART` section to the autonomy tier. When
+`auto_self_restart` is ON, the agent may call `self_restart` without operator
+approval after deploying capability changes (code changes, component roster
+updates) that affect its own behaviour. The agent must announce the restart
+with a brief delay (at least 30 seconds) so the operator can interrupt if
+needed. Self-restart for any other reason still requires explicit operator
+authorization. The `auto_self_restart` flag is added to the tier display line
+alongside the existing `auto_approve_self_authored`, `allowlist`,
+`auto_approve_routine_secret_provisioning`, and `suppress_no_change_monitors`
+settings.
+
+**Rationale:** After capability-changing deploys the assistant previously asked
+the user for permission to self-restart — a mechanical operation that adds
+conversational overhead. Automating it under an explicit opt-in flag makes the
+system feel more autonomous while preserving the operator's ability to interrupt.
+
+**SHA256:** `b9330697842041868a4ebfc75468efee8eb19773c88a8322fd86ccf649a3f05b`
+
 ## AUTONOMOUS v19 — 2026-08-09 — reduce-approval-gate-friction-by-surfaci-cad4
 
 **Summary:** Add an `AUTONOMY PREFERENCE PROBING` section to the AUTONOMY TIER block.

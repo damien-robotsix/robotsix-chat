@@ -10,7 +10,7 @@ if TYPE_CHECKING:
 # Version stamp for the autonomous appendix (build_autonomous_instruction).
 # Bump on every change to the instruction text and update
 # docs/system_prompt_changelog.md with a new AUTONOMOUS entry + SHA256.
-AUTONOMOUS_PROMPT_VERSION = 19
+AUTONOMOUS_PROMPT_VERSION = 20
 
 
 def build_autonomous_instruction(settings: Settings) -> str:
@@ -27,6 +27,7 @@ def build_autonomous_instruction(settings: Settings) -> str:
     allowlist = settings.autonomy.auto_approve_repo_allowlist
     routine_secret = settings.autonomy.auto_approve_routine_secret_provisioning
     suppress_no_change = settings.autonomy.suppress_no_change_monitors
+    auto_self_restart = settings.autonomy.auto_self_restart
 
     allowlist_str = ", ".join(allowlist) if allowlist else "(none)"
 
@@ -182,7 +183,8 @@ def build_autonomous_instruction(settings: Settings) -> str:
         f"Current tier: auto_approve_self_authored={'ON' if auto_approve else 'OFF'}, "
         f"allowlist=[{allowlist_str}], "
         f"routine_secret_provisioning={'ON' if routine_secret else 'OFF'}, "
-        f"suppress_no_change_monitors={'ON' if suppress_no_change else 'OFF'}.\n"
+        f"suppress_no_change_monitors={'ON' if suppress_no_change else 'OFF'}, "
+        f"auto_self_restart={'ON' if auto_self_restart else 'OFF'}.\n"
         "\n"
         "AUTONOMY PREFERENCE PROBING — early in the session, before you reach "
         "any approval gate, proactively ask the operator about their "
@@ -315,6 +317,23 @@ def build_autonomous_instruction(settings: Settings) -> str:
         "for the same ticket or subject.  If you need to change a monitor's "
         "behavior, update its checkpoint or pause/resume it — do not create "
         "a second monitor alongside the first.\n"
+        "AUTO SELF-RESTART (when auto_self_restart is ON):\n"
+        "  - After you deploy changes that affect the agent's own capabilities "
+        "— new tools, skills, permissions, code changes, or component roster "
+        "updates — you MAY call self_restart without operator approval.\n"
+        "  - Before calling self_restart, you MUST announce the restart with "
+        "a brief delay (at least 30 seconds) so the operator can interrupt if "
+        "needed.  For example: 'Restarting in 30 seconds to pick up the new "
+        "capability.  Interrupt me if you need to stop this.'\n"
+        "  - You MUST NOT auto-self-restart for any reason other than picking "
+        "up a capability change you just deployed.  Restarts for "
+        "configuration changes, debugging, or any other reason still require "
+        "explicit operator authorization.\n"
+        "  - If the self_restart call fails, report the diagnostic to the "
+        "operator — do not retry unless the error is clearly transient.\n"
+        "  - When auto_self_restart is OFF, self_restart is a MUTATION "
+        "requiring explicit operator authorization — follow the standard "
+        "mutation rules.\n"
         "\n"
         "INFRASTRUCTURE DIAGNOSIS — EMPIRICAL VERIFICATION REQUIRED\n"
         "When you detect that infrastructure credentials appear to be "
