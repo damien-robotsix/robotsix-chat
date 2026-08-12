@@ -140,13 +140,13 @@ computer, browser, and private window. The only exception is the autonomous runn
 (`autonomous` and `autonomous:<definition>`), which keep their own pool and are fetched by the UI as
 a separate list.
 
-Reserved autonomous owners use a namespaced prefix.  The bootstrap owner is the literal
-`autonomous`; each named preset is stored under `autonomous:<definition>`.  When the session-list
-handler is asked for `owner_id=autonomous`, it treats that as a query over the whole autonomous
-namespace: sessions from `autonomous` itself and from every `autonomous:*` sub-scope are merged into
-one list, sorted by recency.  Only the bootstrap owner is eligible for lazy default creation —
-per-preset sub-scopes are owned by the runner and are never created on read.  Any new scoped owner
-id must be covered by this prefix expansion, or its sessions will run but never appear in the list.
+Reserved autonomous owners use a namespaced prefix. The bootstrap owner is the literal `autonomous`;
+each named preset is stored under `autonomous:<definition>`. When the session-list handler is asked
+for `owner_id=autonomous`, it treats that as a query over the whole autonomous namespace: sessions
+from `autonomous` itself and from every `autonomous:*` sub-scope are merged into one list, sorted by
+recency. Only the bootstrap owner is eligible for lazy default creation — per-preset sub-scopes are
+owned by the runner and are never created on read. Any new scoped owner id must be covered by this
+prefix expansion, or its sessions will run but never appear in the list.
 
 ______________________________________________________________________
 
