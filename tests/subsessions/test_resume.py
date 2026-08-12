@@ -1484,3 +1484,95 @@ async def test_resume_periodic_does_not_respawn_max_runs(
     assert info is not None
     assert info.status is SubsessionStatus.CLOSED
     assert periodic.id not in registry2._running
+
+
+@pytest.mark.asyncio
+async def test_resume_wait_for_event_respawns_auto_closed_human_approval_timeout(
+    tmp_path: Path,
+) -> None:
+    """Re-spawn auto-closed wait_for_event monitors on restart.
+
+    A wait_for_event monitor auto-closed with 'human_approval_timeout'
+    is re-spawned so the worker can re-verify the live ticket state.
+    """
+    store_path = tmp_path / "subsessions.json"
+    registry1 = SubsessionRegistry(store_path=store_path)
+    wfe = registry1.create(
+        kind=SubsessionKind.WAIT_FOR_EVENT,
+        owner_session_id=OWNER,
+        parent_id=None,
+        depth=1,
+        title="watch ticket a1b2",
+        prompt="monitor the ticket",
+        model_level=3,
+        checkpoint={"ticket_id": "a1b2", "last_known_state": "human_issue_approval"},
+        dedup_key="a1b2",
+        event_timeout_seconds=3600.0,
+    )
+    registry1.mark_closed(
+        wfe.id,
+        summary="auto-escalated after timeout",
+        reason="human_approval_timeout",
+        closed_by="system",
+    )
+
+    registry2 = SubsessionRegistry(store_path=store_path)
+    env = build_env(
+        agent=FakeAgent(["resumed after auto-close"]),
+        registry=registry2,
+    )
+    resume_subsessions(env)
+
+    info = registry2.get(wfe.id)
+    assert info is not None
+    assert info.status in (SubsessionStatus.RUNNING, SubsessionStatus.SLEEPING)
+    assert wfe.id in registry2._running
+
+    worker = registry2._running.get(wfe.id)
+    if worker is not None:
+        registry2.cancel_and_close(wfe.id, reason="teardown", closed_by="system")
+        with contextlib.suppress(asyncio.CancelledError):
+            await asyncio.wait_for(worker, 2.0)
+
+
+@pytest.mark.asyncio
+async def test_resume_wait_for_event_does_not_respawn_explicitly_closed(
+    tmp_path: Path,
+) -> None:
+    """Do NOT re-spawn wait_for_event monitors closed explicitly.
+
+    A wait_for_event monitor closed explicitly by the agent
+    (reason='completed') is NOT re-spawned on restart.
+    """
+    store_path = tmp_path / "subsessions.json"
+    registry1 = SubsessionRegistry(store_path=store_path)
+    wfe = registry1.create(
+        kind=SubsessionKind.WAIT_FOR_EVENT,
+        owner_session_id=OWNER,
+        parent_id=None,
+        depth=1,
+        title="watch done ticket",
+        prompt="monitor",
+        model_level=3,
+        checkpoint={"ticket_id": "done1", "last_known_state": "closed"},
+        dedup_key="done1",
+        event_timeout_seconds=3600.0,
+    )
+    registry1.mark_closed(
+        wfe.id,
+        summary="ticket completed",
+        reason="completed",
+        closed_by="agent",
+    )
+
+    registry2 = SubsessionRegistry(store_path=store_path)
+    env = build_env(
+        agent=FakeAgent(["should not run"]),
+        registry=registry2,
+    )
+    resume_subsessions(env)
+
+    info = registry2.get(wfe.id)
+    assert info is not None
+    assert info.status is SubsessionStatus.CLOSED
+    assert wfe.id not in registry2._running

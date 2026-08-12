@@ -453,6 +453,18 @@ def _resume_entry(
 
     if kind is SubsessionKind.WAIT_FOR_EVENT:
         if status not in {s.value for s in ACTIVE_STATUSES}:
+            # CLOSED wait_for_event monitors: only re-spawn those that
+            # were auto-closed (not explicitly closed by the user or
+            # the agent).  The worker's _check_resume_status will
+            # verify the ticket state on its first post-restart tick
+            # and close immediately if conditions have not improved.
+            if (
+                status == "closed"
+                and _entry_str(entry, "close_reason") in _AUTO_CLOSE_REASONS
+            ):
+                return _resume_wait_for_event_entry(
+                    env, entry, sub_id, owner, title, original_status=status
+                )
             _restore_entry(env.registry, entry)
             return None
         return _resume_wait_for_event_entry(
