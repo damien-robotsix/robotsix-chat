@@ -2148,6 +2148,66 @@ async def test_spawn_dedup_guard_different_keys_dont_collide() -> None:
     env.registry.cancel_and_close(second_id, reason="teardown", closed_by="system")
 
 
+@pytest.mark.asyncio
+async def test_spawn_wait_for_event_write_barrier_repairs_checkpoint() -> None:
+    """A wait_for_event spawn persists ticket_id into the checkpoint synchronously.
+
+    Even when the caller supplies a checkpoint without ``ticket_id`` (or no
+    checkpoint at all), the dedup_key must be merged into the checkpoint
+    before ``registry.create`` persists it, so the monitor's first turn never
+    observes a checkpoint missing its ticket id.
+    """
+    env = build_env(agent=FakeAgent(["NO_CHANGE"]))
+    sub_id = spawn_subsession(
+        env=env,
+        kind=SubsessionKind.WAIT_FOR_EVENT,
+        owner_session_id=OWNER,
+        parent_id=None,
+        depth=1,
+        title="watch ticket abc",
+        prompt="monitor the ticket",
+        model_level=3,
+        dedup_key="ticket-abc-123",
+        checkpoint={"last_known_state": "open"},
+    )
+
+    info = env.registry.get(sub_id)
+    assert info is not None
+    assert info.checkpoint == {
+        "last_known_state": "open",
+        "ticket_id": "ticket-abc-123",
+    }
+    assert info.dedup_key == "ticket-abc-123"
+
+    # Clean up the spawned worker.
+    env.registry.cancel_and_close(sub_id, reason="teardown", closed_by="system")
+
+
+@pytest.mark.asyncio
+async def test_spawn_wait_for_event_write_barrier_without_checkpoint() -> None:
+    """A wait_for_event spawn without a checkpoint still writes ticket_id."""
+    env = build_env(agent=FakeAgent(["NO_CHANGE"]))
+    sub_id = spawn_subsession(
+        env=env,
+        kind=SubsessionKind.WAIT_FOR_EVENT,
+        owner_session_id=OWNER,
+        parent_id=None,
+        depth=1,
+        title="watch ticket xyz",
+        prompt="monitor the ticket",
+        model_level=3,
+        dedup_key="ticket-xyz-789",
+    )
+
+    info = env.registry.get(sub_id)
+    assert info is not None
+    assert info.checkpoint == {"ticket_id": "ticket-xyz-789"}
+    assert info.dedup_key == "ticket-xyz-789"
+
+    # Clean up the spawned worker.
+    env.registry.cancel_and_close(sub_id, reason="teardown", closed_by="system")
+
+
 # -- _is_no_change / _is_duplicate_reply unit tests ------------------------
 
 

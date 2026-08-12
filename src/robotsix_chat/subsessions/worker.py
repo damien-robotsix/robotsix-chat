@@ -498,6 +498,17 @@ def spawn_subsession(
     if inherit_context and parent_id is not None:
         prompt = _build_ancestor_context(env.registry, parent_id) + prompt
 
+    # -- write barrier: ticket_id must be in the checkpoint before spawn ----
+    # A wait_for_event monitor's ticket id is carried by its dedup_key.  Some
+    # callers (resume, legacy paths) can pass a checkpoint that is missing
+    # the key; if the worker task were to start before the key reached the
+    # persisted store, the monitor's first turn would observe an empty
+    # checkpoint and report "No ticket_id in checkpoint".  Merge the
+    # dedup_key into the checkpoint here so ``registry.create()`` writes it
+    # in its single synchronous persist before the worker task is created.
+    if kind is SubsessionKind.WAIT_FOR_EVENT and dedup_key:
+        checkpoint = {**(checkpoint or {}), "ticket_id": dedup_key}
+
     try:
         info = env.registry.create(
             kind=kind,
