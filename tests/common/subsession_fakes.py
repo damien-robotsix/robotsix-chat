@@ -136,6 +136,8 @@ class FakeClock:
 def make_settings(
     *,
     max_concurrent: int = 8,
+    max_concurrent_per_session: int = 0,
+    stale_reclaim_seconds: float = 0.0,
     max_depth: int = 3,
     default_model_level: int = 2,
     min_interval_seconds: float = 0.01,
@@ -169,6 +171,8 @@ def make_settings(
     return SimpleNamespace(
         subsessions=SimpleNamespace(
             max_concurrent=max_concurrent,
+            max_concurrent_per_session=max_concurrent_per_session,
+            stale_reclaim_seconds=stale_reclaim_seconds,
             max_depth=max_depth,
             default_model_level=default_model_level,
             min_interval_seconds=min_interval_seconds,

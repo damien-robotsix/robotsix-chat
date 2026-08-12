@@ -1295,6 +1295,138 @@ async def test_spawn_capacity_error_when_cap_reached() -> None:
         await asyncio.wait_for(worker, 2.0)
 
 
+@pytest.mark.asyncio
+async def test_spawn_per_session_capacity_error() -> None:
+    """Spawning beyond per-session cap raises SubsessionCapacityError."""
+    gate = asyncio.Event()
+    agent = FakeAgent(["ok"], gate=gate)
+    env = build_env(
+        agent=agent,
+        settings=make_settings(max_concurrent=100, max_concurrent_per_session=1),
+    )
+
+    first = _spawn(env)
+    with pytest.raises(SubsessionCapacityError, match="per-session"):
+        _spawn(env)
+
+    # Cleanup.
+    env.registry.cancel_and_close(first, reason="teardown", closed_by="system")
+    worker = env.registry._running[first]
+    with contextlib.suppress(asyncio.CancelledError):
+        await asyncio.wait_for(worker, 2.0)
+
+
+@pytest.mark.asyncio
+async def test_spawn_stale_reclaim_frees_slot() -> None:
+    """A stale SLEEPING subsession from another owner is reclaimed to free a slot."""
+    from robotsix_chat.subsessions.models import SubsessionStatus
+
+    gate = asyncio.Event()
+    agent = FakeAgent(["ok"], gate=gate)
+
+    # Use a controlled clock so last_activity_at can be aged past the
+    # reclaim threshold.
+    clock = FakeClock(1000.0)
+    registry = SubsessionRegistry(store_path=None, clock=clock)
+    env = build_env(
+        agent=agent,
+        settings=make_settings(max_concurrent=1, stale_reclaim_seconds=10.0),
+        registry=registry,
+    )
+
+    # Fill the pool with a subsession from owner "A".
+    first = spawn_subsession(
+        env=env,
+        kind=SubsessionKind.TASK,
+        owner_session_id="sess-a",
+        parent_id=None,
+        depth=1,
+        title="job",
+        prompt="do the thing",
+        model_level=3,
+    )
+    info_a = env.registry.get(first)
+    assert info_a is not None
+
+    # Manually set it to SLEEPING and age it past the reclaim threshold.
+    info_a.status = SubsessionStatus.SLEEPING
+    clock.advance(20.0)
+    info_a.last_activity_at = clock.now - 20.0
+    assert env.registry.count_active() >= 1  # SLEEPING counts
+
+    # The global pool thinks it's full — but the stale subsession from
+    # owner "A" should be reclaimed when owner "B" tries to spawn.
+    second = spawn_subsession(
+        env=env,
+        kind=SubsessionKind.TASK,
+        owner_session_id="sess-b",
+        parent_id=None,
+        depth=1,
+        title="job",
+        prompt="do the thing",
+        model_level=3,
+    )
+    assert second != first
+    assert not env.registry.get(first).is_active  # reclaimed
+
+    # Cleanup.
+    env.registry.cancel_and_close(second, reason="teardown", closed_by="system")
+    worker = env.registry._running[second]
+    with contextlib.suppress(asyncio.CancelledError):
+        await asyncio.wait_for(worker, 2.0)
+
+
+@pytest.mark.asyncio
+async def test_spawn_stale_reclaim_respects_owner_boundary() -> None:
+    """A stale subsession from the same owner is NOT reclaimed."""
+    from robotsix_chat.subsessions.models import SubsessionStatus
+
+    gate = asyncio.Event()
+    agent = FakeAgent(["ok"], gate=gate)
+    clock = FakeClock(1000.0)
+    registry = SubsessionRegistry(store_path=None, clock=clock)
+    env = build_env(
+        agent=agent,
+        settings=make_settings(max_concurrent=1, stale_reclaim_seconds=10.0),
+        registry=registry,
+    )
+
+    first = spawn_subsession(
+        env=env,
+        kind=SubsessionKind.TASK,
+        owner_session_id="sess-main",
+        parent_id=None,
+        depth=1,
+        title="job",
+        prompt="do the thing",
+        model_level=3,
+    )
+    info = env.registry.get(first)
+    assert info is not None
+    info.status = SubsessionStatus.SLEEPING
+    clock.advance(20.0)
+    info.last_activity_at = clock.now - 20.0
+
+    # Same owner cannot reclaim its own stale subsession.
+    with pytest.raises(SubsessionCapacityError):
+        spawn_subsession(
+            env=env,
+            kind=SubsessionKind.TASK,
+            owner_session_id="sess-main",
+            parent_id=None,
+            depth=1,
+            title="job",
+            prompt="do the thing",
+            model_level=3,
+        )
+
+    # Cleanup.
+    env.registry.cancel_and_close(first, reason="teardown", closed_by="system")
+    worker = env.registry._running[first]
+    with contextlib.suppress(asyncio.CancelledError):
+        await asyncio.wait_for(worker, 2.0)
+
+
 def test_spawn_depth_error_beyond_max_depth() -> None:
     """Spawning deeper than ``max_depth`` raises ``SubsessionDepthError``."""
     env = build_env(settings=make_settings(max_depth=2))

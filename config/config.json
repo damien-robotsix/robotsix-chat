@@ -101,6 +101,8 @@
   },
   "subsessions": {
     "max_concurrent": 8,
+    "max_concurrent_per_session": 0,
+    "stale_reclaim_seconds": 0.0,
     "max_depth": 3,
     "default_model_level": 2,
     "min_interval_seconds": 60.0,
