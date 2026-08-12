@@ -100,8 +100,8 @@ The diagnosis is tailored to the repository's visibility:
 - **Public repos:** billing is never the cause (GitHub Actions is free for public repos). The
   diagnosis focuses on trigger configuration mismatches, missing reusable workflow files, and
   input-contract mismatches (e.g. a required `workflow_call` input not provided).
-- **Private repos:** billing may be the cause, but the tool cross-checks whether other workflow
-  runs on the same commit completed successfully — if they did, the root cause is likely a trigger
+- **Private repos:** billing may be the cause, but the tool cross-checks whether other workflow runs
+  on the same commit completed successfully — if they did, the root cause is likely a trigger
   configuration mismatch rather than a billing issue (billing would block all workflows).
 
 **Read-only.** Does not modify any repository state. No confirmation gating — safe to call anytime
