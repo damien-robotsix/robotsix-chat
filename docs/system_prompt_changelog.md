@@ -8,8 +8,8 @@ Governed artifact: `Settings.agent_instruction` default literal in
 **Summary:** Add an "Intent-following default" rule to the Autonomy section.
 When the user's intent is unambiguous — an imperative request, an explicit
 affirmative, or an affirmative answer to a question the agent just asked —
-the agent executes the requested action (filing tickets, merging a PR,
-posting a comment) immediately and reports the result, rather than re-asking
+the agent executes the requested action (filing tickets, merging a PR)
+immediately and reports the result, rather than re-asking
 "want me to file?", "shall I press merge?", or "shall I proceed?".  The
 "gate risky actions" rule is narrowed to *genuinely* risky, destructive,
 irreversible, or ambiguous actions; a concrete requested action with a clear
