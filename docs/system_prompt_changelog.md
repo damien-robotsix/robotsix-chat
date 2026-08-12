@@ -1977,6 +1977,24 @@ The hash is computed on the output of `build_autonomous_instruction(Settings())`
 autonomous settings at their pydantic field defaults (``proposal_marker="---PROPOSAL READY---"``,
 ``completion_marker="---AUTONOMOUS COMPLETE---"``, ``stale_monitor_runs_before_completion=3``).
 
+## AUTONOMOUS v12 — 2026-08-09 — improve-conflict-detection-to-include-se-7d38
+
+**Summary:** Add `SEMANTIC CONFLICT ANALYSIS` section to the `TICKET RESUMPTION
+DISCIPLINE` block. Before resuming a stuck PR with merge conflicts, the assistant
+must now distinguish between mechanical conflicts (adjacent-line changes in
+different functions, import reordering) and semantic conflicts (both branches
+modify the same function, class, or logical area in incompatible ways). Semantic
+conflicts must be reported to the operator with a recommended resolution strategy
+rather than blindly retried.
+
+**Rationale:** During session f09916fc, the assistant identified a semantic
+conflict in `_render_body()` that was not resolvable by hand-merge, but the
+initial resume attempt did not detect this until after a second resolution
+attempt. Adding a pre-resume semantic conflict check prevents the loop of blind
+resumes and saves time.
+
+**SHA256:** `16a7236dd8121646379165a6abf4abbf65153dd3b7c6bc9ed121abb7b9cfac0d`
+
 ## AUTONOMOUS v11 — 2026-08-07 — require-operator-approval-before-filing-5833
 
 **Summary:** Add `OPTIMIZATION TICKETS — REQUIRED OPERATOR SIGN-OFF` section to
