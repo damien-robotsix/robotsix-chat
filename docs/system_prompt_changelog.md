@@ -3,6 +3,28 @@
 Governed artifact: `Settings.agent_instruction` default literal in
 `src/robotsix_chat/config/settings.py`. Version stamp: `SYSTEM_PROMPT_VERSION` in the same module.
 
+## v103 — 2026-08-13 — hard-filter-block-ids-and-state-transitions
+
+**Summary:** Strengthen the HARD FILTERING RULE in the agent instruction to
+explicitly ban block IDs (hex strings like `a3f2`), state machine
+transitions, spawn counters, internal timeout values, stack traces, and raw
+API response fragments — not just subsession metadata patterns.  The
+corresponding FORMAT PROHIBITION rules in the subsession react-prompt
+templates (`_REACT_PROMPT_TEMPLATE`, `_BATCH_REACT_PROMPT_TEMPLATE`,
+`_REACT_PROMPT_ACTIVE_PLAN_TEMPLATE`) are also extended with the same
+banned-internal-detail patterns.
+
+**Rationale:** The agent was instructed to strip metadata but the HARD
+FILTERING RULE only covered `kind=`, `status=`, `Subsession summaries:`
+and similar metadata headers — it did not explicitly prohibit block IDs,
+state machine transitions, and raw API fragments.  When consolidating
+multiple subsession outcomes the agent sometimes echoed these internal
+details, producing debug-like output that confused users.  Adding them to
+the banned-patterns list in both the system prompt and the react templates
+closes this gap.
+
+**SHA256:** `ed6a621216c42a037d50a51c26e38009c71b05a549ccb3907f1df3d15ad20ede`
+
 ## v102 — 2026-08-12 — per-session-model-escalation
 
 **Summary:** Document the new `escalate_model(reason)` tool in the Model
