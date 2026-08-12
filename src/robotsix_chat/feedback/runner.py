@@ -636,6 +636,19 @@ class FeedbackRunner:
         client: httpx.AsyncClient,
     ) -> bool:
         """POST a single ticket; return True when the server responds 2xx."""
+        # Pre-flight board-API dedup: query GET /tickets on the board
+        # and check whether an open ticket with the same title already
+        # exists.  This catches duplicates the in-process in-memory
+        # dedup cannot guard against — tickets filed before a server
+        # restart, or identical titles filed from different subsessions
+        # that race past the session-level debounce.
+        if await self._check_existing_open_tickets(
+            ticket_title=ticket["title"],
+            target_repo=ticket.get("target_repo", ""),
+            client=client,
+        ):
+            return True  # intentionally skipped, not a failure
+
         # Title-level dedup: skip when the same normalized title was
         # filed within the dedup window (catches cross-session duplicates
         # that the session-level debounce in schedule() cannot guard).
@@ -786,6 +799,106 @@ class FeedbackRunner:
                 ticket_id,
                 exc_info=True,
             )
+
+    async def _check_existing_open_tickets(
+        self,
+        *,
+        ticket_title: str,
+        target_repo: str,
+        client: httpx.AsyncClient,
+    ) -> bool:
+        """Query the board API for an existing open ticket with the same title.
+
+        Returns ``True`` when an open (non-terminal) ticket with a
+        matching normalized title already exists for *target_repo* on
+        the board — the new ticket should be skipped.
+
+        The board API call is best-effort: any error (timeout, unreachable,
+        non-JSON response) is logged and the method returns ``False`` so
+        the filing proceeds rather than being blocked by a transient API
+        issue.
+        """
+        if not self._board_url:
+            return False
+        # Normalise the candidate title the same way the in-process
+        # dedup does so the comparison is consistent.
+        norm_title = ticket_title.strip().lower()
+        if not norm_title:
+            return False
+
+        list_url = f"{self._board_url}/tickets"
+        req_headers: dict[str, str] = {"Accept": "application/json"}
+        if self._board_token:
+            req_headers["Authorization"] = f"Bearer {self._board_token}"
+
+        try:
+            resp = await client.get(list_url, headers=req_headers)
+            if resp.status_code >= 400:
+                logger.debug(
+                    "Board ticket-list returned HTTP %d — "
+                    "skipping pre-flight dedup check",
+                    resp.status_code,
+                )
+                return False
+            tickets_data = resp.json()
+        except Exception:
+            logger.debug(
+                "Board ticket-list request failed — skipping pre-flight dedup check",
+                exc_info=True,
+            )
+            return False
+
+        # Normalise the response shape.
+        if isinstance(tickets_data, list):
+            ticket_objects: list[dict[str, Any]] = tickets_data
+        elif isinstance(tickets_data, dict):
+            ticket_objects = tickets_data.get("tickets", [])
+            if not isinstance(ticket_objects, list):
+                ticket_objects = []
+        else:
+            ticket_objects = []
+
+        # Terminal ticket states — tickets in these states are "closed"
+        # and should not block a new filing.
+        _terminal_states = frozenset({"closed", "done"})
+
+        for existing in ticket_objects:
+            if not isinstance(existing, dict):
+                continue
+            existing_title = (
+                existing.get("title", "")
+                if isinstance(existing.get("title"), str)
+                else ""
+            )
+            if existing_title.strip().lower() != norm_title:
+                continue
+            # Match repo_id when both sides carry one; skip the check
+            # when the board ticket has no repo_id (older tickets).
+            existing_repo = existing.get("repo_id")
+            if (
+                target_repo
+                and isinstance(existing_repo, str)
+                and existing_repo
+                and existing_repo != target_repo
+            ):
+                continue
+            existing_state = existing.get("state", "")
+            if (
+                isinstance(existing_state, str)
+                and existing_state.lower() in _terminal_states
+            ):
+                continue
+            logger.info(
+                "Feedback ticket skipped — existing open ticket %r "
+                "already on board (title=%r, repo=%r, state=%r)",
+                existing.get("ticket_id", "?"),
+                existing_title,
+                existing_repo,
+                existing_state,
+            )
+            return True
+
+        return False
 
     def _apply_cap(
         self,
