@@ -5,11 +5,11 @@
 Merge a pull request in a repository under the GitHub App installation scope. The merge is performed
 using the GitHub App installation token — the credential never leaves the server.
 
-**This is a confirmation-gated mutation.** Merge only when the operator has explicitly consented
-in the conversation. The operator's own direct request (e.g. "merge PR #123") or a clear
-affirmative answer to your proposal IS that consent — once given, state the exact repo, PR number,
-PR title, and head/base branches and merge without re-asking. Ask only when consent has not yet
-been clearly given. The endpoint modifies live repository state.
+**This is a confirmation-gated mutation.** Merge only when the operator has explicitly consented in
+the conversation. The operator's own direct request (e.g. "merge PR #123") or a clear affirmative
+answer to your proposal IS that consent — once given, state the exact repo, PR number, PR title, and
+head/base branches and merge without re-asking. Ask only when consent has not yet been clearly
+given. The endpoint modifies live repository state.
 
 ### Preconditions (enforced server-side)
 
@@ -68,11 +68,11 @@ Enable GitHub native auto-merge on a pull request. Once armed, GitHub automatica
 soon as all required conditions are met (status checks pass, required reviews are submitted, branch
 protection rules are satisfied) — no further human intervention is needed.
 
-**This is a confirmation-gated mutation.** Enable only when the operator has explicitly consented
-in the conversation. The operator's own direct request (e.g. "enable auto-merge on PR #123") or a
-clear affirmative answer to your proposal IS that consent — once given, state the exact repo, PR
-number, PR title, and head/base branches and enable it without re-asking. Ask only when consent has
-not yet been clearly given.
+**This is a confirmation-gated mutation.** Enable only when the operator has explicitly consented in
+the conversation. The operator's own direct request (e.g. "enable auto-merge on PR #123") or a clear
+affirmative answer to your proposal IS that consent — once given, state the exact repo, PR number,
+PR title, and head/base branches and enable it without re-asking. Ask only when consent has not yet
+been clearly given.
 
 ### Preconditions
 
