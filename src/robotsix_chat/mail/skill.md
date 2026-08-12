@@ -22,6 +22,7 @@ columns, and browse / reorganise the archive.
 | `archive_mail_email`            | Archive an email (mark as processed).                   |
 | `run_mail_triage`               | Re-classify the inbox with the configured triage rules. |
 | `cleanup_empty_archive_folders` | Remove empty archive subfolders from the IMAP server.   |
+| `delete_archive_folder`         | Delete a specific archive subfolder (empty-only unless ``force=True``). |
 
 ## Agent tool: `move_archive_mail`
 
@@ -63,6 +64,32 @@ after moving or archiving messages.
 | Condition        | Message                                      |
 | ---------------- | -------------------------------------------- |
 | IMAP unreachable | `IMAP not configured for this account` (503) |
+
+## Agent tool: `delete_archive_folder`
+
+Delete a specific archive subfolder from the IMAP server. By default, only empty folders (zero
+messages) can be deleted; pass ``force=True`` to delete a non-empty folder.
+
+**This is a confirmation-gated mutation.** Before calling, state the exact archive subfolder path
+and whether the folder is empty or you are using ``force`` mode, and obtain explicit operator
+approval. Never delete an archive folder without the operator's explicit consent.
+
+### Preconditions
+
+- The folder path must be relative to the archive root (``..`` and absolute paths are rejected
+  client-side).
+- The IMAP server must be reachable and authenticated.
+- By default the folder must be empty; use ``force=True`` to override.
+
+### Error responses
+
+| Condition                     | Message                                             |
+| ----------------------------- | --------------------------------------------------- |
+| Folder not empty (no force)   | `folder not empty — use force=true to override`    |
+| Folder path escapes root      | `Folder path escapes archive root` (HTTP 400)       |
+| Folder not found              | `folder not found`                                  |
+| IMAP unreachable              | `IMAP not configured for this account` (503)        |
+| Malformed JSON body           | `Malformed JSON body` (HTTP 400)                    |
 
 ## Valid triage column names
 

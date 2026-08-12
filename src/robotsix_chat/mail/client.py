@@ -2,9 +2,10 @@
 
 Talks directly to the auto-mail board HTTP API (``GET /board-content``,
 ``GET /email/{id}/status``, ``POST /move``, ``POST /delete``,
-``POST /archive``, ``POST /run-triage``) over HTTP — no broker indirection,
-no NL reinterpretation.  Degrades gracefully: HTTP/timeout errors become
-short strings the assistant can relay to the user.
+``POST /archive``, ``POST /run-triage``, ``POST /archive-delete``) over
+HTTP — no broker indirection, no NL reinterpretation.  Degrades
+gracefully: HTTP/timeout errors become short strings the assistant can
+relay to the user.
 """
 
 from __future__ import annotations
@@ -195,6 +196,62 @@ class MailClient:
             url,
             headers=self._headers,
             timeout=self._timeout,
+            label="Mail API",
+        )
+        if result.error:
+            return result.error
+        return result.text  # type: ignore[return-value]
+
+    async def archive_delete(self, folder: str, *, force: bool = False) -> str:
+        """Call ``POST /archive-delete`` with a JSON body.
+
+        Deletes an archive subfolder from the IMAP server.  By default
+        only empty folders (zero messages) can be deleted; pass
+        ``force=True`` to delete a non-empty folder.
+
+        Client-side path-escape protection rejects *folder* values that
+        contain ``..``, null bytes, or absolute paths before the
+        request is sent.
+
+        Args:
+            folder: The archive subfolder path to delete (e.g.
+                ``"Projects/Old"``).
+            force: When ``True``, allow deletion of non-empty folders.
+                Defaults to ``False`` (empty-only).
+
+        Returns:
+            JSON success/error object as text.
+
+        Never raises — errors become a diagnostic string.
+
+        """
+        # Client-side path-escape protection: reject traversal attempts.
+        if not folder or "\x00" in folder:
+            return (
+                "error: invalid folder path — path must not be empty "
+                "or contain null bytes"
+            )
+        if folder.startswith("/"):
+            return (
+                "error: invalid folder path — absolute paths are not "
+                "allowed (must be relative to the archive root)"
+            )
+        if ".." in folder.split("/"):
+            return (
+                "error: invalid folder path — '..' traversal is not "
+                "allowed (must be under the archive root)"
+            )
+
+        url = f"{self._base_url}/archive-delete"
+        json_body: dict[str, object] = {"folder": folder}
+        if force:
+            json_body["force"] = True
+        result = await safe_http_request(
+            "POST",
+            url,
+            headers=self._headers,
+            timeout=self._timeout,
+            json_body=json_body,
             label="Mail API",
         )
         if result.error:

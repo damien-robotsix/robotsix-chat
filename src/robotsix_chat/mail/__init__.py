@@ -222,6 +222,40 @@ def build_mail_tools(settings: MailSettings) -> list[Callable[..., Any]]:
         """
         return await client.archive_cleanup_empty()
 
+    async def delete_archive_folder(folder: str, *, force: bool = False) -> str:
+        """Delete an archive subfolder from the IMAP server.
+
+        **This is a confirmation-gated mutation.**  You MUST obtain
+        explicit operator approval before calling this function.  State:
+
+        * The exact archive subfolder path to delete.
+        * Whether the folder is empty (list its messages first with
+          ``browse_archive_folder``).
+        * Whether you are using ``force`` mode to delete a non-empty
+          folder.
+
+        Wait for a clear confirmation reply (e.g. "yes", "proceed",
+        "go ahead") from the operator before proceeding.  Silently
+        deleting folders without consent is prohibited.
+
+        By default, only empty folders (zero messages) can be deleted.
+        To delete a non-empty folder, pass ``force=True`` — but obtain
+        operator confirmation first.
+
+        Args:
+            folder: The archive subfolder path to delete (e.g.
+                ``"Projects/Old"``).
+            force: When ``True``, allow deletion of non-empty folders.
+                Defaults to ``False`` (empty-only).
+
+        Returns:
+            JSON text with a success confirmation or error detail.
+
+        Never raises — errors become a diagnostic string.
+
+        """
+        return await client.archive_delete(folder, force=force)
+
     return [
         get_mail_board,
         get_mail_email_status,
@@ -233,4 +267,5 @@ def build_mail_tools(settings: MailSettings) -> list[Callable[..., Any]]:
         browse_archive_folder,
         move_archive_mail,
         cleanup_empty_archive_folders,
+        delete_archive_folder,
     ]
