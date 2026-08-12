@@ -1,0 +1,1 @@
+The chat agent now verifies a symptom actually occurs (via logs, code, or live state) or gets explicit user confirmation of a concrete symptom before filing a new capability ticket, and no longer files tickets based on speculation (e.g. a user wondering whether triage "might" re-run on every boot).
