@@ -2214,9 +2214,9 @@ async def _run_periodic_turn(
         )
         summary = (
             f"Auto-paused after {idle_cap} consecutive no-change runs. "
-            f"To resume monitoring, send a message to this subsession "
-            f"via message_subsession — the monitor will wake and re-check "
-            f"the ticket state on its next run."
+            f"The monitor will resume when the ticket's state changes, "
+            f"or you can resume it now by sending a message to this "
+            f"subsession via message_subsession."
         )
         paused = registry.mark_paused(
             sub_id,

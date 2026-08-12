@@ -2,8 +2,9 @@
 
 ``POST /mill-events`` accepts a JSON payload from the mill when a ticket
 changes state.  The endpoint routes the event to all WAIT_FOR_EVENT
-monitor subsessions watching that ticket, waking them within seconds
-with zero polling between events.
+monitor subsessions watching that ticket, plus any paused periodic
+monitors tracking the same ticket, waking them within seconds with zero
+polling between events.
 """
 
 from __future__ import annotations
@@ -23,6 +24,9 @@ _REQUIRED_FIELDS = frozenset({"ticket_id", "old_state", "new_state"})
 
 async def mill_events_endpoint(request: Request) -> JSONResponse:
     """Accept a mill ticket state-change event and route to waiting monitors.
+
+    Wakes ``WAIT_FOR_EVENT`` monitors registered as event waiters and
+    live ``PAUSED`` periodic monitors tracking the ticket.
 
     ``POST /mill-events``
 
