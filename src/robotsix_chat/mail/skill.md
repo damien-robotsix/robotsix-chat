@@ -15,17 +15,18 @@ columns, and browse / reorganise the archive.
 
 ## Mutation tools
 
-| Tool                 | Description                                             |
-| -------------------- | ------------------------------------------------------- |
-| `move_mail_email`    | Move an email to a different triage column.             |
-| `delete_mail_email`  | Permanently delete an email from the board.             |
-| `archive_mail_email` | Archive an email (mark as processed).                   |
-| `run_mail_triage`    | Re-classify the inbox with the configured triage rules. |
+| Tool                            | Description                                             |
+| ------------------------------- | ------------------------------------------------------- |
+| `move_mail_email`               | Move an email to a different triage column.             |
+| `delete_mail_email`             | Permanently delete an email from the board.             |
+| `archive_mail_email`            | Archive an email (mark as processed).                   |
+| `run_mail_triage`               | Re-classify the inbox with the configured triage rules. |
+| `cleanup_empty_archive_folders` | Remove empty archive subfolders from the IMAP server.   |
 
 ## Agent tool: `move_archive_mail`
 
-Move a mail between two archive subfolders on the IMAP server. The target subfolder hierarchy is
-created automatically if it does not yet exist.
+Move a mail between two archive subfolders on the IMAP server. Target folders are created **lazily**
+— only when a message is actually moved into a new folder. Empty folders are not created in advance.
 
 **This is a confirmation-gated mutation.** Before calling, state the exact message details (subject,
 sender, date), the current archive subfolder, and the target subfolder in-chat and obtain explicit
@@ -46,6 +47,22 @@ in the conversation — the operation modifies live IMAP state.
 | Folder path escapes root | `Folder path escapes archive root` (HTTP 400) |
 | IMAP unreachable         | `IMAP not configured for this account` (503)  |
 | Malformed JSON body      | `Malformed JSON body` (HTTP 400)              |
+
+## Agent tool: `cleanup_empty_archive_folders`
+
+Remove empty archive subfolders from the IMAP server. Only folders with zero messages are removed;
+non-empty folders are left untouched. Use this periodically to keep the archive hierarchy clean
+after moving or archiving messages.
+
+### Preconditions
+
+- The IMAP server must be reachable and authenticated.
+
+### Error responses
+
+| Condition        | Message                                      |
+| ---------------- | -------------------------------------------- |
+| IMAP unreachable | `IMAP not configured for this account` (503) |
 
 ## Valid triage column names
 
