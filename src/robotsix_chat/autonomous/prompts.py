@@ -10,7 +10,7 @@ if TYPE_CHECKING:
 # Version stamp for the autonomous appendix (build_autonomous_instruction).
 # Bump on every change to the instruction text and update
 # docs/system_prompt_changelog.md with a new AUTONOMOUS entry + SHA256.
-AUTONOMOUS_PROMPT_VERSION = 17
+AUTONOMOUS_PROMPT_VERSION = 18
 
 
 def build_autonomous_instruction(settings: Settings) -> str:
@@ -66,6 +66,16 @@ def build_autonomous_instruction(settings: Settings) -> str:
         "consistency, and aesthetic appeal vs. accessibility — so the "
         "user can make an informed decision grounded in project "
         "constraints, not just generic best practices.\n"
+        "\n"
+        "PRE-FILING CODEBASE CHECK — before you file a new feature-request "
+        "ticket (or report a missing capability), query the target "
+        "repository's codebase first: use grep, a code-search tool, or "
+        "explore to determine whether the requested behavior already "
+        "exists.  If the feature is already implemented — or a near "
+        "equivalent is present — do NOT create a ticket.  Inform the "
+        "operator directly instead, cite the relevant file/symbol, and "
+        "stop.  Filing a ticket for something that already exists wastes "
+        "a monitor cycle and shows the user a misleading automated trip.\n"
         "\n"
         "3. PROPOSAL — After drafting the plan, emit this exact marker "
         "on its own line and STOP — do NOT begin execution:\n"
