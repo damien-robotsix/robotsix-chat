@@ -60,10 +60,10 @@ def test_build_mail_tools_disabled() -> None:
     assert build_mail_tools(MailSettings(enabled=False)) == []
 
 
-def test_build_mail_tools_returns_six_tools() -> None:
-    """Verify that enabled mail returns six discrete tools."""
+def test_build_mail_tools_returns_nine_tools() -> None:
+    """Verify that enabled mail returns nine discrete tools."""
     tools = build_mail_tools(_settings())
-    assert len(tools) == 6
+    assert len(tools) == 9
     names = [t.__name__ for t in tools]
     assert names == [
         "get_mail_board",
@@ -72,6 +72,9 @@ def test_build_mail_tools_returns_six_tools() -> None:
         "delete_mail_email",
         "archive_mail_email",
         "run_mail_triage",
+        "list_archive_folders",
+        "browse_archive_folder",
+        "move_archive_mail",
     ]
 
 
@@ -255,6 +258,110 @@ async def test_run_triage_success(respx_mock: respx.MockRouter) -> None:
 
     assert route.called
     assert "OK (status 302)" in result
+
+
+# ---------------------------------------------------------------------------
+# MailClient — archive_folders (GET /archive-folders)
+# ---------------------------------------------------------------------------
+
+
+@pytest.mark.asyncio
+async def test_archive_folders_success(respx_mock: respx.MockRouter) -> None:
+    """GET /archive-folders returns JSON with delimiter and folder list."""
+    route = respx_mock.get("http://127.0.0.1:8077/archive-folders").mock(
+        return_value=httpx.Response(
+            200,
+            text='{"delimiter": "/", "folders": ["Projects/Acme", "Receipts"]}',
+        )
+    )
+    tools = build_mail_tools(_settings())
+    list_folders = tools[6]
+
+    result = await list_folders()
+
+    assert route.called
+    assert "Projects/Acme" in result
+    assert "Receipts" in result
+
+
+# ---------------------------------------------------------------------------
+# MailClient — archive_messages (GET /archive/<folder>/messages)
+# ---------------------------------------------------------------------------
+
+
+@pytest.mark.asyncio
+async def test_archive_messages_success(respx_mock: respx.MockRouter) -> None:
+    """GET /archive/<folder>/messages returns message envelope metadata."""
+    route = respx_mock.get(
+        "http://127.0.0.1:8077/archive/Projects%2FAcme/messages"
+    ).mock(
+        return_value=httpx.Response(
+            200,
+            text='{"messages": [{"subject": "Q3 report"}], "folder": "Projects/Acme"}',
+        )
+    )
+    tools = build_mail_tools(_settings())
+    browse = tools[7]
+
+    result = await browse("Projects/Acme")
+
+    assert route.called
+    assert "Q3 report" in result
+    assert "Projects/Acme" in result
+
+
+@pytest.mark.asyncio
+async def test_archive_messages_with_limit(respx_mock: respx.MockRouter) -> None:
+    """GET /archive/<folder>/messages?limit=N passes the query parameter."""
+    route = respx_mock.get(
+        "http://127.0.0.1:8077/archive/Inbox/messages?limit=10"
+    ).mock(
+        return_value=httpx.Response(200, text='{"messages": [], "folder": "Inbox"}')
+    )
+    tools = build_mail_tools(_settings())
+    browse = tools[7]
+
+    await browse("Inbox", limit=10)
+
+    assert route.called
+
+
+# ---------------------------------------------------------------------------
+# MailClient — archive_move (POST /archive-move)
+# ---------------------------------------------------------------------------
+
+
+@pytest.mark.asyncio
+async def test_archive_move_success(respx_mock: respx.MockRouter) -> None:
+    """POST /archive-move with JSON body returns success."""
+    route = respx_mock.post("http://127.0.0.1:8077/archive-move").mock(
+        return_value=httpx.Response(200, text='{"status": "moved"}')
+    )
+    tools = build_mail_tools(_settings())
+    move = tools[8]
+
+    result = await move("msg-id", "Projects/Old", "Projects/New")
+
+    assert route.called
+    body = route.calls.last.request.content.decode()
+    assert "msg-id" in body
+    assert "Projects/Old" in body
+    assert "Projects/New" in body
+    assert "moved" in result
+
+
+@pytest.mark.asyncio
+async def test_archive_move_error(respx_mock: respx.MockRouter) -> None:
+    """POST /archive-move on 400 returns an error string."""
+    respx_mock.post("http://127.0.0.1:8077/archive-move").mock(
+        return_value=httpx.Response(400, text="message not found in source folder")
+    )
+    tools = build_mail_tools(_settings())
+    move = tools[8]
+
+    result = await move("bad-id", "Projects/Old", "Projects/New")
+
+    assert "Mail API error 400" in result
 
 
 # ---------------------------------------------------------------------------

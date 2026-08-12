@@ -8,17 +8,37 @@ so the chat runs exactly as before.
 Each tool is a plain async callable; robotsix-llmio converts it into a tool
 for the underlying agent (the claude-sdk tool loop, or pydantic-ai function
 tools).
+
+Also exposes :func:`load_mail_skill` — reads ``skill.md`` from this package
+so the agent prompt includes mail-tool usage instructions.
 """
 
 from __future__ import annotations
 
+import importlib.resources
 from collections.abc import Callable
 from typing import TYPE_CHECKING, Any
 
 if TYPE_CHECKING:
     from robotsix_chat.config import MailSettings
 
-__all__ = ["build_mail_tools"]
+__all__ = ["build_mail_tools", "load_mail_skill"]
+
+
+def load_mail_skill() -> str:
+    """Return the ``skill.md`` content for mail tools.
+
+    Returns an empty string when the file is missing or unreadable
+    so a missing skill doc never breaks the agent prompt.
+    """
+    try:
+        return (
+            importlib.resources.files("robotsix_chat.mail")
+            .joinpath("skill.md")
+            .read_text()
+        )
+    except Exception:
+        return ""
 
 
 def build_mail_tools(settings: MailSettings) -> list[Callable[..., Any]]:
@@ -114,6 +134,78 @@ def build_mail_tools(settings: MailSettings) -> list[Callable[..., Any]]:
         """
         return await client.run_triage()
 
+    async def list_archive_folders() -> str:
+        """List all archive subfolders on the mail server.
+
+        Returns a JSON object with ``delimiter`` (the hierarchy separator)
+        and ``folders`` (a flat list of subfolder paths relative to the
+        archive root).  Use this to discover which archive subfolders
+        exist before browsing or moving messages.
+
+        Returns:
+            JSON text with delimiter and folder list.
+
+        Never raises — errors become a diagnostic string.
+
+        """
+        return await client.archive_folders()
+
+    async def browse_archive_folder(folder: str, limit: int | None = None) -> str:
+        """List messages inside a specific archive subfolder.
+
+        Args:
+            folder: The archive subfolder path (e.g. "Projects/Acme").
+                Must be under the archive root — path traversal sequences
+                like ``..`` are rejected server-side.
+            limit: Optional cap on the number of messages returned
+                (default 500, max 2000).
+
+        Returns:
+            JSON text with message envelope metadata (sender, subject,
+            date) for every message in the folder, or an empty list when
+            the folder is empty or does not exist.
+
+        Never raises — errors become a diagnostic string.
+
+        """
+        return await client.archive_messages(folder, limit=limit)
+
+    async def move_archive_mail(
+        message_id: str,
+        source_folder: str,
+        target_subfolder: str,
+    ) -> str:
+        """Move a mail between archive subfolders.
+
+        **This is a confirmation-gated mutation.**  You MUST obtain
+        explicit operator approval before calling this function.  State:
+
+        * The exact message identifier (subject / sender / date).
+        * The current archive subfolder it lives in.
+        * The target archive subfolder it will move to.
+
+        Wait for a clear confirmation reply (e.g. "yes", "proceed",
+        "go ahead") from the operator before proceeding.  Silently
+        moving mail without consent is prohibited.
+
+        Args:
+            message_id: The Message-ID header of the mail to move.
+            source_folder: The current archive subfolder path
+                (as listed by ``list_archive_folders``).
+            target_subfolder: The destination archive subfolder path.
+                The target folder hierarchy is created automatically
+                if it does not yet exist.
+
+        Returns:
+            JSON text with a success confirmation or error detail.
+
+        Never raises — errors become a diagnostic string.
+
+        """
+        return await client.archive_move(
+            message_id, source_folder, target_subfolder
+        )
+
     return [
         get_mail_board,
         get_mail_email_status,
@@ -121,4 +213,7 @@ def build_mail_tools(settings: MailSettings) -> list[Callable[..., Any]]:
         delete_mail_email,
         archive_mail_email,
         run_mail_triage,
+        list_archive_folders,
+        browse_archive_folder,
+        move_archive_mail,
     ]
