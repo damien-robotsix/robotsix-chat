@@ -76,6 +76,7 @@ async def _query_ticket_state(
             sub_id,
         )
         return (None, None, exc.response.status_code)
+    except (httpx.TimeoutException, httpx.ConnectError, OSError) as exc:
         logger.debug(
             "Watcher: mill unreachable for ticket %s (subsession %s): %s",
             ticket_id,
@@ -394,6 +395,16 @@ async def watch_paused_monitors(env: SubsessionEnv) -> None:
                             if closed is not None:
                                 await env.delivery.deliver_summary(
                                     closed, summary, "ticket_deleted"
+                                )
+                            else:
+                                # Record was already CLOSED (e.g. legacy
+                                # paused record) — update close_reason
+                                # in-place so find_paused_periodic stops
+                                # returning it on subsequent polls.
+                                info.close_reason = "ticket_deleted"
+                                info.summary = summary
+                                await env.delivery.deliver_summary(
+                                    info, summary, "ticket_deleted"
                                 )
                             continue
                         logger.info(
