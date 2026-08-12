@@ -751,6 +751,11 @@ async def test_diagnose_billing_failure_trigger_config_cross_check(
 
     client = ActionsClient(_settings())
 
+    # Mock visibility check — _diagnose_billing_failure calls it before
+    # the other_succeeded branch, so it must be mocked to avoid a real
+    # (unmocked) HTTP request.
+    monkeypatch.setattr(client, "check_repo_visibility", AsyncMock(return_value=None))
+
     # Mock the cross-check to return True (other workflows succeeded)
     mock_cross_check = AsyncMock(return_value=True)
     monkeypatch.setattr(
