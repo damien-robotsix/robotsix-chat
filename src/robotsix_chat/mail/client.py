@@ -104,11 +104,74 @@ class MailClient:
         """
         return await self._post_form("/run-triage", "")
 
+    async def archive_folders(self) -> str:
+        """Call ``GET /archive-folders`` and return the JSON body as text.
+
+        Returns a JSON object with ``delimiter`` and ``folders`` keys.
+        Never raises — errors become a diagnostic string.
+        """
+        return await self._get("/archive-folders")
+
+    async def archive_messages(self, folder: str, limit: int | None = None) -> str:
+        """Call ``GET /archive/<folder>/messages`` and return the JSON body as text.
+
+        Args:
+            folder: The archive subfolder to browse (URL-path-encoded).
+            limit: Optional max number of messages to return (1-2000).
+
+        Returns:
+            JSON object with ``messages`` and ``folder`` keys.
+
+        Never raises — errors become a diagnostic string.
+
+        """
+        path = f"/archive/{quote(folder, safe='')}/messages"
+        params: dict[str, str] = {}
+        if limit is not None:
+            params["limit"] = str(limit)
+        return await self._get(path, params=params)
+
+    async def archive_move(
+        self,
+        message_id: str,
+        source_folder: str,
+        target_subfolder: str,
+    ) -> str:
+        """Call ``POST /archive-move`` with a JSON body.
+
+        Args:
+            message_id: The Message-ID header of the mail to move.
+            source_folder: The current archive subfolder path.
+            target_subfolder: The destination archive subfolder.
+
+        Returns:
+            JSON success/error object as text.
+
+        Never raises — errors become a diagnostic string.
+
+        """
+        url = f"{self._base_url}/archive-move"
+        result = await safe_http_request(
+            "POST",
+            url,
+            headers=self._headers,
+            timeout=self._timeout,
+            json_body={
+                "message_id": message_id,
+                "source_folder": source_folder,
+                "target_subfolder": target_subfolder,
+            },
+            label="Mail API",
+        )
+        if result.error:
+            return result.error
+        return result.text  # type: ignore[return-value]
+
     # ------------------------------------------------------------------
     # Internal helpers
     # ------------------------------------------------------------------
 
-    async def _get(self, path: str) -> str:
+    async def _get(self, path: str, params: dict[str, str] | None = None) -> str:
         """Perform a GET request and return the text body or error string."""
         url = f"{self._base_url}{path}"
         result = await safe_http_request(
@@ -116,6 +179,7 @@ class MailClient:
             url,
             headers=self._headers,
             timeout=self._timeout,
+            params=params,
             label="Mail API",
         )
         if result.error:
