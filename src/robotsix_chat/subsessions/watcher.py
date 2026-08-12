@@ -38,21 +38,30 @@ logger = logging.getLogger(__name__)
 # (avoids busy-waiting when the watcher has nothing to do).
 _IDLE_POLL_INTERVAL_SECONDS: float = 30.0
 
+# Consecutive 404s from the board API before the watcher closes a
+# paused monitor — the ticket no longer exists (deleted, or the
+# monitor was spawned with a stale/paraphrased ID).
+_MAX_WATCHER_404_FAILURES = 3
+
 
 async def _query_ticket_state(
     board_url: str, ticket_id: str, sub_id: str
-) -> tuple[str | None, str | None]:
-    """Return ``(state, pr_url)`` for *ticket_id*, or ``(None, None)`` on error.
+) -> tuple[str | None, str | None, int | None]:
+    """Return ``(state, pr_url, http_status)`` for *ticket_id*.
 
     *pr_url* is the ticket's linked PR URL from the board API (may be
     ``None`` when the field is absent or null).
+
+    *http_status* is the HTTP status code on HTTP errors, or ``None``
+    for non-HTTP errors (timeout, connection error, malformed URL).
+    Successful responses return ``(state, pr_url, None)``.
     """
     try:
         base = httpx.URL(board_url.rstrip("/"))
         ticket_url = base.copy_with(path=f"/tickets/{ticket_id}")
     except Exception:
         logger.exception("Could not construct ticket URL for subsession %s", sub_id)
-        return (None, None)
+        return (None, None, None)
 
     try:
         async with httpx.AsyncClient(timeout=httpx.Timeout(10.0)) as client:
@@ -66,7 +75,7 @@ async def _query_ticket_state(
             ticket_id,
             sub_id,
         )
-        return (None, None)
+        return (None, None, exc.response.status_code)
     except (httpx.TimeoutException, httpx.ConnectError, OSError) as exc:
         logger.debug(
             "Watcher: mill unreachable for ticket %s (subsession %s): %s",
@@ -74,14 +83,14 @@ async def _query_ticket_state(
             sub_id,
             exc,
         )
-        return (None, None)
+        return (None, None, None)
     except Exception:
         logger.exception(
             "Watcher: unexpected error querying mill for ticket %s (subsession %s)",
             ticket_id,
             sub_id,
         )
-        return (None, None)
+        return (None, None, None)
 
     state = ticket_data.get("state")
     state_str = (
@@ -89,7 +98,7 @@ async def _query_ticket_state(
     )
     pr_url = ticket_data.get("pr_url")
     pr_url_str = pr_url if isinstance(pr_url, str) and pr_url else None
-    return (state_str, pr_url_str)
+    return (state_str, pr_url_str, None)
 
 
 async def _check_pr_merged(
@@ -346,13 +355,80 @@ async def watch_paused_monitors(env: SubsessionEnv) -> None:
                     else None
                 )
 
-                current_state, pr_url = await _query_ticket_state(
+                current_state, pr_url, http_status = await _query_ticket_state(
                     board_url, ticket_id, info.id
                 )
                 if current_state is None:
+                    if http_status == 404:
+                        # Ticket not found — track consecutive 404s and
+                        # close the monitor after the threshold to stop
+                        # futile polling (the ticket was deleted or the
+                        # monitor was spawned with a stale/paraphrased ID).
+                        raw_count = checkpoint.get("_watcher_404_count")
+                        count = (
+                            int(raw_count) if isinstance(raw_count, (int, float)) else 0
+                        )
+                        count += 1
+                        checkpoint["_watcher_404_count"] = count
+                        env.registry.update_checkpoint(info.id, checkpoint)
+                        if count >= _MAX_WATCHER_404_FAILURES:
+                            summary = (
+                                f"Ticket {ticket_id} returned 404 for "
+                                f"{count} consecutive watcher polls — "
+                                f"the ticket no longer exists on the "
+                                f"board.  Closing monitor to prevent "
+                                f"futile polling."
+                            )
+                            logger.warning(
+                                "Watcher: closing monitor %s (ticket %s) "
+                                "after %d consecutive 404s.",
+                                info.id,
+                                ticket_id,
+                                count,
+                            )
+                            closed = env.registry.mark_closed(
+                                info.id,
+                                summary=summary,
+                                reason="ticket_deleted",
+                                closed_by="system",
+                            )
+                            if closed is not None:
+                                await env.delivery.deliver_summary(
+                                    closed, summary, "ticket_deleted"
+                                )
+                            else:
+                                # Record was already CLOSED (e.g. legacy
+                                # paused record) — update close_reason
+                                # in-place so find_paused_periodic stops
+                                # returning it on subsequent polls.
+                                info.close_reason = "ticket_deleted"
+                                info.summary = summary
+                                await env.delivery.deliver_summary(
+                                    info, summary, "ticket_deleted"
+                                )
+                            continue
+                        logger.info(
+                            "Watcher: ticket %s returned 404 for "
+                            "monitor %s (%d/%d consecutive).",
+                            ticket_id,
+                            info.id,
+                            count,
+                            _MAX_WATCHER_404_FAILURES,
+                        )
+                    else:
+                        # Non-404 error or successful response without
+                        # state — reset the 404 counter (the ticket may
+                        # still exist; this was a transient error).
+                        if "_watcher_404_count" in checkpoint:
+                            del checkpoint["_watcher_404_count"]
+                            env.registry.update_checkpoint(info.id, checkpoint)
                     # Mill unreachable or ticket gone — skip this monitor
                     # this round; we'll try again on the next poll cycle.
                     continue
+                # Successful response with state — reset the 404 counter.
+                if "_watcher_404_count" in checkpoint:
+                    del checkpoint["_watcher_404_count"]
+                    env.registry.update_checkpoint(info.id, checkpoint)
 
                 # Resume when the ticket state has changed from what the
                 # monitor last observed.

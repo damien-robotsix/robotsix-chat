@@ -4,6 +4,7 @@ from __future__ import annotations
 
 import asyncio
 import contextlib
+from types import SimpleNamespace
 from typing import Any
 
 import pytest
@@ -953,6 +954,138 @@ async def test_spawn_wait_for_event_empty_dedup_key_rejected() -> None:
     )
 
     assert "require a dedup_key" in result
+
+
+# ---------------------------------------------------------------------------
+# Spawn-time ticket-verification (404-refusal / board-unreachable paths)
+# ---------------------------------------------------------------------------
+
+
+@pytest.mark.asyncio
+async def test_spawn_tool_refuses_monitor_on_ticket_404() -> None:
+    """A periodic/wait_for_event spawn with dedup_key is refused on 404.
+
+    When the board returns 404 for the ticket id passed as
+    ``dedup_key``, the spawn is blocked and a diagnostic message is
+    returned.
+    """
+    from unittest.mock import AsyncMock, MagicMock, patch
+
+    env = build_env()
+    # Enable direct_repo with a board URL so the verification path fires.
+    env.settings.direct_repo = SimpleNamespace(
+        enabled=True, board_api_base_url="https://mill.example.com"
+    )
+    spawn = _by_name(build_subsession_tools(env, ctx=_ctx()), "spawn_subsession")
+
+    # Mock the HTTP client to return a 404.
+    mock_response = MagicMock()
+    mock_response.status_code = 404
+    mock_response.raise_for_status = MagicMock()
+
+    mock_client = MagicMock()
+    mock_client.get = AsyncMock(return_value=mock_response)
+
+    mock_instance = MagicMock()
+    mock_instance.__aenter__ = AsyncMock(return_value=mock_client)
+    mock_instance.__aexit__ = AsyncMock(return_value=None)
+
+    with patch("httpx.AsyncClient", MagicMock(return_value=mock_instance)):
+        result = await spawn(
+            "periodic",
+            "phantom monitor",
+            "monitor ticket that does not exist",
+            interval_seconds=60.0,
+            dedup_key="nonexistent-ticket",
+            model_level=3,
+        )
+
+    assert "Cannot spawn monitor" in result
+    assert "404" in result
+    # No subsession should have been created.
+    assert env.registry.list_for_owner(OWNER) == []
+
+
+@pytest.mark.asyncio
+async def test_spawn_tool_allows_monitor_when_board_unreachable() -> None:
+    """A spawn with dedup_key is allowed when the board is unreachable.
+
+    Connection errors (the board is down or unreachable) should not
+    block monitor spawns — the watcher handles repeated 404s later.
+    """
+    from unittest.mock import AsyncMock, MagicMock, patch
+
+    import httpx
+
+    env = build_env()
+    env.settings.direct_repo = SimpleNamespace(
+        enabled=True, board_api_base_url="https://mill.example.com"
+    )
+    spawn = _by_name(build_subsession_tools(env, ctx=_ctx()), "spawn_subsession")
+
+    # Mock the HTTP client to raise a connection error.
+    mock_client = MagicMock()
+    mock_client.get = AsyncMock(side_effect=httpx.ConnectError("refused"))
+
+    mock_instance = MagicMock()
+    mock_instance.__aenter__ = AsyncMock(return_value=mock_client)
+    mock_instance.__aexit__ = AsyncMock(return_value=None)
+
+    with patch("httpx.AsyncClient", MagicMock(return_value=mock_instance)):
+        result = await spawn(
+            "periodic",
+            "monitor despite unreachable board",
+            "monitor ticket",
+            interval_seconds=60.0,
+            dedup_key="ticket-maybe",
+            model_level=3,
+        )
+
+    # Spawn should succeed — the board-unreachable path logs a warning
+    # but allows the spawn.
+    assert result.startswith("Started periodic subsession ")
+    assert "'monitor despite unreachable board'" in result
+
+
+@pytest.mark.asyncio
+async def test_spawn_tool_allows_monitor_on_non_404_http_error() -> None:
+    """A spawn with dedup_key is allowed on a non-404 server error.
+
+    Only a 404 should block the spawn; temporary board issues (5xx,
+    etc.) should let the spawn proceed — the watcher catches the
+    fallout later.
+    """
+    from unittest.mock import AsyncMock, MagicMock, patch
+
+    env = build_env()
+    env.settings.direct_repo = SimpleNamespace(
+        enabled=True, board_api_base_url="https://mill.example.com"
+    )
+    spawn = _by_name(build_subsession_tools(env, ctx=_ctx()), "spawn_subsession")
+
+    # Mock the HTTP client to return a 500.
+    mock_response = MagicMock()
+    mock_response.status_code = 500
+    mock_response.raise_for_status = MagicMock()
+
+    mock_client = MagicMock()
+    mock_client.get = AsyncMock(return_value=mock_response)
+
+    mock_instance = MagicMock()
+    mock_instance.__aenter__ = AsyncMock(return_value=mock_client)
+    mock_instance.__aexit__ = AsyncMock(return_value=None)
+
+    with patch("httpx.AsyncClient", MagicMock(return_value=mock_instance)):
+        result = await spawn(
+            "wait_for_event",
+            "event monitor",
+            "monitor ticket",
+            dedup_key="ticket-maybe",
+            model_level=3,
+        )
+
+    # Should succeed — only 404 blocks the spawn.
+    assert result.startswith("Started wait_for_event subsession ")
 
 
 # ---------------------------------------------------------------------------

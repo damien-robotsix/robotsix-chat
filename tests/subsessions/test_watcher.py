@@ -50,12 +50,13 @@ async def test_query_ticket_state_returns_state_string() -> None:
     mock_instance.__aexit__ = AsyncMock(return_value=None)
 
     with patch("httpx.AsyncClient", MagicMock(return_value=mock_instance)):
-        state, pr_url = await _query_ticket_state(
+        state, pr_url, http_status = await _query_ticket_state(
             "https://mill.example.com", "TICKET-1", "sub-1"
         )
 
     assert state == "in_progress"
     assert pr_url is None
+    assert http_status is None
 
 
 @pytest.mark.asyncio
@@ -76,17 +77,18 @@ async def test_query_ticket_state_returns_pr_url() -> None:
     mock_instance.__aexit__ = AsyncMock(return_value=None)
 
     with patch("httpx.AsyncClient", MagicMock(return_value=mock_instance)):
-        state, pr_url = await _query_ticket_state(
+        state, pr_url, http_status = await _query_ticket_state(
             "https://mill.example.com", "TICKET-1", "sub-1"
         )
 
     assert state == "closed"
     assert pr_url == "https://github.com/owner/repo/pull/42"
+    assert http_status is None
 
 
 @pytest.mark.asyncio
 async def test_query_ticket_state_returns_none_on_http_error() -> None:
-    """Returns (None, None) when the mill returns a 4xx/5xx status."""
+    """Returns (None, None, status_code) when the mill returns a 4xx/5xx status."""
     mock_response = MagicMock()
     mock_response.raise_for_status.side_effect = httpx.HTTPStatusError(
         "not found", request=MagicMock(), response=MagicMock(status_code=404)
@@ -100,17 +102,18 @@ async def test_query_ticket_state_returns_none_on_http_error() -> None:
     mock_instance.__aexit__ = AsyncMock(return_value=None)
 
     with patch("httpx.AsyncClient", MagicMock(return_value=mock_instance)):
-        state, pr_url = await _query_ticket_state(
+        state, pr_url, http_status = await _query_ticket_state(
             "https://mill.example.com", "TICKET-1", "sub-1"
         )
 
     assert state is None
     assert pr_url is None
+    assert http_status == 404
 
 
 @pytest.mark.asyncio
 async def test_query_ticket_state_returns_none_on_timeout() -> None:
-    """Returns (None, None) when the mill times out."""
+    """Returns (None, None, None) when the mill times out."""
     mock_client = MagicMock()
     mock_client.get = AsyncMock(side_effect=httpx.TimeoutException("timeout"))
 
@@ -119,20 +122,71 @@ async def test_query_ticket_state_returns_none_on_timeout() -> None:
     mock_instance.__aexit__ = AsyncMock(return_value=None)
 
     with patch("httpx.AsyncClient", MagicMock(return_value=mock_instance)):
-        state, pr_url = await _query_ticket_state(
+        state, pr_url, http_status = await _query_ticket_state(
             "https://mill.example.com", "TICKET-1", "sub-1"
         )
 
     assert state is None
     assert pr_url is None
+    assert http_status is None
+
+
+@pytest.mark.asyncio
+async def test_query_ticket_state_returns_none_on_connect_error() -> None:
+    """Returns (None, None, None) when the mill connection is refused.
+
+    Verifies that ``ConnectError`` is caught by its dedicated handler,
+    not swallowed by the generic ``except Exception`` block — the
+    separate handler was once merged into the ``HTTPStatusError``
+    handler by mistake, leaving dead code.  This test guards against
+    that regression.
+    """
+    mock_client = MagicMock()
+    mock_client.get = AsyncMock(side_effect=httpx.ConnectError("refused"))
+
+    mock_instance = MagicMock()
+    mock_instance.__aenter__ = AsyncMock(return_value=mock_client)
+    mock_instance.__aexit__ = AsyncMock(return_value=None)
+
+    with patch("httpx.AsyncClient", MagicMock(return_value=mock_instance)):
+        state, pr_url, http_status = await _query_ticket_state(
+            "https://mill.example.com", "TICKET-1", "sub-1"
+        )
+
+    assert state is None
+    assert pr_url is None
+    assert http_status is None
+
+
+@pytest.mark.asyncio
+async def test_query_ticket_state_returns_none_on_os_error() -> None:
+    """Returns (None, None, None) when a low-level OS error occurs."""
+    mock_client = MagicMock()
+    mock_client.get = AsyncMock(side_effect=OSError("socket error"))
+
+    mock_instance = MagicMock()
+    mock_instance.__aenter__ = AsyncMock(return_value=mock_client)
+    mock_instance.__aexit__ = AsyncMock(return_value=None)
+
+    with patch("httpx.AsyncClient", MagicMock(return_value=mock_instance)):
+        state, pr_url, http_status = await _query_ticket_state(
+            "https://mill.example.com", "TICKET-1", "sub-1"
+        )
+
+    assert state is None
+    assert pr_url is None
+    assert http_status is None
 
 
 @pytest.mark.asyncio
 async def test_query_ticket_state_returns_none_on_bad_url() -> None:
-    """Returns (None, None) when the board URL is malformed."""
-    state, pr_url = await _query_ticket_state("not a url", "TICKET-1", "sub-1")
+    """Returns (None, None, None) when the board URL is malformed."""
+    state, pr_url, http_status = await _query_ticket_state(
+        "not a url", "TICKET-1", "sub-1"
+    )
     assert state is None
     assert pr_url is None
+    assert http_status is None
 
 
 # -- _resume_paused_monitor ------------------------------------------------
@@ -1149,3 +1203,154 @@ async def test_watcher_notifies_on_merge_conflict() -> None:
 
     urgency_values = [frame["urgency"] for frame in merge_conflict_notifications]
     assert urgency_values == ["high"]
+
+
+# -- 404-tracking auto-close -------------------------------------------------
+
+
+@pytest.mark.asyncio
+async def test_watcher_closes_monitor_after_consecutive_404s() -> None:
+    """After ``_MAX_WATCHER_404_FAILURES`` consecutive 404s the monitor is closed.
+
+    The watcher tracks ``_watcher_404_count`` in the checkpoint; when it
+    reaches the threshold the monitor is closed with reason
+    ``"ticket_deleted"`` and a summary is delivered via the delivery
+    channel.
+    """
+    settings = _settings_with_direct_repo()
+    sink = RecordingSink()
+    env = build_env(settings=settings, event_sink=sink)
+
+    info = _make_paused_monitor(env, ticket_id="T-DELETED", last_known="open")
+
+    # Mock the mill to return 404 on every call.
+    mock_response = MagicMock()
+    mock_response.status_code = 404
+    mock_response.raise_for_status.side_effect = httpx.HTTPStatusError(
+        "not found",
+        request=MagicMock(),
+        response=mock_response,
+    )
+
+    mock_client = MagicMock()
+    mock_client.get = AsyncMock(return_value=mock_response)
+
+    mock_instance = MagicMock()
+    mock_instance.__aenter__ = AsyncMock(return_value=mock_client)
+    mock_instance.__aexit__ = AsyncMock(return_value=None)
+
+    # Poll interval short enough for several ticks.
+    settings.subsessions.paused_monitor_poll_interval_seconds = 0.01
+
+    watcher_task = asyncio.create_task(watch_paused_monitors(env))
+
+    with patch("httpx.AsyncClient", MagicMock(return_value=mock_instance)):
+        # Let the watcher poll enough ticks to accumulate 3+ consecutive 404s.
+        await asyncio.sleep(0.2)
+
+    watcher_task.cancel()
+    with pytest.raises(asyncio.CancelledError):
+        _ = await watcher_task
+
+    # The monitor should be CLOSED with reason "ticket_deleted".
+    reopened = env.registry.get(info.id)
+    assert reopened is not None
+    assert reopened.status is SubsessionStatus.CLOSED
+    assert reopened.close_reason == "ticket_deleted"
+    assert "404" in (reopened.summary or "")
+
+
+@pytest.mark.asyncio
+async def test_watcher_resets_404_counter_on_successful_response() -> None:
+    """The 404 counter is reset when the mill returns a successful response.
+
+    One or two 404s followed by a successful response should reset the
+    counter so the threshold never accumulates across transient outages.
+    """
+    settings = _settings_with_direct_repo()
+    env = build_env(settings=settings)
+
+    info = _make_paused_monitor(env, ticket_id="T-TRANSIENT", last_known="open")
+
+    # Pre-seed the checkpoint with 2 prior 404s.
+    assert info.checkpoint is not None
+    info.checkpoint["_watcher_404_count"] = 2
+    env.registry.update_checkpoint(info.id, info.checkpoint)
+
+    # Mock the mill to return a successful response.
+    mock_response = MagicMock()
+    mock_response.json.return_value = {"state": "open"}
+    mock_response.raise_for_status.return_value = None
+
+    mock_client = MagicMock()
+    mock_client.get = AsyncMock(return_value=mock_response)
+
+    mock_instance = MagicMock()
+    mock_instance.__aenter__ = AsyncMock(return_value=mock_client)
+    mock_instance.__aexit__ = AsyncMock(return_value=None)
+
+    settings.subsessions.paused_monitor_poll_interval_seconds = 0.01
+
+    watcher_task = asyncio.create_task(watch_paused_monitors(env))
+
+    with patch("httpx.AsyncClient", MagicMock(return_value=mock_instance)):
+        await asyncio.sleep(0.15)
+
+    watcher_task.cancel()
+    with pytest.raises(asyncio.CancelledError):
+        _ = await watcher_task
+
+    # The 404 counter should have been removed from the checkpoint.
+    reopened = env.registry.get(info.id)
+    assert reopened is not None
+    assert reopened.checkpoint is not None
+    assert "_watcher_404_count" not in reopened.checkpoint
+    # The monitor should still be paused (state unchanged).
+    assert reopened.status is SubsessionStatus.CLOSED
+
+
+@pytest.mark.asyncio
+async def test_watcher_404_keeps_paused_below_threshold() -> None:
+    """One or two 404s do NOT close the monitor — only the threshold triggers."""
+    settings = _settings_with_direct_repo()
+    env = build_env(settings=settings)
+
+    info = _make_paused_monitor(env, ticket_id="T-FLEETING", last_known="open")
+
+    # Mock the mill to return 404.
+    mock_response = MagicMock()
+    mock_response.status_code = 404
+    mock_response.raise_for_status.side_effect = httpx.HTTPStatusError(
+        "not found",
+        request=MagicMock(),
+        response=mock_response,
+    )
+
+    mock_client = MagicMock()
+    mock_client.get = AsyncMock(return_value=mock_response)
+
+    mock_instance = MagicMock()
+    mock_instance.__aenter__ = AsyncMock(return_value=mock_client)
+    mock_instance.__aexit__ = AsyncMock(return_value=None)
+
+    settings.subsessions.paused_monitor_poll_interval_seconds = 0.01
+
+    watcher_task = asyncio.create_task(watch_paused_monitors(env))
+
+    with patch("httpx.AsyncClient", MagicMock(return_value=mock_instance)):
+        # Short sleep — only ~2 ticks, below the threshold of 3.
+        await asyncio.sleep(0.02)
+
+    watcher_task.cancel()
+    with pytest.raises(asyncio.CancelledError):
+        _ = await watcher_task
+
+    # The monitor should still be paused.
+    reopened = env.registry.get(info.id)
+    assert reopened is not None
+    assert reopened.status is SubsessionStatus.CLOSED
+    assert reopened.close_reason == "paused"
+    # The counter should have been incremented but not yet reached threshold.
+    assert reopened.checkpoint is not None
+    count = reopened.checkpoint.get("_watcher_404_count", 0)
+    assert 1 <= count < 3
