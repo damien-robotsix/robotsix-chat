@@ -462,7 +462,6 @@ def build_find_ticket_by_pr_tool(
     conn = _board_connection(settings, component_request)
     if conn is None:
         return []
-    _board_url, _board_token, _timeout = conn
 
     async def find_ticket_by_pr(pr_url: str) -> str:
         """Find the ticket associated with a pull request URL.
