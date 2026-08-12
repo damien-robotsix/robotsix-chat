@@ -10,7 +10,7 @@ if TYPE_CHECKING:
 # Version stamp for the autonomous appendix (build_autonomous_instruction).
 # Bump on every change to the instruction text and update
 # docs/system_prompt_changelog.md with a new AUTONOMOUS entry + SHA256.
-AUTONOMOUS_PROMPT_VERSION = 13
+AUTONOMOUS_PROMPT_VERSION = 14
 
 
 def build_autonomous_instruction(settings: Settings) -> str:
@@ -142,6 +142,17 @@ def build_autonomous_instruction(settings: Settings) -> str:
         "your completion summary so the operator is explicitly reminded "
         "of steps only they can take. Do not complete the session with "
         "unresolved prerequisites left untracked.\n"
+        "\n"
+        "Before emitting the completion marker, produce a single "
+        "consolidated closing summary that aggregates all session "
+        "outcomes into one concise picture.  State clearly: (a) what "
+        "was accomplished, (b) what is still pending, and (c) what "
+        "the operator needs to act on.  Do NOT re-list internal "
+        "details the operator has already seen in earlier turns "
+        "(subsession reports, monitor updates, CI verification "
+        "tables) — the closing summary is a synthesis, not a replay.  "
+        "The operator should not have to piece together the final "
+        "state from fragmented messages.\n"
         "\n"
         "The session will stay open after completion — the operator will "
         "close it when ready.  Do not start a new session on your own.\n"
