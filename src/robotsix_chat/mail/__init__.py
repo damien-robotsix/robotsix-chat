@@ -157,13 +157,11 @@ def build_mail_tools(settings: MailSettings) -> list[Callable[..., Any]]:
                 this to spot stray or duplicate archive roots before
                 reconciling the mailbox structure.
 
-        Returns a JSON object with ``delimiter`` (the hierarchy separator)
-        and ``folders`` (a flat list of folder paths).  Use this to
-        discover which archive subfolders exist before browsing or moving
-        messages.
-
         Returns:
-            JSON text with delimiter and folder list.
+            JSON text with ``delimiter`` (the hierarchy separator) and
+            ``folders`` (a flat list of folder paths).  Use this to
+            discover which archive subfolders exist before browsing or
+            moving messages.
 
         Never raises — errors become a diagnostic string.
 

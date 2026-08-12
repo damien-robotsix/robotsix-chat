@@ -1,0 +1,1 @@
+Added optional `account` and `include_unmapped` arguments to the `list_archive_folders` mail tool (and its `GET /archive-folders` HTTP call), letting the chat agent list all IMAP folders — top-level folders and siblings of the archive root — to reconcile stray duplicate archive roots.
