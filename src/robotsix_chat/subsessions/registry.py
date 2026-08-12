@@ -65,6 +65,34 @@ def _truncate(text: str, limit: int) -> str:
     return text if len(text) <= limit else text[: limit - 1] + "…"
 
 
+def _checkpoint_ticket_id(checkpoint: dict[str, object] | None) -> str:
+    """Return the ``ticket_id`` in *checkpoint* when it is a non-empty string."""
+    raw = checkpoint.get("ticket_id") if checkpoint else None
+    return raw if isinstance(raw, str) and raw else ""
+
+
+def _preserve_event_ticket_id(
+    info: SubsessionInfo, checkpoint: dict[str, object] | None
+) -> dict[str, object] | None:
+    """Keep the system-owned ``ticket_id`` when a WAIT_FOR_EVENT checkpoint is replaced.
+
+    ``set_checkpoint`` (and any other checkpoint writer) replaces the whole
+    dict; a replacement that omits ``ticket_id`` would leave an
+    event-driven monitor unable to filter mill events after the next
+    restart.  Recover the previous value from the current checkpoint or,
+    failing that, the subsession's ``dedup_key`` (which for ticket
+    monitors is always the ticket id).
+    """
+    if _checkpoint_ticket_id(checkpoint):
+        return checkpoint
+    ticket_id = _checkpoint_ticket_id(info.checkpoint) or info.dedup_key
+    if not ticket_id:
+        return checkpoint
+    merged = dict(checkpoint or {})
+    merged["ticket_id"] = ticket_id
+    return merged
+
+
 class RegistryStore:
     """JSON persistence for subsession records — file I/O and terminal retention.
 
@@ -1042,12 +1070,20 @@ class SubsessionRegistry:
     ) -> bool:
         """Replace the checkpoint data for *sub_id* and persist.
 
+        For ``WAIT_FOR_EVENT`` subsessions the ``ticket_id`` key is
+        system-owned: when the replacement drops it, it is recovered from
+        the previous checkpoint (or the subsession's ``dedup_key``) so the
+        monitor's event filter survives agent ``set_checkpoint`` calls and
+        process restarts.
+
         Returns ``True`` when the update was applied; ``False`` when the
         subsession is unknown (including already-terminal).
         """
         info = self._subs.get(sub_id)
         if info is None:
             return False
+        if info.kind is SubsessionKind.WAIT_FOR_EVENT:
+            checkpoint = _preserve_event_ticket_id(info, checkpoint)
         info.checkpoint = checkpoint
         self._store.persist()
         return True

@@ -948,6 +948,92 @@ def test_find_active_periodic_by_ticket_id_skips_non_periodic() -> None:
     assert result is None
 
 
+# ---------------------------------------------------------------------------
+# update_checkpoint ticket_id preservation for WAIT_FOR_EVENT
+# ---------------------------------------------------------------------------
+
+
+def test_update_checkpoint_preserves_ticket_id_for_wait_for_event() -> None:
+    """Replacing a WAIT_FOR_EVENT checkpoint never drops its existing ticket_id."""
+    registry = SubsessionRegistry(store_path=None)
+    info = _create(
+        registry,
+        kind=SubsessionKind.WAIT_FOR_EVENT,
+        title="event monitor",
+        checkpoint={"ticket_id": "tick-1", "last_known_state": "open"},
+    )
+
+    registry.update_checkpoint(info.id, {"last_known_state": "in_progress"})
+
+    refreshed = registry.get(info.id)
+    assert refreshed is not None
+    assert refreshed.checkpoint == {
+        "ticket_id": "tick-1",
+        "last_known_state": "in_progress",
+    }
+
+
+def test_update_checkpoint_recovers_ticket_id_from_dedup_key() -> None:
+    """A WAIT_FOR_EVENT checkpoint replacement falls back to dedup_key for ticket_id."""
+    registry = SubsessionRegistry(store_path=None)
+    info = _create(
+        registry,
+        kind=SubsessionKind.WAIT_FOR_EVENT,
+        title="event monitor",
+        dedup_key="tick-2",
+        checkpoint=None,
+    )
+
+    registry.update_checkpoint(info.id, {"last_known_state": "open"})
+
+    refreshed = registry.get(info.id)
+    assert refreshed is not None
+    assert refreshed.checkpoint == {
+        "ticket_id": "tick-2",
+        "last_known_state": "open",
+    }
+
+
+def test_update_checkpoint_respects_explicit_ticket_id_override() -> None:
+    """An explicit valid ticket_id in the replacement is kept, not overwritten."""
+    registry = SubsessionRegistry(store_path=None)
+    info = _create(
+        registry,
+        kind=SubsessionKind.WAIT_FOR_EVENT,
+        title="event monitor",
+        checkpoint={"ticket_id": "tick-old"},
+    )
+
+    registry.update_checkpoint(
+        info.id, {"ticket_id": "tick-new", "last_known_state": "open"}
+    )
+
+    refreshed = registry.get(info.id)
+    assert refreshed is not None
+    assert refreshed.checkpoint == {
+        "ticket_id": "tick-new",
+        "last_known_state": "open",
+    }
+
+
+def test_update_checkpoint_does_not_fabricate_ticket_id_for_wait_for_event() -> None:
+    """No ticket_id is injected when neither checkpoint nor dedup_key has one."""
+    registry = SubsessionRegistry(store_path=None)
+    info = _create(
+        registry,
+        kind=SubsessionKind.WAIT_FOR_EVENT,
+        title="event monitor",
+        checkpoint=None,
+        dedup_key=None,
+    )
+
+    registry.update_checkpoint(info.id, {"last_known_state": "open"})
+
+    refreshed = registry.get(info.id)
+    assert refreshed is not None
+    assert refreshed.checkpoint == {"last_known_state": "open"}
+
+
 def test_create_raises_dedup_error_for_checkpoint_ticket_id_match() -> None:
     """``create`` raises ``SubsessionDedupError`` on checkpoint ticket_id match.
 
