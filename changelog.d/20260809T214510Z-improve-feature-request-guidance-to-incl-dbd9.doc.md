@@ -1,1 +1,0 @@
-Added a feature-request checklist to `tasks/README.md` requiring preconditions/edge cases and user-facing feedback for all states, plus activation path and definition of done.
