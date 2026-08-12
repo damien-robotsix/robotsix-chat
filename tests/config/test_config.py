@@ -55,6 +55,7 @@ def test_defaults() -> None:
     assert settings.server_port == 8000
     assert settings.log_level == "INFO"
     assert settings.agent_instruction.startswith("You are a helpful assistant.")
+    assert settings.low_risk_actions == []
 
 
 def test_log_level_default() -> None:
