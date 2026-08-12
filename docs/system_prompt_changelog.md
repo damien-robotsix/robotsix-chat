@@ -3,6 +3,27 @@
 Governed artifact: `Settings.agent_instruction` default literal in
 `src/robotsix_chat/config/settings.py`. Version stamp: `SYSTEM_PROMPT_VERSION` in the same module.
 
+## v107 — 2026-08-12 — require-evidence-before-capability-tickets
+
+**Summary:** Add an evidence/confirmation gate to the ticket-lifecycle
+"Initiate" step.  Before the agent proposes a *new capability* ticket (a
+ticket that adds a new feature, tool, component, endpoint, or behavior), it
+must first confirm the need is real rather than speculative: verify the
+symptom actually occurs (inspect logs, code, or live state), or get the
+user's explicit confirmation of a concrete symptom.  The agent must NOT file
+a ticket based on a hypothetical or a passing speculation (e.g. a user
+wondering whether something "might" re-run on every boot), and when it cannot
+verify it should ask the user for a specific symptom or whether they want the
+ticket filed.
+
+**Rationale:** Session 3bb6f7a2f99340d38f5cde6cbd6a85aa saw the agent propose
+a ticket immediately after the user speculated that triage might re-run on
+every boot, without first checking whether that was actually happening or
+asking for a specific symptom.  Speculation-based tickets add noise to the
+board.
+
+**SHA256:** `8d953875b4bb49f923848f0ea7e6ec3c902b5a46d38ffd5c50aa9619b5841efe`
+
 ## v106 — 2026-08-14 — stuck-draft-detection
 
 **Summary:** Add a "Stuck-draft detection" bullet to the periodic-run
