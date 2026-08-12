@@ -685,11 +685,14 @@ class SubsessionsSettings(BaseModel):
             ``SUBSESSIONS_MAX_CONCURRENT_PER_SESSION``.
         stale_reclaim_seconds: When the global pool
             (``max_concurrent``) is full but the spawning session is
-            under its per-session limit, PAUSED subsessions owned by
-            **other** sessions that have been idle for longer than this
-            many seconds are eligible for reclamation — the stalest is
-            closed to free a slot for the new spawn.  Set to ``0`` to
-            disable reclamation.  Env override:
+            under its per-session limit, SLEEPING or PAUSED subsessions
+            owned by **other** sessions that have been idle for longer
+            than this many seconds are eligible for reclamation — the
+            stalest is closed to free a slot for the new spawn.
+            SLEEPING subsessions are preferred over PAUSED because they
+            count against the global capacity cap; reclaiming one
+            actually frees a slot.  Set to ``0`` to disable reclamation.
+            Env override:
             ``SUBSESSIONS_STALE_RECLAIM_SECONDS``.
         max_depth: Maximum nesting depth.  The main chat session is depth
             0; its subsessions are depth 1.  Agents at ``max_depth`` get
