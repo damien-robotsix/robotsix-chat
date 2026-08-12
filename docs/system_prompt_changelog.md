@@ -2082,6 +2082,21 @@ The hash is computed on the output of `build_autonomous_instruction(Settings())`
 autonomous settings at their pydantic field defaults (``proposal_marker="---PROPOSAL READY---"``,
 ``completion_marker="---AUTONOMOUS COMPLETE---"``, ``stale_monitor_runs_before_completion=3``).
 
+## AUTONOMOUS v17 — 2026-08-09 — do-not-output-raw-subsession-debug-summa-f3f1
+
+**Summary:** Reinforced the COMPLETION closing-summary guidance so the HARD FILTERING RULE is
+applied at the very end of a session: the assistant must never output raw subsession summary
+blocks ('Subsession summaries:', '[id] kind=... status=...' bullet enumerations, or any
+'kind=' / 'status=' fragments) and must strip all internal technical identifiers and
+state-machine output, presenting only the synthesized, user-facing meaning.
+
+**Rationale:** Session c0ff4ec1b46b4ba4bcc26390c19c3f21 appended a raw subsession summary block
+(with kind=periodic status=closed internal details) to the user-facing reply at session end,
+violating the consolidation rules' explicit prohibition on raw bullet enumerations of
+[id] kind=... status=... lines.
+
+**SHA256:** `5c07bf939e478102c6b22dd608fe998863e352d605d232cba668750fef681605`
+
 ## AUTONOMOUS v16 — 2026-08-09 — avoid-repeated-monitor-failures-by-not-r-6dec
 
 **Summary:** Added a REPEATED-FAILURE STOP rule to the MONITOR LIFECYCLE MANAGEMENT section: if a
