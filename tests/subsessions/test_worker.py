@@ -2547,13 +2547,13 @@ async def test_wait_for_event_turn_repairs_checkpoint_ticket_id() -> None:
     assert info is not None
     assert info.dedup_key == "abc-123"
 
-    # Simulate the agent calling set_checkpoint to record a state
-    # transition — this replaces the checkpoint, dropping ticket_id.
-    env.registry.update_checkpoint(sub_id, {"last_known_state": "in_progress"})
+    # Simulate a legacy checkpoint that lost its ticket_id before the
+    # registry-level preservation guard existed.  New ``update_checkpoint``
+    # writes no longer drop the key, but a persisted entry from before the
+    # fix can still load without it — the turn handler must repair it.
     info = env.registry.get(sub_id)
     assert info is not None
-    assert info.checkpoint == {"last_known_state": "in_progress"}
-    assert "ticket_id" not in (info.checkpoint or {})
+    info.checkpoint = {"last_known_state": "in_progress"}
 
     # Run the post-turn handler — it should repair the checkpoint.
     result = await _run_wait_for_event_turn(env, info, sub_id, "NO_CHANGE", None, 0)

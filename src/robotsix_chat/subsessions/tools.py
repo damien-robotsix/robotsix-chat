@@ -584,6 +584,9 @@ def _build_set_checkpoint_tool(sub_id: str, registry: SubsessionRegistry) -> Any
 
         Only the most recent call's data is kept — each call REPLACES the
         entire checkpoint, so include ALL the fields you want to keep.
+        Exception: for wait_for_event monitors the ``ticket_id`` key is
+        system-owned and is preserved automatically even when it is omitted,
+        so the monitor keeps its target ticket across restarts.
         """
         if not isinstance(data, dict):
             return "set_checkpoint: data must be a dict of string keys."
