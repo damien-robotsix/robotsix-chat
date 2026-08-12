@@ -31,7 +31,7 @@ def build_autonomous_instruction(settings: Settings) -> str:
     allowlist_str = ", ".join(allowlist) if allowlist else "(none)"
 
     return (
-        "\n\n"
+        "\n\n"  # nosec B608
         "AUTONOMOUS SESSION PROTOCOL\n"
         "You are running in an autonomous session. Follow this lifecycle:\n"
         "\n"
