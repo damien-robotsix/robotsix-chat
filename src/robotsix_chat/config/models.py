@@ -1638,6 +1638,32 @@ class SftpSettings(BaseModel):
     remote_root: str = ""
 
 
+class VolumeToolsSettings(BaseModel):
+    """Local volume-directory listing — discover files on mounted volumes.
+
+    When enabled, the agent gains a ``list_volume_files`` tool that returns
+    the contents of a directory under the configured *root_path*.  This
+    lets the agent discover available files (e.g. a mounted knowledge
+    store, investigation data) without guessing individual file paths.
+
+    This is a read-only, local-filesystem-only primitive — no remote
+    access, no write capability, no traversal outside the root.
+
+    Attributes:
+        enabled: Master switch.  Default ``True`` — this is a purely
+            local, read-only, no-credential primitive.
+        root_path: The directory that all listing operations are scoped
+            under.  Paths outside this root are refused.  Default
+            ``/data``.
+
+    """
+
+    model_config = ConfigDict(extra="forbid")
+
+    enabled: bool = True
+    root_path: str = "/data"
+
+
 class ContinuationSettings(BaseModel):
     """Post-restart continuation — auto-resume a conversation after a restart.
 

@@ -44,6 +44,7 @@ from robotsix_chat.config.models import (
     SftpSettings,
     SubsessionsSettings,
     VersionCheckSettings,
+    VolumeToolsSettings,
 )
 
 logger = logging.getLogger(__name__)
@@ -1235,6 +1236,9 @@ class Settings(BaseModel):
     )
     sftp: SftpSettings = Field(
         default_factory=SftpSettings, json_schema_extra={"advanced": True}
+    )
+    volume_tools: VolumeToolsSettings = Field(
+        default_factory=VolumeToolsSettings, json_schema_extra={"advanced": True}
     )
     feedback: FeedbackSettings = Field(
         default_factory=FeedbackSettings, json_schema_extra={"advanced": True}
