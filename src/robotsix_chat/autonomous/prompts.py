@@ -10,7 +10,7 @@ if TYPE_CHECKING:
 # Version stamp for the autonomous appendix (build_autonomous_instruction).
 # Bump on every change to the instruction text and update
 # docs/system_prompt_changelog.md with a new AUTONOMOUS entry + SHA256.
-AUTONOMOUS_PROMPT_VERSION = 16
+AUTONOMOUS_PROMPT_VERSION = 17
 
 
 def build_autonomous_instruction(settings: Settings) -> str:
@@ -151,6 +151,12 @@ def build_autonomous_instruction(settings: Settings) -> str:
         "details the operator has already seen in earlier turns "
         "(subsession reports, monitor updates, CI verification "
         "tables) — the closing summary is a synthesis, not a replay.  "
+        "Apply the HARD FILTERING RULE to this final summary even at "
+        "the very end of the session: never output 'Subsession "
+        "summaries:', '[id] kind=... status=...' bullet enumerations, "
+        "or any 'kind=' / 'status=' fragments.  Strip all internal "
+        "technical identifiers and state-machine output from the "
+        "reply and present only the synthesized, user-facing meaning.  "
         "The operator should not have to piece together the final "
         "state from fragmented messages.\n"
         "\n"
