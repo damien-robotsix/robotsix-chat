@@ -67,7 +67,7 @@ class ConfigValidationError(ValueError):
 # Version stamp for the agent_instruction default literal.
 # Bump on every change to Settings.agent_instruction and update
 # docs/system_prompt_changelog.md with a new entry + SHA256.
-SYSTEM_PROMPT_VERSION = 105
+SYSTEM_PROMPT_VERSION = 106
 
 # Valid model levels, derived from llmio's tier enum (import-time constant so
 # the set is built once and can never drift from the tiers llmio ships).
@@ -730,6 +730,17 @@ class Settings(BaseModel):
             "answered pending question, a resolved prerequisite, or a new "
             "commit SHA that addresses the block), call resume-blocked with a "
             "justification explaining why re-implementation is now warranted.\n"
+            "  – Stuck-draft detection: a ticket that remains in `draft` with no "
+            "event beyond `created` (no worker pickup, no move toward approval) "
+            "is NOT waiting on priority — its drafting/approval worker never "
+            "picked it up. When a monitor sees this, do not keep emitting "
+            "NO_CHANGE across multiple cycles. Confirm once by reading the "
+            "ticket's events/history (GET /tickets/{id} or ticket_poll_batch), "
+            "then act: if the spec is minimal and complete (low-risk, reversible), "
+            "force the ticket forward from draft to ready yourself using the same "
+            "board-API transition you use for user-requested tickets; otherwise "
+            "surface a compact force-to-ready prompt to the operator instead of "
+            "silently holding.\n"
             "– Unresolved operator prerequisites: When a ticket you filed "
             "reaches completion but a further operator-only action is still "
             "required (e.g. provisioning a credential, secret, or token like "

@@ -3,6 +3,28 @@
 Governed artifact: `Settings.agent_instruction` default literal in
 `src/robotsix_chat/config/settings.py`. Version stamp: `SYSTEM_PROMPT_VERSION` in the same module.
 
+## v106 — 2026-08-14 — stuck-draft-detection
+
+**Summary:** Add a "Stuck-draft detection" bullet to the periodic-run
+guidance in the ticket lifecycle.  When a monitored ticket remains in
+`draft` state with no event beyond `created` (no worker pickup, no move
+toward approval), the drafting/approval worker never picked it up — the
+ticket is not waiting on priority.  The agent must confirm once by reading
+the ticket's events/history (`GET /tickets/{id}` or `ticket_poll_batch`)
+and then either force the ticket forward from `draft` to `ready` itself when
+the spec is minimal and complete (low-risk, reversible), or surface a compact
+force-to-ready prompt to the operator — rather than emitting `NO_CHANGE`
+across multiple monitor cycles.
+
+**Rationale:** Session 665dbb625a40409fa1f2608a90859a44 observed a vhost-route
+ticket stuck in `draft` because the central-deploy drafting worker never
+processed it into the approval stage; priority was already set, so the block
+was not priority-related.  The assistant noticed only after multiple monitor
+cycles reported no change and had to manually force the ticket from `draft`
+to `ready`.
+
+**SHA256:** `52421f1b5cc175355ee4d455e7388c3fa8b22e4d97eeb14aeaf48320e1d03309`
+
 ## v105 — 2026-08-14 — reduce-unnecessary-confirmations
 
 **Summary:** Add an "Intent-following default" rule to the Autonomy section.
