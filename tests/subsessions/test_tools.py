@@ -766,6 +766,32 @@ async def test_set_checkpoint_replaces_entire_checkpoint():
 
 
 @pytest.mark.asyncio
+async def test_set_checkpoint_preserves_ticket_id_for_wait_for_event():
+    """A wait_for_event monitor's ticket_id survives a set_checkpoint replacement."""
+    env = build_env()
+    sub_id = _register(
+        env,
+        kind=SubsessionKind.WAIT_FOR_EVENT,
+        sub_id="cp-wfe",
+        checkpoint={"ticket_id": "TICK-WFE"},
+    ).id
+    close_state = CloseState()
+    tools = build_subsession_tools(
+        env, ctx=_ctx(subsession_id=sub_id, depth=1), close_state=close_state
+    )
+    set_cp = _by_name(tools, "set_checkpoint")
+
+    await set_cp({"last_known_state": "in_progress"})
+
+    info = env.registry.get(sub_id)
+    assert info is not None
+    assert info.checkpoint == {
+        "ticket_id": "TICK-WFE",
+        "last_known_state": "in_progress",
+    }
+
+
+@pytest.mark.asyncio
 async def test_set_checkpoint_empty_dict_clears():
     """Passing an empty dict clears the checkpoint."""
     env = build_env()
