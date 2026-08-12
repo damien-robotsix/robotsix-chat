@@ -129,6 +129,7 @@ def test_merge_tools_returned() -> None:
         "recover_auto_merge",
         "reset_implement_spawn_counter",
         "update_pr_branch",
+        "verify_pr_ci_status",
     ]
 
 

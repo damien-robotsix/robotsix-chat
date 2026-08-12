@@ -1,5 +1,36 @@
 # Direct Repository Access
 
+## Agent tool: `verify_pr_ci_status`
+
+Fetch live CI run status and PR state from GitHub — PR metadata (state, mergeability, draft status)
+combined with the latest CI workflow runs for the PR's head branch. The agent MUST call this tool
+before asserting success or signalling the operator about CI/PR status; never rely on cached,
+inferred, or incomplete data.
+
+**Read-only.** Does not modify any repository state and does not require a ticket to be in BLOCKED
+state.
+
+### Preconditions
+
+- Repository must be within the GitHub App installation scope.
+- The PR must exist and be accessible via the GitHub API.
+
+### Returned information
+
+- PR title, URL, state (open/closed/merged), draft flag, merged flag, mergeable state.
+- CI: up to 5 most recent workflow runs on the PR's head branch, each with name, run id, status, and
+  conclusion.
+
+### Error responses
+
+| Condition                      | Message                                                         |
+| ------------------------------ | --------------------------------------------------------------- |
+| Repo not in installation scope | `The robotsix-mill GitHub App is not installed on 'owner/name'` |
+| PR not found / API error       | `Error fetching PR #... in owner/name: <detail>`                |
+| GitHub Actions unreachable     | `CI status: could not fetch workflow runs — <detail>`           |
+
+______________________________________________________________________
+
 ## Agent tool: `merge_direct_repo_pr`
 
 Merge a pull request in a repository under the GitHub App installation scope. The merge is performed
