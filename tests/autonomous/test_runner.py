@@ -1154,6 +1154,58 @@ class TestResumeSessionsNonBlocking:
         assert new_aq.owner_id == "autonomous"
         assert new_aq.state is AutonomousState.planning
 
+    @pytest.mark.asyncio
+    async def test_resume_multiple_periodic_presets_fire_at_startup(self) -> None:
+        """Every enabled periodic preset bootstraps immediately at startup.
+
+        Regression test for periodic-at-startup semantics: a scheduler that
+        treats ``trigger_interval_seconds`` as an initial delay (or that only
+        reconciles persisted sessions) leaves named periodic presets idle.
+        """
+        from types import SimpleNamespace
+
+        store = ConversationStore()
+        settings = MagicMock()
+        settings.autonomous.sessions = [
+            SimpleNamespace(
+                name=name,
+                prompt="",
+                trigger_type=SimpleNamespace(value="periodic"),
+                trigger_interval_seconds=3600.0,
+                max_auto_turns=20,
+                enabled=True,
+                self_refine=False,
+                self_refine_require_approval=False,
+            )
+            for name in ("cost-review", "mail-check", "release-review")
+        ]
+        run_serializer = MagicMock()
+        run_serializer.for_owner.return_value.__aenter__ = AsyncMock()
+        run_serializer.for_owner.return_value.__aexit__ = AsyncMock()
+
+        runner = AutonomousRunner(
+            settings=settings,
+            conversation_store=store,
+            agent_factory=MagicMock(),
+            run_serializer=run_serializer,
+        )
+        runner._kickoff_initial_turn = AsyncMock()  # type: ignore[method-assign]
+
+        # resume_sessions must return quickly — the interval is a delay
+        # between runs, never an initial delay before the first run.
+        await asyncio.wait_for(runner.resume_sessions(), timeout=0.5)
+
+        assert runner.definition_count == 3
+        assert len(runner._sessions) == 3
+        for name in ("cost-review", "mail-check", "release-review"):
+            owner_id = runner.owner_id_for_definition(name)
+            matching = [
+                aq for aq in runner._sessions.values() if aq.owner_id == owner_id
+            ]
+            assert len(matching) == 1
+            assert matching[0].definition_name == name
+            assert matching[0].state is AutonomousState.planning
+
 
 class TestRestartContextInjection:
     """Restart-context messages are injected when resuming after a restart."""
