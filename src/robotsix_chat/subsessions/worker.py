@@ -720,33 +720,42 @@ def _build_periodic_input(
         "see this — it is for the transcript only).  DO NOT reply NO_CHANGE "
         "when a transition occurred.\n\n"
     )
+    # Resolve and repair the ticket_id from the checkpoint (or fall
+    # back to dedup_key).  This runs unconditionally — not only when
+    # pre_authorized_patterns are configured — so that the ticket_id
+    # survives agent set_checkpoint calls and restarts even for
+    # monitors without pre-authorization rules.
+    ticket_id_raw = info.checkpoint.get("ticket_id") if info.checkpoint else None
+    ticket_id = ticket_id_raw if isinstance(ticket_id_raw, str) else ""
+    # Fall back to dedup_key when the checkpoint has not yet recorded
+    # the ticket_id — the dedup_key for ticket monitors is always the
+    # ticket id, so it is authoritative even on the first run.
+    if not ticket_id and info.dedup_key:
+        ticket_id = info.dedup_key
+        # Repair the checkpoint so the ticket_id survives agent
+        # set_checkpoint calls that may have cleared it and so later
+        # stages (_event_wait_loop, _run_periodic_turn) find it
+        # without needing their own fallback.
+        if sub_id and registry is not None:
+            checkpoint = info.checkpoint or {}
+            checkpoint["ticket_id"] = ticket_id
+            registry.update_checkpoint(sub_id, checkpoint)
+
     # Inject the PRE-AUTHORIZED instruction BEFORE the
     # decision-blocked paragraph so it has priority — a monitor that
     # sees both must follow the pre-authorized directive.
-    if pre_authorized_patterns:
-        ticket_id_raw = info.checkpoint.get("ticket_id") if info.checkpoint else None
-        ticket_id = ticket_id_raw if isinstance(ticket_id_raw, str) else ""
-        # Fall back to dedup_key when the checkpoint has not yet recorded
-        # the ticket_id — the dedup_key for ticket monitors is always the
-        # ticket id, so it is authoritative even on the first run.
-        if not ticket_id and info.dedup_key:
-            ticket_id = info.dedup_key
-            # Repair the checkpoint so the ticket_id survives agent
-            # set_checkpoint calls that may have cleared it and so later
-            # stages (_event_wait_loop, _run_wait_for_event_turn) find it
-            # without needing their own fallback.
-            if sub_id and registry is not None:
-                checkpoint = info.checkpoint or {}
-                checkpoint["ticket_id"] = ticket_id
-                registry.update_checkpoint(sub_id, checkpoint)
-        if ticket_id and _is_ticket_pre_authorized(ticket_id, pre_authorized_patterns):
-            parts.append(
-                "PRE-AUTHORIZED TICKET: this ticket has been pre-authorized "
-                "under a standing operator directive.  The "
-                "human_issue_approval gate does NOT apply — do not treat "
-                "this ticket as decision-blocked.  Continue monitoring "
-                "normally as if the approval were already granted.\n\n"
-            )
+    if (
+        pre_authorized_patterns
+        and ticket_id
+        and _is_ticket_pre_authorized(ticket_id, pre_authorized_patterns)
+    ):
+        parts.append(
+            "PRE-AUTHORIZED TICKET: this ticket has been pre-authorized "
+            "under a standing operator directive.  The "
+            "human_issue_approval gate does NOT apply — do not treat "
+            "this ticket as decision-blocked.  Continue monitoring "
+            "normally as if the approval were already granted.\n\n"
+        )
     parts.append(
         "Decision-blocked tickets: when the monitored ticket is awaiting an "
         "operator decision — stuck in human_issue_approval, waiting on an "
@@ -1526,33 +1535,42 @@ def _build_wait_for_event_input(
         "see this — it is for the transcript only).  DO NOT reply NO_CHANGE "
         "when a transition occurred.\n\n"
     )
+    # Resolve and repair the ticket_id from the checkpoint (or fall
+    # back to dedup_key).  This runs unconditionally — not only when
+    # pre_authorized_patterns are configured — so that the ticket_id
+    # survives agent set_checkpoint calls and restarts even for
+    # monitors without pre-authorization rules.
+    ticket_id_raw = info.checkpoint.get("ticket_id") if info.checkpoint else None
+    ticket_id = ticket_id_raw if isinstance(ticket_id_raw, str) else ""
+    # Fall back to dedup_key when the checkpoint has not yet recorded
+    # the ticket_id — the dedup_key for ticket monitors is always the
+    # ticket id, so it is authoritative even on the first run.
+    if not ticket_id and info.dedup_key:
+        ticket_id = info.dedup_key
+        # Repair the checkpoint so the ticket_id survives agent
+        # set_checkpoint calls that may have cleared it and so later
+        # stages (_event_wait_loop, _run_periodic_turn) find it
+        # without needing their own fallback.
+        if sub_id and registry is not None:
+            checkpoint = info.checkpoint or {}
+            checkpoint["ticket_id"] = ticket_id
+            registry.update_checkpoint(sub_id, checkpoint)
+
     # Inject the PRE-AUTHORIZED instruction BEFORE the
     # decision-blocked paragraph so it has priority — a monitor that
     # sees both must follow the pre-authorized directive.
-    if pre_authorized_patterns:
-        ticket_id_raw = info.checkpoint.get("ticket_id") if info.checkpoint else None
-        ticket_id = ticket_id_raw if isinstance(ticket_id_raw, str) else ""
-        # Fall back to dedup_key when the checkpoint has not yet recorded
-        # the ticket_id — the dedup_key for ticket monitors is always the
-        # ticket id, so it is authoritative even on the first run.
-        if not ticket_id and info.dedup_key:
-            ticket_id = info.dedup_key
-            # Repair the checkpoint so the ticket_id survives agent
-            # set_checkpoint calls that may have cleared it and so later
-            # stages (_event_wait_loop, _run_wait_for_event_turn) find it
-            # without needing their own fallback.
-            if sub_id and registry is not None:
-                checkpoint = info.checkpoint or {}
-                checkpoint["ticket_id"] = ticket_id
-                registry.update_checkpoint(sub_id, checkpoint)
-        if ticket_id and _is_ticket_pre_authorized(ticket_id, pre_authorized_patterns):
-            parts.append(
-                "PRE-AUTHORIZED TICKET: this ticket has been pre-authorized "
-                "under a standing operator directive.  The "
-                "human_issue_approval gate does NOT apply — do not treat "
-                "this ticket as decision-blocked.  Continue monitoring "
-                "normally as if the approval were already granted.\n\n"
-            )
+    if (
+        pre_authorized_patterns
+        and ticket_id
+        and _is_ticket_pre_authorized(ticket_id, pre_authorized_patterns)
+    ):
+        parts.append(
+            "PRE-AUTHORIZED TICKET: this ticket has been pre-authorized "
+            "under a standing operator directive.  The "
+            "human_issue_approval gate does NOT apply — do not treat "
+            "this ticket as decision-blocked.  Continue monitoring "
+            "normally as if the approval were already granted.\n\n"
+        )
     parts.append(
         "Decision-blocked tickets: when the monitored ticket is awaiting an "
         "operator decision — stuck in human_issue_approval, waiting on an "
@@ -2304,6 +2322,30 @@ async def _subsession_worker(env: SubsessionEnv, sub_id: str) -> None:
         consecutive_no_change = info.consecutive_no_change
         first_turn = True
         pending: list[InboxMessage] = []
+
+        # -- checkpoint ticket_id repair on resume ---------------------
+        # Event-driven monitors need ticket_id in the checkpoint to
+        # register as event waiters.  If the checkpoint lost the key
+        # (e.g. agent set_checkpoint cleared it, the server restarted
+        # after a timeout before the post-turn repair could run, or a
+        # pre-existing monitor was persisted without it), recover from
+        # dedup_key now so the monitor survives the restart.
+        if (
+            info.kind in (SubsessionKind.PERIODIC, SubsessionKind.WAIT_FOR_EVENT)
+            and info.dedup_key
+        ):
+            cp = info.checkpoint or {}
+            ticket_id_raw = cp.get("ticket_id")
+            ticket_id = ticket_id_raw if isinstance(ticket_id_raw, str) else ""
+            if not ticket_id:
+                cp["ticket_id"] = info.dedup_key
+                registry.update_checkpoint(sub_id, cp)
+                logger.debug(
+                    "Subsession %s: ticket_id %r recovered from dedup_key "
+                    "on resume; written to checkpoint.",
+                    sub_id,
+                    info.dedup_key,
+                )
 
         # -- resume status check for ticket monitors -------------------
         # Extended to all subsession kinds: a TASK or USER_CHAT with a
