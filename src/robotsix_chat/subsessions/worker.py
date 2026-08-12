@@ -631,6 +631,9 @@ def _build_periodic_input(
     previous_result: str | None,
     steering: list[InboxMessage],
     pre_authorized_patterns: list[str] | None = None,
+    *,
+    sub_id: str = "",
+    registry: SubsessionRegistry | None = None,
 ) -> str:
     """Compose one periodic tick's turn input."""
     parts = [info.prompt]
@@ -728,6 +731,14 @@ def _build_periodic_input(
         # ticket id, so it is authoritative even on the first run.
         if not ticket_id and info.dedup_key:
             ticket_id = info.dedup_key
+            # Repair the checkpoint so the ticket_id survives agent
+            # set_checkpoint calls that may have cleared it and so later
+            # stages (_event_wait_loop, _run_wait_for_event_turn) find it
+            # without needing their own fallback.
+            if sub_id and registry is not None:
+                checkpoint = info.checkpoint or {}
+                checkpoint["ticket_id"] = ticket_id
+                registry.update_checkpoint(sub_id, checkpoint)
         if ticket_id and _is_ticket_pre_authorized(ticket_id, pre_authorized_patterns):
             parts.append(
                 "PRE-AUTHORIZED TICKET: this ticket has been pre-authorized "
@@ -1441,6 +1452,9 @@ def _build_wait_for_event_input(
     previous_result: str | None,
     steering: list[InboxMessage],
     pre_authorized_patterns: list[str] | None = None,
+    *,
+    sub_id: str = "",
+    registry: SubsessionRegistry | None = None,
 ) -> str:
     """Compose one event-driven monitor turn's input."""
     parts = [info.prompt]
@@ -1523,6 +1537,14 @@ def _build_wait_for_event_input(
         # ticket id, so it is authoritative even on the first run.
         if not ticket_id and info.dedup_key:
             ticket_id = info.dedup_key
+            # Repair the checkpoint so the ticket_id survives agent
+            # set_checkpoint calls that may have cleared it and so later
+            # stages (_event_wait_loop, _run_wait_for_event_turn) find it
+            # without needing their own fallback.
+            if sub_id and registry is not None:
+                checkpoint = info.checkpoint or {}
+                checkpoint["ticket_id"] = ticket_id
+                registry.update_checkpoint(sub_id, checkpoint)
         if ticket_id and _is_ticket_pre_authorized(ticket_id, pre_authorized_patterns):
             parts.append(
                 "PRE-AUTHORIZED TICKET: this ticket has been pre-authorized "
@@ -2411,6 +2433,8 @@ async def _subsession_worker(env: SubsessionEnv, sub_id: str) -> None:
                     previous_result,
                     steering,
                     pre_authorized_patterns=env.settings.subsessions.pre_authorized_ticket_patterns,
+                    sub_id=sub_id,
+                    registry=registry,
                 )
             elif info.kind is SubsessionKind.WAIT_FOR_EVENT:
                 next_run = info.runs + 1
@@ -2433,6 +2457,8 @@ async def _subsession_worker(env: SubsessionEnv, sub_id: str) -> None:
                     previous_result,
                     steering,
                     pre_authorized_patterns=env.settings.subsessions.pre_authorized_ticket_patterns,
+                    sub_id=sub_id,
+                    registry=registry,
                 )
             elif first_turn:
                 turn_input = info.prompt
