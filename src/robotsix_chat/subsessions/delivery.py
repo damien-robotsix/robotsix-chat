@@ -196,13 +196,18 @@ _BATCH_REACT_PROMPT_TEMPLATE = (
     "mention, make clear WHY it stopped and whether the user's tracking "
     "goal was met.  Use these categories:\n"
     "  FULFILLED — the monitored ticket reached a terminal state (closed, "
-    "resolved, merged).  The user's tracking request was SATISFIED.\n"
+    "resolved, merged).  The user's tracking request was SATISFIED.  "
+    "Phrase as 'Tracking complete for ticket X — it was resolved/closed.'\n"
     "  INTERRUPTED — the monitor auto-stopped, hit a run limit, or failed "
-    "before the ticket finished.  Tracking was CUT SHORT.\n"
+    "before the ticket finished.  Tracking was CUT SHORT.  Phrase as "
+    "'Monitor for ticket X auto-stopped — the ticket may still need "
+    "attention.'\n"
     "  ACTIVE — the monitor is paused/sleeping but still alive.  Tracking "
-    "is ONGOING and will resume if the ticket changes.\n"
+    "is ONGOING and will resume if the ticket changes.  Phrase as 'Monitor "
+    "for ticket X is paused — will resume if the ticket updates.'\n"
     "Always end with a NEXT STEP for the user: either 'No action needed — "
-    "all tracking goals were met' or a concrete suggestion.\n\n"
+    "all tracking goals were met' or a concrete suggestion like 'You may "
+    "want to check ticket X manually since its monitor stopped.'\n\n"
     "FILTERING RULE: The outcome text above may contain internal technical "
     "details that the subsession agent included in its summary — block IDs, "
     "event numbers, state machine transitions, spawn counters, internal "
@@ -723,6 +728,23 @@ class ParentDelivery:
                     for _info, outcome, _reason, label in outcomes:
                         self._store.record_for_session(session_id, label, outcome)
                 return
+
+            # When the main session has an active autonomous plan (proposal
+            # or executing), degrade to individual _react_in_main_chat calls
+            # rather than using the batch template.  _react_in_main_chat
+            # already selects the correct active-plan prompt, and this
+            # avoids creating a duplicate batch-aware active-plan template.
+            # The batching window is an optimisation, not a correctness
+            # requirement — individual turns are safe and correct here.
+            if self._autonomous_runner is not None:
+                aq = self._autonomous_runner.get_session(session_id)
+                if aq is not None and aq.state in (
+                    AutonomousState.proposal,
+                    AutonomousState.executing,
+                ):
+                    for info, outcome, reason, label in outcomes:
+                        await self._react_in_main_chat(info, outcome, reason, label)
+                    return
 
             # Build the numbered outcome list.
             parts: list[str] = []
