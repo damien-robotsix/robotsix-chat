@@ -64,9 +64,9 @@ rejected.
 
 Persist arbitrary key/value data across restarts. Each call **replaces** the entire checkpoint, so
 include all fields you want to keep. Use it for: monitored ticket id, last-known ticket state,
-completion criteria, consecutive-failure counters. For `wait_for_event` monitors the `ticket_id`
-key is system-owned and is preserved automatically even if omitted, so the monitor keeps its
-target ticket across restarts.
+completion criteria, consecutive-failure counters. For `wait_for_event` monitors the `ticket_id` key
+is system-owned and is preserved automatically even if omitted, so the monitor keeps its target
+ticket across restarts.
 
 ### `self_update_subsession`
 
