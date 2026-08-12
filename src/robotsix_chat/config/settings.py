@@ -67,7 +67,7 @@ class ConfigValidationError(ValueError):
 # Version stamp for the agent_instruction default literal.
 # Bump on every change to Settings.agent_instruction and update
 # docs/system_prompt_changelog.md with a new entry + SHA256.
-SYSTEM_PROMPT_VERSION = 101
+SYSTEM_PROMPT_VERSION = 102
 
 # Valid model levels, derived from llmio's tier enum (import-time constant so
 # the set is built once and can never drift from the tiers llmio ships).
@@ -414,6 +414,20 @@ class Settings(BaseModel):
             "where level 2 struggles; no API key required.\n"
             "  4 = 'primary-frontier' — the frontier tier; only for "
             "genuinely hard reasoning. Never use for routine checks.\n"
+            "– Your own conversation runs at the configured chat tier "
+            "(level 3, 'strong-reasoning') — NOT the frontier tier. If you "
+            "have genuinely tried and cannot solve the user's problem at "
+            "that capability, call escalate_model(reason) to pin THIS "
+            "conversation to the frontier tier for the rest of its life. "
+            "Escalate only after a real attempt has failed: a reasoning "
+            "step you cannot complete, an analysis you keep getting wrong, "
+            "a task you already tried. Do NOT escalate because a request "
+            "sounds hard, is long or tedious, or could be answered by a "
+            "tool call — try first. The stronger tier costs substantially "
+            "more and the switch is permanent for the conversation. It "
+            "takes effect on the user's NEXT message, so after escalating, "
+            "finish the current turn as well as you can and tell the user "
+            "plainly that you switched and why.\n"
             "– When filing tickets that specify model requirements "
             "(agent configurations, tool defaults, deployment specs, "
             "subsession spawning defaults), use these tier LABELS "

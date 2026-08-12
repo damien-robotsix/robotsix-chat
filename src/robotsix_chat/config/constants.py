@@ -24,6 +24,8 @@ from robotsix_llmio.config import (
 )
 
 __all__ = [
+    "FRONTIER_MODEL_LEVEL",
+    "level_display_name",
     "level_needs_api_key",
 ]
 
@@ -56,3 +58,22 @@ def level_needs_api_key(level: int) -> bool:
     """
     tlc = _LEVEL_DEFAULTS.get(level)
     return tlc is None or tlc.provider != _KEYLESS_PROVIDER
+
+
+#: The strongest tier a session can escalate to (``claudeSDK-claude-fable-5``).
+#: Named rather than hard-coded at call sites so adding a level 5 is a
+#: one-line change here.
+FRONTIER_MODEL_LEVEL = 4
+
+
+def level_display_name(level: int) -> str:
+    """Return the human-facing model name for *level* (e.g. ``"opus"``).
+
+    Used by the session list and chat header so the operator sees which model
+    a session is running on. Unknown levels render as ``"level N"`` rather
+    than raising — this is display text, never a control-flow input.
+    """
+    tlc = _LEVEL_DEFAULTS.get(level)
+    if tlc is None:
+        return f"level {level}"
+    return str(tlc.model_name)

@@ -352,6 +352,15 @@ class LlmioChatAgent:
             ),
         )
 
+    @property
+    def model_level(self) -> int:
+        """The level this agent was configured with.
+
+        Read-only: a session's escalated level is passed per turn via
+        ``stream(model_level=...)`` rather than mutating the shared agent.
+        """
+        return self._model_level
+
     async def stream(
         self,
         message: str,
@@ -362,6 +371,7 @@ class LlmioChatAgent:
         images: list[tuple[str, bytes]] | None = None,
         trace_metadata: dict[str, str] | None = None,
         trace_name: str | None = None,
+        model_level: int | None = None,
     ) -> AsyncIterator[str]:
         """Yield the assistant's reply to *message* as a single block.
 
@@ -384,6 +394,11 @@ class LlmioChatAgent:
 
         *trace_metadata* is stamped as span attributes for observability
         (parent/owner lineage, subsession ids, etc.).
+
+        *model_level* overrides the agent's configured level for this turn
+        only.  The chat server passes a session's escalated level here, so one
+        shared agent instance can serve sessions running at different tiers
+        without rebuilding it.
 
         Transient upstream errors (OpenRouter provider failures, 5xx, network
         blips) are retried up to :data:`_MAX_RUN_ATTEMPTS` before surfacing.
@@ -425,10 +440,13 @@ class LlmioChatAgent:
         # it). Gated on the level rather than on whether a key happens to be
         # set, because ``self._api_key`` may now be populated for a keyless
         # primary level purely so the tier fallback can reach a keyed one.
-        if level_needs_api_key(self._model_level) and self._api_key:
-            provider = create_model(level=self._model_level, api_key=self._api_key)
+        # The per-call override wins; ``_attempt`` and the trace metadata below
+        # close over this local, so nothing else has to be threaded.
+        level = self._model_level if model_level is None else model_level
+        if level_needs_api_key(level) and self._api_key:
+            provider = create_model(level=level, api_key=self._api_key)
         else:
-            provider = create_model(level=self._model_level)
+            provider = create_model(level=level)
         message_history = _build_message_history(history)
 
         # Compute effective tools once: static tools + per-request tools from
@@ -467,7 +485,7 @@ class LlmioChatAgent:
         # are usable in Langfuse — the trace_metadata dict from the caller
         # (if any) is merged in so caller keys win on collision.
         effective_trace_metadata: dict[str, str] = {
-            "model_level": str(self._model_level),
+            "model_level": str(level),
         }
         if trace_metadata:
             effective_trace_metadata.update(trace_metadata)
@@ -478,7 +496,7 @@ class LlmioChatAgent:
         # errors (including ClaudeSDKUsageExhaustedError) propagate immediately.
         async def _attempt() -> Any:
             handle = provider.build_agent(
-                level=self._model_level,
+                level=level,
                 system_prompt=system_prompt,
                 tools=tools_arg,
                 builtin_tools=False,
@@ -538,7 +556,7 @@ class LlmioChatAgent:
             logger.warning(
                 "model_level %d cannot serve this turn (%s: %s) — "
                 "falling back to another tier",
-                self._model_level,
+                level,
                 type(exc).__name__,
                 exc,
             )
@@ -548,6 +566,7 @@ class LlmioChatAgent:
                 tools_arg,
                 session_id,
                 effective_trace_metadata,
+                level=level,
                 trace_name=trace_name,
                 credential_is_dead=isinstance(exc, ClaudeSDKAuthError),
             )
@@ -568,6 +587,7 @@ class LlmioChatAgent:
         session_id: str | None,
         trace_metadata: dict[str, str] | None = None,
         *,
+        level: int | None = None,
         trace_name: str | None = None,
         credential_is_dead: bool = False,
     ) -> Any:
@@ -666,7 +686,7 @@ class LlmioChatAgent:
         return await acall_with_tier_fallback(
             _fn_factory,
             tier_config=tier_config,
-            level=TierLevel(f"level{self._model_level}"),
+            level=TierLevel(f"level{self._model_level if level is None else level}"),
             fallback_enabled=True,
             # A dead credential can take every claudeSDK tier with it, so the
             # walk must be able to reach a keyed provider; usage exhaustion is

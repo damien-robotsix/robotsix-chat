@@ -90,6 +90,7 @@ modules:
       - changelog.d/20260809T014841Z-config-constants-py-remove-dead-level4-d-ce01.misc.md
       - changelog.d/20260811T213813Z-fix-claude-sdk-session-id-uuid.bugfix.md
       - changelog.d/20260811T213813Z-revert-subsession-tier-rebalance.misc.md
+      - changelog.d/20260812T072317Z-per-session-model-escalation.feature.md
       - changelog.d/20260801T104213Z-make-github-monitoring-subsessions-resil-601a.bugfix.md
       - release-please-config.json
       - .release-please-manifest.json
@@ -323,10 +324,12 @@ modules:
     paths:
       - src/robotsix_chat/llm/__init__.py
       - src/robotsix_chat/llm/agent.py
+      - src/robotsix_chat/llm/escalation.py
       - src/robotsix_chat/llm/tool_utils.py
       - docs/llm/agent.md
       - tests/llm/__init__.py
       - tests/llm/test_agent.py
+      - tests/llm/test_escalation.py
       - tests/llm/test_tool_utils.py
 
   - id: memory

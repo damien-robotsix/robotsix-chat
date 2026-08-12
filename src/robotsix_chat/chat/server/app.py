@@ -606,6 +606,9 @@ def create_app(
     app.state.memory = getattr(agent, "memory", None)
     app.state.summary_agent = summary_agent if summary_agent is not None else agent
     app.state.conversation_store = conversation_store or ConversationStore()
+    # Configured chat level — the baseline a session runs at until the agent
+    # escalates it. Read from the agent so create_app needs no new parameter.
+    app.state.chat_model_level = getattr(agent, "model_level", None)
     app.state.idle_timeout_minutes = idle_timeout_minutes
     app.state.compaction_min_turns = compaction_min_turns
     app.state.max_images_per_message = max_images_per_message
@@ -940,6 +943,8 @@ def _build_request_tools_factory(
     settings: Settings,
     subsession_env: SubsessionEnv | None,
     event_sink: EventSink | None,
+    conversation_store: ConversationStore | None = None,
+    configured_level: int | None = None,
 ) -> Callable[[str], list[Any]] | None:
     """Build a per-request tools factory for the main chat agent.
 
@@ -977,6 +982,22 @@ def _build_request_tools_factory(
             )
 
         req_factories.append(_make_notification_tools)
+
+    if conversation_store is not None and configured_level is not None:
+        from robotsix_chat.llm.escalation import build_escalation_tools
+
+        store = conversation_store
+        level = configured_level
+
+        def _make_escalation_tools(session_id: str) -> list[Any]:
+            return build_escalation_tools(
+                conversation_store=store,
+                session_id=session_id,
+                configured_level=level,
+                event_sink=event_sink,
+            )
+
+        req_factories.append(_make_escalation_tools)
 
     if not req_factories:
         return None
@@ -1111,6 +1132,15 @@ def create_agent_from_settings(
             settings,
             subsession_env if subsession_ctx is None else None,
             event_sink,
+            # Escalation is a main-chat affordance only: subsessions already
+            # choose their own level when spawned, and an autonomous/bare
+            # agent has no operator watching the badge change.
+            conversation_store if subsession_ctx is None and not bare else None,
+            (
+                (settings.chat_model_level or settings.llmio_model_level)
+                if subsession_ctx is None and not bare
+                else None
+            ),
         )
 
     # Read/write split for background agents. Recall is a retrieval-only

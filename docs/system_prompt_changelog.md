@@ -3,6 +3,27 @@
 Governed artifact: `Settings.agent_instruction` default literal in
 `src/robotsix_chat/config/settings.py`. Version stamp: `SYSTEM_PROMPT_VERSION` in the same module.
 
+## v102 — 2026-08-12 — per-session-model-escalation
+
+**Summary:** Document the new `escalate_model(reason)` tool in the Model
+Policy section.  The chat agent is told that its own conversation runs at the
+configured chat tier (level 3, `strong-reasoning`) rather than the frontier
+tier, and that it may pin *this conversation only* to the frontier tier when
+it has genuinely tried and failed at its current capability.  The instruction
+is explicit that escalation is not for merely long or tedious work, not for
+requests that only sound hard, and not before a real attempt; that the switch
+is permanent for the conversation and costs substantially more; and that it
+takes effect on the user's next message, so the agent must finish the current
+turn and say plainly that it switched.
+
+**Rationale:** Sessions default to opus.  Escalation to fable-5 is now
+possible per session, but only the model can tell when it is genuinely stuck,
+so the trigger is a tool it calls rather than a heuristic.  Without explicit
+"try first" and "not for tedious work" guidance the tool over-triggers, which
+is the failure mode that made the v99 tier rebalance expensive.
+
+**SHA256:** `7dd2e0a7ec5f0bc94396f84a316ccaa2bd8ef83bb2c973e2c1a26688b5de0c76`
+
 ## v101 — 2026-08-11 — revert-tier-rebalance-to-cheaper-default
 
 **Summary:** Revert the v99 model-tier rebalance.  The Subsessions "Model

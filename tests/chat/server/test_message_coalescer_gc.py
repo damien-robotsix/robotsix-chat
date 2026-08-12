@@ -46,6 +46,7 @@ class _SlowAgent:
         images: list[tuple[str, bytes]] | None = None,
         trace_metadata: dict[str, str] | None = None,
         trace_name: str | None = None,
+        model_level: int | None = None,
     ) -> AsyncIterator[str]:
         await self._release.wait()
         for token in self._tokens:
