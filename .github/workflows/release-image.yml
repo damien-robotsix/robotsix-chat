@@ -28,6 +28,7 @@ jobs:
   verify:
     name: Verify CI is green
     runs-on: ubuntu-latest
+    timeout-minutes: 35
     permissions:
       checks: read    # query CI check-run status
       contents: read  # checkout the repo

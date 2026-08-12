@@ -36,7 +36,7 @@ async function retryWithBackoff(fn, {maxRetries = 3, baseDelayMs = 2000} = {}) {
 }
 
 module.exports = async ({github, context, core}) => {
-  const deadlineMs = 20 * 60 * 1000;
+  const deadlineMs = 30 * 60 * 1000;
   const start = Date.now();
 
   // Every GitHub Actions workflow run is backed by a single check suite.
