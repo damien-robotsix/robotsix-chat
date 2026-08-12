@@ -136,6 +136,8 @@ class MailClient:
         message_id: str,
         source_folder: str,
         target_subfolder: str,
+        *,
+        create_folders: bool = False,
     ) -> str:
         """Call ``POST /archive-move`` with a JSON body.
 
@@ -143,6 +145,10 @@ class MailClient:
             message_id: The Message-ID header of the mail to move.
             source_folder: The current archive subfolder path.
             target_subfolder: The destination archive subfolder.
+            create_folders: Whether to create missing subfolders on the
+                target path.  Defaults to ``False`` (lazy creation) — the
+                server will only create the target folder hierarchy when
+                an email is actually archived into a new folder.
 
         Returns:
             JSON success/error object as text.
@@ -151,16 +157,44 @@ class MailClient:
 
         """
         url = f"{self._base_url}/archive-move"
+        json_body: dict[str, object] = {
+            "message_id": message_id,
+            "source_folder": source_folder,
+            "target_subfolder": target_subfolder,
+        }
+        if create_folders:
+            json_body["create_folders"] = True
         result = await safe_http_request(
             "POST",
             url,
             headers=self._headers,
             timeout=self._timeout,
-            json_body={
-                "message_id": message_id,
-                "source_folder": source_folder,
-                "target_subfolder": target_subfolder,
-            },
+            json_body=json_body,
+            label="Mail API",
+        )
+        if result.error:
+            return result.error
+        return result.text  # type: ignore[return-value]
+
+    async def archive_cleanup_empty(self) -> str:
+        """Call ``POST /archive-cleanup-empty`` and return the JSON body as text.
+
+        Removes empty archive subfolders from the IMAP server so the
+        archive hierarchy stays clean.  Only folders with zero messages
+        are removed; non-empty folders are left untouched.
+
+        Returns:
+            JSON object with a list of removed folder paths.
+
+        Never raises — errors become a diagnostic string.
+
+        """
+        url = f"{self._base_url}/archive-cleanup-empty"
+        result = await safe_http_request(
+            "POST",
+            url,
+            headers=self._headers,
+            timeout=self._timeout,
             label="Mail API",
         )
         if result.error:
