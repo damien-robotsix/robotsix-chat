@@ -329,3 +329,171 @@ async def test_inspect_ticket_id_http_500(respx_mock: respx.MockRouter) -> None:
     assert result["error"]
     assert "500" in result["error"]
     assert result["traces"] == []
+
+
+# ---------------------------------------------------------------------------
+# inspect_langfuse_trace — retry behaviour
+# ---------------------------------------------------------------------------
+
+
+@pytest.mark.asyncio
+async def test_retry_timeout_recovers(respx_mock: respx.MockRouter) -> None:
+    """A transient timeout is retried; second attempt succeeds."""
+    trace_id = "01JM3XRETRY1"
+    route = respx_mock.get(
+        f"https://cloud.langfuse.com/api/public/traces/{trace_id}"
+    ).mock(
+        side_effect=[
+            httpx.TimeoutException("timed out"),
+            httpx.Response(
+                200,
+                json={
+                    "id": trace_id,
+                    "name": "implement",
+                    "timestamp": "2026-07-27T00:15:00.000Z",
+                    "userId": "agent-1",
+                    "latency": 12.5,
+                    "totalCost": 0.042,
+                    "metrics": {
+                        "usage": {
+                            "promptTokens": 0,
+                            "completionTokens": 0,
+                            "totalTokens": 0,
+                        }
+                    },
+                    "observations": [],
+                    "scores": [],
+                },
+            ),
+        ]
+    )
+
+    tools = build_langfuse_inspect_tools(_inspect_settings(), _langfuse_settings())
+    result = json.loads(await tools[0](trace_id=trace_id))
+
+    assert len(result["traces"]) == 1
+    assert result["traces"][0]["id"] == trace_id
+    assert route.call_count == 2
+
+
+@pytest.mark.asyncio
+async def test_retry_500_recovers(respx_mock: respx.MockRouter) -> None:
+    """A 500 error is retried; second attempt succeeds."""
+    trace_id = "01JM3XRETRY2"
+    route = respx_mock.get(
+        f"https://cloud.langfuse.com/api/public/traces/{trace_id}"
+    ).mock(
+        side_effect=[
+            httpx.Response(502, text="Bad Gateway"),
+            httpx.Response(
+                200,
+                json={
+                    "id": trace_id,
+                    "name": "implement",
+                    "timestamp": "2026-07-27T00:15:00.000Z",
+                    "userId": "agent-1",
+                    "latency": 12.5,
+                    "totalCost": 0.042,
+                    "metrics": {
+                        "usage": {
+                            "promptTokens": 0,
+                            "completionTokens": 0,
+                            "totalTokens": 0,
+                        }
+                    },
+                    "observations": [],
+                    "scores": [],
+                },
+            ),
+        ]
+    )
+
+    tools = build_langfuse_inspect_tools(_inspect_settings(), _langfuse_settings())
+    result = json.loads(await tools[0](trace_id=trace_id))
+
+    assert len(result["traces"]) == 1
+    assert result["traces"][0]["id"] == trace_id
+    assert route.call_count == 2
+
+
+@pytest.mark.asyncio
+async def test_no_retry_on_401(respx_mock: respx.MockRouter) -> None:
+    """A 401 (auth error) is NOT retried — it's not transient."""
+    trace_id = "01JM3XNORETRY"
+    route = respx_mock.get(
+        f"https://cloud.langfuse.com/api/public/traces/{trace_id}"
+    ).mock(return_value=httpx.Response(401, text="Unauthorized"))
+
+    tools = build_langfuse_inspect_tools(_inspect_settings(), _langfuse_settings())
+    result = json.loads(await tools[0](trace_id=trace_id))
+
+    assert result["error"]
+    assert "401" in result["error"]
+    assert route.call_count == 1  # no retry — returned immediately
+
+
+@pytest.mark.asyncio
+async def test_retry_exhausted_returns_error(respx_mock: respx.MockRouter) -> None:
+    """When all retries are exhausted, the last error is returned."""
+    trace_id = "01JM3XEXHAUST"
+    route = respx_mock.get(
+        f"https://cloud.langfuse.com/api/public/traces/{trace_id}"
+    ).mock(
+        side_effect=[
+            httpx.TimeoutException("timed out"),
+            httpx.TimeoutException("timed out again"),
+            httpx.TimeoutException("timed out a third time"),
+        ]
+    )
+
+    tools = build_langfuse_inspect_tools(_inspect_settings(), _langfuse_settings())
+    result = json.loads(await tools[0](trace_id=trace_id))
+
+    assert result["error"]
+    assert "timed out" in result["error"].lower()
+    assert result["traces"] == []
+    # 3 total attempts: initial + 2 retries (_MAX_RETRIES = 2)
+    assert route.call_count == 3
+
+
+@pytest.mark.asyncio
+async def test_retry_ticket_id_search_timeout_recovers(
+    respx_mock: respx.MockRouter,
+) -> None:
+    """Ticket-id search: timeout on first attempt, recovers on second."""
+    route = respx_mock.get("https://cloud.langfuse.com/api/public/traces").mock(
+        side_effect=[
+            httpx.TimeoutException("timed out"),
+            httpx.Response(
+                200,
+                json={
+                    "data": [
+                        {
+                            "id": "trace-1",
+                            "name": "implement",
+                            "timestamp": "2026-07-27T00:16:00.000Z",
+                            "userId": "agent-1",
+                            "latency": 10.0,
+                            "totalCost": 0.03,
+                            "metrics": {
+                                "usage": {
+                                    "promptTokens": 1000,
+                                    "completionTokens": 500,
+                                    "totalTokens": 1500,
+                                }
+                            },
+                            "observations": [],
+                            "scores": [],
+                        }
+                    ]
+                },
+            ),
+        ]
+    )
+
+    tools = build_langfuse_inspect_tools(_inspect_settings(), _langfuse_settings())
+    result = json.loads(await tools[0](ticket_id="test"))
+
+    assert len(result["traces"]) == 1
+    assert result["traces"][0]["id"] == "trace-1"
+    assert route.call_count == 2
