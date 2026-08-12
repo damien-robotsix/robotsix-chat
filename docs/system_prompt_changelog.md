@@ -1998,6 +1998,23 @@ The hash is computed on the output of `build_autonomous_instruction(Settings())`
 autonomous settings at their pydantic field defaults (``proposal_marker="---PROPOSAL READY---"``,
 ``completion_marker="---AUTONOMOUS COMPLETE---"``, ``stale_monitor_runs_before_completion=3``).
 
+## AUTONOMOUS v14 — 2026-08-09 — provide-a-single-consolidated-outcome-su-1082
+
+**Summary:** Add a consolidated closing-summary instruction to the COMPLETION
+step of the autonomous protocol.  Before emitting the completion marker, the
+assistant must now produce a single concise summary aggregating all session
+outcomes — what was accomplished, what is still pending, and what the operator
+needs to act on — without re-listing internal details (subsession reports,
+monitor updates, CI verification tables) the operator has already seen.
+
+**Rationale:** During session 2dfb02c3, the assistant produced multiple separate
+outcome summaries (subsession reports, monitor updates, CI verification tables)
+without consolidating them into a single closing picture.  The operator was left
+to piece together the final state from fragmented messages.  This instruction
+ensures every autonomous session closes with a single, operator-ready synthesis.
+
+**SHA256:** `8f82d3b83c82cd073fd6e883cc80b58c97bd780b7484d770faaeebd39e810763`
+
 ## AUTONOMOUS v13 — 2026-08-13 — improve-diagnosis-of-persistent-git-clon-9b74
 
 **Summary:** Add `CLONE / WORKSPACE FETCH FAILURE DIAGNOSIS` section after
