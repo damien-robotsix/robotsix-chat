@@ -2082,6 +2082,22 @@ The hash is computed on the output of `build_autonomous_instruction(Settings())`
 autonomous settings at their pydantic field defaults (``proposal_marker="---PROPOSAL READY---"``,
 ``completion_marker="---AUTONOMOUS COMPLETE---"``, ``stale_monitor_runs_before_completion=3``).
 
+## AUTONOMOUS v16 — 2026-08-09 — avoid-repeated-monitor-failures-by-not-r-6dec
+
+**Summary:** Added a REPEATED-FAILURE STOP rule to the MONITOR LIFECYCLE MANAGEMENT section: if a
+monitor creation attempt fails with a checkpoint-related error (e.g. an event-driven monitor that
+loses its ticket_id and reports 'missing_ticket_id'), do not re-spawn the same monitor type —
+switch to a periodic monitor (or reuse/pause an existing one) and file a fix ticket via
+POST /tickets/ingest describing the root cause.
+
+**Rationale:** Session c0ff4ec1b46b4ba4bcc26390c19c3f21 tried to set up an event-driven
+(wait_for_event) monitor for ticket af6d three times; each attempt failed because the monitor's
+checkpoint does not persist the ticket_id. The operator correctly observed the monitor did not
+exist. The agent re-spawned the same broken monitor type instead of recognizing the pattern and
+switching strategy or filing a fix ticket after the first failure.
+
+**SHA256:** `5c16fabcc2ecd43056210ecf1d49d62ce4511c88a675bc7e6860fe74247d7f24`
+
 ## AUTONOMOUS v15 — 2026-08-09 — monitor-lifecycle-management-avoid-subse-990d
 
 **Summary:** Added MONITOR LIFECYCLE MANAGEMENT section instructing the agent to minimize monitor

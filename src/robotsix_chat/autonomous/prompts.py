@@ -10,7 +10,7 @@ if TYPE_CHECKING:
 # Version stamp for the autonomous appendix (build_autonomous_instruction).
 # Bump on every change to the instruction text and update
 # docs/system_prompt_changelog.md with a new AUTONOMOUS entry + SHA256.
-AUTONOMOUS_PROMPT_VERSION = 15
+AUTONOMOUS_PROMPT_VERSION = 16
 
 
 def build_autonomous_instruction(settings: Settings) -> str:
@@ -256,6 +256,13 @@ def build_autonomous_instruction(settings: Settings) -> str:
         "monitors.  A periodic monitor with a reasonable interval is more "
         "reliable than an event-driven monitor that may auto-pause on its "
         "first cycle.\n"
+        "  - REPEATED-FAILURE STOP: if a monitor creation attempt fails with "
+        "a checkpoint-related error (e.g. an event-driven monitor that loses "
+        "its ticket_id and reports 'missing_ticket_id'), do NOT re-spawn the "
+        "same monitor type.  After the first failure, switch to a periodic "
+        "monitor (or reuse/pause an existing one) and file a fix ticket via "
+        "POST /tickets/ingest describing the root cause.  Retrying the same "
+        "broken monitor type wastes pool slots and delays the underlying fix.\n"
         "  - POOL-FULL GUARD: when a monitor creation fails with a pool-full "
         "error (subsession limit reached), do NOT silently drop the task.  "
         "First, call list_subsessions and identify monitors that can be "
