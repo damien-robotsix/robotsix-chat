@@ -3,6 +3,25 @@
 Governed artifact: `Settings.agent_instruction` default literal in
 `src/robotsix_chat/config/settings.py`. Version stamp: `SYSTEM_PROMPT_VERSION` in the same module.
 
+## v104 — 2026-08-14 — infra-denylist-merge-escalation
+
+**Summary:** Add an "Infrastructure denylist" paragraph to the Merge / PR
+management section.  The agent is told that some repositories (notably
+robotsix-central-deploy and deployment-system repos) are on the mill's
+infrastructure denylist — the mill cannot auto-merge PRs on these repos.
+When a PR cycles through repeated auto-rebases without merging, the agent
+must recognize this as the denylist signature and either merge directly via
+``merge_direct_repo_pr`` or escalate to the operator with a clear
+recommendation, rather than cycling on "wait for mill" indefinitely.
+
+**Rationale:** PR #676 (OVH seeding-removal) was repeatedly auto-rebased but
+never merged because robotsix-central-deploy is denylisted.  The assistant
+told the user to "wait for mill" multiple times before resorting to manual
+merge.  The new paragraph teaches the agent to detect the rebase-without-merge
+pattern as a denylist signal and act on it immediately.
+
+**SHA256:** `736b036c83c448edcbc2dfda8ec4f75203628d0e4c4da63fb34795155f97c432`
+
 ## v103 — 2026-08-13 — hard-filter-block-ids-and-state-transitions
 
 **Summary:** Strengthen the HARD FILTERING RULE in the agent instruction to
