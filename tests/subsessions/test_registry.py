@@ -1490,6 +1490,101 @@ def test_find_paused_periodic_empty_when_no_paused() -> None:
     assert registry.find_paused_periodic() == []
 
 
+def test_find_paused_periodic_by_ticket_id_matches_only_live_paused() -> None:
+    """Returns live PAUSED periodic monitors tracking the ticket, not legacy closed."""
+    registry = SubsessionRegistry(store_path=None)
+    p1 = _create(
+        registry,
+        kind=SubsessionKind.PERIODIC,
+        interval_seconds=60.0,
+        checkpoint={"ticket_id": "t-1"},
+    )
+    p2 = _create(
+        registry,
+        kind=SubsessionKind.PERIODIC,
+        interval_seconds=60.0,
+        checkpoint={"ticket_id": "t-2"},
+    )
+    legacy = _create(
+        registry,
+        kind=SubsessionKind.PERIODIC,
+        interval_seconds=60.0,
+        checkpoint={"ticket_id": "t-1"},
+    )
+    registry.mark_paused(p1.id, summary="paused", reason="paused")
+    registry.mark_paused(p2.id, summary="paused", reason="paused")
+    registry.mark_closed(
+        legacy.id, summary="paused", reason="paused", closed_by="system"
+    )
+
+    matches = registry.find_paused_periodic_by_ticket_id("t-1")
+
+    assert [info.id for info in matches] == [p1.id]
+
+
+def test_route_mill_event_wakes_paused_periodic_for_ticket() -> None:
+    """A mill state-change event wakes a PAUSED periodic monitor tracking the ticket."""
+    registry = SubsessionRegistry(store_path=None)
+    info = _create(
+        registry,
+        kind=SubsessionKind.PERIODIC,
+        interval_seconds=60.0,
+        checkpoint={"ticket_id": "t-1"},
+    )
+    registry.mark_paused(info.id, summary="auto-paused", reason="paused")
+
+    woken = registry.route_mill_event(
+        "t-1",
+        {"ticket_id": "t-1", "old_state": "open", "new_state": "closed"},
+    )
+
+    assert woken == 1
+    messages = registry.drain_inbox(info.id)
+    assert len(messages) == 1
+    assert messages[0].role == "system"
+    assert "ticket t-1 state changed from 'open' to 'closed'" in messages[0].text
+    assert registry._wake_events[info.id].is_set() is False
+
+
+def test_route_mill_event_ignores_paused_periodic_for_other_ticket() -> None:
+    """A mill event for an untracked ticket does not wake a paused monitor."""
+    registry = SubsessionRegistry(store_path=None)
+    info = _create(
+        registry,
+        kind=SubsessionKind.PERIODIC,
+        interval_seconds=60.0,
+        checkpoint={"ticket_id": "t-1"},
+    )
+    registry.mark_paused(info.id, summary="auto-paused", reason="paused")
+
+    woken = registry.route_mill_event(
+        "t-other",
+        {"ticket_id": "t-other", "old_state": "open", "new_state": "closed"},
+    )
+
+    assert woken == 0
+    assert registry.drain_inbox(info.id) == []
+
+
+def test_route_mill_event_ignores_paused_periodic_without_ticket_id() -> None:
+    """A paused monitor with no checkpoint ticket_id is not woken."""
+    registry = SubsessionRegistry(store_path=None)
+    info = _create(
+        registry,
+        kind=SubsessionKind.PERIODIC,
+        interval_seconds=60.0,
+    )
+    registry.mark_paused(info.id, summary="auto-paused", reason="paused")
+
+    woken = registry.route_mill_event(
+        "t-1",
+        {"ticket_id": "t-1", "old_state": "open", "new_state": "closed"},
+    )
+
+    assert woken == 0
+    assert registry.drain_inbox(info.id) == []
+
+
 def test_find_paused_periodic_includes_pre_authorized_approval() -> None:
     """``pre_authorized_approval`` monitors are included in the paused set."""
     registry = SubsessionRegistry(store_path=None)

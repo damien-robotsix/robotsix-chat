@@ -808,6 +808,28 @@ class SubsessionRegistry:
                 result.append(info)
         return result
 
+    def find_paused_periodic_by_ticket_id(self, ticket_id: str) -> list[SubsessionInfo]:
+        """Return live ``PAUSED`` periodic monitors tracking *ticket_id*.
+
+        Only live workers are returned (``PAUSED`` status — the worker is
+        alive and blocking on an inbox signal).  Legacy closed records
+        with a paused-style close reason are handled by the background
+        watcher's reopen path, not by inbox wake.
+        """
+        result: list[SubsessionInfo] = []
+        for info in self._subs.values():
+            if info.kind is not SubsessionKind.PERIODIC:
+                continue
+            if info.status is not SubsessionStatus.PAUSED:
+                continue
+            cp = info.checkpoint
+            if cp is None:
+                continue
+            cp_ticket_id = cp.get("ticket_id")
+            if isinstance(cp_ticket_id, str) and cp_ticket_id == ticket_id:
+                result.append(info)
+        return result
+
     def cancel_and_close(
         self, sub_id: str, *, reason: str, closed_by: str
     ) -> SubsessionInfo | None:
@@ -1127,11 +1149,12 @@ class SubsessionRegistry:
                 del self._event_waiters[ticket_id]
 
     def route_mill_event(self, ticket_id: str, event_payload: dict[str, object]) -> int:
-        """Route an incoming mill state-change event to waiting monitors."""
-        waiters = self._event_waiters.get(ticket_id)
-        if not waiters:
-            return 0
+        """Route an incoming mill state-change event to waiting monitors.
 
+        Wakes both ``WAIT_FOR_EVENT`` monitors registered as event waiters
+        and live ``PAUSED`` periodic monitors tracking the same ticket
+        (auto-paused monitors whose worker is blocking on the inbox).
+        """
         old_state = event_payload.get("old_state", "")
         new_state = event_payload.get("new_state", "")
         timestamp = event_payload.get("timestamp", "")
@@ -1144,14 +1167,23 @@ class SubsessionRegistry:
         )
 
         woken = 0
-        for sub_id in list(waiters):
-            if self.enqueue_message(sub_id, "system", event_text):
-                woken += 1
-            else:
-                waiters.discard(sub_id)
+        waiters = self._event_waiters.get(ticket_id)
+        if waiters:
+            for sub_id in list(waiters):
+                if self.enqueue_message(sub_id, "system", event_text):
+                    woken += 1
+                else:
+                    waiters.discard(sub_id)
 
-        if not waiters:
-            del self._event_waiters[ticket_id]
+            if not waiters:
+                del self._event_waiters[ticket_id]
+
+        # Auto-paused periodic monitors do not register as event waiters —
+        # their worker blocks in ``_paused_wait_loop`` on the same inbox
+        # wake mechanism, so enqueueing the event here re-arms them.
+        for info in self.find_paused_periodic_by_ticket_id(ticket_id):
+            if self.enqueue_message(info.id, "system", event_text):
+                woken += 1
 
         if woken:
             logger.info(
