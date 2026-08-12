@@ -60,10 +60,10 @@ def test_build_mail_tools_disabled() -> None:
     assert build_mail_tools(MailSettings(enabled=False)) == []
 
 
-def test_build_mail_tools_returns_twelve_tools() -> None:
-    """Verify that enabled mail returns twelve discrete tools."""
+def test_build_mail_tools_returns_thirteen_tools() -> None:
+    """Verify that enabled mail returns thirteen discrete tools."""
     tools = build_mail_tools(_settings())
-    assert len(tools) == 12
+    assert len(tools) == 13
     names = [t.__name__ for t in tools]
     assert names == [
         "get_mail_board",
@@ -75,6 +75,7 @@ def test_build_mail_tools_returns_twelve_tools() -> None:
         "list_archive_folders",
         "browse_archive_folder",
         "move_archive_mail",
+        "rename_archive_folder",
         "cleanup_empty_archive_folders",
         "delete_archive_folder",
         "list_mail_accounts",
@@ -453,7 +454,7 @@ async def test_archive_cleanup_empty_success(respx_mock: respx.MockRouter) -> No
         )
     )
     tools = build_mail_tools(_settings())
-    cleanup = tools[9]
+    cleanup = tools[10]
 
     result = await cleanup()
 
@@ -469,7 +470,7 @@ async def test_archive_cleanup_empty_error(respx_mock: respx.MockRouter) -> None
         return_value=httpx.Response(500, text="IMAP not configured")
     )
     tools = build_mail_tools(_settings())
-    cleanup = tools[9]
+    cleanup = tools[10]
 
     result = await cleanup()
 
