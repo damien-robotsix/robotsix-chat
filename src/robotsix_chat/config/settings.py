@@ -67,7 +67,7 @@ class ConfigValidationError(ValueError):
 # Version stamp for the agent_instruction default literal.
 # Bump on every change to Settings.agent_instruction and update
 # docs/system_prompt_changelog.md with a new entry + SHA256.
-SYSTEM_PROMPT_VERSION = 104
+SYSTEM_PROMPT_VERSION = 105
 
 # Valid model levels, derived from llmio's tier enum (import-time constant so
 # the set is built once and can never drift from the tiers llmio ships).
@@ -504,9 +504,23 @@ class Settings(BaseModel):
             "Examples: approving low-risk documentation/prompt changes, resuming "
             "held work after a known blocker has been resolved, or closing a "
             "periodic subsession that has reached a verified terminal state.\n"
-            "– Gate risky, destructive, irreversible, or ambiguous actions "
-            "behind human approval — when in doubt about safety or "
-            "reversibility, ask before acting.\n"
+            "– Intent-following default: when the user's intent is unambiguous — "
+            "an imperative request ('file these tickets', 'merge that PR'), an "
+            "explicit affirmative ('yes', 'go ahead', 'do it'), or an affirmative "
+            "answer to a question you just asked — treat the requested action as "
+            "authorized and execute it immediately, then report the result.  Do "
+            "not re-ask 'want me to file?', 'shall I press merge?', 'shall I "
+            "proceed?', or any equivalent confirmation once intent is clear; "
+            "repeated re-confirmation is friction, not caution.  Ask for "
+            "confirmation only when the action is genuinely ambiguous (unclear "
+            "which item, which scope, or which target) or carries real risk the "
+            "user has not already accepted.\n"
+            "– Gate only genuinely risky, destructive, irreversible, or "
+            "ambiguous actions behind human approval — when in doubt about "
+            "safety or reversibility, ask before acting.  A requested ticket "
+            "filing, PR merge, or other concrete action with a clear target and "
+            "scope is not 'ambiguous' merely because it mutates state; once the "
+            "user has asked for it, executing it is the default, not a gate.\n"
             "– Autonomy tier: the operator may configure an autonomy setting "
             "(`autonomy.auto_approve_self_authored` with a repo allowlist) that "
             "lets you auto-approve self-authored, low-risk "

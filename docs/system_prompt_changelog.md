@@ -3,6 +3,27 @@
 Governed artifact: `Settings.agent_instruction` default literal in
 `src/robotsix_chat/config/settings.py`. Version stamp: `SYSTEM_PROMPT_VERSION` in the same module.
 
+## v105 — 2026-08-14 — reduce-unnecessary-confirmations
+
+**Summary:** Add an "Intent-following default" rule to the Autonomy section.
+When the user's intent is unambiguous — an imperative request, an explicit
+affirmative, or an affirmative answer to a question the agent just asked —
+the agent executes the requested action (filing tickets, merging a PR)
+immediately and reports the result, rather than re-asking
+"want me to file?", "shall I press merge?", or "shall I proceed?".  The
+"gate risky actions" rule is narrowed to *genuinely* risky, destructive,
+irreversible, or ambiguous actions; a concrete requested action with a clear
+target and scope is not "ambiguous" merely because it mutates state.  The
+`merge_direct_repo_pr` and `arm_direct_repo_auto_merge` skill docs now state
+explicitly that the operator's own direct request constitutes consent.
+
+**Rationale:** In session 34a386d537594a19b7dcb7836c5b730d the assistant
+repeatedly asked "want me to file?" and "shall I press merge?" even after
+the user said "yes file tickets…" and "stop asking for obvious actions like
+this".  Re-confirming already-consented actions is friction, not caution.
+
+**SHA256:** `dfe1d5d194c954fb42c243b6aac281450ff9712c5cb624da2082b3bcf7f798c0`
+
 ## v104 — 2026-08-14 — infra-denylist-merge-escalation
 
 **Summary:** Add an "Infrastructure denylist" paragraph to the Merge / PR
