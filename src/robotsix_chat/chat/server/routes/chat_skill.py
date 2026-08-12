@@ -35,6 +35,11 @@ it: these endpoints validate every write against your live `Settings`
 model, so a change that would not load is rejected before it is persisted
 rather than after a restart.
 
+**You *can* write your own config.** The allowed write path is your own
+`PUT /config` endpoint, documented below. The guard that follows only
+rules out routing those writes through the deploy plane's
+template-derived endpoints — it is not a prohibition on self-configuration.
+
 Do **not** route config writes through the deploy plane. Endpoints under
 `/chat/config/{name}` on the deploy component rebuild the whole document
 from a stored copy of your schema, which silently drops keys that copy
