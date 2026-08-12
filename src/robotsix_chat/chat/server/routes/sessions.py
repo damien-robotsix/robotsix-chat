@@ -10,6 +10,7 @@ from starlette.requests import Request
 from starlette.responses import JSONResponse
 
 from robotsix_chat.chat.conversation import ConversationStore
+from robotsix_chat.config.constants import level_display_name
 
 from ._shared import _get_session_id, _parse_json_body, build_transcript
 from .chat import ChatAgent
@@ -69,7 +70,9 @@ async def sessions_list_endpoint(request: Request) -> JSONResponse:
           "sessions": [
             {
               "session_id": "...", "title": "...",
-              "last_active": 1.0, "turn_count": 3, "closed": false
+              "last_active": 1.0, "turn_count": 3, "closed": false,
+              "model_level": 3, "model_name": "opus",
+              "model_escalated": false
             },
             ...
           ],
@@ -104,6 +107,22 @@ async def sessions_list_endpoint(request: Request) -> JSONResponse:
                 if aq is not None:
                     s["autonomous_plan_text"] = aq.plan_text
                     s["autonomous_turn_count"] = aq.auto_turn_count
+
+    # Resolve each session's effective model for the UI badge. ``model_level``
+    # is None until the agent escalates the session, so fall back to the
+    # server's configured chat level and mark only real escalations.
+    configured = getattr(request.app.state, "chat_model_level", None)
+    for s in sessions:
+        raw = s.get("model_level")
+        escalated = isinstance(raw, int)
+        level = raw if escalated else configured
+        if isinstance(level, int):
+            s["model_level"] = level
+            s["model_name"] = level_display_name(level)
+            s["model_escalated"] = escalated
+        else:
+            # No agent on this app (test doubles) — omit rather than guess.
+            s.pop("model_level", None)
 
     return JSONResponse({"sessions": sessions, "active_session_id": active_id})
 

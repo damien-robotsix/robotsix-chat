@@ -58,6 +58,10 @@ SSE_CHAT_TURN_RESUME_TYPE = "chat_turn_resume"
 # Browser push notification (via notify_user tool → EventBus → SSE).
 SSE_NOTIFICATION_TYPE = "notification"
 
+# Session model changed (via the escalate_model tool → EventBus → SSE) so the
+# UI badge updates without waiting for a session-list refetch.
+SSE_SESSION_MODEL_TYPE = "session_model"
+
 # ---------------------------------------------------------------------------
 # EventSink — structural Protocol for dependency injection
 # ---------------------------------------------------------------------------
@@ -514,3 +518,27 @@ class EventBus:
         """
         for queue in self._subscribers.get(session_id, ()):
             queue.put_nowait(frame)
+
+
+def session_model_frame(
+    *,
+    session_id: str,
+    model_level: int,
+    model_name: str,
+    escalated: bool,
+    reason: str = "",
+) -> dict[str, object]:
+    """Build a ``session_model`` frame announcing *session_id*'s model.
+
+    *escalated* distinguishes a session pinned by ``escalate_model`` from one
+    simply running the server default, so the UI can mark it.  *reason* is the
+    agent's stated justification, shown to the operator.
+    """
+    return {
+        "type": SSE_SESSION_MODEL_TYPE,
+        "session_id": session_id,
+        "model_level": model_level,
+        "model_name": model_name,
+        "escalated": escalated,
+        "reason": reason,
+    }

@@ -50,6 +50,7 @@ class MockAgent:
         images: list[tuple[str, bytes]] | None = None,
         trace_metadata: dict[str, str] | None = None,
         trace_name: str | None = None,
+        model_level: int | None = None,
     ) -> AsyncIterator[str]:
         """Yield tokens or raise the configured error."""
         self.call_count += 1

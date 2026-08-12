@@ -571,6 +571,25 @@ import { processSSEStream } from "./sse-parser.js";
     });
   }
 
+  // ---- Active-session model badge --------------------------------------
+  // Rendered in the header from whichever session-list entry is active, and
+  // updated live by the `session_model` SSE frame so an escalation shows up
+  // without waiting for the next session-list refetch.
+  function renderActiveModel(name, escalated) {
+    var el = document.getElementById("active-model");
+    if (!el) return;
+    if (!name) {
+      el.textContent = "";
+      el.className = "";
+      return;
+    }
+    el.textContent = escalated ? name + " \u23eb" : name;
+    el.className = escalated ? "model-badge model-badge-escalated" : "model-badge";
+    el.title = escalated
+      ? "Escalated to a stronger model for this session"
+      : "Model serving the active session";
+  }
+
   // ---- Session list rendering -----------------------------------------
   function renderSessionList(data) {
     if (!data || !Array.isArray(data.sessions)) return;
@@ -645,6 +664,25 @@ import { processSSEStream } from "./sse-parser.js";
       }
       metaDiv.textContent = parts.join(" · ");
       row.appendChild(metaDiv);
+
+      // Model badge — which tier this session runs on. Escalated sessions
+      // (the agent asked for a stronger model) are marked so the operator can
+      // see at a glance which conversations cost more.
+      if (s.model_name && s.session_id === activeSessionId) {
+        renderActiveModel(s.model_name, !!s.model_escalated);
+      }
+      if (s.model_name) {
+        var modelDiv = document.createElement("div");
+        modelDiv.className = "session-model";
+        if (s.model_escalated) {
+          modelDiv.classList.add("session-model-escalated");
+          modelDiv.title = "Escalated to a stronger model for this session";
+          modelDiv.textContent = s.model_name + " \u23eb";
+        } else {
+          modelDiv.textContent = s.model_name;
+        }
+        row.appendChild(modelDiv);
+      }
 
       // Delete (close) button — appears on hover; stops the session's
       // subsessions and deletes its history (after a confirm()).
@@ -2393,6 +2431,21 @@ import { processSSEStream } from "./sse-parser.js";
           // here instead of as a token/done frame. Render it as a normal
           // assistant bubble.
           if (frame.text) addAssistantBubble(frame.text);
+        } else if (frame.type === "session_model") {
+          // The agent escalated this session to a stronger model. Update the
+          // badges immediately; the next session-list refetch confirms it.
+          if (frame.session_id === activeSessionId) {
+            renderActiveModel(frame.model_name, !!frame.escalated);
+          }
+          for (var mi = 0; mi < sessionsList.length; mi++) {
+            if (sessionsList[mi].session_id === frame.session_id) {
+              sessionsList[mi].model_name = frame.model_name;
+              sessionsList[mi].model_level = frame.model_level;
+              sessionsList[mi].model_escalated = !!frame.escalated;
+              break;
+            }
+          }
+          renderSessionList({ sessions: sessionsList });
         } else if (frame.type === "notification") {
           // Push notification from the agent's notify_user tool.
           // The browser shows a native notification when permission is

@@ -117,6 +117,12 @@ class Session:
     # How many leading entries of ``turns`` the summary covers.  Adjusted when
     # history trimming drops leading turns.
     compacted_turn_index: int = 0
+    # Escalated model level for this session, set by the agent's
+    # ``escalate_model`` tool when it judges the configured tier insufficient.
+    # ``None`` means "use the server's configured chat level".  Sticky for the
+    # session's lifetime: a session that needed the stronger tier usually keeps
+    # needing it, and switching back mid-session would rebuild the prompt cache.
+    model_level: int | None = None
     # LEGACY (pre in-place compaction): id of the continuation session an old
     # compaction created.  Kept so persisted chains still reroute; new
     # compactions never set it.
@@ -131,6 +137,7 @@ def _session_metadata(session: Session) -> dict[str, object]:
         "last_active": session.wall_last_active,
         "turn_count": session.turn_count,
         "closed": session.closed,
+        "model_level": session.model_level,
     }
 
 
@@ -370,6 +377,11 @@ class ConversationStoreSerializer:
                     turns=turns,
                     turn_count=int(sraw.get("turn_count", len(turns))),
                     closed=bool(sraw.get("closed", False)),
+                    model_level=(
+                        int(model_level_raw)
+                        if isinstance(model_level_raw := sraw.get("model_level"), int)
+                        else None
+                    ),
                     compacted_summary=compacted_summary,
                     compacted_turn_index=min(compacted_turn_index, len(turns)),
                     compacted_into=compacted_into,
@@ -416,6 +428,8 @@ class ConversationStoreSerializer:
                     "turns": [list(t) for t in session.turns],
                     "closed": session.closed,
                 }
+                if session.model_level is not None:
+                    session_dict["model_level"] = session.model_level
                 if session.compacted_summary is not None:
                     session_dict["compacted_summary"] = session.compacted_summary
                 if session.compacted_turn_index:
@@ -662,6 +676,29 @@ class ConversationStore:
         if session is None:
             return False
         session.title = title
+        self._persist()
+        return True
+
+    def get_model_level(self, session_id: str) -> int | None:
+        """Return *session_id*'s escalated model level, or ``None`` if unset.
+
+        ``None`` means the session has never escalated and should run at the
+        server's configured chat level.
+        """
+        session = self._sessions.get(session_id)
+        return None if session is None else session.model_level
+
+    def set_model_level(self, session_id: str, level: int) -> bool:
+        """Pin *session_id* to *level*. Returns ``False`` for unknown sessions.
+
+        Escalation is sticky and one-way in practice — the agent only ever
+        raises the level — but this setter does not enforce that, so an
+        operator-facing reset stays possible without a schema change.
+        """
+        session = self._sessions.get(session_id)
+        if session is None:
+            return False
+        session.model_level = level
         self._persist()
         return True
 

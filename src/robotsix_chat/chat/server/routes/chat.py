@@ -65,6 +65,7 @@ class ChatAgent(Protocol):
         images: list[tuple[str, bytes]] | None = None,
         trace_metadata: dict[str, str] | None = None,
         trace_name: str | None = None,
+        model_level: int | None = None,
     ) -> AsyncIterator[str]:
         """Yield tokens from the LLM in response to ``message``.
 
@@ -372,6 +373,9 @@ class MessageCoalescer:
                     client_id=session_id,
                     images=combined_images,
                     trace_name="chat-turn",
+                    # A session the agent escalated runs at its pinned level;
+                    # None leaves the agent on its configured one.
+                    model_level=store.get_model_level(session_id),
                 ):
                     reply_parts.append(token)
                     for p in pending:
