@@ -360,6 +360,94 @@ class BoardClient:
         """
         return await self._fetch_ticket(ticket_id, "data")
 
+    async def find_ticket_by_pr_url(self, pr_url: str) -> dict[str, Any] | None:
+        """Find a ticket by its linked PR URL.
+
+        Calls ``GET /tickets`` (with a ``pr_url`` query parameter when the
+        board API supports it) and returns the first ticket whose
+        ``pr_url`` field matches *pr_url*, or ``None`` when no ticket is
+        found or the board API is unreachable.
+
+        This is a direct lookup — the caller gets the matching ticket in
+        one API round-trip instead of enumerating all tickets and filtering
+        client-side.
+        """
+        if not self._board_url:
+            return None
+
+        url = f"{self._board_url}/tickets"
+        headers: dict[str, str] = {"Accept": "application/json"}
+        if self._s.board_api_token.get_secret_value():
+            headers["Authorization"] = (
+                f"Bearer {self._s.board_api_token.get_secret_value()}"
+            )
+
+        # Try server-side filtering first — ?pr_url=<encoded>.
+        params: dict[str, str] = {"pr_url": pr_url}
+        try:
+            async with httpx.AsyncClient(timeout=self._s.timeout) as client:
+                retry_client = RetryClient(client, config=_BOARD_RETRY_CONFIG)
+                response = await retry_client.get(url, headers=headers, params=params)
+                response.raise_for_status()
+                tickets_data = response.json()
+        except Exception as exc:
+            logger.warning(
+                "BoardClient.find_ticket_by_pr_url: "
+                "server-side filter failed: %s; falling back to full list",
+                exc,
+            )
+            tickets_data = None
+
+        # Normalise the response shape.
+        ticket_objects: list[dict[str, Any]] = []
+        if isinstance(tickets_data, list):
+            ticket_objects = tickets_data
+        elif isinstance(tickets_data, dict):
+            ticket_objects = tickets_data.get("tickets", [])
+            if not isinstance(ticket_objects, list):
+                ticket_objects = []
+
+        # If server-side filtering returned a match, use it.
+        for t in ticket_objects:
+            if isinstance(t, dict) and t.get("pr_url") == pr_url:
+                return t
+
+        # Server-side filtering didn't return a match (either the board
+        # doesn't support ?pr_url= or the filter returned empty).  Fall
+        # back to fetching the full list and filtering client-side.
+        if ticket_objects:
+            # We already have the full list from the first call — the
+            # server ignored ?pr_url= and returned everything.  We already
+            # scanned it above; no match.
+            return None
+
+        # The first call failed entirely — retry without ?pr_url=.
+        try:
+            async with httpx.AsyncClient(timeout=self._s.timeout) as client:
+                retry_client = RetryClient(client, config=_BOARD_RETRY_CONFIG)
+                response = await retry_client.get(url, headers=headers)
+                response.raise_for_status()
+                tickets_data = response.json()
+        except Exception as exc:
+            logger.warning(
+                "BoardClient.find_ticket_by_pr_url: full-list fallback failed: %s",
+                exc,
+            )
+            return None
+
+        if isinstance(tickets_data, list):
+            ticket_objects = tickets_data
+        elif isinstance(tickets_data, dict):
+            ticket_objects = tickets_data.get("tickets", [])
+            if not isinstance(ticket_objects, list):
+                return None
+
+        for t in ticket_objects:
+            if isinstance(t, dict) and t.get("pr_url") == pr_url:
+                return t
+
+        return None
+
     async def create_ticket(
         self,
         title: str,

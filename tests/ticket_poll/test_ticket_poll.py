@@ -17,6 +17,7 @@ import respx
 from robotsix_chat.config import DirectRepoSettings, Settings
 from robotsix_chat.ticket_poll import (
     _check_unexpected_terminal,
+    build_find_ticket_by_pr_tool,
     build_merge_pull_request_tool,
     build_ticket_poll_tools,
     load_ticket_poll_skill,
@@ -1136,3 +1137,225 @@ def test_unexpected_terminal_skips_non_dict_entries() -> None:
         "events": [None, "also not a dict"],
     }
     assert _check_unexpected_terminal(data) is None
+
+
+# ============================================================================
+# find_ticket_by_pr
+# ============================================================================
+
+
+def test_find_ticket_by_pr_empty_config_returns_empty_list() -> None:
+    """Neither component_request nor board_api_base_url → empty list."""
+    tools = build_find_ticket_by_pr_tool(
+        Settings(direct_repo=DirectRepoSettings(board_api_base_url=""))
+    )
+    assert tools == []
+
+
+def test_find_ticket_by_pr_configured_returns_one_tool() -> None:
+    """When board_api_base_url is set, returns find_ticket_by_pr."""
+    tools = build_find_ticket_by_pr_tool(_settings())
+    assert len(tools) == 1
+    assert tools[0].__name__ == "find_ticket_by_pr"
+
+
+@pytest.mark.asyncio
+async def test_find_ticket_by_pr_server_side_match(
+    respx_mock: respx.MockRouter,
+) -> None:
+    """Server-side ?pr_url= filter returns a matching ticket."""
+    pr_url = "https://github.com/owner/repo/pull/656"
+    ticket = {
+        "ticket_id": "20250101T120000Z-fix-bug-a1b2",
+        "state": "HUMAN_MR_APPROVAL",
+        "pr_url": pr_url,
+    }
+
+    route = respx_mock.get("http://board:8077/tickets").mock(
+        return_value=httpx.Response(200, json=[ticket])
+    )
+
+    tools = build_find_ticket_by_pr_tool(_settings())
+    result = await tools[0](pr_url)
+
+    assert route.called
+    # Verify the pr_url query param was sent
+    assert route.calls.last.request.url.params["pr_url"] == pr_url
+
+    data = json.loads(result)
+    assert data["ticket_id"] == "20250101T120000Z-fix-bug-a1b2"
+    assert data["state"] == "HUMAN_MR_APPROVAL"
+    assert data["pr_url"] == pr_url
+    assert data["error"] == ""
+
+
+@pytest.mark.asyncio
+async def test_find_ticket_by_pr_no_match(
+    respx_mock: respx.MockRouter,
+) -> None:
+    """No matching ticket → error message in JSON."""
+    pr_url = "https://github.com/owner/repo/pull/404"
+
+    respx_mock.get("http://board:8077/tickets").mock(
+        return_value=httpx.Response(
+            200,
+            json=[
+                {
+                    "ticket_id": "other-1",
+                    "state": "DONE",
+                    "pr_url": "https://github.com/other/repo/pull/1",
+                },
+            ],
+        )
+    )
+
+    tools = build_find_ticket_by_pr_tool(_settings())
+    result = await tools[0](pr_url)
+
+    data = json.loads(result)
+    assert data["ticket_id"] is None
+    assert data["state"] is None
+    assert data["pr_url"] == pr_url
+    assert "No ticket found" in data["error"]
+
+
+@pytest.mark.asyncio
+async def test_find_ticket_by_pr_dict_response(
+    respx_mock: respx.MockRouter,
+) -> None:
+    """Handles dict-shaped response ({"tickets": [...]})."""
+    pr_url = "https://github.com/owner/repo/pull/656"
+    ticket = {
+        "ticket_id": "20250101T120000Z-fix-bug-a1b2",
+        "state": "IN_PROGRESS",
+        "pr_url": pr_url,
+    }
+
+    respx_mock.get("http://board:8077/tickets").mock(
+        return_value=httpx.Response(200, json={"tickets": [ticket]})
+    )
+
+    tools = build_find_ticket_by_pr_tool(_settings())
+    result = await tools[0](pr_url)
+
+    data = json.loads(result)
+    assert data["ticket_id"] == "20250101T120000Z-fix-bug-a1b2"
+
+
+@pytest.mark.asyncio
+async def test_find_ticket_by_pr_with_auth_token(
+    respx_mock: respx.MockRouter,
+) -> None:
+    """Auth token is sent as Bearer in the Authorization header."""
+    pr_url = "https://github.com/owner/repo/pull/656"
+
+    route = respx_mock.get("http://board:8077/tickets").mock(
+        return_value=httpx.Response(200, json=[])
+    )
+
+    tools = build_find_ticket_by_pr_tool(
+        _settings(board_api_token="find-token"),
+    )
+    await tools[0](pr_url)
+
+    assert route.called
+    request_headers = route.calls.last.request.headers
+    assert request_headers["Authorization"] == "Bearer find-token"
+
+
+@pytest.mark.asyncio
+async def test_find_ticket_by_pr_board_unreachable(
+    respx_mock: respx.MockRouter,
+) -> None:
+    """Board API unreachable → error message."""
+    pr_url = "https://github.com/owner/repo/pull/656"
+
+    respx_mock.get("http://board:8077/tickets").mock(
+        side_effect=httpx.ConnectError("connection refused")
+    )
+
+    tools = build_find_ticket_by_pr_tool(_settings())
+    result = await tools[0](pr_url)
+
+    data = json.loads(result)
+    assert data["ticket_id"] is None
+    assert "No ticket found" in data["error"]
+
+
+@pytest.mark.asyncio
+async def test_find_ticket_by_pr_strips_trailing_slash(
+    respx_mock: respx.MockRouter,
+) -> None:
+    """Trailing slash on board_api_base_url is stripped correctly."""
+    pr_url = "https://github.com/owner/repo/pull/656"
+    ticket = {
+        "ticket_id": "t1",
+        "state": "DONE",
+        "pr_url": pr_url,
+    }
+
+    route = respx_mock.get("http://board:8077/tickets").mock(
+        return_value=httpx.Response(200, json=[ticket])
+    )
+
+    tools = build_find_ticket_by_pr_tool(
+        _settings(board_api_base_url="http://board:8077/")
+    )
+    await tools[0](pr_url)
+
+    assert route.called
+
+
+@pytest.mark.asyncio
+async def test_find_ticket_by_pr_server_filter_falls_back_to_full_list(
+    respx_mock: respx.MockRouter,
+) -> None:
+    """Server-side ?pr_url= returns all tickets; client-side filtering finds match."""
+    pr_url = "https://github.com/owner/repo/pull/656"
+    ticket = {
+        "ticket_id": "20250101T120000Z-fix-bug-a1b2",
+        "state": "HUMAN_MR_APPROVAL",
+        "pr_url": pr_url,
+    }
+
+    # First call (with ?pr_url=) returns ALL tickets — simulating a board
+    # that ignores the query param. The matching ticket is in the list.
+    route1 = respx_mock.get("http://board:8077/tickets").mock(
+        return_value=httpx.Response(
+            200,
+            json=[
+                {"ticket_id": "other-1", "state": "DONE", "pr_url": None},
+                ticket,
+            ],
+        )
+    )
+
+    tools = build_find_ticket_by_pr_tool(_settings())
+    result = await tools[0](pr_url)
+
+    assert route1.called
+    data = json.loads(result)
+    assert data["ticket_id"] == "20250101T120000Z-fix-bug-a1b2"
+    assert data["state"] == "HUMAN_MR_APPROVAL"
+
+
+@pytest.mark.asyncio
+async def test_find_ticket_by_pr_skips_non_dict_entries(
+    respx_mock: respx.MockRouter,
+) -> None:
+    """Non-dict entries in the ticket list are safely skipped."""
+    pr_url = "https://github.com/owner/repo/pull/656"
+
+    respx_mock.get("http://board:8077/tickets").mock(
+        return_value=httpx.Response(
+            200,
+            json=["not a dict", None, {"ticket_id": "other", "pr_url": "other-url"}],
+        )
+    )
+
+    tools = build_find_ticket_by_pr_tool(_settings())
+    result = await tools[0](pr_url)
+
+    data = json.loads(result)
+    assert data["ticket_id"] is None
+    assert "No ticket found" in data["error"]

@@ -40,6 +40,7 @@ if TYPE_CHECKING:
     from robotsix_chat.config import Settings
 
 __all__ = [
+    "build_find_ticket_by_pr_tool",
     "build_merge_pull_request_tool",
     "build_prioritize_all_open_tickets_tool",
     "build_ticket_poll_tools",
@@ -429,6 +430,83 @@ def build_merge_pull_request_tool(
             return f"Error merging PR for ticket {effective_id}: {exc}"
 
     return [merge_pull_request]
+
+
+def build_find_ticket_by_pr_tool(
+    settings: Settings,
+    *,
+    component_request: Callable[..., Any] | None = None,
+) -> list[Callable[..., Any]]:
+    """Return the ``find_ticket_by_pr`` tool.
+
+    The tool looks up a ticket by its linked PR URL via the mill board
+    API.  It calls ``GET /tickets?pr_url=...`` (server-side filter) when
+    the board supports it, falling back to a client-side scan of the full
+    ticket list otherwise.
+
+    Use this when you know a PR URL and need to find the associated ticket
+    — e.g. when asked to "verify and merge PR #656" but don't know the
+    ticket ID.  It replaces manual enumeration of all tickets.
+
+    Args:
+        settings: Full application settings.
+        component_request: The roster-based request callable, or ``None``
+            when the component roster is unavailable.
+
+    Returns:
+        A one-element list containing the ``find_ticket_by_pr`` async
+        callable, or ``[]`` when neither *component_request* nor
+        ``board_api_base_url`` are available.
+
+    """
+    conn = _board_connection(settings, component_request)
+    if conn is None:
+        return []
+    _board_url, _board_token, _timeout = conn
+
+    async def find_ticket_by_pr(pr_url: str) -> str:
+        """Find the ticket associated with a pull request URL.
+
+        Looks up the mill board for a ticket whose ``pr_url`` field
+        matches *pr_url*.  Returns the ticket ID and state, or an error
+        when no match is found or the board API is unreachable.
+
+        Args:
+            pr_url: The full PR URL (e.g.
+                ``"https://github.com/owner/repo/pull/656"``).
+
+        Returns:
+            A JSON string with ``ticket_id``, ``state``, ``pr_url``, and
+            ``error`` (empty on success, or a diagnostic message).
+
+        """
+        board_client = BoardClient(settings.direct_repo)
+        ticket = await board_client.find_ticket_by_pr_url(pr_url)
+        if ticket is None:
+            return json.dumps(
+                {
+                    "ticket_id": None,
+                    "state": None,
+                    "pr_url": pr_url,
+                    "error": (
+                        f"No ticket found with pr_url={pr_url!r}. "
+                        "The PR may not be linked to any board ticket, "
+                        "or the board API may be unreachable."
+                    ),
+                },
+                ensure_ascii=False,
+            )
+        return json.dumps(
+            {
+                "ticket_id": ticket.get("ticket_id"),
+                "state": ticket.get("state"),
+                "pr_url": ticket.get("pr_url"),
+                "error": "",
+            },
+            ensure_ascii=False,
+        )
+
+    return [find_ticket_by_pr]
 
 
 def build_prioritize_all_open_tickets_tool(

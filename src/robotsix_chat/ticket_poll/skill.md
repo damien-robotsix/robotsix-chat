@@ -1,7 +1,7 @@
 # Ticket Poll — ticket-state lookup and PR merging via the component roster
 
-You have `ticket_poll`, `ticket_poll_batch`, and `merge_pull_request` tools that interact with the
-mill board API. These tools route through `component_request` (roster-based connectivity) when
+You have `ticket_poll`, `ticket_poll_batch`, `merge_pull_request`, and `find_ticket_by_pr` tools
+that interact with the mill board API. These tools route through `component_request` (roster-based connectivity) when
 available, falling back to the direct board API when the roster is unavailable — they are reliable
 as the primary path for checking ticket state and merging approved PRs.
 
@@ -20,6 +20,9 @@ as the primary path for checking ticket state and merging approved PRs.
   `human_mr_approval` state and its associated PR has been approved. This directly calls the mill
   board's merge-now endpoint, bypassing the need for auto-merge to be enabled on the target
   repository.
+- **Find ticket by PR** — use `find_ticket_by_pr` when you know a PR URL (e.g.
+  `https://github.com/owner/repo/pull/656`) but not the associated ticket ID. This is a direct
+  lookup — one API round-trip instead of enumerating all tickets and filtering client-side.
 
 ## Allowed operations
 
@@ -28,6 +31,7 @@ as the primary path for checking ticket state and merging approved PRs.
 | `ticket_poll`                 | HTTP GET to the board API; returns the ticket's current state.               |
 | `ticket_poll_batch`           | Concurrent HTTP GETs for multiple tickets; returns full details for triage.  |
 | `merge_pull_request`          | HTTP POST to merge the approved PR associated with a ticket.                 |
+| `find_ticket_by_pr`           | HTTP GET to find the ticket linked to a given PR URL.                        |
 | `prioritize_all_open_tickets` | Lists all open, unflagged tickets and sets priority on every one in a batch. |
 
 The tool signatures are:
@@ -36,6 +40,7 @@ The tool signatures are:
 ticket_poll(ticket_id: str) -> str
 ticket_poll_batch(ticket_ids: list[str]) -> str
 merge_pull_request(ticket_id: str) -> str
+find_ticket_by_pr(pr_url: str) -> str
 prioritize_all_open_tickets() -> str
 ```
 
@@ -103,6 +108,16 @@ A status message string from the mill API — either a success confirmation or a
 the merge failed (e.g. the PR is not approved, conflicts exist, or required status checks have not
 passed). The tool routes through the component roster when available, falling back to the direct
 board API on any failure.
+
+### `find_ticket_by_pr`
+
+A JSON string with these fields:
+
+- `ticket_id` — the full ticket ID of the matching ticket, or `null` when no match was found
+- `state` — the ticket's current state string, or `null`
+- `pr_url` — the PR URL that was looked up (echoed back)
+- `error` — empty string on success, or a diagnostic message when no matching ticket was found or
+  the board API was unreachable
 
 ### `prioritize_all_open_tickets`
 
