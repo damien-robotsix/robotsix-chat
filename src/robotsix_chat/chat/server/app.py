@@ -48,7 +48,7 @@ from robotsix_chat.langfuse import (
 )
 from robotsix_chat.lifecycle import build_lifecycle_tools, load_lifecycle_skill
 from robotsix_chat.llm import LlmioChatAgent
-from robotsix_chat.mail import build_mail_tools
+from robotsix_chat.mail import build_mail_tools, load_mail_skill
 from robotsix_chat.memory import ChatMemory, NullMemory, ReadOnlyMemory, build_memory
 from robotsix_chat.notification import build_notification_tools, load_notification_skill
 from robotsix_chat.public_fetch import build_public_fetch_tools, load_public_fetch_skill
@@ -846,6 +846,7 @@ def _inject_skills(
         (settings.github_security.enabled, "github_security", load_github_skill),
         (settings.github_actions.enabled, "github_actions", load_github_actions_skill),
         (settings.direct_repo.enabled, "direct_repo", load_direct_repo_skill),
+        (settings.mail.enabled, "mail", load_mail_skill),
         (
             bool(settings.direct_repo.board_api_base_url.strip())
             or bool(settings.central_deploy.url.strip()),
