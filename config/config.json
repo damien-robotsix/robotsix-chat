@@ -208,6 +208,10 @@
     "known_hosts": "",
     "remote_root": ""
   },
+  "volume_tools": {
+    "enabled": true,
+    "root_path": "/data"
+  },
   "render_url": {
     "enabled": false,
     "timeout": 30.0,
