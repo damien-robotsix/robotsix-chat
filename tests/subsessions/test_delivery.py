@@ -1654,12 +1654,8 @@ async def test_batch_with_autonomous_plan_degrades_to_individual_calls() -> None
     )
     delivery.set_autonomous_runner(runner)
 
-    info_a = _make_info(
-        sub_id="sub-a", kind=SubsessionKind.PERIODIC, title="Monitor A"
-    )
-    info_b = _make_info(
-        sub_id="sub-b", kind=SubsessionKind.PERIODIC, title="Monitor B"
-    )
+    info_a = _make_info(sub_id="sub-a", kind=SubsessionKind.PERIODIC, title="Monitor A")
+    info_b = _make_info(sub_id="sub-b", kind=SubsessionKind.PERIODIC, title="Monitor B")
 
     outcomes = [
         (info_a, "Outcome A.", "completed", "[label-a]"),
