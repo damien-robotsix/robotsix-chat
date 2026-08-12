@@ -441,6 +441,44 @@ async def test_archive_move_create_folders_default(
 
 
 # ---------------------------------------------------------------------------
+# MailClient — archive_rename_folder (POST /archive-rename-folder)
+# ---------------------------------------------------------------------------
+
+
+@pytest.mark.asyncio
+async def test_archive_rename_folder_success(respx_mock: respx.MockRouter) -> None:
+    """POST /archive-rename-folder with JSON body returns success."""
+    route = respx_mock.post("http://127.0.0.1:8077/archive-rename-folder").mock(
+        return_value=httpx.Response(200, text='{"status": "renamed"}')
+    )
+    tools = build_mail_tools(_settings())
+    rename = tools[9]
+
+    result = await rename("Orders", "Commandes")
+
+    assert route.called
+    body = route.calls.last.request.content.decode()
+    assert "Orders" in body
+    assert "Commandes" in body
+    assert "renamed" in result
+
+
+@pytest.mark.asyncio
+async def test_archive_rename_folder_error(respx_mock: respx.MockRouter) -> None:
+    """POST /archive-rename-folder on 400 returns an error string."""
+    respx_mock.post("http://127.0.0.1:8077/archive-rename-folder").mock(
+        return_value=httpx.Response(400, text="target folder already exists")
+    )
+    tools = build_mail_tools(_settings())
+    rename = tools[9]
+
+    result = await rename("Orders", "Commandes")
+
+    assert "Mail API error 400" in result
+    assert "target folder already exists" in result
+
+
+# ---------------------------------------------------------------------------
 # MailClient — archive_cleanup_empty (POST /archive-cleanup-empty)
 # ---------------------------------------------------------------------------
 
