@@ -2082,6 +2082,22 @@ The hash is computed on the output of `build_autonomous_instruction(Settings())`
 autonomous settings at their pydantic field defaults (``proposal_marker="---PROPOSAL READY---"``,
 ``completion_marker="---AUTONOMOUS COMPLETE---"``, ``stale_monitor_runs_before_completion=3``).
 
+## AUTONOMOUS v18 — 2026-08-10 — pre-check-codebase-for-existing-features-275b
+
+**Summary:** Added a PRE-FILING CODEBASE CHECK rule to the autonomous protocol: before filing a
+new feature-request ticket (or reporting a missing capability), the agent must query the target
+repository's codebase (grep, code search, or explore) to determine whether the requested behavior
+already exists.  If the feature is already implemented — or a near equivalent is present — the
+agent must inform the operator directly, cite the relevant file/symbol, and stop rather than
+creating a ticket.
+
+**Rationale:** Session e2c54bd977e840b0a710c5bb0aaaed5b filed a feature request for concatenating
+queued messages without first checking whether the feature already existed.  The subsequent
+monitor discovered that ``MessageCoalescer._process_batch`` in ``chat.py`` already implements the
+desired behavior, producing a misleading monitor cycle and unnecessary ticket overhead.
+
+**SHA256:** `f3893a7b34fde84c2ff9a50118dac079c51e87126346fd21cb3fd37d3f3d258d`
+
 ## AUTONOMOUS v17 — 2026-08-09 — do-not-output-raw-subsession-debug-summa-f3f1
 
 **Summary:** Reinforced the COMPLETION closing-summary guidance so the HARD FILTERING RULE is
