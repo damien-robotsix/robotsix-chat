@@ -708,7 +708,7 @@ class SubsessionsSettings(BaseModel):
         max_idle_runs: A periodic subsession auto-pauses (closes with
             reason ``"paused"``) after this many consecutive
             ``NO_CHANGE`` runs.  Set to ``0`` to disable.
-            Default ``3``.
+            Default ``15``.
             Env override: ``SUBSESSIONS_MAX_IDLE_RUNS``.
         human_approval_timeout_runs: When a periodic subsession's checkpoint
             indicates the monitored ticket is in ``human_issue_approval``
@@ -824,7 +824,7 @@ class SubsessionsSettings(BaseModel):
     default_model_level: int = 2
     min_interval_seconds: float = 60.0
     auto_stop_no_change_runs: int = 3
-    max_idle_runs: int = 3
+    max_idle_runs: int = 15
     human_approval_timeout_runs: int = 5
     human_approval_timeout_seconds: float = 300.0
     pre_authorized_ticket_patterns: list[str] = Field(

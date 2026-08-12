@@ -107,7 +107,7 @@
     "default_model_level": 2,
     "min_interval_seconds": 60.0,
     "auto_stop_no_change_runs": 3,
-    "max_idle_runs": 3,
+    "max_idle_runs": 15,
     "human_approval_timeout_runs": 5,
     "pre_authorized_ticket_patterns": [],
     "run_timeout_seconds": 600.0,

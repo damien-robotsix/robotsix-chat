@@ -363,9 +363,9 @@ def test_subsessions_auto_stop_zero_raises() -> None:
 
 
 def test_subsessions_max_idle_runs_default() -> None:
-    """``subsessions.max_idle_runs`` defaults to 3."""
+    """``subsessions.max_idle_runs`` defaults to 15."""
     settings = Settings()
-    assert settings.subsessions.max_idle_runs == 3
+    assert settings.subsessions.max_idle_runs == 15
 
 
 def test_subsessions_max_idle_runs_zero_allowed() -> None:
