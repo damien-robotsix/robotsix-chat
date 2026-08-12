@@ -60,10 +60,10 @@ def test_build_mail_tools_disabled() -> None:
     assert build_mail_tools(MailSettings(enabled=False)) == []
 
 
-def test_build_mail_tools_returns_nine_tools() -> None:
-    """Verify that enabled mail returns nine discrete tools."""
+def test_build_mail_tools_returns_ten_tools() -> None:
+    """Verify that enabled mail returns ten discrete tools."""
     tools = build_mail_tools(_settings())
-    assert len(tools) == 9
+    assert len(tools) == 10
     names = [t.__name__ for t in tools]
     assert names == [
         "get_mail_board",
@@ -75,6 +75,7 @@ def test_build_mail_tools_returns_nine_tools() -> None:
         "list_archive_folders",
         "browse_archive_folder",
         "move_archive_mail",
+        "cleanup_empty_archive_folders",
     ]
 
 
@@ -360,6 +361,86 @@ async def test_archive_move_error(respx_mock: respx.MockRouter) -> None:
     result = await move("bad-id", "Projects/Old", "Projects/New")
 
     assert "Mail API error 400" in result
+
+
+# ---------------------------------------------------------------------------
+# MailClient — archive_move with create_folders flag
+# ---------------------------------------------------------------------------
+
+
+@pytest.mark.asyncio
+async def test_archive_move_create_folders_true(
+    respx_mock: respx.MockRouter,
+) -> None:
+    """When create_folders=True, the JSON body includes the flag."""
+    from robotsix_chat.mail.client import MailClient
+
+    client = MailClient(_settings())
+    route = respx_mock.post("http://127.0.0.1:8077/archive-move").mock(
+        return_value=httpx.Response(200, text='{"status": "moved"}')
+    )
+
+    await client.archive_move("msg-id", "Old", "New", create_folders=True)
+
+    assert route.called
+    body = route.calls.last.request.content.decode()
+    assert '"create_folders":true' in body.lower()
+
+
+@pytest.mark.asyncio
+async def test_archive_move_create_folders_default(
+    respx_mock: respx.MockRouter,
+) -> None:
+    """By default (create_folders=False), the JSON body omits the flag."""
+    from robotsix_chat.mail.client import MailClient
+
+    client = MailClient(_settings())
+    route = respx_mock.post("http://127.0.0.1:8077/archive-move").mock(
+        return_value=httpx.Response(200, text='{"status": "moved"}')
+    )
+
+    await client.archive_move("msg-id", "Old", "New")
+
+    assert route.called
+    body = route.calls.last.request.content.decode()
+    assert "create_folders" not in body.lower()
+
+
+# ---------------------------------------------------------------------------
+# MailClient — archive_cleanup_empty (POST /archive-cleanup-empty)
+# ---------------------------------------------------------------------------
+
+
+@pytest.mark.asyncio
+async def test_archive_cleanup_empty_success(respx_mock: respx.MockRouter) -> None:
+    """POST /archive-cleanup-empty returns JSON with removed folder list."""
+    route = respx_mock.post("http://127.0.0.1:8077/archive-cleanup-empty").mock(
+        return_value=httpx.Response(
+            200, text='{"removed": ["Projects/Old", "Personal/Empty"]}'
+        )
+    )
+    tools = build_mail_tools(_settings())
+    cleanup = tools[9]
+
+    result = await cleanup()
+
+    assert route.called
+    assert "Projects/Old" in result
+    assert "Personal/Empty" in result
+
+
+@pytest.mark.asyncio
+async def test_archive_cleanup_empty_error(respx_mock: respx.MockRouter) -> None:
+    """POST /archive-cleanup-empty on 500 returns an error string."""
+    respx_mock.post("http://127.0.0.1:8077/archive-cleanup-empty").mock(
+        return_value=httpx.Response(500, text="IMAP not configured")
+    )
+    tools = build_mail_tools(_settings())
+    cleanup = tools[9]
+
+    result = await cleanup()
+
+    assert "Mail API error 500" in result
 
 
 # ---------------------------------------------------------------------------

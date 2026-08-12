@@ -188,13 +188,15 @@ def build_mail_tools(settings: MailSettings) -> list[Callable[..., Any]]:
         "go ahead") from the operator before proceeding.  Silently
         moving mail without consent is prohibited.
 
+        Target folders are created lazily — the server only creates
+        the folder hierarchy when a message is actually moved into a
+        new folder.  Empty folders are not created in advance.
+
         Args:
             message_id: The Message-ID header of the mail to move.
             source_folder: The current archive subfolder path
                 (as listed by ``list_archive_folders``).
             target_subfolder: The destination archive subfolder path.
-                The target folder hierarchy is created automatically
-                if it does not yet exist.
 
         Returns:
             JSON text with a success confirmation or error detail.
@@ -203,6 +205,22 @@ def build_mail_tools(settings: MailSettings) -> list[Callable[..., Any]]:
 
         """
         return await client.archive_move(message_id, source_folder, target_subfolder)
+
+    async def cleanup_empty_archive_folders() -> str:
+        """Remove empty archive subfolders from the IMAP server.
+
+        This cleans up the archive hierarchy by deleting subfolders
+        that contain zero messages.  Non-empty folders are left
+        untouched.  Use this periodically to keep the archive view
+        clean after moving or archiving messages.
+
+        Returns:
+            JSON text with a list of removed folder paths.
+
+        Never raises — errors become a diagnostic string.
+
+        """
+        return await client.archive_cleanup_empty()
 
     return [
         get_mail_board,
@@ -214,4 +232,5 @@ def build_mail_tools(settings: MailSettings) -> list[Callable[..., Any]]:
         list_archive_folders,
         browse_archive_folder,
         move_archive_mail,
+        cleanup_empty_archive_folders,
     ]
