@@ -403,6 +403,14 @@ modules:
       - tests/sftp/test_client.py
       - tests/sftp/test_init.py
 
+  - id: volume-tools
+    description: "Local volume-directory listing tool — exposes build_volume_tools() returning a read-only list_volume_files tool scoped to a configurable root path."
+    paths:
+      - src/robotsix_chat/volume_tools/__init__.py
+      - src/robotsix_chat/volume_tools/skill.md
+      - tests/volume_tools/__init__.py
+      - tests/volume_tools/test_init.py
+
   - id: feedback
     description: "Automated feedback analysis — runs at compaction and session-end boundaries, analyses the conversation, and files improvement tickets via POST /tickets/ingest."
     paths:

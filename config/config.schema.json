@@ -1399,6 +1399,24 @@
       },
       "title": "VersionCheckSettings",
       "type": "object"
+    },
+    "VolumeToolsSettings": {
+      "additionalProperties": false,
+      "description": "Local volume-directory listing \u2014 discover files on mounted volumes.\n\nWhen enabled, the agent gains a ``list_volume_files`` tool that returns\nthe contents of a directory under the configured *root_path*.  This\nlets the agent discover available files (e.g. a mounted knowledge\nstore, investigation data) without guessing individual file paths.\n\nThis is a read-only, local-filesystem-only primitive \u2014 no remote\naccess, no write capability, no traversal outside the root.\n\nAttributes:\n    enabled: Master switch.  Default ``True`` \u2014 this is a purely\n        local, read-only, no-credential primitive.\n    root_path: The directory that all listing operations are scoped\n        under.  Paths outside this root are refused.  Default\n        ``/data``.",
+      "properties": {
+        "enabled": {
+          "default": true,
+          "title": "Enabled",
+          "type": "boolean"
+        },
+        "root_path": {
+          "default": "/data",
+          "title": "Root Path",
+          "type": "string"
+        }
+      },
+      "title": "VolumeToolsSettings",
+      "type": "object"
     }
   },
   "additionalProperties": false,
@@ -1580,6 +1598,10 @@
     },
     "sftp": {
       "$ref": "#/$defs/SftpSettings",
+      "advanced": true
+    },
+    "volume_tools": {
+      "$ref": "#/$defs/VolumeToolsSettings",
       "advanced": true
     },
     "feedback": {

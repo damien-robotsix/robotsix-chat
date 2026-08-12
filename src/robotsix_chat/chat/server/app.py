@@ -73,6 +73,7 @@ from robotsix_chat.ticket_poll import (
     load_ticket_poll_skill,
 )
 from robotsix_chat.version_check import build_version_check_tools
+from robotsix_chat.volume_tools import build_volume_tools, load_volume_tools_skill
 
 from .idempotency import MessageIdempotencyStore
 from .routes import (
@@ -846,6 +847,7 @@ def _inject_skills(
         (settings.github_security.enabled, "github_security", load_github_skill),
         (settings.github_actions.enabled, "github_actions", load_github_actions_skill),
         (settings.direct_repo.enabled, "direct_repo", load_direct_repo_skill),
+        (settings.volume_tools.enabled, "volume_tools", load_volume_tools_skill),
         (settings.mail.enabled, "mail", load_mail_skill),
         (
             bool(settings.direct_repo.board_api_base_url.strip())
@@ -918,6 +920,7 @@ def _build_static_tools(
             *build_public_fetch_tools(settings.public_fetch, settings.central_deploy),
             *build_langfuse_inspect_tools(settings.langfuse_inspect, settings.langfuse),
             *build_sftp_tools(settings.sftp),
+            *build_volume_tools(settings.volume_tools),
             *build_ticket_poll_tools(settings, component_request=component_request),
             *build_merge_pull_request_tool(
                 settings, component_request=component_request
