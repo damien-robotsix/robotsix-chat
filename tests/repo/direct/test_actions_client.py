@@ -631,11 +631,19 @@ async def test_get_workflow_run_annotations_api_error(
 
 
 @pytest.mark.asyncio
-async def test_diagnose_billing_failure_never_started() -> None:
-    """Run with no run_started_at → never-started diagnostic."""
+async def test_diagnose_billing_failure_never_started(
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    """Run with no run_started_at → never-started diagnostic (private repo)."""
+    from unittest.mock import AsyncMock
+
     from tests.repo.direct.conftest import _settings
 
     client = ActionsClient(_settings())
+
+    # Mock visibility check → private repo
+    monkeypatch.setattr(client, "check_repo_visibility", AsyncMock(return_value=True))
+
     runs: list[dict[str, object]] = [
         {
             "id": 2,
@@ -649,6 +657,38 @@ async def test_diagnose_billing_failure_never_started() -> None:
     diag = await client._diagnose_billing_failure(runs, "org/repo")
     assert diag is not None
     assert "billing" in diag.lower()
+    assert "never started" in diag.lower()
+
+
+@pytest.mark.asyncio
+async def test_diagnose_billing_failure_never_started_public_repo(
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    """Run with no run_started_at on a public repo → no billing mention."""
+    from unittest.mock import AsyncMock
+
+    from tests.repo.direct.conftest import _settings
+
+    client = ActionsClient(_settings())
+
+    # Mock visibility check → public repo
+    monkeypatch.setattr(client, "check_repo_visibility", AsyncMock(return_value=False))
+
+    runs: list[dict[str, object]] = [
+        {
+            "id": 7,
+            "name": "Deploy",
+            "status": "completed",
+            "conclusion": "failure",
+            "head_branch": "main",
+            "run_started_at": None,
+        }
+    ]
+    diag = await client._diagnose_billing_failure(runs, "org/repo")
+    assert diag is not None
+    assert "public" in diag.lower()
+    assert "billing is not the issue" in diag.lower()
+    assert "reusable workflow" in diag.lower()
     assert "never started" in diag.lower()
 
 
@@ -711,6 +751,11 @@ async def test_diagnose_billing_failure_trigger_config_cross_check(
 
     client = ActionsClient(_settings())
 
+    # Mock visibility check — _diagnose_billing_failure calls it before
+    # the other_succeeded branch, so it must be mocked to avoid a real
+    # (unmocked) HTTP request.
+    monkeypatch.setattr(client, "check_repo_visibility", AsyncMock(return_value=None))
+
     # Mock the cross-check to return True (other workflows succeeded)
     mock_cross_check = AsyncMock(return_value=True)
     monkeypatch.setattr(
@@ -738,6 +783,230 @@ async def test_diagnose_billing_failure_trigger_config_cross_check(
     assert "no github actions billing" not in diag.lower()
     # Verify the cross-check was called with the right args
     mock_cross_check.assert_awaited_once_with("org/repo", "abc123", exclude_run_id=5)
+
+
+@pytest.mark.asyncio
+async def test_diagnose_billing_failure_never_started_visibility_none(
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    """Never-started run with visibility check failing → neutral fallback."""
+    from unittest.mock import AsyncMock
+
+    from tests.repo.direct.conftest import _settings
+
+    client = ActionsClient(_settings())
+
+    # Mock visibility check → None (API error)
+    monkeypatch.setattr(client, "check_repo_visibility", AsyncMock(return_value=None))
+
+    runs: list[dict[str, object]] = [
+        {
+            "id": 9,
+            "name": "Deploy",
+            "status": "completed",
+            "conclusion": "failure",
+            "head_branch": "main",
+            "run_started_at": None,
+        }
+    ]
+    diag = await client._diagnose_billing_failure(runs, "org/repo")
+    assert diag is not None
+    # Must NOT claim repo is public
+    assert "public repository" not in diag.lower()
+    assert "billing is not the issue" not in diag.lower()
+    # Neutral fallback: mentions billing as a possibility
+    assert "billing" in diag.lower()
+    assert "never started" in diag.lower()
+
+
+# ---------------------------------------------------------------------------
+# check_latest_run_for_zero_jobs
+# ---------------------------------------------------------------------------
+
+
+@pytest.mark.asyncio
+async def test_check_latest_run_for_zero_jobs_public_repo(
+    respx_mock: respx.MockRouter,
+) -> None:
+    """Zero-job run on a public repo → no billing mention."""
+    from tests.repo.direct.conftest import _prepopulate_installation_token, _settings
+
+    settings = _settings()
+    _prepopulate_installation_token(settings)
+
+    client = ActionsClient(settings)
+
+    # Mock list_workflow_runs to return a single run.
+    respx_mock.get(
+        "https://api.github.com/repos/org/repo/actions/runs?per_page=1&branch=main"
+    ).mock(
+        return_value=httpx.Response(
+            200,
+            text=json.dumps(
+                {
+                    "workflow_runs": [
+                        {
+                            "id": 42,
+                            "name": "CI",
+                            "status": "completed",
+                            "conclusion": "failure",
+                        }
+                    ]
+                }
+            ),
+        )
+    )
+
+    # Mock get_workflow_run_jobs to return zero jobs.
+    respx_mock.get("https://api.github.com/repos/org/repo/actions/runs/42/jobs").mock(
+        return_value=httpx.Response(
+            200,
+            text=json.dumps({"jobs": []}),
+        )
+    )
+
+    # Mock repo visibility → public.
+    respx_mock.get("https://api.github.com/repos/org/repo").mock(
+        return_value=httpx.Response(
+            200,
+            text=json.dumps({"private": False}),
+        )
+    )
+
+    diag = await client.check_latest_run_for_zero_jobs("org/repo", "main")
+    assert diag is not None
+    assert "public" in diag.lower()
+    assert "billing is not the issue" in diag.lower()
+    assert "reusable workflow" in diag.lower()
+    assert "PRs on this branch are not receiving CI coverage" in diag
+
+
+@pytest.mark.asyncio
+async def test_check_latest_run_for_zero_jobs_visibility_none(
+    respx_mock: respx.MockRouter,
+) -> None:
+    """Zero-job run with visibility check returning None → neutral fallback."""
+    from tests.repo.direct.conftest import _prepopulate_installation_token, _settings
+
+    settings = _settings()
+    _prepopulate_installation_token(settings)
+
+    client = ActionsClient(settings)
+
+    # Mock list_workflow_runs to return a single run.
+    respx_mock.get(
+        "https://api.github.com/repos/org/repo/actions/runs?per_page=1&branch=main"
+    ).mock(
+        return_value=httpx.Response(
+            200,
+            text=json.dumps(
+                {
+                    "workflow_runs": [
+                        {
+                            "id": 42,
+                            "name": "CI",
+                            "status": "completed",
+                            "conclusion": "failure",
+                        }
+                    ]
+                }
+            ),
+        )
+    )
+
+    # Mock get_workflow_run_jobs to return zero jobs.
+    respx_mock.get("https://api.github.com/repos/org/repo/actions/runs/42/jobs").mock(
+        return_value=httpx.Response(
+            200,
+            text=json.dumps({"jobs": []}),
+        )
+    )
+
+    # Mock repo visibility → error (returns None).
+    respx_mock.get("https://api.github.com/repos/org/repo").mock(
+        return_value=httpx.Response(500, text="Server Error")
+    )
+
+    diag = await client.check_latest_run_for_zero_jobs("org/repo", "main")
+    assert diag is not None
+    # Must NOT claim repo is public
+    assert "public repository" not in diag.lower()
+    assert "billing is not the issue" not in diag.lower()
+    # Must mention possible billing (neutral fallback)
+    assert "billing" in diag.lower()
+    assert "PRs on this branch are not receiving CI coverage" in diag
+
+
+# ---------------------------------------------------------------------------
+# _fallback_job_logs — zero-jobs path visibility awareness
+# ---------------------------------------------------------------------------
+
+
+@pytest.mark.asyncio
+async def test_fallback_job_logs_no_jobs_public_repo(
+    respx_mock: respx.MockRouter,
+) -> None:
+    """_fallback_job_logs zero-jobs path on public repo → no billing mention."""
+    from tests.repo.direct.conftest import _prepopulate_installation_token, _settings
+
+    settings = _settings()
+    _prepopulate_installation_token(settings)
+
+    client = ActionsClient(settings)
+
+    # Mock repo visibility → public.
+    respx_mock.get("https://api.github.com/repos/org/repo").mock(
+        return_value=httpx.Response(
+            200,
+            text=json.dumps({"private": False}),
+        )
+    )
+
+    # Mock job listing → empty.
+    respx_mock.get("https://api.github.com/repos/org/repo/actions/runs/42/jobs").mock(
+        return_value=httpx.Response(
+            200,
+            text=json.dumps({"jobs": []}),
+        )
+    )
+
+    result = await client._fallback_job_logs("org/repo", 42, "test error")
+    assert "public" in result.lower()
+    assert "billing is not the issue" in result.lower()
+    assert "reusable workflow" in result.lower()
+
+
+@pytest.mark.asyncio
+async def test_fallback_job_logs_no_jobs_visibility_none(
+    respx_mock: respx.MockRouter,
+) -> None:
+    """_fallback_job_logs zero-jobs path with visibility None → neutral fallback."""
+    from tests.repo.direct.conftest import _prepopulate_installation_token, _settings
+
+    settings = _settings()
+    _prepopulate_installation_token(settings)
+
+    client = ActionsClient(settings)
+
+    # Mock repo visibility → error (returns None).
+    respx_mock.get("https://api.github.com/repos/org/repo").mock(
+        return_value=httpx.Response(500, text="Server Error")
+    )
+
+    # Mock job listing → empty.
+    respx_mock.get("https://api.github.com/repos/org/repo/actions/runs/42/jobs").mock(
+        return_value=httpx.Response(
+            200,
+            text=json.dumps({"jobs": []}),
+        )
+    )
+
+    result = await client._fallback_job_logs("org/repo", 42, "test error")
+    # Must NOT claim repo is public.
+    assert "public repository" not in result.lower()
+    assert "billing is not the issue" not in result.lower()
+    # Neutral fallback: mentions billing as a possibility.
+    assert "billing" in result.lower()
 
 
 # ---------------------------------------------------------------------------
