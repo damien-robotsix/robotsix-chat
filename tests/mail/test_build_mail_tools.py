@@ -315,9 +315,7 @@ async def test_archive_messages_with_limit(respx_mock: respx.MockRouter) -> None
     """GET /archive/<folder>/messages?limit=N passes the query parameter."""
     route = respx_mock.get(
         "http://127.0.0.1:8077/archive/Inbox/messages?limit=10"
-    ).mock(
-        return_value=httpx.Response(200, text='{"messages": [], "folder": "Inbox"}')
-    )
+    ).mock(return_value=httpx.Response(200, text='{"messages": [], "folder": "Inbox"}'))
     tools = build_mail_tools(_settings())
     browse = tools[7]
 

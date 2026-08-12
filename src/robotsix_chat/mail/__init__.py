@@ -202,9 +202,7 @@ def build_mail_tools(settings: MailSettings) -> list[Callable[..., Any]]:
         Never raises — errors become a diagnostic string.
 
         """
-        return await client.archive_move(
-            message_id, source_folder, target_subfolder
-        )
+        return await client.archive_move(message_id, source_folder, target_subfolder)
 
     return [
         get_mail_board,
