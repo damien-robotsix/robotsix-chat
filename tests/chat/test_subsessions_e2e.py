@@ -71,7 +71,10 @@ def _wire(
     serializer = RunSerializer()
     registry = SubsessionRegistry(event_sink=bus, store_path=None)
     delivery = ParentDelivery(
-        conversation_store=store, registry=registry, run_serializer=serializer
+        conversation_store=store,
+        registry=registry,
+        run_serializer=serializer,
+        batch_window_seconds=0,
     )
     env = SubsessionEnv(
         settings=make_settings(),

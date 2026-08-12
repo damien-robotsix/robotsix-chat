@@ -10,6 +10,7 @@ import pytest
 
 from robotsix_chat.autonomous.models import AutonomousSession, AutonomousState
 from robotsix_chat.subsessions.delivery import (
+    _BATCH_REACT_PROMPT_TEMPLATE,
     _REACT_PROMPT_ACTIVE_PLAN_TEMPLATE,
     _REACT_PROMPT_TEMPLATE,
     ParentDelivery,
@@ -64,11 +65,16 @@ def _build_delivery(
     lock: MagicMock | None = None,
     event_sink: MagicMock | None = None,
     agent: MagicMock | None = None,
+    batch_window_seconds: float = 0,
 ) -> ParentDelivery:
     """Build a ``ParentDelivery`` with mocked collaborators.
 
     Passing *agent* calls :meth:`ParentDelivery.set_agent` after
     construction, mirroring how ``cli.py`` wires it post-construction.
+
+    *batch_window_seconds* defaults to 0 (no batching) so existing
+    tests that ``await asyncio.sleep(0)`` to wait for reaction tasks
+    continue to work.  Tests for the batching path can override it.
     """
     store = store or MagicMock()
     registry = registry or MagicMock()
@@ -79,6 +85,7 @@ def _build_delivery(
         registry=registry,
         run_serializer=run_serializer,
         event_sink=event_sink,
+        batch_window_seconds=batch_window_seconds,
     )
     if agent is not None:
         delivery.set_agent(agent)
@@ -1420,3 +1427,382 @@ class TestStripInlineMetadata:
         """Normal text without metadata patterns passes through unchanged."""
         result = _strip_inline_metadata("The ticket T-123 was resolved.")
         assert result == "The ticket T-123 was resolved."
+
+
+# ---------------------------------------------------------------------------
+# Batch reaction (multiple outcomes consolidated into one turn)
+# ---------------------------------------------------------------------------
+
+
+def test_batch_react_prompt_template_contains_consolidation_rule() -> None:
+    """The batch template must include a mandatory consolidation instruction."""
+    text = _BATCH_REACT_PROMPT_TEMPLATE.lower()
+    assert "consolidation rule" in text
+    assert "mandatory" in text
+    assert "exactly one" in text
+    assert "group by theme" in text
+    assert "never reply to each outcome individually" in text
+
+
+def test_batch_react_prompt_template_contains_format_prohibition() -> None:
+    """The batch template must forbid metadata dump patterns."""
+    text = _BATCH_REACT_PROMPT_TEMPLATE.lower()
+    assert "format prohibition" in text
+    assert "kind=" in text
+    assert "subsession summaries" in text
+
+
+def test_batch_react_prompt_template_contains_tracking_status() -> None:
+    """The batch template must include tracking status categories."""
+    text = _BATCH_REACT_PROMPT_TEMPLATE.lower()
+    assert "fulfilled" in text
+    assert "interrupted" in text
+    assert "active" in text
+    assert "next step" in text
+
+
+def test_batch_react_prompt_template_format_with_two_outcomes() -> None:
+    """The batch template formats with count and outcomes list."""
+    prompt = _BATCH_REACT_PROMPT_TEMPLATE.format(
+        count=2,
+        outcomes_list="1. Subsession abc123 (periodic) 'Monitor X' completed.\n"
+        "   Outcome: No change.\n\n"
+        "2. Subsession def456 (periodic) 'Monitor Y' auto-paused.\n"
+        "   Outcome: Nothing new.",
+    )
+    assert "2 subsession outcomes" in prompt
+    assert "abc123" in prompt
+    assert "def456" in prompt
+    assert "Monitor X" in prompt
+    assert "Monitor Y" in prompt
+    assert "CONSOLIDATION RULE" in prompt
+    assert "exactly ONE" in prompt
+
+
+@pytest.mark.asyncio
+async def test_react_batched_with_agent_runs_single_agent_turn() -> None:
+    """Multiple outcomes are delivered in a single agent turn when batched."""
+    agent = _fake_agent(["All monitors: no changes."])
+    store = MagicMock()
+    store.history.return_value = []
+    delivery = _build_delivery(store=store, agent=agent, batch_window_seconds=0)
+
+    info_a = _make_info(sub_id="sub-a", kind=SubsessionKind.PERIODIC, title="Monitor A")
+    info_b = _make_info(sub_id="sub-b", kind=SubsessionKind.PERIODIC, title="Monitor B")
+
+    outcomes = [
+        (info_a, "No change detected.", "paused", "[label-a]"),
+        (info_b, "Also no change.", "paused", "[label-b]"),
+    ]
+
+    await delivery._react_batched("sess-1", outcomes)
+
+    # Should record exactly one prompt+reply pair.
+    assert store.record_for_session.call_count == 1
+    recorded_prompt = store.record_for_session.call_args[0][1]
+    recorded_reply = store.record_for_session.call_args[0][2]
+    assert "Monitor A" in recorded_prompt
+    assert "Monitor B" in recorded_prompt
+    assert "CONSOLIDATION RULE" in recorded_prompt
+    assert recorded_reply == "All monitors: no changes."
+
+
+@pytest.mark.asyncio
+async def test_react_batched_without_agent_degrades_to_passive_records() -> None:
+    """When no agent is wired, each outcome records a passive turn."""
+    store = MagicMock()
+    delivery = _build_delivery(store=store, batch_window_seconds=0)
+
+    info_a = _make_info(sub_id="sub-a", kind=SubsessionKind.PERIODIC, title="Monitor A")
+    info_b = _make_info(sub_id="sub-b", kind=SubsessionKind.PERIODIC, title="Monitor B")
+
+    outcomes = [
+        (info_a, "Outcome A.", "completed", "[label-a]"),
+        (info_b, "Outcome B.", "completed", "[label-b]"),
+    ]
+
+    await delivery._react_batched("sess-1", outcomes)
+
+    # Should record each outcome as a separate passive turn.
+    assert store.record_for_session.call_count == 2
+    assert store.record_for_session.call_args_list[0][0][1] == "[label-a]"
+    assert store.record_for_session.call_args_list[1][0][1] == "[label-b]"
+
+
+# ---------------------------------------------------------------------------
+# Integration: full batching pipeline (deliver_summary → _schedule_reaction
+# → _flush_pending_reactions → _react_batched)
+# ---------------------------------------------------------------------------
+
+
+@pytest.mark.asyncio
+async def test_deliver_summary_batches_two_rapid_outcomes_into_single_turn() -> None:
+    """Two rapid deliver_summary calls within the batch window → one agent turn.
+
+    This exercises the full pipeline: deliver_summary → _schedule_reaction
+    → _flush_pending_reactions → _react_batched, verifying that the batch
+    template is used and only a single store.record_for_session call is
+    made (one consolidated turn, not two individual reactions).
+    """
+    store = MagicMock()
+    store.history.return_value = []
+    registry = MagicMock()
+    agent = _fake_agent(["All monitors: no changes."])
+    event_sink = MagicMock()
+    delivery = _build_delivery(
+        store=store,
+        registry=registry,
+        agent=agent,
+        event_sink=event_sink,
+        batch_window_seconds=0.01,
+    )
+    info_a = _make_info(
+        sub_id="sub-aaaaaaaa",
+        kind=SubsessionKind.PERIODIC,
+        title="Monitor Alpha",
+    )
+    info_b = _make_info(
+        sub_id="sub-bbbbbbbb",
+        kind=SubsessionKind.PERIODIC,
+        title="Monitor Beta",
+    )
+
+    # Deliver two outcomes synchronously — no await between them, so both
+    # _schedule_reaction calls run before the timer fires.  The first
+    # outcome's timer is cancelled by the second outcome, and both
+    # accumulate in _pending_outcomes.
+    await delivery.deliver_summary(info_a, "No change detected.", "paused")
+    await delivery.deliver_summary(info_b, "Also no change.", "paused")
+
+    # Let the timer fire and the background task complete.
+    await asyncio.sleep(0.02)
+    await _await_reaction_tasks(delivery)
+
+    # Exactly one agent turn (consolidated batch), not two.
+    assert store.record_for_session.call_count == 1
+    call_args, _ = store.record_for_session.call_args
+    prompt: str = call_args[1]
+    reply: str = call_args[2]
+
+    assert "Monitor Alpha" in prompt
+    assert "Monitor Beta" in prompt
+    assert "CONSOLIDATION RULE" in prompt
+    assert "exactly ONE" in prompt
+    assert reply == "All monitors: no changes."
+
+    # Event sink published exactly one agent_message frame.
+    event_sink.publish.assert_called_once()
+
+
+@pytest.mark.asyncio
+async def test_deliver_summary_single_outcome_bypasses_batch() -> None:
+    """A single outcome still goes through _react_in_main_chat, not batching.
+
+    When only one outcome arrives within the batch window, _flush_pending_reactions
+    delegates to _safe_react (single-outcome path) rather than _safe_react_batched.
+    """
+    store = MagicMock()
+    store.history.return_value = []
+    registry = MagicMock()
+    agent = _fake_agent(["Noted."])
+    delivery = _build_delivery(
+        store=store,
+        registry=registry,
+        agent=agent,
+        batch_window_seconds=0.01,
+    )
+    info = _make_info(
+        sub_id="sub-cccccccc",
+        kind=SubsessionKind.TASK,
+        title="Solo task",
+    )
+
+    await delivery.deliver_summary(info, "Task done.", "completed")
+    await asyncio.sleep(0.02)
+    await _await_reaction_tasks(delivery)
+
+    # One agent turn via _react_in_main_chat (not _react_batched).
+    assert store.record_for_session.call_count == 1
+    call_args, _ = store.record_for_session.call_args
+    prompt: str = call_args[1]
+    # Default template mentions "not actively conversing" — not the batch template.
+    assert "not actively conversing" in prompt
+    assert "CONSOLIDATION RULE" in prompt  # present in single-outcome template too
+
+
+@pytest.mark.asyncio
+async def test_batch_with_autonomous_plan_degrades_to_individual_calls() -> None:
+    """When autonomous plan is active, degrade to individual calls.
+
+    _react_batched degrades to individual _react_in_main_chat calls (one per
+    outcome) instead of using the batch template.  This ensures the active-plan
+    prompt is used for every outcome, preventing the agent from dropping its
+    plan or re-requesting approval.
+    """
+    store = MagicMock()
+    store.history.return_value = []
+    registry = MagicMock()
+    agent = _fake_agent(["Noted — continuing plan."])
+    runner = _mock_autonomous_runner(
+        "sess-1", AutonomousState.executing, "Close the misfiled ticket"
+    )
+    delivery = _build_delivery(
+        store=store,
+        registry=registry,
+        agent=agent,
+        batch_window_seconds=0,
+    )
+    delivery.set_autonomous_runner(runner)
+
+    info_a = _make_info(sub_id="sub-a", kind=SubsessionKind.PERIODIC, title="Monitor A")
+    info_b = _make_info(sub_id="sub-b", kind=SubsessionKind.PERIODIC, title="Monitor B")
+
+    outcomes = [
+        (info_a, "Outcome A.", "completed", "[label-a]"),
+        (info_b, "Outcome B.", "completed", "[label-b]"),
+    ]
+
+    await delivery._react_batched("sess-1", outcomes)
+
+    # Two individual reaction turns, not one consolidated batch.
+    assert store.record_for_session.call_count == 2
+
+    # Both calls must use the active-plan template.
+    first_prompt = store.record_for_session.call_args_list[0][0][1]
+    assert "executing your approved plan" in first_prompt
+    assert "DO NOT re-request approval" in first_prompt
+    assert "Close the misfiled ticket" in first_prompt
+    # Must NOT be the batch template (no {count} or "subsession outcomes occurred").
+    assert "{count}" not in first_prompt
+    assert "subsession outcomes occurred" not in first_prompt
+
+    second_prompt = store.record_for_session.call_args_list[1][0][1]
+    assert "executing your approved plan" in second_prompt
+    assert "DO NOT re-request approval" in second_prompt
+    assert "Close the misfiled ticket" in second_prompt
+
+
+@pytest.mark.asyncio
+async def test_batch_with_autonomous_proposal_also_degrades() -> None:
+    """Degradation to individual calls also fires for proposal state."""
+    store = MagicMock()
+    store.history.return_value = []
+    registry = MagicMock()
+    agent = _fake_agent(["Noted."])
+    runner = _mock_autonomous_runner(
+        "sess-1", AutonomousState.proposal, "Proposed: close ticket"
+    )
+    delivery = _build_delivery(
+        store=store, registry=registry, agent=agent, batch_window_seconds=0
+    )
+    delivery.set_autonomous_runner(runner)
+
+    info = _make_info(sub_id="sub-x", kind=SubsessionKind.PERIODIC, title="Monitor X")
+    outcomes = [(info, "Outcome.", "completed", "[label-x]")]
+
+    await delivery._react_batched("sess-1", outcomes)
+
+    assert store.record_for_session.call_count == 1
+    prompt = store.record_for_session.call_args[0][1]
+    assert "waiting for operator approval" in prompt
+    assert "DO NOT re-request approval" in prompt
+
+
+@pytest.mark.asyncio
+async def test_batch_without_autonomous_plan_uses_batch_template() -> None:
+    """When no autonomous plan is active, _react_batched uses the batch template."""
+    store = MagicMock()
+    store.history.return_value = []
+    registry = MagicMock()
+    agent = _fake_agent(["All clear."])
+    # Autonomous runner not set (None) — the default.
+    delivery = _build_delivery(
+        store=store, registry=registry, agent=agent, batch_window_seconds=0
+    )
+
+    info_a = _make_info(sub_id="sub-a", kind=SubsessionKind.PERIODIC, title="A")
+    info_b = _make_info(sub_id="sub-b", kind=SubsessionKind.PERIODIC, title="B")
+    outcomes = [
+        (info_a, "Ok A.", "completed", "[label-a]"),
+        (info_b, "Ok B.", "completed", "[label-b]"),
+    ]
+
+    await delivery._react_batched("sess-1", outcomes)
+
+    # One consolidated batch turn.
+    assert store.record_for_session.call_count == 1
+    prompt = store.record_for_session.call_args[0][1]
+    assert "2 subsession outcomes occurred" in prompt
+    assert "CONSOLIDATION RULE" in prompt
+    # Must NOT be the active-plan template.
+    assert "DO NOT re-request approval" not in prompt
+
+
+@pytest.mark.asyncio
+async def test_batch_autonomous_unknown_session_uses_batch_template() -> None:
+    """When the autonomous runner has no record for the session.
+
+    The batch template is used (same as no autonomous plan).
+    """
+    store = MagicMock()
+    store.history.return_value = []
+    registry = MagicMock()
+    agent = _fake_agent(["ok"])
+    runner = MagicMock()
+    runner.get_session.return_value = None  # unknown session
+    delivery = _build_delivery(
+        store=store, registry=registry, agent=agent, batch_window_seconds=0
+    )
+    delivery.set_autonomous_runner(runner)
+
+    info = _make_info(sub_id="sub-x", kind=SubsessionKind.PERIODIC, title="X")
+    outcomes = [(info, "Outcome.", "completed", "[label-x]")]
+
+    await delivery._react_batched("sess-1", outcomes)
+
+    prompt = store.record_for_session.call_args[0][1]
+    # Uses the batch template (not active-plan).
+    assert "1 subsession outcomes occurred" in prompt
+    assert "DO NOT re-request approval" not in prompt
+
+
+@pytest.mark.asyncio
+async def test_batch_autonomous_planning_state_uses_batch_template() -> None:
+    """Planning state (not proposal/executing) still uses the batch template."""
+    store = MagicMock()
+    store.history.return_value = []
+    registry = MagicMock()
+    agent = _fake_agent(["ok"])
+    runner = _mock_autonomous_runner("sess-1", AutonomousState.planning)
+    delivery = _build_delivery(
+        store=store, registry=registry, agent=agent, batch_window_seconds=0
+    )
+    delivery.set_autonomous_runner(runner)
+
+    info = _make_info(sub_id="sub-x", kind=SubsessionKind.PERIODIC, title="X")
+    outcomes = [(info, "Outcome.", "completed", "[label-x]")]
+
+    await delivery._react_batched("sess-1", outcomes)
+
+    prompt = store.record_for_session.call_args[0][1]
+    assert "1 subsession outcomes occurred" in prompt
+    assert "DO NOT re-request approval" not in prompt
+
+
+# ---------------------------------------------------------------------------
+# Batch template: phrasing examples
+# ---------------------------------------------------------------------------
+
+
+def test_batch_react_prompt_template_contains_phrasing_examples() -> None:
+    """The batch template must include explicit 'Phrase as' guidance.
+
+    Must match the single-outcome _REACT_PROMPT_TEMPLATE for consistency.
+    """
+    text = _BATCH_REACT_PROMPT_TEMPLATE
+    assert "Phrase as 'Tracking complete for ticket X" in text
+    assert (
+        "Phrase as 'Monitor for ticket X auto-stopped — the ticket may still need"
+        in text
+    )
+    assert "Phrase as 'Monitor for ticket X is paused" in text

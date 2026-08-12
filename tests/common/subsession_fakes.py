@@ -230,6 +230,7 @@ def build_env(
         conversation_store=store,
         registry=registry,
         run_serializer=RunSerializer(),
+        batch_window_seconds=0,
     )
     return SubsessionEnv(
         settings=settings,

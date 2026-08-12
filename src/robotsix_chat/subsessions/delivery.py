@@ -55,6 +55,17 @@ if TYPE_CHECKING:
 logger = logging.getLogger(__name__)
 
 _REACT_PROMPT_TEMPLATE = (
+    "CONSOLIDATION RULE (apply FIRST — this overrides all other instructions "
+    "below): Scan the conversation above for other subsession outcomes you "
+    "have reported.  If ANY exist, you MUST synthesize ALL of them — this "
+    "new one PLUS the earlier ones — into ONE cohesive narrative paragraph. "
+    "Group by theme (what was checked, what changed, what is recommended), "
+    "NOT by subsession id.  Omit trivial NO_CHANGE runs entirely — mention "
+    "only outcomes with real progress, blockers, or decisions for the user. "
+    "If every outcome is no-change, reply with a single sentence like "
+    "'All monitors report no change — nothing requires attention.'  "
+    "NEVER reply to each outcome individually when you have already "
+    "addressed prior outcomes — one paragraph covers everything.\n\n"
     "[System notice] Subsession {sub_id} ({kind}) '{title}' {reason} while "
     "you were not actively conversing with the user. Outcome:\n\n{outcome}\n\n"
     "FORMAT PROHIBITION (hard rule — violation will confuse the user): "
@@ -64,15 +75,6 @@ _REACT_PROMPT_TEMPLATE = (
     "or any line that looks like a dump of internal subsession metadata.  "
     "These read as debug output — users want to know what happened and what "
     "to do, not how the system works internally.\n\n"
-    "CONSOLIDATION RULE (apply FIRST — this overrides all other instructions "
-    "below): Scan the conversation above for other subsession outcomes you "
-    "have reported.  If ANY exist, you MUST synthesize ALL of them — this "
-    "new one PLUS the earlier ones — into ONE cohesive narrative paragraph. "
-    "Group by theme (what was checked, what changed, what is recommended), "
-    "NOT by subsession id.  Omit trivial NO_CHANGE runs entirely — mention "
-    "only outcomes with real progress, blockers, or decisions for the user. "
-    "If every outcome is no-change, reply with a single sentence like "
-    "'All monitors report no change — nothing requires attention.'\n\n"
     "TRACKING STATUS (apply after consolidation): For every monitor you "
     "mention, make clear WHY it stopped and whether the user's tracking "
     "goal was met.  Use these categories:\n"
@@ -166,6 +168,56 @@ _REACT_PROMPT_ACTIVE_PLAN_TEMPLATE = (
     "or enumeration that the user has already seen."
 )
 
+# Template used when multiple subsession outcomes are batched into a single
+# reaction turn.  The outcomes are pre-formatted by _react_batched() into
+# {outcomes_list} and the count is passed as {count}.
+_BATCH_REACT_PROMPT_TEMPLATE = (
+    "[System notice] {count} subsession outcomes occurred while you were "
+    "not actively conversing with the user:\n\n"
+    "{outcomes_list}\n"
+    "CONSOLIDATION RULE (MANDATORY — apply before anything else): "
+    "You MUST synthesize ALL {count} outcomes above into exactly ONE "
+    "cohesive narrative paragraph.  Group by THEME (what was checked, "
+    "what changed, what is recommended), NOT by subsession id or "
+    "individual outcome.  Omit trivial NO_CHANGE runs entirely — mention "
+    "only outcomes with real progress, blockers, or decisions that the "
+    "user should know about.  If every outcome is no-change, reply with "
+    "a single sentence like 'All monitors report no change — nothing "
+    "requires attention.'  NEVER reply to each outcome individually — "
+    "one paragraph, one reply.\n\n"
+    "FORMAT PROHIBITION (hard rule — violation will confuse the user): "
+    "NEVER output any of these patterns: 'kind=', 'status=', '[N] kind=', "
+    "'sub_id', 'Subsession summaries:', raw bullet enumerations like "
+    "'[1] kind=periodic status=closed', "
+    "or any line that looks like a dump of internal subsession metadata.  "
+    "These read as debug output — users want to know what happened and what "
+    "to do, not how the system works internally.\n\n"
+    "TRACKING STATUS (apply after consolidation): For every monitor you "
+    "mention, make clear WHY it stopped and whether the user's tracking "
+    "goal was met.  Use these categories:\n"
+    "  FULFILLED — the monitored ticket reached a terminal state (closed, "
+    "resolved, merged).  The user's tracking request was SATISFIED.  "
+    "Phrase as 'Tracking complete for ticket X — it was resolved/closed.'\n"
+    "  INTERRUPTED — the monitor auto-stopped, hit a run limit, or failed "
+    "before the ticket finished.  Tracking was CUT SHORT.  Phrase as "
+    "'Monitor for ticket X auto-stopped — the ticket may still need "
+    "attention.'\n"
+    "  ACTIVE — the monitor is paused/sleeping but still alive.  Tracking "
+    "is ONGOING and will resume if the ticket changes.  Phrase as 'Monitor "
+    "for ticket X is paused — will resume if the ticket updates.'\n"
+    "Always end with a NEXT STEP for the user: either 'No action needed — "
+    "all tracking goals were met' or a concrete suggestion like 'You may "
+    "want to check ticket X manually since its monitor stopped.'\n\n"
+    "FILTERING RULE: The outcome text above may contain internal technical "
+    "details that the subsession agent included in its summary — block IDs, "
+    "event numbers, state machine transitions, spawn counters, internal "
+    "timeout values, stack traces, raw API response fragments, or debug "
+    "output.  STRIP ALL of these before presenting to the user.  Your job "
+    "is to extract the MEANING — what decision was reached, what action is "
+    "needed — and present ONLY that.  Never pass raw internal "
+    "identifiers through to the user."
+)
+
 # Mapping from internal reason codes to human-readable phrases used in the
 # reaction prompt and fallback notification messages.
 _REASON_PHRASES: dict[str, str] = {
@@ -189,6 +241,13 @@ _REASON_PHRASES: dict[str, str] = {
 # depth reaches this limit, further closures degrade to passive records so
 # a broken tool loop can't chain-react unboundedly.
 _MAX_REACTION_DEPTH = 3
+
+# Seconds to wait for additional subsession outcomes to arrive before
+# delivering a batch.  When multiple outcomes close within this window
+# they are delivered in a single agent turn with a consolidation
+# instruction, instead of producing N separate reaction turns that each
+# emit a near-identical "no change" reply.
+_BATCH_WINDOW_SECONDS = 0.5
 
 
 # -- patterns for sanitizing reaction replies --------------------------------
@@ -332,6 +391,7 @@ class ParentDelivery:
         run_serializer: RunSerializer,
         event_sink: EventSink | None = None,
         autonomous_runner: AutonomousRunner | None = None,
+        batch_window_seconds: float = _BATCH_WINDOW_SECONDS,
     ) -> None:
         """Wire the store, registry, per-owner run serializer, and event sink.
 
@@ -345,12 +405,18 @@ class ParentDelivery:
         or executing state), the reaction prompt reminds the agent to
         acknowledge the outcome as a note and stay on its plan, preventing
         the agent from dropping its work and re-requesting approval.
+
+        *batch_window_seconds* controls how long to wait for additional
+        subsession outcomes before delivering a batch.  Set to 0 to
+        disable batching (every outcome fires its own reaction turn
+        immediately, preserving the pre-batching behavior).
         """
         self._store = conversation_store
         self._registry = registry
         self._run_serializer = run_serializer
         self._event_sink = event_sink
         self._autonomous_runner = autonomous_runner
+        self._batch_window_seconds = batch_window_seconds
         # Set after construction via set_agent(): the main ChatAgent is built
         # from a SubsessionEnv that itself needs this ParentDelivery, so the
         # two can't be constructed in agent-first order (see set_agent).
@@ -363,6 +429,16 @@ class ParentDelivery:
         # Keep strong references to in-flight background reaction tasks so
         # they aren't garbage-collected mid-run.
         self._reaction_tasks: set[asyncio.Task[None]] = set()
+        # Batching: accumulate subsession outcomes that arrive within a
+        # short window so they can be delivered in a single consolidated
+        # agent turn instead of N separate near-identical replies.
+        # _pending_outcomes maps session_id → list of (info, outcome, reason, label).
+        self._pending_outcomes: dict[
+            str, list[tuple[SubsessionInfo, str, str, str]]
+        ] = {}
+        # _pending_timers maps session_id → asyncio.Task that flushes the
+        # batch after _BATCH_WINDOW_SECONDS.
+        self._pending_timers: dict[str, asyncio.Task[None]] = {}
 
     def set_agent(self, agent: ChatAgent) -> None:
         """Wire the main chat agent used to react to subsession outcomes.
@@ -520,10 +596,11 @@ class ParentDelivery:
     ) -> None:
         """Schedule a background task to react to *outcome* in the main chat.
 
-        The task runs ``_react_in_main_chat`` asynchronously; it is
-        serialised with user-message turns via the per-owner
-        :class:`RunSerializer` lock so the reaction never interleaves
-        with a live ``/chat`` run.
+        Outcomes that arrive within ``_BATCH_WINDOW_SECONDS`` of each other
+        are batched: the first outcome starts a timer; subsequent outcomes
+        arriving before the timer fires are added to the same batch.  When
+        the timer fires all pending outcomes are delivered in a single
+        consolidated agent turn instead of N separate near-identical replies.
 
         The task is fire-and-forget — errors are logged, never surfaced
         to the caller.
@@ -550,10 +627,22 @@ class ParentDelivery:
             task.add_done_callback(self._reaction_tasks.discard)
             return
 
-        self._reaction_depth[session_id] = depth + 1
-        task = asyncio.create_task(self._safe_react(info, outcome, reason, label))
-        self._reaction_tasks.add(task)
-        task.add_done_callback(self._reaction_tasks.discard)
+        # Cancel any existing timer — we restart the window so all outcomes
+        # that arrive close together land in one batch.
+        existing_timer = self._pending_timers.pop(session_id, None)
+        if existing_timer is not None:
+            existing_timer.cancel()
+
+        # Add this outcome to the pending queue.
+        self._pending_outcomes.setdefault(session_id, []).append(
+            (info, outcome, reason, label)
+        )
+
+        # Schedule a flush after the batch window.
+        timer = asyncio.create_task(self._flush_pending_reactions(session_id))
+        self._pending_timers[session_id] = timer
+        self._reaction_tasks.add(timer)
+        timer.add_done_callback(self._reaction_tasks.discard)
 
     async def _safe_react(
         self, info: SubsessionInfo, outcome: str, reason: str, label: str
@@ -568,6 +657,165 @@ class ParentDelivery:
             await self._react_in_main_chat(info, outcome, reason, label)
         except Exception:
             logger.exception("Reaction task failed for subsession %s", info.id)
+
+    # ------------------------------------------------------------------
+    # Outcome batching (fire-and-forget)
+    # ------------------------------------------------------------------
+
+    async def _flush_pending_reactions(self, session_id: str) -> None:
+        """Wait for the batch window, then drain all pending outcomes.
+
+        When the timer fires, all outcomes that accumulated for
+        *session_id* are delivered in a single consolidated agent turn
+        (or a single ``_react_in_main_chat`` call when only one outcome
+        arrived).  Depth is incremented here so all outcomes in the batch
+        count as one reaction turn.
+        """
+        if self._batch_window_seconds > 0:
+            try:
+                await asyncio.sleep(self._batch_window_seconds)
+            except asyncio.CancelledError:
+                # Timer was cancelled because a new outcome arrived before
+                # the window closed — the new outcome started its own timer.
+                return
+
+        outcomes = self._pending_outcomes.pop(session_id, [])
+        self._pending_timers.pop(session_id, None)
+
+        if not outcomes:
+            return
+
+        # Increment depth once for the entire batch.
+        depth = self._reaction_depth.get(session_id, 0) + 1
+        self._reaction_depth[session_id] = depth
+
+        if len(outcomes) == 1:
+            info, outcome, reason, label = outcomes[0]
+            await self._safe_react(info, outcome, reason, label)
+        else:
+            await self._safe_react_batched(session_id, outcomes)
+
+    async def _safe_react_batched(
+        self,
+        session_id: str,
+        outcomes: list[tuple[SubsessionInfo, str, str, str]],
+    ) -> None:
+        """Wrap ``_react_batched`` with a top-level exception guard."""
+        try:
+            await self._react_batched(session_id, outcomes)
+        except Exception:
+            logger.exception(
+                "Batched reaction task failed for session %s (%d outcomes)",
+                session_id,
+                len(outcomes),
+            )
+
+    async def _react_batched(
+        self,
+        session_id: str,
+        outcomes: list[tuple[SubsessionInfo, str, str, str]],
+    ) -> None:
+        """Deliver multiple subsession outcomes in a single consolidated turn.
+
+        Builds one prompt listing all outcomes with a mandatory
+        consolidation instruction, then runs a single agent turn.
+        Degrades to passive records when no agent is wired or the turn
+        fails — each outcome is recorded individually so none are lost.
+        """
+        try:
+            if self._agent is None:
+                async with self._run_serializer.for_owner(session_id):
+                    for _info, outcome, _reason, label in outcomes:
+                        self._store.record_for_session(session_id, label, outcome)
+                return
+
+            # When the main session has an active autonomous plan (proposal
+            # or executing), degrade to individual _react_in_main_chat calls
+            # rather than using the batch template.  _react_in_main_chat
+            # already selects the correct active-plan prompt, and this
+            # avoids creating a duplicate batch-aware active-plan template.
+            # The batching window is an optimisation, not a correctness
+            # requirement — individual turns are safe and correct here.
+            if self._autonomous_runner is not None:
+                aq = self._autonomous_runner.get_session(session_id)
+                if aq is not None and aq.state in (
+                    AutonomousState.proposal,
+                    AutonomousState.executing,
+                ):
+                    for info, outcome, reason, label in outcomes:
+                        await self._react_in_main_chat(info, outcome, reason, label)
+                    return
+
+            # Build the numbered outcome list.
+            parts: list[str] = []
+            for i, (info, outcome, reason, _label) in enumerate(outcomes, start=1):
+                reason_text = _REASON_PHRASES.get(reason, reason)
+                parts.append(
+                    f"{i}. Subsession {info.id[:8]} ({info.kind.value}) "
+                    f"'{info.title}' {reason_text}.\n"
+                    f"   Outcome: {outcome}"
+                )
+            outcomes_list = "\n\n".join(parts)
+
+            prompt = _BATCH_REACT_PROMPT_TEMPLATE.format(
+                count=len(outcomes),
+                outcomes_list=outcomes_list,
+            )
+
+            async with self._run_serializer.for_owner(session_id):
+                history = self._store.history(session_id)
+                try:
+                    chunks = [
+                        chunk
+                        async for chunk in self._agent.stream(
+                            prompt,
+                            history=history or None,
+                            session_id=session_id,
+                            client_id=session_id,
+                            trace_metadata={"subsession_batch": "true"},
+                            trace_name="subsession-reaction-batch",
+                        )
+                    ]
+                except Exception:
+                    logger.exception(
+                        "Batched reaction turn failed for session %s (%d outcomes)",
+                        session_id,
+                        len(outcomes),
+                    )
+                    for _info, outcome, _reason, label in outcomes:
+                        self._store.record_for_session(session_id, label, outcome)
+                    # Push a fallback notification so the user sees the
+                    # outcomes even when the LLM API is unavailable.
+                    if self._event_sink is not None:
+                        summaries: list[str] = []
+                        for info, outcome, reason, _label in outcomes:
+                            reason_text = _REASON_PHRASES.get(reason, reason)
+                            summaries.append(
+                                f"• '{info.title}' ({info.kind.value}) "
+                                f"{reason_text}: {outcome}"
+                            )
+                        fallback_msg = (
+                            "[System] Background tasks completed:\n\n"
+                            + "\n".join(summaries)
+                        )
+                        self._event_sink.publish(
+                            session_id,
+                            agent_message_frame(fallback_msg, time.time()),
+                        )
+                    return
+                reply = "".join(chunks)
+                reply = _sanitize_reaction_reply(reply)
+                self._store.record_for_session(session_id, prompt, reply)
+                if reply and self._event_sink is not None:
+                    self._event_sink.publish(
+                        session_id, agent_message_frame(reply, time.time())
+                    )
+        finally:
+            depth = self._reaction_depth.get(session_id, 1) - 1
+            if depth <= 0:
+                self._reaction_depth.pop(session_id, None)
+            else:
+                self._reaction_depth[session_id] = depth
 
     async def _record_passive(self, session_id: str, label: str, outcome: str) -> None:
         """Record *outcome* as a passive, system-authored turn under the lock.
