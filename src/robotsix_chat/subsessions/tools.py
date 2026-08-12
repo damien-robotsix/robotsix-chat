@@ -322,7 +322,7 @@ def _build_spawn_and_control_tools(
                                     response.status_code,
                                     dedup_key,
                                 )
-                    except (httpx.TimeoutException, httpx.ConnectError, OSError):
+                    except httpx.TimeoutException, httpx.ConnectError, OSError:
                         # Board unreachable — allow the spawn to proceed;
                         # the watcher will catch repeated 404s later.
                         logger.warning(
