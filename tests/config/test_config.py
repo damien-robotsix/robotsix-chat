@@ -327,7 +327,7 @@ def test_subsessions_defaults() -> None:
     assert settings.subsessions.default_model_level == 2
     assert settings.subsessions.min_interval_seconds == 60.0
     assert settings.subsessions.auto_stop_no_change_runs == 3
-    assert settings.subsessions.max_idle_runs == 3
+    assert settings.subsessions.max_idle_runs == 15
     assert settings.subsessions.store_path == "/data/subsessions.json"
     assert settings.subsessions.transcript_max_entries == 200
 
@@ -363,9 +363,9 @@ def test_subsessions_auto_stop_zero_raises() -> None:
 
 
 def test_subsessions_max_idle_runs_default() -> None:
-    """``subsessions.max_idle_runs`` defaults to 3."""
+    """``subsessions.max_idle_runs`` defaults to 15."""
     settings = Settings()
-    assert settings.subsessions.max_idle_runs == 3
+    assert settings.subsessions.max_idle_runs == 15
 
 
 def test_subsessions_max_idle_runs_zero_allowed() -> None:
