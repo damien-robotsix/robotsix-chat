@@ -10,7 +10,7 @@ if TYPE_CHECKING:
 # Version stamp for the autonomous appendix (build_autonomous_instruction).
 # Bump on every change to the instruction text and update
 # docs/system_prompt_changelog.md with a new AUTONOMOUS entry + SHA256.
-AUTONOMOUS_PROMPT_VERSION = 14
+AUTONOMOUS_PROMPT_VERSION = 15
 
 
 def build_autonomous_instruction(settings: Settings) -> str:
@@ -31,7 +31,7 @@ def build_autonomous_instruction(settings: Settings) -> str:
     allowlist_str = ", ".join(allowlist) if allowlist else "(none)"
 
     return (
-        "\n\n"
+        "\n\n"  # nosec B608
         "AUTONOMOUS SESSION PROTOCOL\n"
         "You are running in an autonomous session. Follow this lifecycle:\n"
         "\n"
@@ -234,6 +234,42 @@ def build_autonomous_instruction(settings: Settings) -> str:
         "  - A single sentence like 'All monitors report no change.' is "
         "sufficient only when suppress_no_change_monitors is OFF; when ON, "
         "omit no-change outcomes entirely from operator-facing turns.\n"
+        "\n"
+        "MONITOR LIFECYCLE MANAGEMENT — subsession pool slots are a shared, "
+        "finite resource (typically 20 active subsessions).  Create monitors "
+        "judiciously — every monitor you spawn consumes one pool slot for its "
+        "entire lifetime.  Follow these rules to avoid pool exhaustion:\n"
+        "\n"
+        "  - REUSE OVER REPLACE: before creating a new monitor, call "
+        "list_subsessions to check whether an existing monitor already covers "
+        "the same ticket or subject.  Reuse or resume an existing monitor "
+        "rather than spawning a duplicate.  Two monitors watching the same "
+        "ticket waste a slot and produce conflicting reports.\n"
+        "  - PAUSE OVER REPLACE: when you need to shift focus, pause an "
+        "existing monitor rather than stopping it and creating a new one.  "
+        "A paused monitor holds its slot but can be resumed instantly; a "
+        "stop-and-recreate cycle risks the new monitor failing to start "
+        "and leaves the old one unrecoverable.\n"
+        "  - PREFER POLLING OVER EVENT-DRIVEN: event-driven monitors "
+        "(wait_for_event) have a known checkpoint bug that causes premature "
+        "auto-pause.  Until the bug is fixed, prefer periodic (polling) "
+        "monitors.  A periodic monitor with a reasonable interval is more "
+        "reliable than an event-driven monitor that may auto-pause on its "
+        "first cycle.\n"
+        "  - POOL-FULL GUARD: when a monitor creation fails with a pool-full "
+        "error (subsession limit reached), do NOT silently drop the task.  "
+        "First, call list_subsessions and identify monitors that can be "
+        "stopped or paused to free a slot — prioritize monitors that are "
+        "idle, have been no-change for many cycles, or are watching tickets "
+        "that are already resolved.  If no monitor can be freed, report the "
+        "capacity issue to the operator with a concrete recommendation (e.g. "
+        "'19 of 20 subsession slots are in use; I need to pause X to make "
+        "room for Y — confirm?').  Do NOT retry creation in a tight loop — "
+        "the pool will not free itself.\n"
+        "  - SINGLE MONITOR PER SUBJECT: never create more than one monitor "
+        "for the same ticket or subject.  If you need to change a monitor's "
+        "behavior, update its checkpoint or pause/resume it — do not create "
+        "a second monitor alongside the first.\n"
         "\n"
         "INFRASTRUCTURE DIAGNOSIS — EMPIRICAL VERIFICATION REQUIRED\n"
         "When you detect that infrastructure credentials appear to be "

@@ -2039,6 +2039,20 @@ The hash is computed on the output of `build_autonomous_instruction(Settings())`
 autonomous settings at their pydantic field defaults (``proposal_marker="---PROPOSAL READY---"``,
 ``completion_marker="---AUTONOMOUS COMPLETE---"``, ``stale_monitor_runs_before_completion=3``).
 
+## AUTONOMOUS v15 — 2026-08-09 — monitor-lifecycle-management-avoid-subse-990d
+
+**Summary:** Added MONITOR LIFECYCLE MANAGEMENT section instructing the agent to minimize monitor
+creation, reuse existing monitors, pause rather than replace, prefer polling over event-driven
+monitors (known wait_for_event checkpoint bug causes premature auto-pause), and handle pool-full
+errors by identifying freeable monitors or reporting the capacity issue to the operator.
+
+**Rationale:** Session eee421b68059407a8c32673df5588ecd created multiple monitors (periodic,
+event-driven, replacements) that auto-paused or failed, exhausting all 20 subsession pool slots.
+The agent lacked explicit lifecycle guidance and treated monitors as disposable, spawning new ones
+when pausing or reusing an existing monitor would have been correct.
+
+**SHA256:** `94ef86c484aba4a81d654b04955f35fc2b36b4f9c1f60cf248e6f18bf5d70f84`
+
 ## AUTONOMOUS v14 — 2026-08-09 — provide-a-single-consolidated-outcome-su-1082
 
 **Summary:** Add a consolidated closing-summary instruction to the COMPLETION
