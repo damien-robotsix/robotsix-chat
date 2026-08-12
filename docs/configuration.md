@@ -92,11 +92,11 @@ ______________________________________________________________________
 #### Activating `low_risk_actions`
 
 `low_risk_actions` ships default-off (`[]`) — the agent gates every
-action behind a confirmation prompt.  To pre-authorize actions:
+action behind a confirmation prompt. To pre-authorize actions:
 
 1. **Edit the deployed config** (`config/config.json` in production;
-   `config/config.local.json` for local dev).  Add one or more
-   action descriptions to the `low_risk_actions` list.  For example:
+   `config/config.local.json` for local dev). Add one or more
+   action descriptions to the `low_risk_actions` list. For example:
 
    ```json
    "low_risk_actions": [
@@ -105,17 +105,17 @@ action behind a confirmation prompt.  To pre-authorize actions:
    ]
    ```
 
-2. **Restart the service** so the new config is loaded.
+1. **Restart the service** so the new config is loaded.
 
-3. **Live-proof:** start a chat session and ask the agent to perform
-   one of the listed actions.  The agent should execute it without
-   requesting human confirmation.  Confirm the assembled system
+1. **Live-proof:** start a chat session and ask the agent to perform
+   one of the listed actions. The agent should execute it without
+   requesting human confirmation. Confirm the assembled system
    prompt (visible in Langfuse traces or debug logging) contains the
    "Pre-authorized low-risk actions:" block with each listed action.
 
-4. **Post-deploy follow-up:** after the next deployment cycle, verify
+1. **Post-deploy follow-up:** after the next deployment cycle, verify
    that the `low_risk_actions` config key is present and non-empty in
-   the deployed config file.  If agent confirmation prompts still
+   the deployed config file. If agent confirmation prompts still
    appear for listed actions, check that the config file is writable
    and that `ROBOTSIX_CONFIG_FILE` points to the correct path.
 
@@ -389,7 +389,7 @@ the feedback run never auto-approves. Disabled by default.
    run start within `dedup_window_seconds`, the new run is skipped. This prevents multiple
    compactions or session-end triggers (from concurrent subsessions) from spawning overlapping
    analyses of the same transcript.
-2. **Title-level dedup** — before POSTing a ticket, the runner checks whether a ticket with the same
+1. **Title-level dedup** — before POSTing a ticket, the runner checks whether a ticket with the same
    normalised title (lowercased, stripped) was filed within `dedup_window_seconds`. This catches
    cross-session duplicates that the session-level debounce cannot guard.
 
@@ -420,11 +420,11 @@ Feedback tickets are filed against a set of allowed target repos. The set is res
 
 1. **Deploy roster** — `GET http://central-deploy:8100/chat/components` fetches the list of
    currently deployed chat components. Each component's `id` becomes a candidate target repo.
-2. **Mill repo registry** — `GET http://mill:8077/repos` fetches the list of registered repos from
+1. **Mill repo registry** — `GET http://mill:8077/repos` fetches the list of registered repos from
    the mill board.
-3. **Intersection** — only repos present in *both* the deploy roster *and* the mill repo registry
+1. **Intersection** — only repos present in *both* the deploy roster *and* the mill repo registry
    are allowed. A repo that is registered but not deployed (or vice versa) cannot receive tickets.
-4. **Fallback** — if either service is unreachable, returns an empty response, or the intersection
+1. **Fallback** — if either service is unreachable, returns an empty response, or the intersection
    is empty, the runner falls back to `["robotsix-chat"]` and logs a warning so the feedback
    pipeline continues to function in a degraded state.
 
