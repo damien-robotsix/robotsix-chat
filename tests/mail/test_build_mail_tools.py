@@ -60,10 +60,10 @@ def test_build_mail_tools_disabled() -> None:
     assert build_mail_tools(MailSettings(enabled=False)) == []
 
 
-def test_build_mail_tools_returns_ten_tools() -> None:
-    """Verify that enabled mail returns ten discrete tools."""
+def test_build_mail_tools_returns_eleven_tools() -> None:
+    """Verify that enabled mail returns eleven discrete tools."""
     tools = build_mail_tools(_settings())
-    assert len(tools) == 10
+    assert len(tools) == 11
     names = [t.__name__ for t in tools]
     assert names == [
         "get_mail_board",
@@ -76,6 +76,7 @@ def test_build_mail_tools_returns_ten_tools() -> None:
         "browse_archive_folder",
         "move_archive_mail",
         "cleanup_empty_archive_folders",
+        "delete_archive_folder",
     ]
 
 
@@ -441,6 +442,89 @@ async def test_archive_cleanup_empty_error(respx_mock: respx.MockRouter) -> None
     result = await cleanup()
 
     assert "Mail API error 500" in result
+
+
+# ---------------------------------------------------------------------------
+# MailClient — archive_delete (POST /archive-delete)
+# ---------------------------------------------------------------------------
+
+
+@pytest.mark.asyncio
+async def test_archive_delete_success(respx_mock: respx.MockRouter) -> None:
+    """POST /archive-delete with JSON body returns success."""
+    route = respx_mock.post("http://127.0.0.1:8077/archive-delete").mock(
+        return_value=httpx.Response(200, text='{"deleted": "Projects/Old"}')
+    )
+    tools = build_mail_tools(_settings())
+    delete_folder = tools[10]
+
+    result = await delete_folder("Projects/Old")
+
+    assert route.called
+    body = route.calls.last.request.content.decode()
+    assert '"folder":"Projects/Old"' in body
+    assert '"force"' not in body.lower()
+    assert "Projects/Old" in result
+
+
+@pytest.mark.asyncio
+async def test_archive_delete_force_true(respx_mock: respx.MockRouter) -> None:
+    """POST /archive-delete with force=true includes the flag in the body."""
+    route = respx_mock.post("http://127.0.0.1:8077/archive-delete").mock(
+        return_value=httpx.Response(200, text='{"deleted": "Projects/Old"}')
+    )
+    tools = build_mail_tools(_settings())
+    delete_folder = tools[10]
+
+    result = await delete_folder("Projects/Old", force=True)
+
+    assert route.called
+    body = route.calls.last.request.content.decode()
+    assert '"folder":"Projects/Old"' in body
+    assert '"force":true' in body
+    assert "Projects/Old" in result
+
+
+@pytest.mark.asyncio
+async def test_archive_delete_error(respx_mock: respx.MockRouter) -> None:
+    """POST /archive-delete on 400 returns an error string."""
+    respx_mock.post("http://127.0.0.1:8077/archive-delete").mock(
+        return_value=httpx.Response(
+            400, text="folder not empty — use force=true to override"
+        )
+    )
+    tools = build_mail_tools(_settings())
+    delete_folder = tools[10]
+
+    result = await delete_folder("Projects/NonEmpty")
+
+    assert "Mail API error 400" in result
+    assert "force=true" in result
+
+
+@pytest.mark.asyncio
+async def test_archive_delete_client_side_path_escape(
+    respx_mock: respx.MockRouter,
+) -> None:
+    """Client-side path-escape rejects traversal before sending a request."""
+    tools = build_mail_tools(_settings())
+    delete_folder = tools[10]
+
+    # Absolute path
+    result = await delete_folder("/etc/passwd")
+    assert "absolute paths are not allowed" in result
+
+    # Dot-dot traversal
+    result = await delete_folder("Projects/../escape")
+    assert "'..' traversal is not allowed" in result
+
+    # Null byte
+    result = await delete_folder("foo\x00bar")
+    assert "null bytes" in result
+
+    # Empty string
+    result = await delete_folder("")
+    assert "must not be empty" in result
 
 
 # ---------------------------------------------------------------------------
