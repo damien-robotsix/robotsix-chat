@@ -12,6 +12,7 @@ component skill markdown for injection into the agent instruction.
 
 from __future__ import annotations
 
+import asyncio
 import base64
 import json
 from collections.abc import Callable
@@ -53,6 +54,50 @@ def _basic_auth_header(public_key: str, secret_key: str) -> str:
     credentials = f"{public_key}:{secret_key}"
     encoded = base64.b64encode(credentials.encode()).decode()
     return f"Basic {encoded}"
+
+
+# Retry constants for transient HTTP failures (timeouts, 5xx, network errors).
+# Auth/client errors (401, 403, 4xx) are never retried — they indicate a
+# configuration problem, not a blip.
+_MAX_RETRIES = 2
+_RETRY_BACKOFF_BASE = 1.0  # seconds
+_RETRY_BACKOFF_CAP = 5.0  # seconds
+
+
+async def _retry_safe_http_request(
+    method: str,
+    url: str,
+    *,
+    headers: dict[str, str] | None = None,
+    timeout: float = 30.0,
+    params: dict[str, str] | None = None,
+    label: str = "Langfuse API",
+) -> HttpResult:
+    """Call ``safe_http_request`` with retry on transient errors.
+
+    Transient errors (timeouts, 5xx, bare network failures) are retried
+    up to ``_MAX_RETRIES`` times with exponential backoff.  Auth/client
+    errors (401, 403, 4xx) are returned immediately — they are not
+    transient and retrying wastes time.
+    """
+    for attempt in range(_MAX_RETRIES + 1):
+        result = await safe_http_request(
+            method,
+            url,
+            headers=headers,
+            timeout=timeout,
+            params=params,
+            label=label,
+        )
+        if result.ok:
+            return result
+        # Auth / client errors are not transient — surface immediately.
+        if result.status_code is not None and 400 <= result.status_code < 500:
+            return result
+        if attempt < _MAX_RETRIES:
+            delay = min(_RETRY_BACKOFF_BASE * (2**attempt), _RETRY_BACKOFF_CAP)
+            await asyncio.sleep(delay)
+    return result  # last attempt's error (all retries exhausted)
 
 
 def _summarise_trace(trace: dict[str, Any]) -> dict[str, Any]:
@@ -172,7 +217,7 @@ def build_langfuse_inspect_tools(
         if trace_id:
             # Fetch a single trace by id.
             url = f"{host}/api/public/traces/{trace_id}"
-            result: HttpResult = await safe_http_request(
+            result: HttpResult = await _retry_safe_http_request(
                 "GET",
                 url,
                 headers=headers,
@@ -198,7 +243,7 @@ def build_langfuse_inspect_tools(
             "orderBy": "timestamp.desc",
         }
         url = f"{host}/api/public/traces"
-        result = await safe_http_request(
+        result = await _retry_safe_http_request(
             "GET",
             url,
             headers=headers,

@@ -63,6 +63,27 @@ the cap used.
   are ever exposed to the agent.
 - The tool is only available when `langfuse_inspect.enabled` is `true` in the server config.
 
+## Error handling — read before acting on a failure
+
+- **Transient errors are retried automatically.** The tool retries timeouts, 5xx responses, and
+  network failures up to 2 times with exponential backoff before returning an error.  If you
+  receive an error, it has already survived multiple attempts — do NOT retry the tool repeatedly
+  hoping for a different result.
+- **Do NOT claim credentials are missing.** The tool authenticates via Basic auth using the
+  `langfuse.projects` config block — it checks credentials up front and returns an explicit
+  "credentials are not configured" error when they are absent.  Any other error (HTTP status,
+  timeout, network failure) means the credentials *were* sent and the Langfuse host rejected or
+  did not receive the request.  Blaming a missing credential when the tool did not return the
+  credential-specific error message wastes time and erodes trust.
+- **Do NOT suggest a restart.** The environment-variable credential path
+  (`LANGFUSE_PUBLIC_KEY`, `LANGFUSE_SECRET_KEY`) was decommissioned — the tool reads credentials
+  from the server's JSON config file at startup.  A restart will not change the credential state
+  and will not fix a network, timeout, or API-level error.
+- **The self-check you already have:** call the tool with any known trace id or ticket id.  If
+  it returns data, Langfuse access is working.  If it returns an error, read the error message
+  literally — it tells you exactly what failed (network, timeout, HTTP status, missing
+  credentials).  Do not layer your own theory on top of a clear error message.
+
 ## Example calls
 
 ```text
