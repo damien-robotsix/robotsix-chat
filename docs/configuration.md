@@ -89,6 +89,33 @@ ______________________________________________________________________
 | `allowed_image_media_types` | `array[string]`     | `["image/png","image/jpeg","image/gif","image/webp"]` | Allowed image MIME types.                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                 |
 | `low_risk_actions`          | `array[string]`     | `[]`                                                  | Action names/descriptions the agent may perform without human confirmation. When non-empty, these actions are pre-authorized and the agent will execute them without asking. Operators can list abstract descriptions (e.g. `"prioritize tickets on the board"`, `"close a subsession that has reached a terminal state"`) — the agent matches its available tools against the list at runtime.                                                                                                                                                                                                           |
 
+#### Activating `low_risk_actions`
+
+`low_risk_actions` ships default-off (`[]`) — the agent gates every action behind a confirmation
+prompt. To pre-authorize actions:
+
+1. **Edit the deployed config** (`config/config.json` in production; `config/config.local.json` for
+   local dev). Add one or more action descriptions to the `low_risk_actions` list. For example:
+
+   ```json
+   "low_risk_actions": [
+     "prioritize tickets on the board",
+     "close a subsession that has reached a terminal state"
+   ]
+   ```
+
+2. **Restart the service** so the new config is loaded.
+
+3. **Live-proof:** start a chat session and ask the agent to perform one of the listed actions. The
+   agent should execute it without requesting human confirmation. Confirm the assembled system
+   prompt (visible in Langfuse traces or debug logging) contains the "Pre-authorized low-risk
+   actions:" block with each listed action.
+
+4. **Post-deploy follow-up:** after the next deployment cycle, verify that the `low_risk_actions`
+   config key is present and non-empty in the deployed config file. If agent confirmation prompts
+   still appear for listed actions, check that the config file is writable and that
+   `ROBOTSIX_CONFIG_FILE` points to the correct path.
+
 ### Server
 
 | JSON key                | Type            | Default          | Description                                                                                        |

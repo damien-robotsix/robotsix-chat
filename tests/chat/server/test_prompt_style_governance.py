@@ -83,3 +83,38 @@ def test_inject_skills_includes_style_even_when_bare() -> None:
         "Style directive is missing in bare-mode prompt. "
         "_inject_skills must append the style even when bare=True."
     )
+
+
+# ---------------------------------------------------------------------------
+# low_risk_actions injection
+# ---------------------------------------------------------------------------
+
+
+def test_inject_skills_includes_low_risk_actions() -> None:
+    """When ``low_risk_actions`` is non-empty, the pre-authorized block is injected."""
+    settings = Settings(
+        low_risk_actions=["prioritize tickets on the board", "close a subsession"]
+    )
+    result = _inject_skills(settings, "Test instruction.")
+
+    assert "Pre-authorized low-risk actions:" in result, (
+        "Pre-authorized low-risk actions header missing — "
+        "_inject_skills must inject the block when low_risk_actions is non-empty."
+    )
+    assert "prioritize tickets on the board" in result, (
+        "First low-risk action not found in assembled prompt."
+    )
+    assert "close a subsession" in result, (
+        "Second low-risk action not found in assembled prompt."
+    )
+
+
+def test_inject_skills_no_low_risk_actions_when_empty() -> None:
+    """When ``low_risk_actions`` is empty, the pre-authorized block is NOT injected."""
+    settings = Settings()
+    result = _inject_skills(settings, "Test instruction.")
+
+    assert "Pre-authorized low-risk actions:" not in result, (
+        "Pre-authorized low-risk actions block should not appear "
+        "when low_risk_actions is empty."
+    )
