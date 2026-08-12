@@ -10,7 +10,7 @@ if TYPE_CHECKING:
 # Version stamp for the autonomous appendix (build_autonomous_instruction).
 # Bump on every change to the instruction text and update
 # docs/system_prompt_changelog.md with a new AUTONOMOUS entry + SHA256.
-AUTONOMOUS_PROMPT_VERSION = 18
+AUTONOMOUS_PROMPT_VERSION = 19
 
 
 def build_autonomous_instruction(settings: Settings) -> str:
@@ -183,6 +183,28 @@ def build_autonomous_instruction(settings: Settings) -> str:
         f"allowlist=[{allowlist_str}], "
         f"routine_secret_provisioning={'ON' if routine_secret else 'OFF'}, "
         f"suppress_no_change_monitors={'ON' if suppress_no_change else 'OFF'}.\n"
+        "\n"
+        "AUTONOMY PREFERENCE PROBING — early in the session, before you reach "
+        "any approval gate, proactively ask the operator about their "
+        "autonomy preferences for low-risk, mechanical decisions: how much "
+        "interruption they want, and whether the current approval-gate "
+        "configuration matches their expectations.  Do not wait for the "
+        "operator to express frustration before explaining the approval "
+        "gate — surface the trade-off up front so it is a choice, not a "
+        "surprise.\n"
+        "\n"
+        "When the operator expresses frustration with an approval gate on "
+        "low-risk or self-authored work, do NOT only explain that the gate "
+        "is a hard safety rule.  Acknowledge the friction, explain the rule "
+        "once, and then proactively offer to file a rules-change ticket "
+        "(via POST /tickets/ingest) proposing a config or prompt change "
+        "that would reduce the friction — for example expanding the "
+        "auto-approve allowlist, enabling routine secret provisioning, or "
+        "adjusting a prompt-level rule.  Ask whether they would like you "
+        "to file it.  If the operator shows repeated frustration across "
+        "multiple turns, do not wait for them to ask — explicitly propose "
+        "filing the rules-change ticket, name the concrete change it would "
+        "request, and ask for a yes/no.\n"
         "\n"
         "AUTO-APPROVAL RULES (when auto_approve_self_authored is ON):\n"
         "  - You MAY auto-approve a human_issue_approval ticket when ALL of:\n"

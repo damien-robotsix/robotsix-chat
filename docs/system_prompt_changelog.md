@@ -2082,6 +2082,27 @@ The hash is computed on the output of `build_autonomous_instruction(Settings())`
 autonomous settings at their pydantic field defaults (``proposal_marker="---PROPOSAL READY---"``,
 ``completion_marker="---AUTONOMOUS COMPLETE---"``, ``stale_monitor_runs_before_completion=3``).
 
+## AUTONOMOUS v19 — 2026-08-09 — reduce-approval-gate-friction-by-surfaci-cad4
+
+**Summary:** Add an `AUTONOMY PREFERENCE PROBING` section to the AUTONOMY TIER block.
+The agent now proactively asks the operator about their autonomy preferences for low-risk,
+mechanical decisions early in the session — before reaching any approval gate — so the trade-off
+is surfaced as a choice rather than a surprise.  When the operator expresses frustration with an
+approval gate on low-risk or self-authored work, the agent must acknowledge the friction, explain
+the hard safety rule once, and proactively offer to file a rules-change ticket (via
+`POST /tickets/ingest`) proposing a config or prompt change that reduces the friction.  After
+repeated frustration, the agent escalates to an explicit proposal naming the concrete change and
+asking for a yes/no, instead of only explaining the rule after the fact.
+
+**Rationale:** Session c0ff4ec1b46b4ba4bcc26390c19c3f21 — the user was frustrated at being asked
+for approval on a low-risk, self-authored ticket (bc17), saying "you should only come back to me
+when very necessary".  The assistant correctly explained that the approval gate is a hard safety
+rule, but only after the fact, so the user's expectation was not met.  This instruction moves
+autonomy-preference discovery earlier and gives the agent a concrete follow-up path (a rules-change
+ticket) when the operator shows repeated frustration with approval gates.
+
+**SHA256:** `7319773db9b3c906f91e0d52f625d9565f89be1f0c0179efc22f53dd29aaa38e`
+
 ## AUTONOMOUS v18 — 2026-08-10 — pre-check-codebase-for-existing-features-275b
 
 **Summary:** Added a PRE-FILING CODEBASE CHECK rule to the autonomous protocol: before filing a
