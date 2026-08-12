@@ -938,6 +938,67 @@ class SubsessionRegistry:
             if info.is_active and info.status is not SubsessionStatus.PAUSED
         )
 
+    def count_active_for_owner(self, owner_session_id: str) -> int:
+        """Return the number of active subsessions owned by *owner_session_id*.
+
+        Uses the same exclusion rules as :meth:`count_active`: PAUSED
+        subsessions do not count against the concurrency cap.
+        """
+        sub_ids = self._by_owner.get(owner_session_id, ())
+        return sum(
+            1
+            for sub_id in sub_ids
+            if (info := self._subs.get(sub_id)) is not None
+            and info.is_active
+            and info.status is not SubsessionStatus.PAUSED
+        )
+
+    _RECLAIMABLE_STATUSES: frozenset[SubsessionStatus] = frozenset(
+        {
+            SubsessionStatus.SLEEPING,
+            SubsessionStatus.PAUSED,
+        }
+    )
+
+    def find_stale_for_reclaim(
+        self, *, exclude_owner: str, stale_seconds: float
+    ) -> SubsessionInfo | None:
+        """Return the best candidate for stale-subsession reclamation.
+
+        A candidate must belong to an owner other than *exclude_owner*,
+        be in a reclaimable status (SLEEPING or PAUSED), and have
+        ``last_activity_at`` older than ``now() - stale_seconds``.
+        SLEEPING subsessions are preferred over PAUSED because they
+        count against the global capacity cap; reclaiming one actually
+        frees a slot.
+
+        Returns ``None`` when no eligible subsession exists.
+        """
+        now = self.now()
+        cutoff = now - stale_seconds
+        best: SubsessionInfo | None = None
+        best_score = -1  # 2 = sleeping, 1 = paused
+
+        for owner_id, sub_ids in self._by_owner.items():
+            if owner_id == exclude_owner:
+                continue
+            for sub_id in sub_ids:
+                info = self._subs.get(sub_id)
+                if info is None:
+                    continue
+                if not info.is_active or info.last_activity_at > cutoff:
+                    continue
+                if info.status not in self._RECLAIMABLE_STATUSES:
+                    continue
+                score = 2 if info.status is SubsessionStatus.SLEEPING else 1
+                if score > best_score or (
+                    score == best_score
+                    and (best is None or info.last_activity_at < best.last_activity_at)
+                ):
+                    best = info
+                    best_score = score
+        return best
+
     def claim_run(self, sub_id: str, run_n: int) -> bool:
         """Atomically claim a periodic run number.
 

@@ -405,10 +405,47 @@ def spawn_subsession(
                 return cp_match
 
     cfg = env.settings.subsessions
-    if env.registry.count_active() >= cfg.max_concurrent:
+
+    # Per-session capacity check: reject spawns when the owning
+    # session already holds its configured share of the pool.
+    if (
+        cfg.max_concurrent_per_session > 0
+        and env.registry.count_active_for_owner(owner_session_id)
+        >= cfg.max_concurrent_per_session
+    ):
         raise SubsessionCapacityError(
-            f"subsession capacity reached ({cfg.max_concurrent} active)"
+            f"per-session subsession capacity reached "
+            f"({cfg.max_concurrent_per_session} active for this session)"
         )
+
+    # Global capacity check with stale-reclamation fallback.
+    if env.registry.count_active() >= cfg.max_concurrent:
+        reclaimed = False
+        if cfg.stale_reclaim_seconds > 0:
+            stale = env.registry.find_stale_for_reclaim(
+                exclude_owner=owner_session_id,
+                stale_seconds=cfg.stale_reclaim_seconds,
+            )
+            if stale is not None:
+                logger.info(
+                    "subsession capacity full (%s active); reclaiming "
+                    "stale PAUSED subsession %s (owner=%s, idle=%.0fs)",
+                    cfg.max_concurrent,
+                    stale.id,
+                    stale.owner_session_id,
+                    env.registry.now() - stale.last_activity_at,
+                )
+                env.registry.cancel_and_close(
+                    stale.id,
+                    reason="stale_reclaimed",
+                    closed_by="system",
+                )
+                reclaimed = True
+
+        if not reclaimed or env.registry.count_active() >= cfg.max_concurrent:
+            raise SubsessionCapacityError(
+                f"subsession capacity reached ({cfg.max_concurrent} active)"
+            )
     if depth > cfg.max_depth:
         raise SubsessionDepthError(
             f"maximum subsession nesting depth is {cfg.max_depth}"

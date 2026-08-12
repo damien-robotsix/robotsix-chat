@@ -677,6 +677,20 @@ class SubsessionsSettings(BaseModel):
         max_concurrent: Process-wide cap on simultaneously active
             subsessions (all kinds, all depths).
             Env override: ``SUBSESSIONS_MAX_CONCURRENT``.
+        max_concurrent_per_session: Per-session cap on simultaneously
+            active subsessions owned by a single chat session.  When a
+            session reaches this limit, new spawns are rejected even if
+            the global pool has room.  Set to ``0`` to disable (no
+            per-session limit).  Env override:
+            ``SUBSESSIONS_MAX_CONCURRENT_PER_SESSION``.
+        stale_reclaim_seconds: When the global pool
+            (``max_concurrent``) is full but the spawning session is
+            under its per-session limit, PAUSED subsessions owned by
+            **other** sessions that have been idle for longer than this
+            many seconds are eligible for reclamation — the stalest is
+            closed to free a slot for the new spawn.  Set to ``0`` to
+            disable reclamation.  Env override:
+            ``SUBSESSIONS_STALE_RECLAIM_SECONDS``.
         max_depth: Maximum nesting depth.  The main chat session is depth
             0; its subsessions are depth 1.  Agents at ``max_depth`` get
             no spawn tools.  Env override: ``SUBSESSIONS_MAX_DEPTH``.
@@ -779,6 +793,27 @@ class SubsessionsSettings(BaseModel):
     """
 
     max_concurrent: int = 8
+    max_concurrent_per_session: int = Field(
+        default=0,
+        description=(
+            "Per-session cap on simultaneously active subsessions "
+            "owned by a single chat session.  When a session reaches "
+            "this limit, new spawns are rejected even if the global "
+            "pool has room.  Set to 0 to disable (no per-session "
+            "limit)."
+        ),
+    )
+    stale_reclaim_seconds: float = Field(
+        default=0.0,
+        description=(
+            "When the global pool (max_concurrent) is full but the "
+            "spawning session is under its per-session limit, PAUSED "
+            "subsessions owned by OTHER sessions that have been idle "
+            "for longer than this many seconds are eligible for "
+            "reclamation — the stalest is closed to free a slot for "
+            "the new spawn.  Set to 0 to disable reclamation."
+        ),
+    )
     max_depth: int = 3
     default_model_level: int = 2
     min_interval_seconds: float = 60.0
