@@ -386,7 +386,7 @@ the feedback run never auto-approves. Disabled by default.
    run start within `dedup_window_seconds`, the new run is skipped. This prevents multiple
    compactions or session-end triggers (from concurrent subsessions) from spawning overlapping
    analyses of the same transcript.
-1. **Title-level dedup** — before POSTing a ticket, the runner checks whether a ticket with the same
+2. **Title-level dedup** — before POSTing a ticket, the runner checks whether a ticket with the same
    normalised title (lowercased, stripped) was filed within `dedup_window_seconds`. This catches
    cross-session duplicates that the session-level debounce cannot guard.
 
@@ -417,11 +417,11 @@ Feedback tickets are filed against a set of allowed target repos. The set is res
 
 1. **Deploy roster** — `GET http://central-deploy:8100/chat/components` fetches the list of
    currently deployed chat components. Each component's `id` becomes a candidate target repo.
-1. **Mill repo registry** — `GET http://mill:8077/repos` fetches the list of registered repos from
+2. **Mill repo registry** — `GET http://mill:8077/repos` fetches the list of registered repos from
    the mill board.
-1. **Intersection** — only repos present in *both* the deploy roster *and* the mill repo registry
+3. **Intersection** — only repos present in *both* the deploy roster *and* the mill repo registry
    are allowed. A repo that is registered but not deployed (or vice versa) cannot receive tickets.
-1. **Fallback** — if either service is unreachable, returns an empty response, or the intersection
+4. **Fallback** — if either service is unreachable, returns an empty response, or the intersection
    is empty, the runner falls back to `["robotsix-chat"]` and logs a warning so the feedback
    pipeline continues to function in a degraded state.
 
@@ -642,7 +642,7 @@ types; and any action whose safety the agent cannot independently verify.
 | `autonomy.auto_approve_repo_allowlist`              | `array`   | `[]`    | Repository names (e.g. `"robotsix-chat"`) eligible for auto-approval when `auto_approve_self_authored` is enabled. Tickets targeting repos not listed here are always gated.                                                                                                                                                                                                                     |
 | `autonomy.auto_approve_routine_secret_provisioning` | `boolean` | `false` | When `true`, the agent may auto-approve routine secret provisioning tickets even when they touch security-sensitive paths (`secrets/**`, `credentials`), provided the change has no code modifications, no destructive operations, and is limited to credential/secret/token provisioning. Covers standard operations like adding API keys, rotating credentials, or provisioning access tokens. |
 | `autonomy.suppress_no_change_monitors`              | `boolean` | `false` | When `true`, periodic and event monitor outcomes that carry no actionable delta (NO_CHANGE, completed normally, auto-paused) do not generate an operator-facing turn. Only blockers and terminal failures are surfaced.                                                                                                                                                                          |
-| `autonomy.auto_self_restart`                        | `boolean` | `false` | When `true`, the agent may call `self_restart` without operator approval after deploying capability changes (code changes, component roster updates) that affect the agent's own behaviour. The agent announces the restart with a brief delay so the operator can interrupt if needed.                                                                                                            |
+| `autonomy.auto_self_restart`                        | `boolean` | `false` | When `true`, the agent may call `self_restart` without operator approval after deploying capability changes (code changes, component roster updates) that affect the agent's own behaviour. The agent announces the restart with a brief delay so the operator can interrupt if needed.                                                                                                          |
 
 **Example** — enabling auto-approval for self-authored tickets on the `robotsix-chat` repo, with
 no-change monitor suppression, routine secret provisioning, and auto-self-restart:
