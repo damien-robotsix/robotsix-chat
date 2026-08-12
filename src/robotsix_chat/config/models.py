@@ -807,11 +807,14 @@ class SubsessionsSettings(BaseModel):
         default=0.0,
         description=(
             "When the global pool (max_concurrent) is full but the "
-            "spawning session is under its per-session limit, PAUSED "
-            "subsessions owned by OTHER sessions that have been idle "
-            "for longer than this many seconds are eligible for "
-            "reclamation — the stalest is closed to free a slot for "
-            "the new spawn.  Set to 0 to disable reclamation."
+            "spawning session is under its per-session limit, SLEEPING "
+            "or PAUSED subsessions owned by OTHER sessions that have "
+            "been idle for longer than this many seconds are eligible "
+            "for reclamation — the stalest is closed to free a slot "
+            "for the new spawn.  SLEEPING subsessions are preferred "
+            "over PAUSED because they count against the global capacity "
+            "cap; reclaiming one actually frees a slot.  Set to 0 to "
+            "disable reclamation."
         ),
     )
     max_depth: int = 3

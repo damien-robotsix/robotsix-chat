@@ -429,8 +429,9 @@ def spawn_subsession(
             if stale is not None:
                 logger.info(
                     "subsession capacity full (%s active); reclaiming "
-                    "stale PAUSED subsession %s (owner=%s, idle=%.0fs)",
+                    "stale %s subsession %s (owner=%s, idle=%.0fs)",
                     cfg.max_concurrent,
+                    stale.status.value,
                     stale.id,
                     stale.owner_session_id,
                     env.registry.now() - stale.last_activity_at,
