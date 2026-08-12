@@ -777,6 +777,45 @@ def test_autonomous_owner_stays_separate_from_the_operator() -> None:
     assert [s["session_id"] for s in auto_sessions] == ["auto-1"]
 
 
+def test_list_autonomous_sessions_merges_per_preset_subscopes() -> None:
+    """The bootstrap autonomous query surfaces every ``autonomous:*`` owner.
+
+    Named presets store sessions under ``autonomous:<name>`` while the UI
+    only ever queries ``owner_id=autonomous``.  ``list_sessions`` must expand
+    the bootstrap owner into all per-preset sub-scopes, merged and sorted by
+    recency, or periodic preset sessions run but never appear in the list.
+    """
+    clock = _FakeWallClock()
+    store = _store(wall_clock=clock)
+
+    store.register_session("autonomous", "auto-default", make_active=True)
+    clock.advance(1.0)
+    store.register_session("autonomous:mail-check", "auto-mail", make_active=True)
+    clock.advance(1.0)
+    store.register_session("autonomous:cost-review", "auto-cost", make_active=True)
+    clock.advance(1.0)
+    store.register_session("operator", "human", make_active=True)
+
+    sessions, active = store.list_sessions("autonomous", create_default=False)
+
+    assert [s["session_id"] for s in sessions] == [
+        "auto-cost",
+        "auto-mail",
+        "auto-default",
+    ]
+    assert active == "auto-default"
+
+    # The operator's own session never leaks into the merged pool.
+    operator_sessions, _ = store.list_sessions("operator")
+    assert [s["session_id"] for s in operator_sessions] == ["human"]
+
+    # A direct sub-scope query still returns only that preset's pool.
+    mail_sessions, _ = store.list_sessions(
+        "autonomous:mail-check", create_default=False
+    )
+    assert [s["session_id"] for s in mail_sessions] == ["auto-mail"]
+
+
 def test_load_folds_legacy_per_browser_owners_into_one_pool() -> None:
     """Persisted per-browser owners are merged on load, not dropped.
 
