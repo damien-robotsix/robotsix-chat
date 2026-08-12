@@ -141,13 +141,26 @@ def build_mail_tools(settings: MailSettings) -> list[Callable[..., Any]]:
         """
         return await client.run_triage()
 
-    async def list_archive_folders() -> str:
-        """List all archive subfolders on the mail server.
+    async def list_archive_folders(
+        account: str | None = None,
+        *,
+        include_unmapped: bool = False,
+    ) -> str:
+        """List archive folders on the mail server.
+
+        Args:
+            account: Optional IMAP account to list folders for.  Omit to
+                use the server's default account.
+            include_unmapped: Set to ``True`` to list every IMAP folder —
+                top-level folders and siblings of the archive root — not
+                just the subfolders under the resolved archive root.  Use
+                this to spot stray or duplicate archive roots before
+                reconciling the mailbox structure.
 
         Returns a JSON object with ``delimiter`` (the hierarchy separator)
-        and ``folders`` (a flat list of subfolder paths relative to the
-        archive root).  Use this to discover which archive subfolders
-        exist before browsing or moving messages.
+        and ``folders`` (a flat list of folder paths).  Use this to
+        discover which archive subfolders exist before browsing or moving
+        messages.
 
         Returns:
             JSON text with delimiter and folder list.
@@ -155,7 +168,10 @@ def build_mail_tools(settings: MailSettings) -> list[Callable[..., Any]]:
         Never raises — errors become a diagnostic string.
 
         """
-        return await client.archive_folders()
+        return await client.archive_folders(
+            account,
+            include_unmapped=include_unmapped,
+        )
 
     async def browse_archive_folder(folder: str, limit: int | None = None) -> str:
         """List messages inside a specific archive subfolder.
