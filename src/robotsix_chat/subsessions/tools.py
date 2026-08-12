@@ -21,6 +21,8 @@ import logging
 import time
 from typing import Any
 
+import httpx
+
 from .models import (
     ACTIVE_STATUSES,
     SubsessionCapacityError,
@@ -280,6 +282,60 @@ def _build_spawn_and_control_tools(
             SubsessionKind.PERIODIC,
             SubsessionKind.WAIT_FOR_EVENT,
         ):
+            # Verify the ticket exists on the board before spawning the
+            # monitor — a monitor for a stale/paraphrased ticket ID would
+            # waste agent turns before auto-pausing, then the watcher
+            # would poll 404s indefinitely.
+            direct_repo = getattr(env.settings, "direct_repo", None)
+            if direct_repo is not None and getattr(direct_repo, "enabled", False):
+                board_url = getattr(direct_repo, "board_api_base_url", "")
+                if board_url:
+                    try:
+                        ticket_url = f"{board_url.rstrip('/')}/tickets/{dedup_key}"
+                        async with httpx.AsyncClient(
+                            timeout=httpx.Timeout(10.0)
+                        ) as client:
+                            response = await client.get(ticket_url)
+                            if response.status_code == 404:
+                                logger.warning(
+                                    "spawn_subsession_tool: ticket %r not "
+                                    "found (404) — refusing to spawn "
+                                    "monitor.",
+                                    dedup_key,
+                                )
+                                return (
+                                    f"Cannot spawn monitor for ticket "
+                                    f"'{dedup_key}': ticket not found "
+                                    f"(404) on the board — the ID may be "
+                                    f"paraphrased or stale.  Verify the "
+                                    f"ticket ID against the board ticket "
+                                    f"list before retrying."
+                                )
+                            # Non-2xx non-404: log but allow the spawn —
+                            # the board may be temporarily unhealthy and
+                            # we don't want to block all monitor spawns.
+                            if response.status_code >= 400:
+                                logger.warning(
+                                    "spawn_subsession_tool: board returned "
+                                    "%d for ticket %r — allowing spawn "
+                                    "but ticket may be unreachable.",
+                                    response.status_code,
+                                    dedup_key,
+                                )
+                    except httpx.TimeoutException, httpx.ConnectError, OSError:
+                        # Board unreachable — allow the spawn to proceed;
+                        # the watcher will catch repeated 404s later.
+                        logger.warning(
+                            "spawn_subsession_tool: board unreachable "
+                            "when verifying ticket %r — allowing spawn.",
+                            dedup_key,
+                        )
+                    except Exception:
+                        logger.exception(
+                            "spawn_subsession_tool: unexpected error "
+                            "verifying ticket %r — allowing spawn.",
+                            dedup_key,
+                        )
             checkpoint = {"ticket_id": dedup_key}
 
         try:
