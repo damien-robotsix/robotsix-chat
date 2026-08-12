@@ -180,16 +180,39 @@ def build_github_actions_tools(
             # Single-run deep inspection
             jobs = await actions.get_workflow_run_jobs(repo_full_name, run_id)
             if not jobs:
-                return (
-                    f"Workflow run {run_id} on {repo_full_name} has no jobs — "
-                    f"this may indicate that GitHub Actions billing "
-                    f"is not enabled for this private repository, or that the "
-                    f"workflow trigger is misconfigured (e.g. only triggers on "
-                    f"``push`` to ``main``, not on the event that created this "
-                    f"run).  Check the workflow's ``on:`` trigger in "
-                    f"``.github/workflows/``, and verify billing at "
-                    f"Settings > Actions > General."
-                )
+                is_private = await actions.check_repo_visibility(repo_full_name)
+                if is_private is True:
+                    return (
+                        f"Workflow run {run_id} on {repo_full_name} has no jobs — "
+                        f"this may indicate that GitHub Actions billing "
+                        f"is not enabled for this private repository, or that the "
+                        f"workflow trigger is misconfigured (e.g. only triggers on "
+                        f"``push`` to ``main``, not on the event that created this "
+                        f"run).  Check the workflow's ``on:`` trigger in "
+                        f"``.github/workflows/``, and verify billing at "
+                        f"Settings > Actions > General."
+                    )
+                elif is_private is False:
+                    return (
+                        f"Workflow run {run_id} on {repo_full_name} has no jobs. "
+                        f"Since {repo_full_name} is a public repository, billing "
+                        f"is not the issue.  The likely causes are a missing "
+                        f"reusable workflow file (``.github/workflows/``), an "
+                        f"input-contract mismatch (e.g. a required "
+                        f"``workflow_call`` input not provided), or a "
+                        f"misconfigured trigger in the workflow's ``on:`` block."
+                    )
+                else:
+                    return (
+                        f"Workflow run {run_id} on {repo_full_name} has no jobs — "
+                        f"this may indicate that GitHub Actions billing "
+                        f"is not enabled for this private repository, or that the "
+                        f"workflow trigger is misconfigured (e.g. only triggers on "
+                        f"``push`` to ``main``, not on the event that created this "
+                        f"run).  Check the workflow's ``on:`` trigger in "
+                        f"``.github/workflows/``, and verify billing at "
+                        f"Settings > Actions > General."
+                    )
             lines: list[str] = [
                 f"Workflow run {run_id} on {repo_full_name} — {len(jobs)} job(s):"
             ]

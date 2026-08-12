@@ -631,11 +631,19 @@ async def test_get_workflow_run_annotations_api_error(
 
 
 @pytest.mark.asyncio
-async def test_diagnose_billing_failure_never_started() -> None:
-    """Run with no run_started_at → never-started diagnostic."""
+async def test_diagnose_billing_failure_never_started(
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    """Run with no run_started_at → never-started diagnostic (private repo)."""
+    from unittest.mock import AsyncMock
+
     from tests.repo.direct.conftest import _settings
 
     client = ActionsClient(_settings())
+
+    # Mock visibility check → private repo
+    monkeypatch.setattr(client, "check_repo_visibility", AsyncMock(return_value=True))
+
     runs: list[dict[str, object]] = [
         {
             "id": 2,
@@ -649,6 +657,38 @@ async def test_diagnose_billing_failure_never_started() -> None:
     diag = await client._diagnose_billing_failure(runs, "org/repo")
     assert diag is not None
     assert "billing" in diag.lower()
+    assert "never started" in diag.lower()
+
+
+@pytest.mark.asyncio
+async def test_diagnose_billing_failure_never_started_public_repo(
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    """Run with no run_started_at on a public repo → no billing mention."""
+    from unittest.mock import AsyncMock
+
+    from tests.repo.direct.conftest import _settings
+
+    client = ActionsClient(_settings())
+
+    # Mock visibility check → public repo
+    monkeypatch.setattr(client, "check_repo_visibility", AsyncMock(return_value=False))
+
+    runs: list[dict[str, object]] = [
+        {
+            "id": 7,
+            "name": "Deploy",
+            "status": "completed",
+            "conclusion": "failure",
+            "head_branch": "main",
+            "run_started_at": None,
+        }
+    ]
+    diag = await client._diagnose_billing_failure(runs, "org/repo")
+    assert diag is not None
+    assert "public" in diag.lower()
+    assert "billing is not the issue" in diag.lower()
+    assert "reusable workflow" in diag.lower()
     assert "never started" in diag.lower()
 
 

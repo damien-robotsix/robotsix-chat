@@ -93,11 +93,16 @@ and inputs with the user in-chat.
 Fetch recent workflow runs and diagnose common CI failure patterns. This is a read-only agent tool
 (no HTTP endpoint) that inspects workflow runs and detects known failure signatures.
 
-In particular, it detects **private-repo billing failures** — runs that complete with
+In particular, it detects **workflow infrastructure failures** — runs that complete with
 `conclusion: "failure"` but have zero jobs, or runs that never started (`run_started_at` is null).
-Before attributing the failure to billing, it cross-checks whether other workflow runs on the same
-commit completed successfully — if they did, the root cause is likely a trigger configuration
-mismatch (e.g. a workflow that only triggers on `push` to `main`, not on `pull_request`).
+The diagnosis is tailored to the repository's visibility:
+
+- **Public repos:** billing is never the cause (GitHub Actions is free for public repos). The
+  diagnosis focuses on trigger configuration mismatches, missing reusable workflow files, and
+  input-contract mismatches (e.g. a required `workflow_call` input not provided).
+- **Private repos:** billing may be the cause, but the tool cross-checks whether other workflow
+  runs on the same commit completed successfully — if they did, the root cause is likely a trigger
+  configuration mismatch rather than a billing issue (billing would block all workflows).
 
 **Read-only.** Does not modify any repository state. No confirmation gating — safe to call anytime
 to investigate a CI failure.

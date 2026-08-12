@@ -266,6 +266,10 @@ async def test_check_workflow_run_detects_never_started_run(
             ]
         }
     )
+    # Mock repo visibility check → private repo
+    respx_mock.get(
+        url=f"{dr.github_api_base_url}/repos/damien-robotsix/test-repo"
+    ).respond(json={"private": True})
 
     tools = build_github_actions_tools(_actions_settings(), dr)
     check_run = tools[2]
@@ -380,7 +384,7 @@ async def test_check_workflow_run_specific_run_with_jobs(
 async def test_check_workflow_run_specific_run_no_jobs(
     respx_mock: respx.MockRouter,
 ) -> None:
-    """Specific run_id with zero jobs → billing diagnostic."""
+    """Specific run_id with zero jobs → billing diagnostic (private repo)."""
     dr = _direct_repo_settings()
 
     respx_mock.get(
@@ -392,12 +396,48 @@ async def test_check_workflow_run_specific_run_no_jobs(
             "/actions/runs/99/jobs"
         )
     ).respond(json={"jobs": []})
+    # Mock repo visibility check → private repo
+    respx_mock.get(
+        url=f"{dr.github_api_base_url}/repos/damien-robotsix/test-repo"
+    ).respond(json={"private": True})
 
     tools = build_github_actions_tools(_actions_settings(), dr)
     check_run = tools[2]
 
     result = await check_run("test-repo", run_id=99)
     assert "billing" in result.lower()
+    assert "99" in result
+    assert "no jobs" in result.lower()
+
+
+@pytest.mark.asyncio
+async def test_check_workflow_run_specific_run_no_jobs_public_repo(
+    respx_mock: respx.MockRouter,
+) -> None:
+    """Specific run_id with zero jobs on a public repo → no billing mention."""
+    dr = _direct_repo_settings()
+
+    respx_mock.get(
+        url__startswith=f"{dr.github_api_base_url}/installation/repositories"
+    ).respond(json={"repositories": [{"full_name": "damien-robotsix/test-repo"}]})
+    respx_mock.get(
+        url__startswith=(
+            f"{dr.github_api_base_url}/repos/damien-robotsix/test-repo"
+            "/actions/runs/99/jobs"
+        )
+    ).respond(json={"jobs": []})
+    # Mock repo visibility check → public repo
+    respx_mock.get(
+        url=f"{dr.github_api_base_url}/repos/damien-robotsix/test-repo"
+    ).respond(json={"private": False})
+
+    tools = build_github_actions_tools(_actions_settings(), dr)
+    check_run = tools[2]
+
+    result = await check_run("test-repo", run_id=99)
+    assert "public" in result.lower()
+    assert "billing is not the issue" in result.lower()
+    assert "reusable workflow" in result.lower()
     assert "99" in result
     assert "no jobs" in result.lower()
 

@@ -626,6 +626,24 @@ class ActionsClient:
         except Exception as exc:
             return f"Error setting secret: {exc}"
 
+    # -- repo visibility ---------------------------------------------------
+
+    async def check_repo_visibility(self, repo_full_name: str) -> bool | None:
+        """Return ``True`` when *repo_full_name* is private, ``False`` when public.
+
+        Calls ``GET /repos/{owner}/{repo}`` and reads the ``private`` field.
+        Returns ``None`` on any error (logged at DEBUG level).
+        """
+        try:
+            repo = await self._client._get_json(f"/repos/{repo_full_name}")
+        except Exception:
+            logger.debug(
+                "check_repo_visibility: could not fetch repo metadata for %s",
+                repo_full_name,
+            )
+            return None
+        return bool(repo.get("private", False))
+
     # -- zero-job workflow detection ---------------------------------------
 
     async def check_latest_run_for_zero_jobs(
@@ -676,14 +694,31 @@ class ActionsClient:
             return None
 
         run_name = latest.get("name", str(run_id))
-        return (
-            f"CI INFRASTRUCTURE FAILURE: workflow run '{run_name}' "
-            f"(id {run_id}) on {repo_full_name} branch '{branch}' "
-            f"has ZERO jobs — the CI workflow is not executing any jobs. "
-            f"This typically indicates a workflow configuration error "
-            f"(wrong trigger, invalid conditional) or a billing issue. "
-            f"PRs on this branch are not receiving CI coverage."
-        )
+
+        is_private = await self.check_repo_visibility(repo_full_name)
+        if is_private is True:
+            return (
+                f"CI INFRASTRUCTURE FAILURE: workflow run '{run_name}' "
+                f"(id {run_id}) on {repo_full_name} branch '{branch}' "
+                f"has ZERO jobs — the CI workflow is not executing any jobs. "
+                f"This typically indicates a workflow configuration error "
+                f"(wrong trigger, invalid conditional), a billing issue, "
+                f"or a missing reusable workflow file. "
+                f"PRs on this branch are not receiving CI coverage."
+            )
+        else:
+            return (
+                f"CI INFRASTRUCTURE FAILURE: workflow run '{run_name}' "
+                f"(id {run_id}) on {repo_full_name} branch '{branch}' "
+                f"has ZERO jobs — the CI workflow is not executing any jobs. "
+                f"Since {repo_full_name} is a public repository, billing "
+                f"is not the issue.  The likely causes are a workflow "
+                f"configuration error (wrong trigger, invalid conditional), "
+                f"a missing reusable workflow file, or an input-contract "
+                f"mismatch (e.g. a required ``workflow_call`` input not "
+                f"provided by the caller). "
+                f"PRs on this branch are not receiving CI coverage."
+            )
 
     # -- billing failure diagnosis -----------------------------------------
 
@@ -728,17 +763,25 @@ class ActionsClient:
         runs: list[dict[str, Any]],
         repo_full_name: str,
     ) -> str | None:
-        """Inspect recent workflow runs for a private-repo billing failure.
+        """Inspect recent workflow runs for a workflow infrastructure failure.
 
         Heuristic: a run whose ``run_started_at`` is ``null`` (never started)
-        strongly suggests the repo has no GitHub Actions billing enabled.
+        strongly suggests the repo has a workflow configuration or
+        infrastructure problem (billing, trigger config, missing reusable
+        workflow, etc.).  The diagnosis is tailored to whether the repo is
+        public or private.
 
-        **Cross-check:** before returning a billing diagnosis, this method
-        checks whether *other* workflow runs on the same commit completed
+        **Cross-check:** before returning a diagnosis, this method checks
+        whether *other* workflow runs on the same commit completed
         successfully.  If they did, the root cause is likely a trigger
         configuration mismatch (e.g. a workflow that only triggers on
         ``push`` to ``main``, not on ``pull_request``) rather than a
         billing issue — billing would block all workflows, not just one.
+
+        **Public-repo awareness:** for public repositories, billing is
+        never the cause (GitHub Actions is free for public repos).  The
+        diagnosis focuses on trigger misconfigurations, missing reusable
+        workflow files, and input-contract mismatches instead.
 
         Note: zero-job detection is NOT attempted here because the
         ``/actions/runs`` endpoint does not include per-job run data.
@@ -764,6 +807,8 @@ class ActionsClient:
                 else:
                     other_succeeded = False
 
+                is_private = await self.check_repo_visibility(repo_full_name)
+
                 if other_succeeded:
                     return (
                         f"Workflow run '{run_name}' (id {run_id}) for "
@@ -777,13 +822,38 @@ class ActionsClient:
                         f"Check the workflow's ``on:`` trigger in the "
                         f"``.github/workflows/`` directory."
                     )
-                return (
-                    f"Workflow run '{run_name}' (id {run_id}) for "
-                    f"{run.get('head_branch', '?')} never started — "
-                    f"this is typical of a private repository with no "
-                    f"GitHub Actions billing. "
-                    f"Enable Actions in the repo's "
-                    f"Settings > Actions > General, "
-                    f"or add billing at the organisation level."
-                )
+
+                if is_private is True:
+                    return (
+                        f"Workflow run '{run_name}' (id {run_id}) for "
+                        f"{run.get('head_branch', '?')} never started — "
+                        f"this is typical of a private repository with no "
+                        f"GitHub Actions billing. "
+                        f"Enable Actions in the repo's "
+                        f"Settings > Actions > General, "
+                        f"or add billing at the organisation level."
+                    )
+                elif is_private is False:
+                    return (
+                        f"Workflow run '{run_name}' (id {run_id}) for "
+                        f"{run.get('head_branch', '?')} never started. "
+                        f"{repo_full_name} is a public repository, so "
+                        f"billing is not the issue.  The likely causes "
+                        f"are a missing reusable workflow file "
+                        f"(``.github/workflows/``), an input-contract "
+                        f"mismatch (e.g. a required ``workflow_call`` "
+                        f"input not provided), or an invalid conditional "
+                        f"in the workflow's ``on:`` trigger."
+                    )
+                else:
+                    return (
+                        f"Workflow run '{run_name}' (id {run_id}) for "
+                        f"{run.get('head_branch', '?')} never started — "
+                        f"this may indicate that GitHub Actions billing "
+                        f"is not enabled for this private repository, or "
+                        f"a trigger configuration mismatch, or a missing "
+                        f"reusable workflow file.  Check the workflow's "
+                        f"``on:`` trigger in ``.github/workflows/`` and "
+                        f"verify billing at Settings > Actions > General."
+                    )
         return None
