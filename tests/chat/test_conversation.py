@@ -816,6 +816,40 @@ def test_list_autonomous_sessions_merges_per_preset_subscopes() -> None:
     assert [s["session_id"] for s in mail_sessions] == ["auto-mail"]
 
 
+def test_list_autonomous_sessions_default_creates_only_bootstrap() -> None:
+    """The UI's default query lazily creates the bootstrap owner only.
+
+    ``list_sessions("autonomous")`` defaults to ``create_default=True`` (the
+    real UI query).  Only the bootstrap ``autonomous`` owner is eligible for
+    lazy default creation; per-preset ``autonomous:*`` sub-scopes are owned by
+    the runner and must never be fabricated on read.  This guards against a
+    regression where a merged-list query materialises an empty, un-closable
+    "New chat" husk for every preset that has not actually run.
+    """
+    clock = _FakeWallClock()
+    store = _store(wall_clock=clock)
+
+    store.register_session("autonomous:mail-check", "auto-mail", make_active=True)
+    clock.advance(1.0)
+
+    sessions, active = store.list_sessions("autonomous")  # create_default=True
+
+    # The bootstrap owner was lazily created and reported active ...
+    assert active not in ("", "auto-mail")
+    # ... and the merged list is exactly the lazily-created bootstrap session
+    # plus the pre-existing sub-scope session — no per-preset husk appears.
+    assert [s["session_id"] for s in sessions] == [active, "auto-mail"]
+
+    # The sub-scope that already existed is untouched (still exactly one
+    # session), and a sub-scope that has never run is not created by the read.
+    mail_sessions, _ = store.list_sessions(
+        "autonomous:mail-check", create_default=False
+    )
+    assert [s["session_id"] for s in mail_sessions] == ["auto-mail"]
+    never_ran, _ = store.list_sessions("autonomous:never-ran", create_default=False)
+    assert never_ran == []
+
+
 def test_load_folds_legacy_per_browser_owners_into_one_pool() -> None:
     """Persisted per-browser owners are merged on load, not dropped.
 
