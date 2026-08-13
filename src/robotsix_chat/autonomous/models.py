@@ -30,3 +30,9 @@ class AutonomousSession:
     recent_user_messages: list[str] | None = None
     definition_name: str = ""
     """Name of the session definition that spawned this session."""
+    last_board_digest: str = ""
+    """SHA-256 digest of the board content seen on the previous run.
+
+    Used on restart/resumption to detect that the board state is unchanged
+    and avoid re-running the board content check + emitting a duplicate
+    digest.  Empty on a fresh session (no prior snapshot yet)."""

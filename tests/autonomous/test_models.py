@@ -32,6 +32,7 @@ class TestAutonomousSession:
         assert aq.plan_text == ""
         assert aq.auto_turn_count == 0
         assert aq.rejected_subjects is None
+        assert aq.last_board_digest == ""
 
     def test_custom_state(self) -> None:
         """All fields accept explicit values."""
@@ -41,7 +42,9 @@ class TestAutonomousSession:
             state=AutonomousState.executing,
             plan_text="a plan",
             auto_turn_count=5,
+            last_board_digest="abc123",
         )
         assert aq.state is AutonomousState.executing
         assert aq.plan_text == "a plan"
         assert aq.auto_turn_count == 5
+        assert aq.last_board_digest == "abc123"
