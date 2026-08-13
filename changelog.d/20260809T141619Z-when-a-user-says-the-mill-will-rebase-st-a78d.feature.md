@@ -1,1 +1,0 @@
-Added a "Delegated-action preferences" rule to the system prompt: when the user explicitly delegates a class of action to an automated system (the mill, CI, a pipeline, etc.), the assistant records that delegation as a standing preference and stops offering manual interventions for that class (rebase, update-branch, re-run, etc.) until the user explicitly reverses it.
