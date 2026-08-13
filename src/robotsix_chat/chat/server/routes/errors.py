@@ -53,9 +53,10 @@ _STREAM_ERROR_MESSAGES: dict[str, str] = {
 def stream_error_code(exc: BaseException) -> str:
     """Map ``exc`` to a stable, client-safe error code.
 
-    Categories are derived from transport-level facts only (timeout, HTTP
-    status on an attached response). Anything unrecognised degrades to
-    ``server_error`` rather than guessing.
+    Categories are derived from transport-level facts (timeout, HTTP status on
+    an attached response) plus one semantic classifier — a Claude SDK tier
+    reporting exhausted usage credits maps to ``budget_exhausted``. Anything
+    unrecognised degrades to ``server_error`` rather than guessing.
     """
     if is_claude_sdk_usage_exhausted(exc):
         return STREAM_ERROR_BUDGET_EXHAUSTED

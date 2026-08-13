@@ -103,6 +103,10 @@ class Settings(BaseModel):
             it is a bounded extraction task, not open-ended reasoning —
             reusing the main agent's (often much pricier) level here would
             burn a full-capability call on every single turn.
+        llmio_task_budget_tokens: Optional advisory per-task token budget
+            forwarded to the keyless Claude SDK tiers as ``task_budget`` so
+            the model sees a live budget-remaining countdown. ``None``
+            (default) sends no budget.
         agent_instruction: System instruction handed to the LLM agent.
             Includes guidance on spawning subsessions for background work.
         server_host: Host address the chat SSE server binds to.
@@ -149,6 +153,19 @@ class Settings(BaseModel):
         default=None, json_schema_extra={"advanced": True}
     )
     summary_model_level: int = Field(default=1, json_schema_extra={"advanced": True})
+    llmio_task_budget_tokens: int | None = Field(
+        default=None,
+        json_schema_extra={"advanced": True},
+        description=(
+            "Optional advisory per-task token budget forwarded to the keyless "
+            "Claude SDK tiers as ``task_budget`` — the countdown the model "
+            "reads so it can pace itself and wrap up gracefully instead of "
+            "being cut off mid-task. Minimum 20000 (the Claude Agent SDK "
+            "floor); values below it are ignored with a warning. Not "
+            "forwarded to keyed OpenRouter tiers, which keep their own "
+            "per-response ``max_tokens`` caps. ``None`` means no budget."
+        ),
+    )
     agent_instruction: str = Field(
         default=(
             "You are a helpful assistant. "
