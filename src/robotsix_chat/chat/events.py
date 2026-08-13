@@ -365,7 +365,7 @@ def autonomous_state_frame(
         {
             "type": "autonomous_state",
             "session_id": <str>,
-            "state": <"planning|proposal|executing|completed">,
+            "state": <"executing|completed">,
             "plan_text": <str>,
             "auto_turn_count": <int>,
             "max_auto_turns": <int>,

@@ -329,8 +329,8 @@ async def config_get_endpoint(request: Request) -> JSONResponse:
     The on-disk data is overlaid onto the full :class:`Settings` model
     defaults — every schema key (including newly-added fields like
     ``autonomous.sessions``) appears in the response even when absent from
-    the persisted config file.  Legacy keys are migrated during
-    validation (e.g. ``approval_marker`` → ``proposal_marker``).
+    the persisted config file.  Legacy keys are stripped during
+    validation (e.g. ``approval_marker`` / ``proposal_marker``).
 
     ``GET /config`` — no auth (gateway handles it).
     """
@@ -346,8 +346,8 @@ async def config_get_endpoint(request: Request) -> JSONResponse:
     defaults = Settings().model_dump(mode="json")
     merged = _deep_merge(defaults, data)
 
-    # Validate through Settings to trigger migration of legacy keys
-    # (approval_marker → proposal_marker) and strip unknown fields.
+    # Validate through Settings to trigger stripping of legacy keys
+    # (approval_marker / proposal_marker) and unknown fields.
     # On failure, fall back to the unvalidated merge — the UI can still
     # render what we have while the operator addresses validation errors.
     try:

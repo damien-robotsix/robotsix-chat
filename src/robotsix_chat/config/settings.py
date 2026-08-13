@@ -1522,12 +1522,11 @@ class Settings(BaseModel):
     @model_validator(mode="before")
     @classmethod
     def _migrate_legacy_keys(cls, data: Any) -> Any:
-        """Rename legacy config keys to their current names.
+        """Strip legacy config keys that no longer exist in the schema.
 
-        Handles:
-        - ``autonomous.approval_marker`` → ``autonomous.proposal_marker``
-
-        Also strips unknown keys from the ``autonomous`` sub-dict so
+        Removes ``autonomous.approval_marker`` and
+        ``autonomous.proposal_marker`` (the proposal handshake was removed)
+        and any other unknown keys from the ``autonomous`` sub-dict so
         ``extra="forbid"`` validation on :class:`AutonomousSettings`
         doesn't permanently brick saves on configs written by older
         versions.
@@ -1539,18 +1538,7 @@ class Settings(BaseModel):
 
         autonomous = data.get("autonomous")
         if isinstance(autonomous, dict):
-            # approval_marker was renamed to proposal_marker.
-            # Always overwrite — the file value (from a legacy key)
-            # takes precedence over any default already present.
-            if "approval_marker" in autonomous:
-                autonomous["proposal_marker"] = autonomous["approval_marker"]
-                logger.info(
-                    "Migrated legacy key autonomous.approval_marker → "
-                    "autonomous.proposal_marker (value preserved)"
-                )
-                del autonomous["approval_marker"]
-
-            # Strip unknown keys so extra="forbid" passes
+            # Strip unknown keys so extra="forbid" passes.
             known_auto = set(AutonomousSettings.model_fields.keys())
             for key in sorted(set(autonomous.keys()) - known_auto):
                 logger.info(

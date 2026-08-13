@@ -136,50 +136,6 @@ _REACT_PROMPT_TEMPLATE = (
     "identifiers through to the user."
 )
 
-# Template used when the main chat session has an active autonomous plan
-# (proposal awaiting approval or execution in progress).  The agent must
-# acknowledge the subsession outcome WITHOUT requesting re-approval or
-# abandoning the plan.
-_REACT_PROMPT_ACTIVE_PLAN_TEMPLATE = (
-    "[System notice] Subsession {sub_id} ({kind}) '{title}' {reason} while "
-    "you were {autonomous_state_phrase}.\n\n"
-    "Your current plan:\n{plan_text}\n\n"
-    "Outcome:\n{outcome}\n\n"
-    "You are {autonomous_state_phrase}.  Briefly acknowledge this "
-    "notification — incorporate any relevant information from it into your "
-    "work — but DO NOT re-request approval, restart planning, or abandon "
-    "your current plan.  If the outcome is not relevant to your current "
-    "task, acknowledge it in one sentence and move on.  This is a note, not "
-    "a blocker: stay on your plan and continue from where you left off.\n\n"
-    "FORMAT PROHIBITION: NEVER output patterns like 'kind=', 'status=', "
-    "'[N] kind=', 'Subsession summaries:', raw bullet enumerations of "
-    "subsession metadata, block IDs (hex strings like 'a3f2'), raw "
-    "internal identifiers (ticket IDs, run numbers, PR numbers, commit "
-    "hashes), state machine transitions, spawn counters, internal timeout "
-    "values, stack traces, or raw API fragments.  "
-    "These read as debug output — strip all internal detail before "
-    "presenting to the user.\n\n"
-    "CONSOLIDATION: Scan the conversation above for other subsession outcomes "
-    "you have acknowledged.  If ANY exist, you MUST synthesize ALL of them — "
-    "this new one PLUS the earlier ones — into ONE brief sentence.  Never "
-    "output a raw bullet list or enumeration of bracketed id/kind/status "
-    "metadata lines.\n\n"
-    "FILTERING RULE: Strip internal technical details (ticket IDs, run "
-    "numbers, PR numbers, commit hashes, block IDs, event numbers, state "
-    "machine transitions, spawn counters, raw API fragments) "
-    "from the outcome before incorporating it.  Extract only the MEANING — "
-    "what decision was reached, what action is needed.  When the reason is "
-    "'ticket_terminal' or 'completed', the tracking goal was FULFILLED "
-    "(the ticket reached its end state) — do not report this as if tracking "
-    "was interrupted.\n\n"
-    "ANTI-RE-EMISSION RULE: If the subsession outcome (table, rollup, "
-    "enumeration) was already presented to the user earlier in this "
-    "conversation, do not re-emit the full payload verbatim. Reply with "
-    "only the delta (what changed since the last presentation) or a "
-    "one-sentence synthesis — never re-list the full table, ticket IDs, "
-    "or enumeration that the user has already seen."
-)
-
 # Template used when multiple subsession outcomes are batched into a single
 # reaction turn.  The outcomes are pre-formatted by _react_batched() into
 # {outcomes_list} and the count is passed as {count}.
@@ -749,19 +705,14 @@ class ParentDelivery:
                         self._store.record_for_session(session_id, label, outcome)
                 return
 
-            # When the main session has an active autonomous plan (proposal
-            # or executing), degrade to individual _react_in_main_chat calls
-            # rather than using the batch template.  _react_in_main_chat
-            # already selects the correct active-plan prompt, and this
-            # avoids creating a duplicate batch-aware active-plan template.
-            # The batching window is an optimisation, not a correctness
-            # requirement — individual turns are safe and correct here.
+            # When the main session is an actively running autonomous
+            # session, degrade to individual _react_in_main_chat calls
+            # rather than using the batch template.  The batching window is
+            # an optimisation, not a correctness requirement — individual
+            # turns are safe and correct here.
             if self._autonomous_runner is not None:
                 aq = self._autonomous_runner.get_session(session_id)
-                if aq is not None and aq.state in (
-                    AutonomousState.proposal,
-                    AutonomousState.executing,
-                ):
+                if aq is not None and aq.state is AutonomousState.executing:
                     for info, outcome, reason, label in outcomes:
                         await self._react_in_main_chat(info, outcome, reason, label)
                     return
@@ -882,42 +833,13 @@ class ParentDelivery:
 
             reason_text = _REASON_PHRASES.get(reason, reason)
 
-            # When the main session has an active autonomous plan (awaiting
-            # approval or mid-execution), use the active-plan template so
-            # the agent acknowledges the subsession as a note and stays on
-            # task rather than dropping the plan and re-requesting approval.
-            autonomous_state_phrase: str | None = None
-            plan_text: str | None = None
-            if self._autonomous_runner is not None:
-                aq = self._autonomous_runner.get_session(session_id)
-                if aq is not None:
-                    if aq.state is AutonomousState.proposal:
-                        autonomous_state_phrase = (
-                            "waiting for operator approval of your proposed plan"
-                        )
-                        plan_text = aq.plan_text
-                    elif aq.state is AutonomousState.executing:
-                        autonomous_state_phrase = "executing your approved plan"
-                        plan_text = aq.plan_text
-
-            if autonomous_state_phrase is not None and plan_text:
-                prompt = _REACT_PROMPT_ACTIVE_PLAN_TEMPLATE.format(
-                    sub_id=info.id[:8],
-                    kind=info.kind.value,
-                    title=info.title,
-                    reason=reason_text,
-                    autonomous_state_phrase=autonomous_state_phrase,
-                    plan_text=plan_text,
-                    outcome=outcome,
-                )
-            else:
-                prompt = _REACT_PROMPT_TEMPLATE.format(
-                    sub_id=info.id[:8],
-                    kind=info.kind.value,
-                    title=info.title,
-                    reason=reason_text,
-                    outcome=outcome,
-                )
+            prompt = _REACT_PROMPT_TEMPLATE.format(
+                sub_id=info.id[:8],
+                kind=info.kind.value,
+                title=info.title,
+                reason=reason_text,
+                outcome=outcome,
+            )
             async with self._run_serializer.for_owner(session_id):
                 history = self._store.history(session_id)
                 try:

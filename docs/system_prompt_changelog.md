@@ -2120,8 +2120,27 @@ Governed artifact: `build_autonomous_instruction()` in
 `src/robotsix_chat/autonomous/prompts.py`. Version stamp: `AUTONOMOUS_PROMPT_VERSION` in the same module.
 
 The hash is computed on the output of `build_autonomous_instruction(Settings())` — i.e. with all
-autonomous settings at their pydantic field defaults (``proposal_marker="---PROPOSAL READY---"``,
-``completion_marker="---AUTONOMOUS COMPLETE---"``, ``stale_monitor_runs_before_completion=3``).
+autonomous settings at their pydantic field defaults
+(``completion_marker="---AUTONOMOUS COMPLETE---"``,
+``stale_monitor_runs_before_completion=3``).
+
+## AUTONOMOUS v22 — 2026-08-16 — autonomous-sessions-should-run-as-normal-2694
+
+**Summary:** Remove the proposal/approval handshake from the autonomous
+protocol.  The agent no longer emits `---PROPOSAL READY---` and waits for
+operator approval after drafting a plan.  Instead it plans, then begins
+executing immediately, and works autonomously until it emits the completion
+marker.  If it hits a blocker it surfaces it in a normal message and
+continues with the actionable parts of the plan.  The session now closes
+automatically on completion (the configured trigger starts the next one),
+rather than staying open for the operator to close.
+
+**Rationale:** The operator wants autonomous sessions to be ordinary chat
+sessions that start automatically and run to completion — plan/approval
+behaviour, if any, should come from the session's own prompt, not a bespoke
+proposal state machine in the runner.
+
+**SHA256:** `05b91d11723befaba56ebfc13e00900148271f33a5a69903bb58579b9a2286bd`
 
 ## AUTONOMOUS v21 — 2026-08-13 — monitor-terminal-state-and-consolidation
 

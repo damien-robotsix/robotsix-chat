@@ -558,8 +558,10 @@ not an alternative route: that lands on the SSO login page.
 
 ### Autonomous
 
-Autonomous sessions that pick a subject, draft a plan for operator review, then execute after the
-operator comments. Sessions stay open after completion — the operator must explicitly close them.
+Autonomous sessions are ordinary chat sessions that start automatically from their configured
+trigger and run their configured prompt to completion, closing on the completion marker. There is
+no proposal/approval handshake — plan/approval behaviour, if any, comes from the session's own
+prompt.
 
 Session presets in `autonomous.sessions` are the **sole enablement model** — a preset that exists
 and is enabled IS the enablement. There is no separate master switch. When the sessions list is
@@ -567,10 +569,9 @@ empty, no autonomous sessions run.
 
 | JSON key                                          | Type      | Default                       | Description                                                                                                                                                                                                                         |
 | ------------------------------------------------- | --------- | ----------------------------- | ----------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- |
-| `autonomous.proposal_marker`                      | `string`  | `"---PROPOSAL READY---"`      | Marker string the agent emits after drafting a plan to signal it is ready for operator review. The session enters the `proposal` state.                                                                                             |
-| `autonomous.completion_marker`                    | `string`  | `"---AUTONOMOUS COMPLETE---"` | Marker string the agent emits when the plan is complete. The session stays open after completion.                                                                                                                                   |
+| `autonomous.completion_marker`                    | `string`  | `"---AUTONOMOUS COMPLETE---"` | Marker string the agent emits when the run is complete. The session closes automatically on completion.                                                                                                                             |
 | `autonomous.continue_interval_seconds`            | `number`  | `45.0`                        | Minimum pacing interval (seconds) between auto-continue loop iterations.                                                                                                                                                            |
-| `autonomous.max_idle_auto_turns`                  | `integer` | `5`                           | Maximum number of consecutive NO_CHANGE / idle auto-continue turns before the loop halts (reverts to `proposal`). Set to `0` to disable the idle cap and only rely on per-preset `max_auto_turns`.                                  |
+| `autonomous.max_idle_auto_turns`                  | `integer` | `5`                           | Maximum number of consecutive NO_CHANGE / idle auto-continue turns before the loop halts (session closes). Set to `0` to disable the idle cap and only rely on per-preset `max_auto_turns`.                                        |
 | `autonomous.stale_monitor_runs_before_completion` | `integer` | `3`                           | Number of consecutive `NO_CHANGE` cycles after which a periodic monitor is considered "stale" — the agent may declare the autonomous session complete even while the monitor is still running. Monitors continue in the background. |
 | `autonomous.sessions`                             | `array`   | `[]`                          | List of named autonomous session definitions (see below). An empty list means no autonomous sessions run.                                                                                                                           |
 
@@ -579,10 +580,10 @@ Each entry in `autonomous.sessions` is an `AutonomousSessionDefinition` object:
 | JSON key                       | Type      | Default      | Description                                                                                                                                                              |
 | ------------------------------ | --------- | ------------ | ------------------------------------------------------------------------------------------------------------------------------------------------------------------------ |
 | `name`                         | `string`  | *(required)* | Unique identifier for this session definition.                                                                                                                           |
-| `prompt`                       | `string`  | `""`         | Custom kickoff prompt. When empty, the standard "Pick a subject and draft a plan" prompt is used.                                                                        |
+| `prompt`                       | `string`  | `""`         | Custom kickoff prompt. When empty, the standard "Begin a new autonomous session and work it to completion" prompt is used.                                               |
 | `trigger_type`                 | `string`  | `"periodic"` | Restart strategy: `"periodic"` (wait `trigger_interval_seconds`) or `"on_close"` (continuous mode).                                                                      |
 | `trigger_interval_seconds`     | `number`  | `45.0`       | Delay between completion and restart for `"periodic"` trigger. Ignored for `"on_close"`.                                                                                 |
-| `max_auto_turns`               | `integer` | `20`         | Maximum automatic agent turns during the execution phase before reverting to `proposal`.                                                                                 |
+| `max_auto_turns`               | `integer` | `20`         | Maximum automatic agent turns during the run before the session closes.                                                                                                  |
 | `enabled`                      | `boolean` | `true`       | When `false`, the definition is skipped — no session is created for it.                                                                                                  |
 | `self_refine`                  | `boolean` | `false`      | When `true`, after each run completes an LLM refinement step proposes an updated prompt addendum that folds in the run's feedback. The next run uses the refined prompt. |
 | `self_refine_require_approval` | `boolean` | `false`      | When `true`, refinements enter `pending` state and require operator approval before they take effect. When `false`, refinements are auto-accepted.                       |

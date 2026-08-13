@@ -210,7 +210,6 @@ async def test_auto_continue_suppressed_for_active_periodic_subsession(
     settings.autonomous.max_auto_turns = 20
     settings.autonomous.continue_interval_seconds = 0
     settings.autonomous.pending_subsession_wait_timeout = 0
-    settings.autonomous.proposal_marker = "[APPROVAL]"
     settings.autonomous.completion_marker = "[COMPLETE]"
     settings.autonomous.auto_approve = False
     settings.autonomous.max_idle_auto_turns = 0
@@ -222,7 +221,7 @@ async def test_auto_continue_suppressed_for_active_periodic_subsession(
     agent = MagicMock()
 
     async def _stream(*args, **kwargs):
-        yield "[APPROVAL]"  # exit loop via proposal marker
+        yield "[COMPLETE]"  # exit loop via completion marker
         return
 
     agent.stream.side_effect = _stream
@@ -246,7 +245,6 @@ async def test_auto_continue_suppressed_for_active_periodic_subsession(
     )
     aq = runner.create_session("owner1", schedule_kickoff=False)
     aq.state = AutonomousState.executing
-    aq.plan_text = "plan"
     aq.auto_turn_count = 2  # non-zero so throttle gate + suppression apply
     runner._save_sessions = MagicMock()
 

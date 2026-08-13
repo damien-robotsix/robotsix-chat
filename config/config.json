@@ -229,7 +229,6 @@
     "dedup_window_seconds": 60.0
   },
   "autonomous": {
-    "proposal_marker": "---PROPOSAL READY---",
     "completion_marker": "---AUTONOMOUS COMPLETE---",
     "max_idle_auto_turns": 5,
     "continue_interval_seconds": 45.0,
