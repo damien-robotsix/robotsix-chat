@@ -3,6 +3,28 @@
 Governed artifact: `Settings.agent_instruction` default literal in
 `src/robotsix_chat/config/settings.py`. Version stamp: `SYSTEM_PROMPT_VERSION` in the same module.
 
+## v111 — 2026-08-09 — improve-detection-of-reusable-workflow-i-63ba
+
+**Summary:** Add a "Reusable-workflow startup_failure" shortcut to the
+Troubleshooting guidance.  When a GitHub Actions reusable-workflow call fails
+at startup, and ALL callers pinned to the same reusable-workflow commit SHA
+fail while callers pinned to a different SHA succeed, the cause is almost
+always an input-contract mismatch at that SHA.  Diff each failing caller's
+`with:` inputs against the `workflow_call:` inputs declared at the pinned SHA
+and, if a caller passes an input that is not declared (e.g. `sync-args`), flag
+that unknown input immediately and stop — before any multi-step file reading.
+
+**Rationale:** Session 2dfb02c32d044c24bbb49ccaebf590f6 saw the assistant spend
+many tool calls diagnosing a robotsix-modules startup_failure — checking SHAs,
+listing files, comparing caller inputs to callee declarations — when the root
+cause was a simple input-contract mismatch (CI passed `sync-args`, which the
+pinned reusable workflow does not define).  The agent's tooling cannot see
+GitHub's startup_failure reason directly, so the "unknown input passed to a
+reusable workflow" pattern needs a fast heuristic that jumps straight to the
+caller-input-vs-workflow_call diff.
+
+**SHA256:** `9bc95410b33d235e93cc84d2865ae347c71411b52f3593701ddd07aeaf05af9b`
+
 ## v110 — 2026-08-11 — ensure-consistent-card-counts-across-ass-cfb9
 
 **Summary:** Add a "Batch-operation count reconciliation" bullet to the

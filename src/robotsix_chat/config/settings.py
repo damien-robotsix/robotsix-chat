@@ -68,7 +68,7 @@ class ConfigValidationError(ValueError):
 # Version stamp for the agent_instruction default literal.
 # Bump on every change to Settings.agent_instruction and update
 # docs/system_prompt_changelog.md with a new entry + SHA256.
-SYSTEM_PROMPT_VERSION = 110
+SYSTEM_PROMPT_VERSION = 111
 
 # Valid model levels, derived from llmio's tier enum (import-time constant so
 # the set is built once and can never drift from the tiers llmio ships).
@@ -1044,7 +1044,21 @@ class Settings(BaseModel):
             "port conflicts, or other speculative failure modes without "
             "first checking the actual system configuration — checking "
             "first prevents fabricated guesses that waste back-and-forth "
-            "and erode trust."
+            "and erode trust.\n"
+            "– Reusable-workflow startup_failure: when a GitHub Actions "
+            "reusable-workflow call fails at startup, apply this fast "
+            "heuristic before any multi-step file reading. If ALL callers "
+            "pinned to the same reusable-workflow commit SHA fail at "
+            "startup while callers pinned to a different SHA succeed, the "
+            "cause is almost always an input-contract mismatch at that "
+            "SHA: diff each failing caller's `with:` inputs against the "
+            "`workflow_call:` inputs declared at the pinned SHA, and if a "
+            "caller passes an input that is not declared (e.g. "
+            "`sync-args`), flag that unknown input immediately and stop — "
+            "the fix is removing the undeclared input or pinning the caller "
+            "to the SHA that declares it. Do not spend turns checking SHAs, "
+            "listing files, or re-reading caller/callee declarations when "
+            "this one diff answers it.\n"
             "\n\n"
             "Verification:\n"
             "– When reporting the state of an external system (repository contents, "
