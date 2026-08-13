@@ -558,10 +558,10 @@ Periodic health-check settings. When enabled, a background scheduler runs every
 reachable and producing expected output: memory (cognee recall), knowledge store, feedback runner,
 and diagnostics store. Results are exposed via `GET /health` and logged.
 
-| JSON key                        | Type      | Default | Description                                                  |
-| ------------------------------- | --------- | ------- | ------------------------------------------------------------ |
-| `health.enabled`                | `boolean` | `true`  | Master switch. When `false`, no health checks run.           |
-| `health.check_interval_seconds` | `number`  | `300.0` | Seconds between scheduled health-check cycles. Must be >0.   |
+| JSON key                        | Type      | Default | Description                                                |
+| ------------------------------- | --------- | ------- | ---------------------------------------------------------- |
+| `health.enabled`                | `boolean` | `true`  | Master switch. When `false`, no health checks run.         |
+| `health.check_interval_seconds` | `number`  | `300.0` | Seconds between scheduled health-check cycles. Must be >0. |
 
 ### Gateway Route
 
