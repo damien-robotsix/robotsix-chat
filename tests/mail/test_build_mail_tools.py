@@ -319,6 +319,72 @@ async def test_archive_folders_success(respx_mock: respx.MockRouter) -> None:
     assert "Receipts" in result
 
 
+@pytest.mark.asyncio
+async def test_archive_folders_with_account(respx_mock: respx.MockRouter) -> None:
+    """GET /archive-folders?account=ROBOTSIX passes the account query param."""
+    route = respx_mock.get(
+        "http://127.0.0.1:8077/archive-folders?account=ROBOTSIX"
+    ).mock(
+        return_value=httpx.Response(
+            200,
+            text='{"delimiter": "/", "folders": ["INBOX/robotsix-mail-archive"]}',
+        )
+    )
+    tools = build_mail_tools(_settings())
+    list_folders = tools[6]
+
+    result = await list_folders("ROBOTSIX")
+
+    assert route.called
+    assert "INBOX/robotsix-mail-archive" in result
+
+
+@pytest.mark.asyncio
+async def test_archive_folders_with_include_unmapped(
+    respx_mock: respx.MockRouter,
+) -> None:
+    """GET /archive-folders?include_unmapped=true passes the flag."""
+    route = respx_mock.get(
+        "http://127.0.0.1:8077/archive-folders?include_unmapped=true"
+    ).mock(
+        return_value=httpx.Response(
+            200,
+            text='{"delimiter": "/", "folders": ["INBOX", "robotsix-mail-archive"]}',
+        )
+    )
+    tools = build_mail_tools(_settings())
+    list_folders = tools[6]
+
+    result = await list_folders(include_unmapped=True)
+
+    assert route.called
+    assert "INBOX" in result
+    assert "robotsix-mail-archive" in result
+
+
+@pytest.mark.asyncio
+async def test_archive_folders_with_account_and_include_unmapped(
+    respx_mock: respx.MockRouter,
+) -> None:
+    """GET /archive-folders combines account and include_unmapped params."""
+    route = respx_mock.get(
+        "http://127.0.0.1:8077/archive-folders?account=ROBOTSIX&include_unmapped=true"
+    ).mock(
+        return_value=httpx.Response(
+            200,
+            text='{"delimiter": "/", "folders": ["INBOX", "robotsix-mail-archive"]}',
+        )
+    )
+    tools = build_mail_tools(_settings())
+    list_folders = tools[6]
+
+    result = await list_folders("ROBOTSIX", include_unmapped=True)
+
+    assert route.called
+    assert "INBOX" in result
+    assert "robotsix-mail-archive" in result
+
+
 # ---------------------------------------------------------------------------
 # MailClient — archive_messages (GET /archive/<folder>/messages)
 # ---------------------------------------------------------------------------

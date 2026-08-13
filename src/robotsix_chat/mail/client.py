@@ -120,13 +120,31 @@ class MailClient:
         """
         return await self._post_form("/run-triage", "")
 
-    async def archive_folders(self) -> str:
+    async def archive_folders(
+        self,
+        account: str | None = None,
+        *,
+        include_unmapped: bool = False,
+    ) -> str:
         """Call ``GET /archive-folders`` and return the JSON body as text.
+
+        Args:
+            account: Optional IMAP account to list folders for.  When
+                omitted, the server lists folders for its default account.
+            include_unmapped: When ``True``, return every IMAP folder
+                (top-level folders and siblings of the archive root), not
+                just the subfolders under the resolved archive root.
 
         Returns a JSON object with ``delimiter`` and ``folders`` keys.
         Never raises — errors become a diagnostic string.
+
         """
-        return await self._get("/archive-folders")
+        params: dict[str, str] = {}
+        if account is not None:
+            params["account"] = account
+        if include_unmapped:
+            params["include_unmapped"] = "true"
+        return await self._get("/archive-folders", params=params)
 
     async def archive_messages(self, folder: str, limit: int | None = None) -> str:
         """Call ``GET /archive/<folder>/messages`` and return the JSON body as text.

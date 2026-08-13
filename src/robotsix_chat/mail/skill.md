@@ -46,7 +46,7 @@ covers every account the user asks about.
 | `get_mail_board`        | Full board content (columns + cards) as JSON; pass `account_id` to scope. |
 | `list_mail_accounts`    | List registered mail accounts and their `account_id` values.              |
 | `get_mail_email_status` | Triage column name for one email by message_id.                           |
-| `list_archive_folders`  | List all archive subfolders on the server.                                |
+| `list_archive_folders`  | List archive folders (optionally all IMAP folders).                       |
 | `browse_archive_folder` | List message envelope metadata in one archive subfolder.                  |
 
 ## Mutation tools
@@ -60,6 +60,17 @@ covers every account the user asks about.
 | `rename_archive_folder`         | Rename an archive subfolder in-place on the IMAP server.              |
 | `cleanup_empty_archive_folders` | Remove empty archive subfolders from the IMAP server.                 |
 | `delete_archive_folder`         | Delete a specific archive subfolder (empty-only unless `force=True`). |
+
+## Agent tool: `list_archive_folders`
+
+List archive folders on the IMAP server. By default this returns only subfolders under the
+configured archive root, which is what you need for ordinary browse/move work.
+
+To reconcile structural problems — a stray duplicate archive root, a folder sitting outside the
+configured root, or top-level IMAP folders — call it with `include_unmapped=True`. That returns
+every IMAP folder (top-level folders and siblings of the archive root), not just the resolved
+archive root's children. Pass `account="<name>"` to target a specific IMAP account; omit it for the
+server's default account.
 
 ## Agent tool: `move_archive_mail`
 
