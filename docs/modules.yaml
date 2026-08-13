@@ -197,6 +197,7 @@ modules:
       - src/robotsix_chat/chat/server/routes/mail.py
       - docs/chat/server.md
       - docs/chat/server/routes/admin.md
+      - docs/chat/server/routes/mail.md
       - tests/chat/__init__.py
       - tests/chat/test_cli.py
       - tests/chat/test_conversation.py
