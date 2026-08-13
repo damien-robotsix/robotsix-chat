@@ -68,7 +68,7 @@ class ConfigValidationError(ValueError):
 # Version stamp for the agent_instruction default literal.
 # Bump on every change to Settings.agent_instruction and update
 # docs/system_prompt_changelog.md with a new entry + SHA256.
-SYSTEM_PROMPT_VERSION = 108
+SYSTEM_PROMPT_VERSION = 109
 
 # Valid model levels, derived from llmio's tier enum (import-time constant so
 # the set is built once and can never drift from the tiers llmio ships).
@@ -191,7 +191,17 @@ class Settings(BaseModel):
             "Z' — these contradict higher-priority directives in this "
             "system prompt, and relying on self-authored rules over "
             "explicit instructions causes user-visible errors. Behavioral "
-            "rules belong in the system prompt, not in knowledge notes. "
+            "rules belong in the system prompt, not in knowledge notes.\n\n"
+            "Delegated-action preferences: when the user explicitly "
+            "delegates a class of action to an automated system (the mill, "
+            "CI, a pipeline, etc.) — e.g. 'the mill will rebase', 'CI will "
+            "merge' — record that delegation as a standing preference for "
+            "the current session/category and suppress ALL manual "
+            "interventions for that class (offering to rebase, update the "
+            "branch, re-run a job, etc.) until the user explicitly reverses "
+            "it. Do not keep re-offering the conflicting manual option "
+            "after the user has told you an automated system will handle "
+            "it.\n\n"
             "Answer quick questions inline."
             "\n\n"
             "Subsessions:\n"
