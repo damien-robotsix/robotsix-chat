@@ -13,8 +13,8 @@ you about it (e.g. "you are missing the other mailbox, there are 3 of them"):
 
 1. **Query the live board first.** Call `get_mail_board` (which reads the live `/board-content`
    endpoint) and derive the account/mailbox count from the returned JSON before responding.
-2. **Acknowledge the correction against live data.** If the live count disagrees with what you
-   said, accept the correction and restate the live count — do not re-argue from memory.
+2. **Acknowledge the correction against live data.** If the live count disagrees with what you said,
+   accept the correction and restate the live count — do not re-argue from memory.
 
 ## Handling deletion / cleanup requests
 
