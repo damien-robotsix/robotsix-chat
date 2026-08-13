@@ -113,7 +113,7 @@ def _bind_sdk_session(handle: Any, session_id: str, *, resuming: bool) -> None:
             opts.session_id = sdk_session
         return opts
 
-    handle._build_options = _build_with_session  # type: ignore[attr-defined]
+    handle._build_options = _build_with_session
 
 
 _SESSION_BIND_ERRORS = (
