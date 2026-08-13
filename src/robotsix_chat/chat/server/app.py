@@ -68,6 +68,7 @@ from robotsix_chat.selfreview import build_recent_activity_tools
 from robotsix_chat.sftp import build_sftp_tools
 from robotsix_chat.ticket_poll import (
     build_find_ticket_by_pr_tool,
+    build_mark_ticket_ready_tool,
     build_merge_pull_request_tool,
     build_prioritize_all_open_tickets_tool,
     build_ticket_poll_tools,
@@ -927,6 +928,9 @@ def _build_static_tools(
             *build_volume_tools(settings.volume_tools),
             *build_ticket_poll_tools(settings, component_request=component_request),
             *build_merge_pull_request_tool(
+                settings, component_request=component_request
+            ),
+            *build_mark_ticket_ready_tool(
                 settings, component_request=component_request
             ),
             *build_find_ticket_by_pr_tool(
