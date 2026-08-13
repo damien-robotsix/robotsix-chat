@@ -57,6 +57,7 @@ covers every account the user asks about.
 | `delete_mail_email`             | Permanently delete an email from the board.                           |
 | `archive_mail_email`            | Archive an email (mark as processed).                                 |
 | `run_mail_triage`               | Re-classify the inbox with the configured triage rules.               |
+| `rename_archive_folder`         | Rename an archive subfolder in-place on the IMAP server.              |
 | `cleanup_empty_archive_folders` | Remove empty archive subfolders from the IMAP server.                 |
 | `delete_archive_folder`         | Delete a specific archive subfolder (empty-only unless `force=True`). |
 
@@ -81,6 +82,30 @@ in the conversation — the operation modifies live IMAP state.
 | Condition                | Message                                       |
 | ------------------------ | --------------------------------------------- |
 | Mail not found in source | `message not found in source folder`          |
+| Folder path escapes root | `Folder path escapes archive root` (HTTP 400) |
+| IMAP unreachable         | `IMAP not configured for this account` (503)  |
+| Malformed JSON body      | `Malformed JSON body` (HTTP 400)              |
+
+## Agent tool: `rename_archive_folder`
+
+Rename an archive subfolder in-place on the IMAP server, preserving all messages. This is a single
+atomic IMAP operation — no message moves, no temporary folders, no risk of data loss.
+
+**This is a confirmation-gated mutation.** Before calling, state the current folder path and the
+target folder path in-chat and obtain explicit operator approval. Never rename a folder without the
+operator's explicit consent in the conversation — the operation modifies live IMAP state.
+
+### Preconditions
+
+- Both `old_path` and `new_path` must be under the archive root (enforced server-side).
+- The IMAP server must be reachable and authenticated.
+
+### Error responses
+
+| Condition                | Message                                       |
+| ------------------------ | --------------------------------------------- |
+| Old folder not found     | `folder not found`                            |
+| New path already exists  | `target folder already exists`                |
 | Folder path escapes root | `Folder path escapes archive root` (HTTP 400) |
 | IMAP unreachable         | `IMAP not configured for this account` (503)  |
 | Malformed JSON body      | `Malformed JSON body` (HTTP 400)              |

@@ -60,10 +60,10 @@ def test_build_mail_tools_disabled() -> None:
     assert build_mail_tools(MailSettings(enabled=False)) == []
 
 
-def test_build_mail_tools_returns_twelve_tools() -> None:
-    """Verify that enabled mail returns twelve discrete tools."""
+def test_build_mail_tools_returns_thirteen_tools() -> None:
+    """Verify that enabled mail returns thirteen discrete tools."""
     tools = build_mail_tools(_settings())
-    assert len(tools) == 12
+    assert len(tools) == 13
     names = [t.__name__ for t in tools]
     assert names == [
         "get_mail_board",
@@ -75,6 +75,7 @@ def test_build_mail_tools_returns_twelve_tools() -> None:
         "list_archive_folders",
         "browse_archive_folder",
         "move_archive_mail",
+        "rename_archive_folder",
         "cleanup_empty_archive_folders",
         "delete_archive_folder",
         "list_mail_accounts",
@@ -440,6 +441,44 @@ async def test_archive_move_create_folders_default(
 
 
 # ---------------------------------------------------------------------------
+# MailClient — archive_rename_folder (POST /archive-rename-folder)
+# ---------------------------------------------------------------------------
+
+
+@pytest.mark.asyncio
+async def test_archive_rename_folder_success(respx_mock: respx.MockRouter) -> None:
+    """POST /archive-rename-folder with JSON body returns success."""
+    route = respx_mock.post("http://127.0.0.1:8077/archive-rename-folder").mock(
+        return_value=httpx.Response(200, text='{"status": "renamed"}')
+    )
+    tools = build_mail_tools(_settings())
+    rename = tools[9]
+
+    result = await rename("Orders", "Commands")
+
+    assert route.called
+    body = route.calls.last.request.content.decode()
+    assert "Orders" in body
+    assert "Commands" in body
+    assert "renamed" in result
+
+
+@pytest.mark.asyncio
+async def test_archive_rename_folder_error(respx_mock: respx.MockRouter) -> None:
+    """POST /archive-rename-folder on 400 returns an error string."""
+    respx_mock.post("http://127.0.0.1:8077/archive-rename-folder").mock(
+        return_value=httpx.Response(400, text="target folder already exists")
+    )
+    tools = build_mail_tools(_settings())
+    rename = tools[9]
+
+    result = await rename("Orders", "Commands")
+
+    assert "Mail API error 400" in result
+    assert "target folder already exists" in result
+
+
+# ---------------------------------------------------------------------------
 # MailClient — archive_cleanup_empty (POST /archive-cleanup-empty)
 # ---------------------------------------------------------------------------
 
@@ -453,7 +492,7 @@ async def test_archive_cleanup_empty_success(respx_mock: respx.MockRouter) -> No
         )
     )
     tools = build_mail_tools(_settings())
-    cleanup = tools[9]
+    cleanup = tools[10]
 
     result = await cleanup()
 
@@ -469,7 +508,7 @@ async def test_archive_cleanup_empty_error(respx_mock: respx.MockRouter) -> None
         return_value=httpx.Response(500, text="IMAP not configured")
     )
     tools = build_mail_tools(_settings())
-    cleanup = tools[9]
+    cleanup = tools[10]
 
     result = await cleanup()
 
@@ -488,7 +527,7 @@ async def test_archive_delete_success(respx_mock: respx.MockRouter) -> None:
         return_value=httpx.Response(200, text='{"deleted": "Projects/Old"}')
     )
     tools = build_mail_tools(_settings())
-    delete_folder = tools[10]
+    delete_folder = tools[11]
 
     result = await delete_folder("Projects/Old")
 
@@ -506,7 +545,7 @@ async def test_archive_delete_force_true(respx_mock: respx.MockRouter) -> None:
         return_value=httpx.Response(200, text='{"deleted": "Projects/Old"}')
     )
     tools = build_mail_tools(_settings())
-    delete_folder = tools[10]
+    delete_folder = tools[11]
 
     result = await delete_folder("Projects/Old", force=True)
 
@@ -526,7 +565,7 @@ async def test_archive_delete_error(respx_mock: respx.MockRouter) -> None:
         )
     )
     tools = build_mail_tools(_settings())
-    delete_folder = tools[10]
+    delete_folder = tools[11]
 
     result = await delete_folder("Projects/NonEmpty")
 
@@ -540,7 +579,7 @@ async def test_archive_delete_client_side_path_escape(
 ) -> None:
     """Client-side path-escape rejects traversal before sending a request."""
     tools = build_mail_tools(_settings())
-    delete_folder = tools[10]
+    delete_folder = tools[11]
 
     # Absolute path
     result = await delete_folder("/etc/passwd")
@@ -574,7 +613,7 @@ async def test_list_accounts_success(respx_mock: respx.MockRouter) -> None:
         )
     )
     tools = build_mail_tools(_settings())
-    list_accounts = tools[11]
+    list_accounts = tools[12]
 
     result = await list_accounts()
 
@@ -589,7 +628,7 @@ async def test_list_accounts_error(respx_mock: respx.MockRouter) -> None:
         return_value=httpx.Response(500, text="Internal error")
     )
     tools = build_mail_tools(_settings())
-    list_accounts = tools[11]
+    list_accounts = tools[12]
 
     result = await list_accounts()
 

@@ -273,6 +273,40 @@ class MailClient:
             return result.error
         return result.text  # type: ignore[return-value]
 
+    async def archive_rename_folder(self, old_path: str, new_path: str) -> str:
+        """Call ``POST /archive-rename-folder`` with a JSON body.
+
+        Renames an archive subfolder in-place on the IMAP server,
+        preserving all messages.  This is a single atomic operation —
+        no message moves, no temporary folders, no risk of data loss.
+
+        Args:
+            old_path: The current archive subfolder path to rename.
+            new_path: The destination archive subfolder path.
+
+        Returns:
+            JSON success/error object as text.
+
+        Never raises — errors become a diagnostic string.
+
+        """
+        url = f"{self._base_url}/archive-rename-folder"
+        json_body: dict[str, object] = {
+            "old_path": old_path,
+            "new_path": new_path,
+        }
+        result = await safe_http_request(
+            "POST",
+            url,
+            headers=self._headers,
+            timeout=self._timeout,
+            json_body=json_body,
+            label="Mail API",
+        )
+        if result.error:
+            return result.error
+        return result.text  # type: ignore[return-value]
+
     # ------------------------------------------------------------------
     # Internal helpers
     # ------------------------------------------------------------------

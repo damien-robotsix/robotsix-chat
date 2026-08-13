@@ -213,6 +213,39 @@ def build_mail_tools(settings: MailSettings) -> list[Callable[..., Any]]:
         """
         return await client.archive_move(message_id, source_folder, target_subfolder)
 
+    async def rename_archive_folder(
+        old_path: str,
+        new_path: str,
+    ) -> str:
+        """Rename an archive subfolder in-place on the IMAP server.
+
+        **This is a confirmation-gated mutation.**  You MUST obtain
+        explicit operator approval before calling this function.  State:
+
+        * The current folder path to rename.
+        * The target folder path (the new name).
+
+        Wait for a clear confirmation reply (e.g. "yes", "proceed",
+        "go ahead") from the operator before proceeding.  Silently
+        renaming folders without consent is prohibited.
+
+        This is a single atomic IMAP operation — all messages in the
+        folder are preserved.  No message moves, no temporary folders,
+        no risk of data loss.
+
+        Args:
+            old_path: The current archive subfolder path to rename
+                (as listed by ``list_archive_folders``).
+            new_path: The destination archive subfolder path.
+
+        Returns:
+            JSON text with a success confirmation or error detail.
+
+        Never raises — errors become a diagnostic string.
+
+        """
+        return await client.archive_rename_folder(old_path, new_path)
+
     async def cleanup_empty_archive_folders() -> str:
         """Remove empty archive subfolders from the IMAP server.
 
@@ -287,6 +320,7 @@ def build_mail_tools(settings: MailSettings) -> list[Callable[..., Any]]:
         list_archive_folders,
         browse_archive_folder,
         move_archive_mail,
+        rename_archive_folder,
         cleanup_empty_archive_folders,
         delete_archive_folder,
         list_mail_accounts,
