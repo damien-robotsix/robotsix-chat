@@ -21,6 +21,8 @@ from starlette.responses import JSONResponse
 from robotsix_chat.config import MailSettings
 from robotsix_chat.mail.client import MailClient
 
+from .config import _read_config_json
+
 _EXPECTED_OVH_ARCHIVE_ROOT = "INBOX/robotsix-mail-archive"
 
 
@@ -40,13 +42,7 @@ def _load_mail_settings(request: Request) -> MailSettings:
     JSON dump would round-trip the API token through its masked form.
     """
     config_path = _resolve_mail_config_path(request)
-    data: dict[str, Any] = {}
-    if config_path.exists():
-        raw = config_path.read_text(encoding="utf-8")
-        if raw.strip():
-            loaded: Any = json.loads(raw)
-            if isinstance(loaded, dict):
-                data = loaded
+    data = _read_config_json(config_path)
 
     mail_data: Any = data.get("mail", {})
     if not isinstance(mail_data, dict):

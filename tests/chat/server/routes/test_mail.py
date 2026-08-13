@@ -99,6 +99,7 @@ def test_archive_root_check_returns_503_when_mail_disabled(
 
     assert resp.status_code == 503
     assert resp.json()["status"] == "error"
+    assert resp.json()["detail"] == "mail integration is disabled"
 
 
 def test_archive_root_check_returns_502_on_non_json_response(
@@ -120,3 +121,62 @@ def test_archive_root_check_returns_502_on_non_json_response(
 
     assert resp.status_code == 502
     assert resp.json()["status"] == "error"
+
+
+def test_archive_root_check_returns_503_on_malformed_config_json(
+    tmp_path: Path,
+) -> None:
+    """GET returns 503 when the on-disk config is not valid JSON."""
+    config_path = tmp_path / "config.json"
+    config_path.write_text("{not valid json", encoding="utf-8")
+    client = _make_app(str(config_path))
+
+    resp = client.get("/mail/archive-root-check")
+
+    assert resp.status_code == 503
+    assert resp.json()["status"] == "error"
+    assert "failed to load mail config" in resp.json()["detail"]
+
+
+def test_archive_root_check_returns_502_on_non_dict_payload(
+    tmp_path: Path, monkeypatch: pytest.MonkeyPatch
+) -> None:
+    """GET returns 502 when the mail server returns JSON that is not an object."""
+    config_path = _write_config(
+        tmp_path,
+        {"enabled": True, "api_base_url": "http://127.0.0.1:8077"},
+    )
+
+    async def _fake_archive_folders(self: MailClient) -> str:
+        return json.dumps(["not", "a", "dict"])
+
+    monkeypatch.setattr(MailClient, "archive_folders", _fake_archive_folders)
+
+    client = _make_app(config_path)
+    resp = client.get("/mail/archive-root-check")
+
+    assert resp.status_code == 502
+    assert resp.json()["status"] == "error"
+    assert resp.json()["detail"] == "mail server returned an unexpected response"
+
+
+def test_archive_root_check_returns_502_when_folders_is_not_a_list(
+    tmp_path: Path, monkeypatch: pytest.MonkeyPatch
+) -> None:
+    """GET returns 502 when the mail server's folders field is not a list."""
+    config_path = _write_config(
+        tmp_path,
+        {"enabled": True, "api_base_url": "http://127.0.0.1:8077"},
+    )
+
+    async def _fake_archive_folders(self: MailClient) -> str:
+        return json.dumps({"delimiter": "/", "folders": "not-a-list"})
+
+    monkeypatch.setattr(MailClient, "archive_folders", _fake_archive_folders)
+
+    client = _make_app(config_path)
+    resp = client.get("/mail/archive-root-check")
+
+    assert resp.status_code == 502
+    assert resp.json()["status"] == "error"
+    assert resp.json()["detail"] == "mail server response missing 'folders' list"
