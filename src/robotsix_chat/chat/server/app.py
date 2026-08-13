@@ -40,6 +40,10 @@ from robotsix_chat.docker_digest import (
     build_docker_digest_tools,
     load_docker_digest_skill,
 )
+from robotsix_chat.gateway_route import (
+    build_gateway_route_tools,
+    load_gateway_route_skill,
+)
 from robotsix_chat.http_probe import build_http_probe_tools, load_http_probe_skill
 from robotsix_chat.knowledge import build_knowledge_tools
 from robotsix_chat.langfuse import (
@@ -850,6 +854,7 @@ def _inject_skills(
         (settings.notification.enabled, "notification", load_notification_skill),
         (settings.http_probe.enabled, "http_probe", load_http_probe_skill),
         (settings.docker_digest.enabled, "docker_digest", load_docker_digest_skill),
+        (settings.gateway_route.enabled, "gateway_route", load_gateway_route_skill),
         (
             settings.continuation.enabled,
             "continuation",
@@ -935,6 +940,7 @@ def _build_static_tools(
             *build_render_url_tools(settings.render_url),
             *build_http_probe_tools(settings.http_probe, settings.central_deploy),
             *build_docker_digest_tools(settings.docker_digest),
+            *build_gateway_route_tools(settings.gateway_route, settings.central_deploy),
             *build_public_fetch_tools(settings.public_fetch, settings.central_deploy),
             *build_langfuse_inspect_tools(settings.langfuse_inspect, settings.langfuse),
             *build_sftp_tools(settings.sftp),
