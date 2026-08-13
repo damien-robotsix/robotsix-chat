@@ -105,7 +105,6 @@ async def sessions_list_endpoint(request: Request) -> JSONResponse:
                     s["autonomous_state"] = state.value
                 aq = runner.get_session(sid)
                 if aq is not None:
-                    s["autonomous_plan_text"] = aq.plan_text
                     s["autonomous_turn_count"] = aq.auto_turn_count
 
     # Resolve each session's effective model for the UI badge. ``model_level``

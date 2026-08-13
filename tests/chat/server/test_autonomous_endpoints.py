@@ -59,7 +59,6 @@ def autonomous_runner(store, tmp_path, monkeypatch) -> AutonomousRunner:
     # xdist workers or between tests sharing an event loop.
     monkeypatch.setattr(AutonomousRunner, "_schedule_background", MagicMock())
     settings = MagicMock()
-    settings.autonomous.proposal_marker = "---PROPOSAL READY---"
     settings.autonomous.completion_marker = "---AUTONOMOUS COMPLETE---"
     settings.autonomous.continue_interval_seconds = 45.0
     settings.autonomous.max_idle_auto_turns = 5
@@ -101,8 +100,8 @@ async def client(mock_agent, store, autonomous_runner):
         yield c
 
 
-class TestProposalMessageTriggersExecution:
-    """POST /chat triggers execution when autonomous session is in proposal state."""
+class TestChatAcceptsAutonomousMessages:
+    """POST /chat accepts messages for autonomous sessions in any state."""
 
     @pytest.fixture(autouse=True)
     def _mock_persistence(self, monkeypatch) -> None:
@@ -112,15 +111,15 @@ class TestProposalMessageTriggersExecution:
         )
 
     @pytest.mark.asyncio
-    async def test_chat_succeeds_when_proposal(
+    async def test_chat_succeeds_when_executing(
         self, client, autonomous_runner, store, mock_agent, owner_id
     ):
-        """Messages to a proposal session are accepted (triggers execution)."""
+        """Messages to an executing autonomous session are accepted."""
         sid = store.create_session(owner_id)["session_id"]
         aq = autonomous_runner.create_session(
             owner_id, session_id=sid, schedule_kickoff=False
         )
-        aq.state = AutonomousState.proposal
+        aq.state = AutonomousState.executing
         r = await client.post(
             "/chat",
             json={
@@ -129,7 +128,7 @@ class TestProposalMessageTriggersExecution:
                 "owner_id": owner_id,
             },
         )
-        assert r.status_code == 200  # proposal sessions accept messages
+        assert r.status_code == 200
 
     @pytest.mark.asyncio
     async def test_chat_allows_when_not_proposal(
@@ -199,8 +198,7 @@ class TestSessionsListAutonomousAnnotation:
         """GET /sessions returns 200 with autonomous annotations."""
         sid = store.create_session(owner_id)["session_id"]
         aq = autonomous_runner.create_session(owner_id, session_id=sid)
-        aq.state = AutonomousState.proposal
-        aq.plan_text = "Draft plan text"
+        aq.state = AutonomousState.executing
         aq.auto_turn_count = 3
 
         r = await client.get(f"/sessions?owner_id={owner_id}")
@@ -210,8 +208,7 @@ class TestSessionsListAutonomousAnnotation:
         s = sessions[0]
         assert s["session_id"] == sid
         assert s["autonomous"] is True
-        assert s[SSE_AUTONOMOUS_STATE_TYPE] == "proposal"
-        assert s["autonomous_plan_text"] == "Draft plan text"
+        assert s[SSE_AUTONOMOUS_STATE_TYPE] == "executing"
         assert s["autonomous_turn_count"] == 3
 
     @pytest.mark.asyncio

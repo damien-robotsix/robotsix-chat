@@ -144,84 +144,69 @@ ______________________________________________________________________
 
 ## Autonomous Sessions
 
-The autonomous subsystem lets the agent independently pick a subject, draft a plan including a
-step-by-step proposal, present that proposal to the operator, and — when the operator comments on
-the plan — execute it through tool calls. After execution the session stays open until the operator
-explicitly closes it; there is no auto-close or respawn.
+The autonomous subsystem runs each configured session definition as a normal agent session that
+starts automatically, works through the configured prompt (or the standard "Begin a new autonomous
+session and work it to completion." prompt) to the completion marker, then closes and restarts on
+the next trigger. There is no plan-drafting/proposal pause and no operator approval gate.
 
 ### Single-session model
 
 When autonomous sessions are configured (`autonomous.sessions` is non-empty), there is **at most one
-open** autonomous session per owner at any instant. "Open" means any non-terminal state (`planning`,
-`proposal`, `executing`). Terminal states are `completed`.
+open** autonomous session per owner at any instant. "Open" means the `executing` state; the only
+terminal state is `completed`.
 
 - `create_session()` enforces this invariant: if the owner already has an open session, the existing
   session is returned unchanged and no new session is created.
 
-### Lifecycle (spawn → proposal → execute → operator closes)
+### Lifecycle (executing → completed → auto-restart)
 
-Sessions no longer auto-close or respawn. After completion the session stays open until the operator
-manually closes it via the UI. A new session is only created when the operator explicitly starts
-one.
+A run begins with the definition's kickoff prompt, continues automatically via `Continue.` turns,
+and closes when the agent emits the completion marker (or the turn/idle caps are hit). Completion is
+automatic: the runner marks the session `completed`, then schedules a fresh run via
+`_auto_restart()` — immediately for `on_close` presets, or after `trigger_interval_seconds` for
+`periodic` presets. The operator never closes sessions manually.
 
 ### Non-blocking startup (never blocks chat)
 
 All autonomous lifecycle work is moved off the startup/lifespan critical path:
 
-| Operation                 | Where it runs                              | Blocking? |
-| ------------------------- | ------------------------------------------ | --------- |
-| Resume completed sessions | Left as-is (operator closes)               | Never     |
-| Resume executing sessions | Background task via `_schedule_background` | Never     |
-| Resume planning sessions  | Background task via `_schedule_background` | Never     |
-| Resume proposal sessions  | Left for operator review                   | Never     |
-| Initial turn kickoff      | Background task via `_schedule_background` | Never     |
-| Auto-continue loop        | Background task via `_schedule_background` | Never     |
+| Operation                                   | Where it runs                              | Blocking? |
+| ------------------------------------------- | ------------------------------------------ | --------- |
+| Resume completed sessions                   | Skipped; retired + replaced by bootstrap   | Never     |
+| Resume executing sessions                   | Background task via `_schedule_background` | Never     |
+| Auto-continue loop (kickoff + continuation) | Background task via `_schedule_background` | Never     |
 
-`resume_sessions()` (called from the lifespan) iterates persisted autonomous sessions and schedules
-each one's handling as a background task, then returns immediately. Chat becomes available
-regardless of whether the background tasks have finished or errored. Errors in background tasks are
-caught and logged via `logger.exception`; they never propagate into the lifespan/startup path.
+`resume_sessions()` (called from the lifespan) iterates persisted autonomous sessions, schedules
+each executing session's continuation as a background task, then calls
+`ensure_all_active_sessions()` to guarantee every enabled definition has one open session, then
+returns immediately. Chat becomes available regardless of whether the background tasks have finished
+or errored. Errors in background tasks are caught and logged via `logger.exception`; they never
+propagate into the lifespan/startup path.
 
 ### Restart context message
 
 When a session is resumed after a process restart, the agent receives a `"SYSTEM RESTARTED"` notice
 in its prompt so it is aware it is resuming rather than starting cold:
 
-- **`planning` sessions** — the restart notice is prepended to the initial-turn prompt
-  (`_kickoff_initial_turn(…, is_restart=True)`).
-- **`executing` sessions with `auto_turn_count == 0`** (first turn after proposal) — the restart
-  notice is prepended to the "The operator has seen your plan" proceed message.
-- **`executing` sessions with `auto_turn_count > 0`** (mid-execution) — the restart notice is
-  prepended to the "Continue." message.
-- **`proposal` sessions** — left for operator review; no restart notice needed.
-- **`completed` sessions** — left as-is; the operator closes them when ready.
+- **First turn after restart** (`auto_turn_count == 0`) — the restart notice is prepended to the
+  kickoff prompt ("resuming an existing autonomous session").
+- **Mid-execution after restart** (`auto_turn_count > 0`) — the restart notice is prepended to the
+  "Continue." message.
+- **Unchanged board** — when the mail board digest matches the previous run, a `BOARD UNCHANGED`
+  notice is also injected instructing the agent to reply `NO_CHANGE` and stop.
+- **`completed` sessions** — skipped on resume; the bootstrap retires them and starts a fresh run.
 
 ### Session lifecycle
 
 ```text
-  create_session()
+  create_session() / ensure_active_session()
         │
         ▼
-      planning  ──► _kickoff_initial_turn()
-        │
-        ▼
-     proposal  ◄── per-preset max_auto_turns hit
-        │
-        └─ operator sends a message
-                │
-                ▼
-           executing ── _auto_continue() ──► proposal (blocker)
-                │
-                └─ completion_marker detected
-                        │
-                        ▼
-                   completed  ──► operator explicitly closes via UI
+     executing ── _auto_continue() ──► completion_marker detected
+        │                                      │
+        │                                      ▼
+        └── Continue. (until completion)   completed ──► _auto_restart() → new session
 ```
-
-When the operator rejects a proposed subject, the plan text from that proposal is recorded in the
-session's `rejected_subjects` list, persisted to the sessions JSON file, and injected into the
-agent's prompt on the next subject-selection round as a "do not propose" instruction — preventing
-the same subject from being re-picked until the session ends.
 
 ### Configuration
 
@@ -236,9 +221,8 @@ the presets model, manual creation is redundant and can violate the single-sessi
 code path that checked `GET /config` to conditionally show the button has also been removed from
 `chat.js`.
 
-The Approve / Reject buttons that appeared when a session was awaiting approval have been removed.
-Sessions in `proposal` state display "Awaiting review" with a plan snippet. The operator comments on
-the plan in the chat to begin execution.
+The Approve / Reject buttons that appeared when a session was awaiting approval have been removed —
+autonomous sessions no longer pause for operator approval.
 
 **Consent propagation.** When the operator authorises a complete operation (e.g. "use this password
 and deploy this config change"), that consent carries forward automatically to all sub-operations in

@@ -10,17 +10,16 @@ if TYPE_CHECKING:
 # Version stamp for the autonomous appendix (build_autonomous_instruction).
 # Bump on every change to the instruction text and update
 # docs/system_prompt_changelog.md with a new AUTONOMOUS entry + SHA256.
-AUTONOMOUS_PROMPT_VERSION = 21
+AUTONOMOUS_PROMPT_VERSION = 22
 
 
 def build_autonomous_instruction(settings: Settings) -> str:
     """Return the autonomous protocol supplement for the agent system prompt.
 
     The returned string instructs the agent on the full autonomous lifecycle
-    (subject selection, plan drafting, approval gate, execution, completion)
-    and the marker conventions it must follow.
+    (subject selection, plan drafting, execution, completion) and the
+    completion-marker convention it must follow.
     """
-    proposal_marker = settings.autonomous.proposal_marker
     completion_marker = settings.autonomous.completion_marker
     stale_threshold = settings.autonomous.stale_monitor_runs_before_completion
     auto_approve = settings.autonomy.auto_approve_self_authored
@@ -78,22 +77,13 @@ def build_autonomous_instruction(settings: Settings) -> str:
         "stop.  Filing a ticket for something that already exists wastes "
         "a monitor cycle and shows the user a misleading automated trip.\n"
         "\n"
-        "3. PROPOSAL — After drafting the plan, emit this exact marker "
-        "on its own line and STOP — do NOT begin execution:\n"
-        f"\n{proposal_marker}\n"
-        "\n"
-        "The operator will review your plan and may comment before "
-        "execution begins.  Do NOT take any execution actions until the "
-        "operator has interacted with the session.\n"
-        "\n"
-        "4. EXECUTION — When the operator comments on your plan (you will "
-        "see their message in the history), immediately begin executing "
-        "your plan.  Start with your first step and use your tools to take "
+        "3. EXECUTION — After drafting your plan, begin executing it "
+        "immediately.  Start with your first step and use your tools to take "
         "the action now — do not describe what you will do, actually do it.  "
         "Work autonomously through all remaining steps without waiting for "
-        "further operator input.  If you hit a genuine blocker that you "
-        f"cannot resolve, emit {proposal_marker} again with an explanation "
-        "of the blocker — this will pause execution for operator review.\n"
+        "operator input.  If you hit a genuine blocker that you cannot "
+        "resolve, surface it to the operator in a normal message and "
+        "continue with whatever parts of the plan remain actionable.\n"
         "\n"
         "Sub-ticket failure pattern: if you split a task into child tickets "
         "and ALL of them close immediately as 'no change needed / empty diff' "
@@ -186,8 +176,9 @@ def build_autonomous_instruction(settings: Settings) -> str:
         "The operator should not have to piece together the final "
         "state from fragmented messages.\n"
         "\n"
-        "The session will stay open after completion — the operator will "
-        "close it when ready.  Do not start a new session on your own.\n"
+        "The session closes automatically once you emit the completion "
+        "marker.  Do not start a new session on your own — the configured "
+        "trigger will start the next one.\n"
         "\n"
         "\n"
         "AUTONOMY TIER — the operator has configured an autonomy setting that "

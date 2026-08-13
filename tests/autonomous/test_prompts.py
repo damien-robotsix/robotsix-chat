@@ -12,7 +12,6 @@ class TestBuildAutonomousInstruction:
 
     def _make_settings(
         self,
-        proposal_marker: str = "---PROPOSAL READY---",
         completion_marker: str = "---AUTONOMOUS COMPLETE---",
         stale_threshold: int = 3,
         auto_approve: bool = False,
@@ -21,7 +20,6 @@ class TestBuildAutonomousInstruction:
     ) -> MagicMock:
         """Build a mock Settings with the given autonomy parameters."""
         settings = MagicMock()
-        settings.autonomous.proposal_marker = proposal_marker
         settings.autonomous.completion_marker = completion_marker
         settings.autonomous.stale_monitor_runs_before_completion = stale_threshold
         settings.autonomy.auto_approve_self_authored = auto_approve
@@ -29,14 +27,12 @@ class TestBuildAutonomousInstruction:
         settings.autonomy.suppress_no_change_monitors = suppress_no_change
         return settings
 
-    def test_includes_proposal_marker(self) -> None:
-        """Default markers and lifecycle sections are present."""
+    def test_includes_lifecycle_sections(self) -> None:
+        """Default completion marker and lifecycle sections are present."""
         settings = self._make_settings()
         result = build_autonomous_instruction(settings)
-        assert "---PROPOSAL READY---" in result
         assert "---AUTONOMOUS COMPLETE---" in result
         assert "PLANNING" in result
-        assert "PROPOSAL" in result
         assert "EXECUTION" in result
         assert "COMPLETION" in result
         assert "Stale monitor completion" in result
@@ -50,17 +46,22 @@ class TestBuildAutonomousInstruction:
         assert "human_issue_approval" in result
         assert "gate-specific" in result
 
-    def test_custom_markers(self) -> None:
-        """Custom marker strings are injected, defaults are absent."""
+    def test_no_proposal_handshake(self) -> None:
+        """The proposal handshake is gone from the autonomous protocol."""
+        settings = self._make_settings()
+        result = build_autonomous_instruction(settings)
+        assert "PROPOSAL" not in result
+        assert "---PROPOSAL READY---" not in result
+
+    def test_custom_completion_marker(self) -> None:
+        """Custom completion marker is injected, the default is absent."""
         settings = self._make_settings(
-            proposal_marker="---CUSTOM PROPOSAL---",
             completion_marker="---CUSTOM COMPLETE---",
             stale_threshold=5,
         )
         result = build_autonomous_instruction(settings)
-        assert "---CUSTOM PROPOSAL---" in result
         assert "---CUSTOM COMPLETE---" in result
-        assert "---PROPOSAL READY---" not in result
+        assert "---AUTONOMOUS COMPLETE---" not in result
         assert "5 or more consecutive cycles" in result
 
     def test_autonomy_tier_section_present(self) -> None:
