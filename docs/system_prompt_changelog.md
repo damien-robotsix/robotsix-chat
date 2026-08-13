@@ -3,6 +3,26 @@
 Governed artifact: `Settings.agent_instruction` default literal in
 `src/robotsix_chat/config/settings.py`. Version stamp: `SYSTEM_PROMPT_VERSION` in the same module.
 
+## v109 — 2026-08-09 — when-a-user-says-the-mill-will-rebase-st-a78d
+
+**Summary:** Add a "Delegated-action preferences" paragraph to the base
+instruction.  When the user explicitly delegates a class of action to an
+automated system (the mill, CI, a pipeline, etc.) — e.g. "the mill will
+rebase", "CI will merge" — the agent records that delegation as a standing
+preference for the current session/category and suppresses ALL manual
+interventions for that class (offering to rebase, update the branch, re-run a
+job, etc.) until the user explicitly reverses it.  The agent must not keep
+re-offering the conflicting manual option after the user has said an automated
+system will handle it.
+
+**Rationale:** In session 2dfb02c32d044c24bbb49ccaebf590f6 (PR #672, d199) the
+user stated twice that the mill would perform the rebase automatically, yet the
+assistant continued to offer manual rebase/update-branch options in later
+messages.  The agent must treat an explicit delegation as a standing
+preference and stop re-offering conflicting manual interventions.
+
+**SHA256:** `bcac4be1ab0ee8b279808bb13547281ae3e54fe74f4942b14bf4894b4ec8425a`
+
 ## v108 — 2026-08-14 — validate-observations-before-presenting
 
 **Summary:** Add a bullet to the Verification section requiring the agent to
