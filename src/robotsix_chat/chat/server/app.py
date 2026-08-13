@@ -109,6 +109,7 @@ from .routes import (
     health_endpoint,
     history_endpoint,
     http_exception_handler,
+    mail_archive_root_check_endpoint,
     mill_events_endpoint,
     not_found_handler,
     prune_endpoint,
@@ -553,6 +554,11 @@ def create_app(
         Route("/config", config_save_endpoint, methods=["PUT"]),
         Route("/config/versions", config_versions_endpoint, methods=["GET"]),
         Route("/config/rollback", config_rollback_endpoint, methods=["POST"]),
+        Route(
+            "/mail/archive-root-check",
+            mail_archive_root_check_endpoint,
+            methods=["GET"],
+        ),
         Route(
             "/diagnostics/events",
             diagnostics_create_endpoint,
