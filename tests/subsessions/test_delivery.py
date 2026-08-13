@@ -11,7 +11,6 @@ import pytest
 from robotsix_chat.autonomous.models import AutonomousSession, AutonomousState
 from robotsix_chat.subsessions.delivery import (
     _BATCH_REACT_PROMPT_TEMPLATE,
-    _REACT_PROMPT_ACTIVE_PLAN_TEMPLATE,
     _REACT_PROMPT_TEMPLATE,
     ParentDelivery,
     _sanitize_reaction_reply,
@@ -1060,31 +1059,26 @@ async def test_deliver_no_suppression_when_last_known_missing() -> None:
 # ---------------------------------------------------------------------------
 
 
-def _mock_autonomous_runner(
-    session_id: str, state: AutonomousState, plan_text: str = "test plan"
-) -> MagicMock:
+def _mock_autonomous_runner(session_id: str, state: AutonomousState) -> MagicMock:
     """Build an AutonomousRunner stub with a session in *state*."""
     runner = MagicMock()
     session = AutonomousSession(
         session_id=session_id,
         owner_id=session_id,
         state=state,
-        plan_text=plan_text,
     )
     runner.get_session.return_value = session
     return runner
 
 
 @pytest.mark.asyncio
-async def test_reaction_with_autonomous_executing_uses_active_plan_template() -> None:
-    """Reaction prompt uses the active-plan template when the session is executing."""
+async def test_reaction_with_autonomous_executing_uses_default_template() -> None:
+    """Reaction prompt uses the default template for an executing session."""
     store = MagicMock()
     store.history.return_value = []
     registry = MagicMock()
-    agent = _fake_agent(["Noted — continuing the plan."])
-    runner = _mock_autonomous_runner(
-        "owner-sess-1", AutonomousState.executing, "Close the misfiled ticket"
-    )
+    agent = _fake_agent(["Noted — continuing."])
+    runner = _mock_autonomous_runner("owner-sess-1", AutonomousState.executing)
     delivery = _build_delivery(store=store, registry=registry, agent=agent)
     delivery.set_autonomous_runner(runner)
     info = _make_info(parent_id=None)
@@ -1095,49 +1089,19 @@ async def test_reaction_with_autonomous_executing_uses_active_plan_template() ->
     store.record_for_session.assert_called_once()
     args, _kwargs = store.record_for_session.call_args
     prompt = args[1]
-    # The active-plan template must be used, not the default one.
-    assert "executing your approved plan" in prompt
-    assert "Close the misfiled ticket" in prompt
-    assert "DO NOT re-request approval" in prompt
+    assert "not actively conversing" in prompt
     assert "P1 outage resolved" in prompt
-    # The default template's "not actively conversing" phrase must be absent.
-    assert "not actively conversing" not in prompt
+    assert "DO NOT re-request approval" not in prompt
 
 
 @pytest.mark.asyncio
-async def test_reaction_with_autonomous_proposal_uses_active_plan_template() -> None:
-    """Reaction prompt uses the active-plan template when the session is in proposal."""
-    store = MagicMock()
-    store.history.return_value = []
-    registry = MagicMock()
-    agent = _fake_agent(["Noted."])
-    runner = _mock_autonomous_runner(
-        "owner-sess-1", AutonomousState.proposal, "Proposed: close misfiled ticket"
-    )
-    delivery = _build_delivery(store=store, registry=registry, agent=agent)
-    delivery.set_autonomous_runner(runner)
-    info = _make_info(parent_id=None)
-
-    await delivery.deliver_summary(info, "P1 outage resolved", "completed")
-    await _await_reaction_tasks(delivery)
-
-    store.record_for_session.assert_called_once()
-    args, _kwargs = store.record_for_session.call_args
-    prompt = args[1]
-    assert "waiting for operator approval of" in prompt
-    assert "Proposed: close misfiled ticket" in prompt
-    assert "DO NOT re-request approval" in prompt
-    assert "not actively conversing" not in prompt
-
-
-@pytest.mark.asyncio
-async def test_reaction_with_autonomous_planning_uses_default_template() -> None:
-    """Default template is used when the session is still in planning state."""
+async def test_reaction_with_autonomous_completed_uses_default_template() -> None:
+    """Default template is used for a completed autonomous session."""
     store = MagicMock()
     store.history.return_value = []
     registry = MagicMock()
     agent = _fake_agent(["ok"])
-    runner = _mock_autonomous_runner("owner-sess-1", AutonomousState.planning)
+    runner = _mock_autonomous_runner("owner-sess-1", AutonomousState.completed)
     delivery = _build_delivery(store=store, registry=registry, agent=agent)
     delivery.set_autonomous_runner(runner)
     info = _make_info(parent_id=None)
@@ -1203,18 +1167,10 @@ def test_react_prompt_forbids_reemitting_already_shown_payload() -> None:
     assert "delta" in text
 
 
-def test_active_plan_react_prompt_forbids_reemitting_already_shown_payload() -> None:
-    """Active-plan template must forbid re-emitting already-shown data."""
-    text = _REACT_PROMPT_ACTIVE_PLAN_TEMPLATE.lower()
-    assert "delta" in text
-    assert "already presented" in text
-
-
 def test_react_prompt_templates_strip_internal_identifiers() -> None:
     """All reaction templates must forbid raw internal identifiers."""
     for template in (
         _REACT_PROMPT_TEMPLATE,
-        _REACT_PROMPT_ACTIVE_PLAN_TEMPLATE,
         _BATCH_REACT_PROMPT_TEMPLATE,
     ):
         text = template.lower()
@@ -1647,21 +1603,17 @@ async def test_deliver_summary_single_outcome_bypasses_batch() -> None:
 
 
 @pytest.mark.asyncio
-async def test_batch_with_autonomous_plan_degrades_to_individual_calls() -> None:
-    """When autonomous plan is active, degrade to individual calls.
+async def test_batch_with_autonomous_executing_degrades_to_individual_calls() -> None:
+    """When an autonomous session is executing, degrade to individual calls.
 
     _react_batched degrades to individual _react_in_main_chat calls (one per
-    outcome) instead of using the batch template.  This ensures the active-plan
-    prompt is used for every outcome, preventing the agent from dropping its
-    plan or re-requesting approval.
+    outcome) instead of using the batch template.
     """
     store = MagicMock()
     store.history.return_value = []
     registry = MagicMock()
-    agent = _fake_agent(["Noted — continuing plan."])
-    runner = _mock_autonomous_runner(
-        "sess-1", AutonomousState.executing, "Close the misfiled ticket"
-    )
+    agent = _fake_agent(["Noted — continuing."])
+    runner = _mock_autonomous_runner("sess-1", AutonomousState.executing)
     delivery = _build_delivery(
         store=store,
         registry=registry,
@@ -1683,31 +1635,28 @@ async def test_batch_with_autonomous_plan_degrades_to_individual_calls() -> None
     # Two individual reaction turns, not one consolidated batch.
     assert store.record_for_session.call_count == 2
 
-    # Both calls must use the active-plan template.
     first_prompt = store.record_for_session.call_args_list[0][0][1]
-    assert "executing your approved plan" in first_prompt
-    assert "DO NOT re-request approval" in first_prompt
-    assert "Close the misfiled ticket" in first_prompt
+    assert "not actively conversing" in first_prompt
+    assert "Outcome A." in first_prompt
+    assert "DO NOT re-request approval" not in first_prompt
     # Must NOT be the batch template (no {count} or "subsession outcomes occurred").
     assert "{count}" not in first_prompt
     assert "subsession outcomes occurred" not in first_prompt
 
     second_prompt = store.record_for_session.call_args_list[1][0][1]
-    assert "executing your approved plan" in second_prompt
-    assert "DO NOT re-request approval" in second_prompt
-    assert "Close the misfiled ticket" in second_prompt
+    assert "not actively conversing" in second_prompt
+    assert "Outcome B." in second_prompt
+    assert "DO NOT re-request approval" not in second_prompt
 
 
 @pytest.mark.asyncio
-async def test_batch_with_autonomous_proposal_also_degrades() -> None:
-    """Degradation to individual calls also fires for proposal state."""
+async def test_batch_with_autonomous_completed_uses_batch_template() -> None:
+    """A completed autonomous session uses the batch template."""
     store = MagicMock()
     store.history.return_value = []
     registry = MagicMock()
     agent = _fake_agent(["Noted."])
-    runner = _mock_autonomous_runner(
-        "sess-1", AutonomousState.proposal, "Proposed: close ticket"
-    )
+    runner = _mock_autonomous_runner("sess-1", AutonomousState.completed)
     delivery = _build_delivery(
         store=store, registry=registry, agent=agent, batch_window_seconds=0
     )
@@ -1720,8 +1669,8 @@ async def test_batch_with_autonomous_proposal_also_degrades() -> None:
 
     assert store.record_for_session.call_count == 1
     prompt = store.record_for_session.call_args[0][1]
-    assert "waiting for operator approval" in prompt
-    assert "DO NOT re-request approval" in prompt
+    assert "1 subsession outcomes occurred" in prompt
+    assert "DO NOT re-request approval" not in prompt
 
 
 @pytest.mark.asyncio
@@ -1783,13 +1732,13 @@ async def test_batch_autonomous_unknown_session_uses_batch_template() -> None:
 
 
 @pytest.mark.asyncio
-async def test_batch_autonomous_planning_state_uses_batch_template() -> None:
-    """Planning state (not proposal/executing) still uses the batch template."""
+async def test_batch_autonomous_completed_state_uses_batch_template() -> None:
+    """Completed state (not executing) still uses the batch template."""
     store = MagicMock()
     store.history.return_value = []
     registry = MagicMock()
     agent = _fake_agent(["ok"])
-    runner = _mock_autonomous_runner("sess-1", AutonomousState.planning)
+    runner = _mock_autonomous_runner("sess-1", AutonomousState.completed)
     delivery = _build_delivery(
         store=store, registry=registry, agent=agent, batch_window_seconds=0
     )
