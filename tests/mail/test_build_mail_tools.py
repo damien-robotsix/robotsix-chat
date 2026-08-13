@@ -527,7 +527,7 @@ async def test_archive_delete_success(respx_mock: respx.MockRouter) -> None:
         return_value=httpx.Response(200, text='{"deleted": "Projects/Old"}')
     )
     tools = build_mail_tools(_settings())
-    delete_folder = tools[10]
+    delete_folder = tools[11]
 
     result = await delete_folder("Projects/Old")
 
@@ -545,7 +545,7 @@ async def test_archive_delete_force_true(respx_mock: respx.MockRouter) -> None:
         return_value=httpx.Response(200, text='{"deleted": "Projects/Old"}')
     )
     tools = build_mail_tools(_settings())
-    delete_folder = tools[10]
+    delete_folder = tools[11]
 
     result = await delete_folder("Projects/Old", force=True)
 
@@ -565,7 +565,7 @@ async def test_archive_delete_error(respx_mock: respx.MockRouter) -> None:
         )
     )
     tools = build_mail_tools(_settings())
-    delete_folder = tools[10]
+    delete_folder = tools[11]
 
     result = await delete_folder("Projects/NonEmpty")
 
@@ -579,7 +579,7 @@ async def test_archive_delete_client_side_path_escape(
 ) -> None:
     """Client-side path-escape rejects traversal before sending a request."""
     tools = build_mail_tools(_settings())
-    delete_folder = tools[10]
+    delete_folder = tools[11]
 
     # Absolute path
     result = await delete_folder("/etc/passwd")
@@ -613,7 +613,7 @@ async def test_list_accounts_success(respx_mock: respx.MockRouter) -> None:
         )
     )
     tools = build_mail_tools(_settings())
-    list_accounts = tools[11]
+    list_accounts = tools[12]
 
     result = await list_accounts()
 
@@ -628,7 +628,7 @@ async def test_list_accounts_error(respx_mock: respx.MockRouter) -> None:
         return_value=httpx.Response(500, text="Internal error")
     )
     tools = build_mail_tools(_settings())
-    list_accounts = tools[11]
+    list_accounts = tools[12]
 
     result = await list_accounts()
 
