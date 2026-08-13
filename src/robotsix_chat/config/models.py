@@ -1360,10 +1360,11 @@ class AutonomousSettings(BaseModel):
             auto-continue turns before the loop halts (session closes).
         stale_monitor_runs_before_completion: Number of consecutive NO_CHANGE
             cycles after which a periodic monitor is considered 'stale'.
-        sessions: List of named autonomous session definitions.  When
-            explicitly cleared, no autonomous sessions run — presets are the
-            sole enablement model.  Each entry defines a prompt, trigger, max
-            turns, and enabled flag for one autonomous session.
+        sessions: List of named autonomous session definitions.  An explicit
+            empty list is migrated to the built-in default preset on load so
+            the default session is always surfaced.  Each entry defines a
+            prompt, trigger, max turns, and enabled flag for one autonomous
+            session.
 
     """
 
@@ -1395,10 +1396,10 @@ class AutonomousSettings(BaseModel):
             "Named autonomous session definitions.  The built-in default "
             'preset ``{"name": "default"}`` ships in the schema defaults '
             "and in the committed config template so it is always visible.  "
-            "When the list is explicitly cleared, no autonomous sessions run "
-            "— presets are the sole enablement model.  Each entry defines a "
-            "prompt, trigger, max turns, and enabled flag for one autonomous "
-            "session."
+            "An explicit empty list is migrated to the built-in default "
+            "preset on load so the default session is always surfaced.  "
+            "Each entry defines a prompt, trigger, max turns, and enabled "
+            "flag for one autonomous session."
         ),
     )
     model_config = ConfigDict(extra="forbid")
@@ -1416,8 +1417,10 @@ class AutonomousSettings(BaseModel):
         The built-in default preset (``{"name": "default"}``) is now carried
         in the ``sessions`` field default (schema default), not injected here.
         Existing deployments that lack a ``sessions`` key receive the default
-        from the field default; deployments that explicitly clear the list
-        run no autonomous sessions.
+        from the field default; an explicit empty ``sessions`` list is
+        migrated to the built-in default preset so older on-disk configs
+        (which serialized ``sessions: []``) still surface the default
+        session.
 
         The global ``max_auto_turns`` value is migrated into every session
         preset that does not already define its own ``max_auto_turns``,
@@ -1444,6 +1447,12 @@ class AutonomousSettings(BaseModel):
             for preset in data["sessions"]:
                 if isinstance(preset, dict) and "max_auto_turns" not in preset:
                     preset["max_auto_turns"] = legacy_max_turns
+
+        # Older on-disk configs serialized ``sessions: []`` explicitly, which
+        # overrides the field's schema default and hides the default preset.
+        # Replace the explicit empty list with the built-in default preset.
+        if data.get("sessions") == []:
+            data["sessions"] = [{"name": "default"}]
 
         return data
 
