@@ -454,12 +454,12 @@ async def test_archive_rename_folder_success(respx_mock: respx.MockRouter) -> No
     tools = build_mail_tools(_settings())
     rename = tools[9]
 
-    result = await rename("Orders", "Commandes")
+    result = await rename("Orders", "Commands")
 
     assert route.called
     body = route.calls.last.request.content.decode()
     assert "Orders" in body
-    assert "Commandes" in body
+    assert "Commands" in body
     assert "renamed" in result
 
 
@@ -472,7 +472,7 @@ async def test_archive_rename_folder_error(respx_mock: respx.MockRouter) -> None
     tools = build_mail_tools(_settings())
     rename = tools[9]
 
-    result = await rename("Orders", "Commandes")
+    result = await rename("Orders", "Commands")
 
     assert "Mail API error 400" in result
     assert "target folder already exists" in result
