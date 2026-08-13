@@ -117,6 +117,39 @@ async def test_key_bearing_level_forwards_api_key() -> None:
 
 
 @pytest.mark.asyncio
+async def test_task_budget_forwarded_to_keyless_level() -> None:
+    """``task_budget_tokens`` is forwarded as ``max_tokens`` to a keyless tier."""
+    create_model, _ = _patched_create_model()
+
+    with patch("robotsix_chat.llm.agent.create_model", create_model):
+        agent = LlmioChatAgent(
+            model_level=3,
+            instruction="Be helpful.",
+            task_budget_tokens=30_000,
+        )
+        _ = [c async for c in agent.stream("hi")]
+
+    create_model.assert_called_once_with(level=3, max_tokens=30_000)
+
+
+@pytest.mark.asyncio
+async def test_task_budget_not_forwarded_to_keyed_level() -> None:
+    """``task_budget_tokens`` must not clobber a keyed tier's own max_tokens."""
+    create_model, _ = _patched_create_model()
+
+    with patch("robotsix_chat.llm.agent.create_model", create_model):
+        agent = LlmioChatAgent(
+            model_level=1,
+            instruction="Be helpful.",
+            api_key="k",
+            task_budget_tokens=30_000,
+        )
+        _ = [c async for c in agent.stream("hi")]
+
+    create_model.assert_called_once_with(level=1, api_key="k")
+
+
+@pytest.mark.asyncio
 async def test_empty_output_yields_nothing() -> None:
     """An empty reply yields no chunks (and still closes the handle)."""
     create_model, handle = _patched_create_model("")

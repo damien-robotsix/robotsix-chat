@@ -1176,6 +1176,7 @@ def create_agent_from_settings(
         tools=tools,
         request_tools_factory=request_tools_factory,
         event_sink=event_sink,
+        task_budget_tokens=settings.llmio_task_budget_tokens,
     )
     # Wire guarded auto-recovery (self-restart) for the top-level chat agent's
     # memory only — never for bare summary agents, subsession children, or any
