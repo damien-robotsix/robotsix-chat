@@ -135,9 +135,22 @@ modules:
     description: "Typed configuration — pydantic Settings model loaded from the one JSON config file via robotsix-config."
     paths:
       - src/robotsix_chat/config/__init__.py
+      - src/robotsix_chat/config/autonomous_models.py
+      - src/robotsix_chat/config/component_models.py
       - src/robotsix_chat/config/constants.py
+      - src/robotsix_chat/config/deploy_models.py
+      - src/robotsix_chat/config/github_models.py
+      - src/robotsix_chat/config/langfuse_models.py
+      - src/robotsix_chat/config/memory_models.py
       - src/robotsix_chat/config/models.py
+      - src/robotsix_chat/config/network_models.py
+      - src/robotsix_chat/config/notification_models.py
+      - src/robotsix_chat/config/ref_doc_models.py
+      - src/robotsix_chat/config/render_url_models.py
+      - src/robotsix_chat/config/server_models.py
+      - src/robotsix_chat/config/session_models.py
       - src/robotsix_chat/config/settings.py
+      - src/robotsix_chat/config/storage_models.py
       - docs/config/api.md
       - tests/config/__init__.py
       - tests/config/test_config.py
@@ -236,6 +249,7 @@ modules:
       - src/robotsix_chat/repo/direct/actions_client.py
       - src/robotsix_chat/repo/direct/board_client.py
       - src/robotsix_chat/repo/direct/client.py
+      - src/robotsix_chat/repo/direct/github_tools.py
       - src/robotsix_chat/repo/direct/skill.md
       - tests/repo/direct/__init__.py
       - tests/repo/direct/conftest.py
@@ -354,6 +368,7 @@ modules:
       - src/robotsix_chat/subsessions/watcher.py
       - src/robotsix_chat/subsessions/worker.py
       - src/robotsix_chat/subsessions/worker_mill.py
+      - src/robotsix_chat/subsessions/worker_periodic.py
       - tests/subsessions/__init__.py
       - tests/subsessions/test_delivery.py
       - tests/subsessions/test_models.py
