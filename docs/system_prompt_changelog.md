@@ -3,6 +3,24 @@
 Governed artifact: `Settings.agent_instruction` default literal in
 `src/robotsix_chat/config/settings.py`. Version stamp: `SYSTEM_PROMPT_VERSION` in the same module.
 
+## v112 — 2026-08-11 — auto-verify-new-api-endpoints-are-live-b206
+
+**Summary:** Strengthen the ticket-lifecycle "Complete" step so that, when a
+monitored ticket reaches a terminal state, the agent reports the verification
+result (live/failing) in the same message that announces the closure — never
+leaving the user to ask whether a newly built endpoint is up. For a new API
+endpoint, the agent must automatically trigger a verification call (an HTTP
+GET via `component_request` for internal/mill endpoints, or `http_probe` for
+public URLs) and confirm a 2xx response, rather than waiting for the user to
+request the check.
+
+**Rationale:** In session 3bb6f7a2f99340d38f5cde6cbd6a85aa, after the
+`GET /board-cards` endpoint was implemented and its ticket closed, the agent
+reported the closure without verifying the endpoint was live — the user had to
+ask. Automatic live verification at closure detection prevents that follow-up.
+
+**SHA256:** `f12c80caff7cacd109f0493ac92a2e7326f1c895121e81dbac53dbd987db9823`
+
 ## v111 — 2026-08-09 — improve-detection-of-reusable-workflow-i-63ba
 
 **Summary:** Add a "Reusable-workflow startup_failure" shortcut to the

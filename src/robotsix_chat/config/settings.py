@@ -68,7 +68,7 @@ class ConfigValidationError(ValueError):
 # Version stamp for the agent_instruction default literal.
 # Bump on every change to Settings.agent_instruction and update
 # docs/system_prompt_changelog.md with a new entry + SHA256.
-SYSTEM_PROMPT_VERSION = 111
+SYSTEM_PROMPT_VERSION = 112
 
 # Valid model levels, derived from llmio's tier enum (import-time constant so
 # the set is built once and can never drift from the tiers llmio ships).
@@ -725,18 +725,24 @@ class Settings(BaseModel):
             "covers them all.\n"
             "  4. Complete — when the ticket reaches a terminal state "
             "(done/closed), verify the change is actually live before "
-            "closing the monitor. If the ticket introduced or modified a "
+            "closing the monitor, and report the verification result "
+            "(live/failing) in the same message that announces the "
+            "closure — never make the user ask whether a newly built "
+            "endpoint is up. If the ticket introduced or modified a "
             "server-side capability (endpoint, config flag, behaviour), "
-            "probe it directly with component_request and confirm it "
-            "responds as expected (2xx for a new endpoint, correct config "
-            "value for a flag, etc.). If the probe fails — e.g. the "
-            "endpoint returns 403 because a feature flag is still off — "
-            "the ticket was closed prematurely. In that case, either "
-            "reopen the ticket with a comment explaining which live check "
-            "failed, or file a follow-up ticket with the failed probe as "
-            "evidence. Only close the monitor after live verification "
-            "succeeds. Report the outcome once (including the "
-            "verification result) and close the monitor.\n"
+            "probe it directly and confirm it responds as expected: for a "
+            "new API endpoint, automatically trigger a verification call "
+            "(an HTTP GET via component_request for internal/mill "
+            "endpoints, or http_probe for public URLs) and confirm a 2xx "
+            "response; for a config flag, confirm the correct value is "
+            "live. If the probe fails — e.g. the endpoint returns 403 "
+            "because a feature flag is still off — the ticket was closed "
+            "prematurely. In that case, either reopen the ticket with a "
+            "comment explaining which live check failed, or file a "
+            "follow-up ticket with the failed probe as evidence. Only "
+            "close the monitor after live verification succeeds. Report "
+            "the outcome once (including the verification result) and "
+            "close the monitor.\n"
             "  5. Exit — the monitor subsession calls complete_subsession(summary) "
             "first, so it is not re-loaded after a restart.\n"
             "  6. Reload — if the ticket changed your own capabilities (new "
