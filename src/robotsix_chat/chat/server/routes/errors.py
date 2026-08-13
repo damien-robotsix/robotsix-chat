@@ -10,6 +10,7 @@ import logging
 
 import httpx
 from asgi_correlation_id import correlation_id
+from robotsix_llmio.claude_sdk import is_claude_sdk_usage_exhausted
 from starlette.exceptions import HTTPException
 from starlette.requests import Request
 from starlette.responses import JSONResponse
@@ -24,6 +25,7 @@ STREAM_ERROR_TIMEOUT = "timeout"
 STREAM_ERROR_RATE_LIMIT = "rate_limit_exceeded"
 STREAM_ERROR_AUTH = "authentication_error"
 STREAM_ERROR_INVALID_REQUEST = "invalid_request_error"
+STREAM_ERROR_BUDGET_EXHAUSTED = "budget_exhausted"
 
 #: Curated, client-safe wording per code. Deliberately free of exception
 #: detail: ``str(exc)`` routinely embeds filesystem paths, upstream URLs and
@@ -41,16 +43,23 @@ _STREAM_ERROR_MESSAGES: dict[str, str] = {
         "The assistant could not authenticate with its model provider."
     ),
     STREAM_ERROR_INVALID_REQUEST: ("The assistant could not process that request."),
+    STREAM_ERROR_BUDGET_EXHAUSTED: (
+        "The assistant's model budget is exhausted. Resume with a new message "
+        "to continue, or switch to a different model level."
+    ),
 }
 
 
 def stream_error_code(exc: BaseException) -> str:
     """Map ``exc`` to a stable, client-safe error code.
 
-    Categories are derived from transport-level facts only (timeout, HTTP
-    status on an attached response). Anything unrecognised degrades to
-    ``server_error`` rather than guessing.
+    Categories are derived from transport-level facts (timeout, HTTP status on
+    an attached response) plus one semantic classifier — a Claude SDK tier
+    reporting exhausted usage credits maps to ``budget_exhausted``. Anything
+    unrecognised degrades to ``server_error`` rather than guessing.
     """
+    if is_claude_sdk_usage_exhausted(exc):
+        return STREAM_ERROR_BUDGET_EXHAUSTED
     if isinstance(exc, TimeoutError | httpx.TimeoutException):
         return STREAM_ERROR_TIMEOUT
     status = getattr(getattr(exc, "response", None), "status_code", None)

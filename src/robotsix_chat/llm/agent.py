@@ -254,6 +254,7 @@ class LlmioChatAgent:
         tools: list[Any] | None = None,
         request_tools_factory: Callable[[str], list[Any]] | None = None,
         event_sink: EventSink | None = None,
+        task_budget_tokens: int | None = None,
     ) -> None:
         """Store the agent configuration for later ``stream`` calls.
 
@@ -263,6 +264,14 @@ class LlmioChatAgent:
         provider actually takes one, and holding it is what lets a tier
         fallback reach a keyed provider when the shared Claude credential is
         the thing that failed.
+
+        *task_budget_tokens*, when set, is forwarded as ``max_tokens`` to
+        keyless (claudeSDK) tiers only. llmio maps that onto the Claude Agent
+        SDK ``task_budget`` advisory allowance — the countdown the model reads
+        so it can pace itself against a real budget-remaining signal instead
+        of being cut off at the subscription limit. Keyed (OpenRouter) tiers
+        are deliberately left alone: their own per-response ``max_tokens``
+        caps live in llmio's tier config and must not be clobbered.
 
         *request_tools_factory* is called once per ``stream`` invocation with
         the request's *client_id* to produce per-request tools (e.g. the
@@ -289,6 +298,7 @@ class LlmioChatAgent:
         self._tools = list(tools) if tools is not None else None
         self._request_tools_factory = request_tools_factory
         self._event_sink = event_sink
+        self._task_budget_tokens = task_budget_tokens
         # Hold references to in-flight background writes so they aren't GC'd.
         self._write_tasks: set[asyncio.Task[None]] = set()
 
@@ -296,6 +306,22 @@ class LlmioChatAgent:
     def memory(self) -> ChatMemory:
         """The agent's memory backend (for health reporting / recovery wiring)."""
         return self._memory
+
+    def _provider_kwargs(self, level: int) -> dict[str, Any]:
+        """Build the ``create_model`` kwargs for *level*.
+
+        Forwards the configured api_key only to keyed (OpenRouter) levels —
+        keyless providers reject it. Forwards ``max_tokens`` only to keyless
+        (claudeSDK) levels — there it becomes the advisory ``task_budget``;
+        keyed levels keep their own per-response caps from llmio's tier
+        config, which must not be clobbered.
+        """
+        kwargs: dict[str, Any] = {}
+        if level_needs_api_key(level) and self._api_key:
+            kwargs["api_key"] = self._api_key
+        if not level_needs_api_key(level) and self._task_budget_tokens is not None:
+            kwargs["max_tokens"] = self._task_budget_tokens
+        return kwargs
 
     def _activity_callback(
         self, session_id: str | None
@@ -443,10 +469,7 @@ class LlmioChatAgent:
         # The per-call override wins; ``_attempt`` and the trace metadata below
         # close over this local, so nothing else has to be threaded.
         level = self._model_level if model_level is None else model_level
-        if level_needs_api_key(level) and self._api_key:
-            provider = create_model(level=level, api_key=self._api_key)
-        else:
-            provider = create_model(level=level)
+        provider = create_model(level=level, **self._provider_kwargs(level))
         message_history = _build_message_history(history)
 
         # Compute effective tools once: static tools + per-request tools from
@@ -645,10 +668,9 @@ class LlmioChatAgent:
                 # credential is what died. Keyless providers reject an
                 # api_key, so ask per level rather than reusing the primary's
                 # answer.
-                if level_needs_api_key(level) and self._api_key:
-                    fallback_provider = create_model(level=level, api_key=self._api_key)
-                else:
-                    fallback_provider = create_model(level=level)
+                fallback_provider = create_model(
+                    level=level, **self._provider_kwargs(level)
+                )
                 fallback_handle = fallback_provider.build_agent(
                     level=level,
                     system_prompt=self._instruction,
