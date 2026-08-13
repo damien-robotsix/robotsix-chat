@@ -691,7 +691,7 @@ async def test_check_resume_status_open_injects_context():
 
 @pytest.mark.asyncio
 async def test_check_resume_status_http_404_closes_immediately():
-    """A 404 response closes the subsession immediately (not counted as unreachable)."""
+    """A confirmed 404 on a healthy API closes the subsession immediately."""
     env = _env_with_board()
     info = _make_checkpoint_info(
         env,
@@ -699,18 +699,33 @@ async def test_check_resume_status_http_404_closes_immediately():
         last_known_state="open",
     )
 
-    error_response = AsyncMock()
-    error_response.status_code = 404
-    http_error = httpx.HTTPStatusError(
-        "not found", request=AsyncMock(), response=error_response
-    )
+    ticket_calls = {"count": 0}
 
-    mock = _mock_async_client(side_effect=http_error)
+    async def _dispatch(url, **kwargs):
+        url_str = str(url)
+        if "/health" in url_str:
+            return _make_response({"started_at": "2024-01-01T00:00:00Z"})
+        ticket_calls["count"] += 1
+        resp = MagicMock()
+        resp.raise_for_status.side_effect = httpx.HTTPStatusError(
+            "not found", request=MagicMock(), response=MagicMock(status_code=404)
+        )
+        return resp
+
+    mock_client = MagicMock()
+    mock_client.get = _dispatch
+    mock_instance = MagicMock()
+    mock_instance.__aenter__ = AsyncMock(return_value=mock_client)
+    mock_instance.__aexit__ = AsyncMock(return_value=None)
+    mock = MagicMock(return_value=mock_instance)
+
     with patch("httpx.AsyncClient", mock):
         should_continue, context_msg = await _check_resume_status(env, info, info.id)
 
     assert should_continue is False
     assert "deleted" in (context_msg or "")
+    # The ticket was fetched once, then re-fetched to confirm the 404.
+    assert ticket_calls["count"] == 2
     # Check that checkpoint was NOT updated with a failure counter (404 is not
     # counted as unreachable).
     updated = env.registry.get(info.id)
@@ -725,6 +740,93 @@ async def test_check_resume_status_http_404_closes_immediately():
     history = env.conversation_store.history(OWNER)
     assert len(history) == 1
     assert "deleted" in history[0][1]
+
+
+@pytest.mark.asyncio
+async def test_check_resume_status_http_404_unhealthy_api_counts_as_unreachable():
+    """A 404 with a failing health probe is transient, not a deletion claim."""
+    env = _env_with_board()
+    info = _make_checkpoint_info(
+        env,
+        ticket_id="TICKET-1",
+        last_known_state="open",
+    )
+
+    async def _dispatch(url, **kwargs):
+        url_str = str(url)
+        if "/health" in url_str:
+            resp = MagicMock()
+            resp.raise_for_status.side_effect = httpx.ConnectError("refused")
+            return resp
+        resp = MagicMock()
+        resp.raise_for_status.side_effect = httpx.HTTPStatusError(
+            "not found", request=MagicMock(), response=MagicMock(status_code=404)
+        )
+        return resp
+
+    mock_client = MagicMock()
+    mock_client.get = _dispatch
+    mock_instance = MagicMock()
+    mock_instance.__aenter__ = AsyncMock(return_value=mock_client)
+    mock_instance.__aexit__ = AsyncMock(return_value=None)
+    mock = MagicMock(return_value=mock_instance)
+
+    with patch("httpx.AsyncClient", mock):
+        should_continue, context_msg = await _check_resume_status(env, info, info.id)
+
+    assert should_continue is True
+    assert context_msg is None
+    updated = env.registry.get(info.id)
+    assert updated is not None
+    assert updated.checkpoint is not None
+    assert updated.checkpoint.get("consecutive_mill_failures") == 1
+
+
+@pytest.mark.asyncio
+async def test_check_resume_status_http_404_but_refetch_succeeds_continues():
+    """A 404 that does not persist on re-fetch is transient — continue monitoring."""
+    env = _env_with_board()
+    info = _make_checkpoint_info(
+        env,
+        ticket_id="TICKET-1",
+        last_known_state="open",
+        consecutive_mill_failures=1,
+    )
+
+    ticket_calls = {"count": 0}
+
+    async def _dispatch(url, **kwargs):
+        url_str = str(url)
+        if "/health" in url_str:
+            return _make_response({"started_at": "2024-01-01T00:00:00Z"})
+        ticket_calls["count"] += 1
+        if ticket_calls["count"] == 1:
+            resp = MagicMock()
+            resp.raise_for_status.side_effect = httpx.HTTPStatusError(
+                "not found",
+                request=MagicMock(),
+                response=MagicMock(status_code=404),
+            )
+            return resp
+        return _make_response({"state": "draft"})
+
+    mock_client = MagicMock()
+    mock_client.get = _dispatch
+    mock_instance = MagicMock()
+    mock_instance.__aenter__ = AsyncMock(return_value=mock_client)
+    mock_instance.__aexit__ = AsyncMock(return_value=None)
+    mock = MagicMock(return_value=mock_instance)
+
+    with patch("httpx.AsyncClient", mock):
+        should_continue, context_msg = await _check_resume_status(env, info, info.id)
+
+    assert should_continue is True
+    assert context_msg is None
+    assert ticket_calls["count"] == 2
+    updated = env.registry.get(info.id)
+    assert updated is not None
+    assert updated.checkpoint is not None
+    assert updated.checkpoint.get("consecutive_mill_failures") == 0
 
 
 @pytest.mark.asyncio
