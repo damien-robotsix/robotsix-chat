@@ -122,9 +122,16 @@ def build_component_tools(
         Validation failures from the target are surfaced back as clear error
         messages.
 
+        This tool configures **other** component agents only: *base_url* must
+        name a component in the ``component_client.components`` allowlist. It
+        never targets you — to change your own configuration, call your own
+        ``PUT /config`` endpoint (see the ``robotsix-chat-self`` chat skill)
+        instead of this tool.
+
         Args:
             base_url: The base URL of the component agent to configure
-                (e.g. ``"http://comp-1:8090"``).
+                (e.g. ``"http://comp-1:8090"``). Must be listed in the
+                ``component_client.components`` allowlist.
             updates: A mapping of dotted-path config keys to new values
                 (e.g. ``{"server.port": 8080}``).
 
