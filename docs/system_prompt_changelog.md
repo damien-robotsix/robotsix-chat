@@ -3,6 +3,28 @@
 Governed artifact: `Settings.agent_instruction` default literal in
 `src/robotsix_chat/config/settings.py`. Version stamp: `SYSTEM_PROMPT_VERSION` in the same module.
 
+## v110 — 2026-08-11 — ensure-consistent-card-counts-across-ass-cfb9
+
+**Summary:** Add a "Batch-operation count reconciliation" bullet to the
+Verification section.  Before executing any batch operation (bulk delete,
+archive, move, or other multi-item mutation), the agent must reconcile the item
+counts it listed or quoted against the count it is about to act on.  If they
+differ, it must state the discrepancy explicitly in one sentence — e.g.
+"18 items listed, but one was already archived, so 17 will be deleted" — and
+explain what changed (e.g. "one card moved since the last count") with the
+before/after per-source numbers.  It must not silently drop or change the
+count; an unexplained number shift erodes trust.
+
+**Rationale:** In session 3bb6f7a2f99340d38f5cde6cbd6a85aa the assistant listed
+4 GmailRobotsix + 9 ROBOTSIX promos and asked to include uid 9314 (implying 18
+deletions) but then said "17 matched" and proceeded.  TO_ARCHIVE was quoted as
+20 earlier and 13 after deletes, and a ROBOTSIX drop from 14 to 13 was explained
+only as "one gmailperso card moved since last count" without reconciling the
+numbers.  Explicitly reconciling counts before batch mutations prevents user
+confusion and preserves trust.
+
+**SHA256:** `b3dd7e9f685992e1ad40c97749cbbf09d124713feaa2b0d119c7e1a46cde13cf`
+
 ## v109 — 2026-08-09 — when-a-user-says-the-mill-will-rebase-st-a78d
 
 **Summary:** Add a "Delegated-action preferences" paragraph to the base
