@@ -361,10 +361,10 @@ a contradictory action instruction. A prompt that says both "Reply with NO_CHANG
 "Begin a new autonomous session. Pick a subject and draft a plan." is self-contradictory — the agent
 will follow whichever instruction it weights higher, defeating the stop directive.
 
-**Rationale:** Ticket 20260811T081603Z (PR #1394) — board-unchanged detection prepended
-'BOARD UNCHANGED…Reply with NO_CHANGE and stop' before both the custom-prompt branch and the default
-'Begin a new autonomous session…' text, creating a contradictory prompt that undermines the
-no-change detection.
+**Rationale:** Ticket 20260811T081603Z (PR #1394) — board-unchanged detection prepended 'BOARD
+UNCHANGED…Reply with NO_CHANGE and stop' before both the custom-prompt branch and the default 'Begin
+a new autonomous session…' text, creating a contradictory prompt that undermines the no-change
+detection.
 
 ## Prompt governance
 
