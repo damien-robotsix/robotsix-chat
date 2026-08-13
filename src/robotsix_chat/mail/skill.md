@@ -29,10 +29,10 @@ covers every account the user asks about.
 
 ## Read-only tools
 
-| Tool                    | Description                                                              |
-| ----------------------- | ------------------------------------------------------------------------ |
+| Tool                    | Description                                                               |
+| ----------------------- | ------------------------------------------------------------------------- |
 | `get_mail_board`        | Full board content (columns + cards) as JSON; pass `account_id` to scope. |
-| `list_mail_accounts`    | List registered mail accounts and their `account_id` values.             |
+| `list_mail_accounts`    | List registered mail accounts and their `account_id` values.              |
 | `get_mail_email_status` | Triage column name for one email by message_id.                           |
 | `list_archive_folders`  | List all archive subfolders on the server.                                |
 | `browse_archive_folder` | List message envelope metadata in one archive subfolder.                  |
