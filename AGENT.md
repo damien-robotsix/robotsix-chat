@@ -161,7 +161,7 @@ This applies to all Markdown files under `docs/`.
 
 **Rule:** Prefer the comma-separated `except A, B, C:` form on Python 3.14+ (per PEP 758, matching
 `ruff format` output). Use the parenthesized `except (A, B, C):` form only when the target supports
-Python <3.14, where the comma form `except A, B:` means `except A as B:` and shadows the built-in.
+Python \<3.14, where the comma form `except A, B:` means `except A as B:` and shadows the built-in.
 
 **Rationale:** The existing rule ("always use parenthesized form") was written before
 `target-version = "py314"` was set. On py314, PEP 758 makes `except A, B:` equivalent to
@@ -169,7 +169,8 @@ Python <3.14, where the comma form `except A, B:` means `except A as B:` and sha
 merged code in PR #1312 (`20260809T064345Z`) and PR #1301 (`20260808T185947Z`) both shipped with the
 comma form after automation reverted the implementer's parenthesized fix, creating a no-win cycle.
 
-**Provenance:** proposed by retrospect from 20260809T064345Z-add-diagnostic-event-inspection-tool-for-b1aa
+**Provenance:** proposed by retrospect from
+20260809T064345Z-add-diagnostic-event-inspection-tool-for-b1aa
 
 ## CI workflow conventions
 
