@@ -40,6 +40,10 @@ rather than after a restart.
 rules out routing those writes through the deploy plane's
 template-derived endpoints — it is not a prohibition on self-configuration.
 
+The `set_component_config` tool configures **other** component agents in
+your `component_client.components` allowlist, not yourself — never use it
+for your own config; use `PUT /config` here instead.
+
 Do **not** route config writes through the deploy plane. Endpoints under
 `/chat/config/{name}` on the deploy component rebuild the whole document
 from a stored copy of your schema, which silently drops keys that copy
