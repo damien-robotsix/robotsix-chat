@@ -33,7 +33,6 @@ from robotsix_chat.subsessions.worker import (
     CloseState,
     SubsessionContext,
     SubsessionEnv,
-    _build_periodic_input,
     _event_wait_loop,
     _format_worker_error,
     _is_duplicate_reply,
@@ -42,6 +41,7 @@ from robotsix_chat.subsessions.worker import (
     _run_wait_for_event_turn,
     _truncate,
 )
+from robotsix_chat.subsessions.worker_periodic import _build_periodic_input
 from tests.common.subsession_fakes import (
     CapturingAgentFactory,
     FakeAgent,

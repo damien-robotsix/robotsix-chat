@@ -2304,6 +2304,8 @@ async def _run_periodic_turn(
 
 async def _subsession_worker(env: SubsessionEnv, sub_id: str) -> None:
     """Drive one subsession to a terminal state (see module docstring)."""
+    from .worker_periodic import _build_periodic_input
+
     registry = env.registry
     info = registry.get(sub_id)
     if info is None:  # pragma: no cover - spawn always registers first
@@ -2843,6 +2845,8 @@ async def _handle_kind_continuation(
 
     # PERIODIC
     if info.kind is SubsessionKind.PERIODIC:
+        from .worker_periodic import _run_periodic_turn
+
         result = await _run_periodic_turn(
             env, info, sub_id, reply, previous_result, consecutive_no_change
         )
