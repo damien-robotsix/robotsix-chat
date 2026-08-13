@@ -811,6 +811,27 @@ async def test_merge_pull_request_roster_falls_back_to_direct(
 
 
 @pytest.mark.asyncio
+async def test_merge_pull_request_roster_http_error_falls_back_to_direct(
+    respx_mock: respx.MockRouter,
+) -> None:
+    """Roster 404 (no ``Error:`` prefix) still triggers the direct fallback."""
+    route = respx_mock.post(
+        "http://board:8077/tickets/mr-http-fallback/merge-now"
+    ).mock(return_value=httpx.Response(200, json={"status": "merged_from_direct"}))
+
+    tools = build_merge_pull_request_tool(
+        _settings(),
+        component_request=_component_request_error(
+            "HTTP 404 Not Found\n" + json.dumps({"detail": "Not found"})
+        ),
+    )
+    result = await tools[0]("mr-http-fallback")
+
+    assert route.called
+    assert "merged_from_direct" in result
+
+
+@pytest.mark.asyncio
 async def test_merge_pull_request_direct_only(
     respx_mock: respx.MockRouter,
 ) -> None:
@@ -1208,6 +1229,27 @@ async def test_mark_ticket_ready_roster_falls_back_to_direct(
         component_request=_component_request_error("Error: connection refused"),
     )
     result = await tools[0]("mr-fallback")
+
+    assert route.called
+    assert "READY" in result
+
+
+@pytest.mark.asyncio
+async def test_mark_ticket_ready_roster_http_error_falls_back_to_direct(
+    respx_mock: respx.MockRouter,
+) -> None:
+    """Roster 502 (no ``Error:`` prefix) still triggers the direct fallback."""
+    route = respx_mock.post(
+        "http://board:8077/tickets/mr-http-fallback/mark-ready"
+    ).mock(return_value=httpx.Response(200, json={"state": "READY"}))
+
+    tools = build_mark_ticket_ready_tool(
+        _settings(),
+        component_request=_component_request_error(
+            "HTTP 502 Bad Gateway\n" + json.dumps({"detail": "upstream down"})
+        ),
+    )
+    result = await tools[0]("mr-http-fallback")
 
     assert route.called
     assert "READY" in result
