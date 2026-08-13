@@ -3,6 +3,7 @@
 from __future__ import annotations
 
 import asyncio
+import hashlib
 import json
 import logging
 import time
@@ -108,6 +109,37 @@ class AutonomousRunner:
         """Fixed pseudo-owner id under which autonomous sessions are surfaced."""
         return BOOTSTRAP_OWNER
 
+    # -- board digest ------------------------------------------------------
+
+    async def _mail_board_digest(self) -> str | None:
+        """Return a SHA-256 digest of the current auto-mail board content.
+
+        The digest is computed from the raw ``GET /board-content`` JSON so a
+        resuming session can detect byte-for-byte identical board state and
+        avoid re-running the board check when nothing new has appeared.
+
+        Returns ``None`` when the mail integration is disabled or the board
+        cannot be read (unreachable / error response) — callers then simply
+        skip no-change detection for this run.
+        """
+        # ``is True`` (rather than truthiness) keeps MagicMock-based test
+        # settings — where ``settings.mail.enabled`` is itself a mock — from
+        # accidentally triggering a real network call.
+        if getattr(self._settings.mail, "enabled", False) is not True:
+            return None
+        try:
+            from robotsix_chat.mail.client import MailClient
+
+            content = await MailClient(self._settings.mail).board_content()
+        except Exception:
+            logger.exception("Failed to fetch mail board content for digest")
+            return None
+        if not content or content.startswith("Mail API"):
+            # ``board_content`` returns a diagnostic string on failure;
+            # there is no valid board snapshot to hash.
+            return None
+        return hashlib.sha256(content.encode("utf-8")).hexdigest()
+
     # -- persistence ------------------------------------------------------
 
     def _save_sessions(self) -> None:
@@ -126,6 +158,7 @@ class AutonomousRunner:
                     "rejected_subjects": aq.rejected_subjects or [],
                     "recent_user_messages": aq.recent_user_messages or [],
                     "definition_name": aq.definition_name,
+                    "last_board_digest": aq.last_board_digest,
                 }
             self._persist_path.parent.mkdir(parents=True, exist_ok=True)
             self._persist_path.write_text(json.dumps(data, indent=2))
@@ -162,6 +195,7 @@ class AutonomousRunner:
                     rejected_subjects=entry.get("rejected_subjects", []),
                     recent_user_messages=entry.get("recent_user_messages", []),
                     definition_name=entry.get("definition_name", ""),
+                    last_board_digest=entry.get("last_board_digest", ""),
                 )
             except Exception:
                 logger.exception("Skipping unparsable autonomous session %s", sid)
@@ -928,6 +962,14 @@ class AutonomousRunner:
                 fire_ts,
                 is_restart,
             )
+            aq = self._sessions.get(session_id)
+            current_board_digest = await self._mail_board_digest()
+            board_unchanged = (
+                is_restart
+                and current_board_digest is not None
+                and aq is not None
+                and aq.last_board_digest == current_board_digest
+            )
             async with self._run_serializer.for_owner(owner_id):
                 agent = await asyncio.to_thread(self._agent_factory)
                 restart_notice = ""
@@ -935,6 +977,14 @@ class AutonomousRunner:
                     restart_notice = (
                         "SYSTEM RESTARTED — you are resuming an existing "
                         "autonomous session. "
+                    )
+                no_change_note = ""
+                if board_unchanged:
+                    no_change_note = (
+                        "BOARD UNCHANGED — the auto-mail board content is "
+                        "identical to the previous run. Do NOT re-run the "
+                        "board content check or output a duplicate board "
+                        "digest. Reply with NO_CHANGE and stop.\n\n"
                     )
                 # Build the kickoff prompt: use the session definition's
                 # custom prompt when provided, otherwise fall back to the
@@ -952,10 +1002,11 @@ class AutonomousRunner:
                         effective = self._refinement_store.effective_prompt(
                             defn.get("name", ""), custom_prompt
                         )
-                    prompt = f"{restart_notice}{effective}{rejected_note}"
+                    prompt = f"{restart_notice}{no_change_note}{effective}"
+                    prompt += rejected_note
                 else:
                     prompt = (
-                        f"{restart_notice}"
+                        f"{restart_notice}{no_change_note}"
                         "Begin a new autonomous session. "
                         "Pick a subject and draft a plan."
                         f"{rejected_note}"
@@ -987,6 +1038,12 @@ class AutonomousRunner:
                         agent_message_frame(full_reply, time.time()),
                     )
                 self.check_reply_for_markers(session_id, full_reply)
+
+                # Persist the board digest we just observed so the next
+                # restart can compare against it and detect no-change.
+                if aq is not None and current_board_digest:
+                    aq.last_board_digest = current_board_digest
+                    self._save_sessions()
         except asyncio.CancelledError:
             logger.debug("Initial-turn task cancelled for session %s", session_id)
         except Exception:
