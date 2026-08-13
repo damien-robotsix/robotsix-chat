@@ -128,7 +128,10 @@ robotsix-github-auth = { git = "https://github.com/damien-robotsix/robotsix-gith
 # Force pypdf>=6.15.0 (transitive dep of cognee) to resolve GHSA-fwg2-594c-jp42.
 # Constraint-dependencies avoids making pypdf a direct (deptry-visible) dependency.
 [tool.uv]
-constraint-dependencies = ["pypdf>=6.15.0"]
+constraint-dependencies = [
+    "pypdf>=6.15.0",
+    "anyio>=4.14.2",
+]
 
 [tool.ruff]
 target-version = "py314"

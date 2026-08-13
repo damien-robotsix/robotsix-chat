@@ -101,7 +101,13 @@ module.exports = async ({github, context, core}) => {
       const name = r.name || '';
       return name.endsWith(' / Deploy') || /\bDeploy\b/.test(name);
     };
-    others = runs.filter((r) => !isSelf(r) && !isDeploy(r));
+    // The OpenSSF Scorecard workflow ("Scorecard analysis" check run) is being
+    // retired fleet-wide and its `publish_results` step fails transiently
+    // against the Scorecard API for reasons unrelated to this codebase. It
+    // must not gate releases: exclude it here (a separate ticket removes the
+    // workflow from this repo entirely).
+    const isScorecard = (r) => (r.name || '') === 'Scorecard analysis';
+    others = runs.filter((r) => !isSelf(r) && !isDeploy(r) && !isScorecard(r));
     const pending = others.filter((r) => r.status !== 'completed');
 
     if (others.length === 0 || pending.length === 0) break;

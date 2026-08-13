@@ -5,7 +5,7 @@
 # system interpreter (/usr/local), exactly what the runtime stage copies.
 # Standard robotsix Dockerfile pattern — see robotsix-standards, docker page.
 # ---------------------------------------------------------------------------
-FROM python:3.14-slim@sha256:cea0e6040540fb2b965b6e7fb5ffa00871e632eef63719f0ea54bca189ce14a6 AS builder
+FROM python:3.14-slim@sha256:ce40764625a4ff50df3548277632e7f96c4e77fe75fa848aae9885476e7df5a4 AS builder
 
 SHELL ["/bin/bash", "-o", "pipefail", "-c"]
 
@@ -46,13 +46,21 @@ RUN uv export --frozen --no-emit-project --no-hashes \
 # builder — no uv, no git, no compilers. Node.js + the claude CLI are the one
 # genuine runtime system dependency (claude-sdk transport spawns the CLI).
 # ---------------------------------------------------------------------------
-FROM python:3.14-slim@sha256:cea0e6040540fb2b965b6e7fb5ffa00871e632eef63719f0ea54bca189ce14a6 AS runtime
+FROM python:3.14-slim@sha256:ce40764625a4ff50df3548277632e7f96c4e77fe75fa848aae9885476e7df5a4 AS runtime
 
 SHELL ["/bin/bash", "-o", "pipefail", "-c"]
 
 COPY --from=builder /usr/local/lib/python3.14/site-packages/ /usr/local/lib/python3.14/site-packages/
 COPY --from=builder /usr/local/bin/robotsix-chat /usr/local/bin/robotsix-chat
 COPY --from=builder /usr/local/bin/playwright /usr/local/bin/playwright
+
+# The runtime stage re-inherits pip from the base image (the COPY above
+# merges into site-packages rather than replacing it). pip is build-time
+# tooling only, and its vendored msgpack/setuptools trip the Trivy gate —
+# drop it from the runtime image.
+RUN rm -rf /usr/local/lib/python3.14/site-packages/pip \
+           /usr/local/lib/python3.14/site-packages/pip-*.dist-info \
+           /usr/local/bin/pip*
 
 # Install Node.js (LTS) and the claude CLI — required at runtime: the
 # claude-sdk subscription transport spawns the `claude` CLI as a subprocess.
