@@ -334,17 +334,6 @@ class BoardClient:
                 result.error,
             )
             return False, result.error
-        if result.status_code and result.status_code >= 400:
-            reason = (
-                f"Board API returned HTTP {result.status_code} "
-                f"for resume-blocked on ticket {ticket_id}"
-            )
-            if result.text:
-                body = result.text.strip()[:300]
-                if body:
-                    reason += f": {body}"
-            logger.warning("%s", reason)
-            return False, reason
         return True, None
 
     async def get_ticket_data(self, ticket_id: str) -> dict[str, Any] | None:
