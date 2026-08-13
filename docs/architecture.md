@@ -160,8 +160,8 @@ terminal state is `completed`.
 
 ### Lifecycle (executing → completed → auto-restart)
 
-A run begins with the definition's kickoff prompt, continues automatically via `Continue.` turns, and
-closes when the agent emits the completion marker (or the turn/idle caps are hit). Completion is
+A run begins with the definition's kickoff prompt, continues automatically via `Continue.` turns,
+and closes when the agent emits the completion marker (or the turn/idle caps are hit). Completion is
 automatic: the runner marks the session `completed`, then schedules a fresh run via
 `_auto_restart()` — immediately for `on_close` presets, or after `trigger_interval_seconds` for
 `periodic` presets. The operator never closes sessions manually.
@@ -170,18 +170,18 @@ automatic: the runner marks the session `completed`, then schedules a fresh run 
 
 All autonomous lifecycle work is moved off the startup/lifespan critical path:
 
-| Operation                 | Where it runs                              | Blocking? |
-| ------------------------- | ------------------------------------------ | --------- |
-| Resume completed sessions | Skipped; retired + replaced by bootstrap   | Never     |
-| Resume executing sessions | Background task via `_schedule_background` | Never     |
+| Operation                                   | Where it runs                              | Blocking? |
+| ------------------------------------------- | ------------------------------------------ | --------- |
+| Resume completed sessions                   | Skipped; retired + replaced by bootstrap   | Never     |
+| Resume executing sessions                   | Background task via `_schedule_background` | Never     |
 | Auto-continue loop (kickoff + continuation) | Background task via `_schedule_background` | Never     |
 
-`resume_sessions()` (called from the lifespan) iterates persisted autonomous sessions, schedules each
-executing session's continuation as a background task, then calls `ensure_all_active_sessions()` to
-guarantee every enabled definition has one open session, then returns immediately. Chat becomes
-available regardless of whether the background tasks have finished or errored. Errors in background
-tasks are caught and logged via `logger.exception`; they never propagate into the lifespan/startup
-path.
+`resume_sessions()` (called from the lifespan) iterates persisted autonomous sessions, schedules
+each executing session's continuation as a background task, then calls
+`ensure_all_active_sessions()` to guarantee every enabled definition has one open session, then
+returns immediately. Chat becomes available regardless of whether the background tasks have finished
+or errored. Errors in background tasks are caught and logged via `logger.exception`; they never
+propagate into the lifespan/startup path.
 
 ### Restart context message
 
