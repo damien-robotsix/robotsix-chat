@@ -170,6 +170,77 @@ async def _check_stale_worker_resume(
     return (True, None)
 
 
+async def _confirm_ticket_404(
+    board_url: str,
+    ticket_url: httpx.URL,
+    ticket_id: str,
+    sub_id: str,
+) -> bool | None:
+    """Confirm that a 404 on the ticket endpoint is a genuine deletion.
+
+    A 404 can also be produced by a gateway/proxy while the board API is
+    unreachable, so a single 404 must never be treated as a deletion claim
+    on its own.  This helper (1) probes the mill health endpoint and then
+    (2) re-fetches the ticket.  Only a 404 that persists while the health
+    endpoint responds is treated as terminal.
+
+    Returns:
+    * ``True``  — 404 confirmed on a healthy API; treat as deletion.
+    * ``False`` — ticket is reachable again; continue monitoring.
+    * ``None``  — API could not be confirmed healthy; treat as transient
+      unreachable (caller invokes ``_handle_mill_unreachable``).
+
+    """
+    started_at = await _get_mill_started_at(board_url)
+    if started_at is None:
+        logger.warning(
+            "Mill returned 404 for ticket %s (subsession %s) but the "
+            "health probe failed — treating as transient unreachable.",
+            ticket_id,
+            sub_id,
+        )
+        return None
+
+    try:
+        async with httpx.AsyncClient(timeout=httpx.Timeout(10.0)) as client:
+            confirm = await client.get(str(ticket_url))
+            confirm.raise_for_status()
+    except httpx.HTTPStatusError as exc:
+        if exc.response.status_code == 404:
+            return True
+        logger.warning(
+            "Mill returned %d re-fetching ticket %s (subsession %s) "
+            "after a 404 — treating as transient unreachable.",
+            exc.response.status_code,
+            ticket_id,
+            sub_id,
+        )
+        return None
+    except (httpx.TimeoutException, httpx.ConnectError, OSError) as exc:
+        logger.warning(
+            "Mill unreachable re-fetching ticket %s (subsession %s) after a 404: %s",
+            ticket_id,
+            sub_id,
+            exc,
+        )
+        return None
+    except Exception:
+        logger.exception(
+            "Unexpected error re-fetching ticket %s (subsession %s) after a 404",
+            ticket_id,
+            sub_id,
+        )
+        return None
+
+    logger.info(
+        "Ticket %s (subsession %s) became reachable on re-fetch after "
+        "a 404 — resuming monitoring.",
+        ticket_id,
+        sub_id,
+    )
+    return False
+
+
 async def _check_resume_status(
     env: SubsessionEnv,
     info: SubsessionInfo,
@@ -232,11 +303,25 @@ async def _check_resume_status(
             sub_id,
         )
         # 4xx errors are permanent — close immediately with the reason.
+        # Exception: a 404 can also be produced by a gateway/proxy while
+        # the board API is unreachable, so it is only treated as a
+        # deletion after the health probe + re-fetch confirmation below.
         if 400 <= status_code < 500:
             if status_code == 404:
+                confirmed = await _confirm_ticket_404(
+                    board_url, ticket_url, ticket_id, sub_id
+                )
+                if confirmed is None:
+                    # API unreachable while confirming — transient.
+                    should_continue = await _handle_mill_unreachable(env, info, sub_id)
+                    return (should_continue, None)
+                if confirmed is False:
+                    # Ticket became reachable again — the 404 was transient.
+                    _reset_mill_failure_counter(env, info, sub_id)
+                    return (True, None)
                 reason = f"Ticket {ticket_id} was deleted during the outage."
                 logger.warning(
-                    "Mill returned 404 for ticket %r (subsession %s). "
+                    "Mill confirmed 404 for ticket %r (subsession %s). "
                     "This ID may have been derived from narrative text "
                     "rather than from a board API response — verify it "
                     "against GET /tickets on the board.",
