@@ -150,6 +150,9 @@ async def test_spawn_tool_capacity_refusal() -> None:
 
     assert result.startswith("Could not start the subsession:")
     assert "capacity" in result
+    assert "list_subsessions" in result
+    assert "poll the ticket/subject manually" in result
+    assert "Do NOT retry in a tight loop" in result
 
 
 @pytest.mark.asyncio

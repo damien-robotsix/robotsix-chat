@@ -360,8 +360,20 @@ def _build_spawn_and_control_tools(
                     else None
                 ),
             )
+        except SubsessionCapacityError as exc:
+            return (
+                f"Could not start the subsession: {exc}\n"
+                "The subsession pool is full, so no new monitor can start "
+                "right now. To work around this, either:\n"
+                "  1. call list_subsessions and close or pause idle/resolved "
+                "monitors (especially ones reporting no change for many "
+                "cycles) to free a slot, then retry;\n"
+                "  2. poll the ticket/subject manually in this conversation "
+                "instead of starting a monitor;\n"
+                "  3. retry later once an active monitor closes on its own.\n"
+                "Do NOT retry in a tight loop — the pool will not free itself."
+            )
         except (
-            SubsessionCapacityError,
             SubsessionDepthError,
             SubsessionIntervalError,
             SubsessionLevelError,
