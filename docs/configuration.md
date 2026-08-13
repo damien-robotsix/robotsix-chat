@@ -118,17 +118,17 @@ prompt. To pre-authorize actions:
 
 ### Server
 
-| JSON key                | Type            | Default          | Description                                                                                        |
-| ----------------------- | --------------- | ---------------- | -------------------------------------------------------------------------------------------------- |
-| `server_host`           | `string`        | `"0.0.0.0"`      | Host the server binds to.                                                                          |
-| `server_port`           | `integer`       | `8000`           | Port the server listens on.                                                                        |
-| `idle_timeout_minutes`  | `integer`       | `30`             | Minutes of inactivity before closing the connection.                                               |
-| `compaction_min_turns`  | `integer`       | `3`              | Minimum fresh (not yet summarized) turns before compaction triggers.                               |
-| `compaction_keep_recent_turns` | `integer` | `2`        | Most recent turns left verbatim after compaction so pending proposals and exact identifiers survive. |
-| `log_level`             | `string`        | `"INFO"`         | Python logging level.                                                                              |
-| `log_json_format`       | `boolean`       | `true`           | When `true`, log lines are structured JSON (structlog); `false` for human-readable console output. |
-| `cors_allow_origins`    | `array[string]` | `[]`             | Origins allowed to call `/chat` cross-origin.                                                      |
-| `correlation_id_header` | `string`        | `"X-Request-ID"` | Header name for request correlation ids.                                                           |
+| JSON key                       | Type            | Default          | Description                                                                                          |
+| ------------------------------ | --------------- | ---------------- | ---------------------------------------------------------------------------------------------------- |
+| `server_host`                  | `string`        | `"0.0.0.0"`      | Host the server binds to.                                                                            |
+| `server_port`                  | `integer`       | `8000`           | Port the server listens on.                                                                          |
+| `idle_timeout_minutes`         | `integer`       | `30`             | Minutes of inactivity before closing the connection.                                                 |
+| `compaction_min_turns`         | `integer`       | `3`              | Minimum fresh (not yet summarized) turns before compaction triggers.                                 |
+| `compaction_keep_recent_turns` | `integer`       | `2`              | Most recent turns left verbatim after compaction so pending proposals and exact identifiers survive. |
+| `log_level`                    | `string`        | `"INFO"`         | Python logging level.                                                                                |
+| `log_json_format`              | `boolean`       | `true`           | When `true`, log lines are structured JSON (structlog); `false` for human-readable console output.   |
+| `cors_allow_origins`           | `array[string]` | `[]`             | Origins allowed to call `/chat` cross-origin.                                                        |
+| `correlation_id_header`        | `string`        | `"X-Request-ID"` | Header name for request correlation ids.                                                             |
 
 **Compaction strategy.** When a session has been idle past `idle_timeout_minutes`, the turns before
 the most recent `compaction_keep_recent_turns` turns are folded into a summary; the recent turns
