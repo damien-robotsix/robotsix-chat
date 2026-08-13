@@ -1346,6 +1346,7 @@ async def test_run_server_from_config_creates_agent_from_settings(
             "port": 8080,
             "idle_timeout_minutes": 30,
             "compaction_min_turns": 3,
+            "compaction_keep_recent_turns": 2,
             "max_images_per_message": 8,
             "max_image_bytes": 5_242_880,
             "allowed_image_media_types": [
@@ -2716,10 +2717,12 @@ async def test_idle_compaction_is_in_place_same_session() -> None:
     # Subsession untouched.
     assert sub.owner_session_id == sid
     # Transcript intact (3 old turns + the new one); agent view compacted.
+    # The two most recent pre-compaction turns stay verbatim so a pending
+    # plan survives the summary.
     assert len(store.history(sid)) == 4
     agent_view = store.agent_history(sid)
     assert "summary of prior chat" in agent_view[0][1]
-    assert [u for u, _ in agent_view[1:]] == ["back"]
+    assert [u for u, _ in agent_view[1:]] == ["q1", "q2", "back"]
 
 
 @pytest.mark.asyncio
@@ -2746,6 +2749,90 @@ async def test_idle_compaction_skipped_below_min_turns() -> None:
         conversation_store=store,
         idle_timeout_minutes=30,
         compaction_min_turns=3,
+    ) as f:
+        await f.client.post(
+            "/chat",
+            json={"message": "back", "session_id": sid, "owner_id": "owner-idle"},
+        )
+
+    assert summary_agent.call_count == 0
+    assert store.get_session(sid).compacted_summary is None  # type: ignore[union-attr]
+
+
+@pytest.mark.asyncio
+async def test_idle_compaction_preserves_recent_action_plan_verbatim() -> None:
+    """A proposed plan with itemized identifiers survives idle compaction.
+
+    The plan lives in the most recent pre-compaction turn and is kept out of
+    the summary so the agent can execute it without the operator re-pasting.
+    """
+    import time as time_mod
+
+    plan = (
+        "Plan (awaiting confirmation):\n"
+        "- uid 112233: archive\n"
+        "- uid 445566: reply\n"
+        "- ticket T-789: close as done"
+    )
+    store = ConversationStore()
+    sid = cast(str, store.create_session("owner-idle")["session_id"])
+    store.record(sid, "owner-idle", "old resolved question", "old resolved answer")
+    store.record(sid, "owner-idle", "what should I do", plan)
+
+    session = store.get_session(sid)
+    assert session is not None
+    session.wall_last_active = time_mod.time() - 3600
+
+    summary_agent = MockAgent(tokens=["lossy summary without identifiers"])
+    async with mock_app(
+        tokens=["ok"],
+        summary_agent=summary_agent,
+        conversation_store=store,
+        idle_timeout_minutes=30,
+        compaction_min_turns=1,
+        compaction_keep_recent_turns=1,
+    ) as f:
+        await f.client.post(
+            "/chat",
+            json={"message": "go ahead", "session_id": sid, "owner_id": "owner-idle"},
+        )
+
+    # The summary prompt asks for pending confirmations, exact identifiers,
+    # and agreed next steps.
+    assert summary_agent.called_with is not None
+    assert "Pending confirmations" in summary_agent.called_with
+    assert "Exact identifiers" in summary_agent.called_with
+    assert "Agreed next steps" in summary_agent.called_with
+
+    # The plan turn is replayed verbatim, not folded into the (deliberately
+    # lossy) summary, so every uid/ticket id is still available.
+    agent_view = store.agent_history(sid)
+    assert [u for u, _ in agent_view[1:]] == ["what should I do", "go ahead"]
+    assert plan in agent_view[1][1]
+
+
+@pytest.mark.asyncio
+async def test_idle_compaction_skipped_when_only_kept_turns_remain() -> None:
+    """Compaction is skipped when every fresh turn falls inside the keep window."""
+    import time as time_mod
+
+    store = ConversationStore()
+    sid = cast(str, store.create_session("owner-idle")["session_id"])
+    store.record(sid, "owner-idle", "q1", "a1")
+    store.record(sid, "owner-idle", "q2", "a2")
+
+    session = store.get_session(sid)
+    assert session is not None
+    session.wall_last_active = time_mod.time() - 3600
+
+    summary_agent = MockAgent(tokens=["should never run"])
+    async with mock_app(
+        tokens=["ok"],
+        summary_agent=summary_agent,
+        conversation_store=store,
+        idle_timeout_minutes=30,
+        compaction_min_turns=1,
+        compaction_keep_recent_turns=2,
     ) as f:
         await f.client.post(
             "/chat",
