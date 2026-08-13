@@ -97,7 +97,7 @@ operator's explicit consent in the conversation — the operation modifies live 
 
 ### Preconditions
 
-- Both ``old_path`` and ``new_path`` must be under the archive root (enforced server-side).
+- Both `old_path` and `new_path` must be under the archive root (enforced server-side).
 - The IMAP server must be reachable and authenticated.
 
 ### Error responses
