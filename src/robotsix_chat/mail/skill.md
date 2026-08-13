@@ -4,6 +4,18 @@ The mail tools connect directly to the robotsix-auto-mail board server — a liv
 application. Use them to inspect the kanban triage board, move or delete mails across triage
 columns, and browse / reorganise the archive.
 
+## Mailbox / account counts
+
+Never assert how many mailboxes or mail accounts exist from memory, a previous summary, or the
+conversation so far — the live board can change between sessions and your recollection is frequently
+stale. When the number of mailboxes/accounts matters to your reply, or the user corrects you about
+it (e.g. "you are missing the other mailbox, there are 3 of them"):
+
+1. **Query the live board first.** Call `get_mail_board` (which reads the live `/board-content`
+   endpoint) and derive the account/mailbox count from the returned JSON before responding.
+2. **Acknowledge the correction against live data.** If the live count disagrees with what you said,
+   accept the correction and restate the live count — do not re-argue from memory.
+
 ## Handling deletion / cleanup requests
 
 When a user asks you to find or delete mails — e.g. "delete newsletters", "check Lenovo/Macif
