@@ -138,6 +138,21 @@ def test_archive_root_check_returns_503_on_malformed_config_json(
     assert "failed to load mail config" in resp.json()["detail"]
 
 
+def test_archive_root_check_returns_503_when_mail_section_is_not_an_object(
+    tmp_path: Path,
+) -> None:
+    """GET returns 503 when the ``mail`` config section is not an object."""
+    config_path = tmp_path / "config.json"
+    config_path.write_text(json.dumps({"mail": "not-an-object"}), encoding="utf-8")
+    client = _make_app(str(config_path))
+
+    resp = client.get("/mail/archive-root-check")
+
+    assert resp.status_code == 503
+    assert resp.json()["status"] == "error"
+    assert "failed to load mail config" in resp.json()["detail"]
+
+
 def test_archive_root_check_returns_502_on_non_dict_payload(
     tmp_path: Path, monkeypatch: pytest.MonkeyPatch
 ) -> None:

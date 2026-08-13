@@ -44,9 +44,11 @@ def _load_mail_settings(request: Request) -> MailSettings:
     config_path = _resolve_mail_config_path(request)
     data = _read_config_json(config_path)
 
+    # An absent ``mail`` section is the same as a disabled integration; a
+    # present-but-non-dict section is a config-shape error surfaced by
+    # ``MailSettings`` validation below (rather than silently treated as
+    # disabled).
     mail_data: Any = data.get("mail", {})
-    if not isinstance(mail_data, dict):
-        mail_data = {}
     return MailSettings.model_validate(mail_data)
 
 
