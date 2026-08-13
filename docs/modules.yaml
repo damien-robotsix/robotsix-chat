@@ -55,6 +55,7 @@ modules:
       - .robotsix-mill/**/*
       - _stubs/**/*
       - src/robotsix_mill/__init__.py
+      - src/robotsix_mill/agent_definitions/document.yaml
       - src/robotsix_mill/agent_definitions/implement.yaml
       - src/robotsix_mill/agents/runners/diagnostic_events.py
       - src/robotsix_mill/stages/document.py
