@@ -61,6 +61,8 @@ modules:
       - src/robotsix_mill/stages/document.py
       - src/robotsix_mill/stages/retrospect.py
       - src/robotsix_mill/stages/towncrier.py
+      - tests/scripts/__init__.py
+      - tests/scripts/test_verify_changelog_fragment.py
       - tests/stages/**/*
       - config/**/*
       - deploy/**/*
