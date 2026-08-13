@@ -2144,6 +2144,25 @@ autonomous settings at their pydantic field defaults
 (``completion_marker="---AUTONOMOUS COMPLETE---"``,
 ``stale_monitor_runs_before_completion=3``).
 
+## AUTONOMOUS v23 — 2026-08-13 — avoid-suggesting-stale-disconnected-moni-7f5e
+
+**Summary:** Add a monitor re-activation guard.  Before offering to resume,
+wake, or re-activate any paused or auto-paused monitor, the agent must
+verify that the tracked resource still exists and is meaningful (query the
+board for the tracked ID, or use `list_subsessions`).  If the tracked ticket
+returns 404, has been deleted, or no longer exists, the monitor is tracking
+a stale/broken ID — do not offer to wake or resume it; instead report the
+broken monitor and stop it to free its pool slot.  Apply the same check when
+a monitor auto-pauses on NO_CHANGE: confirm the underlying resource still
+exists before suggesting re-activation.
+
+**Rationale:** The assistant created a monitor for a non-existent ticket ID,
+later received a stale/broken-ID notice, and then offered to wake the
+monitor — a pointless action.  Validating tracked IDs before re-activation
+avoids offering to resume monitors that would watch nothing.
+
+**SHA256:** `b9833bee1ef2c891e0bc2252bc1f2c980f3cb8817a6c5bf344dea2ff682e6d7d`
+
 ## AUTONOMOUS v22 — 2026-08-16 — autonomous-sessions-should-run-as-normal-2694
 
 **Summary:** Remove the proposal/approval handshake from the autonomous
