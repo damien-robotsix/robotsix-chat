@@ -1301,8 +1301,8 @@ class AutonomousSessionDefinition(BaseModel):
     Attributes:
         name: Unique identifier for this session definition.
         prompt: Custom kickoff prompt appended to the autonomous protocol
-            supplement.  When empty, the agent uses the standard "Pick a
-            subject and draft a plan" prompt.
+            supplement.  When empty, the agent uses the standard "Begin a new
+            autonomous session and work it to completion" prompt.
         trigger_type: How the session is re-triggered after completion —
             ``"periodic"`` (wait ``trigger_interval_seconds``) or
             ``"on_close"`` (restart immediately, continuous mode).

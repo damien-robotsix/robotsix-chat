@@ -986,7 +986,10 @@ class AutonomousRunner:
     async def resume_sessions(self) -> None:
         """Handle autonomous sessions on server restart.
 
-        - Sessions in ``completed`` state: left as-is (operator closes).
+        - Sessions in ``completed`` state: skipped (not re-run).  The
+          auto-restart guarantee in :meth:`ensure_all_active_sessions`
+          then retires them and starts a fresh session for their
+          definition.
         - Sessions in ``executing`` state: resume auto-continue.
         - When no sessions exist at all for a definition (e.g. a fresh or
           wiped store), auto-start one session per enabled definition so
