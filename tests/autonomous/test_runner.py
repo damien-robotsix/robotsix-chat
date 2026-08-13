@@ -2184,3 +2184,54 @@ class TestScheduleRefinement:
         ]
         # Should contain truncation marker.
         assert "transcript truncated" in history_text
+
+
+class TestBoardDigestPersistence:
+    """``last_board_digest`` survives the save/load round-trip."""
+
+    def test_last_board_digest_round_trip(self, tmp_path: Path) -> None:
+        """A session's last_board_digest is written and read back intact."""
+        store = ConversationStore()
+        runner = AutonomousRunner(
+            settings=MagicMock(),
+            conversation_store=store,
+            agent_factory=MagicMock(),
+            run_serializer=MagicMock(),
+        )
+        # Point persistence at a temp file so the round-trip is isolated.
+        runner._persist_path = tmp_path / "autonomous_sessions.json"
+
+        aq = runner.create_session("owner1", schedule_kickoff=False)
+        aq.last_board_digest = "sha256:deadbeef"
+        runner._save_sessions()
+
+        reloaded = runner._load_sessions()
+        assert reloaded[aq.session_id].last_board_digest == "sha256:deadbeef"
+
+    def test_load_defaults_missing_digest_to_empty(self, tmp_path: Path) -> None:
+        """A session missing the digest field loads with "" (backward-compat)."""
+        import json
+
+        store = ConversationStore()
+        runner = AutonomousRunner(
+            settings=MagicMock(),
+            conversation_store=store,
+            agent_factory=MagicMock(),
+            run_serializer=MagicMock(),
+        )
+        persist = tmp_path / "autonomous_sessions.json"
+        persist.write_text(
+            json.dumps(
+                {
+                    "legacy": {
+                        "session_id": "legacy",
+                        "owner_id": "owner1",
+                        "state": "planning",
+                    }
+                }
+            )
+        )
+        runner._persist_path = persist
+
+        reloaded = runner._load_sessions()
+        assert reloaded["legacy"].last_board_digest == ""
