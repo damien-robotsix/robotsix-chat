@@ -10,7 +10,7 @@ if TYPE_CHECKING:
 # Version stamp for the autonomous appendix (build_autonomous_instruction).
 # Bump on every change to the instruction text and update
 # docs/system_prompt_changelog.md with a new AUTONOMOUS entry + SHA256.
-AUTONOMOUS_PROMPT_VERSION = 22
+AUTONOMOUS_PROMPT_VERSION = 23
 
 
 def build_autonomous_instruction(settings: Settings) -> str:
@@ -122,6 +122,19 @@ def build_autonomous_instruction(settings: Settings) -> str:
         "into per-module tickets, or isolate the configuration step from "
         "the code change).  This reduces operator cognitive load and "
         "speeds up unblocking.\n"
+        "\n"
+        "Monitor re-activation guard: before offering to resume, wake, or "
+        "re-activate any paused or auto-paused monitor, verify that the "
+        "resource it tracks still exists and is meaningful.  Query the board "
+        "for the tracked ID (component_request GET /tickets/{id}, or "
+        "list_subsessions to confirm the monitor's target).  If the tracked "
+        "ticket returns 404, has been deleted, or otherwise no longer "
+        "exists, the monitor is tracking a stale or broken ID — do NOT offer "
+        "to wake or resume it.  Report the broken monitor to the operator "
+        "and stop it to free its pool slot instead.  Apply the same check "
+        "when a monitor auto-pauses on NO_CHANGE: before suggesting "
+        "re-activation, confirm the underlying resource still exists, "
+        "otherwise a resumed monitor would watch nothing.\n"
         "\n"
         "Consolidate identical monitor notices: when several monitors "
         "report the same outcome (no-change, auto-pause, or auto-stop) in "
