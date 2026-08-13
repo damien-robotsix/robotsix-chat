@@ -1497,6 +1497,12 @@
       "title": "Compaction Min Turns",
       "type": "integer"
     },
+    "compaction_keep_recent_turns": {
+      "advanced": true,
+      "default": 2,
+      "title": "Compaction Keep Recent Turns",
+      "type": "integer"
+    },
     "log_level": {
       "default": "INFO",
       "title": "Log Level",

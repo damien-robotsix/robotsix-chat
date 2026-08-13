@@ -996,14 +996,17 @@ class ConversationStore:
         owner_id: str,  # noqa: ARG002 — kept for call-site clarity
         session_id: str,
         summary: str,
+        keep_recent_turns: int = 0,
     ) -> dict[str, object]:
         """Compact *session_id* **in place**: store *summary* over its turns.
 
         The session keeps its id, title, and full ``turns`` list (the UI
         transcript is untouched); only the agent-facing replay changes —
         turns up to this point are replaced by *summary* (see
-        :meth:`agent_history`).  No new session is created, so the session
-        list stays stable and subsessions never change owner.
+        :meth:`agent_history`).  The most recent ``keep_recent_turns`` turns
+        are left verbatim in the replay so a pending proposal (and its exact
+        identifiers) survives compaction.  No new session is created, so the
+        session list stays stable and subsessions never change owner.
 
         (The previous design minted a continuation session per idle gap,
         which proliferated "New chat" husks, dragged subsession trees across
@@ -1023,8 +1026,13 @@ class ConversationStore:
                 "compacted_summary": summary,
             }
 
+        keep = max(0, min(keep_recent_turns, len(session.turns)))
         session.compacted_summary = summary
-        session.compacted_turn_index = len(session.turns)
+        session.compacted_turn_index = len(session.turns) - keep
+        # Restart the idle clock: compaction consumes the idle gap, and
+        # without this a keep>0 window would re-trigger summarisation on
+        # every subsequent message instead of waiting for a fresh idle gap.
+        session.wall_last_active = self._wall_clock()
         self._persist()
 
         return {

@@ -1258,6 +1258,9 @@ class Settings(BaseModel):
     server_port: int = Field(default=8000, json_schema_extra={"advanced": True})
     idle_timeout_minutes: int = 30
     compaction_min_turns: int = Field(default=3, json_schema_extra={"advanced": True})
+    compaction_keep_recent_turns: int = Field(
+        default=2, json_schema_extra={"advanced": True}
+    )
     log_level: str = "INFO"
     log_json_format: bool = True
     cors_allow_origins: list[str] = Field(
@@ -1435,6 +1438,11 @@ class Settings(BaseModel):
         if err:
             failures.append(err)
         err = self._require_min(self.compaction_min_turns, 0, "compaction_min_turns")
+        if err:
+            failures.append(err)
+        err = self._require_min(
+            self.compaction_keep_recent_turns, 0, "compaction_keep_recent_turns"
+        )
         if err:
             failures.append(err)
         err = self._require_min(

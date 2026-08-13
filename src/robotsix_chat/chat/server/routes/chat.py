@@ -608,11 +608,22 @@ async def _generate_idle_summary(
     transcript = build_transcript(turns)
 
     prompt = (
-        "Write a brief, plain-text summary of the conversation below — "
-        "what it's about, what's currently in progress, and anything "
-        "blocking or worth remembering. A few sentences of prose. No "
-        "headers, no bullet points, no JSON, no markdown fences — just "
-        "plain text.\n\nConversation:\n"
+        "Summarize the conversation below for the assistant's future self. "
+        "The summary MUST explicitly carry:\n"
+        "1. Pending confirmations — proposals awaiting the user's approval, "
+        "and exactly what is being confirmed.\n"
+        "2. Exact identifiers — ticket ids, message uids, file paths, PR "
+        "URLs, subsession ids, and task ids. Reproduce them verbatim; never "
+        "paraphrase, abbreviate, or drop them.\n"
+        "3. Agreed next steps — the concrete actions the assistant said it "
+        "would take next.\n"
+        "4. Pending action plans — if the assistant laid out a multi-item "
+        "plan (especially one with per-item identifiers and decisions), "
+        "reproduce that plan as a verbatim block so it can be executed "
+        "without re-deriving anything. Do not collapse an itemized plan "
+        "into prose.\n\n"
+        "Keep the surrounding prose brief. Do not invent identifiers that "
+        "do not appear in the conversation.\n\nConversation:\n"
         f"{transcript}\n\nSummary:"
     )
 
@@ -757,6 +768,7 @@ async def chat_endpoint(
 
     idle_timeout_minutes: int = request.app.state.idle_timeout_minutes
     compaction_min_turns: int = request.app.state.compaction_min_turns
+    compaction_keep_recent_turns: int = request.app.state.compaction_keep_recent_turns
     if had_session and idle_timeout_minutes > 0:
         idle_session = store.get_session(session_id)
         if idle_session is not None:
@@ -765,6 +777,7 @@ async def chat_endpoint(
             if (
                 idle_seconds > idle_timeout_minutes * 60
                 and fresh_turns >= compaction_min_turns
+                and fresh_turns > compaction_keep_recent_turns
             ):
                 compaction_turns = store.agent_history(session_id)
                 summary = await _generate_idle_summary(
@@ -772,13 +785,20 @@ async def chat_endpoint(
                     compaction_turns,
                 )
                 if summary:
-                    store.compact_session(owner_id or "", session_id, summary)
+                    store.compact_session(
+                        owner_id or "",
+                        session_id,
+                        summary,
+                        keep_recent_turns=compaction_keep_recent_turns,
+                    )
+                    folded_turns = fresh_turns - compaction_keep_recent_turns
                     logger.info(
                         "Idle timeout (%d min): compacted session %s in place "
-                        "(%d turns folded into summary)",
+                        "(%d turns folded into summary, %d kept verbatim)",
                         idle_timeout_minutes,
                         session_id,
-                        fresh_turns,
+                        folded_turns,
+                        compaction_keep_recent_turns,
                     )
 
                 # Schedule a feedback run for the compacted session.
