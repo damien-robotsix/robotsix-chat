@@ -3,6 +3,26 @@
 Governed artifact: `Settings.agent_instruction` default literal in
 `src/robotsix_chat/config/settings.py`. Version stamp: `SYSTEM_PROMPT_VERSION` in the same module.
 
+## v108 — 2026-08-14 — validate-observations-before-presenting
+
+**Summary:** Add a bullet to the Verification section requiring the agent to
+validate its own observations before presenting them as fact.  Before telling
+the user that data is empty, missing, or malformed (e.g. "the JSON shows empty
+archive folders"), the agent must re-read the actual tool output or re-query
+the live source and confirm the claim — an unverified first impression forces
+a correction next turn and wastes the user's attention.  When the agent
+discovers an earlier statement was a mistake and the data is actually correct,
+it must issue a single concise retraction stating the corrected fact and then
+proceed on the correct data, without unpacking the error or re-narrating the
+misreading.
+
+**Rationale:** Session 3bb6f7a2f99340d38f5cde6cbd6a85aa saw the agent claim
+JSON showed empty archive folders, then admit in the next turn that this was a
+mistake and the data was correct before acting on the correct data — confusing
+the user and spending tokens on the error narrative.
+
+**SHA256:** `d2f9249b93c58b093a921e4ea259cb61ed422fca4e78a925fc52888849a18be9`
+
 ## v107 — 2026-08-12 — require-evidence-before-capability-tickets
 
 **Summary:** Add an evidence/confirmation gate to the ticket-lifecycle
