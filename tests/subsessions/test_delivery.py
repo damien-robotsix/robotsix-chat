@@ -1210,6 +1210,20 @@ def test_active_plan_react_prompt_forbids_reemitting_already_shown_payload() -> 
     assert "already presented" in text
 
 
+def test_react_prompt_templates_strip_internal_identifiers() -> None:
+    """All reaction templates must forbid raw internal identifiers."""
+    for template in (
+        _REACT_PROMPT_TEMPLATE,
+        _REACT_PROMPT_ACTIVE_PLAN_TEMPLATE,
+        _BATCH_REACT_PROMPT_TEMPLATE,
+    ):
+        text = template.lower()
+        assert "ticket id" in text
+        assert "run number" in text
+        assert "pr number" in text
+        assert "commit hash" in text
+
+
 # ---------------------------------------------------------------------------
 # _sanitize_reaction_reply — stripping internal metadata from reaction output
 # ---------------------------------------------------------------------------
@@ -1439,8 +1453,10 @@ def test_batch_react_prompt_template_contains_consolidation_rule() -> None:
     text = _BATCH_REACT_PROMPT_TEMPLATE.lower()
     assert "consolidation rule" in text
     assert "mandatory" in text
+    assert "always apply" in text
     assert "exactly one" in text
     assert "group by theme" in text
+    assert "raw outcome list" in text
     assert "never reply to each outcome individually" in text
 
 
