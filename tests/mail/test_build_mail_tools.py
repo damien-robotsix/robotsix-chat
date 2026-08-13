@@ -81,6 +81,22 @@ def test_build_mail_tools_returns_eleven_tools() -> None:
 
 
 # ---------------------------------------------------------------------------
+# load_mail_skill
+# ---------------------------------------------------------------------------
+
+
+def test_mail_skill_guides_scope_confirmation_before_listing_candidates() -> None:
+    """The skill tells the agent to confirm scope before listing deletion candidates."""
+    from robotsix_chat.mail import load_mail_skill
+
+    skill = load_mail_skill()
+    assert "Confirm scope first" in skill
+    assert "Present only the matching subset" in skill
+    assert "Wait for confirmation" in skill
+    assert "You asked about newsletters, Lenovo, and Macif" in skill
+
+
+# ---------------------------------------------------------------------------
 # MailClient — board_content (GET /board-content)
 # ---------------------------------------------------------------------------
 

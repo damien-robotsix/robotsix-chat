@@ -4,6 +4,21 @@ The mail tools connect directly to the robotsix-auto-mail board server — a liv
 application. Use them to inspect the kanban triage board, move or delete mails across triage
 columns, and browse / reorganise the archive.
 
+## Handling deletion / cleanup requests
+
+When a user asks you to find or delete mails — e.g. "delete newsletters", "check Lenovo/Macif
+emails" — do **not** immediately dump the full board or a long list of every candidate you can find.
+An exhaustive list (including mails already discussed and uncertain mails the user never asked
+about) overloads the user and makes it harder to act. Instead:
+
+1. **Confirm scope first.** Restate the specific requests you heard, by account, folder, or
+   criterion — e.g. "You asked about newsletters, Lenovo, and Macif — here's my read on those."
+2. **Present only the matching subset.** Show just the candidates that fall under the user's stated
+   criteria. Omit mails that were already discussed or decided, and omit uncertain candidates the
+   user did not ask about.
+3. **Wait for confirmation.** Do not enumerate further candidates, and do not perform any mutation,
+   until the user confirms the subset is correct or asks for more.
+
 ## Read-only tools
 
 | Tool                    | Description                                              |
