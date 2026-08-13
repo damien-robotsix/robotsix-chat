@@ -350,7 +350,6 @@ def autonomous_state_frame(
     session_id: str,
     state: str,
     *,
-    plan_text: str = "",
     auto_turn_count: int = 0,
     max_auto_turns: int = 0,
 ) -> dict[str, object]:
@@ -366,7 +365,6 @@ def autonomous_state_frame(
             "type": "autonomous_state",
             "session_id": <str>,
             "state": <"executing|completed">,
-            "plan_text": <str>,
             "auto_turn_count": <int>,
             "max_auto_turns": <int>,
         }
@@ -375,7 +373,6 @@ def autonomous_state_frame(
         "type": SSE_AUTONOMOUS_STATE_TYPE,
         "session_id": session_id,
         "state": state,
-        "plan_text": plan_text,
         "auto_turn_count": auto_turn_count,
         "max_auto_turns": max_auto_turns,
     }
