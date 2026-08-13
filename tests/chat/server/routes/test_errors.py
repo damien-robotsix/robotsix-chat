@@ -290,6 +290,41 @@ def test_stream_error_code_maps_http_status() -> None:
     assert stream_error_code(_exc(503)) == STREAM_ERROR_SERVER
 
 
+def test_stream_error_code_maps_usage_exhausted_to_budget_exhausted() -> None:
+    """Claude SDK usage exhaustion gets a distinct machine-readable code."""
+    from robotsix_llmio.claude_sdk import ClaudeSDKUsageExhaustedError
+
+    from robotsix_chat.chat.server.routes.errors import (
+        STREAM_ERROR_BUDGET_EXHAUSTED,
+        stream_error_code,
+    )
+
+    assert (
+        stream_error_code(ClaudeSDKUsageExhaustedError("out of usage credits"))
+        == STREAM_ERROR_BUDGET_EXHAUSTED
+    )
+
+
+def test_curated_stream_error_budget_exhausted_is_actionable() -> None:
+    """The budget-exhausted payload names the code and a recovery action."""
+    from robotsix_llmio.claude_sdk import ClaudeSDKUsageExhaustedError
+
+    from robotsix_chat.chat.server.routes.errors import (
+        STREAM_ERROR_BUDGET_EXHAUSTED,
+        curated_stream_error,
+    )
+
+    payload = curated_stream_error(
+        ClaudeSDKUsageExhaustedError("You are out of usage credits"),
+        fallback_id="turn-1",
+    )
+    assert payload["code"] == STREAM_ERROR_BUDGET_EXHAUSTED
+    assert "new message" in payload["message"]
+    assert "model level" in payload["message"]
+    # The curated message never echoes the upstream exception text.
+    assert "usage credits" not in payload["message"]
+
+
 def test_curated_stream_error_hides_exception_text() -> None:
     """The payload never echoes ``str(exc)`` or the exception class name."""
     from robotsix_chat.chat.server.routes.errors import curated_stream_error
