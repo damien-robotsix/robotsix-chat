@@ -76,6 +76,27 @@ def _parse_json_body(body: str) -> tuple[dict[str, Any] | None, str]:
         return None, "Non-JSON response from board API"
 
 
+def _component_response_is_error(resp: str) -> bool:
+    r"""Return True when a ``component_request`` response indicates failure.
+
+    ``component_request`` returns either ``Error: ...`` for early-exit
+    failures (unknown component, empty roster, connection error) or
+    ``HTTP <status>\n<body>`` for an actual HTTP response.  Success is any
+    2xx/3xx status; 4xx/5xx responses (e.g. ``404 Not Found``,
+    ``502 Bad Gateway``) are failures and should trigger the direct
+    fallback rather than being surfaced to the agent as success.
+    """
+    if resp.startswith("Error:"):
+        return True
+    if resp.startswith("HTTP "):
+        try:
+            status = int(resp.split(" ", 2)[1])
+        except IndexError, ValueError:
+            return False
+        return not 200 <= status < 400
+    return False
+
+
 async def _resolve_ticket_ids(
     board_url: str,
     board_token: str,
@@ -390,7 +411,7 @@ def build_merge_pull_request_tool(
             resp = await component_request(
                 "mill", "POST", f"/tickets/{effective_id}/merge-now"
             )
-            if not resp.startswith("Error:"):
+            if not _component_response_is_error(resp):
                 return str(resp)
             logger.info(
                 "merge_pull_request: roster path failed for %s; "
@@ -524,7 +545,7 @@ def build_mark_ticket_ready_tool(
                 path,
                 json_body=json_body,
             )
-            if not resp.startswith("Error:"):
+            if not _component_response_is_error(resp):
                 return str(resp)
             logger.info(
                 "mark_ticket_ready: roster path failed for %s; "
