@@ -1243,6 +1243,32 @@ class DockerDigestSettings(BaseModel):
     model_config = ConfigDict(extra="forbid")
 
 
+class GatewayRouteSettings(BaseModel):
+    """Read-only gateway-route diagnostic tool for the agent.
+
+    When enabled, the agent gains a ``check_gateway_route`` tool that reads
+    central-deploy's component registry, derives the current
+    vhost → upstream mapping, and compares it with the expected route for a
+    supplied service slug.  central-deploy publishes every registered,
+    routable component at ``<id>.<gateway_base_domain>`` automatically, so a
+    route is "present" exactly when the slug is registered.
+
+    Attributes:
+        enabled: Master switch.  When ``False``, no check_gateway_route tool
+            is offered.
+        timeout: Per-request HTTP timeout in seconds (default 30 s).
+        gateway_base_domain: Fleet base domain used to derive the expected
+            vhost ``<slug>.<base_domain>``.  Must match central-deploy's
+            ``gateway_base_domain`` setting.
+
+    """
+
+    enabled: bool = False
+    timeout: float = 30.0
+    gateway_base_domain: str = "deploy.robotsix.net"
+    model_config = ConfigDict(extra="forbid")
+
+
 class PublicFetchSettings(BaseModel):
     """Scoped public-repo-fetch tool for the chat agent.
 
