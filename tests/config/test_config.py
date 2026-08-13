@@ -728,6 +728,12 @@ def test_coerce_memory_nested_empty_string_to_dict() -> None:
     assert settings.memory.embedding.model == "bge-m3"
 
 
+def test_migrate_empty_autonomous_sessions_to_default_preset() -> None:
+    """An explicit ``autonomous.sessions: []`` is migrated to the default preset."""
+    settings = Settings(autonomous={"sessions": []})  # type: ignore[arg-type]
+    assert [session.name for session in settings.autonomous.sessions] == ["default"]
+
+
 # ---------------------------------------------------------------------------
 # JS-toString sentinel coercion ([object Object], undefined, null)
 # ---------------------------------------------------------------------------
