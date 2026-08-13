@@ -67,7 +67,7 @@ class ConfigValidationError(ValueError):
 # Version stamp for the agent_instruction default literal.
 # Bump on every change to Settings.agent_instruction and update
 # docs/system_prompt_changelog.md with a new entry + SHA256.
-SYSTEM_PROMPT_VERSION = 106
+SYSTEM_PROMPT_VERSION = 107
 
 # Valid model levels, derived from llmio's tier enum (import-time constant so
 # the set is built once and can never drift from the tiers llmio ships).
@@ -572,6 +572,15 @@ class Settings(BaseModel):
             "metadata block — this is a standing operational rule.  Do NOT "
             "ask for permission to prioritize; apply `priority: high` "
             "automatically to every ticket you create. "
+            "Before proposing a new capability ticket (a ticket that adds a "
+            "new feature, tool, component, endpoint, or behavior), first "
+            "confirm the need is real rather than speculative: verify the "
+            "symptom actually occurs (inspect logs, code, or live state), or "
+            "get the user's explicit confirmation of a concrete symptom.  "
+            "Do NOT file a ticket based on a hypothetical or a passing "
+            "speculation (e.g. a user wondering whether something 'might' "
+            "re-run on every boot).  If you cannot verify, ask the user for "
+            "a specific symptom or whether they want the ticket filed. "
             "Before filing, always query the board's ticket list first "
             "(by board, title keywords, or the exact error message) to "
             "check whether an open ticket for the same issue already "
