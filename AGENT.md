@@ -147,6 +147,12 @@ Config keys: `memory.enabled`, `memory.data_dir`, `memory.recall_search_type`,
   `constants.py`, `_shared.py`); `GET /`, `POST /chat`, `GET /health`
 - `.github/workflows/release-image.yml` — GHCR publish caller (shared `docker-release.yml`)
 
+## Formatting conventions
+
+**Rule:** When adding or editing ordered lists in `docs/`, use `1.` for every item (CommonMark renders them sequentially regardless). Do not use sequential numbering (`2.`, `3.`, …) — the `mdformat --number` pre-commit hook flattens them back to `1.`, creating a wasted CI auto-fix cycle. This applies to all Markdown files under `docs/`.
+
+**Rationale:** PRs #1297 and #1298 both hit this cycle; every PR touching the three ordered lists in `docs/configuration.md` will trigger it until the hook is changed.
+
 ## Python conventions
 
 **Rule:** Always write exception-tuple handlers in the parenthesized form
