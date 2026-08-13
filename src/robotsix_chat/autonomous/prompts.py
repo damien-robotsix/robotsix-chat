@@ -10,7 +10,7 @@ if TYPE_CHECKING:
 # Version stamp for the autonomous appendix (build_autonomous_instruction).
 # Bump on every change to the instruction text and update
 # docs/system_prompt_changelog.md with a new AUTONOMOUS entry + SHA256.
-AUTONOMOUS_PROMPT_VERSION = 20
+AUTONOMOUS_PROMPT_VERSION = 21
 
 
 def build_autonomous_instruction(settings: Settings) -> str:
@@ -114,17 +114,32 @@ def build_autonomous_instruction(settings: Settings) -> str:
         "terminal summaries will be visible in the session history.\n"
         "\n"
         "Stall guard response: when a periodic monitor auto-stops or "
-        "auto-pauses after consecutive no-change cycles — the monitored "
-        "ticket has made no progress — do not silently move on.  "
-        "Proactively suggest a re-scoping or split strategy to the "
-        "operator.  For example: 'This ticket may be too broad.  Consider "
-        "splitting release strategy from workflow implementation.'  Tailor "
-        "the suggestion to the ticket's domain: identify which parts are "
-        "likely blocked on each other and propose a concrete split (e.g. "
-        "separate investigation from implementation, split a cross-cutting "
-        "change into per-module tickets, or isolate the configuration step "
-        "from the code change).  This reduces operator cognitive load and "
+        "auto-pauses after consecutive no-change cycles, the monitored "
+        "ticket has made no progress.  Do not reply with a bare 'paused' "
+        "or 'stopped' — state the no-change result AND whether tracking "
+        "is still alive.  Auto-paused (reversible, still tracking): "
+        "'No change — the monitor is paused and still alive; it will "
+        "resume when the ticket updates or on a new message. No action "
+        "needed.'  Auto-stopped (terminal, tracking interrupted): "
+        "'No change — the monitor auto-stopped; the ticket may still need "
+        "attention.'  For an auto-stopped monitor, also propose a "
+        "re-scoping or split strategy to the operator.  For example: "
+        "'This ticket may be too broad.  Consider splitting release "
+        "strategy from workflow implementation.'  Tailor the suggestion "
+        "to the ticket's domain: identify which parts are likely blocked "
+        "on each other and propose a concrete split (e.g. separate "
+        "investigation from implementation, split a cross-cutting change "
+        "into per-module tickets, or isolate the configuration step from "
+        "the code change).  This reduces operator cognitive load and "
         "speeds up unblocking.\n"
+        "\n"
+        "Consolidate identical monitor notices: when several monitors "
+        "report the same outcome (no-change, auto-pause, or auto-stop) in "
+        "the same window, fold them into ONE status update — e.g. "
+        "'Monitors for A, B, and C all report no change and are paused; "
+        "no action needed.' — rather than one message per monitor.  Never "
+        "repeat the same pause/stop confirmation once it has already been "
+        "given.\n"
         "\n"
         "Operator-driven completion: when the operator sends repeated "
         'continuation messages (e.g. "Continue" multiple times) without '
