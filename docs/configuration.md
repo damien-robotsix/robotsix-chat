@@ -551,6 +551,19 @@ target platform to its immutable `sha256:...` content digest. Enabled by default
 | `docker_digest.registry_host` | `string`  | `"registry-1.docker.io"`         | Docker Registry v2 hostname for manifest lookups (Docker Hub).               |
 | `docker_digest.auth_url`      | `string`  | `"https://auth.docker.io/token"` | Token-authentication endpoint for bearer tokens (Docker Hub's auth service). |
 
+### Gateway Route
+
+Read-only gateway-route diagnostic tool for the agent. When enabled, the agent gains a
+`check_gateway_route` tool that reads central-deploy's component registry, derives the current vhost
+→ upstream mapping, and compares it with the expected `<slug>.<gateway_base_domain>` route for a
+supplied service slug. Disabled by default.
+
+| JSON key                            | Type      | Default                 | Description                                                                                                      |
+| ----------------------------------- | --------- | ----------------------- | ---------------------------------------------------------------------------------------------------------------- |
+| `gateway_route.enabled`             | `boolean` | `false`                 | Master switch. When `false`, no `check_gateway_route` tool is offered.                                           |
+| `gateway_route.timeout`             | `number`  | `30.0`                  | Per-request HTTP timeout in seconds.                                                                             |
+| `gateway_route.gateway_base_domain` | `string`  | `"deploy.robotsix.net"` | Fleet base domain used to derive the expected `<slug>.<base_domain>` vhost; must match central-deploy's setting. |
+
 ## Reaching fleet components
 
 There is no credential setting. The tools that make outbound HTTP requests (`http_probe`,

@@ -480,6 +480,29 @@
       "title": "FeedbackSettings",
       "type": "object"
     },
+    "GatewayRouteSettings": {
+      "additionalProperties": false,
+      "description": "Read-only gateway-route diagnostic tool for the agent.\n\nWhen enabled, the agent gains a ``check_gateway_route`` tool that reads\ncentral-deploy's component registry, derives the current\nvhost \u2192 upstream mapping, and compares it with the expected route for a\nsupplied service slug.  central-deploy publishes every registered,\nroutable component at ``<id>.<gateway_base_domain>`` automatically, so a\nroute is \"present\" exactly when the slug is registered.\n\nAttributes:\n    enabled: Master switch.  When ``False``, no check_gateway_route tool\n        is offered.\n    timeout: Per-request HTTP timeout in seconds (default 30 s).\n    gateway_base_domain: Fleet base domain used to derive the expected\n        vhost ``<slug>.<base_domain>``.  Must match central-deploy's\n        ``gateway_base_domain`` setting.",
+      "properties": {
+        "enabled": {
+          "default": false,
+          "title": "Enabled",
+          "type": "boolean"
+        },
+        "timeout": {
+          "default": 30.0,
+          "title": "Timeout",
+          "type": "number"
+        },
+        "gateway_base_domain": {
+          "default": "deploy.robotsix.net",
+          "title": "Gateway Base Domain",
+          "type": "string"
+        }
+      },
+      "title": "GatewayRouteSettings",
+      "type": "object"
+    },
     "GitHubActionsSettings": {
       "additionalProperties": false,
       "description": "GitHub Actions secrets and workflow dispatch via the GitHub App installation.\n\nWhen enabled, the chat agent gains ``set_actions_secret`` and\n``dispatch_workflow`` tools that can create/update repository Actions\nsecrets and trigger ``workflow_dispatch`` events on repos under the\nconfigured GitHub App's installation scope.\n\n**Guardrails built into the tools (not configurable):**\n- Repo scope is resolved dynamically from the GitHub App installation\n  (list-installation-repositories) \u2014 no static allowlist.\n- Only repos within the installation scope are modifiable.\n- Secret encryption uses libsodium sealed-box (requires ``pynacl``).\n- Both tools are confirmation-gated: the agent must confirm the exact\n  repo, secret name (or workflow id + ref) with the user before calling.\n\nAttributes:\n    enabled: Master switch.  When ``False``, no Actions tools are offered.\n    github_org: GitHub organisation name whose repos are in scope\n        (e.g. ``\"damien-robotsix\"``).\n    deploy_api_key: API key that clients must present in the\n        ``X-API-Key`` header when calling the Actions endpoints.\n        When empty, the endpoints return 503 (unconfigured).\n\nNote: GitHub App authentication is delegated to\n:class:`DirectRepoSettings` \u2014 those credentials must also be configured\nfor the tools to function.",
@@ -1611,6 +1634,10 @@
     },
     "docker_digest": {
       "$ref": "#/$defs/DockerDigestSettings",
+      "advanced": true
+    },
+    "gateway_route": {
+      "$ref": "#/$defs/GatewayRouteSettings",
       "advanced": true
     },
     "public_fetch": {

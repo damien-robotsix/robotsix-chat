@@ -475,6 +475,14 @@ modules:
       - tests/docker_digest/__init__.py
       - tests/docker_digest/test_docker_digest.py
 
+  - id: gateway-route
+    description: "Read-only gateway-route diagnostic tool for the agent — exposes build_gateway_route_tools() returning a check_gateway_route tool that reads central-deploy's component registry, derives the vhost → upstream mapping, and reports whether the expected <slug>.<gateway_base_domain> route is present, plus load_gateway_route_skill() for the component skill document."
+    paths:
+      - src/robotsix_chat/gateway_route/__init__.py
+      - src/robotsix_chat/gateway_route/skill.md
+      - tests/gateway_route/__init__.py
+      - tests/gateway_route/test_gateway_route.py
+
   - id: public-fetch
     description: "Scoped public-URL fetch tool for the chat agent — exposes build_public_fetch_tools() returning a fetch_public_url tool that performs a plain HTTP(S) GET with SSRF protection, size cap, rate limiting, and audit logging, plus load_public_fetch_skill() for the component skill document."
     paths:
