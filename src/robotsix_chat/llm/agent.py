@@ -73,6 +73,70 @@ def _sdk_session_uuid(session_id: str) -> str:
     return str(uuid.uuid5(uuid.NAMESPACE_URL, f"robotsix-chat:session:{session_id}"))
 
 
+def _bind_sdk_session(handle: Any, session_id: str, *, resuming: bool) -> None:
+    """Point *handle* at this chat session's SDK session.
+
+    Wraps the handle's ``_build_options`` so the CLI reuses its session cache
+    instead of re-sending the system prompt every turn.
+
+    ``ClaudeAgentOptions`` exposes two different options here, and they are not
+    interchangeable:
+
+    * ``session_id`` — "use a specific session ID for the conversation *instead
+      of an auto-generated one*".  It **creates** a session under that id.
+    * ``resume`` — "session ID to resume.  Loads the conversation history from
+      the specified session."  It **continues** one.
+
+    Setting ``session_id`` on every turn (what this code used to do) creates the
+    transcript on the first turn and then asks the CLI to create that same id
+    again on every later turn, which it correctly refuses:
+    ``Error: Session ID <uuid> is already in use.``  The turn fails, and because
+    the id is derived deterministically from the chat session, all three retry
+    attempts reproduce it exactly — the turn is lost rather than degraded.
+    Observed 2026-08-13 on two chat sessions (6 failures, 3 per turn).
+
+    The SDK also rejects both options together unless ``fork_session`` is set,
+    and forking would defeat the cache reuse this exists for — so set exactly
+    one.
+    """
+    orig_build = getattr(handle, "_build_options", None)
+    if orig_build is None:
+        return
+
+    sdk_session = _sdk_session_uuid(session_id)
+
+    def _build_with_session(sp: str) -> Any:
+        opts = orig_build(sp)
+        if resuming:
+            opts.resume = sdk_session
+        else:
+            opts.session_id = sdk_session
+        return opts
+
+    handle._build_options = _build_with_session
+
+
+_SESSION_BIND_ERRORS = (
+    "already in use",
+    "no conversation found",
+    "session not found",
+    "does not exist",
+)
+
+
+def _is_session_binding_error(exc: BaseException) -> bool:
+    """Report whether *exc* says the SDK session id could not be bound as asked.
+
+    Covers both directions: asking to create an id whose transcript already
+    exists, and asking to resume one the CLI no longer has (the ``.claude``
+    volume was reset while this chat session's own history survived).  Both are
+    fixed by flipping which option we set, and neither is fixed by retrying the
+    identical call — which is what used to burn all three attempts.
+    """
+    text = str(exc).lower()
+    return any(marker in text for marker in _SESSION_BIND_ERRORS)
+
+
 def _build_message_history(history: list[Turn] | None) -> list[Any] | None:
     """Convert ``(user, assistant)`` turns into a pydantic-ai message history.
 
@@ -530,23 +594,12 @@ class LlmioChatAgent:
                 # "sources fetched, all empty" rather than "I cannot search".
                 web_tools=True,
             )
-            # -----------------------------------------------------------------
-            # Inject session_id into the Claude SDK handle so the CLI reuses
-            # its session cache rather than re-sending the system prompt on
-            # every turn.  Without this the 24.6:1 input:output ratio on
-            # fable-5 is almost entirely static-prefix re-billing — pure
+            # Reuse the CLI's session cache rather than re-sending the system
+            # prompt on every turn.  Without this the 24.6:1 input:output ratio
+            # on fable-5 is almost entirely static-prefix re-billing — pure
             # cap-headroom waste on the Claude subscription.
             if session_id:
-                _orig_build = getattr(handle, "_build_options", None)
-                if _orig_build is not None:
-
-                    def _build_with_session(sp: str) -> Any:
-                        opts = _orig_build(sp)
-                        opts.session_id = _sdk_session_uuid(session_id)
-                        return opts
-
-                    handle._build_options = _build_with_session  # type: ignore[attr-defined]
-            # -----------------------------------------------------------------
+                _bind_sdk_session(handle, session_id, resuming=bool(message_history))
             try:
                 with (
                     _trace_session(
@@ -554,7 +607,25 @@ class LlmioChatAgent:
                     ),
                     _activity_context(on_activity),
                 ):
-                    return await handle.run(prompt, message_history=message_history)
+                    try:
+                        return await handle.run(prompt, message_history=message_history)
+                    except Exception as exc:
+                        # The chat session and the CLI's transcript store can
+                        # disagree about whether this SDK session exists.  Flip
+                        # the binding once and re-run; retrying as-is can never
+                        # succeed, because the id is derived deterministically
+                        # from the chat session.
+                        if not (session_id and _is_session_binding_error(exc)):
+                            raise
+                        logger.warning(
+                            "sdk session binding failed (%s) — retrying with the "
+                            "opposite binding",
+                            exc,
+                        )
+                        _bind_sdk_session(
+                            handle, session_id, resuming=not bool(message_history)
+                        )
+                        return await handle.run(prompt, message_history=message_history)
             finally:
                 handle.close()
 
@@ -678,18 +749,11 @@ class LlmioChatAgent:
                     builtin_tools=False,
                     web_tools=True,  # see the primary handle above
                 )
-                # Same session_id injection as the primary handle path
-                # (see _attempt above for rationale).
+                # Same session binding as the primary handle path.
                 if session_id:
-                    _fb_orig = getattr(fallback_handle, "_build_options", None)
-                    if _fb_orig is not None:
-
-                        def _fb_build(sp: str) -> Any:
-                            opts = _fb_orig(sp)
-                            opts.session_id = _sdk_session_uuid(session_id)
-                            return opts
-
-                        fallback_handle._build_options = _fb_build  # type: ignore[attr-defined]
+                    _bind_sdk_session(
+                        fallback_handle, session_id, resuming=bool(message_history)
+                    )
                 try:
                     with (
                         _trace_session(
