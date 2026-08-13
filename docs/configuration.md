@@ -554,15 +554,15 @@ target platform to its immutable `sha256:...` content digest. Enabled by default
 ### Gateway Route
 
 Read-only gateway-route diagnostic tool for the agent. When enabled, the agent gains a
-`check_gateway_route` tool that reads central-deploy's component registry, derives the current
-vhost → upstream mapping, and compares it with the expected `<slug>.<gateway_base_domain>` route
-for a supplied service slug. Disabled by default.
+`check_gateway_route` tool that reads central-deploy's component registry, derives the current vhost
+→ upstream mapping, and compares it with the expected `<slug>.<gateway_base_domain>` route for a
+supplied service slug. Disabled by default.
 
-| JSON key                             | Type      | Default                | Description                                                                                               |
-| ------------------------------------ | --------- | ---------------------- | --------------------------------------------------------------------------------------------------------- |
-| `gateway_route.enabled`              | `boolean` | `false`                | Master switch. When `false`, no `check_gateway_route` tool is offered.                                    |
-| `gateway_route.timeout`              | `number`  | `30.0`                 | Per-request HTTP timeout in seconds.                                                                       |
-| `gateway_route.gateway_base_domain`  | `string`  | `"deploy.robotsix.net"` | Fleet base domain used to derive the expected `<slug>.<base_domain>` vhost; must match central-deploy's setting. |
+| JSON key                            | Type      | Default                 | Description                                                                                                      |
+| ----------------------------------- | --------- | ----------------------- | ---------------------------------------------------------------------------------------------------------------- |
+| `gateway_route.enabled`             | `boolean` | `false`                 | Master switch. When `false`, no `check_gateway_route` tool is offered.                                           |
+| `gateway_route.timeout`             | `number`  | `30.0`                  | Per-request HTTP timeout in seconds.                                                                             |
+| `gateway_route.gateway_base_domain` | `string`  | `"deploy.robotsix.net"` | Fleet base domain used to derive the expected `<slug>.<base_domain>` vhost; must match central-deploy's setting. |
 
 ## Reaching fleet components
 
