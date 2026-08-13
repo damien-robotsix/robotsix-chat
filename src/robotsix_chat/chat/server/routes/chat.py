@@ -16,7 +16,6 @@ from starlette.exceptions import HTTPException
 from starlette.requests import Request
 from starlette.responses import JSONResponse, StreamingResponse
 
-from robotsix_chat.autonomous.models import AutonomousState
 from robotsix_chat.chat.conversation import ConversationStore
 
 from ._shared import (
@@ -794,38 +793,9 @@ async def chat_endpoint(
 
     lock_key = client_id or session_id
 
-    # -- Autonomous proposal approval / rejection --------------------------
-    # Analyse the operator's message for conversational approval or
-    # rejection when the session is in proposal state.
-    autonomous_runner = request.app.state.autonomous_runner
-    if autonomous_runner is not None:
-        disposition = autonomous_runner.on_user_message(session_id, message)
-        if disposition == "stalemate":
-            aq = autonomous_runner.get_session(session_id)
-            if aq is not None and aq.state is AutonomousState.executing:
-                message = (
-                    "[STALEMATE NOTICE: The operator has sent the same "
-                    "continuation message multiple times without providing "
-                    "new instructions or data. This is explicit permission "
-                    "to close the session — emit the completion marker "
-                    "immediately. Do NOT keep polling monitors or waiting "
-                    "for subsession cycles to accumulate. If only periodic "
-                    "monitors remain and all actionable work is done, "
-                    "complete the session now.]\n\n"
-                ) + message
-            else:
-                message = (
-                    "[STALEMATE NOTICE: The user has sent this same message "
-                    "multiple times without responding to your previous "
-                    "proposals. Instead of generating another plan, acknowledge "
-                    "the stalling pattern. Ask whether they want to proceed "
-                    "with a default action, suggest alternative interaction "
-                    "modes (e.g. a direct question), or offer to abort the "
-                    "session.]\n\n"
-                ) + message
-
     # -- Submit to the message coalescer ----------------------------------
 
+    autonomous_runner = request.app.state.autonomous_runner
     coalescer: MessageCoalescer = request.app.state.message_coalescer
     # Only use summary_agent for title generation when it's a dedicated
     # (cheaper) agent — not when it's the fallback-to-main-agent default.

@@ -630,20 +630,7 @@ import { processSSEStream } from "./sse-parser.js";
       // Per-state autonomous feedback (Fix 2).
       if (s.autonomous) {
         var aState = s.autonomous_state || "";
-        if (aState === "planning") {
-          parts.push("Planning\u2026");
-        } else if (aState === "proposal") {
-          parts.push("Plan ready — reply to approve");
-          // Show a plan snippet when available.
-          if (s.autonomous_plan_text) {
-            var preview = s.autonomous_plan_text.substring(0, 80);
-            if (s.autonomous_plan_text.length > 80) preview += "\u2026";
-            var planDiv = document.createElement("div");
-            planDiv.className = "session-plan-preview";
-            planDiv.textContent = preview;
-            row.appendChild(planDiv);
-          }
-        } else if (aState === "executing") {
+        if (aState === "executing") {
           var turn = s.autonomous_turn_count || 0;
           var max = s.autonomous_max_turns || 0;
           if (max > 0) {

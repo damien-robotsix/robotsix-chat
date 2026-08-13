@@ -1301,8 +1301,8 @@ class AutonomousSessionDefinition(BaseModel):
     Attributes:
         name: Unique identifier for this session definition.
         prompt: Custom kickoff prompt appended to the autonomous protocol
-            supplement.  When empty, the agent uses the standard "Pick a
-            subject and draft a plan" prompt.
+            supplement.  When empty, the agent uses the standard "Begin a new
+            autonomous session and work it to completion" prompt.
         trigger_type: How the session is re-triggered after completion —
             ``"periodic"`` (wait ``trigger_interval_seconds``) or
             ``"on_close"`` (restart immediately, continuous mode).
@@ -1329,7 +1329,7 @@ class AutonomousSessionDefinition(BaseModel):
         default=20,
         description=(
             "Maximum number of automatic agent turns during the "
-            "execution phase before reverting to proposal."
+            "execution phase before the session closes."
         ),
     )
     enabled: bool = True
@@ -1351,18 +1351,13 @@ class AutonomousSettings(BaseModel):
     presets list — there is no hidden or implicit fallback session.
 
     Attributes:
-        proposal_marker: Marker string the agent emits after drafting a plan
-            to signal the plan is ready for operator review.  The session
-            enters the ``proposal`` state and waits for the operator to
-            comment before beginning execution.
-        completion_marker: Marker string the agent emits when the plan is
-            complete.  The session stays open after completion; the operator
-            must explicitly close it.
+        completion_marker: Marker string the agent emits when the run is
+            complete.  The session closes automatically on completion.
         continue_interval_seconds: Minimum delay between auto-continue cycles
             (throttle).  Also serves as the default trigger interval for
             synthesized sessions when no presets are configured.
         max_idle_auto_turns: Maximum number of consecutive NO_CHANGE / idle
-            auto-continue turns before the loop halts (reverts to proposal).
+            auto-continue turns before the loop halts (session closes).
         stale_monitor_runs_before_completion: Number of consecutive NO_CHANGE
             cycles after which a periodic monitor is considered 'stale'.
         sessions: List of named autonomous session definitions.  When
@@ -1372,14 +1367,13 @@ class AutonomousSettings(BaseModel):
 
     """
 
-    proposal_marker: str = "---PROPOSAL READY---"
     completion_marker: str = "---AUTONOMOUS COMPLETE---"
     continue_interval_seconds: float = 45.0
     max_idle_auto_turns: int = Field(
         default=5,
         description=(
             "Maximum number of consecutive NO_CHANGE / idle auto-continue "
-            "turns before the loop halts (reverts to proposal).  A turn is "
+            "turns before the loop halts (session closes).  A turn is "
             "idle when the agent reply is a recognised no-op sentinel "
             "(NO_CHANGE, nothing changed, …).  Set to 0 to disable the "
             "idle cap and only rely on per-preset max_auto_turns."
@@ -1415,8 +1409,9 @@ class AutonomousSettings(BaseModel):
         """Strip removed single-session keys and relocate ``max_auto_turns``.
 
         Legacy keys ``enabled``, ``initial_task``, ``session_color``,
-        ``persist_path``, and ``pending_subsession_wait_timeout`` are
-        stripped silently — they have no equivalent in the preset model.
+        ``persist_path``, ``pending_subsession_wait_timeout``,
+        ``proposal_marker``, and ``approval_marker`` are stripped silently —
+        they have no equivalent in the current model.
 
         The built-in default preset (``{"name": "default"}``) is now carried
         in the ``sessions`` field default (schema default), not injected here.
@@ -1437,6 +1432,8 @@ class AutonomousSettings(BaseModel):
             "session_color",
             "persist_path",
             "pending_subsession_wait_timeout",
+            "proposal_marker",
+            "approval_marker",
         )
         for key in _stripped_keys:
             data.pop(key, None)

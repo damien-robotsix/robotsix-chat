@@ -1,9 +1,9 @@
 # Autonomous Sessions
 
-Autonomous sessions are self-directed agent loops: the agent independently picks a subject, drafts a
-step-by-step plan, presents the plan to the operator for review, then — once the operator comments
-on the plan — executes it through tool calls. Sessions stay open after completion; the operator
-explicitly closes them.
+Autonomous sessions are self-directed agent loops: the agent starts a normal session automatically
+and works the configured prompt through to completion, then closes. There is no plan-drafting or
+proposal pause and no operator approval gate — the run executes until the completion marker, then
+the session closes and restarts on its trigger.
 
 **Session presets in `autonomous.sessions` are the sole enablement model.** A preset that exists and
 has `"enabled": true` IS the enablement — there is no separate master switch. When the sessions list
@@ -22,16 +22,14 @@ session is active.
 
 Each session run follows the same flow:
 
-1. **Spawn** — the runner kicks off an initial agent turn with the session's kickoff prompt.
-2. **Plan & propose** — the agent picks a subject and drafts a plan, then emits the proposal marker
-   (`---PROPOSAL READY---` by default). The session enters the `proposal` state and waits for the
-   operator.
-3. **Execute** — when the operator comments on the plan, the session enters the `executing` state
-   and auto-cycles through tool calls.
-4. **Complete** — when the agent emits the completion marker (`---AUTONOMOUS COMPLETE---` by
-   default), the session is marked `completed`, but stays open. The operator explicitly closes it.
-5. **Re-trigger** — depending on the session's trigger, a fresh run is scheduled after completion
-   (see [Triggers](#triggers)).
+1. **Start** — the runner kicks off an initial agent turn with the session's kickoff prompt (or the
+   standard "begin a new autonomous session and work it to completion" prompt when empty).
+2. **Execute** — the agent works autonomously, auto-cycling through `Continue.` turns and tool calls
+   until it reaches a terminal condition.
+3. **Complete** — when the agent emits the completion marker (`---AUTONOMOUS COMPLETE---` by
+   default) — or the run hits `max_auto_turns` or the idle cap — the session is marked `completed`.
+4. **Re-trigger** — completion is automatic: the runner closes the session and schedules a fresh run
+   per the session's trigger (see [Triggers](#triggers)).
 
 ### The `[AUTONOMOUS]` badge
 
@@ -61,7 +59,7 @@ session:
 }
 ```
 
-- **Prompt**: the standard "Pick a subject and draft a plan" prompt.
+- **Prompt**: the standard "Begin a new autonomous session and work it to completion" prompt.
 - **Trigger**: `periodic` — it restarts after the configured `trigger_interval_seconds` (default 45
   s) after completion.
 - **Owner**: `autonomous`.
@@ -75,13 +73,13 @@ ______________________________________________________________________
 
 Add entries under `autonomous.sessions` in the config to define named sessions. Each entry has:
 
-| Key                        | Default      | Description                                                                       |
-| -------------------------- | ------------ | --------------------------------------------------------------------------------- |
-| `name`                     | *(required)* | Unique identifier for the session definition.                                     |
-| `prompt`                   | `""`         | Custom kickoff prompt. When empty, the standard subject-selection prompt is used. |
-| `trigger_type`             | `"periodic"` | `"periodic"` (wait `trigger_interval_seconds`) or `"on_close"` (continuous).      |
-| `trigger_interval_seconds` | `45.0`       | Delay between completion and restart for `"periodic"`. Ignored for `"on_close"`.  |
-| `enabled`                  | `true`       | When `false`, the definition is skipped — no session is created for it.           |
+| Key                        | Default      | Description                                                                                                                |
+| -------------------------- | ------------ | -------------------------------------------------------------------------------------------------------------------------- |
+| `name`                     | *(required)* | Unique identifier for the session definition.                                                                              |
+| `prompt`                   | `""`         | Custom kickoff prompt. When empty, the standard "begin a new autonomous session and work it to completion" prompt is used. |
+| `trigger_type`             | `"periodic"` | `"periodic"` (wait `trigger_interval_seconds`) or `"on_close"` (continuous).                                               |
+| `trigger_interval_seconds` | `45.0`       | Delay between completion and restart for `"periodic"`. Ignored for `"on_close"`.                                           |
+| `enabled`                  | `true`       | When `false`, the definition is skipped — no session is created for it.                                                    |
 
 Once `autonomous.sessions` is non-empty, each enabled definition becomes its own session with its
 own prompt and trigger. Each maps to a distinct pseudo-owner (`autonomous:<name>`), so sessions run

@@ -250,7 +250,7 @@ async def test_sessions_list_endpoint_missing_owner_id() -> None:
 
 @pytest.mark.asyncio
 async def test_sessions_list_endpoint_autonomous_annotations() -> None:
-    """Annotates autonomous sessions with state, plan_text, and turn counts."""
+    """Annotates autonomous sessions with state and turn counts."""
     from robotsix_chat.autonomous.models import AutonomousState
 
     mock_store = MagicMock()
@@ -264,7 +264,6 @@ async def test_sessions_list_endpoint_autonomous_annotations() -> None:
     mock_runner.get_state.return_value = AutonomousState.executing
 
     fake_session = MagicMock()
-    fake_session.plan_text = "Do stuff"
     fake_session.auto_turn_count = 5
     mock_runner.get_session.return_value = fake_session
 
@@ -277,7 +276,6 @@ async def test_sessions_list_endpoint_autonomous_annotations() -> None:
     body = json.loads(response.body)  # type: ignore[arg-type]
     assert body["sessions"][0]["autonomous"] is True
     assert body["sessions"][0][SSE_AUTONOMOUS_STATE_TYPE] == "executing"
-    assert body["sessions"][0]["autonomous_plan_text"] == "Do stuff"
     assert body["sessions"][0]["autonomous_turn_count"] == 5
     # Manual session should remain unannotated.
     assert "autonomous" not in body["sessions"][1]
@@ -363,7 +361,7 @@ async def test_sessions_create_endpoint_autonomous() -> None:
     mock_runner = MagicMock()
     fake_aq = MagicMock()
     fake_aq.session_id = "auto-sess"
-    fake_aq.state = AutonomousState.planning
+    fake_aq.state = AutonomousState.executing
     mock_runner.create_session.return_value = fake_aq
 
     state = MagicMock(conversation_store=MagicMock(), autonomous_runner=mock_runner)

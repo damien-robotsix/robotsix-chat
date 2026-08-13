@@ -1,4 +1,4 @@
-"""Autonomous session runner — state machine, marker detection, auto-cycling."""
+"""Autonomous session runner — completion marker detection, auto-cycling."""
 
 from __future__ import annotations
 
@@ -59,19 +59,8 @@ _DEFAULT_TRIGGER_INTERVAL = 45.0
 _PENDING_SUBSESSION_WAIT_TIMEOUT = 600.0
 
 
-def _rejected_subjects_note(aq: AutonomousSession | None) -> str:
-    """Return a prompt suffix listing previously rejected subjects, or ""."""
-    if aq is None or not aq.rejected_subjects:
-        return ""
-    items = "\n".join(f"  - {s!r}" for s in aq.rejected_subjects)
-    return (
-        "\n\nPREVIOUSLY REJECTED SUBJECTS — do NOT propose any of these "
-        f"subjects again:\n{items}"
-    )
-
-
 class AutonomousRunner:
-    """Owns the autonomous-session state machine and drives auto-continue loops."""
+    """Owns autonomous-session lifecycle and drives auto-continue loops."""
 
     def __init__(
         self,
@@ -142,6 +131,19 @@ class AutonomousRunner:
 
     # -- persistence ------------------------------------------------------
 
+    @staticmethod
+    def _parse_persisted_state(raw: str) -> AutonomousState:
+        """Map a persisted state value to the current state model.
+
+        Sessions persisted by older releases used the ``planning`` and
+        ``proposal`` states, which no longer exist.  Any non-completed
+        legacy state is treated as an open (executing) session so a
+        deployment upgrade resumes in-flight runs instead of dropping them.
+        """
+        if raw == "completed":
+            return AutonomousState.completed
+        return AutonomousState.executing
+
     def _save_sessions(self) -> None:
         """Persist the in-memory session registry to disk."""
         try:
@@ -151,12 +153,9 @@ class AutonomousRunner:
                     "session_id": aq.session_id,
                     "owner_id": aq.owner_id,
                     "state": aq.state.value,
-                    "plan_text": aq.plan_text,
                     "auto_turn_count": aq.auto_turn_count,
                     "consecutive_no_change": aq.consecutive_no_change,
                     "completion_suppressed": aq.completion_suppressed,
-                    "rejected_subjects": aq.rejected_subjects or [],
-                    "recent_user_messages": aq.recent_user_messages or [],
                     "definition_name": aq.definition_name,
                     "last_board_digest": aq.last_board_digest,
                 }
@@ -187,13 +186,10 @@ class AutonomousRunner:
                 sessions[sid] = AutonomousSession(
                     session_id=entry["session_id"],
                     owner_id=entry["owner_id"],
-                    state=AutonomousState(entry["state"]),
-                    plan_text=entry.get("plan_text", ""),
+                    state=self._parse_persisted_state(entry.get("state", "")),
                     auto_turn_count=entry.get("auto_turn_count", 0),
                     consecutive_no_change=entry.get("consecutive_no_change", 0),
                     completion_suppressed=entry.get("completion_suppressed", False),
-                    rejected_subjects=entry.get("rejected_subjects", []),
-                    recent_user_messages=entry.get("recent_user_messages", []),
                     definition_name=entry.get("definition_name", ""),
                     last_board_digest=entry.get("last_board_digest", ""),
                 )
@@ -294,8 +290,8 @@ class AutonomousRunner:
     def active_session_id_for_definition(self, name: str) -> str | None:
         """Return the ``session_id`` of the active session for *name*, or ``None``.
 
-        An active session is in a non-terminal state (planning, proposal,
-        or executing).  Completed sessions are ignored.
+        An active session is in a non-terminal state (executing).  Completed
+        sessions are ignored.
         """
         owner_id = self._owner_id_for_definition(name)
         for aq in self._sessions.values():
@@ -347,7 +343,6 @@ class AutonomousRunner:
             autonomous_state_frame(
                 session_id=session_id,
                 state=aq.state.value,
-                plan_text=aq.plan_text,
                 auto_turn_count=aq.auto_turn_count,
                 max_auto_turns=max_turns,
             ),
@@ -363,10 +358,11 @@ class AutonomousRunner:
     ) -> AutonomousSession:
         """Register a new autonomous session, creating a store session if needed.
 
-        When *schedule_kickoff* is ``True`` (the default), an initial agent
-        turn is scheduled as a background task so the session immediately
-        begins subject selection.  Pass ``False`` when the caller will handle
-        the kickoff itself (e.g. when the caller will schedule it manually).
+        When *schedule_kickoff* is ``True`` (the default), the autonomous run
+        is scheduled as a background task so the session immediately begins
+        executing its configured prompt.  Pass ``False`` when the caller will
+        handle the kickoff itself (e.g. when the caller will schedule it
+        manually).
 
         *definition_name* names the :class:`AutonomousSessionDefinition`
         that spawned this session.  When empty, derived from *owner_id*.
@@ -414,7 +410,7 @@ class AutonomousRunner:
         aq = AutonomousSession(
             session_id=session_id,
             owner_id=owner_id,
-            state=AutonomousState.planning,
+            state=AutonomousState.executing,
             definition_name=resolved_name,
         )
         self._sessions[session_id] = aq
@@ -439,11 +435,9 @@ class AutonomousRunner:
         )
 
         if schedule_kickoff:
-            # Schedule the initial agent turn so the session immediately
-            # begins subject selection + plan drafting (Fix 1: kickoff).
-            self._schedule_background(
-                lambda: self._kickoff_initial_turn(session_id, owner_id)
-            )
+            # Schedule the autonomous run so the session immediately begins
+            # executing its configured prompt and continues to completion.
+            self._schedule_background(lambda: self._auto_continue(session_id))
 
         return aq
 
@@ -655,18 +649,17 @@ class AutonomousRunner:
         session_id: str,
         reply_text: str,
     ) -> AutonomousState | None:
-        """Scan *reply_text* for lifecycle markers; transition state on match.
+        """Scan *reply_text* for the completion marker and close on match.
 
-        Returns the new state when a transition occurred, ``None`` otherwise.
+        Returns ``AutonomousState.completed`` when the session closed,
+        ``None`` otherwise.
         """
         aq = self._sessions.get(session_id)
         if aq is None:
             return None
 
-        proposal_marker = self._settings.autonomous.proposal_marker
         completion_marker = self._settings.autonomous.completion_marker
 
-        # Check completion first (it terminates the execution loop).
         if completion_marker in reply_text:
             # Gate: suppress completion while the session owns any active
             # non-periodic subsession (task / user_chat).  Periodic monitors
@@ -685,372 +678,45 @@ class AutonomousRunner:
                 self._save_sessions()
                 return None
 
-            aq.state = AutonomousState.completed
-            preset_name = aq.definition_name or "unknown"
-            defn = self._definition_for_owner(aq.owner_id)
-            trigger_type = defn.get("trigger_type", "periodic") if defn else "periodic"
-            interval = (
-                defn.get("trigger_interval_seconds", _DEFAULT_TRIGGER_INTERVAL)
-                if defn
-                else _DEFAULT_TRIGGER_INTERVAL
-            )
-            next_fire = time.time() + (0.0 if trigger_type == "on_close" else interval)
-            logger.info(
-                "Autonomous session completed: preset=%s session_id=%s "
-                "owner_id=%s trigger=%s interval=%.0fs "
-                "next_fire_ts=%.3f",
-                preset_name,
-                session_id,
-                aq.owner_id,
-                trigger_type,
-                interval,
-                next_fire,
-            )
-            self._save_sessions()
-            self._publish_state(session_id)
-            # Auto-restart always: schedule a fresh autonomous run (throttled)
-            # so the operator always has one live session.
-            owner_id = aq.owner_id
-            self._schedule_background(lambda: self._auto_restart(owner_id))
-            # Self-refinement: if this definition has self_refine enabled,
-            # schedule a refinement step after the run completes.
-            self._schedule_refinement(session_id, aq)
+            self._mark_completed(session_id, aq)
             return AutonomousState.completed
-
-        # Check proposal marker.
-        if proposal_marker in reply_text:
-            # Plan text is everything before the marker.
-            idx = reply_text.index(proposal_marker)
-            aq.plan_text = reply_text[:idx].strip()
-
-            aq.state = AutonomousState.proposal
-            preset_name = aq.definition_name or "unknown"
-            logger.info(
-                "Autonomous session proposal ready: preset=%s session_id=%s "
-                "(plan %d chars)",
-                preset_name,
-                session_id,
-                len(aq.plan_text),
-            )
-            self._save_sessions()
-            self._publish_state(session_id)
-            return AutonomousState.proposal
 
         return None
 
-    # -- proposal → execution transition -----------------------------------
+    # -- completion ----------------------------------------------------------
 
-    def _begin_execution(self, session_id: str) -> None:
-        """Transition *session_id* into execution and kick off auto-continue.
-
-        Shared by :meth:`on_user_message` (when the operator comments on a
-        proposal) and :meth:`_auto_continue` (when the agent re-proposes
-        after hitting a blocker).  Resets the turn counter, flips to
-        ``executing``, schedules the background auto-continue loop,
-        persists, and publishes the new state.  No-op when the session
-        is gone.
-        """
-        aq = self._sessions.get(session_id)
-        if aq is None:
-            return
-
-        aq.state = AutonomousState.executing
-        aq.auto_turn_count = 0
-        aq.consecutive_no_change = 0
-
-        # Schedule auto-continue as a background task.
-        self._schedule_background(lambda: self._auto_continue(session_id))
-
-        self._save_sessions()
-        self._publish_state(session_id)
-
-    # -- conversational approval / rejection detection ---------------------
-
-    _APPROVAL_PHRASES: tuple[str, ...] = (
-        "approved",
-        "approve",
-        "lgtm",
-        "looks good",
-        "go ahead",
-        "proceed",
-        "yes",
-        "ok",
-        "okay",
-        "start",
-        "begin",
-        "execute",
-        "do it",
-        "let's go",
-        "go for it",
-        "sure",
-        "great",
-        "perfect",
-        "agreed",
-        "accepted",
-    )
-    _REJECTION_PHRASES: tuple[str, ...] = (
-        "reject",
-        "rejected",
-        "no",
-        "nope",
-        "try again",
-        "different",
-        "redo",
-        "change",
-        "not this",
-        "stop",
-        "cancel",
-        "something else",
-        "don't",
-        "do not",
-    )
-
-    def on_user_message(self, session_id: str, message: str = "") -> str:
-        """Handle a user message to an autonomous session.
-
-        Analyses the operator's message for conversational approval or
-        rejection when the session is in ``proposal`` state:
-
-        * **Approval** — the session transitions to executing and the
-          auto-continue loop begins.
-        * **Rejection** — the plan subject is recorded in
-          ``rejected_subjects``, the session reverts to ``planning``,
-          and a new planning turn is scheduled.
-        * **Neutral** — the session stays in ``proposal`` so the agent
-          can respond conversationally; the operator can approve or
-          reject later.
-        * **Stalemate** — the same message has been repeated multiple
-          times without the operator engaging with proposals; the
-          caller should prepend a stalemate notice so the agent
-          acknowledges the pattern instead of cycling again.
-
-        Returns ``"approved"``, ``"rejected"``, ``"neutral"``, or
-        ``"stalemate"``.
-        No-op for unknown sessions (returns ``"neutral"``).
-        """
-        aq = self._sessions.get(session_id)
-        if aq is None:
-            return "neutral"
-
-        # -- stalemate detection (all states) ------------------------------
-        stripped = message.strip()
-        if aq.recent_user_messages is None:
-            aq.recent_user_messages = []
-        aq.recent_user_messages.append(stripped)
-        # Trim to last N so the list stays bounded.
-        _max_recent = 10
-        if len(aq.recent_user_messages) > _max_recent:
-            aq.recent_user_messages = aq.recent_user_messages[-_max_recent:]
-        self._save_sessions()
-
-        # Count *consecutive* identical messages from the tail — an
-        # intervening different message resets the repeat count.
-        consecutive = 0
-        for m in reversed(aq.recent_user_messages):
-            if m == stripped:
-                consecutive += 1
-            else:
-                break
-
-        # Stalemate: 3+ consecutive occurrences (2 repeats after the first).
-        if consecutive >= 3:
-            logger.warning(
-                "Autonomous session %s — stalemate: user repeated %r "
-                "%d times without engaging with proposals",
-                session_id,
-                stripped[:80],
-                consecutive,
-            )
-            return "stalemate"
-
-        if aq.state is not AutonomousState.proposal:
-            return "neutral"
-
-        lower = message.strip().lower()
-        # Very short messages with approval keywords are clear approvals.
-        is_approval = any(phrase in lower for phrase in self._APPROVAL_PHRASES)
-        is_rejection = any(phrase in lower for phrase in self._REJECTION_PHRASES)
-
-        if is_rejection and not is_approval:
-            logger.info(
-                "Autonomous session %s — operator rejected the proposal",
-                session_id,
-            )
-            self._handle_rejection(session_id)
-            return "rejected"
-
-        if is_approval:
-            logger.info(
-                "Autonomous session %s — operator approved, "
-                "transitioning from proposal to executing",
-                session_id,
-            )
-            self._begin_execution(session_id)
-            return "approved"
-
-        # Neutral: the operator is discussing the plan without
-        # explicitly approving or rejecting it.
+    def _mark_completed(self, session_id: str, aq: AutonomousSession) -> None:
+        """Close *aq*, persisting and scheduling restart + self-refinement."""
+        aq.state = AutonomousState.completed
+        preset_name = aq.definition_name or "unknown"
+        defn = self._definition_for_owner(aq.owner_id)
+        trigger_type = defn.get("trigger_type", "periodic") if defn else "periodic"
+        interval = (
+            defn.get("trigger_interval_seconds", _DEFAULT_TRIGGER_INTERVAL)
+            if defn
+            else _DEFAULT_TRIGGER_INTERVAL
+        )
+        next_fire = time.time() + (0.0 if trigger_type == "on_close" else interval)
         logger.info(
-            "Autonomous session %s — operator message is neutral; staying in proposal",
+            "Autonomous session completed: preset=%s session_id=%s "
+            "owner_id=%s trigger=%s interval=%.0fs "
+            "next_fire_ts=%.3f",
+            preset_name,
             session_id,
+            aq.owner_id,
+            trigger_type,
+            interval,
+            next_fire,
         )
-        return "neutral"
-
-    def _handle_rejection(self, session_id: str) -> None:
-        """Record plan rejection and schedule a fresh planning turn.
-
-        Copies the current ``plan_text`` subject into ``rejected_subjects``
-        so the next planning round avoids it, resets the session to
-        ``planning``, and kicks off a new initial turn.
-        """
-        aq = self._sessions.get(session_id)
-        if aq is None:
-            return
-        # Record the rejected subject.
-        if aq.rejected_subjects is None:
-            aq.rejected_subjects = []
-        if aq.plan_text:
-            # Use the first line as the subject for the rejection list.
-            subject = aq.plan_text.strip().split("\n", 1)[0].strip()
-            if subject:
-                aq.rejected_subjects.append(subject)
-        aq.state = AutonomousState.planning
-        aq.plan_text = ""
         self._save_sessions()
         self._publish_state(session_id)
-        # Schedule a fresh planning turn.
-        self._schedule_background(
-            lambda: self._kickoff_initial_turn(session_id, aq.owner_id)
-        )
-
-    # -- initial turn kickoff ------------------------------------------------
-
-    async def _kickoff_initial_turn(
-        self, session_id: str, owner_id: str, *, is_restart: bool = False
-    ) -> None:
-        """Run the first agent turn for a new autonomous session.
-
-        Streams the agent with the autonomous instruction supplement so
-        it performs subject selection + plan drafting and (when the model
-        cooperates) emits the proposal marker.  After the reply,
-        :meth:`check_reply_for_markers` transitions the session to
-        ``proposal`` (or ``completed``).
-
-        When *is_restart* is ``True``, the prompt is adjusted to inform
-        the agent that the system was restarted and the session is being
-        resumed rather than freshly created.
-        """
-        try:
-            defn = self._definition_for_owner(owner_id)
-            preset_name = defn.get("name", "unknown") if defn else "unknown"
-            trigger_type = defn.get("trigger_type", "periodic") if defn else "periodic"
-            interval = (
-                defn.get("trigger_interval_seconds", _DEFAULT_TRIGGER_INTERVAL)
-                if defn
-                else _DEFAULT_TRIGGER_INTERVAL
-            )
-            fire_ts = time.time()
-            logger.info(
-                "Autonomous session kickoff starting: preset=%s session_id=%s "
-                "owner_id=%s trigger=%s interval=%.0fs fire_ts=%.3f "
-                "is_restart=%s",
-                preset_name,
-                session_id,
-                owner_id,
-                trigger_type,
-                interval,
-                fire_ts,
-                is_restart,
-            )
-            aq = self._sessions.get(session_id)
-            current_board_digest = await self._mail_board_digest()
-            board_unchanged = (
-                is_restart
-                and current_board_digest is not None
-                and aq is not None
-                and aq.last_board_digest == current_board_digest
-            )
-            async with self._run_serializer.for_owner(owner_id):
-                agent = await asyncio.to_thread(self._agent_factory)
-                restart_notice = ""
-                if is_restart:
-                    restart_notice = (
-                        "SYSTEM RESTARTED — you are resuming an existing "
-                        "autonomous session. "
-                    )
-                no_change_note = ""
-                if board_unchanged:
-                    no_change_note = (
-                        "BOARD UNCHANGED — the auto-mail board content is "
-                        "identical to the previous run. Do NOT re-run the "
-                        "board content check or output a duplicate board "
-                        "digest. Reply with NO_CHANGE and stop.\n\n"
-                    )
-                # Build the kickoff prompt: use the session definition's
-                # custom prompt when provided, otherwise fall back to the
-                # global initial_task or the standard prompt.
-                custom_prompt = defn.get("prompt", "") if defn else ""
-                rejected_note = _rejected_subjects_note(self._sessions.get(session_id))
-                if custom_prompt:
-                    # Apply self-refinement addendum when enabled.
-                    effective = custom_prompt
-                    if (
-                        defn
-                        and defn.get("self_refine")
-                        and self._refinement_store is not None
-                    ):
-                        effective = self._refinement_store.effective_prompt(
-                            defn.get("name", ""), custom_prompt
-                        )
-                    prompt = f"{restart_notice}{no_change_note}{effective}"
-                    prompt += rejected_note
-                else:
-                    prompt = (
-                        f"{restart_notice}{no_change_note}"
-                        "Begin a new autonomous session. "
-                        "Pick a subject and draft a plan."
-                        f"{rejected_note}"
-                    )
-                reply_parts: list[str] = []
-                async for token in agent.stream(
-                    prompt,
-                    history=[],
-                    session_id=session_id,
-                    client_id=session_id,
-                    trace_name="autonomous-init",
-                ):
-                    reply_parts.append(token)
-                    if self._event_sink is not None:
-                        self._event_sink.publish(
-                            session_id,
-                            autonomous_token_frame(token),
-                        )
-                full_reply = "".join(reply_parts)
-                self._store.record(
-                    session_id,
-                    owner_id,
-                    prompt,
-                    full_reply,
-                )
-                if self._event_sink is not None:
-                    self._event_sink.publish(
-                        session_id,
-                        agent_message_frame(full_reply, time.time()),
-                    )
-                self.check_reply_for_markers(session_id, full_reply)
-
-                # Persist the board digest we just observed so the next
-                # restart can compare against it and detect no-change.
-                if aq is not None and current_board_digest:
-                    aq.last_board_digest = current_board_digest
-                    self._save_sessions()
-        except asyncio.CancelledError:
-            logger.debug("Initial-turn task cancelled for session %s", session_id)
-        except Exception:
-            logger.exception(
-                "Initial-turn error in autonomous session %s",
-                session_id,
-            )
+        # Auto-restart always: schedule a fresh autonomous run (throttled)
+        # so the operator always has one live session.
+        owner_id = aq.owner_id
+        self._schedule_background(lambda: self._auto_restart(owner_id))
+        # Self-refinement: if this definition has self_refine enabled,
+        # schedule a refinement step after the run completes.
+        self._schedule_refinement(session_id, aq)
 
     # -- auto-continue loop -------------------------------------------------
 
@@ -1116,10 +782,14 @@ class AutonomousRunner:
     async def _auto_continue(
         self, session_id: str, *, is_restart: bool = False
     ) -> None:
-        """Drive execution turns until completion, re-approval, or turn cap.
+        """Drive an autonomous session from kickoff through completion.
 
-        When *is_restart* is ``True``, the agent is informed that the
-        system was restarted and the session is being resumed.
+        The first turn runs the session definition's custom prompt (or the
+        standard autonomous kickoff prompt); subsequent turns run a
+        ``Continue`` instruction until the agent emits the completion marker
+        (or the turn/idle caps are hit).  When *is_restart* is ``True``, the
+        agent is informed that the system was restarted and the session is
+        being resumed.
         """
         aq = self._sessions.get(session_id)
         if aq is None:
@@ -1129,6 +799,14 @@ class AutonomousRunner:
         defn = self._definition_for_owner(owner_id)
         max_turns = defn.get("max_auto_turns", 20) if defn else 20
 
+        # Compute the board digest + restart context once for this run.
+        current_board_digest = await self._mail_board_digest()
+        board_unchanged = (
+            is_restart
+            and current_board_digest is not None
+            and aq.last_board_digest == current_board_digest
+        )
+
         try:
             while True:
                 aq = self._sessions.get(session_id)
@@ -1137,15 +815,12 @@ class AutonomousRunner:
 
                 # Enforce max_auto_turns.
                 if aq.auto_turn_count >= max_turns:
-                    logger.warning(
-                        "Autonomous session %s hit max_auto_turns (%d) — "
-                        "reverting to proposal",
+                    logger.info(
+                        "Autonomous session %s hit max_auto_turns (%d) — closing",
                         session_id,
                         max_turns,
                     )
-                    aq.state = AutonomousState.proposal
-                    self._save_sessions()
-                    self._publish_state(session_id)
+                    self._mark_completed(session_id, aq)
                     return
 
                 # Throttle + gate: pace continues and pause while the session
@@ -1167,23 +842,40 @@ class AutonomousRunner:
                     agent = await asyncio.to_thread(self._agent_factory)
                     history = self._store.agent_history(session_id)
 
-                    # First turn after proposal approval: the operator's
-                    # message is already in history, so just prompt
-                    # the agent to continue executing its plan.
                     if aq.auto_turn_count == 0:
-                        restart_prefix = (
-                            "SYSTEM RESTARTED — resuming your autonomous session. "
-                            if is_restart
-                            else ""
-                        )
-                        message = (
-                            f"{restart_prefix}"
-                            "The operator has seen your plan and is ready for "
-                            "you to begin. Execute the first step of your plan "
-                            "immediately — use your tools to take the action "
-                            "now. Do not describe what you will do; actually "
-                            "perform it."
-                        )
+                        restart_notice = ""
+                        if is_restart:
+                            restart_notice = (
+                                "SYSTEM RESTARTED — you are resuming an existing "
+                                "autonomous session. "
+                            )
+                        no_change_note = ""
+                        if board_unchanged:
+                            no_change_note = (
+                                "BOARD UNCHANGED — the auto-mail board content is "
+                                "identical to the previous run. Do NOT re-run the "
+                                "board content check or output a duplicate board "
+                                "digest. Reply with NO_CHANGE and stop.\n\n"
+                            )
+                        custom_prompt = defn.get("prompt", "") if defn else ""
+                        if custom_prompt:
+                            effective = custom_prompt
+                            if (
+                                defn
+                                and defn.get("self_refine")
+                                and self._refinement_store is not None
+                            ):
+                                effective = self._refinement_store.effective_prompt(
+                                    defn.get("name", ""), custom_prompt
+                                )
+                            message = f"{restart_notice}{no_change_note}{effective}"
+                        else:
+                            message = (
+                                f"{restart_notice}{no_change_note}"
+                                "Begin a new autonomous session and work it to "
+                                "completion."
+                            )
+                        trace_name = "autonomous-init"
                     else:
                         if aq.completion_suppressed:
                             aq.completion_suppressed = False
@@ -1210,6 +902,7 @@ class AutonomousRunner:
                             )
                         else:
                             message = "Continue."
+                        trace_name = "autonomous-continue"
 
                     # Stream the agent reply.
                     reply_parts: list[str] = []
@@ -1219,7 +912,7 @@ class AutonomousRunner:
                             history=history,
                             session_id=session_id,
                             client_id=session_id,
-                            trace_name="autonomous-continue",
+                            trace_name=trace_name,
                         ):
                             reply_parts.append(token)
                             if self._event_sink is not None:
@@ -1253,6 +946,10 @@ class AutonomousRunner:
                         )
 
                     aq.auto_turn_count += 1
+                    # Persist the board digest observed for this run so the
+                    # next restart can compare against it.
+                    if current_board_digest:
+                        aq.last_board_digest = current_board_digest
                     self._save_sessions()
 
                     # Idle cap: halt the loop after N consecutive no-op turns.
@@ -1260,25 +957,19 @@ class AutonomousRunner:
                     if max_idle > 0 and aq.consecutive_no_change >= max_idle:
                         logger.info(
                             "Autonomous session %s hit max_idle_auto_turns "
-                            "(%d consecutive no-op turns) — reverting to "
-                            "proposal",
+                            "(%d consecutive no-op turns) — closing",
                             session_id,
                             max_idle,
                         )
-                        aq.state = AutonomousState.proposal
-                        self._save_sessions()
-                        self._publish_state(session_id)
+                        self._mark_completed(session_id, aq)
                         return
 
-                    # Check for lifecycle markers in the reply.
+                    # Check for the completion marker in the reply.
                     new_state = self.check_reply_for_markers(session_id, full_reply)
                     if new_state is AutonomousState.completed:
                         # check_reply_for_markers already schedules the
                         # _auto_restart background task — we only need to
                         # exit the execution loop here.
-                        return
-                    if new_state is AutonomousState.proposal:
-                        # Agent hit a blocker — wait for operator.
                         return
                     # Otherwise continue the loop.
 
@@ -1295,11 +986,11 @@ class AutonomousRunner:
     async def resume_sessions(self) -> None:
         """Handle autonomous sessions on server restart.
 
-        - Sessions in ``completed`` state: left as-is (operator closes).
+        - Sessions in ``completed`` state: skipped (not re-run).  The
+          auto-restart guarantee in :meth:`ensure_all_active_sessions`
+          then retires them and starts a fresh session for their
+          definition.
         - Sessions in ``executing`` state: resume auto-continue.
-        - Sessions in ``planning`` state: re-kickoff the initial
-          turn (the previous kickoff was lost on restart).
-        - Sessions in ``proposal`` state: left for operator review.
         - When no sessions exist at all for a definition (e.g. a fresh or
           wiped store), auto-start one session per enabled definition so
           autonomous mode is not permanently idle.
@@ -1354,24 +1045,6 @@ class AutonomousRunner:
                 )
                 self._schedule_background(
                     lambda sid=session_id: self._auto_continue(sid, is_restart=True)  # type: ignore[misc]
-                )
-
-            elif aq.state is AutonomousState.planning:
-                logger.info(
-                    "Resuming: re-kickoff initial turn for session %s",
-                    session_id,
-                )
-                self._schedule_background(
-                    lambda sid=session_id, oid=aq.owner_id: self._kickoff_initial_turn(  # type: ignore[misc]
-                        sid, oid, is_restart=True
-                    )
-                )
-
-            elif aq.state is AutonomousState.proposal:
-                logger.info(
-                    "Resuming: leaving session %s in proposal "
-                    "(awaiting operator review)",
-                    session_id,
                 )
 
         # Auto-restart always: guarantee every enabled session definition has
