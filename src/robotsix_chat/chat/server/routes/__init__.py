@@ -60,6 +60,9 @@ from .github import (
     github_repo_create_endpoint,
     github_settings_endpoint,
 )
+from .mail import (
+    mail_archive_root_check_endpoint,
+)
 from .mill_events import (
     mill_events_endpoint,
 )
@@ -132,6 +135,7 @@ __all__ = [
     "health_endpoint",
     "history_endpoint",
     "http_exception_handler",
+    "mail_archive_root_check_endpoint",
     "mill_events_endpoint",
     "not_found_handler",
     "prune_endpoint",

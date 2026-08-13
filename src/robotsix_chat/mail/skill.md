@@ -106,6 +106,21 @@ approval. Never delete an archive folder without the operator's explicit consent
 | IMAP unreachable            | `IMAP not configured for this account` (503)    |
 | Malformed JSON body         | `Malformed JSON body` (HTTP 400)                |
 
+## Archive root (OVH-hosted accounts)
+
+For OVH-hosted accounts the archive root IMAP folder is
+`INBOX/robotsix-mail-archive` — OVH IMAP places user folders under the `INBOX/`
+namespace, so a bare `robotsix-mail-archive` root does not exist on the server
+and the archive appears empty.
+
+`archive_root` is server-side configuration on the auto-mail board server; the
+chat agent never sends or receives it. If `list_archive_folders` returns an
+empty folder list (or the user reports an empty archive), the archive root is
+likely misconfigured: suggest the operator set `archive_root` to
+`INBOX/robotsix-mail-archive` for OVH-hosted accounts. The server's
+`GET /mail/archive-root-check` endpoint reports the archive-root folder count
+and emits the same OVH guidance when the root looks empty.
+
 ## Valid triage column names
 
 `INBOX`, `HUMAN_TRIAGE`, `PENDING_ACTION`, `TO_ARCHIVE`, `TO_DELETE`, `TO_CALENDAR`, `TO_ANSWER`,
