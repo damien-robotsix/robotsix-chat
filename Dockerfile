@@ -9,8 +9,12 @@ FROM python:3.14-slim@sha256:ce40764625a4ff50df3548277632e7f96c4e77fe75fa848aae9
 
 SHELL ["/bin/bash", "-o", "pipefail", "-c"]
 
-# Bring in the uv static binary (pinned to a released version for reproducibility).
-COPY --from=ghcr.io/astral-sh/uv:0.11.21 /uv /usr/local/bin/uv
+# Bring in uv, pinned to a released version for reproducibility.  Installed
+# from the official PyPI wheel rather than COPY --from=ghcr.io/astral-sh/uv:
+# the push build authenticates to GHCR with GITHUB_TOKEN, whose packages scope
+# is repo-local, so it cannot pull the cross-namespace astral-sh/uv image
+# ("failed to fetch oauth token: denied: denied").
+RUN python -m pip install --no-cache-dir "uv==0.11.21"
 
 ENV UV_LINK_MODE=copy \
     UV_PYTHON_DOWNLOADS=0
