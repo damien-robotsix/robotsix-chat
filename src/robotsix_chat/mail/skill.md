@@ -19,14 +19,23 @@ about) overloads the user and makes it harder to act. Instead:
 3. **Wait for confirmation.** Do not enumerate further candidates, and do not perform any mutation,
    until the user confirms the subset is correct or asks for more.
 
+## Selecting an account
+
+The auto-mail board can host multiple registered mail accounts. Call `list_mail_accounts` first to
+discover the available accounts and their `account_id` values. To view a specific account's board,
+pass its `account_id` to `get_mail_board` (e.g. `get_mail_board(account_id="acct_2")`). When no
+`account_id` is given, `get_mail_board` returns the server's default account — do not assume that
+covers every account the user asks about.
+
 ## Read-only tools
 
-| Tool                    | Description                                              |
-| ----------------------- | -------------------------------------------------------- |
-| `get_mail_board`        | Full board content (columns + cards) as JSON.            |
-| `get_mail_email_status` | Triage column name for one email by message_id.          |
-| `list_archive_folders`  | List all archive subfolders on the server.               |
-| `browse_archive_folder` | List message envelope metadata in one archive subfolder. |
+| Tool                    | Description                                                              |
+| ----------------------- | ------------------------------------------------------------------------ |
+| `get_mail_board`        | Full board content (columns + cards) as JSON; pass `account_id` to scope. |
+| `list_mail_accounts`    | List registered mail accounts and their `account_id` values.             |
+| `get_mail_email_status` | Triage column name for one email by message_id.                           |
+| `list_archive_folders`  | List all archive subfolders on the server.                                |
+| `browse_archive_folder` | List message envelope metadata in one archive subfolder.                  |
 
 ## Mutation tools
 

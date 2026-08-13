@@ -48,13 +48,28 @@ class MailClient:
             headers["Authorization"] = f"Bearer {self._token}"
         self._headers = headers
 
-    async def board_content(self) -> str:
+    async def board_content(self, account_id: str | None = None) -> str:
         """Call ``GET /board-content`` and return the JSON body as text.
+
+        Args:
+            account_id: Optional account identifier to scope the board to.
+                When omitted, the server's default account is used.
+
+        Never raises — errors become a diagnostic string.
+
+        """
+        params: dict[str, str] | None = None
+        if account_id:
+            params = {"account_id": account_id}
+        result = await self._get("/board-content", params=params)
+        return result
+
+    async def list_accounts(self) -> str:
+        """Call ``GET /list-accounts`` and return the JSON body as text.
 
         Never raises — errors become a diagnostic string.
         """
-        result = await self._get("/board-content")
-        return result
+        return await self._get("/list-accounts")
 
     async def email_status(self, message_id: str) -> str:
         """Call ``GET /email/{message_id}/status`` and return the triage column name.

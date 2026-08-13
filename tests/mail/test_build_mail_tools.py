@@ -60,10 +60,10 @@ def test_build_mail_tools_disabled() -> None:
     assert build_mail_tools(MailSettings(enabled=False)) == []
 
 
-def test_build_mail_tools_returns_eleven_tools() -> None:
-    """Verify that enabled mail returns eleven discrete tools."""
+def test_build_mail_tools_returns_twelve_tools() -> None:
+    """Verify that enabled mail returns twelve discrete tools."""
     tools = build_mail_tools(_settings())
-    assert len(tools) == 11
+    assert len(tools) == 12
     names = [t.__name__ for t in tools]
     assert names == [
         "get_mail_board",
@@ -77,6 +77,7 @@ def test_build_mail_tools_returns_eleven_tools() -> None:
         "move_archive_mail",
         "cleanup_empty_archive_folders",
         "delete_archive_folder",
+        "list_mail_accounts",
     ]
 
 
@@ -128,6 +129,21 @@ async def test_board_content_error(respx_mock: respx.MockRouter) -> None:
     result = await get_board()
 
     assert "Mail API error 500" in result
+
+
+@pytest.mark.asyncio
+async def test_board_content_with_account_id(respx_mock: respx.MockRouter) -> None:
+    """GET /board-content?account_id=... filters the board to one account."""
+    route = respx_mock.get(
+        "http://127.0.0.1:8077/board-content?account_id=acct_2"
+    ).mock(return_value=httpx.Response(200, text='{"columns": []}'))
+    tools = build_mail_tools(_settings())
+    get_board = tools[0]
+
+    result = await get_board(account_id="acct_2")
+
+    assert route.called
+    assert result == '{"columns": []}'
 
 
 # ---------------------------------------------------------------------------
@@ -541,6 +557,43 @@ async def test_archive_delete_client_side_path_escape(
     # Empty string
     result = await delete_folder("")
     assert "must not be empty" in result
+
+
+# ---------------------------------------------------------------------------
+# MailClient — list_accounts (GET /list-accounts)
+# ---------------------------------------------------------------------------
+
+
+@pytest.mark.asyncio
+async def test_list_accounts_success(respx_mock: respx.MockRouter) -> None:
+    """GET /list-accounts returns registered accounts as JSON."""
+    route = respx_mock.get("http://127.0.0.1:8077/list-accounts").mock(
+        return_value=httpx.Response(
+            200,
+            text='{"accounts": [{"account_id": "acct_1", "email": "a@example.com"}]}',
+        )
+    )
+    tools = build_mail_tools(_settings())
+    list_accounts = tools[11]
+
+    result = await list_accounts()
+
+    assert route.called
+    assert "acct_1" in result
+
+
+@pytest.mark.asyncio
+async def test_list_accounts_error(respx_mock: respx.MockRouter) -> None:
+    """GET /list-accounts on 500 returns an error string, never raises."""
+    respx_mock.get("http://127.0.0.1:8077/list-accounts").mock(
+        return_value=httpx.Response(500, text="Internal error")
+    )
+    tools = build_mail_tools(_settings())
+    list_accounts = tools[11]
+
+    result = await list_accounts()
+
+    assert "Mail API error 500" in result
 
 
 # ---------------------------------------------------------------------------
