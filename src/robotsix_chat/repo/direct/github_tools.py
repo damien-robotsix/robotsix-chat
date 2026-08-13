@@ -12,7 +12,7 @@ from __future__ import annotations
 
 import json
 import logging
-from collections.abc import Callable
+from collections.abc import Awaitable, Callable
 from typing import TYPE_CHECKING, Any
 
 if TYPE_CHECKING:
@@ -30,8 +30,8 @@ def build_github_tools(
     board: BoardClient,
     settings: DirectRepoSettings,
     component_request: Callable[..., Any] | None,
-    assert_blocked_and_scoped: Callable[..., Any],
-    assert_in_scope: Callable[..., Any],
+    assert_blocked_and_scoped: Callable[..., Awaitable[str | None]],
+    assert_in_scope: Callable[..., Awaitable[str | None]],
 ) -> list[Callable[..., Any]]:
     """Build the GitHub repo/PR operation tools.
 
