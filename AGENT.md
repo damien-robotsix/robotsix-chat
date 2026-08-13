@@ -173,7 +173,7 @@ the formatter always produces the comma form. The previous rule's rationale (cro
 portability and readability hazard) is moot on a ≥3.14 repo and was what motivated the impossible
 rule.
 
-**Escape hatch:** if this repo ever needs to support Python <3.14 again, set ruff's
+**Escape hatch:** if this repo ever needs to support Python \<3.14 again, set ruff's
 `target-version = "py313"` and the parenthesized form survives — the lever is the formatter target,
 not a style rule.
 
