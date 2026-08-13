@@ -1293,6 +1293,135 @@ class TestRestartContextInjection:
         assert "SYSTEM RESTARTED" not in captured_prompt[0]
 
     @pytest.mark.asyncio
+    async def test_kickoff_restart_board_unchanged_injects_no_change(
+        self, monkeypatch
+    ) -> None:
+        """Resuming kickoff with an unchanged board digest tells the agent NO_CHANGE."""
+        store = ConversationStore()
+        settings = MagicMock()
+        settings.autonomous.initial_task = ""
+        run_serializer = MagicMock()
+        run_serializer.for_owner.return_value.__aenter__ = AsyncMock()
+        run_serializer.for_owner.return_value.__aexit__ = AsyncMock()
+
+        monkeypatch.setattr(
+            AutonomousRunner,
+            "_mail_board_digest",
+            AsyncMock(return_value="digest-123"),
+        )
+
+        captured_prompt: list[str] = []
+        agent = MagicMock()
+        agent.stream = MagicMock()
+
+        async def _capture_stream(prompt, *args, **kwargs):
+            captured_prompt.append(str(prompt))
+            yield ""
+            return
+
+        agent.stream.side_effect = _capture_stream
+
+        runner = AutonomousRunner(
+            settings=settings,
+            conversation_store=store,
+            agent_factory=lambda: agent,
+            run_serializer=run_serializer,
+        )
+        aq = runner.create_session("owner1", schedule_kickoff=False)
+        aq.last_board_digest = "digest-123"
+
+        await runner._kickoff_initial_turn(aq.session_id, "owner1", is_restart=True)
+
+        assert len(captured_prompt) == 1
+        assert "SYSTEM RESTARTED" in captured_prompt[0]
+        assert "BOARD UNCHANGED" in captured_prompt[0]
+        assert "NO_CHANGE" in captured_prompt[0]
+        assert aq.last_board_digest == "digest-123"
+
+    @pytest.mark.asyncio
+    async def test_kickoff_restart_board_changed_stores_new_digest(
+        self, monkeypatch
+    ) -> None:
+        """A changed board on resume skips NO_CHANGE and persists the new digest."""
+        store = ConversationStore()
+        settings = MagicMock()
+        settings.autonomous.initial_task = ""
+        settings.autonomous.proposal_marker = "[APPROVAL]"
+        settings.autonomous.completion_marker = "[COMPLETE]"
+        run_serializer = MagicMock()
+        run_serializer.for_owner.return_value.__aenter__ = AsyncMock()
+        run_serializer.for_owner.return_value.__aexit__ = AsyncMock()
+
+        monkeypatch.setattr(
+            AutonomousRunner,
+            "_mail_board_digest",
+            AsyncMock(return_value="new-digest"),
+        )
+
+        captured_prompt: list[str] = []
+        agent = MagicMock()
+        agent.stream = MagicMock()
+
+        async def _capture_stream(prompt, *args, **kwargs):
+            captured_prompt.append(str(prompt))
+            yield ""
+            return
+
+        agent.stream.side_effect = _capture_stream
+
+        runner = AutonomousRunner(
+            settings=settings,
+            conversation_store=store,
+            agent_factory=lambda: agent,
+            run_serializer=run_serializer,
+        )
+        aq = runner.create_session("owner1", schedule_kickoff=False)
+        aq.last_board_digest = "old-digest"
+
+        await runner._kickoff_initial_turn(aq.session_id, "owner1", is_restart=True)
+
+        assert len(captured_prompt) == 1
+        assert "SYSTEM RESTARTED" in captured_prompt[0]
+        assert "BOARD UNCHANGED" not in captured_prompt[0]
+        assert "NO_CHANGE" not in captured_prompt[0]
+        assert aq.last_board_digest == "new-digest"
+
+    @pytest.mark.asyncio
+    async def test_mail_board_digest_disabled_returns_none(self) -> None:
+        """A disabled (or mock) mail integration produces no board digest."""
+        runner = AutonomousRunner(
+            settings=MagicMock(),
+            conversation_store=ConversationStore(),
+            agent_factory=MagicMock(),
+            run_serializer=MagicMock(),
+        )
+        assert await runner._mail_board_digest() is None
+
+    @pytest.mark.asyncio
+    async def test_mail_board_digest_hashes_board_content(self, monkeypatch) -> None:
+        """Enabled mail integration hashes the raw board-content response."""
+        import hashlib
+
+        settings = MagicMock()
+        settings.mail.enabled = True
+
+        runner = AutonomousRunner(
+            settings=settings,
+            conversation_store=ConversationStore(),
+            agent_factory=MagicMock(),
+            run_serializer=MagicMock(),
+        )
+
+        fake_client = MagicMock()
+        fake_client.board_content = AsyncMock(return_value='{"columns": []}')
+        monkeypatch.setattr(
+            "robotsix_chat.mail.client.MailClient", lambda _settings: fake_client
+        )
+
+        digest = await runner._mail_board_digest()
+        assert digest == hashlib.sha256(b'{"columns": []}').hexdigest()
+
+    @pytest.mark.asyncio
     async def test_auto_continue_restart_mid_execution(self) -> None:
         """_auto_continue with is_restart and auto_turn_count>0 injects restart msg."""
         store = ConversationStore()
