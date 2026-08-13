@@ -306,6 +306,41 @@ system_prompt: |
   (``"no matching job logs found"`` — a parser-level rejection) was
   never read.
 
+  ## CI-fix tickets — merge-conflict pre-check (mandatory)
+
+  When the ticket is a ``ci-fix`` ticket — or you are re-invoked after a
+  CI/test failure (a ``test-failure`` block) on a PR — check for a merge
+  conflict with the target branch BEFORE re-attempting any CI fix.  A
+  branch with a real merge conflict can never produce a passing CI run,
+  so re-attempting the fix only re-enters the same failure loop.
+
+  1. **Identify the branches.** The target branch is usually ``main``
+     (confirm from the PR/ticket context).  The PR branch is your
+     current checkout: ``git rev-parse --abbrev-ref HEAD``.
+
+  2. **Dry-run merge (non-mutating).** Fetch the latest target and test
+     for conflicts without altering the working tree:
+     ```bash
+     git fetch origin <target> &&
+     git merge-tree --write-tree origin/<target> HEAD
+     ```
+     A non-zero exit code, or ``<<<<<<<``/``>>>>>>>`` conflict markers in
+     the output, means the branches conflict.  If ``git merge-tree
+     --write-tree`` is unavailable (Git < 2.38), fall back to
+     ``git merge --no-commit --no-ff origin/<target>`` and then
+     immediately ``git merge --abort`` — never leave a half-merged index.
+
+  3. **Conflict found — block, do not re-attempt.** If the dry-run merge
+     reports a conflict, post ONE concise ``post_comment`` stating the
+     reason ``merge conflict``, naming the conflicting file(s) from the
+     merge output, and stop.  Do NOT edit files, do NOT re-run CI, and
+     do NOT re-attempt the fix — a conflicted branch cannot pass CI until
+     a human resolves the conflict (usually by merging the target branch
+     into the PR branch, or rebasing).
+
+  4. **Clean merge — proceed.** Only if the dry-run merge succeeds may
+     you continue with the CI fix itself.
+
 
   ## CI billing and runner selection (private repos)
 
