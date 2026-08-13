@@ -599,6 +599,26 @@ def test_agent_history_replaces_compacted_turns_with_summary():
     assert begin_history == history
 
 
+def test_compact_session_keeps_recent_turns_verbatim():
+    """The most recent turns survive compaction as verbatim replay."""
+    store = _store()
+    sid = str(store.create_session("owner-1")["session_id"])
+    store.record(sid, "owner-1", "q1", "a1")
+    store.record(sid, "owner-1", "q2", "a2")
+    store.record(sid, "owner-1", "q3", "a3")
+
+    store.compact_session("owner-1", sid, "sum of q1", keep_recent_turns=2)
+
+    session = store.get_session(sid)
+    assert session is not None
+    assert session.compacted_turn_index == 1  # q1 folded; q2+q3 kept verbatim
+    history = store.agent_history(sid)
+    assert "sum of q1" in history[0][1]
+    assert history[1:] == [("q2", "a2"), ("q3", "a3")]
+    # The UI transcript is untouched by compaction.
+    assert store.history(sid) == [("q1", "a1"), ("q2", "a2"), ("q3", "a3")]
+
+
 def test_compaction_marker_survives_history_trim():
     """Trimming old turns keeps the marker aligned (never re-covers turns)."""
     store = _store(max_history_turns=3)

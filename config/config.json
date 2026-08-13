@@ -9,6 +9,7 @@
   "cors_allow_origins": [],
   "correlation_id_header": "X-Request-ID",
   "compaction_min_turns": 3,
+  "compaction_keep_recent_turns": 2,
   "langfuse": {
     "host": "https://cloud.langfuse.com",
     "projects": {}
