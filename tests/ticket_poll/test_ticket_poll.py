@@ -18,6 +18,7 @@ from robotsix_chat.config import DirectRepoSettings, Settings
 from robotsix_chat.ticket_poll import (
     _check_unexpected_terminal,
     build_find_ticket_by_pr_tool,
+    build_mark_ticket_ready_tool,
     build_merge_pull_request_tool,
     build_ticket_poll_tools,
     load_ticket_poll_skill,
@@ -40,7 +41,12 @@ def _component_request_success(
 ) -> Callable[..., Any]:
     """Return an async mock that returns a successful roster-style response."""
 
-    async def _req(component: str, method: str, path: str) -> str:
+    async def _req(
+        component: str,
+        method: str,
+        path: str,
+        **kwargs: Any,
+    ) -> str:
         return "HTTP 200 OK\n" + json.dumps({"state": state, "ticket_id": ticket_id})
 
     return _req
@@ -51,7 +57,12 @@ def _component_request_error(
 ) -> Callable[..., Any]:
     """Return an async mock that returns a roster-style error."""
 
-    async def _req(component: str, method: str, path: str) -> str:
+    async def _req(
+        component: str,
+        method: str,
+        path: str,
+        **kwargs: Any,
+    ) -> str:
         return error_msg
 
     return _req
@@ -1137,6 +1148,165 @@ def test_unexpected_terminal_skips_non_dict_entries() -> None:
         "events": [None, "also not a dict"],
     }
     assert _check_unexpected_terminal(data) is None
+
+
+# ============================================================================
+# mark_ticket_ready
+# ============================================================================
+
+
+def test_mark_ticket_ready_empty_config_returns_empty_list() -> None:
+    """Neither component_request nor board_api_base_url → empty list."""
+    tools = build_mark_ticket_ready_tool(
+        Settings(direct_repo=DirectRepoSettings(board_api_base_url=""))
+    )
+    assert tools == []
+
+
+def test_mark_ticket_ready_configured_returns_one_tool() -> None:
+    """When board_api_base_url is set, returns mark_ticket_ready."""
+    tools = build_mark_ticket_ready_tool(_settings())
+    assert len(tools) == 1
+    assert tools[0].__name__ == "mark_ticket_ready"
+
+
+@pytest.mark.asyncio
+async def test_mark_ticket_ready_roster_first_success() -> None:
+    """When component_request succeeds, return its response directly."""
+
+    async def _req(
+        component: str,
+        method: str,
+        path: str,
+        json_body: dict[str, Any] | None = None,
+    ) -> str:
+        return "HTTP 200 OK\n" + json.dumps(
+            {"state": "READY", "ticket_id": "mr-ready-roster"}
+        )
+
+    tools = build_mark_ticket_ready_tool(
+        _settings(),
+        component_request=_req,
+    )
+    result = await tools[0]("mr-ready-roster", justification="answered question")
+
+    assert "HTTP 200" in result
+    assert "READY" in result
+
+
+@pytest.mark.asyncio
+async def test_mark_ticket_ready_roster_falls_back_to_direct(
+    respx_mock: respx.MockRouter,
+) -> None:
+    """When roster path returns an error, fall back to direct POST."""
+    route = respx_mock.post("http://board:8077/tickets/mr-fallback/mark-ready").mock(
+        return_value=httpx.Response(200, json={"state": "READY"})
+    )
+
+    tools = build_mark_ticket_ready_tool(
+        _settings(),
+        component_request=_component_request_error("Error: connection refused"),
+    )
+    result = await tools[0]("mr-fallback")
+
+    assert route.called
+    assert "READY" in result
+
+
+@pytest.mark.asyncio
+async def test_mark_ticket_ready_direct_only(
+    respx_mock: respx.MockRouter,
+) -> None:
+    """Without component_request, the direct POST path works."""
+    route = respx_mock.post("http://board:8077/tickets/mr-direct/mark-ready").mock(
+        return_value=httpx.Response(200, json={"state": "READY"})
+    )
+
+    tools = build_mark_ticket_ready_tool(_settings())
+    result = await tools[0]("mr-direct")
+
+    assert route.called
+    assert "READY" in result
+
+
+@pytest.mark.asyncio
+async def test_mark_ticket_ready_with_auth_token(
+    respx_mock: respx.MockRouter,
+) -> None:
+    """Auth token is sent as Bearer in the Authorization header."""
+    route = respx_mock.post("http://board:8077/tickets/mr-auth/mark-ready").mock(
+        return_value=httpx.Response(200, json={"state": "READY"})
+    )
+
+    tools = build_mark_ticket_ready_tool(
+        _settings(board_api_token="mark-token"),
+    )
+    await tools[0]("mr-auth")
+
+    assert route.called
+    request_headers = route.calls.last.request.headers
+    assert request_headers["Authorization"] == "Bearer mark-token"
+
+
+@pytest.mark.asyncio
+async def test_mark_ticket_ready_strips_trailing_slash(
+    respx_mock: respx.MockRouter,
+) -> None:
+    """Trailing slash on board_api_base_url is stripped correctly."""
+    route = respx_mock.post("http://board:8077/tickets/mr-slash/mark-ready").mock(
+        return_value=httpx.Response(200, json={"state": "READY"})
+    )
+
+    tools = build_mark_ticket_ready_tool(
+        _settings(board_api_base_url="http://board:8077/")
+    )
+    await tools[0]("mr-slash")
+
+    assert route.called
+
+
+@pytest.mark.asyncio
+async def test_mark_ticket_ready_http_404(
+    respx_mock: respx.MockRouter,
+) -> None:
+    """HTTP 404 → error message includes the status code."""
+    respx_mock.post("http://board:8077/tickets/mr-404/mark-ready").mock(
+        return_value=httpx.Response(404, json={"detail": "Not found"})
+    )
+
+    tools = build_mark_ticket_ready_tool(_settings())
+    result = await tools[0]("mr-404")
+
+    assert "404" in result
+    assert "Not found" in result
+
+
+@pytest.mark.asyncio
+async def test_mark_ticket_ready_resolves_paraphrased_id(
+    respx_mock: respx.MockRouter,
+) -> None:
+    """Paraphrased ID is resolved via hash-suffix match before the POST."""
+    real_id = "20260811T083147Z-mark-ready-resolution-761f"
+
+    respx_mock.get("http://board:8077/tickets").mock(
+        return_value=httpx.Response(
+            200,
+            json=[
+                {"ticket_id": real_id, "state": "draft"},
+                {"ticket_id": "20260810T232905Z-other-ticket-a3f2", "state": "DONE"},
+            ],
+        )
+    )
+
+    route = respx_mock.post(f"http://board:8077/tickets/{real_id}/mark-ready").mock(
+        return_value=httpx.Response(200, json={"state": "READY"})
+    )
+
+    tools = build_mark_ticket_ready_tool(_settings())
+    result = await tools[0]("761f")
+
+    assert route.called
+    assert "READY" in result
 
 
 # ============================================================================
