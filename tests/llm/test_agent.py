@@ -5,6 +5,8 @@ from __future__ import annotations
 import asyncio
 import re
 import uuid
+from types import SimpleNamespace
+from typing import Any
 from unittest.mock import AsyncMock, MagicMock, call, patch
 
 import pytest
@@ -1172,3 +1174,87 @@ class TestSdkSessionUuid:
         """Stability is what makes the CLI reuse its session cache."""
         assert _sdk_session_uuid("session-one") == _sdk_session_uuid("session-one")
         assert _sdk_session_uuid("session-one") != _sdk_session_uuid("session-two")
+
+
+class TestBindSdkSession:
+    """``session_id`` creates a session; ``resume`` continues one.
+
+    Setting ``session_id`` on every turn created the transcript on turn 1 and
+    then asked the CLI to create the same id again on every later turn, which
+    it refuses with "Session ID <uuid> is already in use" — losing the turn,
+    and losing all three retries with it because the id is deterministic.
+    Observed 2026-08-13 on two chat sessions.
+    """
+
+    class _Handle:
+        """Minimal stand-in exposing the ``_build_options`` seam."""
+
+        def __init__(self) -> None:
+            self._build_options = lambda sp: SimpleNamespace(
+                session_id=None, resume=None
+            )
+
+    def _opts(self, *, resuming: bool) -> Any:
+        from robotsix_chat.llm.agent import _bind_sdk_session
+
+        handle = self._Handle()
+        _bind_sdk_session(handle, "chat-session-1", resuming=resuming)
+        return handle._build_options("system prompt")
+
+    def test_first_turn_creates_the_session(self) -> None:
+        """Turn 1 has no history, so the session must be created."""
+        opts = self._opts(resuming=False)
+        assert opts.session_id == _sdk_session_uuid("chat-session-1")
+        assert opts.resume is None
+
+    def test_later_turns_resume_it(self) -> None:
+        """Any turn with history continues the existing session."""
+        opts = self._opts(resuming=True)
+        assert opts.resume == _sdk_session_uuid("chat-session-1")
+        assert opts.session_id is None
+
+    def test_never_sets_both(self) -> None:
+        """Set exactly one of the two options, never both.
+
+        The SDK rejects them together unless ``fork_session`` is set, and a
+        fork would defeat the cache reuse this binding exists for.
+        """
+        for resuming in (True, False):
+            opts = self._opts(resuming=resuming)
+            assert (opts.session_id is None) != (opts.resume is None)
+
+    def test_missing_seam_is_a_no_op(self) -> None:
+        """A handle without ``_build_options`` must not raise."""
+        from robotsix_chat.llm.agent import _bind_sdk_session
+
+        _bind_sdk_session(SimpleNamespace(), "chat-session-1", resuming=True)
+
+
+class TestSessionBindingErrorDetection:
+    """Both directions of chat-history / CLI-transcript disagreement."""
+
+    def test_detects_already_in_use(self) -> None:
+        """Creating an id whose transcript already exists."""
+        from robotsix_chat.llm.agent import _is_session_binding_error
+
+        assert _is_session_binding_error(
+            RuntimeError(
+                "Error: Session ID bcc0a8f8-b677-5248-b707-3c8f03043c65 "
+                "is already in use."
+            )
+        )
+
+    def test_detects_missing_session_on_resume(self) -> None:
+        """Resuming an id the CLI no longer has."""
+        from robotsix_chat.llm.agent import _is_session_binding_error
+
+        assert _is_session_binding_error(
+            RuntimeError("No conversation found with session ID abc")
+        )
+
+    def test_ignores_unrelated_errors(self) -> None:
+        """Only binding errors may flip the mode — everything else propagates."""
+        from robotsix_chat.llm.agent import _is_session_binding_error
+
+        assert not _is_session_binding_error(RuntimeError("rate limit exceeded"))
+        assert not _is_session_binding_error(RuntimeError("connection reset"))
