@@ -55,6 +55,55 @@ async def test_reset_implement_spawn_counter_failure(
 
 
 @pytest.mark.asyncio
+async def test_reset_implement_spawn_counter_failure_surfaces_manual_flag(
+    respx_mock: respx.MockRouter,
+) -> None:
+    """HTTP 500 → tool flags manual intervention and reports ticket visibility."""
+    respx_mock.post("http://127.0.0.1:8077/tickets/t-manual/resume-blocked").mock(
+        return_value=httpx.Response(
+            500, text=json.dumps({"error": "internal spawn reset failure"})
+        )
+    )
+    respx_mock.get("http://127.0.0.1:8077/tickets/t-manual").mock(
+        return_value=httpx.Response(
+            200, text=json.dumps({"id": "t-manual", "state": "blocked"})
+        )
+    )
+
+    tools = build_direct_repo_tools(_settings())
+    reset_fn = [t for t in tools if t.__name__ == "reset_implement_spawn_counter"][0]
+
+    out = await reset_fn(ticket_id="t-manual")
+    assert "MANUAL INTERVENTION REQUIRED" in out
+    assert "t-manual" in out
+    assert "still visible" in out
+    assert "blocked" in out
+    assert "500" in out
+    assert "internal spawn reset failure" in out
+
+
+@pytest.mark.asyncio
+async def test_reset_implement_spawn_counter_failure_ticket_not_visible(
+    respx_mock: respx.MockRouter,
+) -> None:
+    """When the ticket cannot be located after a failure, say so explicitly."""
+    respx_mock.post("http://127.0.0.1:8077/tickets/t-gone/resume-blocked").mock(
+        return_value=httpx.Response(500, text="Internal Server Error")
+    )
+    respx_mock.get("http://127.0.0.1:8077/tickets/t-gone").mock(
+        return_value=httpx.Response(404, text="Not found")
+    )
+
+    tools = build_direct_repo_tools(_settings())
+    reset_fn = [t for t in tools if t.__name__ == "reset_implement_spawn_counter"][0]
+
+    out = await reset_fn(ticket_id="t-gone")
+    assert "MANUAL INTERVENTION REQUIRED" in out
+    assert "t-gone" in out
+    assert "could not be located" in out
+
+
+@pytest.mark.asyncio
 async def test_reset_implement_spawn_counter_roster_first_success() -> None:
     """When component_request is available, use roster path first."""
 

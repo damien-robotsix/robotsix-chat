@@ -986,8 +986,10 @@ def build_direct_repo_tools(
                 (e.g. ``"20250624T020652Z-my-ticket-a1b2"``).
 
         Returns:
-            A status message — success confirmation or an error describing
-            why the reset failed.
+            A status message — success confirmation, or a
+            ``MANUAL INTERVENTION REQUIRED`` error describing the board
+            API failure, the ticket's current visibility on the board, and
+            the next step for a human operator.
 
         """
         # Resolve paraphrased / abbreviated IDs before making the request.
@@ -1018,7 +1020,7 @@ def build_direct_repo_tools(
             )
 
         # Fall back to the direct board API path.
-        ok = await board.resume_blocked_ticket(effective_id, justification)
+        ok, reason = await board.resume_blocked_ticket(effective_id, justification)
         if ok:
             return (
                 f"Implement spawn counter reset for ticket {effective_id}. "
@@ -1026,10 +1028,28 @@ def build_direct_repo_tools(
             )
 
         board_url = board._board_url
+        # Even when resume fails, confirm whether the ticket is still visible
+        # on the board so the operator knows if this is a connectivity/API
+        # failure or a ticket that has vanished from the board.
+        state = await board.get_ticket_state(effective_id)
+        if state:
+            visibility = (
+                f"Ticket {effective_id} is still visible on the board "
+                f"(current state: {state})."
+            )
+        else:
+            visibility = (
+                f"Ticket {effective_id} could not be located on the board — "
+                "it may have been deleted or the board API is unreachable."
+            )
         return (
             f"Error: could not reset implement spawn counter for ticket "
-            f"{effective_id}.  Verify the ticket id and board API connectivity "
-            f"({board_url})."
+            f"{effective_id}.\n"
+            "MANUAL INTERVENTION REQUIRED: resume-blocked failed with "
+            f"{reason or 'unknown board API error'}.\n"
+            f"{visibility}\n"
+            f"Board URL: {board_url}. A human should check the ticket on the "
+            "board and resume it manually."
         )
 
     async def apply_patch_to_file(
