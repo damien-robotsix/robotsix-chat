@@ -355,6 +355,17 @@ output, generating 12 false-positive tickets. The fix (fenced metadata section +
 drafted, but the convention should be documented in AGENT.md so future prompt builders follow the
 same pattern.
 
+**Rule:** When constructing prompts that include a "stop", "no-op", or "NO_CHANGE" directive,
+replace the action-oriented prompt body entirely rather than prepending the stop instruction before
+a contradictory action instruction. A prompt that says both "Reply with NO_CHANGE and stop" and
+"Begin a new autonomous session. Pick a subject and draft a plan." is self-contradictory — the agent
+will follow whichever instruction it weights higher, defeating the stop directive.
+
+**Rationale:** Ticket 20260811T081603Z (PR #1394) — board-unchanged detection prepended
+'BOARD UNCHANGED…Reply with NO_CHANGE and stop' before both the custom-prompt branch and the default
+'Begin a new autonomous session…' text, creating a contradictory prompt that undermines the
+no-change detection.
+
 ## Prompt governance
 
 **Rule:** Every edit to the `build_autonomous_instruction()` return text in
