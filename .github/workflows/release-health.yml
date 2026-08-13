@@ -1,0 +1,132 @@
+name: Release health
+
+# Monitors the end-to-end release pipeline so a merge can never silently
+# ship without a release.  The reported failure mode was: the publish-image
+# workflow passed, but release-please failed on a GitHub App permission
+# issue, so no release PR/tag was ever produced.  This workflow closes that
+# gap with two independent checks that both run on every push to main, on a
+# daily schedule, and on demand:
+#
+#   1. verify-permissions      — confirms the vars/secrets release-please
+#                               needs are present AND that the GitHub App
+#                               actually grants the scoped permissions
+#                               release-please requests.
+#   2. monitor-release-please  — fails if the latest completed release-please
+#                               run concluded in anything but success.
+#
+# A red run here is the team's alert.  Fix the underlying cause and re-run
+# via the Actions UI (workflow_dispatch) to confirm the pipeline is healthy.
+
+on:
+  schedule:
+    # Daily at 07:00 UTC — after the typical overnight merge window.
+    - cron: '0 7 * * *'
+  workflow_dispatch:
+  push:
+    branches: [main]
+
+permissions:
+  contents: read  # baseline: checkout the repo, nothing else
+
+concurrency:
+  group: release-health-${{ github.ref }}
+  cancel-in-progress: false
+
+jobs:
+  verify-permissions:
+    name: Verify release-please prerequisites
+    runs-on: ubuntu-latest
+    permissions:
+      contents: read  # baseline; the App token is minted from App credentials, not GITHUB_TOKEN
+    steps:
+      - name: Harden Runner
+        uses: step-security/harden-runner@bf7454d06d71f1098171f2acdf0cd4708d7b5920  # v2.20.0
+        with:
+          egress-policy: audit
+
+      - name: Verify required configuration is present
+        env:
+          RELEASE_APP_ID: ${{ vars.RELEASE_APP_ID }}
+          RELEASE_APP_PRIVATE_KEY: ${{ secrets.RELEASE_APP_PRIVATE_KEY }}
+        run: |
+          set -euo pipefail
+          if [ -z "${RELEASE_APP_ID:-}" ]; then
+            echo "::error::vars.RELEASE_APP_ID is not set — release-please cannot mint a GitHub App token."
+            exit 1
+          fi
+          if [ -z "${RELEASE_APP_PRIVATE_KEY:-}" ]; then
+            echo "::error::secrets.RELEASE_APP_PRIVATE_KEY is not set — release-please cannot mint a GitHub App token."
+            exit 1
+          fi
+          echo "release-please configuration present (RELEASE_APP_ID=${RELEASE_APP_ID})."
+
+      - name: Verify the GitHub App grants the required permissions
+        id: app-token
+        uses: actions/create-github-app-token@fee1f7d63c2ff003460e3d139729b119787bc349  # v2.2.2
+        with:
+          app-id: ${{ vars.RELEASE_APP_ID }}
+          private-key: ${{ secrets.RELEASE_APP_PRIVATE_KEY }}
+          # MUST mirror release-please.yml exactly.  The action fails at
+          # minting time when the App installation does not grant one of
+          # these scopes, so this step is the live permission check.
+          permission-contents: write        # release commit, tag, Release
+          permission-pull-requests: write   # open and update the release PR
+
+  monitor-release-please:
+    name: Monitor release-please status
+    runs-on: ubuntu-latest
+    permissions:
+      actions: read  # list workflow runs
+    steps:
+      - name: Harden Runner
+        uses: step-security/harden-runner@bf7454d06d71f1098171f2acdf0cd4708d7b5920  # v2.20.0
+        with:
+          egress-policy: audit
+
+      - name: Check latest completed release-please run
+        uses: actions/github-script@3a2844b7e9c422d3c10d287c895573f7108da1b3  # v9
+        with:
+          script: |
+            const workflowFile = 'release-please.yml';
+            const perPage = 10;
+            const { data } = await github.rest.actions.listWorkflowRuns({
+              owner: context.repo.owner,
+              repo: context.repo.repo,
+              workflow_id: workflowFile,
+              per_page: perPage,
+            });
+
+            const allRuns = data.workflow_runs || [];
+            if (allRuns.length === 0) {
+              core.setFailed(
+                `No ${workflowFile} runs found — the release pipeline has never been triggered.`
+              );
+              return;
+            }
+
+            // release-please also triggers on every regular PR close, but its
+            // single job's `if` is false there, yielding a `skipped` run that
+            // is NOT a release failure.  Skip those (and cancelled runs) and
+            // judge by the first completed run that actually executed.
+            const meaningful = allRuns.filter(
+              (r) =>
+                r.status === 'completed' &&
+                r.conclusion !== 'skipped' &&
+                r.conclusion !== 'cancelled'
+            );
+            if (meaningful.length === 0) {
+              core.notice(
+                `No completed (non-skipped) ${workflowFile} runs in the last ${perPage} — nothing to check yet.`
+              );
+              return;
+            }
+
+            const latest = meaningful[0];
+            core.info(
+              `Latest completed ${workflowFile} run: #${latest.run_number} (${latest.conclusion}) ${latest.html_url}`
+            );
+            if (latest.conclusion !== 'success') {
+              core.setFailed(
+                `Latest ${workflowFile} run #${latest.run_number} concluded ${latest.conclusion} — automated releases are blocked. See ${latest.html_url}`
+              );
+            }
