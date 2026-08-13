@@ -1941,7 +1941,7 @@ async def test_list_installation_repos_paginates(
 
 
 def test_tool_docstrings_forbid_merge() -> None:
-    """Tool docstrings must not suggest merge capability (except merge_pr).
+    """Tool docstrings must not suggest merge capability.
 
     Only denial or descriptive checking of state is allowed.
     Descriptive uses of "merge" (e.g. "merge conflicts",
@@ -1969,9 +1969,6 @@ def test_tool_docstrings_forbid_merge() -> None:
         assert "blocked" in doc, (
             f"Tool {tool.__name__} docstring missing BLOCKED mention"
         )
-        # merge_pr is allowed to use performative merge language
-        if tool.__name__ == "merge_pr":
-            continue
         # If "merge" appears in other tools it must be descriptive only.
         performative = ("perform merge", "execute merge", "merge pr", "merge pull")
         if "merge" in doc:
