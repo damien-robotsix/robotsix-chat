@@ -118,50 +118,56 @@ async def test_get_ticket_state_500_returns_none(
 async def test_resume_blocked_ticket_2xx_returns_true(
     respx_mock: respx.MockRouter,
 ) -> None:
-    """HTTP 2xx → returns True."""
+    """HTTP 2xx → returns (True, None)."""
     respx_mock.post("http://127.0.0.1:8077/tickets/t-1/resume-blocked").mock(
         return_value=httpx.Response(200, text=json.dumps({"ok": True}))
     )
     client = _client()
-    result = await client.resume_blocked_ticket("t-1", "Needs more cycles")
-    assert result is True
+    ok, reason = await client.resume_blocked_ticket("t-1", "Needs more cycles")
+    assert ok is True
+    assert reason is None
 
 
 @pytest.mark.asyncio
 async def test_resume_blocked_ticket_400_returns_false(
     respx_mock: respx.MockRouter,
 ) -> None:
-    """HTTP >=400 → returns False."""
+    """HTTP >=400 → returns (False, reason)."""
     respx_mock.post("http://127.0.0.1:8077/tickets/t-1/resume-blocked").mock(
         return_value=httpx.Response(400, text=json.dumps({"error": "bad request"}))
     )
     client = _client()
-    result = await client.resume_blocked_ticket("t-1", "Needs more cycles")
-    assert result is False
+    ok, reason = await client.resume_blocked_ticket("t-1", "Needs more cycles")
+    assert ok is False
+    assert reason is not None
+    assert "400" in reason
 
 
 @pytest.mark.asyncio
 async def test_resume_blocked_ticket_500_returns_false(
     respx_mock: respx.MockRouter,
 ) -> None:
-    """HTTP 500 → returns False."""
+    """HTTP 500 → returns (False, reason)."""
     respx_mock.post("http://127.0.0.1:8077/tickets/t-1/resume-blocked").mock(
         return_value=httpx.Response(500, text="Internal Server Error")
     )
     client = _client()
-    result = await client.resume_blocked_ticket("t-1", "Needs more cycles")
-    assert result is False
+    ok, reason = await client.resume_blocked_ticket("t-1", "Needs more cycles")
+    assert ok is False
+    assert reason is not None
+    assert "500" in reason
 
 
 @pytest.mark.asyncio
 async def test_resume_blocked_ticket_connection_error_returns_false(
     respx_mock: respx.MockRouter,
 ) -> None:
-    """Connection error (no route mocked → respx raises) → returns False."""
+    """Connection error (no route mocked → respx raises) → returns (False, reason)."""
     # No route mocked — respx raises a connection error by default.
     client = _client()
-    result = await client.resume_blocked_ticket("t-1", "Needs more cycles")
-    assert result is False
+    ok, reason = await client.resume_blocked_ticket("t-1", "Needs more cycles")
+    assert ok is False
+    assert reason is not None
 
 
 # ---------------------------------------------------------------------------

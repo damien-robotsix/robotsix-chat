@@ -299,12 +299,19 @@ class BoardClient:
             await self._fetch_ticket_field(ticket_id, "state", field="state"),
         )
 
-    async def resume_blocked_ticket(self, ticket_id: str, justification: str) -> bool:
+    async def resume_blocked_ticket(
+        self, ticket_id: str, justification: str
+    ) -> tuple[bool, str | None]:
         """Resume a blocked ticket via the board API.
 
         Sends ``POST /tickets/{ticket_id}/resume-blocked`` with a JSON
-        body containing *justification*.  Returns ``True`` on success
-        (HTTP 2xx), ``False`` on any error (logged as a warning).
+        body containing *justification*.
+
+        Returns ``(True, None)`` on success (HTTP 2xx).  On failure returns
+        ``(False, reason)`` where *reason* is the board API's actionable
+        diagnostic (status code + response-body excerpt, or the transport
+        error) so callers can surface it instead of a generic "could not
+        reset" message.  Every failure is also logged as a warning.
         """
         url = f"{self._board_url}/tickets/{ticket_id}/resume-blocked"
         headers: dict[str, str] = {"Accept": "application/json"}
@@ -326,15 +333,19 @@ class BoardClient:
                 ticket_id,
                 result.error,
             )
-            return False
+            return False, result.error
         if result.status_code and result.status_code >= 400:
-            logger.warning(
-                "Board API returned %d for resume-blocked on ticket %s",
-                result.status_code,
-                ticket_id,
+            reason = (
+                f"Board API returned HTTP {result.status_code} "
+                f"for resume-blocked on ticket {ticket_id}"
             )
-            return False
-        return True
+            if result.text:
+                body = result.text.strip()[:300]
+                if body:
+                    reason += f": {body}"
+            logger.warning("%s", reason)
+            return False, reason
+        return True, None
 
     async def get_ticket_data(self, ticket_id: str) -> dict[str, Any] | None:
         """Return the full ticket JSON from the board API, or None on failure.
