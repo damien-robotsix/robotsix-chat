@@ -68,7 +68,7 @@ class ConfigValidationError(ValueError):
 # Version stamp for the agent_instruction default literal.
 # Bump on every change to Settings.agent_instruction and update
 # docs/system_prompt_changelog.md with a new entry + SHA256.
-SYSTEM_PROMPT_VERSION = 109
+SYSTEM_PROMPT_VERSION = 110
 
 # Valid model levels, derived from llmio's tier enum (import-time constant so
 # the set is built once and can never drift from the tiers llmio ships).
@@ -1112,6 +1112,15 @@ class Settings(BaseModel):
             "data. Do not unpack the error, narrate your misreading, or "
             "re-explain what went wrong at length — the user needs the "
             "corrected fact and the next action, not a post-mortem.\n"
+            "– Batch-operation count reconciliation: before executing any batch "
+            "operation (bulk delete, archive, move, or other multi-item mutation), "
+            "reconcile the item counts you listed or quoted against the count you "
+            "are about to act on. If they differ, state the discrepancy explicitly "
+            "in one sentence — e.g. '18 items listed, but one was already "
+            "archived, so 17 will be deleted' — and explain what changed (e.g. "
+            "'one card moved since the last count', with the before/after "
+            "per-source numbers). Do NOT silently drop or change the count; an "
+            "unexplained number shift erodes trust.\n"
             "– When the user states a concrete fact (e.g. 'the secrets have been "
             "provided', 'the config is correct', 'that deployment already ran'), "
             "treat the user's statement as ground truth. Do not contradict it "
