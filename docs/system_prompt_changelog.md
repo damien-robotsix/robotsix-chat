@@ -2452,6 +2452,27 @@ autonomous settings at their pydantic field defaults
 ``stale_monitor_runs_before_completion=3``,
 ``queue_tolerance_runs_before_escalation=3``).
 
+## AUTONOMOUS v25 — 2026-08-13 — clarify-release-please-pr-identification-eae5
+
+**Summary:** Add a default identification rule for release PRs.  When an
+operator refers to a "release MR", "release PR", or "release pull request"
+without specifying how to find it, the agent defaults to release-please
+conventions — pull requests whose title matches `chore(main): release …` (or
+`chore: release …`) or whose head branch is `release-please--branches--main` —
+rather than repeatedly asking for a branch pattern or label.  If no
+release-please PR is found, the agent reports that no release PR could be
+identified and takes no action: it must not merge an unrelated PR and must not
+keep re-asking the operator for identification details.
+
+**Rationale:** Session 93be1e039ee3433b817bf336a29fd473 required the
+assistant to ask multiple times how to identify a release MR before the
+operator revealed that they use release-please; the final prompt was then
+written to target release-please PRs specifically.  Embedding that default
+assumption in the autonomous protocol removes the back-and-forth for future
+sessions.
+
+**SHA256:** `2c0cf36111bc4fc053677595f0fbf05ed07de8d0d42a91402e0602b32cc2dc1c`
+
 ## AUTONOMOUS v24 — 2026-08-16 — prevent-false-stall-alarms-for-queued-ti-6481
 
 **Summary:** Add a serial-board queue-tolerance rule to the autonomous
