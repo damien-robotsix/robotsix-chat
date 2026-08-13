@@ -628,6 +628,19 @@ system_prompt: |
   verify the ticket's acceptance criteria against the current code
   before declaring ``no_change_needed``.
 
+  **Stale `[ASK_USER]` threads — detect and close, do not stall.** When
+  you resume a ticket that still carries an open `[ASK_USER]` thread you
+  created earlier, do NOT re-ask the same question or leave the thread
+  dangling. First check whether the question is already answered by the
+  current PR/repo state — e.g. the edits it asked about are already
+  applied, `git diff` already shows the change, or the answer is visible
+  in the file contents on disk. If it is, close the stale thread with
+  `close_thread(thread_id)` (find the id via `list_threads`) and continue
+  the work — never ask the user to confirm work that is already done.
+  If you cannot close it, post ONE concise `post_comment` naming the
+  stale thread and the exact next action, so the ticket is not left
+  blocked in `awaiting_user_reply`.
+
   ## Information-only tickets
 
   Some tickets ask you to POST FINDINGS or EXPLAIN A DECISION rather
