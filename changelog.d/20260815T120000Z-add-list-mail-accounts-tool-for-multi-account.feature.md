@@ -1,0 +1,1 @@
+Add `list_mail_accounts` tool and `account_id` parameter to `get_mail_board` so the chat agent can discover and switch between multiple registered mail accounts on the auto-mail board server.

@@ -50,16 +50,23 @@ def build_mail_tools(settings: MailSettings) -> list[Callable[..., Any]]:
 
     client = MailClient(settings)
 
-    async def get_mail_board() -> str:
+    async def get_mail_board(account_id: str | None = None) -> str:
         """Get the full auto-mail board content (columns + cards).
 
-        Returns the board state as JSON text — each column lists its
-        contained emails.  Use this to see the current triage state.
+        Args:
+            account_id: Optional account identifier to scope the board to
+                a specific registered account.  Call ``list_mail_accounts``
+                first to discover available account identifiers.  When
+                omitted, the server's default account is used.
+
+        Returns:
+            The board state as JSON text — each column lists its
+            contained emails.  Use this to see the current triage state.
 
         Never raises — errors become a diagnostic string.
 
         """
-        return await client.board_content()
+        return await client.board_content(account_id=account_id)
 
     async def get_mail_email_status(message_id: str) -> str:
         """Get the triage column name for a specific email.
@@ -256,6 +263,20 @@ def build_mail_tools(settings: MailSettings) -> list[Callable[..., Any]]:
         """
         return await client.archive_delete(folder, force=force)
 
+    async def list_mail_accounts() -> str:
+        """List the mail accounts registered on the auto-mail board server.
+
+        Returns:
+            JSON text describing the available accounts and their
+            identifiers.  Use a returned ``account_id`` with
+            ``get_mail_board(account_id=...)`` to view a specific
+            account's board.
+
+        Never raises — errors become a diagnostic string.
+
+        """
+        return await client.list_accounts()
+
     return [
         get_mail_board,
         get_mail_email_status,
@@ -268,4 +289,5 @@ def build_mail_tools(settings: MailSettings) -> list[Callable[..., Any]]:
         move_archive_mail,
         cleanup_empty_archive_folders,
         delete_archive_folder,
+        list_mail_accounts,
     ]

@@ -93,6 +93,7 @@ modules:
       - changelog.d/20260811T213813Z-fix-claude-sdk-session-id-uuid.bugfix.md
       - changelog.d/20260811T213813Z-revert-subsession-tier-rebalance.misc.md
       - changelog.d/20260812T072317Z-per-session-model-escalation.feature.md
+      - changelog.d/20260815T120000Z-add-list-mail-accounts-tool-for-multi-account.feature.md
       - changelog.d/20260801T104213Z-make-github-monitoring-subsessions-resil-601a.bugfix.md
       - changelog.d/20260802T101228Z-verify-ci-and-pr-state-before-reporting-03a9.misc.md
       - changelog.d/20260814T120000Z-subsession-capacity-workaround-message.bugfix.md
