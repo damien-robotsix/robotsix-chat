@@ -2103,6 +2103,27 @@ The hash is computed on the output of `build_autonomous_instruction(Settings())`
 autonomous settings at their pydantic field defaults (``proposal_marker="---PROPOSAL READY---"``,
 ``completion_marker="---AUTONOMOUS COMPLETE---"``, ``stale_monitor_runs_before_completion=3``).
 
+## AUTONOMOUS v21 — 2026-08-13 — monitor-terminal-state-and-consolidation
+
+**Summary:** Refine the stall-guard guidance for periodic monitors.  When a
+monitor auto-pauses after consecutive no-change cycles, the agent must state
+the terminal state plainly — "no change — the monitor is paused and still
+alive; it will resume when the ticket updates or on a new message; no action
+needed" — rather than replying with a bare pause confirmation.  When a monitor
+auto-stops (terminal, tracking interrupted), the agent must state "no change —
+the monitor auto-stopped; the ticket may still need attention" and then offer a
+re-scoping or split strategy.  Add a consolidation rule: multiple identical
+monitor notices (no-change, auto-pause, or auto-stop) in the same window are
+folded into one status update instead of one message per monitor.
+
+**Rationale:** Session fbd3ce5b65ff4cb591e4a7b8384a5504 observed an
+OSV-exemption monitor auto-pause acknowledged with only a confirmation of the
+pause; the operator was left unaware that no progress had been made and that no
+action was needed, and identical monitor notifications were repeated rather
+than consolidated.
+
+**SHA256:** `70aae0a01b4c6aaefedc114c0fd1f49278e42d4a8457b49fc50879d93962a5ff`
+
 ## AUTONOMOUS v20 — 2026-08-13 — automate-self-restart-after-capability-a-3ab1
 
 **Summary:** Add `AUTO SELF-RESTART` section to the autonomy tier. When
