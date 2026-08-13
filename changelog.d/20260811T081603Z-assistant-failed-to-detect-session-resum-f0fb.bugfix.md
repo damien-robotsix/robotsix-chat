@@ -1,1 +1,0 @@
-Autonomous sessions now persist a digest of the auto-mail board content and, on resumption, detect when the board is unchanged and reply `NO_CHANGE` instead of re-running the board check and emitting a duplicate digest.
