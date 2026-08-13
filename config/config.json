@@ -189,6 +189,11 @@
     "enabled": false,
     "timeout": 30.0
   },
+  "gateway_route": {
+    "enabled": false,
+    "timeout": 30.0,
+    "gateway_base_domain": "deploy.robotsix.net"
+  },
   "public_fetch": {
     "enabled": false,
     "timeout": 10.0,

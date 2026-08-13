@@ -25,6 +25,7 @@ from robotsix_chat.config.models import (
     DirectRepoSettings,
     DockerDigestSettings,
     FeedbackSettings,
+    GatewayRouteSettings,
     GitHubActionsSettings,
     GitHubSecuritySettings,
     HealthSettings,
@@ -1332,6 +1333,9 @@ class Settings(BaseModel):
     )
     docker_digest: DockerDigestSettings = Field(
         default_factory=DockerDigestSettings, json_schema_extra={"advanced": True}
+    )
+    gateway_route: GatewayRouteSettings = Field(
+        default_factory=GatewayRouteSettings, json_schema_extra={"advanced": True}
     )
     public_fetch: PublicFetchSettings = Field(
         default_factory=PublicFetchSettings, json_schema_extra={"advanced": True}
