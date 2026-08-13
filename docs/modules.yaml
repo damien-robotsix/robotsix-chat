@@ -87,6 +87,7 @@ modules:
       - changelog.d/20260809T140000Z-roster-replaces-fleet-auth.feature.md
       - changelog.d/20260809T165000Z-startup-connectivity-check-for-compone-dbcb.feature.md
       - changelog.d/20260802T143816Z-test-test-tool-docstrings-forbid-merge-r-f85c.misc.md
+      - changelog.d/20260802T210925Z-always-verify-packaging-compliance-again-43cf.doc.md
       - changelog.d/20260809T014935Z-sanitize-sse-mid-stream-error-payload-st-0ede.bugfix.md
       - changelog.d/20260809T014841Z-config-constants-py-remove-dead-level4-d-ce01.misc.md
       - changelog.d/20260811T213813Z-fix-claude-sdk-session-id-uuid.bugfix.md
