@@ -107,7 +107,13 @@ module.exports = async ({github, context, core}) => {
     // must not gate releases: exclude it here (a separate ticket removes the
     // workflow from this repo entirely).
     const isScorecard = (r) => (r.name || '') === 'Scorecard analysis';
-    others = runs.filter((r) => !isSelf(r) && !isDeploy(r) && !isScorecard(r));
+    // The "All CI checks passed" aggregate check run is a GitHub-internal
+    // summary check run whose conclusion is purely derivative of the
+    // individual job check runs already monitored by the loop. Including it
+    // causes confusing double-reporting (e.g. "Pre-commit hooks=failure,
+    // All CI checks passed=failure") without adding any information.
+    const isAggregate = (r) => (r.name || '').startsWith('All CI checks');
+    others = runs.filter((r) => !isSelf(r) && !isDeploy(r) && !isScorecard(r) && !isAggregate(r));
     const pending = others.filter((r) => r.status !== 'completed');
 
     if (others.length === 0 || pending.length === 0) break;
