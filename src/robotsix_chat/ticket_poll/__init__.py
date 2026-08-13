@@ -13,6 +13,10 @@ approved PRs/MRs.  Prefer this over the generic ``component_request`` when
 merging PRs for tickets in ``waiting_auto_merge`` or ``human_mr_approval``
 state.
 
+Also provides ``mark_ticket_ready(ticket_id)`` — a dedicated state-transition
+tool that calls ``POST /tickets/{id}/mark-ready`` to force a stalled ticket
+out of ``draft`` / ``human_issue_approval`` into ``ready``.
+
 Exposes :func:`build_ticket_poll_tools` and
 :func:`build_merge_pull_request_tool` — factories returning the LLM tools.
 Returns no tools when neither ``component_request`` nor
@@ -41,6 +45,7 @@ if TYPE_CHECKING:
 
 __all__ = [
     "build_find_ticket_by_pr_tool",
+    "build_mark_ticket_ready_tool",
     "build_merge_pull_request_tool",
     "build_prioritize_all_open_tickets_tool",
     "build_ticket_poll_tools",
@@ -430,6 +435,140 @@ def build_merge_pull_request_tool(
             return f"Error merging PR for ticket {effective_id}: {exc}"
 
     return [merge_pull_request]
+
+
+def build_mark_ticket_ready_tool(
+    settings: Settings,
+    *,
+    component_request: Callable[..., Any] | None = None,
+) -> list[Callable[..., Any]]:
+    """Return the ``mark_ticket_ready`` tool.
+
+    The tool calls the mill board's ``POST /tickets/{id}/mark-ready`` endpoint
+    to force a ticket out of ``draft`` / ``human_issue_approval`` into the
+    ``ready`` state — the manual nudge for tickets whose drafting/approval
+    worker never picked them up.  It routes through *component_request*
+    (roster-based connectivity) when available, falling back to the direct
+    ``board_api_base_url`` otherwise.
+
+    Use this only after confirming the ticket is genuinely stuck (still in
+    ``draft`` with no event beyond ``created``) and only when the transition
+    is authorized — for user-requested tickets at the operator's explicit
+    request, or for a low-risk, reversible spec the operator has approved.
+
+    Args:
+        settings: Full application settings.
+        component_request: The roster-based request callable, or ``None``
+            when the component roster is unavailable.
+
+    Returns:
+        A one-element list containing the ``mark_ticket_ready`` async
+        callable, or ``[]`` when neither *component_request* nor
+        ``board_api_base_url`` are available.
+
+    """
+    conn = _board_connection(settings, component_request)
+    if conn is None:
+        return []
+    board_url, board_token, timeout = conn
+
+    async def mark_ticket_ready(
+        ticket_id: str,
+        justification: str = "",
+    ) -> str:
+        """Force a stalled draft ticket forward into the ``ready`` state.
+
+        Calls the mill board's mark-ready endpoint to transition the given
+        ticket out of ``draft`` / ``human_issue_approval``.  Use this when
+        a monitored ticket remains stuck in ``draft`` with no event beyond
+        ``created`` (the drafting/approval worker never picked it up), or
+        to approve a user-requested ticket in the same turn it was filed.
+
+        This is a state mutation — only call it when the transition is
+        authorized (operator consent, or a standing directive for the
+        specific ticket / gate).
+
+        Args:
+            ticket_id: The ticket ID to transition (e.g.
+                ``"20250101T120000Z-my-ticket-a1b2"``).  Paraphrased /
+                abbreviated IDs are resolved via hash-suffix or
+                slug-substring match against the live board.
+            justification: Optional human-readable reason for the forced
+                transition, sent as the request body's ``justification``
+                field for auditability.
+
+        Returns:
+            A status message from the mill API — success confirmation or
+            an error describing why the transition failed.
+
+        """
+        # Resolve paraphrased / abbreviated IDs against the live board
+        # before making the request.  This prevents 404 failures when an
+        # ID was derived from narrative text rather than from a board API
+        # response.
+        resolved_map = await _resolve_ticket_ids(
+            board_url, board_token, timeout, [ticket_id]
+        )
+        effective_id = resolved_map.get(ticket_id) or ticket_id
+
+        path = f"/tickets/{effective_id}/mark-ready"
+        json_body: dict[str, str] | None = (
+            {"justification": justification} if justification else None
+        )
+
+        # Try component_request (roster-based) first.
+        if component_request is not None:
+            resp = await component_request(
+                "mill",
+                "POST",
+                path,
+                json_body=json_body,
+            )
+            if not resp.startswith("Error:"):
+                return str(resp)
+            logger.info(
+                "mark_ticket_ready: roster path failed for %s; "
+                "falling back to direct board API",
+                effective_id,
+            )
+
+        # Direct fallback via board API.
+        url = f"{board_url}{path}"
+        headers: dict[str, str] = {"Accept": "application/json"}
+        if board_token:
+            headers["Authorization"] = f"Bearer {board_token}"
+
+        try:
+            async with httpx.AsyncClient(timeout=timeout) as client:
+                retry_client = RetryClient(client, config=_TICKET_POLL_RETRY_CONFIG)
+                response = await retry_client.post(url, headers=headers, json=json_body)
+                try:
+                    body = response.json()
+                    body_str = json.dumps(body)
+                except Exception:
+                    body_str = response.text
+                return f"HTTP {response.status_code}\n{body_str}"
+        except httpx.HTTPStatusError as exc:
+            try:
+                body = exc.response.json()
+                body_str = json.dumps(body)
+            except Exception:
+                body_str = exc.response.text
+            return f"HTTP {exc.response.status_code}\n{body_str}"
+        except httpx.ConnectError, httpx.ConnectTimeout, httpx.TimeoutException:
+            return (
+                f"Error marking ticket {effective_id} ready: "
+                f"board API request timed out after {timeout}s"
+            )
+        except Exception as exc:
+            logger.warning(
+                "mark_ticket_ready direct path failed for %s: %s",
+                effective_id,
+                exc,
+            )
+            return f"Error marking ticket {effective_id} ready: {exc}"
+
+    return [mark_ticket_ready]
 
 
 def build_find_ticket_by_pr_tool(
