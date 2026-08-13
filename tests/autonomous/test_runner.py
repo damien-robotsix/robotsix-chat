@@ -901,7 +901,56 @@ class TestRestartContextInjection:
         assert "SYSTEM RESTARTED" in captured_prompt[0]
         assert "BOARD UNCHANGED" in captured_prompt[0]
         assert "NO_CHANGE" in captured_prompt[0]
+        assert "Begin a new autonomous session" not in captured_prompt[0]
         assert aq.last_board_digest == "digest-123"
+
+    @pytest.mark.asyncio
+    async def test_restart_board_unchanged_drops_custom_prompt(
+        self, monkeypatch
+    ) -> None:
+        """An unchanged board on resume drops the custom kickoff prompt."""
+        store = ConversationStore()
+        settings = _make_settings()
+        settings.autonomous.sessions = [
+            _make_definition("default", prompt="Run the nightly triage now."),
+        ]
+        run_serializer = _make_run_serializer()
+
+        monkeypatch.setattr(
+            AutonomousRunner,
+            "_mail_board_digest",
+            AsyncMock(return_value="digest-123"),
+        )
+
+        captured_prompt: list[str] = []
+
+        agent = MagicMock()
+        agent.stream = MagicMock()
+
+        async def _capture_stream(prompt, *args, **kwargs):
+            captured_prompt.append(str(prompt))
+            yield "---AUTONOMOUS COMPLETE---"
+
+        agent.stream.side_effect = _capture_stream
+
+        runner = AutonomousRunner(
+            settings=settings,
+            conversation_store=store,
+            agent_factory=lambda: agent,
+            run_serializer=run_serializer,
+        )
+        runner._auto_restart = AsyncMock()
+        owner_id = runner.owner_id_for_definition("default")
+        aq = runner.create_session(owner_id, schedule_kickoff=False)
+        aq.last_board_digest = "digest-123"
+
+        await runner._auto_continue(aq.session_id, is_restart=True)
+
+        assert len(captured_prompt) == 1
+        assert "SYSTEM RESTARTED" in captured_prompt[0]
+        assert "BOARD UNCHANGED" in captured_prompt[0]
+        assert "NO_CHANGE" in captured_prompt[0]
+        assert "Run the nightly triage now." not in captured_prompt[0]
 
     @pytest.mark.asyncio
     async def test_restart_board_changed_stores_new_digest(self, monkeypatch) -> None:

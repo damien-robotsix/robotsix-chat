@@ -857,24 +857,27 @@ class AutonomousRunner:
                                 "board content check or output a duplicate board "
                                 "digest. Reply with NO_CHANGE and stop.\n\n"
                             )
-                        custom_prompt = defn.get("prompt", "") if defn else ""
-                        if custom_prompt:
-                            effective = custom_prompt
-                            if (
-                                defn
-                                and defn.get("self_refine")
-                                and self._refinement_store is not None
-                            ):
-                                effective = self._refinement_store.effective_prompt(
-                                    defn.get("name", ""), custom_prompt
-                                )
-                            message = f"{restart_notice}{no_change_note}{effective}"
+                        if board_unchanged:
+                            message = f"{restart_notice}{no_change_note}".rstrip()
                         else:
-                            message = (
-                                f"{restart_notice}{no_change_note}"
-                                "Begin a new autonomous session and work it to "
-                                "completion."
-                            )
+                            custom_prompt = defn.get("prompt", "") if defn else ""
+                            if custom_prompt:
+                                effective = custom_prompt
+                                if (
+                                    defn
+                                    and defn.get("self_refine")
+                                    and self._refinement_store is not None
+                                ):
+                                    effective = self._refinement_store.effective_prompt(
+                                        defn.get("name", ""), custom_prompt
+                                    )
+                                message = f"{restart_notice}{no_change_note}{effective}"
+                            else:
+                                message = (
+                                    f"{restart_notice}{no_change_note}"
+                                    "Begin a new autonomous session and work it to "
+                                    "completion."
+                                )
                         trace_name = "autonomous-init"
                     else:
                         if aq.completion_suppressed:
