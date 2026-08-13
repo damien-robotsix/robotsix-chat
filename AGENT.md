@@ -159,15 +159,23 @@ This applies to all Markdown files under `docs/`.
 
 ## Python conventions
 
-**Rule:** Prefer the comma-separated `except A, B, C:` form on Python 3.14+ (per PEP 758, matching
-`ruff format` output). Use the parenthesized `except (A, B, C):` form only when the target supports
-Python \<3.14, where the comma form `except A, B:` means `except A as B:` and shadows the built-in.
+**Rule:** On this repo (Python ≥3.14, `target-version = "py314"`) the canonical form is the
+comma-separated `except A, B, C:` — correct PEP 758 tuple semantics and exactly what `ruff format`
+produces. Do **not** write `except (A, B, C):`; the formatter strips the parentheses, so the edit
+becomes a no-op diff and the ticket is blocked.
 
-**Rationale:** The existing rule ("always use parenthesized form") was written before
-`target-version = "py314"` was set. On py314, PEP 758 makes `except A, B:` equivalent to
-`except (A, B):`, and `ruff format` actively converts the parenthesized form to the comma form. The
-merged code in PR #1312 (`20260809T064345Z`) and PR #1301 (`20260808T185947Z`) both shipped with the
-comma form after automation reverted the implementer's parenthesized fix, creating a no-win cycle.
+**Rationale:** Measured on CPython 3.14.6, `except TypeError, ValueError:` catches both exception
+types and does **not** rebind `ValueError` — it is still `builtins.ValueError`. The bare comma form
+has tuple semantics, exactly as PEP 758 specifies. `ruff` 0.16.2's formatter output depends on
+`target-version`: `py313` preserves `except (A, B):`, while `py314` strips the parentheses to
+`except A, B:`. This repo declares `requires-python = ">=3.14"` and `target-version = "py314"`, so
+the formatter always produces the comma form. The previous rule's rationale (cross-version
+portability and readability hazard) is moot on a ≥3.14 repo and was what motivated the impossible
+rule.
+
+**Escape hatch:** if this repo ever needs to support Python <3.14 again, set ruff's
+`target-version = "py313"` and the parenthesized form survives — the lever is the formatter target,
+not a style rule.
 
 **Provenance:** proposed by retrospect from
 20260809T064345Z-add-diagnostic-event-inspection-tool-for-b1aa
