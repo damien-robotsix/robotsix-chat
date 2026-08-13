@@ -717,7 +717,6 @@ import { processSSEStream } from "./sse-parser.js";
     for (var i = 0; i < sessionsList.length; i++) {
       if (sessionsList[i].session_id === frame.session_id) {
         sessionsList[i].autonomous_state = frame.state;
-        sessionsList[i].autonomous_plan_text = frame.plan_text || "";
         sessionsList[i].autonomous_turn_count = frame.auto_turn_count || 0;
         sessionsList[i].autonomous_max_turns = frame.max_auto_turns || 0;
         sessionsList[i].autonomous_session_color = frame.session_color || "";
