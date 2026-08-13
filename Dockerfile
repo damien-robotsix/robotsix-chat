@@ -54,6 +54,14 @@ COPY --from=builder /usr/local/lib/python3.14/site-packages/ /usr/local/lib/pyth
 COPY --from=builder /usr/local/bin/robotsix-chat /usr/local/bin/robotsix-chat
 COPY --from=builder /usr/local/bin/playwright /usr/local/bin/playwright
 
+# The runtime stage re-inherits pip from the base image (the COPY above
+# merges into site-packages rather than replacing it). pip is build-time
+# tooling only, and its vendored msgpack/setuptools trip the Trivy gate —
+# drop it from the runtime image.
+RUN rm -rf /usr/local/lib/python3.14/site-packages/pip \
+           /usr/local/lib/python3.14/site-packages/pip-*.dist-info \
+           /usr/local/bin/pip*
+
 # Install Node.js (LTS) and the claude CLI — required at runtime: the
 # claude-sdk subscription transport spawns the `claude` CLI as a subprocess.
 # Build-only packages and caches are pruned in the same layer.
