@@ -13,7 +13,6 @@ from __future__ import annotations
 import json
 import logging
 from collections.abc import Callable
-from pathlib import Path
 from typing import TYPE_CHECKING, Any
 
 if TYPE_CHECKING:
@@ -44,7 +43,6 @@ def build_github_tools(
     from robotsix_chat.common.unified_diff import apply_patch as _apply_patch
 
     from .actions_client import ActionsClient
-
 
     async def push_direct_repo_branch(
         ticket_id: str,
@@ -99,7 +97,7 @@ def build_github_tools(
         if not isinstance(files, list):
             return "Error: files_json must be a JSON array."
 
-        if error := await _assert_blocked_and_scoped(client, ticket_id, repo_full_name):
+        if error := await assert_blocked_and_scoped(client, ticket_id, repo_full_name):
             return error
 
         # --- ensure changelog fragments end with a newline ---
@@ -155,7 +153,7 @@ def build_github_tools(
             A status message with the PR URL on success, or an error message.
 
         """
-        if error := await _assert_blocked_and_scoped(client, ticket_id, repo_full_name):
+        if error := await assert_blocked_and_scoped(client, ticket_id, repo_full_name):
             return error
 
         pr_body = body or (
@@ -203,7 +201,7 @@ def build_github_tools(
             or an error describing merge conflicts or other failures.
 
         """
-        if error := await _assert_blocked_and_scoped(client, ticket_id, repo_full_name):
+        if error := await assert_blocked_and_scoped(client, ticket_id, repo_full_name):
             return error
 
         return await client.update_pr_branch(
@@ -241,7 +239,7 @@ def build_github_tools(
             A status message with mergeability details, or an error message.
 
         """
-        if error := await _assert_blocked_and_scoped(client, ticket_id, repo_full_name):
+        if error := await assert_blocked_and_scoped(client, ticket_id, repo_full_name):
             return error
 
         try:
@@ -496,7 +494,7 @@ def build_github_tools(
             actionable error message (conflicts, CI not green, draft, etc.).
 
         """
-        if error := await _assert_in_scope(client, repo_full_name):
+        if error := await assert_in_scope(client, repo_full_name):
             return error
 
         result = await client.merge_pr(
@@ -533,7 +531,7 @@ def build_github_tools(
             or an error message if the repository could not be fetched.
 
         """
-        if error := await _assert_in_scope(client, repo_full_name):
+        if error := await assert_in_scope(client, repo_full_name):
             return error
         return await client.check_auto_merge_enabled(
             repo_full_name=repo_full_name,
@@ -583,7 +581,7 @@ def build_github_tools(
             A success message, or an actionable error message.
 
         """
-        if error := await _assert_in_scope(client, repo_full_name):
+        if error := await assert_in_scope(client, repo_full_name):
             return error
 
         result = await client.arm_auto_merge(
@@ -754,7 +752,7 @@ def build_github_tools(
             message describing why the patch was refused or failed.
 
         """
-        if error := await _assert_blocked_and_scoped(client, ticket_id, repo_full_name):
+        if error := await assert_blocked_and_scoped(client, ticket_id, repo_full_name):
             return error
 
         msg = commit_message or (
@@ -860,7 +858,7 @@ def build_github_tools(
 
         """
         # --- guard 1+2: BLOCKED + scope ---
-        if error := await _assert_blocked_and_scoped(client, ticket_id, repo_full_name):
+        if error := await assert_blocked_and_scoped(client, ticket_id, repo_full_name):
             return error
 
         # --- guard 3: fetch PR and verify head branch ---

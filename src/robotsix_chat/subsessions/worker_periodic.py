@@ -36,6 +36,8 @@ from .worker import (
 )
 
 logger = logging.getLogger(__name__)
+
+
 def _build_periodic_input(
     info: SubsessionInfo,
     previous_result: str | None,
@@ -630,4 +632,3 @@ async def _run_periodic_turn(
     woke = await registry.wait_for_inbox(sub_id, timeout=info.interval_seconds)
     pending = registry.drain_inbox(sub_id) if woke else []
     return pending, previous_result, consecutive_no_change
-
