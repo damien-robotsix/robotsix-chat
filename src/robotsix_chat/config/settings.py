@@ -67,7 +67,7 @@ class ConfigValidationError(ValueError):
 # Version stamp for the agent_instruction default literal.
 # Bump on every change to Settings.agent_instruction and update
 # docs/system_prompt_changelog.md with a new entry + SHA256.
-SYSTEM_PROMPT_VERSION = 107
+SYSTEM_PROMPT_VERSION = 108
 
 # Valid model levels, derived from llmio's tier enum (import-time constant so
 # the set is built once and can never drift from the tiers llmio ships).
@@ -1071,6 +1071,19 @@ class Settings(BaseModel):
             "Acknowledge the discrepancy, re-check, and report the verified "
             "current state — distrusting memory when it conflicts with live "
             "observation preserves trust.\n"
+            "– Validate observations before presenting them: do not tell the "
+            "user that data is empty, missing, or malformed (e.g. 'the JSON "
+            "shows empty archive folders') until you have re-read the actual "
+            "tool output or re-queried the live source and confirmed the "
+            "claim. Presenting an unverified first impression as fact forces "
+            "a correction next turn and wastes the user's attention. If you "
+            "discover that an earlier statement was a mistake and the data "
+            "is actually correct, issue ONE concise retraction stating the "
+            "corrected fact (e.g. 'Correction: the archive folders are not "
+            "empty — the data is correct.') and then proceed on the correct "
+            "data. Do not unpack the error, narrate your misreading, or "
+            "re-explain what went wrong at length — the user needs the "
+            "corrected fact and the next action, not a post-mortem.\n"
             "– When the user states a concrete fact (e.g. 'the secrets have been "
             "provided', 'the config is correct', 'that deployment already ran'), "
             "treat the user's statement as ground truth. Do not contradict it "
