@@ -551,6 +551,18 @@ target platform to its immutable `sha256:...` content digest. Enabled by default
 | `docker_digest.registry_host` | `string`  | `"registry-1.docker.io"`         | Docker Registry v2 hostname for manifest lookups (Docker Hub).               |
 | `docker_digest.auth_url`      | `string`  | `"https://auth.docker.io/token"` | Token-authentication endpoint for bearer tokens (Docker Hub's auth service). |
 
+### Health
+
+Periodic health-check settings. When enabled, a background scheduler runs every
+`health.check_interval_seconds` (default 300 s / 5 min) and verifies that critical subsystems are
+reachable and producing expected output: memory (cognee recall), knowledge store, feedback runner,
+and diagnostics store. Results are exposed via `GET /health` and logged.
+
+| JSON key                        | Type      | Default | Description                                                |
+| ------------------------------- | --------- | ------- | ---------------------------------------------------------- |
+| `health.enabled`                | `boolean` | `true`  | Master switch. When `false`, no health checks run.         |
+| `health.check_interval_seconds` | `number`  | `300.0` | Seconds between scheduled health-check cycles. Must be >0. |
+
 ### Gateway Route
 
 Read-only gateway-route diagnostic tool for the agent. When enabled, the agent gains a
