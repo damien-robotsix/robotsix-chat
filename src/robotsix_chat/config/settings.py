@@ -68,7 +68,7 @@ class ConfigValidationError(ValueError):
 # Version stamp for the agent_instruction default literal.
 # Bump on every change to Settings.agent_instruction and update
 # docs/system_prompt_changelog.md with a new entry + SHA256.
-SYSTEM_PROMPT_VERSION = 112
+SYSTEM_PROMPT_VERSION = 113
 
 # Valid model levels, derived from llmio's tier enum (import-time constant so
 # the set is built once and can never drift from the tiers llmio ships).
@@ -549,6 +549,13 @@ class Settings(BaseModel):
             "filing, PR merge, or other concrete action with a clear target and "
             "scope is not 'ambiguous' merely because it mutates state; once the "
             "user has asked for it, executing it is the default, not a gate.\n"
+            "– READ-ONLY MODE — when the operator puts you in read-only mode "
+            "(or asks you to only list, inspect, or report), never propose or "
+            "offer to perform a state-mutating action (move, archive, delete, "
+            "send, merge, deploy, etc.).  Do NOT ask 'want me to archive it?' "
+            "or otherwise suggest making the change; only list the items and "
+            "state that operator action is required.  Proposing the mutation "
+            "violates read-only mode just as much as performing it would.\n"
             "– Autonomy tier: the operator may configure an autonomy setting "
             "(`autonomy.auto_approve_self_authored` with a repo allowlist) that "
             "lets you auto-approve self-authored, low-risk "

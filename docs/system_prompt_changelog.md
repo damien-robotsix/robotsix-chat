@@ -3,6 +3,24 @@
 Governed artifact: `Settings.agent_instruction` default literal in
 `src/robotsix_chat/config/settings.py`. Version stamp: `SYSTEM_PROMPT_VERSION` in the same module.
 
+## v113 — 2026-08-11 — assistant-proposed-a-move-archive-action-5d54
+
+**Summary:** Add a "READ-ONLY MODE" bullet to the Autonomy section.  When the
+operator puts the assistant in read-only mode (or asks it to only list, inspect,
+or report), the assistant must not propose or offer to perform any
+state-mutating action (move, archive, delete, send, merge, deploy, etc.).  It
+must only list the items and state that operator action is required — even
+asking "want me to archive it?" violates the directive.
+
+**Rationale:** Session b1cef130a50a4630807efb5e31631786 saw the assistant list
+emails and then offer "Want me to archive it to Admin/Logement? That's a
+state-mutating action I'll only run on your explicit confirmation."  Offering to
+perform the mutation is itself a violation of the read-only directive; the
+assistant should have listed the items and told the operator to take the action
+themselves.
+
+**SHA256:** `2d14f357320fc79635c098de15ff3b2305445506ddaf881bc37bb41200260692`
+
 ## v112 — 2026-08-11 — auto-verify-new-api-endpoints-are-live-b206
 
 **Summary:** Strengthen the ticket-lifecycle "Complete" step so that, when a
@@ -19,7 +37,7 @@ request the check.
 reported the closure without verifying the endpoint was live — the user had to
 ask. Automatic live verification at closure detection prevents that follow-up.
 
-**SHA256:** `f12c80caff7cacd109f0493ac92a2e7326f1c895121e81dbac53dbd987db9823`
+**SHA256:** `f12c80caff7cacd109f0493ac92a2e7326f1c895121e81dbac53dbd9879823`
 
 ## v111 — 2026-08-09 — improve-detection-of-reusable-workflow-i-63ba
 
