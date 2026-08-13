@@ -738,10 +738,13 @@ class CogneeMemory:
             )
             # Reset the *alert* start time so we do not spam the log on every
             # subsequent failure — re-alert only if the freeze persists through
-            # another full threshold window.  Add a tiny epsilon so a second
-            # call in the same tick does not re-fire.  (The freeze clock,
-            # ``_freeze_start``, is NOT reset here.)
-            self._write_failure_start = now + 0.001
+            # another full threshold window.  Advance the reset by a full second
+            # (negligible against the minutes-scale threshold) rather than a
+            # sub-millisecond epsilon: the gap between two consecutive
+            # ``time.monotonic()`` calls is not guaranteed to stay under 1 ms on
+            # a loaded CI runner, so 0.001 s could still re-fire the alert.
+            # (The freeze clock, ``_freeze_start``, is NOT reset here.)
+            self._write_failure_start = now + 1.0
 
         # Guarded auto-recovery once the freeze has persisted long enough.
         freeze_minutes = (now - self._freeze_start) / 60.0
