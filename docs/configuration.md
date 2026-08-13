@@ -574,9 +574,9 @@ trigger and run their configured prompt to completion, closing on the completion
 proposal/approval handshake — plan/approval behaviour, if any, comes from the session's own prompt.
 
 Session presets in `autonomous.sessions` are the **sole enablement model** — a preset that exists
-and is enabled IS the enablement. There is no separate master switch. An explicit empty
-`sessions` list is migrated to the built-in default preset on load; disable autonomous sessions by
-setting the default preset's `enabled` to `false`.
+and is enabled IS the enablement. There is no separate master switch. An explicit empty `sessions`
+list is migrated to the built-in default preset on load; disable autonomous sessions by setting the
+default preset's `enabled` to `false`.
 
 | JSON key                                          | Type      | Default                       | Description                                                                                                                                                                                                                         |
 | ------------------------------------------------- | --------- | ----------------------------- | ----------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- |
@@ -584,7 +584,7 @@ setting the default preset's `enabled` to `false`.
 | `autonomous.continue_interval_seconds`            | `number`  | `45.0`                        | Minimum pacing interval (seconds) between auto-continue loop iterations.                                                                                                                                                            |
 | `autonomous.max_idle_auto_turns`                  | `integer` | `5`                           | Maximum number of consecutive NO_CHANGE / idle auto-continue turns before the loop halts (session closes). Set to `0` to disable the idle cap and only rely on per-preset `max_auto_turns`.                                         |
 | `autonomous.stale_monitor_runs_before_completion` | `integer` | `3`                           | Number of consecutive `NO_CHANGE` cycles after which a periodic monitor is considered "stale" — the agent may declare the autonomous session complete even while the monitor is still running. Monitors continue in the background. |
-| `autonomous.sessions`                             | `array`   | `[]`                          | List of named autonomous session definitions (see below). An explicit empty list is migrated to the built-in default preset on load.                                                                                              |
+| `autonomous.sessions`                             | `array`   | `[]`                          | List of named autonomous session definitions (see below). An explicit empty list is migrated to the built-in default preset on load.                                                                                                |
 
 Each entry in `autonomous.sessions` is an `AutonomousSessionDefinition` object:
 
