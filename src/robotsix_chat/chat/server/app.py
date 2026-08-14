@@ -70,6 +70,7 @@ from robotsix_chat.repo.security import build_github_security_tools, load_github
 from robotsix_chat.repo.study import build_repo_study_tools
 from robotsix_chat.selfreview import build_recent_activity_tools
 from robotsix_chat.sftp import build_sftp_tools
+from robotsix_chat.skill_index import build_skill_index
 from robotsix_chat.ticket_poll import (
     build_find_ticket_by_pr_tool,
     build_mark_ticket_ready_tool,
@@ -736,6 +737,51 @@ def _load_prompt_style() -> str:
     return body
 
 
+def _skill_registry(
+    settings: Settings,
+) -> list[tuple[bool, str, Callable[[], str]]]:
+    """Return ``(enabled, name, loader)`` for every bundled skill.
+
+    Single source of truth for both halves of progressive disclosure: the
+    index built into the system prompt and the ``read_skill`` tool that
+    serves bodies on demand. Keeping them on one list is what stops the
+    index from advertising a skill the tool cannot fetch.
+    """
+    from robotsix_chat.subsessions import load_subsessions_skill
+
+    return [
+        (True, "subsessions", load_subsessions_skill),
+        (settings.lifecycle.enabled, "lifecycle", load_lifecycle_skill),
+        (settings.notification.enabled, "notification", load_notification_skill),
+        (settings.http_probe.enabled, "http_probe", load_http_probe_skill),
+        (settings.docker_digest.enabled, "docker_digest", load_docker_digest_skill),
+        (settings.gateway_route.enabled, "gateway_route", load_gateway_route_skill),
+        (
+            settings.continuation.enabled,
+            "continuation",
+            load_continuation_skill,
+        ),
+        (
+            settings.langfuse_inspect.enabled,
+            "langfuse_inspect",
+            load_langfuse_inspect_skill,
+        ),
+        (settings.public_fetch.enabled, "public_fetch", load_public_fetch_skill),
+        (settings.render_url.enabled, "render_url", load_render_url_skill),
+        (settings.github_security.enabled, "github_security", load_github_skill),
+        (settings.github_actions.enabled, "github_actions", load_github_actions_skill),
+        (settings.direct_repo.enabled, "direct_repo", load_direct_repo_skill),
+        (settings.volume_tools.enabled, "volume_tools", load_volume_tools_skill),
+        (settings.mail.enabled, "mail", load_mail_skill),
+        (
+            bool(settings.direct_repo.board_api_base_url.strip())
+            or bool(settings.central_deploy.url.strip()),
+            "ticket_poll",
+            load_ticket_poll_skill,
+        ),
+    ]
+
+
 def _inject_skills(
     settings: Settings,
     instruction: str,
@@ -846,47 +892,60 @@ def _inject_skills(
         if skill_prompt:
             instruction = f"{instruction}\n\n{skill_prompt}"
 
-    from robotsix_chat.subsessions import load_subsessions_skill
+    _skill_entries = _skill_registry(settings)
 
-    _skill_entries: list[tuple[bool, str, Callable[[], str]]] = [
-        (True, "subsessions", load_subsessions_skill),
-        (settings.lifecycle.enabled, "lifecycle", load_lifecycle_skill),
-        (settings.notification.enabled, "notification", load_notification_skill),
-        (settings.http_probe.enabled, "http_probe", load_http_probe_skill),
-        (settings.docker_digest.enabled, "docker_digest", load_docker_digest_skill),
-        (settings.gateway_route.enabled, "gateway_route", load_gateway_route_skill),
-        (
-            settings.continuation.enabled,
-            "continuation",
-            load_continuation_skill,
-        ),
-        (
-            settings.langfuse_inspect.enabled,
-            "langfuse_inspect",
-            load_langfuse_inspect_skill,
-        ),
-        (settings.public_fetch.enabled, "public_fetch", load_public_fetch_skill),
-        (settings.render_url.enabled, "render_url", load_render_url_skill),
-        (settings.github_security.enabled, "github_security", load_github_skill),
-        (settings.github_actions.enabled, "github_actions", load_github_actions_skill),
-        (settings.direct_repo.enabled, "direct_repo", load_direct_repo_skill),
-        (settings.volume_tools.enabled, "volume_tools", load_volume_tools_skill),
-        (settings.mail.enabled, "mail", load_mail_skill),
-        (
-            bool(settings.direct_repo.board_api_base_url.strip())
-            or bool(settings.central_deploy.url.strip()),
-            "ticket_poll",
-            load_ticket_poll_skill,
-        ),
-    ]
-
-    for enabled, _name, loader in _skill_entries:
-        if enabled:
-            skill = loader()
-            if skill:
-                instruction = f"{instruction}\n\n{skill}"
+    index = build_skill_index(
+        [(name, loader) for enabled, name, loader in _skill_entries if enabled]
+    )
+    if index:
+        instruction = f"{instruction}\n\n{index}"
 
     return instruction
+
+
+def build_skill_tools(settings: Settings) -> list[Callable[..., Any]]:
+    """Return the ``read_skill`` tool — the read half of progressive disclosure.
+
+    The system prompt carries only a summary per skill (see
+    :mod:`robotsix_chat.skill_index`); this serves the full body when the agent
+    decides it needs one. Both halves read the same registry, so the tool can
+    always fetch anything the index advertises.
+    """
+    registry = {
+        name: loader for enabled, name, loader in _skill_registry(settings) if enabled
+    }
+
+    def read_skill(name: str) -> str:
+        """Read the full instructions for one of your available skills.
+
+        Call this before acting on a capability listed in "Available skills" —
+        the prompt carries only a one-line summary of each, and the body holds
+        the endpoints, arguments, safety rules and examples. The body stays in
+        context afterwards, so read each skill at most once per session.
+
+        Args:
+            name: Skill name exactly as listed in "Available skills".
+
+        Returns:
+            The skill's full Markdown body, or an error naming the valid
+            skills when *name* is not one of them.
+
+        """
+        loader = registry.get(name)
+        if loader is None:
+            available = ", ".join(sorted(registry)) or "(none)"
+            return (
+                f"No skill named {name!r}. Available skills: {available}. "
+                "Use the name exactly as listed in 'Available skills'."
+            )
+        try:
+            body = loader()
+        except Exception as exc:
+            logger.warning("read_skill(%s) failed to load", name, exc_info=True)
+            return f"Skill {name!r} could not be loaded: {exc}"
+        return body or f"Skill {name!r} is registered but its body is empty."
+
+    return [read_skill]
 
 
 def _build_static_tools(
@@ -913,6 +972,7 @@ def _build_static_tools(
     return [
         require_args(t)
         for t in (
+            *build_skill_tools(settings),
             *component_access_tools,
             *build_mail_tools(settings.mail),
             *build_component_tools(settings.component_client),
