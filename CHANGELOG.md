@@ -69,6 +69,18 @@ Everything below predates the release-please migration and was
 maintained by hand or by towncrier. It is kept verbatim; new entries
 are added above by release-please.
 
+## [0.11.0](https://github.com/damien-robotsix/robotsix-chat/compare/v0.10.0...v0.11.0) (2026-08-14)
+
+
+### Features
+
+* progressive skill disclosure ([#1438](https://github.com/damien-robotsix/robotsix-chat/issues/1438)) ([6af8f9d](https://github.com/damien-robotsix/robotsix-chat/commit/6af8f9d1e8546061b3e562ba634f32b218ef6c67))
+
+
+### Bug Fixes
+
+* CI failure: Release image on main (20260813T221825Z-ci-failure-release-image-on-main-52a4) ([#1436](https://github.com/damien-robotsix/robotsix-chat/issues/1436)) ([7b16aa3](https://github.com/damien-robotsix/robotsix-chat/commit/7b16aa3e24b9a4ea5e1d05d967f55a2f8badba24))
+
 ## [0.10.0](https://github.com/damien-robotsix/robotsix-chat/compare/v0.9.0...v0.10.0) (2026-08-13)
 
 
