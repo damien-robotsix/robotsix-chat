@@ -3,6 +3,24 @@
 Governed artifact: `Settings.agent_instruction` default literal in
 `src/robotsix_chat/config/settings.py`. Version stamp: `SYSTEM_PROMPT_VERSION` in the same module.
 
+## v116 — 2026-08-14 — handle-typos-or-ambiguous-references-via-4617
+
+**Summary:** Add an Autonomy bullet requiring fuzzy matching / a "did you
+mean?" flow when a user reference to a known entity (ticket name or id, repo
+name, common term) does not match literally — e.g. "moblie app" for "mobile
+app".  Instead of matching the typo verbatim or stopping at "no results", the
+assistant must resolve the reference with case-insensitive / token-subset /
+edit-distance matching against the live board and known terms, confirm the
+entity exists, and — when the best candidate is not an exact match — present
+"did you mean X?" with the closest matches and ask the user to confirm before
+acting.
+
+**Rationale:** Session 2b110277edaf4379a8b6465d9c54a341 saw the assistant match
+"moblie app" literally, risking confusion when a typo is not an exact
+identifier.
+
+**SHA256:** `89084526a8ea4e3b87e6492d08788e524066634f30d5c7be36802c02bd2b0c67`
+
 ## v115 — 2026-08-14 — prioritize-live-board-search-for-ticket-f2af
 
 **Summary:** Add an Autonomy bullet that requires the assistant to search the
