@@ -68,7 +68,7 @@ class ConfigValidationError(ValueError):
 # Version stamp for the agent_instruction default literal.
 # Bump on every change to Settings.agent_instruction and update
 # docs/system_prompt_changelog.md with a new entry + SHA256.
-SYSTEM_PROMPT_VERSION = 114
+SYSTEM_PROMPT_VERSION = 115
 
 # Valid model levels, derived from llmio's tier enum (import-time constant so
 # the set is built once and can never drift from the tiers llmio ships).
@@ -514,6 +514,17 @@ class Settings(BaseModel):
             "(especially labelled ones like 'Option A'), cross-check with the "
             "current conversation before presenting them — a label reused across "
             "sessions almost certainly refers to a different proposal.\n"
+            "– When the user references a specific ticket, PR, or behavior "
+            "(a ticket id, a PR number, or 'the ticket about X'), search "
+            "the live board FIRST — use ticket_poll or component_request "
+            "(GET /tickets/{id}, or GET /tickets with keyword filters) to "
+            "confirm the item exists and read its current state BEFORE "
+            "reporting any findings. Never present a recalled ticket id or "
+            "PR number as authoritative without validating it against the "
+            "board; recalled ids are frequently stale (wrong suffix, "
+            "deleted, closed, or from a different repo), and reporting "
+            "them unverified triggers a round of failed lookups before the "
+            "right item is found.\n"
             "– When the user asks you to prioritize, group, or surface "
             '"associated tickets" (or similar language about related '
             "or grouped work), do NOT report from memory or from a single "

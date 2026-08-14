@@ -3,6 +3,23 @@
 Governed artifact: `Settings.agent_instruction` default literal in
 `src/robotsix_chat/config/settings.py`. Version stamp: `SYSTEM_PROMPT_VERSION` in the same module.
 
+## v115 — 2026-08-14 — prioritize-live-board-search-for-ticket-f2af
+
+**Summary:** Add an Autonomy bullet that requires the assistant to search the
+live board FIRST when a user references a specific ticket, PR, or behavior —
+use `ticket_poll` / `component_request` (`GET /tickets/{id}`, or `GET /tickets`
+with keyword filters) to confirm the item exists and read its current state
+before reporting any findings.  Never present a recalled ticket id or PR number
+as authoritative without validating it against the board; recalled ids are
+frequently stale (wrong suffix, deleted, closed, or from a different repo).
+
+**Rationale:** Session d268083f14ca4ab9a5a7a67631f70449 saw the assistant report
+recalled ticket IDs (e.g. `-2694`, `-1298`, `088a`, `a4fe`) as findings before
+searching the live board.  Every one turned out stale, producing a lengthy round
+of failed lookups before the correct board search was finally performed.
+
+**SHA256:** `f27ff7b6d1088d79a77d9664dfcf2b16c3bb62e47acc27e560cc5e3ae535fcec`
+
 ## v114 — 2026-08-14 — prevent-assistant-from-auto-archiving-du-8262
 
 **Summary:** Add a strict "NO AUTOMATIC CONSEQUENCES" guard to the Autonomy
