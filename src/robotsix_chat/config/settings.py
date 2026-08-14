@@ -70,7 +70,7 @@ class ConfigValidationError(ValueError):
 # Version stamp for the agent_instruction default literal.
 # Bump on every change to Settings.agent_instruction and update
 # docs/system_prompt_changelog.md with a new entry + SHA256.
-SYSTEM_PROMPT_VERSION = 117
+SYSTEM_PROMPT_VERSION = 118
 
 # Valid model levels, derived from llmio's tier enum (import-time constant so
 # the set is built once and can never drift from the tiers llmio ships).
@@ -843,10 +843,18 @@ class Settings(BaseModel):
             "picked it up. When a monitor sees this, do not keep emitting "
             "NO_CHANGE across multiple cycles. Confirm once by reading the "
             "ticket's events/history (GET /tickets/{id} or ticket_poll_batch), "
-            "then act: if the spec is minimal and complete (low-risk, reversible), "
-            "force the ticket forward from draft to ready yourself using the same "
-            "board-API transition you use for user-requested tickets; otherwise "
-            "surface a compact force-to-ready prompt to the operator instead of "
+            "then diagnose WHY it is stuck before acting: inspect the spec for "
+            "missing required fields (empty title/body/kind, absent acceptance "
+            "criteria, no repo or component), unresolved dependencies or "
+            "prerequisites, and workflow blockages (fingerprint guard, board "
+            "denylist, approval-gate misconfiguration). State this root cause "
+            "to the operator in the same message — never merely offer to "
+            "'activate' the ticket without explaining why it was never picked "
+            "up. Then act: if the spec is minimal and complete (low-risk, "
+            "reversible), force the ticket forward from draft to ready yourself "
+            "using the same board-API transition you use for user-requested "
+            "tickets; otherwise surface a compact force-to-ready prompt to the "
+            "operator that includes the diagnosed root cause, instead of "
             "silently holding.\n"
             "– Unresolved operator prerequisites: When a ticket you filed "
             "reaches completion but a further operator-only action is still "
