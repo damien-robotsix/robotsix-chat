@@ -340,6 +340,21 @@ report it after the user followed up with another request — an avoidable round
 of back-and-forth and a surprise block.
 
 **SHA256:** `082e3b709adcf0fbd77cc2bca8b696b867536da0fe29d661846910508aa4368d` (chore: Improve detection and communication of root causes for stalled tickets (20260814T213722Z-improve-detection-and-communication-of-r-3c48))
+## v117 — 2026-08-14 — auto-activate-self-authored-tickets-4cf4
+
+**Summary:** Extend the ticket-lifecycle rule so that tickets the assistant
+authors on its own (chores and feedback tickets) are transitioned out of
+`draft` / `human_issue_approval` to `ready` immediately after filing — the
+same as user-requested tickets — rather than being left in `draft` and
+requiring a manual propose-activation / await-confirmation cycle.
+
+**Rationale:** Assistant-filed tickets (e.g. capability tickets and feedback
+tickets) were consistently stuck in `draft`, forcing the assistant to manually
+propose activation and await operator confirmation before they entered the
+implementation pipeline.  Auto-activating self-authored tickets streamlines
+the workflow and reduces manual oversight.
+
+**SHA256:** `0f46f6a2c91bc1a4d2fa5b6449c066bed0ec5234ed2cd76a6f0237bff8d21835`
 
 ## v116 — 2026-08-14 — handle-typos-or-ambiguous-references-via-4617
 
