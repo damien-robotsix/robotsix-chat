@@ -97,22 +97,34 @@ def _bind_sdk_session(handle: Any, session_id: str, *, resuming: bool) -> None:
 
     The SDK also rejects both options together unless ``fork_session`` is set,
     and forking would defeat the cache reuse this exists for — so set exactly
-    one.
+    one.  Two things are needed to keep that true across a re-bind, because
+    ``_attempt`` calls this a second time on the same handle when it flips the
+    binding:
+
+    * Wrap the handle's **own** builder, not the previous wrapper.  Stacking
+      leaves the earlier wrapper's assignment in place, so both options reach
+      the CLI and it refuses outright: ``Error: --session-id can only be used
+      with --continue or --resume if --fork-session is also specified.``  That
+      turned the self-heal itself into the failure — the flipped retry could
+      never succeed (observed 2026-08-14, three autonomous sessions).
+    * Assign **both** fields every call, one of them ``None``, so no value can
+      survive from an earlier binding.
     """
-    orig_build = getattr(handle, "_build_options", None)
-    if orig_build is None:
+    current = getattr(handle, "_build_options", None)
+    if current is None:
         return
+    # Unwrap: a previous bind stored the handle's own builder on its wrapper.
+    orig_build = getattr(current, "_robotsix_orig_build", current)
 
     sdk_session = _sdk_session_uuid(session_id)
 
     def _build_with_session(sp: str) -> Any:
         opts = orig_build(sp)
-        if resuming:
-            opts.resume = sdk_session
-        else:
-            opts.session_id = sdk_session
+        opts.resume = sdk_session if resuming else None
+        opts.session_id = None if resuming else sdk_session
         return opts
 
+    _build_with_session._robotsix_orig_build = orig_build  # type: ignore[attr-defined]
     handle._build_options = _build_with_session
 
 

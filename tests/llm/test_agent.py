@@ -1201,6 +1201,48 @@ class TestBindSdkSession:
         _bind_sdk_session(handle, "chat-session-1", resuming=resuming)
         return handle._build_options("system prompt")
 
+    def test_rebinding_does_not_leave_both_options_set(self) -> None:
+        """The flip must replace the binding, not add to it.
+
+        ``_attempt`` re-binds the same handle when the first binding is
+        refused.  Wrapping the previous wrapper left its assignment in place,
+        so the CLI got ``--session-id`` *and* ``--resume`` and refused
+        outright ("--session-id can only be used with --continue or --resume
+        if --fork-session is also specified") — the self-heal could never
+        succeed.  Observed 2026-08-14 on three autonomous sessions.
+        """
+        from robotsix_chat.llm.agent import _bind_sdk_session
+
+        handle = self._Handle()
+        _bind_sdk_session(handle, "chat-session-1", resuming=True)
+        _bind_sdk_session(handle, "chat-session-1", resuming=False)
+
+        opts = handle._build_options("system prompt")
+        assert opts.session_id == _sdk_session_uuid("chat-session-1")
+        assert opts.resume is None
+
+    def test_rebinding_the_other_way_round_is_also_clean(self) -> None:
+        """The flip runs in both directions; neither may leak the other field."""
+        from robotsix_chat.llm.agent import _bind_sdk_session
+
+        handle = self._Handle()
+        _bind_sdk_session(handle, "chat-session-1", resuming=False)
+        _bind_sdk_session(handle, "chat-session-1", resuming=True)
+
+        opts = handle._build_options("system prompt")
+        assert opts.resume == _sdk_session_uuid("chat-session-1")
+        assert opts.session_id is None
+
+    def test_repeated_rebinding_does_not_stack_wrappers(self) -> None:
+        """Guard against unbounded wrapper depth if the flip ever loops."""
+        from robotsix_chat.llm.agent import _bind_sdk_session
+
+        handle = self._Handle()
+        base = handle._build_options
+        for i in range(5):
+            _bind_sdk_session(handle, "chat-session-1", resuming=bool(i % 2))
+        assert handle._build_options._robotsix_orig_build is base
+
     def test_first_turn_creates_the_session(self) -> None:
         """Turn 1 has no history, so the session must be created."""
         opts = self._opts(resuming=False)
