@@ -69,6 +69,19 @@ Everything below predates the release-please migration and was
 maintained by hand or by towncrier. It is kept verbatim; new entries
 are added above by release-please.
 
+## [0.12.0](https://github.com/damien-robotsix/robotsix-chat/compare/v0.11.0...v0.12.0) (2026-08-14)
+
+
+### Features
+
+* Handle 'SYSTEM RESTARTED' prefix to avoid redundant re-fetches (20260814T081053Z-handle-system-restarted-prefix-to-avoid-6951) ([#1440](https://github.com/damien-robotsix/robotsix-chat/issues/1440)) ([6abdb85](https://github.com/damien-robotsix/robotsix-chat/commit/6abdb85465cb36414588a92c596f73df61652d1a))
+* Prevent assistant from auto-archiving during read-only triage mode (20260814T081052Z-prevent-assistant-from-auto-archiving-du-8262) ([#1439](https://github.com/damien-robotsix/robotsix-chat/issues/1439)) ([2bb429a](https://github.com/damien-robotsix/robotsix-chat/commit/2bb429ae4b74f33423aa759176a9c5bedeb642d4))
+
+
+### Bug Fixes
+
+* re-binding an SDK session must replace the binding, not stack on it ([#1445](https://github.com/damien-robotsix/robotsix-chat/issues/1445)) ([98f2554](https://github.com/damien-robotsix/robotsix-chat/commit/98f255401ece27a075db9d098a1ed77a7d700546))
+
 ## [0.11.0](https://github.com/damien-robotsix/robotsix-chat/compare/v0.10.0...v0.11.0) (2026-08-14)
 
 
