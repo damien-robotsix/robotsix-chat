@@ -31,3 +31,10 @@ class AutonomousSession:
     Used on restart/resumption to detect that the board state is unchanged
     and avoid re-running the board content check + emitting a duplicate
     digest.  Empty on a fresh session (no prior snapshot yet)."""
+    last_board_digest_at: float = 0.0
+    """Wall-clock timestamp (``time.time()``) of the most recent run that
+    fetched the board content and produced a non-NO_CHANGE digest.
+
+    Used on restart/resumption to skip the board re-fetch entirely when a
+    triage digest was already produced within the recent-digest window.
+    ``0.0`` means the session has not yet produced a digest."""

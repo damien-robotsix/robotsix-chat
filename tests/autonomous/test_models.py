@@ -32,6 +32,7 @@ class TestAutonomousSession:
         assert aq.completion_suppressed is False
         assert aq.definition_name == ""
         assert aq.last_board_digest == ""
+        assert aq.last_board_digest_at == 0.0
 
     def test_custom_state(self) -> None:
         """All fields accept explicit values."""
@@ -44,6 +45,7 @@ class TestAutonomousSession:
             completion_suppressed=True,
             definition_name="nightly",
             last_board_digest="abc123",
+            last_board_digest_at=123.0,
         )
         assert aq.state is AutonomousState.completed
         assert aq.auto_turn_count == 5
@@ -51,3 +53,4 @@ class TestAutonomousSession:
         assert aq.completion_suppressed is True
         assert aq.definition_name == "nightly"
         assert aq.last_board_digest == "abc123"
+        assert aq.last_board_digest_at == 123.0
