@@ -176,6 +176,7 @@ modules:
       - src/robotsix_chat/chat/events.py
       - src/robotsix_chat/chat/server/__init__.py
       - src/robotsix_chat/chat/server/app.py
+      - src/robotsix_chat/skill_index.py
       - src/robotsix_chat/chat/server/cli.py
       - src/robotsix_chat/chat/server/idempotency.py
       - src/robotsix_chat/chat/server/routes/__init__.py
@@ -204,6 +205,8 @@ modules:
       - tests/chat/test_subsessions_e2e.py
       - tests/chat/server/__init__.py
       - tests/chat/server/test_server.py
+      - tests/chat/server/test_skill_disclosure.py
+      - tests/test_skill_index.py
       - tests/chat/server/test_idempotency.py
       - tests/chat/server/test_message_coalescer_gc.py
       - tests/chat/server/routes/__init__.py
