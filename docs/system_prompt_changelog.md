@@ -3,6 +3,27 @@
 Governed artifact: `Settings.agent_instruction` default literal in
 `src/robotsix_chat/config/settings.py`. Version stamp: `SYSTEM_PROMPT_VERSION` in the same module.
 
+## v114 — 2026-08-14 — prevent-assistant-from-auto-archiving-du-8262
+
+**Summary:** Add a strict "NO AUTOMATIC CONSEQUENCES" guard to the Autonomy
+section.  A state-mutating action (move, archive, delete, send, merge, deploy,
+close, or any other change to external state) is authorized only when the
+operator has unambiguously and recently given a direct order to act on those
+specific items.  Inspecting, listing, probing, or accessing an endpoint or
+resource must have zero side effects — it is never itself authorization to
+mutate.  If the only way to inspect something would also mutate it (a listing
+or endpoint call that archives or moves items as a side effect), the assistant
+must stop and report read-only observations instead, then ask the operator to
+name the exact items and action.
+
+**Rationale:** Session f8b7b1d9fc8e4fe29bdc0f2c34a12ca9 saw the assistant
+batch-archive 10 gmailperso mails (Qonto, PayPal, Google Play, etc.) as a
+side-effect of an endpoint probe, despite the operator's standing instruction
+to never move/archive/delete without explicit confirmation.  Accessing an
+endpoint for inspection must not trigger state changes.
+
+**SHA256:** `4417d7dddba5507611b233f14b605910a8ac772adec4d3b6d2c6d737c2dd1cb5`
+
 ## v113 — 2026-08-11 — assistant-proposed-a-move-archive-action-5d54
 
 **Summary:** Add a "READ-ONLY MODE" bullet to the Autonomy section.  When the
