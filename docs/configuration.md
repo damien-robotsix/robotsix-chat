@@ -62,7 +62,7 @@ Secret fields include:
 
 - `llmio_api_key`
 - `langfuse.projects.<project>.public_key`, `langfuse.projects.<project>.secret_key`
-- `memory.llm.api_key`, `memory.embedding.api_key`
+- `openrouter.keys.<alias>`, `memory.embedding.api_key`
 - `central_deploy.api_token`
 - `mail.api_token`
 - `direct_repo.github_app_private_key`, `direct_repo.board_api_token`
@@ -181,6 +181,31 @@ Keeping every component's credentials in this one standard block is what lets ce
 enumerate them uniformly and hand them to the fleet consumers that need them (the chat trace proxy,
 cost-monitor's reconciliation).
 
+### OpenRouter
+
+The canonical component-standard OpenRouter credential block: provider API keys keyed by the
+**alias** each LLM-generating subsystem is billed under. The alias matches the subsystem's Langfuse
+project name, so cost-monitor can join OpenRouter provider spend to Langfuse traces via the shared
+alias.
+
+| JSON key                  | Type              | Default | Description                                                          |
+| ------------------------- | ----------------- | ------- | -------------------------------------------------------------------- |
+| `openrouter.keys.<alias>` | `string` (secret) | —       | OpenRouter API key for the LLM-generating subsystem named `<alias>`. |
+
+The main chat agent runs on the Claude SDK and needs no OpenRouter key, so this component declares
+only one alias:
+
+- `robotsix-chat-cognee` — the cognee memory extraction LLM, matching `memory.langfuse_project` (and
+  the `langfuse.projects` entry of the same name).
+
+```json
+"openrouter": {
+  "keys": {
+    "robotsix-chat-cognee": "sk-or-..."  // pragma: allowlist secret
+  }
+}
+```
+
 ### Langfuse Inspect
 
 Trace-inspection tool that lets the agent query recent Langfuse traces. Reuses the main `langfuse`
@@ -221,7 +246,6 @@ Persistent, cross-conversation episodic memory via embedded cognee. Disabled by 
 | `memory.llm.provider`                    | `string`          | `"custom"`                       | Extraction LLM provider.                                                                                                                                                                                                                                                                                                                                                                                                                                                            |
 | `memory.llm.model`                       | `string`          | `"openrouter/openai/gpt-5-nano"` | Extraction LLM model.                                                                                                                                                                                                                                                                                                                                                                                                                                                               |
 | `memory.llm.endpoint`                    | `string`          | `"https://openrouter.ai/api/v1"` | Extraction LLM endpoint.                                                                                                                                                                                                                                                                                                                                                                                                                                                            |
-| `memory.llm.api_key`                     | `string` (secret) | `""`                             | OpenRouter API key for extraction.                                                                                                                                                                                                                                                                                                                                                                                                                                                  |
 | `memory.llm.max_completion_tokens`       | `integer`         | `1024`                           | Maximum completion tokens per extraction LLM call. Caps output verbosity to control cost.                                                                                                                                                                                                                                                                                                                                                                                           |
 | `memory.embedding.provider`              | `string`          | `"openai_compatible"`            | Embedding provider.                                                                                                                                                                                                                                                                                                                                                                                                                                                                 |
 | `memory.embedding.model`                 | `string`          | `"bge-m3"`                       | Embedding model name.                                                                                                                                                                                                                                                                                                                                                                                                                                                               |

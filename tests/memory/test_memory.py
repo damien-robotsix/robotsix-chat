@@ -22,6 +22,7 @@ from robotsix_chat.config import (
     MemoryEmbeddingSettings,
     MemoryLlmSettings,
     MemorySettings,
+    OpenRouterSettings,
 )
 from robotsix_chat.memory import (
     NullMemory,
@@ -50,12 +51,19 @@ def _fresh_build_memory_cache() -> Any:
 
 
 def _enabled_settings(data_dir: str = "/data/cognee") -> MemorySettings:
-    """Return a valid enabled MemorySettings with key and endpoint present."""
+    """Return a valid enabled MemorySettings with embedding endpoint present."""
     return MemorySettings(
         enabled=True,
         data_dir=data_dir,
-        llm=MemoryLlmSettings(api_key=SecretStr("sk-or-x")),  # pragma: allowlist secret
+        llm=MemoryLlmSettings(),
         embedding=MemoryEmbeddingSettings(endpoint="http://box:11434/v1"),
+    )
+
+
+def _openrouter_with_key(alias: str = "robotsix-chat-cognee") -> OpenRouterSettings:
+    """Return a canonical OpenRouter block holding the cognee alias's key."""
+    return OpenRouterSettings(
+        keys={alias: SecretStr("sk-or-x")}  # pragma: allowlist secret
     )
 
 
@@ -221,6 +229,22 @@ async def test_cognee_recall_returns_formatted(
     """Verify that cognee recall returns the mocked fact as a string."""
     mem, _ = cognee_memory
     assert await mem.recall("who?") == "recalled fact"
+
+
+@pytest.mark.asyncio
+async def test_cognee_configure_reads_openrouter_key(
+    monkeypatch: pytest.MonkeyPatch, tmp_path: Any
+) -> None:
+    """The extraction-LLM key is read from the canonical openrouter block."""
+    fake = _install_fake_cognee(monkeypatch)
+    mem = CogneeMemory(
+        _enabled_settings(str(tmp_path / "cognee")),
+        openrouter=_openrouter_with_key(),
+    )
+    await mem.setup()
+    fake.config.set_llm_api_key.assert_called_once_with(
+        "sk-or-x"  # pragma: allowlist secret
+    )
 
 
 @pytest.mark.asyncio

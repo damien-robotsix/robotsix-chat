@@ -1232,7 +1232,9 @@ def test_create_agent_from_settings_memory_enabled_builds_memory() -> None:
     ) as build:
         agent = create_agent_from_settings(settings=settings)
 
-    build.assert_called_once_with(settings.memory, settings.langfuse)
+    build.assert_called_once_with(
+        settings.memory, settings.langfuse, settings.openrouter
+    )
     assert agent._memory is sentinel
 
 

@@ -27,7 +27,11 @@ from pathlib import Path
 from typing import TYPE_CHECKING, Any, TypeVar
 
 if TYPE_CHECKING:
-    from robotsix_chat.config import LangfuseSettings, MemorySettings
+    from robotsix_chat.config import (
+        LangfuseSettings,
+        MemorySettings,
+        OpenRouterSettings,
+    )
     from robotsix_chat.memory.base import RecoverCallback
 
 _T = TypeVar("_T")
@@ -99,7 +103,10 @@ class CogneeMemory:
     """
 
     def __init__(
-        self, settings: MemorySettings, langfuse: LangfuseSettings | None = None
+        self,
+        settings: MemorySettings,
+        langfuse: LangfuseSettings | None = None,
+        openrouter: OpenRouterSettings | None = None,
     ) -> None:
         """Store settings; actual cognee configuration is deferred to ``setup``.
 
@@ -110,12 +117,22 @@ class CogneeMemory:
             langfuse: The component's canonical Langfuse credential block,
                 where that project's credentials live.  Omitted (or empty)
                 means cognee LLM calls are not traced.
+            openrouter: The component's canonical OpenRouter credential block.
+                The extraction-LLM key is resolved from ``keys`` under
+                ``settings.langfuse_project``'s alias.  Omitted (or empty)
+                means cognee runs without an extraction-LLM key.
 
         """
         from robotsix_chat.config.models import LangfuseSettings as _LangfuseSettings
+        from robotsix_chat.config.models import (
+            OpenRouterSettings as _OpenRouterSettings,
+        )
 
         self._settings = settings
         self._langfuse = langfuse if langfuse is not None else _LangfuseSettings()
+        self._openrouter = (
+            openrouter if openrouter is not None else _OpenRouterSettings()
+        )
         self._setup_done = False
         self._setup_lock = asyncio.Lock()
         # The in-flight one-shot configuration task — see :meth:`setup`.
@@ -336,10 +353,13 @@ class CogneeMemory:
         cognee.config.system_root_directory(str(system_root))
 
         # Extraction LLM — OpenRouter via litellm's `custom` provider.
+        from robotsix_chat.config import PROJECT_MEMORY
+
+        alias = s.langfuse_project or PROJECT_MEMORY
         cognee.config.set_llm_provider(s.llm.provider)
         cognee.config.set_llm_model(s.llm.model)
         cognee.config.set_llm_endpoint(s.llm.endpoint)
-        cognee.config.set_llm_api_key(s.llm.api_key.get_secret_value())
+        cognee.config.set_llm_api_key(self._openrouter.key(alias).get_secret_value())
         cognee.config.set_llm_config(
             {"llm_max_completion_tokens": s.llm.max_completion_tokens}
         )

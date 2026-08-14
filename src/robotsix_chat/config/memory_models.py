@@ -17,8 +17,9 @@ class MemoryLlmSettings(BaseModel):
 
     Defaults match the validated robotsix setup: ``gpt-5-nano`` (cognee's
     cheapest model, reliable json_mode structured output) through
-    OpenRouter's ``custom`` provider. ``api_key`` is required when memory
-    is enabled (provide it via ``MEMORY_LLM_API_KEY``).
+    OpenRouter's ``custom`` provider.  The extraction-LLM API key no longer
+    lives here — it is read from the canonical top-level ``openrouter.keys``
+    block under ``memory.langfuse_project``'s alias.
 
     The default is deliberately a **cheap** model: cognee runs an
     extraction/consolidation LLM call per message, so an expensive default
@@ -35,7 +36,6 @@ class MemoryLlmSettings(BaseModel):
     # stalls, 2026-07-09).
     model: str = "openrouter/openai/gpt-5-nano"
     endpoint: str = "https://openrouter.ai/api/v1"
-    api_key: SecretStr = SecretStr("")
     max_completion_tokens: int = 1024
     model_config = ConfigDict(extra="forbid")
 

@@ -23,7 +23,11 @@ from typing import TYPE_CHECKING
 from .base import ChatMemory, NullMemory, ReadOnlyMemory
 
 if TYPE_CHECKING:
-    from robotsix_chat.config import LangfuseSettings, MemorySettings
+    from robotsix_chat.config import (
+        LangfuseSettings,
+        MemorySettings,
+        OpenRouterSettings,
+    )
 
 __all__ = [
     "ChatMemory",
@@ -56,7 +60,9 @@ def reset_build_memory_cache() -> None:
 
 
 def build_memory(
-    settings: MemorySettings, langfuse: LangfuseSettings | None = None
+    settings: MemorySettings,
+    langfuse: LangfuseSettings | None = None,
+    openrouter: OpenRouterSettings | None = None,
 ) -> ChatMemory:
     """Return the :class:`ChatMemory` for the given ``MemorySettings``.
 
@@ -76,6 +82,10 @@ def build_memory(
         langfuse: The component's canonical Langfuse credential block, from
             which cognee resolves its own project (``langfuse_project``).
             Omitted means cognee LLM calls are not traced.
+        openrouter: The component's canonical OpenRouter credential block,
+            from which cognee resolves its extraction-LLM API key under
+            ``settings.langfuse_project``'s alias. Omitted means the key is
+            empty.
 
     """
     if not settings.enabled:
@@ -98,6 +108,8 @@ def build_memory(
         settings.model_dump_json()
         + "|"
         + (langfuse.model_dump_json() if langfuse is not None else "")
+        + "|"
+        + (openrouter.model_dump_json() if openrouter is not None else "")
     )
     cached = _MEMORY_CACHE.get(key)
     if cached is not None:
@@ -105,6 +117,6 @@ def build_memory(
 
     from .cognee import CogneeMemory
 
-    memory = CogneeMemory(settings, langfuse)
+    memory = CogneeMemory(settings, langfuse, openrouter)
     _MEMORY_CACHE[key] = memory
     return memory

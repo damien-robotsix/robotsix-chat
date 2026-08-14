@@ -15,6 +15,7 @@ from robotsix_llmio.config import TierLevel
 
 from robotsix_chat.config.constants import level_needs_api_key
 from robotsix_chat.config.models import (
+    PROJECT_MEMORY,
     AutonomousSettings,
     AutonomySettings,
     CentralDeploySettings,
@@ -37,6 +38,7 @@ from robotsix_chat.config.models import (
     MailSettings,
     MemorySettings,
     NotificationSettings,
+    OpenRouterSettings,
     PublicFetchSettings,
     RefDocsSettings,
     RenderUrlSettings,
@@ -129,6 +131,9 @@ class Settings(BaseModel):
             instance host plus every project it traces to, keyed by project
             name (``robotsix-chat`` for the main agent,
             ``robotsix-chat-cognee`` for the memory subsystem).
+        openrouter: The component's canonical OpenRouter credential block —
+            provider API keys keyed by the Langfuse project alias they bill
+            under (``robotsix-chat-cognee`` for the memory subsystem).
         langfuse_inspect: Langfuse trace-inspection tool — lets the agent
             fetch and summarise recent implement traces for a given ticket
             or trace id.  Default-disabled.
@@ -1341,6 +1346,7 @@ class Settings(BaseModel):
         default="X-Request-ID", json_schema_extra={"advanced": True}
     )
     langfuse: LangfuseSettings = Field(default_factory=LangfuseSettings)
+    openrouter: OpenRouterSettings = Field(default_factory=OpenRouterSettings)
     langfuse_inspect: LangfuseInspectSettings = Field(
         default_factory=LangfuseInspectSettings, json_schema_extra={"advanced": True}
     )
@@ -1496,11 +1502,11 @@ class Settings(BaseModel):
         # (see cli.py) so the default (level 1) never breaks a deployment
         # that has not configured an OpenRouter key.
         if self.memory.enabled:
-            if not self.memory.llm.api_key.get_secret_value():
+            alias = self.memory.langfuse_project or PROJECT_MEMORY
+            if not self.openrouter.key(alias).get_secret_value():
                 failures.append(
-                    "memory.llm.api_key must be set when memory is enabled — "
-                    "provide it via the `memory.llm.api_key` "
-                    "field of your config file"
+                    f"openrouter.keys[{alias!r}] must be set when memory is enabled — "
+                    "provide it via the `openrouter.keys` field of your config file"
                 )
             if not self.memory.embedding.endpoint:
                 failures.append(
@@ -1631,6 +1637,60 @@ class Settings(BaseModel):
 
         return data
 
+    @model_validator(mode="before")
+    @classmethod
+    def _migrate_legacy_memory_openrouter_key(cls, data: Any) -> Any:
+        """Move the legacy ``memory.llm.api_key`` into ``openrouter.keys``.
+
+        Before the canonical top-level ``openrouter`` block existed, the
+        cognee extraction-LLM key lived at ``memory.llm.api_key``.  Deployed
+        configs still carry that nested key; with the field removed from the
+        schema, ``extra="forbid"`` would otherwise reject the whole file and
+        crash-loop the container on the first start after an image upgrade.
+
+        The legacy value is migrated into ``openrouter.keys`` under the same
+        alias the subsystem's Langfuse traffic uses (``memory.langfuse_project``,
+        default ``robotsix-chat-cognee``) so operators do not re-enter the
+        secret.  An explicitly-configured canonical key always wins.
+        """
+        if not isinstance(data, dict):
+            return data
+
+        memory = data.get("memory")
+        if not isinstance(memory, dict):
+            return data
+        llm = memory.get("llm")
+        if not isinstance(llm, dict):
+            return data
+
+        legacy_key = llm.pop("api_key", None)
+        if not legacy_key:
+            return data
+
+        alias = memory.get("langfuse_project") or PROJECT_MEMORY
+        openrouter = data.get("openrouter")
+        if not isinstance(openrouter, dict):
+            openrouter = {}
+            data["openrouter"] = openrouter
+        keys = openrouter.get("keys")
+        if not isinstance(keys, dict):
+            keys = {}
+            openrouter["keys"] = keys
+
+        if not keys.get(alias):
+            keys[alias] = legacy_key
+            logger.info(
+                "Migrated legacy memory.llm.api_key into openrouter.keys[%r]",
+                alias,
+            )
+        else:
+            logger.info(
+                "Ignoring legacy memory.llm.api_key — openrouter.keys[%r] "
+                "is already configured",
+                alias,
+            )
+        return data
+
     # ------------------------------------------------------------------
     # Legacy config normalisation
     # ------------------------------------------------------------------
@@ -1666,6 +1726,7 @@ class Settings(BaseModel):
         # Top-level object fields — tolerate "" and JS sentinels → {}
         _object_keys = (
             "langfuse",
+            "openrouter",
             "langfuse_inspect",
             "memory",
             "central_deploy",

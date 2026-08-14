@@ -127,6 +127,17 @@ def test_mask_secrets_masks_api_key() -> None:
     )  # pragma: allowlist secret
 
 
+def test_mask_secrets_masks_openrouter_keys() -> None:
+    """Alias-keyed OpenRouter secrets are masked even without a secret suffix."""
+    data = {  # pragma: allowlist secret
+        "openrouter": {"keys": {"robotsix-chat-cognee": "sk-or"}}
+    }
+    result = _mask_secrets(data)
+    assert (
+        result["openrouter"]["keys"]["robotsix-chat-cognee"] == "**********"
+    )  # pragma: allowlist secret
+
+
 def test_mask_secrets_preserves_non_secret() -> None:
     """Non-secret fields are passed through unchanged."""
     data = {"server_port": 8080, "memory": {"enabled": True}}
@@ -150,6 +161,9 @@ def test_mask_secrets_masks_multiple_keys() -> None:
             "llm": {"api_key": "sk-def"},  # pragma: allowlist secret
             "embedding": {"api_key": "sk-ghi"},  # pragma: allowlist secret
         },
+        "openrouter": {
+            "keys": {"robotsix-chat-cognee": "sk-or"}  # pragma: allowlist secret
+        },
         "langfuse": {"secret_key": "sk-lf"},  # pragma: allowlist secret
         "direct_repo": {"github_app_private_key": "pk"},  # pragma: allowlist secret
     }
@@ -160,6 +174,9 @@ def test_mask_secrets_masks_multiple_keys() -> None:
     )  # pragma: allowlist secret
     assert (
         result["memory"]["embedding"]["api_key"] == "**********"
+    )  # pragma: allowlist secret
+    assert (
+        result["openrouter"]["keys"]["robotsix-chat-cognee"] == "**********"
     )  # pragma: allowlist secret
     assert result["langfuse"]["secret_key"] == "**********"  # pragma: allowlist secret
     assert (
@@ -207,6 +224,34 @@ def test_preserve_masked_secrets_non_secret_not_affected() -> None:
     result = _preserve_masked_secrets(merged, existing, update)
     # "server_host" is not a secret key, so sentinel is kept as-is
     assert result["server_host"] == "**********"
+
+
+def test_preserve_masked_secrets_restores_openrouter_key() -> None:
+    """A masked alias-keyed OpenRouter secret restores the on-disk value."""
+    existing = {  # pragma: allowlist secret
+        "openrouter": {"keys": {"robotsix-chat-cognee": "sk-real"}}
+    }
+    update = {  # pragma: allowlist secret
+        "openrouter": {"keys": {"robotsix-chat-cognee": "**********"}}
+    }
+    merged = _deep_merge(existing, update)
+    result = _preserve_masked_secrets(merged, existing, update)
+    assert (  # pragma: allowlist secret
+        result["openrouter"]["keys"]["robotsix-chat-cognee"] == "sk-real"
+    )
+
+
+def test_preserve_masked_secrets_restores_blank_openrouter_key() -> None:
+    """A blank alias-keyed OpenRouter secret restores the on-disk value."""
+    existing = {  # pragma: allowlist secret
+        "openrouter": {"keys": {"robotsix-chat-cognee": "sk-real"}}
+    }
+    update = {"openrouter": {"keys": {"robotsix-chat-cognee": ""}}}
+    merged = _deep_merge(existing, update)
+    result = _preserve_masked_secrets(merged, existing, update)
+    assert (  # pragma: allowlist secret
+        result["openrouter"]["keys"]["robotsix-chat-cognee"] == "sk-real"
+    )
 
 
 # ---------------------------------------------------------------------------
@@ -298,8 +343,10 @@ def test_get_config_returns_masked_data(tmp_path: Path) -> None:
             "llmio_api_key": "sk-real",  # pragma: allowlist secret
             "server_port": 8080,
             "memory": {
-                "llm": {"api_key": "sk-mem"},  # pragma: allowlist secret
                 "embedding": {"endpoint": "http://box:11434/v1"},
+            },
+            "openrouter": {
+                "keys": {"robotsix-chat-cognee": "sk-mem"}  # pragma: allowlist secret
             },
         },
     )
@@ -312,7 +359,9 @@ def test_get_config_returns_masked_data(tmp_path: Path) -> None:
     assert data["llmio_model_level"] == 3
     assert data["llmio_api_key"] == "**********"
     assert data["server_port"] == 8080
-    assert data["memory"]["llm"]["api_key"] == "**********"  # pragma: allowlist secret
+    assert (  # pragma: allowlist secret
+        data["openrouter"]["keys"]["robotsix-chat-cognee"] == "**********"
+    )
     assert data["memory"]["embedding"]["endpoint"] == "http://box:11434/v1"
 
 
@@ -527,8 +576,10 @@ def test_put_preserves_nested_object_keys(tmp_path: Path) -> None:
         {
             "memory": {
                 "enabled": True,
-                "llm": {"api_key": "sk-llm"},  # pragma: allowlist secret
                 "embedding": {"endpoint": "http://box:11434/v1", "dimensions": 1024},
+            },
+            "openrouter": {
+                "keys": {"robotsix-chat-cognee": "sk-llm"}  # pragma: allowlist secret
             },
         },
     )
@@ -540,8 +591,8 @@ def test_put_preserves_nested_object_keys(tmp_path: Path) -> None:
 
     on_disk = _read_config_json(config_path)
     assert on_disk["memory"]["enabled"] is False  # updated
-    assert (
-        on_disk["memory"]["llm"]["api_key"] == "sk-llm"  # pragma: allowlist secret
+    assert (  # pragma: allowlist secret
+        on_disk["openrouter"]["keys"]["robotsix-chat-cognee"] == "sk-llm"
     )  # preserved
     # preserved (partial save did not touch these)
     assert on_disk["memory"]["embedding"]["endpoint"] == "http://box:11434/v1"
@@ -562,8 +613,10 @@ def test_put_rejects_invalid_config(tmp_path: Path) -> None:
             "llmio_model_level": 3,
             "memory": {
                 "enabled": True,
-                "llm": {"api_key": "sk-llm"},  # pragma: allowlist secret
                 "embedding": {"endpoint": "http://box:11434/v1"},
+            },
+            "openrouter": {
+                "keys": {"robotsix-chat-cognee": "sk-llm"}  # pragma: allowlist secret
             },
         },
     )
@@ -612,8 +665,10 @@ def test_put_reports_all_precondition_failures(tmp_path: Path) -> None:
             "llmio_model_level": 3,
             "memory": {
                 "enabled": True,
-                "llm": {"api_key": "sk-llm"},  # pragma: allowlist secret
                 "embedding": {"endpoint": "http://box:11434/v1"},
+            },
+            "openrouter": {
+                "keys": {"robotsix-chat-cognee": "sk-llm"}  # pragma: allowlist secret
             },
         },
     )

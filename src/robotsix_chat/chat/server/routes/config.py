@@ -87,6 +87,19 @@ def _is_secret_key(key: str) -> bool:
     return key.endswith(_SECRET_KEY_SUFFIXES)
 
 
+def _is_secret_leaf(key: str, parent: tuple[str, ...]) -> bool:
+    """Return ``True`` when the value at *key* under *parent* is a secret.
+
+    In addition to the key-suffix heuristic, every value inside the
+    canonical ``openrouter.keys`` map is a secret — the map is keyed by
+    alias (Langfuse project name), so its leaf keys don't match any secret
+    suffix.
+    """
+    if _is_secret_key(key):
+        return True
+    return len(parent) >= 2 and parent[-2:] == ("openrouter", "keys")
+
+
 # ---------------------------------------------------------------------------
 # Secret masking / preservation
 # ---------------------------------------------------------------------------
@@ -102,13 +115,21 @@ def _preserve_masked_secrets(
     existing on-disk value.
 
     Secret fields are identified by key-name suffix (see
-    :data:`_SECRET_KEY_SUFFIXES`).
+    :data:`_SECRET_KEY_SUFFIXES`) plus the alias-keyed ``openrouter.keys``
+    map (see :func:`_is_secret_leaf`).
     """
 
-    def _walk(m: dict[str, Any], e: dict[str, Any], u: dict[str, Any]) -> None:
+    def _walk(
+        m: dict[str, Any],
+        e: dict[str, Any],
+        u: dict[str, Any],
+        parent: tuple[str, ...] = (),
+    ) -> None:
         for key in list(m.keys()):
             uv = u.get(key)
-            if _is_secret_key(key) and (uv == _MASKED_SECRET_SENTINEL or uv == ""):
+            if _is_secret_leaf(key, parent) and (
+                uv == _MASKED_SECRET_SENTINEL or uv == ""
+            ):
                 if key in e:
                     m[key] = deepcopy(e[key])
                 continue
@@ -117,7 +138,7 @@ def _preserve_masked_secrets(
                 and isinstance(e.get(key), dict)
                 and isinstance(uv, dict)
             ):
-                _walk(m[key], e[key], uv)
+                _walk(m[key], e[key], uv, (*parent, key))
 
     _walk(merged, existing, update)
     return merged
@@ -127,16 +148,17 @@ def _mask_secrets(data: dict[str, Any]) -> dict[str, Any]:
     """Return a copy of *data* with secret field values replaced by the sentinel.
 
     Secret fields are identified by key-name suffix (see
-    :data:`_SECRET_KEY_SUFFIXES`).
+    :data:`_SECRET_KEY_SUFFIXES`) plus the alias-keyed ``openrouter.keys``
+    map (see :func:`_is_secret_leaf`).
     """
 
-    def _walk(d: dict[str, Any]) -> dict[str, Any]:
+    def _walk(d: dict[str, Any], parent: tuple[str, ...] = ()) -> dict[str, Any]:
         result: dict[str, Any] = {}
         for key, value in d.items():
-            if _is_secret_key(key) and isinstance(value, str) and value:
+            if isinstance(value, dict):
+                result[key] = _walk(value, (*parent, key))
+            elif _is_secret_leaf(key, parent) and isinstance(value, str) and value:
                 result[key] = _MASKED_SECRET_SENTINEL
-            elif isinstance(value, dict):
-                result[key] = _walk(value)
             else:
                 result[key] = deepcopy(value)
         return result

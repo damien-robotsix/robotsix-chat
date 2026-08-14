@@ -147,6 +147,7 @@ modules:
       - src/robotsix_chat/config/models.py
       - src/robotsix_chat/config/network_models.py
       - src/robotsix_chat/config/notification_models.py
+      - src/robotsix_chat/config/openrouter_models.py
       - src/robotsix_chat/config/ref_doc_models.py
       - src/robotsix_chat/config/render_url_models.py
       - src/robotsix_chat/config/server_models.py
