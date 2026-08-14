@@ -995,6 +995,95 @@ class TestRestartContextInjection:
         assert aq.last_board_digest == "new-digest"
 
     @pytest.mark.asyncio
+    async def test_restart_recent_digest_skips_fetch_and_injects_no_change(
+        self, monkeypatch
+    ) -> None:
+        """A recent triage digest skips the board fetch and replies NO_CHANGE."""
+        store = ConversationStore()
+        settings = _make_settings()
+        run_serializer = _make_run_serializer()
+
+        digest_mock = AsyncMock(return_value="new-digest")
+        monkeypatch.setattr(AutonomousRunner, "_mail_board_digest", digest_mock)
+
+        captured_prompt: list[str] = []
+
+        agent = MagicMock()
+        agent.stream = MagicMock()
+
+        async def _capture_stream(prompt, *args, **kwargs):
+            captured_prompt.append(str(prompt))
+            yield "---AUTONOMOUS COMPLETE---"
+
+        agent.stream.side_effect = _capture_stream
+
+        runner = AutonomousRunner(
+            settings=settings,
+            conversation_store=store,
+            agent_factory=lambda: agent,
+            run_serializer=run_serializer,
+        )
+        runner._auto_restart = AsyncMock()
+        aq = runner.create_session("owner1", schedule_kickoff=False)
+        aq.last_board_digest = "old-digest"
+        aq.last_board_digest_at = time.time() - 3600
+
+        await runner._auto_continue(aq.session_id, is_restart=True)
+
+        digest_mock.assert_not_called()
+        assert len(captured_prompt) == 1
+        assert "SYSTEM RESTARTED" in captured_prompt[0]
+        assert "RECENT TRIAGE DIGEST" in captured_prompt[0]
+        assert "NO_CHANGE" in captured_prompt[0]
+        assert "Begin a new autonomous session" not in captured_prompt[0]
+        assert aq.last_board_digest == "old-digest"
+        assert aq.last_board_digest_at == pytest.approx(time.time() - 3600)
+
+    @pytest.mark.asyncio
+    async def test_restart_stale_digest_refetches_board(self, monkeypatch) -> None:
+        """A digest older than 24h re-fetches the board and records the new digest."""
+        store = ConversationStore()
+        settings = _make_settings()
+        run_serializer = _make_run_serializer()
+
+        monkeypatch.setattr(
+            AutonomousRunner,
+            "_mail_board_digest",
+            AsyncMock(return_value="new-digest"),
+        )
+
+        captured_prompt: list[str] = []
+
+        agent = MagicMock()
+        agent.stream = MagicMock()
+
+        async def _capture_stream(prompt, *args, **kwargs):
+            captured_prompt.append(str(prompt))
+            yield "---AUTONOMOUS COMPLETE---"
+
+        agent.stream.side_effect = _capture_stream
+
+        runner = AutonomousRunner(
+            settings=settings,
+            conversation_store=store,
+            agent_factory=lambda: agent,
+            run_serializer=run_serializer,
+        )
+        runner._auto_restart = AsyncMock()
+        aq = runner.create_session("owner1", schedule_kickoff=False)
+        aq.last_board_digest = "old-digest"
+        aq.last_board_digest_at = time.time() - 25 * 3600
+
+        await runner._auto_continue(aq.session_id, is_restart=True)
+
+        assert len(captured_prompt) == 1
+        assert "SYSTEM RESTARTED" in captured_prompt[0]
+        assert "RECENT TRIAGE DIGEST" not in captured_prompt[0]
+        assert "BOARD UNCHANGED" not in captured_prompt[0]
+        assert aq.last_board_digest == "new-digest"
+        assert aq.last_board_digest_at == pytest.approx(time.time(), abs=5)
+
+    @pytest.mark.asyncio
     async def test_mail_board_digest_disabled_returns_none(self) -> None:
         """A disabled (or mock) mail integration produces no board digest."""
         runner = AutonomousRunner(

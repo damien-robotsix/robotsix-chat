@@ -58,6 +58,11 @@ _DEFAULT_TRIGGER_INTERVAL = 45.0
 # the config model as not an operator-facing setting.
 _PENDING_SUBSESSION_WAIT_TIMEOUT = 600.0
 
+# Maximum age (seconds) of a previously-produced triage digest for which a
+# resuming session skips the board re-fetch and replies NO_CHANGE instead of
+# re-fetching and re-reporting the same board state.
+_RECENT_DIGEST_WINDOW_SECONDS = 24 * 60 * 60
+
 
 class AutonomousRunner:
     """Owns autonomous-session lifecycle and drives auto-continue loops."""
@@ -158,6 +163,7 @@ class AutonomousRunner:
                     "completion_suppressed": aq.completion_suppressed,
                     "definition_name": aq.definition_name,
                     "last_board_digest": aq.last_board_digest,
+                    "last_board_digest_at": aq.last_board_digest_at,
                 }
             self._persist_path.parent.mkdir(parents=True, exist_ok=True)
             self._persist_path.write_text(json.dumps(data, indent=2))
@@ -192,6 +198,7 @@ class AutonomousRunner:
                     completion_suppressed=entry.get("completion_suppressed", False),
                     definition_name=entry.get("definition_name", ""),
                     last_board_digest=entry.get("last_board_digest", ""),
+                    last_board_digest_at=entry.get("last_board_digest_at", 0.0),
                 )
             except Exception:
                 logger.exception("Skipping unparsable autonomous session %s", sid)
@@ -800,12 +807,23 @@ class AutonomousRunner:
         max_turns = defn.get("max_auto_turns", 20) if defn else 20
 
         # Compute the board digest + restart context once for this run.
-        current_board_digest = await self._mail_board_digest()
-        board_unchanged = (
+        recent_digest = (
             is_restart
-            and current_board_digest is not None
-            and aq.last_board_digest == current_board_digest
+            and aq.last_board_digest_at > 0
+            and (time.time() - aq.last_board_digest_at) <= _RECENT_DIGEST_WINDOW_SECONDS
         )
+        if recent_digest:
+            # A triage digest was already produced within the window — skip
+            # the board fetch entirely and instruct the agent to NO_CHANGE.
+            current_board_digest: str | None = None
+            board_unchanged = False
+        else:
+            current_board_digest = await self._mail_board_digest()
+            board_unchanged = (
+                is_restart
+                and current_board_digest is not None
+                and aq.last_board_digest == current_board_digest
+            )
 
         try:
             while True:
@@ -850,14 +868,21 @@ class AutonomousRunner:
                                 "autonomous session. "
                             )
                         no_change_note = ""
-                        if board_unchanged:
+                        if recent_digest:
+                            no_change_note = (
+                                "RECENT TRIAGE DIGEST — this session already "
+                                "produced a board/triage digest within the last "
+                                "24 hours. Do NOT re-fetch or re-report the board "
+                                "state. Reply with NO_CHANGE and stop.\n\n"
+                            )
+                        elif board_unchanged:
                             no_change_note = (
                                 "BOARD UNCHANGED — the auto-mail board content is "
                                 "identical to the previous run. Do NOT re-run the "
                                 "board content check or output a duplicate board "
                                 "digest. Reply with NO_CHANGE and stop.\n\n"
                             )
-                        if board_unchanged:
+                        if recent_digest or board_unchanged:
                             message = f"{restart_notice}{no_change_note}".rstrip()
                         else:
                             custom_prompt = defn.get("prompt", "") if defn else ""
@@ -950,9 +975,13 @@ class AutonomousRunner:
 
                     aq.auto_turn_count += 1
                     # Persist the board digest observed for this run so the
-                    # next restart can compare against it.
+                    # next restart can compare against it.  Record when a
+                    # non-NO_CHANGE digest was actually produced so a later
+                    # restart can skip re-fetching within the recent window.
                     if current_board_digest:
                         aq.last_board_digest = current_board_digest
+                        if not is_noop:
+                            aq.last_board_digest_at = time.time()
                     self._save_sessions()
 
                     # Idle cap: halt the loop after N consecutive no-op turns.
