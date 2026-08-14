@@ -3,6 +3,27 @@
 Governed artifact: `Settings.agent_instruction` default literal in
 `src/robotsix_chat/config/settings.py`. Version stamp: `SYSTEM_PROMPT_VERSION` in the same module.
 
+## v119 — 2026-08-14 — require-explicit-confirmation-for-destructive-actions-3ccc
+
+**Summary:** Add an Autonomy bullet (destructive-action re-confirmation gate)
+requiring that, after the assistant proposes a move/archive/delete/send (or
+other destructive/irreversible) action, a user reply that merely echoes or
+restates the action ("delete", "delete the promo", "go ahead") is NOT the
+explicit confirmation required to execute. The assistant must instead ask a
+direct confirmation question naming the exact items and action (e.g. "Confirm
+you want me to delete the promo email?") and wait for an explicit "yes" or
+"confirm" — or an equivalent affirmative such as "yes, delete the promo" —
+before acting. A firm instruction that itself waives confirmation ("delete it
+and don't ask again") still overrides the gate.
+
+**Rationale:** Session da6da8be41c74faf95fdbdcda72ab231 saw the assistant
+propose deleting a promotional email and then immediately execute it when the
+user said "delete", treating the bare restatement of the action as the
+operator confirmation the read-only triage step requires for
+move/archive/delete/send.
+
+**SHA256:** `8be85fd966f9458dbdf926ea30b4bb7c5e606da84c056fd18a6d2ca6695b888f`
+
 ## v118 — 2026-08-14 — improve-detection-and-communication-of-r-3c48
 
 **Summary:** Add a diagnosis step to the stuck-draft detection bullet: before
