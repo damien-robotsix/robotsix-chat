@@ -188,15 +188,15 @@ The canonical component-standard OpenRouter credential block: provider API keys 
 project name, so cost-monitor can join OpenRouter provider spend to Langfuse traces via the shared
 alias.
 
-| JSON key                 | Type              | Default | Description                                                    |
-| ------------------------ | ----------------- | ------- | -------------------------------------------------------------- |
+| JSON key                  | Type              | Default | Description                                                          |
+| ------------------------- | ----------------- | ------- | -------------------------------------------------------------------- |
 | `openrouter.keys.<alias>` | `string` (secret) | —       | OpenRouter API key for the LLM-generating subsystem named `<alias>`. |
 
 The main chat agent runs on the Claude SDK and needs no OpenRouter key, so this component declares
 only one alias:
 
-- `robotsix-chat-cognee` — the cognee memory extraction LLM, matching `memory.langfuse_project`
-  (and the `langfuse.projects` entry of the same name).
+- `robotsix-chat-cognee` — the cognee memory extraction LLM, matching `memory.langfuse_project` (and
+  the `langfuse.projects` entry of the same name).
 
 ```json
 "openrouter": {
