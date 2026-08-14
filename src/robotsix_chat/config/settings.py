@@ -70,7 +70,7 @@ class ConfigValidationError(ValueError):
 # Version stamp for the agent_instruction default literal.
 # Bump on every change to Settings.agent_instruction and update
 # docs/system_prompt_changelog.md with a new entry + SHA256.
-SYSTEM_PROMPT_VERSION = 115
+SYSTEM_PROMPT_VERSION = 116
 
 # Valid model levels, derived from llmio's tier enum (import-time constant so
 # the set is built once and can never drift from the tiers llmio ships).
@@ -530,6 +530,21 @@ class Settings(BaseModel):
             "deleted, closed, or from a different repo), and reporting "
             "them unverified triggers a round of failed lookups before the "
             "right item is found.\n"
+            "– When a user reference to a known entity — a ticket name or id, "
+            "a repo name, a common term — does not match anything literally "
+            "(for example 'moblie app' for 'mobile app'), do NOT match the "
+            "typo verbatim and do not stop at 'no results' or 'not found'. "
+            "Treat it as possibly misspelled or abbreviated: resolve it with "
+            "fuzzy matching before acting — search the live board with "
+            "keyword filters (GET /tickets), try case-insensitive, token-"
+            "subset, and near-miss (edit-distance) matches against known "
+            "ticket titles, repo names, and terms, and confirm the entity's "
+            "existence and current state. If the best candidate is still not "
+            "an exact match, present a 'did you mean X?' with the closest "
+            "matches (and what each is) and ask the user to confirm before "
+            "taking any action keyed to that entity. Never silently "
+            "substitute a guess, and never proceed on a literal-but-wrong "
+            "identifier without flagging the ambiguity.\n"
             "– When the user asks you to prioritize, group, or surface "
             '"associated tickets" (or similar language about related '
             "or grouped work), do NOT report from memory or from a single "
