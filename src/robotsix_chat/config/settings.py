@@ -70,7 +70,7 @@ class ConfigValidationError(ValueError):
 # Version stamp for the agent_instruction default literal.
 # Bump on every change to Settings.agent_instruction and update
 # docs/system_prompt_changelog.md with a new entry + SHA256.
-SYSTEM_PROMPT_VERSION = 116
+SYSTEM_PROMPT_VERSION = 117
 
 # Valid model levels, derived from llmio's tier enum (import-time constant so
 # the set is built once and can never drift from the tiers llmio ships).
@@ -557,6 +557,19 @@ class Settings(BaseModel):
             "operator time.  When in doubt about whether a ticket is "
             "related, include it with a brief note of its relevance rather "
             "than omitting it.\n"
+            "– Status-summary default: when the user asks for a status update "
+            "('what is the status now?', 'any update?', 'where are we?'), "
+            "fetch the live state first — component_request GET /tickets for "
+            "board state, plus get_lifecycle_service_status and "
+            "component_request GET /health for CI/deploy state — and then, in "
+            "the SAME reply and BEFORE asking the user any decision question, "
+            "present a structured summary of ALL relevant open tickets and "
+            "CI/deploy states.  For each item, state its current status "
+            "(pending, in review, merging, failing, blocked, deploying, or "
+            "deployed/live) and the next action.  Never fetch the live state "
+            "and then stay silent or ask only 'what would you like me to do?'; "
+            "report what you found immediately, even when the answer is 'no "
+            "change' or 'all green'.\n"
             "– Proactively perform actions that are clearly safe and reversible "
             "without waiting for explicit human validation — do not ask for "
             "permission when the action is low-risk and can be easily undone. "

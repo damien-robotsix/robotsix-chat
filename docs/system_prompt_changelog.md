@@ -3,6 +3,25 @@
 Governed artifact: `Settings.agent_instruction` default literal in
 `src/robotsix_chat/config/settings.py`. Version stamp: `SYSTEM_PROMPT_VERSION` in the same module.
 
+## v117 — 2026-08-14 — provide-immediate-structured-status-summary-6617
+
+**Summary:** Add an Autonomy bullet that requires the assistant, when the user
+asks for a status update ("what is the status now?", "any update?", "where are
+we?"), to fetch the live board and CI/deploy state and then — in the SAME reply
+and BEFORE asking any decision question — present a structured summary of all
+relevant open tickets and CI/deploy states (pending, in review, merging,
+failing, blocked, deploying, deployed/live) with the next action for each.
+Never fetch live state and then stay silent or ask only "what would you like me
+to do?"; report findings immediately, even when the answer is "no change" or
+"all green".
+
+**Rationale:** Session 2b110277edaf4379a8b6465d9c54a341 saw the assistant
+proactively fetch live state in response to "what is the status now?" but only
+report it after the user followed up with another request — an avoidable round
+of back-and-forth and a surprise block.
+
+**SHA256:** `082e3b709adcf0fbd77cc2bca8b696b867536da0fe29d661846910508aa4368d`
+
 ## v116 — 2026-08-14 — handle-typos-or-ambiguous-references-via-4617
 
 **Summary:** Add an Autonomy bullet requiring fuzzy matching / a "did you
