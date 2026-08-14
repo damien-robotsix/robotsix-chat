@@ -14,8 +14,8 @@ from robotsix_chat.config import (
     DiagnosticsSettings,
     MailSettings,
     MemoryEmbeddingSettings,
-    MemoryLlmSettings,
     MemorySettings,
+    OpenRouterSettings,
     RefDocsSettings,
     SelfReviewSettings,
     Settings,
@@ -159,7 +159,7 @@ def test_memory_disabled_by_default() -> None:
 
 def test_memory_enabled_requires_llm_key() -> None:
     """Enabling memory without an extraction-LLM key is rejected."""
-    with pytest.raises(ValueError, match="memory.llm.api_key"):
+    with pytest.raises(ValueError, match="openrouter.keys"):
         Settings(
             memory=MemorySettings(
                 enabled=True,
@@ -172,12 +172,12 @@ def test_memory_enabled_requires_embedding_endpoint() -> None:
     """Enabling memory without an embedding endpoint is rejected."""
     with pytest.raises(ValueError, match="memory.embedding.endpoint"):
         Settings(
-            memory=MemorySettings(
-                enabled=True,
-                llm=MemoryLlmSettings(
-                    api_key=SecretStr("sk-or-x")  # pragma: allowlist secret
-                ),
-            )
+            memory=MemorySettings(enabled=True),
+            openrouter=OpenRouterSettings(
+                keys={  # pragma: allowlist secret
+                    "robotsix-chat-cognee": SecretStr("sk-or-x")
+                }
+            ),
         )
 
 
@@ -186,11 +186,13 @@ def test_memory_enabled_with_key_and_endpoint_ok() -> None:
     settings = Settings(
         memory=MemorySettings(
             enabled=True,
-            llm=MemoryLlmSettings(
-                api_key=SecretStr("sk-or-x")  # pragma: allowlist secret
-            ),
             embedding=MemoryEmbeddingSettings(endpoint="http://box:11434/v1"),
-        )
+        ),
+        openrouter=OpenRouterSettings(
+            keys={  # pragma: allowlist secret
+                "robotsix-chat-cognee": SecretStr("sk-or-x")
+            }
+        ),
     )
     assert settings.memory.enabled is True
 
@@ -204,8 +206,12 @@ def test_memory_from_json_config(
         {
             "memory": {
                 "enabled": True,
-                "llm": {"api_key": "sk-or-env"},  # pragma: allowlist secret
                 "embedding": {"endpoint": "http://box:11434/v1", "dimensions": 768},
+            },
+            "openrouter": {
+                "keys": {
+                    "robotsix-chat-cognee": "sk-or-env"  # pragma: allowlist secret
+                }
             },
         },
     )
@@ -215,9 +221,39 @@ def test_memory_from_json_config(
 
     assert settings.memory.enabled is True
     # pragma: allowlist secret
-    assert settings.memory.llm.api_key.get_secret_value() == "sk-or-env"
+    assert (
+        settings.openrouter.key("robotsix-chat-cognee").get_secret_value()
+        == "sk-or-env"
+    )
     assert settings.memory.embedding.endpoint == "http://box:11434/v1"
     assert settings.memory.embedding.dimensions == 768
+
+
+def test_memory_legacy_llm_api_key_migrates_to_openrouter(
+    tmp_path: Path, monkeypatch: pytest.MonkeyPatch
+) -> None:
+    """A legacy ``memory.llm.api_key`` loads into ``openrouter.keys`` on read."""
+    config_path = _write_config_json(
+        tmp_path,
+        {
+            "memory": {
+                "enabled": True,
+                "llm": {"api_key": "sk-legacy"},  # pragma: allowlist secret
+                "embedding": {"endpoint": "http://box:11434/v1"},
+            },
+        },
+    )
+    monkeypatch.setenv("ROBOTSIX_CONFIG_FILE", str(config_path))
+
+    settings = Settings.load()
+
+    assert settings.memory.enabled is True
+    # pragma: allowlist secret
+    assert (
+        settings.openrouter.key("robotsix-chat-cognee").get_secret_value()
+        == "sk-legacy"
+    )
+    assert "api_key" not in settings.memory.llm.model_dump()
 
 
 # ---------------------------------------------------------------------------

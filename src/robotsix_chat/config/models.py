@@ -47,6 +47,7 @@ from .notification_models import (
     FeedbackSettings,
     NotificationSettings,
 )
+from .openrouter_models import OpenRouterSettings
 from .ref_doc_models import (
     DiagnosticsSettings,
     MailSettings,
@@ -104,6 +105,7 @@ __all__ = [
     "MemoryLlmSettings",
     "MemorySettings",
     "NotificationSettings",
+    "OpenRouterSettings",
     "PublicFetchSettings",
     "RefDocsSettings",
     "RenderUrlSettings",
