@@ -82,6 +82,7 @@ re-asking. Ask only when consent has not yet been clearly given. The endpoint tr
 | ------------------------------ | ----------------------------------------------------------------------------- |
 | Repo not in installation scope | `The robotsix-mill GitHub App is not installed on 'owner/name'`               |
 | No failed run found            | `No failed workflow run found on '<branch>' in owner/name — nothing to re-run.` |
+| GitHub Actions unreachable     | `Error listing workflow runs for owner/name: <detail>`                        |
 | GitHub Actions error           | `Error rerunning workflow run <id>: <detail>`                                 |
 
 ______________________________________________________________________

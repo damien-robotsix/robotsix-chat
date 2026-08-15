@@ -1306,6 +1306,37 @@ async def test_check_ci_health_reports_green(
     assert "Verdict: GREEN" in out
 
 
+@pytest.mark.asyncio
+async def test_check_ci_health_reports_api_error(
+    respx_mock: respx.MockRouter,
+) -> None:
+    """An Actions API failure is surfaced, not reported as 'no runs'."""
+    settings = _settings()
+    _prepopulate_installation_token(settings)
+
+    respx_mock.get(
+        url__startswith="https://api.github.com/installation/repositories"
+    ).mock(
+        return_value=httpx.Response(
+            200,
+            text=json.dumps({"repositories": [{"full_name": "org/repo"}]}),
+        )
+    )
+    respx_mock.get("https://api.github.com/repos/org/repo").mock(
+        return_value=httpx.Response(200, text=json.dumps({"default_branch": "main"}))
+    )
+    respx_mock.get(
+        url__startswith="https://api.github.com/repos/org/repo/actions/runs"
+    ).mock(return_value=httpx.Response(403, text="Forbidden"))
+
+    tools = build_direct_repo_tools(settings)
+    fn = [t for t in tools if t.__name__ == "check_ci_health"][0]
+
+    out = await fn(repo_full_name="org/repo")
+    assert "Error checking CI health for org/repo" in out
+    assert "No recent workflow runs found" not in out
+
+
 # ---------------------------------------------------------------------------
 # rerun_ci_workflow
 # ---------------------------------------------------------------------------
@@ -1389,6 +1420,37 @@ async def test_rerun_ci_workflow_no_failed_run(
 
     out = await fn(repo_full_name="org/repo")
     assert "No failed workflow run found" in out
+
+
+@pytest.mark.asyncio
+async def test_rerun_ci_workflow_reports_api_error(
+    respx_mock: respx.MockRouter,
+) -> None:
+    """An Actions API failure while listing runs is surfaced as an error."""
+    settings = _settings()
+    _prepopulate_installation_token(settings)
+
+    respx_mock.get(
+        url__startswith="https://api.github.com/installation/repositories"
+    ).mock(
+        return_value=httpx.Response(
+            200,
+            text=json.dumps({"repositories": [{"full_name": "org/repo"}]}),
+        )
+    )
+    respx_mock.get("https://api.github.com/repos/org/repo").mock(
+        return_value=httpx.Response(200, text=json.dumps({"default_branch": "main"}))
+    )
+    respx_mock.get(
+        url__startswith="https://api.github.com/repos/org/repo/actions/runs"
+    ).mock(return_value=httpx.Response(403, text="Forbidden"))
+
+    tools = build_direct_repo_tools(settings)
+    fn = [t for t in tools if t.__name__ == "rerun_ci_workflow"][0]
+
+    out = await fn(repo_full_name="org/repo")
+    assert "Error listing workflow runs for org/repo" in out
+    assert "No failed workflow run found" not in out
 
 
 # ---------------------------------------------------------------------------

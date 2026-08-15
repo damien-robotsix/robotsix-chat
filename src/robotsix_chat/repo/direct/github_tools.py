@@ -423,7 +423,10 @@ def build_github_tools(
 
         try:
             runs = await actions_client.list_workflow_runs(
-                repo_full_name, branch=target_branch, per_page=20
+                repo_full_name,
+                branch=target_branch,
+                per_page=20,
+                raise_on_error=True,
             )
         except Exception as exc:
             return f"Error checking CI health for {repo_full_name}: {exc}"
@@ -523,7 +526,10 @@ def build_github_tools(
             )
             try:
                 runs = await actions_client.list_workflow_runs(
-                    repo_full_name, branch=target_branch, per_page=20
+                    repo_full_name,
+                    branch=target_branch,
+                    per_page=20,
+                    raise_on_error=True,
                 )
             except Exception as exc:
                 return f"Error listing workflow runs for {repo_full_name}: {exc}"

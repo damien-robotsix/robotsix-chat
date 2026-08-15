@@ -81,6 +81,7 @@ class ActionsClient:
         branch: str | None = None,
         head_sha: str | None = None,
         per_page: int = 10,
+        raise_on_error: bool = False,
     ) -> list[dict[str, Any]]:
         """List recent workflow runs for a repository.
 
@@ -92,9 +93,14 @@ class ActionsClient:
             head_sha: Optional commit SHA filter — only returns runs
                 triggered by this commit.
             per_page: Results per page (default 10).
+            raise_on_error: When ``True``, re-raise the underlying
+                ``RuntimeError`` instead of returning an empty list.  This
+                lets callers that need to distinguish "no runs exist" from
+                "the GitHub Actions API is unreachable" surface the error.
 
         Returns:
-            A list of workflow run dicts (empty list on error).
+            A list of workflow run dicts (empty list on error unless
+            *raise_on_error* is set).
 
         """
         params = f"?per_page={min(max(per_page, 1), 100)}"
@@ -109,6 +115,8 @@ class ActionsClient:
             runs: list[dict[str, Any]] = data.get("workflow_runs", [])
             return runs
         except RuntimeError as exc:
+            if raise_on_error:
+                raise
             logger.warning(
                 "Failed to list workflow runs for %s: %s",
                 repo_full_name,

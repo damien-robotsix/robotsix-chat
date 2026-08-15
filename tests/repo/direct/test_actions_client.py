@@ -233,6 +233,25 @@ async def test_list_workflow_runs_returns_empty_on_error(
 
 
 @pytest.mark.asyncio
+async def test_list_workflow_runs_raise_on_error(
+    respx_mock: respx.MockRouter,
+) -> None:
+    """list_workflow_runs re-raises when raise_on_error=True."""
+    from tests.repo.direct.conftest import _prepopulate_installation_token, _settings
+
+    settings = _settings()
+    _prepopulate_installation_token(settings)
+
+    respx_mock.get(
+        "https://api.github.com/repos/org/repo/actions/runs?per_page=10"
+    ).mock(return_value=httpx.Response(403, text="Forbidden"))
+
+    client = ActionsClient(settings)
+    with pytest.raises(RuntimeError):
+        await client.list_workflow_runs("org/repo", raise_on_error=True)
+
+
+@pytest.mark.asyncio
 async def test_list_workflow_runs_respects_per_page(
     respx_mock: respx.MockRouter,
 ) -> None:
