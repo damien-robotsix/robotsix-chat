@@ -383,6 +383,72 @@ def build_github_tools(
 
         return "\n".join(lines)
 
+    async def list_open_prs(
+        org_name: str,
+    ) -> str:
+        """List open pull requests across an organization's repositories in one batch.
+
+        Uses GitHub's Search API (``/search/issues?q=type:pr+state:open+org:...``)
+        to return every open PR the GitHub App can access in *org_name* with a
+        single search query — instead of one WebFetch/API call per repository.
+        Prefer this tool whenever the user asks about PRs across several
+        repositories (a batch-worthy number of targets).
+
+        **Read-only.** Does not modify any repository state and does not
+        require a ticket to be in BLOCKED state.  Results are limited to the
+        repositories the robotsix-mill GitHub App is installed on.
+
+        Args:
+            org_name: GitHub organization name (e.g. ``"robotsix"``).
+
+        Returns:
+            A summary grouped by repository listing each open PR's number,
+            title, URL, author, and draft status — plus a total count and a
+            truncation note when GitHub's search-result limit is reached.
+
+        """
+        try:
+            items = await client.search_open_prs(org_name=org_name)
+        except Exception as exc:
+            return f"Error listing open PRs for org '{org_name}': {exc}"
+
+        if not items:
+            return (
+                f"No open PRs found for org '{org_name}' "
+                "(in repositories the GitHub App can access)."
+            )
+
+        by_repo: dict[str, list[dict[str, Any]]] = {}
+        for item in items:
+            repository_url = item.get("repository_url", "")
+            repo = (
+                repository_url.rsplit("/repos/", 1)[-1]
+                if "/repos/" in repository_url
+                else "(unknown repo)"
+            )
+            by_repo.setdefault(repo, []).append(item)
+
+        lines = [
+            f"Open PRs across org '{org_name}' — {len(items)} total:",
+        ]
+        for repo in sorted(by_repo):
+            lines.append(f"\n{repo}:")
+            for item in sorted(by_repo[repo], key=lambda p: p.get("number", 0)):
+                number = item.get("number", "?")
+                title = item.get("title", "(no title)")
+                html_url = item.get("html_url", "")
+                author = (item.get("user") or {}).get("login", "unknown")
+                draft = " [draft]" if item.get("draft") else ""
+                lines.append(f"  - #{number} {title}{draft} (by {author}) — {html_url}")
+
+        if len(items) >= 1000:
+            lines.append(
+                "\nNote: GitHub's search API caps results at 1000 items; "
+                "there may be more open PRs than shown."
+            )
+
+        return "\n".join(lines)
+
     async def recover_auto_merge(
         repo_full_name: str,
         pr_number: int,
@@ -909,6 +975,7 @@ def build_github_tools(
         verify_pr_ci_status,
         recover_auto_merge,
         check_direct_repo_auto_merge,
+        list_open_prs,
         merge_direct_repo_pr,
         arm_direct_repo_auto_merge,
         reset_implement_spawn_counter,

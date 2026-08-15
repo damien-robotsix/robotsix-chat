@@ -18,6 +18,7 @@ import base64
 import json
 import logging
 from typing import TYPE_CHECKING, Any
+from urllib.parse import quote
 
 from robotsix_chat.common.github_auth import _build_github_app_auth_headers
 from robotsix_chat.common.http import safe_http_request
@@ -607,6 +608,38 @@ class DirectRepoClient:
         Raises RuntimeError on failure (callers catch and format).
         """
         return await self._get_json(f"/repos/{repo_full_name}/pulls/{pr_number}")
+
+    async def search_open_prs(
+        self,
+        *,
+        org_name: str,
+        per_page: int = 100,
+    ) -> list[dict[str, Any]]:
+        """Return open PRs across *org_name*'s repositories via the Search API.
+
+        Uses a single ``/search/issues`` batch query
+        (``type:pr state:open org:<org_name>``) instead of one REST call per
+        repository.  Paginates through the result pages (GitHub caps search
+        results at 10 pages / 1000 items); results are limited to
+        repositories the GitHub App installation can access.
+
+        Raises RuntimeError on failure (callers catch and format).
+        """
+        query = quote(f"type:pr state:open org:{org_name}", safe="")
+        all_items: list[dict[str, Any]] = []
+        page = 1
+
+        while page <= 10:
+            data = await self._get_json(
+                f"/search/issues?q={query}&per_page={per_page}&page={page}"
+            )
+            items: list[dict[str, Any]] = data.get("items", [])
+            all_items.extend(items)
+            if len(items) < per_page:
+                break
+            page += 1
+
+        return all_items
 
     async def push_commit_to_branch(
         self,

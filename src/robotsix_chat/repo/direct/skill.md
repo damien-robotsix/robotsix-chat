@@ -31,6 +31,35 @@ state.
 
 ______________________________________________________________________
 
+## Agent tool: `list_open_prs`
+
+List every open pull request across an organization's repositories in a single batched GitHub Search
+API query (`/search/issues?q=type:pr state:open org:<org>`). Use this **before** iterating
+repository-by-repository with per-repo PR lookups whenever the user asks about PRs across several
+repositories — it replaces O(n) individual calls with one batch query.
+
+**Read-only.** Does not modify any repository state and does not require a ticket to be in BLOCKED
+state. Results are limited to the repositories the robotsix-mill GitHub App is installed on.
+
+### Preconditions
+
+- The GitHub App installation must include at least one repository in *org_name*.
+
+### Returned information
+
+- Total count of open PRs, grouped by repository.
+- Per PR: number, title, URL, author, and draft status.
+- A truncation note when GitHub's 1000-result search cap is reached.
+
+### Error responses
+
+| Condition         | Message                                                                          |
+| ----------------- | -------------------------------------------------------------------------------- |
+| Search API error  | `Error listing open PRs for org '<org>': <detail>`                               |
+| No accessible PRs | `No open PRs found for org '<org>' (in repositories the GitHub App can access).` |
+
+______________________________________________________________________
+
 ## Agent tool: `merge_direct_repo_pr`
 
 Merge a pull request in a repository under the GitHub App installation scope. The merge is performed
