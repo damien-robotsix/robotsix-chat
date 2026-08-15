@@ -23,6 +23,7 @@ from robotsix_chat.subsessions import (
     SubsessionIntervalError,
     SubsessionKind,
     SubsessionLevelError,
+    SubsessionNoChangeThresholdError,
     SubsessionPeriodicSpawnError,
     SubsessionRegistry,
     SubsessionStatus,
@@ -293,6 +294,37 @@ def test_periodic_interval_below_minimum_is_rejected() -> None:
         _spawn(env, kind=SubsessionKind.PERIODIC, interval_seconds=0.5)
     with pytest.raises(SubsessionIntervalError):
         _spawn(env, kind=SubsessionKind.PERIODIC, interval_seconds=None)
+
+    assert env.registry.list_for_owner(OWNER) == []
+
+
+def test_periodic_no_change_threshold_below_one_is_rejected() -> None:
+    """A per-spawn auto_stop_no_change_runs below 1 raises."""
+    env = build_env()
+
+    with pytest.raises(SubsessionNoChangeThresholdError):
+        _spawn(
+            env,
+            kind=SubsessionKind.PERIODIC,
+            interval_seconds=0.5,
+            auto_stop_no_change_runs=0,
+        )
+
+    assert env.registry.list_for_owner(OWNER) == []
+
+
+def test_periodic_no_change_threshold_non_int_is_rejected() -> None:
+    """A non-int auto_stop_no_change_runs is rejected (bool is an int in Python)."""
+    env = build_env()
+
+    for bad_value in (2.5, "50", True):
+        with pytest.raises(SubsessionNoChangeThresholdError):
+            _spawn(
+                env,
+                kind=SubsessionKind.PERIODIC,
+                interval_seconds=60.0,
+                auto_stop_no_change_runs=bad_value,
+            )
 
     assert env.registry.list_for_owner(OWNER) == []
 
@@ -612,6 +644,56 @@ async def test_periodic_auto_stops_after_consecutive_no_change_runs() -> None:
     assert info is not None
     assert info.status is SubsessionStatus.CLOSED
     assert info.close_reason == "no_change_auto_stop"
+    assert "Auto-stopped after 2 consecutive no-change runs" in (info.summary or "")
+    assert len(agent.calls) == 2
+
+
+@pytest.mark.asyncio
+async def test_periodic_auto_stop_uses_per_spawn_no_change_threshold() -> None:
+    """A per-spawn auto_stop_no_change_runs override wins over the global cap."""
+    agent = FakeAgent(["NO_CHANGE", "NO_CHANGE", "NO_CHANGE", "NO_CHANGE"])
+    env = build_env(agent=agent, settings=make_settings(auto_stop_no_change_runs=2))
+
+    sub_id = _spawn(
+        env,
+        kind=SubsessionKind.PERIODIC,
+        interval_seconds=0.02,
+        auto_stop_no_change_runs=3,
+    )
+    await _await_worker(env, sub_id)
+
+    info = env.registry.get(sub_id)
+    assert info is not None
+    assert info.status is SubsessionStatus.CLOSED
+    assert info.close_reason == "no_change_auto_stop"
+    assert "Auto-stopped after 3 consecutive no-change runs" in (info.summary or "")
+    # The global threshold (2) must not have fired first.
+    assert len(agent.calls) == 3
+
+
+@pytest.mark.asyncio
+async def test_periodic_ignores_bool_no_change_threshold_in_checkpoint() -> None:
+    """A bool ``auto_stop_no_change_runs`` in the checkpoint is not a valid override.
+
+    Spawn validation rejects bools, but an agent ``set_checkpoint`` call
+    could still write one — the periodic turn loop must ignore it and fall
+    back to the global threshold rather than treating ``True`` as ``1``.
+    """
+    agent = FakeAgent(["NO_CHANGE", "NO_CHANGE"])
+    env = build_env(agent=agent, settings=make_settings(auto_stop_no_change_runs=2))
+
+    sub_id = _spawn(env, kind=SubsessionKind.PERIODIC, interval_seconds=0.02)
+    # Seed a bool override directly into the checkpoint before the worker's
+    # first turn runs (spawn_subsession is synchronous, so the task has not
+    # been scheduled yet).
+    assert env.registry.update_checkpoint(sub_id, {"auto_stop_no_change_runs": True})
+    await _await_worker(env, sub_id)
+
+    info = env.registry.get(sub_id)
+    assert info is not None
+    assert info.status is SubsessionStatus.CLOSED
+    assert info.close_reason == "no_change_auto_stop"
+    # The global threshold (2) applied — True was ignored, not treated as 1.
     assert "Auto-stopped after 2 consecutive no-change runs" in (info.summary or "")
     assert len(agent.calls) == 2
 

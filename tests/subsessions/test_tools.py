@@ -295,6 +295,35 @@ async def test_spawn_tool_starts_a_worker() -> None:
     assert infos[0].summary == "done quickly"
 
 
+@pytest.mark.asyncio
+async def test_spawn_tool_forwards_auto_stop_no_change_runs_override() -> None:
+    """The spawn tool persists the per-monitor no-change threshold."""
+    env = build_env()
+    spawn = _by_name(build_subsession_tools(env, ctx=_ctx()), "spawn_subsession")
+
+    result = await spawn(
+        "periodic",
+        "watch ticket",
+        "monitor ticket state",
+        model_level=3,
+        interval_seconds=60.0,
+        dedup_key="ticket-123",
+        auto_stop_no_change_runs=7,
+    )
+
+    assert result.startswith("Started periodic subsession ")
+    info = env.registry.list_for_owner(OWNER)[0]
+    assert info.checkpoint == {
+        "ticket_id": "ticket-123",
+        "auto_stop_no_change_runs": 7,
+    }
+
+    task = env.registry._running.get(info.id)
+    if task is not None and not task.done():
+        task.cancel()
+    await asyncio.sleep(0.05)
+
+
 # ---------------------------------------------------------------------------
 # message / close scope guard
 # ---------------------------------------------------------------------------

@@ -93,6 +93,44 @@ def _preserve_event_ticket_id(
     return merged
 
 
+def _checkpoint_auto_stop_no_change_runs(
+    checkpoint: dict[str, object] | None,
+) -> int | None:
+    """Return the valid per-spawn no-change threshold in *checkpoint*, if any.
+
+    Mirrors the read in :func:`_run_periodic_turn`: only a positive
+    ``int`` (excluding ``bool``, which is an ``int`` subclass) is a valid
+    override — anything else is treated as absent.
+    """
+    raw = checkpoint.get("auto_stop_no_change_runs") if checkpoint else None
+    if isinstance(raw, bool) or not isinstance(raw, int) or raw < 1:
+        return None
+    return raw
+
+
+def _preserve_periodic_auto_stop_no_change_runs(
+    info: SubsessionInfo, checkpoint: dict[str, object] | None
+) -> dict[str, object] | None:
+    """Keep a PERIODIC monitor's ``auto_stop_no_change_runs`` override on replacement.
+
+    The override is seeded into the checkpoint at spawn time.  Because
+    ``set_checkpoint`` (and other checkpoint writers) replace the whole
+    dict, a replacement that omits ``auto_stop_no_change_runs`` would
+    silently drop the override and let the monitor fall back to the global
+    ``subsessions.auto_stop_no_change_runs`` default — re-triggering the
+    premature auto-stop this override exists to prevent.  Recover the
+    previous value from the current checkpoint when it is missing.
+    """
+    if _checkpoint_auto_stop_no_change_runs(checkpoint) is not None:
+        return checkpoint
+    previous = _checkpoint_auto_stop_no_change_runs(info.checkpoint)
+    if previous is None:
+        return checkpoint
+    merged = dict(checkpoint or {})
+    merged["auto_stop_no_change_runs"] = previous
+    return merged
+
+
 class RegistryStore:
     """JSON persistence for subsession records — file I/O and terminal retention.
 
@@ -1076,6 +1114,12 @@ class SubsessionRegistry:
         monitor's event filter survives agent ``set_checkpoint`` calls and
         process restarts.
 
+        For ``PERIODIC`` subsessions the ``auto_stop_no_change_runs``
+        override is likewise system-owned: when the replacement drops it,
+        it is recovered from the previous checkpoint so a long-lived
+        monitor that records PR/state via ``set_checkpoint`` does not
+        silently revert to the global auto-stop default.
+
         Returns ``True`` when the update was applied; ``False`` when the
         subsession is unknown (including already-terminal).
         """
@@ -1084,6 +1128,8 @@ class SubsessionRegistry:
             return False
         if info.kind is SubsessionKind.WAIT_FOR_EVENT:
             checkpoint = _preserve_event_ticket_id(info, checkpoint)
+        elif info.kind is SubsessionKind.PERIODIC:
+            checkpoint = _preserve_periodic_auto_stop_no_change_runs(info, checkpoint)
         info.checkpoint = checkpoint
         self._store.persist()
         return True

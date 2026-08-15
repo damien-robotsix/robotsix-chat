@@ -43,6 +43,7 @@ from .models import (
     SubsessionIntervalError,
     SubsessionKind,
     SubsessionLevelError,
+    SubsessionNoChangeThresholdError,
     SubsessionPeriodicSpawnError,
     SubsessionStatus,
     SubsessionUserChatSpawnError,
@@ -356,6 +357,7 @@ def spawn_subsession(
     interval_seconds: float | None = None,
     include_previous_result: bool = False,
     max_runs: int | None = None,
+    auto_stop_no_change_runs: int | None = None,
     inherit_context: bool = False,
     sub_id: str | None = None,
     runs: int = 0,
@@ -369,8 +371,9 @@ def spawn_subsession(
     """Validate, register, and launch a subsession worker; return its id.
 
     Raises :class:`SubsessionCapacityError`, :class:`SubsessionDepthError`,
-    :class:`SubsessionLevelError`, or :class:`SubsessionIntervalError` on
-    invalid requests — the tool layer maps these to polite refusals.
+    :class:`SubsessionLevelError`, :class:`SubsessionIntervalError`, or
+    :class:`SubsessionNoChangeThresholdError` on invalid requests — the
+    tool layer maps these to polite refusals.
 
     Idempotent: when *sub_id* is given and already registered (e.g. a
     duplicate resume), the existing worker is left alone and the id is
@@ -382,6 +385,14 @@ def spawn_subsession(
     duplicate — this prevents a single root-cause event (e.g. filing
     the same ticket twice, or an ``asyncio.run`` crash affecting
     multiple ticket monitors) from spawning redundant workers.
+
+    *auto_stop_no_change_runs* optionally overrides the global
+    ``subsessions.auto_stop_no_change_runs`` threshold for this
+    periodic monitor only.  It is persisted in the subsession
+    checkpoint so the override survives resume/restart.  Set it higher
+    for long-lived ticket monitors that naturally progress over days
+    (waiting on human review or CI) so they are not auto-stopped after
+    a handful of ``NO_CHANGE`` runs.
     """
     # Idempotency guard: if the subsession already exists (duplicate
     # spawn / resume race), return the existing id without launching
@@ -405,6 +416,15 @@ def spawn_subsession(
                 return cp_match
 
     cfg = env.settings.subsessions
+
+    if auto_stop_no_change_runs is not None and (
+        isinstance(auto_stop_no_change_runs, bool)
+        or not isinstance(auto_stop_no_change_runs, int)
+        or auto_stop_no_change_runs < 1
+    ):
+        raise SubsessionNoChangeThresholdError(
+            "auto_stop_no_change_runs must be an integer >= 1"
+        )
 
     # Per-session capacity check: reject spawns when the owning
     # session already holds its configured share of the pool.
@@ -508,6 +528,11 @@ def spawn_subsession(
     # in its single synchronous persist before the worker task is created.
     if kind is SubsessionKind.WAIT_FOR_EVENT and dedup_key:
         checkpoint = {**(checkpoint or {}), "ticket_id": dedup_key}
+    if kind is SubsessionKind.PERIODIC and auto_stop_no_change_runs is not None:
+        checkpoint = {
+            **(checkpoint or {}),
+            "auto_stop_no_change_runs": auto_stop_no_change_runs,
+        }
 
     try:
         info = env.registry.create(

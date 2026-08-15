@@ -26,6 +26,7 @@ __all__ = [
     "SubsessionIntervalError",
     "SubsessionKind",
     "SubsessionLevelError",
+    "SubsessionNoChangeThresholdError",
     "SubsessionPeriodicSpawnError",
     "SubsessionStatus",
     "SubsessionUserChatSpawnError",
@@ -79,6 +80,10 @@ class SubsessionDepthError(RuntimeError):
 
 class SubsessionIntervalError(ValueError):
     """Raised when a periodic interval is below the configured minimum."""
+
+
+class SubsessionNoChangeThresholdError(ValueError):
+    """Raised when a per-spawn no-change threshold is below 1."""
 
 
 class SubsessionLevelError(ValueError):

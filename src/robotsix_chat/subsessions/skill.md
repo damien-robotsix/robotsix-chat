@@ -22,12 +22,17 @@ children would still be within the configured `max_depth`.
 ### `spawn_subsession`
 
 Start a background subsession and return its id immediately. Required: `kind`, `title`,
-`instructions`. Optional: `model_level`, `interval_seconds`, `max_runs`, `include_previous_result`,
-`inherit_context`, `dedup_key`.
+`instructions`. Optional: `model_level`, `interval_seconds`, `max_runs`, `auto_stop_no_change_runs`,
+`include_previous_result`, `inherit_context`, `dedup_key`.
 
 - `model_level` picks capability 1 (cheapest) to 4 (frontier). Levels 1-2 need an OpenRouter API
   key; if a spawn errors with an API key message, retry at level 3 (keyless).
-- `interval_seconds` (minimum enforced) and `max_runs` are for `periodic` only.
+- `interval_seconds` (minimum enforced), `max_runs`, and `auto_stop_no_change_runs` are for
+  `periodic` only.
+- `auto_stop_no_change_runs` (must be an integer ≥ 1) overrides the global auto-stop threshold for
+  this monitor only. For a long-lived ticket monitor that progresses over days (waiting on human
+  review or CI), pass a higher value (e.g. 50) so it is not auto-stopped after the default 3
+  consecutive `NO_CHANGE` runs.
 - `dedup_key` prevents duplicate `user_chat`, `periodic`, and `wait_for_event` subsessions — use the
   ticket id as the dedup key for monitors. Always check `list_subsessions` first.
 
@@ -64,9 +69,10 @@ rejected.
 
 Persist arbitrary key/value data across restarts. Each call **replaces** the entire checkpoint, so
 include all fields you want to keep. Use it for: monitored ticket id, last-known ticket state,
-completion criteria, consecutive-failure counters. For `wait_for_event` monitors the `ticket_id` key
-is system-owned and is preserved automatically even if omitted, so the monitor keeps its target
-ticket across restarts.
+completion criteria, consecutive-failure counters. Two keys are system-owned and preserved
+automatically even if omitted: `ticket_id` for `wait_for_event` monitors (so the monitor keeps its
+target ticket across restarts), and `auto_stop_no_change_runs` for `periodic` monitors (so a
+per-spawn no-change threshold override is not lost).
 
 ### `self_update_subsession`
 

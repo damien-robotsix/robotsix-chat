@@ -239,7 +239,8 @@ def _build_periodic_input(
         "in this subsession's checkpoint using set_checkpoint with "
         "'pr_number' (int) and 'repo_full_name' (str, e.g. "
         "'owner/repo').  Include the existing checkpoint fields "
-        "(ticket_id, last_known_state, human_approval_since) alongside "
+        "(ticket_id, last_known_state, human_approval_since, and "
+        "auto_stop_no_change_runs if present) alongside "
         "the new PR fields — the checkpoint is replaced wholesale.  "
         "This enables the background watcher to detect PR merges and "
         "auto-resume the monitor after a merge event, even when the "
@@ -578,6 +579,13 @@ async def _run_periodic_turn(
         return None
 
     no_change_cap = env.settings.subsessions.auto_stop_no_change_runs
+    no_change_cap_override = checkpoint.get("auto_stop_no_change_runs")
+    if (
+        not isinstance(no_change_cap_override, bool)
+        and isinstance(no_change_cap_override, int)
+        and no_change_cap_override >= 1
+    ):
+        no_change_cap = no_change_cap_override
     if consecutive_no_change >= no_change_cap:
         logger.warning(
             "Subsession %s: auto-stopping after %d consecutive no-change runs. "
