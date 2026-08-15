@@ -115,11 +115,7 @@ class AutonomousRunner:
                     "owner_id": aq.owner_id,
                     "state": aq.state.value,
                     "auto_turn_count": aq.auto_turn_count,
-                    "consecutive_no_change": aq.consecutive_no_change,
-                    "completion_suppressed": aq.completion_suppressed,
                     "definition_name": aq.definition_name,
-                    "last_board_digest": aq.last_board_digest,
-                    "last_board_digest_at": aq.last_board_digest_at,
                 }
             self._persist_path.parent.mkdir(parents=True, exist_ok=True)
             self._persist_path.write_text(json.dumps(data, indent=2))
@@ -150,11 +146,7 @@ class AutonomousRunner:
                     owner_id=entry["owner_id"],
                     state=self._parse_persisted_state(entry.get("state", "")),
                     auto_turn_count=entry.get("auto_turn_count", 0),
-                    consecutive_no_change=entry.get("consecutive_no_change", 0),
-                    completion_suppressed=entry.get("completion_suppressed", False),
                     definition_name=entry.get("definition_name", ""),
-                    last_board_digest=entry.get("last_board_digest", ""),
-                    last_board_digest_at=entry.get("last_board_digest_at", 0.0),
                 )
             except Exception:
                 logger.exception("Skipping unparsable autonomous session %s", sid)

@@ -97,15 +97,19 @@ class AutonomousSettings(BaseModel):
     """
 
     completion_marker: str = "---AUTONOMOUS COMPLETE---"
-    continue_interval_seconds: float = 45.0
+    continue_interval_seconds: float = Field(
+        default=45.0,
+        description=(
+            "Retained for config compatibility. No longer used — autonomous "
+            "runs receive a single prompt, so there is no auto-continue "
+            "pacing loop."
+        ),
+    )
     max_idle_auto_turns: int = Field(
         default=5,
         description=(
-            "Maximum number of consecutive NO_CHANGE / idle auto-continue "
-            "turns before the loop halts (session closes).  A turn is "
-            "idle when the agent reply is a recognised no-op sentinel "
-            "(NO_CHANGE, nothing changed, …).  Set to 0 to disable the "
-            "idle cap and only rely on per-preset max_auto_turns."
+            "Retained for config compatibility. No longer used — there is no "
+            "auto-continue loop, so there is no idle turn cap."
         ),
     )
     stale_monitor_runs_before_completion: int = Field(
