@@ -14,17 +14,17 @@ Tell the assistant something like:
 
 The assistant calls `spawn_subsession` with:
 
-| Parameter                 | Value                                                                                                            |
-| ------------------------- | ---------------------------------------------------------------------------------------------------------------- |
-| `kind`                    | `"periodic"`                                                                                                     |
-| `title`                   | Short human-readable label shown in the UI panel, e.g. "Monitor ticket T-42 status"                              |
-| `instructions`            | A self-contained prompt for the sub-agent: what to check, which tickets to watch, what constitutes a change      |
-| `model_level`             | Capability level 1–4 picked by difficulty (cheap tiers for simple polling)                                       |
-| `interval_seconds`        | How often to re-run, in seconds. Minimum is 60 seconds; 1800 (30 minutes) is a common choice                     |
-| `max_runs`                | (optional) Cap on the number of runs; omitted means run until closed                                             |
+| Parameter                  | Value                                                                                                                                                                                                       |
+| -------------------------- | ----------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- |
+| `kind`                     | `"periodic"`                                                                                                                                                                                                |
+| `title`                    | Short human-readable label shown in the UI panel, e.g. "Monitor ticket T-42 status"                                                                                                                         |
+| `instructions`             | A self-contained prompt for the sub-agent: what to check, which tickets to watch, what constitutes a change                                                                                                 |
+| `model_level`              | Capability level 1–4 picked by difficulty (cheap tiers for simple polling)                                                                                                                                  |
+| `interval_seconds`         | How often to re-run, in seconds. Minimum is 60 seconds; 1800 (30 minutes) is a common choice                                                                                                                |
+| `max_runs`                 | (optional) Cap on the number of runs; omitted means run until closed                                                                                                                                        |
 | `auto_stop_no_change_runs` | (optional) Per-monitor override of `subsessions.auto_stop_no_change_runs` (must be an integer ≥ 1). Set higher for long-lived ticket monitors that progress over days (e.g. waiting on human review or CI). |
-| `include_previous_result` | Set to `true` so each run can compare against the prior state                                                    |
-| `dedup_key`               | When monitoring a ticket, set to the ticket id (e.g. `"5f1c"`) — prevents duplicate monitors for the same ticket |
+| `include_previous_result`  | Set to `true` so each run can compare against the prior state                                                                                                                                               |
+| `dedup_key`                | When monitoring a ticket, set to the ticket id (e.g. `"5f1c"`) — prevents duplicate monitors for the same ticket                                                                                            |
 
 ### Change-detection convention
 
@@ -37,8 +37,8 @@ replies with a single concise line; full reports are reserved for substantive ch
 blocking, completion, failure, or transitions requiring user action). After a configurable number of
 consecutive `NO_CHANGE` runs (`subsessions.auto_stop_no_change_runs`, default 3) the subsession
 closes itself. The threshold can be overridden per monitor at spawn time via the
-`auto_stop_no_change_runs` parameter — useful for long-lived ticket monitors that naturally
-progress over days, where the default 3-run window is too aggressive.
+`auto_stop_no_change_runs` parameter — useful for long-lived ticket monitors that naturally progress
+over days, where the default 3-run window is too aggressive.
 
 ### Auto-stop, auto-pause, and failure notifications
 

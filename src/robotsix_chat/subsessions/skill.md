@@ -22,8 +22,8 @@ children would still be within the configured `max_depth`.
 ### `spawn_subsession`
 
 Start a background subsession and return its id immediately. Required: `kind`, `title`,
-`instructions`. Optional: `model_level`, `interval_seconds`, `max_runs`,
-`auto_stop_no_change_runs`, `include_previous_result`, `inherit_context`, `dedup_key`.
+`instructions`. Optional: `model_level`, `interval_seconds`, `max_runs`, `auto_stop_no_change_runs`,
+`include_previous_result`, `inherit_context`, `dedup_key`.
 
 - `model_level` picks capability 1 (cheapest) to 4 (frontier). Levels 1-2 need an OpenRouter API
   key; if a spawn errors with an API key message, retry at level 3 (keyless).
