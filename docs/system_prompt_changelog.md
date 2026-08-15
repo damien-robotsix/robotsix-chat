@@ -3,6 +3,26 @@
 Governed artifact: `Settings.agent_instruction` default literal in
 `src/robotsix_chat/config/settings.py`. Version stamp: `SYSTEM_PROMPT_VERSION` in the same module.
 
+## v120 — 2026-08-14 — never-claim-a-monitor-exists-without-ver-3d06
+
+**Summary:** Add a Monitor existence check bullet to the agent instruction:
+never claim a monitor is active (or that none is needed because the work
+already finished) without first checking live state.  Before making any claim
+about a monitor's existence or status, call `list_subsessions` (and, when a
+specific ticket is named, `component_request GET /tickets/{id}`) to verify
+what is actually spawned and what state it is in.  If no monitor was spawned,
+say so directly and offer to start one — do not invent a reason for why no
+monitor exists.  Treat the work as unfinished (and the monitor as still
+needed) until the ticket is merged AND its endpoints are confirmed live.
+
+**Rationale:** Session 3bb6f7a2f99340d38f5cde6cbd6a85aa saw the assistant
+tell the user "There's no monitor because the work finished" even though the
+ticket was not yet merged and the endpoints were not live — a fabricated
+claim.  The assistant must verify live state before answering monitor-status
+questions.
+
+**SHA256:** `c5cd71301c03d31f495078dd550d54f95cce3af6b6808a318e1759b83a33c959`
+
 ## v119 — 2026-08-14 — require-explicit-confirmation-for-destructive-actions-3ccc
 
 **Summary:** Add an Autonomy bullet (destructive-action re-confirmation gate)
