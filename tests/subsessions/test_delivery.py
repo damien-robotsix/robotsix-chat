@@ -12,6 +12,7 @@ from robotsix_chat.autonomous.models import AutonomousSession, AutonomousState
 from robotsix_chat.subsessions.delivery import (
     _BATCH_REACT_PROMPT_TEMPLATE,
     _REACT_PROMPT_TEMPLATE,
+    _REASON_PHRASES,
     ParentDelivery,
     _sanitize_reaction_reply,
     _strip_inline_metadata,
@@ -1180,6 +1181,26 @@ def test_react_prompt_templates_strip_internal_identifiers() -> None:
         assert "commit hash" in text
 
 
+def test_react_prompt_templates_compress_repeated_monitor_closures() -> None:
+    """Reaction templates must collapse same-ticket monitor closures."""
+    for template in (
+        _REACT_PROMPT_TEMPLATE,
+        _BATCH_REACT_PROMPT_TEMPLATE,
+    ):
+        text = template.lower()
+        assert "tracking continues under a fresh monitor" in text
+        assert "same ticket" in text
+        assert "fresh monitor" in text
+        assert "never repeat a closure notice" in text
+
+
+def test_reason_phrase_for_max_runs_escalated_is_human_readable() -> None:
+    """The max_runs_escalated reason must not leak its raw internal code."""
+    assert "max_runs_escalated" in _REASON_PHRASES
+    assert _REASON_PHRASES["max_runs_escalated"] != "max_runs_escalated"
+    assert "run limit" in _REASON_PHRASES["max_runs_escalated"]
+
+
 # ---------------------------------------------------------------------------
 # _sanitize_reaction_reply — stripping internal metadata from reaction output
 # ---------------------------------------------------------------------------
@@ -1429,6 +1450,7 @@ def test_batch_react_prompt_template_contains_tracking_status() -> None:
     text = _BATCH_REACT_PROMPT_TEMPLATE.lower()
     assert "fulfilled" in text
     assert "interrupted" in text
+    assert "continues" in text
     assert "active" in text
     assert "next step" in text
 

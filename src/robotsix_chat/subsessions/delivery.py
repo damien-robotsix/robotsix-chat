@@ -64,6 +64,12 @@ _REACT_PROMPT_TEMPLATE = (
     "only outcomes with real progress, blockers, or decisions for the user. "
     "If every outcome is no-change, reply with a single sentence like "
     "'All monitors report no change — nothing requires attention.'  "
+    "When the earlier outcomes are monitor closures for the SAME ticket "
+    "(a monitor hit its run limit or auto-stopped and a fresh monitor has "
+    "already taken over tracking), collapse them into ONE concise summary "
+    "— never repeat a closure notice for each monitor.  Use a single "
+    "sentence such as 'Monitor for ticket X closed — tracking continues "
+    "under a fresh monitor.'  "
     "NEVER reply to each outcome individually when you have already "
     "addressed prior outcomes — one paragraph covers everything.\n\n"
     "[System notice] Subsession {sub_id} ({kind}) '{title}' {reason} while "
@@ -89,6 +95,11 @@ _REACT_PROMPT_TEMPLATE = (
     "before the ticket finished.  Tracking was CUT SHORT.  Phrase as "
     "'Monitor for ticket X auto-stopped — the ticket may still need "
     "attention.'\n"
+    "  CONTINUES — the monitor closed (hit a run limit, auto-stopped, or "
+    "was otherwise replaced) BUT tracking is already being continued by a "
+    "fresh monitor for the same ticket.  Tracking is ONGOING.  Phrase as "
+    "'Monitor for ticket X closed — tracking continues under a fresh "
+    "monitor.'\n"
     "  ACTIVE — the monitor is paused/sleeping but still alive.  Tracking "
     "is ONGOING and resumes when the ticket changes or when the user sends "
     "it a message.  Phrase as 'Monitor for ticket X is paused — it will "
@@ -153,7 +164,13 @@ _BATCH_REACT_PROMPT_TEMPLATE = (
     "only outcomes with real progress, blockers, or decisions that the "
     "user should know about.  If every outcome is no-change, reply with "
     "a single sentence like 'All monitors report no change — nothing "
-    "requires attention.'  NEVER reply to each outcome individually — "
+    "requires attention.'  When several of these outcomes are monitor "
+    "closures for the SAME ticket (a monitor hit its run limit or "
+    "auto-stopped and a fresh monitor has already taken over tracking), "
+    "collapse them into ONE concise summary — never repeat a closure "
+    "notice for each monitor.  Use a single sentence such as 'Monitor for "
+    "ticket X closed — tracking continues under a fresh monitor.'  "
+    "NEVER reply to each outcome individually — "
     "one paragraph, one reply.\n\n"
     "FORMAT PROHIBITION (hard rule — violation will confuse the user): "
     "NEVER output any of these patterns: 'kind=', 'status=', '[N] kind=', "
@@ -176,6 +193,11 @@ _BATCH_REACT_PROMPT_TEMPLATE = (
     "before the ticket finished.  Tracking was CUT SHORT.  Phrase as "
     "'Monitor for ticket X auto-stopped — the ticket may still need "
     "attention.'\n"
+    "  CONTINUES — the monitor closed (hit a run limit, auto-stopped, or "
+    "was otherwise replaced) BUT tracking is already being continued by a "
+    "fresh monitor for the same ticket.  Tracking is ONGOING.  Phrase as "
+    "'Monitor for ticket X closed — tracking continues under a fresh "
+    "monitor.'\n"
     "  ACTIVE — the monitor is paused/sleeping but still alive.  Tracking "
     "is ONGOING and resumes when the ticket changes or when the user sends "
     "it a message.  Phrase as 'Monitor for ticket X is paused — it will "
@@ -199,6 +221,7 @@ _BATCH_REACT_PROMPT_TEMPLATE = (
 _REASON_PHRASES: dict[str, str] = {
     "completed": "completed",
     "max_runs": "reached its run limit",
+    "max_runs_escalated": "reached its run limit and auto-escalated",
     "human_approval_timeout": "timed out waiting for operator approval",
     "paused": "auto-paused after consecutive no-change runs",
     "no_change_auto_stop": "auto-stopped after consecutive no-change runs",
