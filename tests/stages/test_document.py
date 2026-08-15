@@ -98,6 +98,10 @@ class _FakeDocResult(SimpleNamespace):
         super().__init__(user_facing=user_facing, summary=summary)
 
 
+class UsageLimitExceededError(RuntimeError):
+    """Fake pydantic-ai usage-cap exception for retry tests."""
+
+
 # --- Stub all missing sibling modules in sys.modules ---
 
 _fake_core_states = SimpleNamespace(State=_FakeState)
@@ -1065,3 +1069,130 @@ class TestDocumentStageRun:
     def test_stage_traced_is_true(self) -> None:
         """DocumentStage.traced is True."""
         assert DocumentStage.traced is True
+
+
+# ---------------------------------------------------------------------------
+# Usage-limit detection + retry
+# ---------------------------------------------------------------------------
+
+
+class TestIsUsageLimitError:
+    """Unit tests for ``_is_usage_limit_error``."""
+
+    def test_usage_limit_exceeded_class_name(self) -> None:
+        """The pydantic-ai UsageLimitExceeded class name is recognised."""
+        assert _document._is_usage_limit_error(
+            UsageLimitExceededError("request limit exceeded")
+        )
+
+    def test_rate_limit_message(self) -> None:
+        """A rate-limit message on a generic exception is recognised."""
+        assert _document._is_usage_limit_error(RuntimeError("rate limit exceeded"))
+
+    def test_http_429_message(self) -> None:
+        """An HTTP 429 message is recognised."""
+        assert _document._is_usage_limit_error(
+            RuntimeError("HTTP 429 too many requests")
+        )
+
+    def test_claude_sdk_usage_exhausted_name(self) -> None:
+        """The Claude-SDK usage-exhausted error name is recognised."""
+
+        class ClaudeSDKUsageExhaustedError(RuntimeError):
+            pass
+
+        assert _document._is_usage_limit_error(
+            ClaudeSDKUsageExhaustedError("out of usage credits")
+        )
+
+    def test_non_usage_limit_is_false(self) -> None:
+        """A plain failure is not treated as a usage limit."""
+        assert not _document._is_usage_limit_error(RuntimeError("doc agent crashed"))
+
+    def test_wrapped_cause_chain(self) -> None:
+        """A usage limit wrapped in an outer exception is recognised."""
+        outer = RuntimeError("runner failed")
+        outer.__cause__ = UsageLimitExceededError("budget cap")
+        assert _document._is_usage_limit_error(outer)
+
+
+class TestDocAgentUsageLimitRetry:
+    """Tests for ``_run_doc_agent_with_retry`` via ``DocumentStage.run``."""
+
+    def test_retries_usage_limit_then_succeeds(self, tmp_path: Path) -> None:
+        """A usage-limit failure is retried with backoff, then succeeds."""
+        _fake_agents_documenting.run_doc_classifier.return_value = (
+            _FakeDocClassifierResult(user_facing=True, classification="user-facing")
+        )
+        _fake_agents_documenting.run_doc_agent.side_effect = [
+            UsageLimitExceededError("request limit exceeded"),
+            _FakeDocResult(user_facing=True, summary="updated docs"),
+        ]
+        _fake_vcs_git_ops.has_changes.return_value = False
+
+        stage = DocumentStage()
+        ctx = _make_stage_context(tmp_path)
+        ticket = MagicMock()
+        ticket.id = "test-id"
+        ticket.title = "Test"
+
+        with (
+            patch.object(_document.time, "sleep") as mock_sleep,
+            patch.object(_document.random, "uniform", return_value=0),
+        ):
+            outcome = stage.run(ticket, ctx)
+
+        assert outcome.state == _FakeStateEnum.DELIVERABLE
+        assert _fake_agents_documenting.run_doc_agent.call_count == 2
+        mock_sleep.assert_called_once()
+        assert mock_sleep.call_args[0][0] == pytest.approx(2.0)
+
+    def test_exhausts_retries_then_passes_through(self, tmp_path: Path) -> None:
+        """Persistent usage limits fall back to a non-blocking summary note."""
+        _fake_agents_documenting.run_doc_classifier.return_value = (
+            _FakeDocClassifierResult(user_facing=True, classification="user-facing")
+        )
+        _fake_agents_documenting.run_doc_agent.side_effect = UsageLimitExceededError(
+            "request limit exceeded"
+        )
+
+        stage = DocumentStage()
+        ctx = _make_stage_context(tmp_path)
+        ticket = MagicMock()
+        ticket.id = "test-id"
+        ticket.title = "Test"
+
+        with (
+            patch.object(_document.time, "sleep") as mock_sleep,
+            patch.object(_document.random, "uniform", return_value=0),
+        ):
+            outcome = stage.run(ticket, ctx)
+
+        assert outcome.state == _FakeStateEnum.DELIVERABLE
+        assert _fake_agents_documenting.run_doc_agent.call_count == 3
+        assert mock_sleep.call_count == 2
+        assert "usage limit" in outcome.note
+        _fake_notify.send_notification.assert_called_once()
+
+    def test_non_usage_limit_error_not_retried(self, tmp_path: Path) -> None:
+        """A non-usage-limit failure re-raises immediately (no retry)."""
+        _fake_agents_documenting.run_doc_classifier.return_value = (
+            _FakeDocClassifierResult(user_facing=True, classification="user-facing")
+        )
+        _fake_agents_documenting.run_doc_agent.side_effect = RuntimeError(
+            "doc agent crashed"
+        )
+
+        stage = DocumentStage()
+        ctx = _make_stage_context(tmp_path)
+        ticket = MagicMock()
+        ticket.id = "test-id"
+        ticket.title = "Test"
+
+        with patch.object(_document.time, "sleep") as mock_sleep:
+            outcome = stage.run(ticket, ctx)
+
+        assert outcome.state == _FakeStateEnum.DELIVERABLE
+        assert _fake_agents_documenting.run_doc_agent.call_count == 1
+        mock_sleep.assert_not_called()
+        assert "doc agent failed" in outcome.note
