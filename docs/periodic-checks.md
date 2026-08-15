@@ -517,10 +517,9 @@ run once and a transient failure would silently lose the work.
 
 ## Autonomous-session interaction
 
-In **autonomous sessions**, periodic monitors do not block session completion. The runner's
-`_has_pending_subsessions` check **excludes** periodic subsessions; only `task` and `user_chat`
-subsessions (which have finite lifetimes) block the loop. The agent is instructed to emit the
-completion marker while periodic monitors are still running, under either of the following paths:
+In **autonomous sessions**, periodic monitors do not block session completion. The agent is
+instructed to emit the completion marker while periodic monitors are still running, under either of
+the following paths:
 
 ### Stale-monitor completion (automatic)
 
@@ -535,9 +534,9 @@ terminal summaries are delivered to the next session.
 When the operator sends repeated continuation messages (e.g. "Continue" multiple times) without
 providing new instructions or data, the agent treats this as explicit permission to close the
 session immediately — bypassing the stale-threshold check. The same applies when the operator sends
-short, non-substantive messages several times in a row. This prevents indefinite looping when the
-operator is satisfied and all actionable work is done but periodic monitors have not yet accumulated
-enough `NO_CHANGE` cycles to auto-close.
+short, non-substantive messages several times in a row. This lets the operator close the session
+promptly when they are satisfied and all actionable work is done but periodic monitors have not yet
+accumulated enough `NO_CHANGE` cycles to auto-close.
 
 | Config key                                        | Default | Description                                                                   |
 | ------------------------------------------------- | ------- | ----------------------------------------------------------------------------- |

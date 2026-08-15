@@ -160,11 +160,12 @@ terminal state is `completed`.
 
 ### Lifecycle (executing → completed → auto-restart)
 
-A run begins with the definition's kickoff prompt, continues automatically via `Continue.` turns,
-and closes when the agent emits the completion marker (or the turn/idle caps are hit). Completion is
-automatic: the runner marks the session `completed`, then schedules a fresh run via
-`_auto_restart()` — immediately for `on_close` presets, or after `trigger_interval_seconds` for
-`periodic` presets. The operator never closes sessions manually.
+A run begins with the definition's single kickoff prompt and closes when the agent emits the
+completion marker. There is no `Continue.` loop and no turn/idle caps — the agent works through the
+prompt in one turn, using its tools, subsessions, and the continuation-scheduling mechanism as
+needed, then emits the marker. Completion is automatic: the runner marks the session `completed`,
+then schedules a fresh run via `_auto_restart()` — immediately for `on_close` presets, or after
+`trigger_interval_seconds` for `periodic` presets. The operator never closes sessions manually.
 
 ### Non-blocking startup (never blocks chat)
 
@@ -173,28 +174,15 @@ All autonomous lifecycle work is moved off the startup/lifespan critical path:
 | Operation                                   | Where it runs                              | Blocking? |
 | ------------------------------------------- | ------------------------------------------ | --------- |
 | Resume completed sessions                   | Skipped; retired + replaced by bootstrap   | Never     |
-| Resume executing sessions                   | Background task via `_schedule_background` | Never     |
-| Auto-continue loop (kickoff + continuation) | Background task via `_schedule_background` | Never     |
+| Resume executing sessions                   | Left as-is; agent schedules continuations  | Never     |
+| Single-prompt run (kickoff)                 | Background task via `_schedule_background` | Never     |
 
-`resume_sessions()` (called from the lifespan) iterates persisted autonomous sessions, schedules
-each executing session's continuation as a background task, then calls
-`ensure_all_active_sessions()` to guarantee every enabled definition has one open session, then
-returns immediately. Chat becomes available regardless of whether the background tasks have finished
-or errored. Errors in background tasks are caught and logged via `logger.exception`; they never
-propagate into the lifespan/startup path.
-
-### Restart context message
-
-When a session is resumed after a process restart, the agent receives a `"SYSTEM RESTARTED"` notice
-in its prompt so it is aware it is resuming rather than starting cold:
-
-- **First turn after restart** (`auto_turn_count == 0`) — the restart notice is prepended to the
-  kickoff prompt ("resuming an existing autonomous session").
-- **Mid-execution after restart** (`auto_turn_count > 0`) — the restart notice is prepended to the
-  "Continue." message.
-- **Unchanged board** — when the mail board digest matches the previous run, a `BOARD UNCHANGED`
-  notice is also injected instructing the agent to reply `NO_CHANGE` and stop.
-- **`completed` sessions** — skipped on resume; the bootstrap retires them and starts a fresh run.
+`resume_sessions()` (called from the lifespan) iterates persisted autonomous sessions, leaves each
+executing session as-is (no synthetic re-prompt), then calls `ensure_all_active_sessions()` to
+guarantee every enabled definition has one open session, then returns immediately. Chat becomes
+available regardless of whether the background tasks have finished or errored. Errors in background
+tasks are caught and logged via `logger.exception`; they never propagate into the lifespan/startup
+path.
 
 ### Session lifecycle
 
@@ -202,10 +190,12 @@ in its prompt so it is aware it is resuming rather than starting cold:
   create_session() / ensure_active_session()
         │
         ▼
-     executing ── _auto_continue() ──► completion_marker detected
-        │                                      │
-        │                                      ▼
-        └── Continue. (until completion)   completed ──► _auto_restart() → new session
+     executing ── _auto_continue() (single prompt) ──► completion_marker detected
+        │                                                      │
+        │                                                      ▼
+        │                                              completed ──► _auto_restart() → new session
+        │
+        └── (no Continue. loop)
 ```
 
 ### Configuration

@@ -102,7 +102,7 @@ modules:
       - deploy/.env.example
 
   - id: autonomous
-    description: "Autonomous chat sessions — self-directed agent loops with operator approval gates."
+    description: "Autonomous chat sessions — single-prompt self-directed agent runs with operator approval gates."
     paths:
       - src/robotsix_chat/autonomous/__init__.py
       - src/robotsix_chat/autonomous/models.py
@@ -114,7 +114,6 @@ modules:
       - tests/autonomous/test_prompts.py
       - tests/autonomous/test_refinement.py
       - tests/autonomous/test_runner.py
-      - tests/autonomous/test_continue_throttle_gate.py
       - docs/user-guide/autonomous-sessions.md
 
   - id: component-client

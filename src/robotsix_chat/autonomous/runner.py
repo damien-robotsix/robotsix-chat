@@ -1,15 +1,14 @@
-"""Autonomous session runner — completion marker detection, auto-cycling."""
+"""Autonomous session runner — single-prompt runs and completion detection."""
 
 from __future__ import annotations
 
 import asyncio
-import hashlib
 import json
 import logging
 import time
 from collections.abc import Callable, Coroutine
 from pathlib import Path
-from typing import TYPE_CHECKING, Any, cast
+from typing import TYPE_CHECKING, Any
 
 from robotsix_chat.autonomous.models import AutonomousSession, AutonomousState
 from robotsix_chat.autonomous.refinement import RefinementStore
@@ -53,19 +52,9 @@ AUTONOMOUS_PERSIST_PATH = "/data/autonomous_sessions.json"
 # and fallback when a session definition lacks ``trigger_interval_seconds``.
 _DEFAULT_TRIGGER_INTERVAL = 45.0
 
-# Hardcoded pending-subsession wait timeout (seconds).
-# Formerly ``autonomous.pending_subsession_wait_timeout`` — removed from
-# the config model as not an operator-facing setting.
-_PENDING_SUBSESSION_WAIT_TIMEOUT = 600.0
-
-# Maximum age (seconds) of a previously-produced triage digest for which a
-# resuming session skips the board re-fetch and replies NO_CHANGE instead of
-# re-fetching and re-reporting the same board state.
-_RECENT_DIGEST_WINDOW_SECONDS = 24 * 60 * 60
-
 
 class AutonomousRunner:
-    """Owns autonomous-session lifecycle and drives auto-continue loops."""
+    """Owns autonomous-session lifecycle and drives single-prompt runs."""
 
     def __init__(
         self,
@@ -74,7 +63,6 @@ class AutonomousRunner:
         agent_factory: Callable[[], ChatAgent],
         run_serializer: RunSerializer,
         event_sink: EventSink | None = None,
-        subsession_registry: Any = None,
         refinement_store: RefinementStore | None = None,
     ) -> None:
         """Create a runner with settings, store, agent factory, and serializer."""
@@ -83,11 +71,10 @@ class AutonomousRunner:
         self._agent_factory = agent_factory
         self._run_serializer = run_serializer
         self._event_sink = event_sink
-        self._subsession_registry = subsession_registry
         self._refinement_store = refinement_store
         self._persist_path = Path(AUTONOMOUS_PERSIST_PATH)
         self._sessions: dict[str, AutonomousSession] = self._load_sessions()
-        # Strong references to in-flight auto-continue tasks (see asyncio
+        # Strong references to in-flight autonomous run tasks (see asyncio
         # docs warning on create_task and weak references).
         self._auto_tasks: set[asyncio.Task[None]] = set()
         # Resolve session definitions from the configured presets list.
@@ -102,37 +89,6 @@ class AutonomousRunner:
     def bootstrap_owner(self) -> str:
         """Fixed pseudo-owner id under which autonomous sessions are surfaced."""
         return BOOTSTRAP_OWNER
-
-    # -- board digest ------------------------------------------------------
-
-    async def _mail_board_digest(self) -> str | None:
-        """Return a SHA-256 digest of the current auto-mail board content.
-
-        The digest is computed from the raw ``GET /board-content`` JSON so a
-        resuming session can detect byte-for-byte identical board state and
-        avoid re-running the board check when nothing new has appeared.
-
-        Returns ``None`` when the mail integration is disabled or the board
-        cannot be read (unreachable / error response) — callers then simply
-        skip no-change detection for this run.
-        """
-        # ``is True`` (rather than truthiness) keeps MagicMock-based test
-        # settings — where ``settings.mail.enabled`` is itself a mock — from
-        # accidentally triggering a real network call.
-        if getattr(self._settings.mail, "enabled", False) is not True:
-            return None
-        try:
-            from robotsix_chat.mail.client import MailClient
-
-            content = await MailClient(self._settings.mail).board_content()
-        except Exception:
-            logger.exception("Failed to fetch mail board content for digest")
-            return None
-        if not content or content.startswith("Mail API"):
-            # ``board_content`` returns a diagnostic string on failure;
-            # there is no valid board snapshot to hash.
-            return None
-        return hashlib.sha256(content.encode("utf-8")).hexdigest()
 
     # -- persistence ------------------------------------------------------
 
@@ -616,8 +572,8 @@ class AutonomousRunner:
             )
             # Cap the transcript at a generous character limit to avoid
             # overflowing the refinement LLM's context window.  When
-            # truncated, keep the beginning (plan/approval) and the end
-            # (outcome) while dropping the middle (auto-continue turns).
+            # truncated, keep the beginning and the end while dropping the
+            # middle of the single-prompt reply.
             max_chars = 30_000
             if len(history_text) > max_chars:
                 head = history_text[: max_chars // 3]
@@ -668,23 +624,6 @@ class AutonomousRunner:
         completion_marker = self._settings.autonomous.completion_marker
 
         if completion_marker in reply_text:
-            # Gate: suppress completion while the session owns any active
-            # non-periodic subsession (task / user_chat).  Periodic monitors
-            # run indefinitely by design and must not deadlock completion.
-            # Premature completion closes the session and locks the agent
-            # out of spawning tracking monitors, leaving newly-filed tickets
-            # untracked.
-            if self._has_pending_subsessions(session_id):
-                logger.warning(
-                    "Autonomous session %s attempted completion while "
-                    "pending subsessions (task / user_chat) are still "
-                    "running — suppressing",
-                    session_id,
-                )
-                aq.completion_suppressed = True
-                self._save_sessions()
-                return None
-
             self._mark_completed(session_id, aq)
             return AutonomousState.completed
 
@@ -725,291 +664,87 @@ class AutonomousRunner:
         # schedule a refinement step after the run completes.
         self._schedule_refinement(session_id, aq)
 
-    # -- auto-continue loop -------------------------------------------------
+    # -- autonomous single-prompt run ---------------------------------------
 
-    def _list_subsessions(self, session_id: str) -> list[Any]:
-        """Return the subsession list owned by *session_id*, or an empty list.
+    async def _auto_continue(self, session_id: str) -> None:
+        """Drive the single autonomous turn for *session_id*.
 
-        Guards against a missing registry or a registry error — callers
-        receive an empty list on any failure path so ``any()`` predicates
-        evaluate to ``False``.
-        """
-        reg = self._subsession_registry
-        if reg is None:
-            return []
-        try:
-            return cast("list[Any]", reg.list_for_owner(session_id))
-        except Exception:
-            return []
-
-    def _has_active_subsessions(self, session_id: str) -> bool:
-        """Return True when the session has *any* active subsession.
-
-        Unlike :meth:`_has_pending_subsessions`, this includes periodic
-        monitors — used as a pre-completion gate so the session is never
-        marked completed while owned background work is still running.
-        """
-        return any(
-            getattr(s, "is_active", False) for s in self._list_subsessions(session_id)
-        )
-
-    def _has_pending_subsessions(self, session_id: str) -> bool:
-        """Return True when the session has active non-periodic subsessions.
-
-        Periodic subsessions run indefinitely by design — they are not
-        "pending" work that the runner should wait for.  Only task and
-        user_chat subsessions (which have finite lifetimes) block the
-        auto-continue loop.
-        """
-        return any(
-            getattr(s, "is_active", False)
-            and getattr(s, "kind", None) not in (None, "periodic")
-            for s in self._list_subsessions(session_id)
-        )
-
-    async def _wait_before_continue(self, session_id: str) -> None:
-        """Pace the continue loop and pause while pending subsessions exist.
-
-        Always waits at least ``continue_interval_seconds`` (throttle), then
-        keeps waiting while the session has active subsessions, bounded by
-        ``pending_subsession_wait_timeout`` so a stuck subsession cannot hang
-        the session forever. Runs OUTSIDE the per-owner run lock and is
-        cancellable (``asyncio.sleep`` propagates ``CancelledError``).
-        """
-        interval = max(0.0, self._settings.autonomous.continue_interval_seconds)
-        timeout = _PENDING_SUBSESSION_WAIT_TIMEOUT
-        step = interval if interval > 0 else 5.0
-        if interval > 0:
-            await asyncio.sleep(interval)
-        waited = interval
-        while self._has_pending_subsessions(session_id) and waited < timeout:
-            await asyncio.sleep(step)
-            waited += step
-
-    async def _auto_continue(
-        self, session_id: str, *, is_restart: bool = False
-    ) -> None:
-        """Drive an autonomous session from kickoff through completion.
-
-        The first turn runs the session definition's custom prompt (or the
-        standard autonomous kickoff prompt); subsequent turns run a
-        ``Continue`` instruction until the agent emits the completion marker
-        (or the turn/idle caps are hit).  When *is_restart* is ``True``, the
-        agent is informed that the system was restarted and the session is
-        being resumed.
+        An autonomous session receives exactly one user prompt: the session
+        definition's custom prompt (or the standard autonomous kickoff prompt
+        when the preset has no custom prompt).  The base autonomous
+        instruction is injected into the agent's system prompt by the agent
+        factory, so the single user turn carries only the custom/preset
+        prompt.  After the reply is recorded, the session closes when the
+        agent emits the completion marker — there is no continue/re-prompt
+        loop.
         """
         aq = self._sessions.get(session_id)
-        if aq is None:
+        if aq is None or aq.state is not AutonomousState.executing:
             return
 
         owner_id = aq.owner_id
         defn = self._definition_for_owner(owner_id)
-        max_turns = defn.get("max_auto_turns", 20) if defn else 20
 
-        # Compute the board digest + restart context once for this run.
-        recent_digest = (
-            is_restart
-            and aq.last_board_digest_at > 0
-            and (time.time() - aq.last_board_digest_at) <= _RECENT_DIGEST_WINDOW_SECONDS
-        )
-        if recent_digest:
-            # A triage digest was already produced within the window — skip
-            # the board fetch entirely and instruct the agent to NO_CHANGE.
-            current_board_digest: str | None = None
-            board_unchanged = False
+        custom_prompt = defn.get("prompt", "") if defn else ""
+        if custom_prompt:
+            message = custom_prompt
+            if defn and defn.get("self_refine") and self._refinement_store is not None:
+                message = self._refinement_store.effective_prompt(
+                    defn.get("name", ""), custom_prompt
+                )
         else:
-            current_board_digest = await self._mail_board_digest()
-            board_unchanged = (
-                is_restart
-                and current_board_digest is not None
-                and aq.last_board_digest == current_board_digest
-            )
+            message = "Begin a new autonomous session and work it to completion."
 
         try:
-            while True:
-                aq = self._sessions.get(session_id)
-                if aq is None or aq.state is not AutonomousState.executing:
-                    return
+            async with self._run_serializer.for_owner(owner_id):
+                agent = await asyncio.to_thread(self._agent_factory)
+                history = self._store.agent_history(session_id)
 
-                # Enforce max_auto_turns.
-                if aq.auto_turn_count >= max_turns:
-                    logger.info(
-                        "Autonomous session %s hit max_auto_turns (%d) — closing",
+                reply_parts: list[str] = []
+                try:
+                    async for token in agent.stream(
+                        message,
+                        history=history,
+                        session_id=session_id,
+                        client_id=session_id,
+                        trace_name="autonomous-init",
+                    ):
+                        reply_parts.append(token)
+                        if self._event_sink is not None:
+                            self._event_sink.publish(
+                                session_id,
+                                autonomous_token_frame(token),
+                            )
+                except Exception:
+                    logger.exception(
+                        "Agent stream error in autonomous session %s",
                         session_id,
-                        max_turns,
                     )
-                    self._mark_completed(session_id, aq)
                     return
 
-                # Throttle + gate: pace continues and pause while the session
-                # has pending subsessions/periodic work outstanding.
-                if aq.auto_turn_count > 0:
-                    await self._wait_before_continue(session_id)
-                    aq = self._sessions.get(session_id)
-                    if aq is None or aq.state is not AutonomousState.executing:
-                        return
-                    # Suppress auto-continue while any subsession is still
-                    # active (including periodic monitors sleeping between
-                    # ticks).  Only emit Continue when the conversation is
-                    # genuinely idle with no pending background work.
-                    if self._has_active_subsessions(session_id):
-                        continue
+                full_reply = "".join(reply_parts)
 
-                # Acquire the per-owner run lock.
-                async with self._run_serializer.for_owner(owner_id):
-                    agent = await asyncio.to_thread(self._agent_factory)
-                    history = self._store.agent_history(session_id)
+                # Record the single exchange in the conversation history.
+                self._store.record(session_id, owner_id, message, full_reply)
 
-                    if aq.auto_turn_count == 0:
-                        restart_notice = ""
-                        if is_restart:
-                            restart_notice = (
-                                "SYSTEM RESTARTED — you are resuming an existing "
-                                "autonomous session. "
-                            )
-                        no_change_note = ""
-                        if recent_digest:
-                            no_change_note = (
-                                "RECENT TRIAGE DIGEST — this session already "
-                                "produced a board/triage digest within the last "
-                                "24 hours. Do NOT re-fetch or re-report the board "
-                                "state. Reply with NO_CHANGE and stop.\n\n"
-                            )
-                        elif board_unchanged:
-                            no_change_note = (
-                                "BOARD UNCHANGED — the auto-mail board content is "
-                                "identical to the previous run. Do NOT re-run the "
-                                "board content check or output a duplicate board "
-                                "digest. Reply with NO_CHANGE and stop.\n\n"
-                            )
-                        if recent_digest or board_unchanged:
-                            message = f"{restart_notice}{no_change_note}".rstrip()
-                        else:
-                            custom_prompt = defn.get("prompt", "") if defn else ""
-                            if custom_prompt:
-                                effective = custom_prompt
-                                if (
-                                    defn
-                                    and defn.get("self_refine")
-                                    and self._refinement_store is not None
-                                ):
-                                    effective = self._refinement_store.effective_prompt(
-                                        defn.get("name", ""), custom_prompt
-                                    )
-                                message = f"{restart_notice}{no_change_note}{effective}"
-                            else:
-                                message = (
-                                    f"{restart_notice}{no_change_note}"
-                                    "Begin a new autonomous session and work it to "
-                                    "completion."
-                                )
-                        trace_name = "autonomous-init"
-                    else:
-                        if aq.completion_suppressed:
-                            aq.completion_suppressed = False
-                            restart_prefix = (
-                                "SYSTEM RESTARTED — resuming your autonomous "
-                                "execution session from where it left off. "
-                                if is_restart
-                                else ""
-                            )
-                            message = (
-                                f"{restart_prefix}"
-                                "Continue. (Your previous completion marker "
-                                "was ignored because pending subsessions "
-                                "(task / user_chat) are still running.  Use "
-                                "list_subsessions to check their status, "
-                                "and only emit the completion marker when "
-                                "all pending subsessions have finished.)"
-                            )
-                        elif is_restart:
-                            message = (
-                                "SYSTEM RESTARTED — resuming your autonomous "
-                                "execution session from where it left off. "
-                                "Continue."
-                            )
-                        else:
-                            message = "Continue."
-                        trace_name = "autonomous-continue"
+                is_noop = _is_no_change(full_reply)
+                if self._event_sink is not None and not is_noop:
+                    self._event_sink.publish(
+                        session_id,
+                        agent_message_frame(full_reply, time.time()),
+                    )
 
-                    # Stream the agent reply.
-                    reply_parts: list[str] = []
-                    try:
-                        async for token in agent.stream(
-                            message,
-                            history=history,
-                            session_id=session_id,
-                            client_id=session_id,
-                            trace_name=trace_name,
-                        ):
-                            reply_parts.append(token)
-                            if self._event_sink is not None:
-                                self._event_sink.publish(
-                                    session_id,
-                                    autonomous_token_frame(token),
-                                )
-                    except Exception:
-                        logger.exception(
-                            "Agent stream error in autonomous session %s",
-                            session_id,
-                        )
-                        return
+                aq.auto_turn_count += 1
+                self._save_sessions()
 
-                    full_reply = "".join(reply_parts)
-
-                    # Record the exchange so history accumulates.
-                    self._store.record(session_id, owner_id, message, full_reply)
-
-                    # Detect no-op / idle replies and suppress publication.
-                    is_noop = _is_no_change(full_reply)
-                    if is_noop:
-                        aq.consecutive_no_change += 1
-                    else:
-                        aq.consecutive_no_change = 0
-
-                    if self._event_sink is not None and not is_noop:
-                        self._event_sink.publish(
-                            session_id,
-                            agent_message_frame(full_reply, time.time()),
-                        )
-
-                    aq.auto_turn_count += 1
-                    # Persist the board digest observed for this run so the
-                    # next restart can compare against it.  Record when a
-                    # non-NO_CHANGE digest was actually produced so a later
-                    # restart can skip re-fetching within the recent window.
-                    if current_board_digest:
-                        aq.last_board_digest = current_board_digest
-                        if not is_noop:
-                            aq.last_board_digest_at = time.time()
-                    self._save_sessions()
-
-                    # Idle cap: halt the loop after N consecutive no-op turns.
-                    max_idle = self._settings.autonomous.max_idle_auto_turns
-                    if max_idle > 0 and aq.consecutive_no_change >= max_idle:
-                        logger.info(
-                            "Autonomous session %s hit max_idle_auto_turns "
-                            "(%d consecutive no-op turns) — closing",
-                            session_id,
-                            max_idle,
-                        )
-                        self._mark_completed(session_id, aq)
-                        return
-
-                    # Check for the completion marker in the reply.
-                    new_state = self.check_reply_for_markers(session_id, full_reply)
-                    if new_state is AutonomousState.completed:
-                        # check_reply_for_markers already schedules the
-                        # _auto_restart background task — we only need to
-                        # exit the execution loop here.
-                        return
-                    # Otherwise continue the loop.
-
+                # Close on completion; this also schedules the next run and
+                # any configured self-refinement step.
+                self.check_reply_for_markers(session_id, full_reply)
         except asyncio.CancelledError:
-            logger.debug("Auto-continue task cancelled for session %s", session_id)
+            logger.debug("Autonomous session task cancelled for %s", session_id)
         except Exception:
             logger.exception(
-                "Auto-continue loop error in autonomous session %s",
+                "Autonomous session error for %s",
                 session_id,
             )
 
@@ -1022,7 +757,10 @@ class AutonomousRunner:
           auto-restart guarantee in :meth:`ensure_all_active_sessions`
           then retires them and starts a fresh session for their
           definition.
-        - Sessions in ``executing`` state: resume auto-continue.
+        - Sessions in ``executing`` state: left as-is.  The session has
+          already received its single prompt; resumption is the agent's
+          responsibility via the continuation-scheduling mechanism, not a
+          synthetic re-prompt from the runner.
         - When no sessions exist at all for a definition (e.g. a fresh or
           wiped store), auto-start one session per enabled definition so
           autonomous mode is not permanently idle.
@@ -1072,11 +810,10 @@ class AutonomousRunner:
 
             elif aq.state is AutonomousState.executing:
                 logger.info(
-                    "Resuming: restarting auto-continue for session %s",
+                    "Resuming: executing autonomous session %s — leaving "
+                    "as-is (no re-prompt; the agent schedules its own "
+                    "continuations)",
                     session_id,
-                )
-                self._schedule_background(
-                    lambda sid=session_id: self._auto_continue(sid, is_restart=True)  # type: ignore[misc]
                 )
 
         # Auto-restart always: guarantee every enabled session definition has
