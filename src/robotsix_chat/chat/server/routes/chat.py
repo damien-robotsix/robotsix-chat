@@ -813,6 +813,15 @@ async def chat_endpoint(
 
     lock_key = client_id or session_id
 
+    # -- Flush pending subsession outcomes at this natural breakpoint ------
+    # Subsessions that closed while the user was away are held in the
+    # delivery queue.  Deliver them as one consolidated summary now —
+    # before the agent processes the new message — so the reply sees a
+    # single consolidated update rather than N separate reaction turns.
+    subsession_delivery = request.app.state.subsession_delivery
+    if subsession_delivery is not None:
+        await subsession_delivery.flush_pending_reactions(session_id)
+
     # -- Submit to the message coalescer ----------------------------------
 
     autonomous_runner = request.app.state.autonomous_runner
