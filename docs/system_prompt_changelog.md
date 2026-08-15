@@ -3,6 +3,27 @@
 Governed artifact: `Settings.agent_instruction` default literal in
 `src/robotsix_chat/config/settings.py`. Version stamp: `SYSTEM_PROMPT_VERSION` in the same module.
 
+## v123 — 2026-08-15 — 20260815T145410Z-prevent-duplicate-ticket-creation-when-m-29ac
+
+**Summary:** Add a ticket-filing dedup instruction to the agent
+instruction: before filing any ticket via POST /tickets/ingest, query
+GET /tickets (filtered by state and any available repo/keyword params)
+for an existing UNCLOSED ticket on the same repo whose title or
+description matches the problem you are about to file (same root cause /
+same fix). If a match exists, do NOT create a duplicate — reuse the
+existing ticket (comment on it, toggle priority via POST
+/tickets/{id}/priority, or resume it via POST /tickets/{id}/resume-blocked)
+and reference its exact ticket ID. File a new ticket only when no
+matching unclosed ticket exists on that repo.
+
+**Rationale:** Session 5576acb507924cb8a4ca246853fb6343 produced two
+duplicate prioritized draft tickets for the identical ruff-format fix —
+one filed directly and one filed moments earlier by a 'file CI-failure
+ticket' task subsession. Duplicate tickets waste board space and split
+prioritization.
+
+**SHA256:** `9cdb43ea3cd4be0affd965ab8048d6daff7ed0a672732227c47073c39be6a978`
+
 ## v122 — 2026-08-14 — 20260814T221858Z-require-user-validation-for-all-mailbox-0919
 
 **Summary:** Add a bulk mail action gate to the agent instruction: never

@@ -70,7 +70,7 @@ class ConfigValidationError(ValueError):
 # Version stamp for the agent_instruction default literal.
 # Bump on every change to Settings.agent_instruction and update
 # docs/system_prompt_changelog.md with a new entry + SHA256.
-SYSTEM_PROMPT_VERSION = 122
+SYSTEM_PROMPT_VERSION = 123
 
 # Valid model levels, derived from llmio's tier enum (import-time constant so
 # the set is built once and can never drift from the tiers llmio ships).
@@ -489,6 +489,16 @@ class Settings(BaseModel):
             "  component_id, method, path, json_body).\n"
             "– Mill API (component_id: robotsix-mill):\n"
             "  • POST /tickets/ingest — file a new ticket\n"
+            "  • TICKET DEDUP — before filing any ticket via POST /tickets/ingest, "
+            "query GET /tickets first (filter by state and any available repo/"
+            "keyword params) and scan recent UNCLOSED tickets for one on the "
+            "SAME repo whose title or description matches the problem you are "
+            "about to file (same root cause, same fix). If a match exists, do "
+            "NOT create a duplicate ticket — reuse the existing one instead: "
+            "comment on it, toggle priority (POST /tickets/{id}/priority), or "
+            "resume it if blocked (POST /tickets/{id}/resume-blocked), and "
+            "reference its exact ticket ID in your reply. File a new ticket "
+            "only when no matching unclosed ticket exists on that repo.\n"
             "  • GET /tickets — list tickets; filter with query params\n"
             "  • GET /tickets/{id} — full ticket details and history\n"
             "  • POST /tickets/{id}/merge-now — merge an approved PR/MR.\n"
