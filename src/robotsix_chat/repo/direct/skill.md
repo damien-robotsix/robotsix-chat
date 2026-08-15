@@ -33,8 +33,8 @@ ______________________________________________________________________
 
 ## Agent tool: `list_open_prs`
 
-List every open pull request across an organization's repositories in a single batched GitHub
-Search API query (`/search/issues?q=type:pr state:open org:<org>`). Use this **before** iterating
+List every open pull request across an organization's repositories in a single batched GitHub Search
+API query (`/search/issues?q=type:pr state:open org:<org>`). Use this **before** iterating
 repository-by-repository with per-repo PR lookups whenever the user asks about PRs across several
 repositories — it replaces O(n) individual calls with one batch query.
 
@@ -53,9 +53,9 @@ state. Results are limited to the repositories the robotsix-mill GitHub App is i
 
 ### Error responses
 
-| Condition         | Message                                                            |
-| ----------------- | ------------------------------------------------------------------ |
-| Search API error  | `Error listing open PRs for org '<org>': <detail>`                 |
+| Condition         | Message                                                                          |
+| ----------------- | -------------------------------------------------------------------------------- |
+| Search API error  | `Error listing open PRs for org '<org>': <detail>`                               |
 | No accessible PRs | `No open PRs found for org '<org>' (in repositories the GitHub App can access).` |
 
 ______________________________________________________________________
