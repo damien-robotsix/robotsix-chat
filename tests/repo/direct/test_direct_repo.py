@@ -1202,6 +1202,7 @@ async def test_inspect_github_installation_token_error(
     out = await fn("org/repo")
     assert "Error inspecting installation token for org/repo: mint failed" in out
 
+
 # ---------------------------------------------------------------------------
 # check_ci_health
 # ---------------------------------------------------------------------------
