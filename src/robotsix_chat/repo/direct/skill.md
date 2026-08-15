@@ -174,3 +174,44 @@ state and the repo to be in the installation scope:
 
 These tools are read-only or gated on BLOCKED state — they do not modify live repository state
 beyond what the agent has already been authorised to do via the BLOCKED ticket flow.
+
+______________________________________________________________________
+
+## Diagnosing GitHub permission errors (403 "lacks <permission>")
+
+When a GitHub API mutation fails with a 403 permission error — e.g. `lacks pages: write` when
+enabling GitHub Pages — do **not** immediately assume a cached token or restart the service.
+Instead:
+
+1. Call **`inspect_github_installation_token`** with the `owner/repo` that failed.
+1. Read the reported **token expiry timestamp** and **permission map**:
+   - **Permission present** (e.g. `pages: write` or `pages: admin`) but the request still failed →
+     the earlier request used a cached/stale token. A fresh token has now been minted; retry the
+     operation, and if it still fails, re-check below.
+   - **Permission missing** → the App installation genuinely lacks the permission; caching is NOT
+     the cause. Give the user the exact steps below to grant it.
+1. Also compare the reported **installation id** with the App/installation the user changed. If the
+   grant was made on a different App or installation, the configured installation still lacks the
+   permission — point the user at the right one.
+
+**Granting a permission (exact GitHub UI paths):**
+
+For an organisation-installed App:
+
+1. Open `https://github.com/organizations/<org>/settings/installations/<installation_id>`
+   (or: navigate to the organisation → **Settings** → **Third-party access** → **GitHub Apps** →
+   click **Configure** next to the app).
+1. Under **Permissions**, find the relevant permission (e.g. **Pages**) and set it to
+   **Read and write**.
+1. Click **Save**.
+
+For a user-installed App:
+
+1. Open `https://github.com/settings/installations/<installation_id>`
+   (or: click your avatar → **Settings** → **Applications** → **GitHub Apps** → click
+   **Configure** next to the app).
+1. Under **Permissions**, find the relevant permission and set it to **Read and write**.
+1. Click **Save**.
+
+After the grant is saved, call `inspect_github_installation_token` again to confirm the permission
+now appears in the fresh token's scope before retrying the original operation.

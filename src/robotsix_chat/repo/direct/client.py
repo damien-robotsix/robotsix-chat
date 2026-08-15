@@ -458,6 +458,62 @@ class DirectRepoClient:
             f"try again."
         )
 
+    async def get_installation_token_diagnostics(
+        self,
+        repo_full_name: str,
+    ) -> dict[str, Any]:
+        """Mint a fresh installation token and return its expiry and scope.
+
+        Mints a fresh installation token for *repo_full_name* and returns its
+        expiry and permission scope for diagnosis.  Resolves the installation
+        id from the repository (bypassing any cached token) so the returned
+        ``permissions`` reflect the GitHub App's **current** grant — not a
+        possibly-stale cached token.  This lets the agent distinguish "the
+        token was cached/stale" from "the App genuinely lacks the
+        permission" when a GitHub API call fails with a 403 permission error.
+
+        Raises:
+            RuntimeError: When GitHub App credentials are missing or the
+                token cannot be minted (e.g. the repo has no installation).
+            ValueError: When *repo_full_name* is not ``owner/repo``.
+
+        """
+        if not (
+            self._s.github_app_id and self._s.github_app_private_key.get_secret_value()
+        ):
+            raise RuntimeError(
+                "GitHub App credentials are not configured "
+                "(github_app_id / github_app_private_key)."
+            )
+
+        owner, sep, repo = repo_full_name.partition("/")
+        if not sep or not repo or "/" in repo:
+            raise ValueError("repo_full_name must be 'owner/repo'.")
+
+        from robotsix_github_auth import mint_installation_token
+
+        try:
+            result = await asyncio.to_thread(
+                mint_installation_token,
+                app_id=self._s.github_app_id,
+                private_key=self._s.github_app_private_key.get_secret_value(),
+                owner=owner,
+                repo=repo,
+            )
+        except Exception as exc:
+            raise RuntimeError(
+                f"Failed to mint a fresh installation token for "
+                f"'{repo_full_name}': {exc}"
+            ) from exc
+
+        return {
+            "app_id": self._s.github_app_id,
+            "configured_installation_id": self._s.github_app_installation_id,
+            "expires_at": result.expires_at.isoformat(),
+            "seconds_remaining": round(result.seconds_remaining, 1),
+            "permissions": dict(result.permissions),
+        }
+
     async def push_branch(
         self,
         *,
