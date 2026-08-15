@@ -58,6 +58,7 @@ modules:
       - src/robotsix_mill/agent_definitions/document.yaml
       - src/robotsix_mill/agent_definitions/implement.yaml
       - src/robotsix_mill/agents/runners/diagnostic_events.py
+      - src/robotsix_mill/stages/changelog_gate.py
       - src/robotsix_mill/stages/document.py
       - src/robotsix_mill/stages/retrospect.py
       - src/robotsix_mill/stages/towncrier.py

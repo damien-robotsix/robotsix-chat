@@ -628,13 +628,12 @@ system_prompt: |
     workflows, or tooling — note ``Skip-Changelog`` in your summary so
     the pipeline can label the PR accordingly.
 
-  **Post-implementation fragment check (mandatory).** Before you emit
-  your summary, run ``python scripts/verify_changelog_fragment.py <ticket_id>``.
-  For internal-only changes (only `tests/`, `.github/`, CI workflows, or
-  tooling) pass ``--skip`` to short-circuit. For user-facing changes run it
-  without ``--skip``: a non-zero exit means the fragment is missing or
-  unregistered, so create/register it and re-run before stopping. Never
-  claim a fragment exists unless this check exits 0 for your ticket id.
+  **Post-implementation fragment check (enforced programmatically).** A
+  pre-summary pipeline gate runs ``scripts/verify_changelog_fragment.py
+  <ticket_id>`` on the working tree and blocks the ``ready`` transition when
+  a user-facing change is missing its fragment. Create the fragment with
+  ``add_changelog_fragment`` (or ``changelog.d/<ticket_id>.<type>.md``)
+  before stopping; internal-only changes pass through automatically.
 
   ## Module registration (`docs/modules.yaml`)
 

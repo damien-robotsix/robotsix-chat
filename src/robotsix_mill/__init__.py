@@ -104,3 +104,101 @@ def _load_with_local_overrides(path: Path) -> AgentDefinition:
 
 
 robotsix_mill.agents.yaml_loader.load_agent_definition = _load_with_local_overrides
+
+# ---------------------------------------------------------------------------
+# 6.  Patch the implement stage's post-summary verification gate to also run
+#     the repo's ``scripts/verify_changelog_fragment.py <ticket_id>`` before
+#     the ready transition is emitted.  This replaces the advisory prompt
+#     instruction with a programmatic gate: a non-zero exit blocks the ready
+#     transition and sends the agent back into the implement loop with the
+#     script's error.  Internal-only changes short-circuit via the script's
+#     ``--skip`` flag, so the gate passes through for them.
+# ---------------------------------------------------------------------------
+import robotsix_mill.stages.changelog_gate  # noqa: E402
+from robotsix_mill.core.states import State  # noqa: E402
+from robotsix_mill.stages.base import Outcome  # noqa: E402
+from robotsix_mill.stages.changelog_gate import (  # noqa: E402
+    run_changelog_fragment_gate,
+)
+from robotsix_mill.stages.implement import implementation_logic  # noqa: E402
+from robotsix_mill.stages.implement._shared import (  # noqa: E402
+    _ImplementContext,
+    _SinglePassResult,
+)
+
+_original_run_summary_verification = (
+    implementation_logic.ImplementationLogicMixin._run_summary_verification
+)
+
+
+@classmethod
+def _run_summary_verification_with_changelog_gate(
+    cls,
+    ticket,
+    repo_dir,
+    summary,
+    ic,
+    updated_ref_files,
+    updated_prev_summary,
+    new_msgs,
+    target_branch="main",
+):
+    """Run the original claim check, then the changelog-fragment gate."""
+    result = _original_run_summary_verification.__func__(
+        cls,
+        ticket,
+        repo_dir,
+        summary,
+        ic,
+        updated_ref_files,
+        updated_prev_summary,
+        new_msgs,
+        target_branch,
+    )
+    if result is not None:
+        return result
+
+    error = run_changelog_fragment_gate(repo_dir, ticket.id)
+    if error is None:
+        return None
+
+    feedback = f"[CHANGELOG] {error}"
+    if (ic.feedback or "").startswith("[CHANGELOG]"):
+        robotsix_mill.stages.changelog_gate.log.warning(
+            "%s: changelog fragment verification failed again — %s; blocking",
+            ticket.id,
+            error,
+        )
+        return _SinglePassResult(
+            next_action="return",
+            outcome=Outcome(
+                State.BLOCKED,
+                f"changelog fragment verification failed after retry: {error}",
+            ),
+        )
+
+    robotsix_mill.stages.changelog_gate.log.warning(
+        "%s: changelog fragment verification failed — %s; re-prompting",
+        ticket.id,
+        error,
+    )
+    verify_ic = _ImplementContext(
+        spec=ic.spec,
+        memory_text=ic.memory_text,
+        reference_files=updated_ref_files,
+        file_map=ic.file_map,
+        feedback=feedback,
+        previous_attempt_summary=updated_prev_summary,
+        open_thread_ids=ic.open_thread_ids,
+    )
+    return _SinglePassResult(
+        next_action="retry",
+        feedback=feedback,
+        ic=verify_ic,
+        new_msgs=new_msgs,
+    )
+
+
+implementation_logic.ImplementationLogicMixin._run_summary_verification = (
+    _run_summary_verification_with_changelog_gate
+)
