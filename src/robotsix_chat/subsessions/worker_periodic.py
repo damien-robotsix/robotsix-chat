@@ -332,6 +332,26 @@ async def _run_periodic_turn(
             cp["no_change_pause_count"] = 0
             registry.update_checkpoint(sub_id, cp)
     runs = info.runs + 1
+    # -- adaptive run budget: record whether this run observed progress
+    #    (a non-suppressed reply, i.e. the agent acknowledged a state
+    #    transition or reported activity rather than emitting NO_CHANGE).
+    #    The max_runs gate below uses this rolling window to extend the
+    #    budget while the ticket is actively moving through non-terminal
+    #    states instead of cutting the monitor off at a hard cap.
+    progress_window = env.settings.subsessions.max_runs_progress_window
+    if info.max_runs is not None and progress_window > 0:
+        checkpoint = info.checkpoint
+        if checkpoint is None:
+            checkpoint = {}
+            info.checkpoint = checkpoint
+        flags_raw = checkpoint.get("recent_progress_flags")
+        flags = (
+            [bool(flag) for flag in flags_raw] if isinstance(flags_raw, list) else []
+        )
+        flags.append(not suppressed)
+        if len(flags) > progress_window:
+            flags = flags[-progress_window:]
+        checkpoint["recent_progress_flags"] = flags
     if info.interval_seconds is None:  # pragma: no cover - spawn validates
         raise RuntimeError("periodic subsession without an interval")
     registry.set_status(
@@ -354,6 +374,38 @@ async def _run_periodic_turn(
             ),
         )
     previous_result = reply
+
+    if info.max_runs is not None and runs >= info.max_runs:
+        # -- adaptive run-budget extension: when the monitored ticket has
+        #    made progress recently (a non-suppressed reply within the
+        #    configured window), extend the run budget instead of closing
+        #    hard at max_runs.  This keeps a monitor alive through
+        #    long-running, actively-progressing pipeline stages (e.g. a
+        #    PR sitting in code_review) rather than cutting tracking short.
+        checkpoint = info.checkpoint or {}
+        extension = env.settings.subsessions.max_runs_progress_extension
+        if extension > 0:
+            flags_raw = checkpoint.get("recent_progress_flags")
+            flags = (
+                [bool(flag) for flag in flags_raw]
+                if isinstance(flags_raw, list)
+                else []
+            )
+            if any(flags):
+                ceiling = env.settings.subsessions.periodic_max_total_runs
+                new_cap = min(info.max_runs + extension, ceiling)
+                if new_cap > info.max_runs:
+                    logger.info(
+                        "Subsession %s: extending max_runs from %d to %d "
+                        "after observing progress within the last %d runs.",
+                        sub_id,
+                        info.max_runs,
+                        new_cap,
+                        env.settings.subsessions.max_runs_progress_window,
+                    )
+                    info.max_runs = new_cap
+                    checkpoint["recent_progress_flags"] = []
+                    registry.update_checkpoint(sub_id, checkpoint)
 
     if info.max_runs is not None and runs >= info.max_runs:
         # -- max_runs escalation: track how many consecutive times this

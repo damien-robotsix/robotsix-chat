@@ -1206,6 +1206,71 @@ def test_update_checkpoint_does_not_fabricate_no_change_pause_count() -> None:
     assert refreshed.checkpoint == {"last_known_state": "open"}
 
 
+
+def test_update_checkpoint_preserves_recent_progress_flags_for_periodic() -> None:
+    """Replacing a PERIODIC checkpoint keeps its rolling progress window."""
+    registry = SubsessionRegistry(store_path=None)
+    info = _create(
+        registry,
+        kind=SubsessionKind.PERIODIC,
+        title="long-lived monitor",
+        interval_seconds=60.0,
+        checkpoint={
+            "ticket_id": "tick-1",
+            "recent_progress_flags": [True, False, True],
+            "last_known_state": "open",
+        },
+    )
+
+    registry.update_checkpoint(
+        info.id, {"last_known_state": "code_review", "pr_number": 42}
+    )
+
+    refreshed = registry.get(info.id)
+    assert refreshed is not None
+    assert refreshed.checkpoint == {
+        "recent_progress_flags": [True, False, True],
+        "last_known_state": "code_review",
+        "pr_number": 42,
+    }
+
+
+def test_update_checkpoint_keeps_explicit_progress_flags() -> None:
+    """An explicit progress window in the replacement is kept, not overwritten."""
+    registry = SubsessionRegistry(store_path=None)
+    info = _create(
+        registry,
+        kind=SubsessionKind.PERIODIC,
+        title="long-lived monitor",
+        interval_seconds=60.0,
+        checkpoint={"recent_progress_flags": [True, False, True]},
+    )
+
+    registry.update_checkpoint(info.id, {"recent_progress_flags": []})
+
+    refreshed = registry.get(info.id)
+    assert refreshed is not None
+    assert refreshed.checkpoint == {"recent_progress_flags": []}
+
+
+def test_update_checkpoint_does_not_fabricate_progress_flags() -> None:
+    """No progress window is injected when the checkpoint never had one."""
+    registry = SubsessionRegistry(store_path=None)
+    info = _create(
+        registry,
+        kind=SubsessionKind.PERIODIC,
+        title="default monitor",
+        interval_seconds=60.0,
+        checkpoint={"ticket_id": "tick-1"},
+    )
+
+    registry.update_checkpoint(info.id, {"last_known_state": "open"})
+
+    refreshed = registry.get(info.id)
+    assert refreshed is not None
+    assert refreshed.checkpoint == {"last_known_state": "open"}
+
+
 def test_create_raises_dedup_error_for_checkpoint_ticket_id_match() -> None:
     """``create`` raises ``SubsessionDedupError`` on checkpoint ticket_id match.
 

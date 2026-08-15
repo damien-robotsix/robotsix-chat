@@ -171,6 +171,29 @@ def _preserve_periodic_no_change_pause_count(
     return merged
 
 
+def _preserve_periodic_progress_flags(
+    info: SubsessionInfo, checkpoint: dict[str, object] | None
+) -> dict[str, object] | None:
+    """Keep a PERIODIC monitor's ``recent_progress_flags`` on replacement.
+
+    The adaptive run-budget extension relies on the rolling progress
+    window surviving ``set_checkpoint`` calls, which replace the whole
+    dict.  Recover the previous window when a replacement omits it so a
+    monitor that records state every run still counts progress across the
+    configured ``max_runs_progress_window``.
+    """
+    if checkpoint is not None and isinstance(
+        checkpoint.get("recent_progress_flags"), list
+    ):
+        return checkpoint
+    previous = info.checkpoint or {}
+    if not isinstance(previous.get("recent_progress_flags"), list):
+        return checkpoint
+    merged = dict(checkpoint or {})
+    merged["recent_progress_flags"] = previous["recent_progress_flags"]
+    return merged    return merged
+
+
 class RegistryStore:
     """JSON persistence for subsession records — file I/O and terminal retention.
 
@@ -1210,7 +1233,7 @@ class SubsessionRegistry:
         elif info.kind is SubsessionKind.PERIODIC:
             checkpoint = _preserve_periodic_auto_stop_no_change_runs(info, checkpoint)
             checkpoint = _preserve_periodic_no_change_pause_count(info, checkpoint)
-        info.checkpoint = checkpoint
+            checkpoint = _preserve_periodic_progress_flags(info, checkpoint)        info.checkpoint = checkpoint
         self._store.persist()
         return True
 
