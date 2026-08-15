@@ -1,9 +1,9 @@
 # Autonomous Sessions
 
-Autonomous sessions are self-directed agent loops: the agent starts a normal session automatically
-and works the configured prompt through to completion, then closes. There is no plan-drafting or
-proposal pause and no operator approval gate — the run executes until the completion marker, then
-the session closes and restarts on its trigger.
+Autonomous sessions are single-prompt self-directed runs: the agent starts a normal session
+automatically and works the configured prompt through to completion, then closes. There is no
+plan-drafting or proposal pause and no operator approval gate — the run executes until the
+completion marker, then the session closes and restarts on its trigger.
 
 **Session presets in `autonomous.sessions` are the sole enablement model.** A preset that exists and
 has `"enabled": true` IS the enablement — there is no separate master switch. When the sessions list
@@ -13,21 +13,21 @@ ______________________________________________________________________
 
 ## Overview
 
-Each configured session preset in `autonomous.sessions` runs an independent loop over its own
-pseudo-owner (`autonomous` for the `"default"` preset, `autonomous:<name>` for named sessions). A
-session cannot overlap with itself: a new run does not start while the previous run of the same
-session is active.
+Each configured session preset in `autonomous.sessions` runs an independent single-prompt session
+over its own pseudo-owner (`autonomous` for the `"default"` preset, `autonomous:<name>` for named
+sessions). A session cannot overlap with itself: a new run does not start while the previous run of
+the same session is active.
 
 ### Lifecycle
 
 Each session run follows the same flow:
 
-1. **Start** — the runner kicks off an initial agent turn with the session's kickoff prompt (or the
+1. **Start** — the runner kicks off exactly one agent turn with the session's kickoff prompt (or the
    standard "begin a new autonomous session and work it to completion" prompt when empty).
-2. **Execute** — the agent works autonomously, auto-cycling through `Continue.` turns and tool calls
-   until it reaches a terminal condition.
+2. **Execute** — the agent works autonomously in that single turn, using its tools, subsessions, and
+   the continuation-scheduling mechanism as needed.
 3. **Complete** — when the agent emits the completion marker (`---AUTONOMOUS COMPLETE---` by
-   default) — or the run hits `max_auto_turns` or the idle cap — the session is marked `completed`.
+   default) the session is marked `completed`.
 4. **Re-trigger** — completion is automatic: the runner closes the session and schedules a fresh run
    per the session's trigger (see [Triggers](#triggers)).
 
