@@ -69,6 +69,23 @@ Everything below predates the release-please migration and was
 maintained by hand or by towncrier. It is kept verbatim; new entries
 are added above by release-please.
 
+## [0.13.0](https://github.com/damien-robotsix/robotsix-chat/compare/v0.12.0...v0.13.0) (2026-08-15)
+
+
+### Features
+
+* Batch candidate PR detection instead of sequential WebFetches (20260814T221529Z-batch-candidate-pr-detection-instead-of-dae6) ([#1452](https://github.com/damien-robotsix/robotsix-chat/issues/1452)) ([aa71243](https://github.com/damien-robotsix/robotsix-chat/commit/aa7124390a9b6ca0a78385c26cc8d32660502cc5))
+* Monitor auto-pause design is not ideal for long-running tickets with infrequent state changes (20260814T221828Z-monitor-auto-pause-design-is-not-ideal-f-f339) ([#1454](https://github.com/damien-robotsix/robotsix-chat/issues/1454)) ([0f26b17](https://github.com/damien-robotsix/robotsix-chat/commit/0f26b1791a772ce6847589e48e897695be26019b))
+* Require user validation for all mailbox triage actions (20260814T221858Z-require-user-validation-for-all-mailbox-0919) ([#1459](https://github.com/damien-robotsix/robotsix-chat/issues/1459)) ([81fa14e](https://github.com/damien-robotsix/robotsix-chat/commit/81fa14ee019b72b59bd9ae75fe3ce13d4560b4a6))
+
+
+### Bug Fixes
+
+* Consolidate and deduplicate subsession outcome reporting (20260814T221942Z-consolidate-and-deduplicate-subsession-o-d341) ([#1457](https://github.com/damien-robotsix/robotsix-chat/issues/1457)) ([1587df2](https://github.com/damien-robotsix/robotsix-chat/commit/1587df2221f76f5698893c209102ba95cf52bc53))
+* Extend monitor run limit or switch to webhook-based tracking for long-running ticket workflows (20260814T222018Z-extend-monitor-run-limit-or-switch-to-we-d302) ([#1458](https://github.com/damien-robotsix/robotsix-chat/issues/1458)) ([1d69fc6](https://github.com/damien-robotsix/robotsix-chat/commit/1d69fc6d1594cb9fe63e582089873b46c8ba841b))
+* Fix delete endpoint to surface required parameters in tool specification (20260814T221510Z-fix-delete-endpoint-to-surface-required-65c5) ([#1450](https://github.com/damien-robotsix/robotsix-chat/issues/1450)) ([8385519](https://github.com/damien-robotsix/robotsix-chat/commit/838551988e810b0149b6995b456230dc92462b2c))
+* Never claim a monitor exists without verification (20260814T221858Z-never-claim-a-monitor-exists-without-ver-3d06) ([#1455](https://github.com/damien-robotsix/robotsix-chat/issues/1455)) ([a9caa48](https://github.com/damien-robotsix/robotsix-chat/commit/a9caa4878aaa0da76408d610bd327adb0c0b318d))
+
 ## [0.12.0](https://github.com/damien-robotsix/robotsix-chat/compare/v0.11.0...v0.12.0) (2026-08-14)
 
 
