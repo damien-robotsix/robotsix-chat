@@ -1,12 +1,10 @@
-"""Tests for the AutonomousRunner lifecycle and auto-continue logic."""
+"""Tests for the AutonomousRunner lifecycle and single-prompt logic."""
 
 from __future__ import annotations
 
 import asyncio
-import hashlib
 import json
 import tempfile
-import time
 from pathlib import Path
 from types import SimpleNamespace
 from unittest.mock import AsyncMock, MagicMock
@@ -119,14 +117,13 @@ class TestCompletionMarkerDetection:
             AutonomousRunner, "_load_sessions", MagicMock(return_value={})
         )
 
-    def _runner(self, *, registry: MagicMock | None = None) -> AutonomousRunner:
+    def _runner(self) -> AutonomousRunner:
         store = ConversationStore()
         return AutonomousRunner(
             settings=_make_settings(),
             conversation_store=store,
             agent_factory=MagicMock(),
             run_serializer=MagicMock(),
-            subsession_registry=registry,
         )
 
     def test_completion_marker_transitions_to_completed(self) -> None:
@@ -153,28 +150,9 @@ class TestCompletionMarkerDetection:
         result = runner.check_reply_for_markers("unknown", "---AUTONOMOUS COMPLETE---")
         assert result is None
 
-    def test_completion_suppressed_when_active_subsessions(self) -> None:
-        """Completion marker is ignored when non-periodic subsessions are running."""
-        reg = MagicMock()
-        reg.list_for_owner.return_value = [
-            SimpleNamespace(is_active=True, kind="task"),
-        ]
-        runner = self._runner(registry=reg)
-        aq = runner.create_session("owner1")
-        reply = "All done!\n\n---AUTONOMOUS COMPLETE---"
-
-        new_state = runner.check_reply_for_markers(aq.session_id, reply)
-        assert new_state is None
-        assert aq.state is AutonomousState.executing
-        assert aq.completion_suppressed is True
-
-    def test_completion_not_suppressed_with_only_periodic_subsessions(self) -> None:
-        """Completion is NOT suppressed when only periodic monitors are active."""
-        reg = MagicMock()
-        reg.list_for_owner.return_value = [
-            SimpleNamespace(is_active=True, kind="periodic"),
-        ]
-        runner = self._runner(registry=reg)
+    def test_completion_marker_closes_without_subsession_gate(self) -> None:
+        """The completion marker closes the session without a subsession gate."""
+        runner = self._runner()
         aq = runner.create_session("owner1")
         reply = "All done!\n\n---AUTONOMOUS COMPLETE---"
 
@@ -268,8 +246,8 @@ class TestAutoContinue:
         assert aq.state is AutonomousState.completed
 
     @pytest.mark.asyncio
-    async def test_auto_continue_continues_until_completion(self) -> None:
-        """Subsequent turns run Continue until the agent emits the marker."""
+    async def test_single_prompt_does_not_continue(self) -> None:
+        """The runner sends exactly one prompt and never a Continue nudge."""
         store = ConversationStore()
         settings = _make_settings()
         run_serializer = _make_run_serializer()
@@ -281,10 +259,7 @@ class TestAutoContinue:
 
         async def _stream(message, *args, **kwargs):
             captured_message.append(str(message))
-            if len(captured_message) == 1:
-                yield "Step one done."
-            else:
-                yield "All done.\n---AUTONOMOUS COMPLETE---"
+            yield "Step one done."  # no completion marker
 
         agent.stream.side_effect = _stream
 
@@ -297,31 +272,44 @@ class TestAutoContinue:
         runner._auto_restart = AsyncMock()
 
         aq = runner.create_session("owner1", schedule_kickoff=False)
-        aq.auto_turn_count = 1
         await runner._auto_continue(aq.session_id)
 
-        assert captured_message[0] == "Continue."
-        assert aq.state is AutonomousState.completed
-        assert aq.auto_turn_count == 3
+        assert captured_message == [
+            "Begin a new autonomous session and work it to completion."
+        ]
+        assert agent.stream.call_count == 1
+        assert aq.auto_turn_count == 1
+        assert aq.state is AutonomousState.executing
 
     @pytest.mark.asyncio
-    async def test_max_turns_closes_session(self) -> None:
-        """When max_auto_turns is reached the session closes."""
+    async def test_single_prompt_closes_on_completion_marker(self) -> None:
+        """A single prompt that emits the completion marker closes the session."""
         store = ConversationStore()
         settings = _make_settings()
+        run_serializer = _make_run_serializer()
+
+        agent = MagicMock()
+        agent.stream = MagicMock()
+
+        async def _stream(*args, **kwargs):
+            yield "All done.\n---AUTONOMOUS COMPLETE---"
+
+        agent.stream.side_effect = _stream
+
         runner = AutonomousRunner(
             settings=settings,
             conversation_store=store,
-            agent_factory=MagicMock(),
-            run_serializer=_make_run_serializer(),
+            agent_factory=lambda: agent,
+            run_serializer=run_serializer,
         )
         runner._auto_restart = AsyncMock()
-        aq = runner.create_session("owner1", schedule_kickoff=False)
-        aq.auto_turn_count = 20
 
+        aq = runner.create_session("owner1", schedule_kickoff=False)
         await runner._auto_continue(aq.session_id)
 
+        assert agent.stream.call_count == 1
         assert aq.state is AutonomousState.completed
+        assert aq.auto_turn_count == 1
 
     @pytest.mark.asyncio
     async def test_auto_continue_stops_on_completed(self) -> None:
@@ -342,78 +330,10 @@ class TestAutoContinue:
         assert agent.stream.call_count == 0
 
     @pytest.mark.asyncio
-    async def test_completion_suppressed_feedback_message(self) -> None:
-        """When completion_suppressed is set, the next Continue includes a notice."""
-        store = ConversationStore()
-        settings = _make_settings()
-        run_serializer = _make_run_serializer()
-
-        captured_message: list[str] = []
-
-        agent = MagicMock()
-        agent.stream = MagicMock()
-
-        async def _capture_stream(message, *args, **kwargs):
-            captured_message.append(str(message))
-            yield "---AUTONOMOUS COMPLETE---"
-
-        agent.stream.side_effect = _capture_stream
-
-        runner = AutonomousRunner(
-            settings=settings,
-            conversation_store=store,
-            agent_factory=lambda: agent,
-            run_serializer=run_serializer,
-        )
-        runner._auto_restart = AsyncMock()
-        aq = runner.create_session("owner1", schedule_kickoff=False)
-        aq.auto_turn_count = 1
-        aq.completion_suppressed = True
-
-        await runner._auto_continue(aq.session_id)
-
-        assert len(captured_message) >= 1
-        assert "previous completion marker was ignored" in captured_message[0]
-        assert "pending subsessions (task / user_chat)" in captured_message[0]
-        assert "list_subsessions" in captured_message[0]
-        assert aq.completion_suppressed is False
-
-    @pytest.mark.asyncio
-    async def test_idle_cap_closes_session(self) -> None:
-        """N consecutive no-change turns close the session."""
-        store = ConversationStore()
-        settings = _make_settings(max_idle_auto_turns=2)
-        run_serializer = _make_run_serializer()
-
-        agent = MagicMock()
-        agent.stream = MagicMock()
-
-        async def _noop_stream(*args, **kwargs):
-            yield "NO_CHANGE"
-            return
-
-        agent.stream.side_effect = _noop_stream
-
-        runner = AutonomousRunner(
-            settings=settings,
-            conversation_store=store,
-            agent_factory=lambda: agent,
-            run_serializer=run_serializer,
-        )
-        runner._auto_restart = AsyncMock()
-        aq = runner.create_session("owner1", schedule_kickoff=False)
-        aq.auto_turn_count = 0
-        aq.consecutive_no_change = 1
-
-        await runner._auto_continue(aq.session_id)
-
-        assert aq.state is AutonomousState.completed
-
-    @pytest.mark.asyncio
     async def test_no_change_reply_not_published_to_event_sink(self) -> None:
         """A NO_CHANGE reply is recorded but NOT published to the event sink."""
         store = ConversationStore()
-        settings = _make_settings(max_idle_auto_turns=5)
+        settings = _make_settings()
         run_serializer = _make_run_serializer()
         event_sink = MagicMock()
 
@@ -435,8 +355,6 @@ class TestAutoContinue:
         )
         runner._auto_restart = AsyncMock()
         aq = runner.create_session("owner1", schedule_kickoff=False)
-        aq.auto_turn_count = 0
-        aq.consecutive_no_change = 0
 
         await runner._auto_continue(aq.session_id)
 
@@ -446,8 +364,9 @@ class TestAutoContinue:
             if c[0][1].get("type") == SSE_AGENT_MESSAGE_TYPE
         ]
         assert agent_msg_calls == []
-        assert aq.consecutive_no_change == 5
-        assert aq.state is AutonomousState.completed
+        assert aq.auto_turn_count == 1
+        # No completion marker and no continue loop — the session stays open.
+        assert aq.state is AutonomousState.executing
 
 
 class TestAgentFactoryLoopSafety:
@@ -717,8 +636,8 @@ class TestResumeSessionsNonBlocking:
         assert runner.get_session(aq.session_id).state is AutonomousState.completed
 
     @pytest.mark.asyncio
-    async def test_resume_executing_schedules_auto_continue(self) -> None:
-        """Executing sessions schedule auto-continue on resume."""
+    async def test_resume_executing_does_not_reprompt(self) -> None:
+        """Executing sessions are left as-is — no synthetic re-prompt."""
         store = ConversationStore()
         runner = AutonomousRunner(
             settings=_make_settings(),
@@ -726,13 +645,14 @@ class TestResumeSessionsNonBlocking:
             agent_factory=MagicMock(),
             run_serializer=_make_run_serializer(),
         )
-        runner.create_session("owner1", schedule_kickoff=False)
+        aq = runner.create_session("owner1", schedule_kickoff=False)
         runner._auto_continue = AsyncMock()
 
         await asyncio.wait_for(runner.resume_sessions(), timeout=0.5)
         await asyncio.sleep(0)
 
-        assert runner._auto_continue.call_count >= 1
+        assert runner._auto_continue.call_count == 0
+        assert runner.get_session(aq.session_id).state is AutonomousState.executing
 
     @pytest.mark.asyncio
     async def test_resume_empty_store_bootstraps_session(self) -> None:
@@ -786,8 +706,8 @@ class TestResumeSessionsNonBlocking:
             assert matching[0].state is AutonomousState.executing
 
 
-class TestRestartContextInjection:
-    """Restart-context messages are injected when resuming after a restart."""
+class TestNoContinuationInjection:
+    """The single-prompt run never injects Continue or restart notices."""
 
     @pytest.fixture(autouse=True)
     def _mock_persistence(self, monkeypatch) -> None:
@@ -797,8 +717,8 @@ class TestRestartContextInjection:
         )
 
     @pytest.mark.asyncio
-    async def test_restart_injects_system_restarted(self) -> None:
-        """is_restart prepends a SYSTEM RESTARTED notice."""
+    async def test_single_prompt_has_no_synthetic_nudges(self) -> None:
+        """No 'Continue.' or 'SYSTEM RESTARTED' text reaches the agent."""
         store = ConversationStore()
         settings = _make_settings()
         run_serializer = _make_run_serializer()
@@ -823,403 +743,9 @@ class TestRestartContextInjection:
         runner._auto_restart = AsyncMock()
         aq = runner.create_session("owner1", schedule_kickoff=False)
 
-        await runner._auto_continue(aq.session_id, is_restart=True)
+        await runner._auto_continue(aq.session_id)
 
         assert len(captured_prompt) == 1
-        assert "SYSTEM RESTARTED" in captured_prompt[0]
-        assert "resuming an existing autonomous session" in captured_prompt[0]
-
-    @pytest.mark.asyncio
-    async def test_no_restart_has_no_system_restarted(self) -> None:
-        """A fresh run has no SYSTEM RESTARTED notice."""
-        store = ConversationStore()
-        settings = _make_settings()
-        run_serializer = _make_run_serializer()
-
-        captured_prompt: list[str] = []
-
-        agent = MagicMock()
-        agent.stream = MagicMock()
-
-        async def _capture_stream(prompt, *args, **kwargs):
-            captured_prompt.append(str(prompt))
-            yield "---AUTONOMOUS COMPLETE---"
-
-        agent.stream.side_effect = _capture_stream
-
-        runner = AutonomousRunner(
-            settings=settings,
-            conversation_store=store,
-            agent_factory=lambda: agent,
-            run_serializer=run_serializer,
-        )
-        runner._auto_restart = AsyncMock()
-        aq = runner.create_session("owner1", schedule_kickoff=False)
-
-        await runner._auto_continue(aq.session_id, is_restart=False)
-
-        assert len(captured_prompt) == 1
+        assert "Continue." not in captured_prompt[0]
         assert "SYSTEM RESTARTED" not in captured_prompt[0]
-
-    @pytest.mark.asyncio
-    async def test_restart_board_unchanged_injects_no_change(self, monkeypatch) -> None:
-        """An unchanged board on resume injects a NO_CHANGE instruction."""
-        store = ConversationStore()
-        settings = _make_settings()
-        run_serializer = _make_run_serializer()
-
-        monkeypatch.setattr(
-            AutonomousRunner,
-            "_mail_board_digest",
-            AsyncMock(return_value="digest-123"),
-        )
-
-        captured_prompt: list[str] = []
-
-        agent = MagicMock()
-        agent.stream = MagicMock()
-
-        async def _capture_stream(prompt, *args, **kwargs):
-            captured_prompt.append(str(prompt))
-            yield "---AUTONOMOUS COMPLETE---"
-
-        agent.stream.side_effect = _capture_stream
-
-        runner = AutonomousRunner(
-            settings=settings,
-            conversation_store=store,
-            agent_factory=lambda: agent,
-            run_serializer=run_serializer,
-        )
-        runner._auto_restart = AsyncMock()
-        aq = runner.create_session("owner1", schedule_kickoff=False)
-        aq.last_board_digest = "digest-123"
-
-        await runner._auto_continue(aq.session_id, is_restart=True)
-
-        assert len(captured_prompt) == 1
-        assert "SYSTEM RESTARTED" in captured_prompt[0]
-        assert "BOARD UNCHANGED" in captured_prompt[0]
-        assert "NO_CHANGE" in captured_prompt[0]
-        assert "Begin a new autonomous session" not in captured_prompt[0]
-        assert aq.last_board_digest == "digest-123"
-
-    @pytest.mark.asyncio
-    async def test_restart_board_unchanged_drops_custom_prompt(
-        self, monkeypatch
-    ) -> None:
-        """An unchanged board on resume drops the custom kickoff prompt."""
-        store = ConversationStore()
-        settings = _make_settings()
-        settings.autonomous.sessions = [
-            _make_definition("default", prompt="Run the nightly triage now."),
-        ]
-        run_serializer = _make_run_serializer()
-
-        monkeypatch.setattr(
-            AutonomousRunner,
-            "_mail_board_digest",
-            AsyncMock(return_value="digest-123"),
-        )
-
-        captured_prompt: list[str] = []
-
-        agent = MagicMock()
-        agent.stream = MagicMock()
-
-        async def _capture_stream(prompt, *args, **kwargs):
-            captured_prompt.append(str(prompt))
-            yield "---AUTONOMOUS COMPLETE---"
-
-        agent.stream.side_effect = _capture_stream
-
-        runner = AutonomousRunner(
-            settings=settings,
-            conversation_store=store,
-            agent_factory=lambda: agent,
-            run_serializer=run_serializer,
-        )
-        runner._auto_restart = AsyncMock()
-        owner_id = runner.owner_id_for_definition("default")
-        aq = runner.create_session(owner_id, schedule_kickoff=False)
-        aq.last_board_digest = "digest-123"
-
-        await runner._auto_continue(aq.session_id, is_restart=True)
-
-        assert len(captured_prompt) == 1
-        assert "SYSTEM RESTARTED" in captured_prompt[0]
-        assert "BOARD UNCHANGED" in captured_prompt[0]
-        assert "NO_CHANGE" in captured_prompt[0]
-        assert "Run the nightly triage now." not in captured_prompt[0]
-
-    @pytest.mark.asyncio
-    async def test_restart_board_changed_stores_new_digest(self, monkeypatch) -> None:
-        """A changed board on resume skips NO_CHANGE and stores the new digest."""
-        store = ConversationStore()
-        settings = _make_settings()
-        run_serializer = _make_run_serializer()
-
-        monkeypatch.setattr(
-            AutonomousRunner,
-            "_mail_board_digest",
-            AsyncMock(return_value="new-digest"),
-        )
-
-        captured_prompt: list[str] = []
-
-        agent = MagicMock()
-        agent.stream = MagicMock()
-
-        async def _capture_stream(prompt, *args, **kwargs):
-            captured_prompt.append(str(prompt))
-            yield "---AUTONOMOUS COMPLETE---"
-
-        agent.stream.side_effect = _capture_stream
-
-        runner = AutonomousRunner(
-            settings=settings,
-            conversation_store=store,
-            agent_factory=lambda: agent,
-            run_serializer=run_serializer,
-        )
-        runner._auto_restart = AsyncMock()
-        aq = runner.create_session("owner1", schedule_kickoff=False)
-        aq.last_board_digest = "old-digest"
-
-        await runner._auto_continue(aq.session_id, is_restart=True)
-
-        assert len(captured_prompt) == 1
-        assert "SYSTEM RESTARTED" in captured_prompt[0]
-        assert "BOARD UNCHANGED" not in captured_prompt[0]
-        assert "NO_CHANGE" not in captured_prompt[0]
-        assert aq.last_board_digest == "new-digest"
-
-    @pytest.mark.asyncio
-    async def test_restart_recent_digest_skips_fetch_and_injects_no_change(
-        self, monkeypatch
-    ) -> None:
-        """A recent triage digest skips the board fetch and replies NO_CHANGE."""
-        store = ConversationStore()
-        settings = _make_settings()
-        run_serializer = _make_run_serializer()
-
-        digest_mock = AsyncMock(return_value="new-digest")
-        monkeypatch.setattr(AutonomousRunner, "_mail_board_digest", digest_mock)
-
-        captured_prompt: list[str] = []
-
-        agent = MagicMock()
-        agent.stream = MagicMock()
-
-        async def _capture_stream(prompt, *args, **kwargs):
-            captured_prompt.append(str(prompt))
-            yield "---AUTONOMOUS COMPLETE---"
-
-        agent.stream.side_effect = _capture_stream
-
-        runner = AutonomousRunner(
-            settings=settings,
-            conversation_store=store,
-            agent_factory=lambda: agent,
-            run_serializer=run_serializer,
-        )
-        runner._auto_restart = AsyncMock()
-        aq = runner.create_session("owner1", schedule_kickoff=False)
-        aq.last_board_digest = "old-digest"
-        aq.last_board_digest_at = time.time() - 3600
-
-        await runner._auto_continue(aq.session_id, is_restart=True)
-
-        digest_mock.assert_not_called()
-        assert len(captured_prompt) == 1
-        assert "SYSTEM RESTARTED" in captured_prompt[0]
-        assert "RECENT TRIAGE DIGEST" in captured_prompt[0]
-        assert "NO_CHANGE" in captured_prompt[0]
-        assert "Begin a new autonomous session" not in captured_prompt[0]
-        assert aq.last_board_digest == "old-digest"
-        assert aq.last_board_digest_at == pytest.approx(time.time() - 3600)
-
-    @pytest.mark.asyncio
-    async def test_restart_stale_digest_refetches_board(self, monkeypatch) -> None:
-        """A digest older than 24h re-fetches the board and records the new digest."""
-        store = ConversationStore()
-        settings = _make_settings()
-        run_serializer = _make_run_serializer()
-
-        monkeypatch.setattr(
-            AutonomousRunner,
-            "_mail_board_digest",
-            AsyncMock(return_value="new-digest"),
-        )
-
-        captured_prompt: list[str] = []
-
-        agent = MagicMock()
-        agent.stream = MagicMock()
-
-        async def _capture_stream(prompt, *args, **kwargs):
-            captured_prompt.append(str(prompt))
-            yield "---AUTONOMOUS COMPLETE---"
-
-        agent.stream.side_effect = _capture_stream
-
-        runner = AutonomousRunner(
-            settings=settings,
-            conversation_store=store,
-            agent_factory=lambda: agent,
-            run_serializer=run_serializer,
-        )
-        runner._auto_restart = AsyncMock()
-        aq = runner.create_session("owner1", schedule_kickoff=False)
-        aq.last_board_digest = "old-digest"
-        aq.last_board_digest_at = time.time() - 25 * 3600
-
-        await runner._auto_continue(aq.session_id, is_restart=True)
-
-        assert len(captured_prompt) == 1
-        assert "SYSTEM RESTARTED" in captured_prompt[0]
-        assert "RECENT TRIAGE DIGEST" not in captured_prompt[0]
-        assert "BOARD UNCHANGED" not in captured_prompt[0]
-        assert aq.last_board_digest == "new-digest"
-        assert aq.last_board_digest_at == pytest.approx(time.time(), abs=5)
-
-    @pytest.mark.asyncio
-    async def test_mail_board_digest_disabled_returns_none(self) -> None:
-        """A disabled (or mock) mail integration produces no board digest."""
-        runner = AutonomousRunner(
-            settings=MagicMock(),
-            conversation_store=ConversationStore(),
-            agent_factory=MagicMock(),
-            run_serializer=MagicMock(),
-        )
-        assert await runner._mail_board_digest() is None
-
-    @pytest.mark.asyncio
-    async def test_mail_board_digest_hashes_board_content(self, monkeypatch) -> None:
-        """Enabled mail integration hashes the raw board-content response."""
-        settings = MagicMock()
-        settings.mail.enabled = True
-
-        runner = AutonomousRunner(
-            settings=settings,
-            conversation_store=ConversationStore(),
-            agent_factory=MagicMock(),
-            run_serializer=MagicMock(),
-        )
-
-        fake_client = MagicMock()
-        fake_client.board_content = AsyncMock(return_value='{"columns": []}')
-        monkeypatch.setattr(
-            "robotsix_chat.mail.client.MailClient", lambda _settings: fake_client
-        )
-
-        digest = await runner._mail_board_digest()
-        assert digest == hashlib.sha256(b'{"columns": []}').hexdigest()
-
-
-class TestAutoContinueThrottleAndSubsessionGate:
-    """Throttle interval, subsession gate blocking, and timeout fallback."""
-
-    @pytest.fixture(autouse=True)
-    def _mock_persistence(self, monkeypatch) -> None:
-        monkeypatch.setattr(AutonomousRunner, "_save_sessions", MagicMock())
-        monkeypatch.setattr(
-            AutonomousRunner, "_load_sessions", MagicMock(return_value={})
-        )
-
-    @staticmethod
-    def _make_subsession_info(is_active: bool = True) -> MagicMock:
-        info = MagicMock()
-        info.is_active = is_active
-        info.kind = "task"
-        return info
-
-    @staticmethod
-    def _make_registry(*subsessions: MagicMock) -> MagicMock:
-        reg = MagicMock()
-        reg.list_for_owner.return_value = list(subsessions)
-        return reg
-
-    @pytest.mark.asyncio
-    async def test_throttle_waits_interval(self) -> None:
-        """_wait_before_continue sleeps at least the configured interval."""
-        store = ConversationStore()
-        settings = _make_settings(continue_interval_seconds=0.05)
-
-        runner = AutonomousRunner(
-            settings=settings,
-            conversation_store=store,
-            agent_factory=MagicMock(),
-            run_serializer=MagicMock(),
-            subsession_registry=self._make_registry(),
-        )
-        aq = runner.create_session("owner1", schedule_kickoff=False)
-
-        start = time.monotonic()
-        await runner._wait_before_continue(aq.session_id)
-        elapsed = time.monotonic() - start
-
-        assert elapsed >= 0.04
-
-    @pytest.mark.asyncio
-    async def test_subsession_gate_blocks_while_active(self) -> None:
-        """The gate keeps waiting while an active subsession exists."""
-        store = ConversationStore()
-        settings = _make_settings(continue_interval_seconds=0.01)
-
-        active_info = self._make_subsession_info(is_active=True)
-        registry = self._make_registry(active_info)
-
-        runner = AutonomousRunner(
-            settings=settings,
-            conversation_store=store,
-            agent_factory=MagicMock(),
-            run_serializer=MagicMock(),
-            subsession_registry=registry,
-        )
-        aq = runner.create_session("owner1", schedule_kickoff=False)
-
-        async def _resolve_after_delay() -> None:
-            await asyncio.sleep(0.1)
-            active_info.is_active = False
-
-        async def _run() -> float:
-            start = time.monotonic()
-            await runner._wait_before_continue(aq.session_id)
-            return time.monotonic() - start
-
-        elapsed = await asyncio.gather(_run(), _resolve_after_delay())
-        elapsed = elapsed[0]
-
-        assert elapsed >= 0.1
-        assert registry.list_for_owner.call_count >= 1
-
-    @pytest.mark.asyncio
-    async def test_subsession_gate_timeout_fallback(
-        self, monkeypatch: pytest.MonkeyPatch
-    ) -> None:
-        """The gate eventually returns when a subsession stays active."""
-        store = ConversationStore()
-        timeout = 0.2
-        monkeypatch.setattr(
-            "robotsix_chat.autonomous.runner._PENDING_SUBSESSION_WAIT_TIMEOUT",
-            timeout,
-        )
-        settings = _make_settings(continue_interval_seconds=0.01)
-
-        registry = self._make_registry(self._make_subsession_info(is_active=True))
-
-        runner = AutonomousRunner(
-            settings=settings,
-            conversation_store=store,
-            agent_factory=MagicMock(),
-            run_serializer=MagicMock(),
-            subsession_registry=registry,
-        )
-        aq = runner.create_session("owner1", schedule_kickoff=False)
-
-        start = time.monotonic()
-        await runner._wait_before_continue(aq.session_id)
-        elapsed = time.monotonic() - start
-
-        assert elapsed >= 0.15
+        assert "Begin a new autonomous session" in captured_prompt[0]
