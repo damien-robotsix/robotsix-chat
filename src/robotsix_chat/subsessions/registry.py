@@ -131,6 +131,46 @@ def _preserve_periodic_auto_stop_no_change_runs(
     return merged
 
 
+def _checkpoint_no_change_pause_count(
+    checkpoint: dict[str, object] | None,
+) -> int | None:
+    """Return the no-change pause counter in *checkpoint*, if present.
+
+    ``0`` is a meaningful value (progress was observed since the last
+    pause), so — unlike the auto-stop override helper — this only
+    distinguishes *presence* from absence and does not validate the
+    magnitude.  A bool or non-int value is treated as absent.
+    """
+    if not checkpoint or "no_change_pause_count" not in checkpoint:
+        return None
+    raw = checkpoint["no_change_pause_count"]
+    if isinstance(raw, bool) or not isinstance(raw, int):
+        return None
+    return raw
+
+
+def _preserve_periodic_no_change_pause_count(
+    info: SubsessionInfo, checkpoint: dict[str, object] | None
+) -> dict[str, object] | None:
+    """Keep a PERIODIC monitor's no-change pause counter on replacement.
+
+    The counter is seeded into the checkpoint by the periodic turn loop
+    when the monitor auto-pauses.  ``set_checkpoint`` (and other
+    checkpoint writers) replace the whole dict; a replacement that omits
+    ``no_change_pause_count`` would silently reset the escalation budget
+    and let a stuck monitor keep pausing forever.  Recover the previous
+    value from the current checkpoint when it is missing.
+    """
+    if _checkpoint_no_change_pause_count(checkpoint) is not None:
+        return checkpoint
+    previous = _checkpoint_no_change_pause_count(info.checkpoint)
+    if previous is None:
+        return checkpoint
+    merged = dict(checkpoint or {})
+    merged["no_change_pause_count"] = previous
+    return merged
+
+
 class RegistryStore:
     """JSON persistence for subsession records — file I/O and terminal retention.
 
@@ -1130,6 +1170,7 @@ class SubsessionRegistry:
             checkpoint = _preserve_event_ticket_id(info, checkpoint)
         elif info.kind is SubsessionKind.PERIODIC:
             checkpoint = _preserve_periodic_auto_stop_no_change_runs(info, checkpoint)
+            checkpoint = _preserve_periodic_no_change_pause_count(info, checkpoint)
         info.checkpoint = checkpoint
         self._store.persist()
         return True

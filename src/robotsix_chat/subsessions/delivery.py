@@ -224,6 +224,7 @@ _REASON_PHRASES: dict[str, str] = {
     "max_runs_escalated": "reached its run limit and auto-escalated",
     "human_approval_timeout": "timed out waiting for operator approval",
     "paused": "auto-paused after consecutive no-change runs",
+    "no_change_pause_limit": "auto-closed after repeated no-change pauses",
     "no_change_auto_stop": "auto-stopped after consecutive no-change runs",
     "failed": "failed with an error",
     "stale_worker": "was terminated (stale worker)",

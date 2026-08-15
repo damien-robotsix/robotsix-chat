@@ -364,6 +364,7 @@ def test_subsessions_defaults() -> None:
     assert settings.subsessions.min_interval_seconds == 60.0
     assert settings.subsessions.auto_stop_no_change_runs == 3
     assert settings.subsessions.max_idle_runs == 15
+    assert settings.subsessions.max_no_change_pauses == 3
     assert settings.subsessions.store_path == "/data/subsessions.json"
     assert settings.subsessions.transcript_max_entries == 200
 
@@ -408,6 +409,24 @@ def test_subsessions_max_idle_runs_zero_allowed() -> None:
     """``subsessions.max_idle_runs = 0`` (disabled) is valid."""
     settings = Settings(subsessions={"max_idle_runs": 0})
     assert settings.subsessions.max_idle_runs == 0
+
+
+def test_subsessions_max_no_change_pauses_default() -> None:
+    """``subsessions.max_no_change_pauses`` defaults to 3."""
+    settings = Settings()
+    assert settings.subsessions.max_no_change_pauses == 3
+
+
+def test_subsessions_max_no_change_pauses_zero_allowed() -> None:
+    """``subsessions.max_no_change_pauses = 0`` (disabled) is valid."""
+    settings = Settings(subsessions={"max_no_change_pauses": 0})
+    assert settings.subsessions.max_no_change_pauses == 0
+
+
+def test_subsessions_max_no_change_pauses_negative_raises() -> None:
+    """``subsessions.max_no_change_pauses = -1`` is rejected."""
+    with pytest.raises(ValueError, match="max_no_change_pauses"):
+        Settings(subsessions={"max_no_change_pauses": -1})
 
 
 def test_subsessions_max_idle_runs_negative_raises() -> None:
