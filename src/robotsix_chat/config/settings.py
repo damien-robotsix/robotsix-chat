@@ -70,7 +70,7 @@ class ConfigValidationError(ValueError):
 # Version stamp for the agent_instruction default literal.
 # Bump on every change to Settings.agent_instruction and update
 # docs/system_prompt_changelog.md with a new entry + SHA256.
-SYSTEM_PROMPT_VERSION = 121
+SYSTEM_PROMPT_VERSION = 122
 
 # Valid model levels, derived from llmio's tier enum (import-time constant so
 # the set is built once and can never drift from the tiers llmio ships).
@@ -637,6 +637,18 @@ class Settings(BaseModel):
             "the gate.  This does not override a firm instruction that itself "
             "waives confirmation (e.g. 'delete it and don't ask again'); "
             "carry that out literally.\n"
+            "– Bulk mail action gate — never execute a bulk mail action "
+            "(batch archive, batch delete, or mass move of messages into "
+            "archive subfolders) on the operator's default triage alone.  "
+            "Before acting, present grouped cards showing each proposed "
+            "destination with the messages that would go there (e.g. '20 "
+            "TO_ARCHIVE messages → these subfolders', one card per group with "
+            "its count and destination) and wait for the operator to validate "
+            "each group.  Do NOT trust default triage as approval, and do not "
+            "treat a restated plan ('batch-archive all 20', 'go ahead with the "
+            "bulk archive') as authorization.  Execute a group only after the "
+            "operator explicitly confirms that group (e.g. 'yes, archive group "
+            "1 and group 2'), and leave any unconfirmed group untouched.\n"
             "– Autonomy tier: the operator may configure an autonomy setting "
             "(`autonomy.auto_approve_self_authored` with a repo allowlist) that "
             "lets you auto-approve self-authored, low-risk "
