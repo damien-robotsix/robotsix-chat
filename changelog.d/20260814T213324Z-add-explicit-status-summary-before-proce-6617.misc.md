@@ -1,0 +1,1 @@
+When the user asks for a status update, the assistant now fetches live board and CI/deploy state and immediately presents a structured summary of all relevant ticket and CI states (pending, in review, merging, failing, blocked, deploying, deployed/live) with next actions — before asking any decision question — instead of holding the fetched state until a follow-up request.
