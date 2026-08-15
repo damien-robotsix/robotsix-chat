@@ -1723,3 +1723,86 @@ async def test_push_patched_file_no_change(respx_mock: respx.MockRouter) -> None
         "no changes" in result.lower()
         or "already in the desired state" in result.lower()
     )
+
+
+# ============================================================================
+# DirectRepoClient — get_installation_token_diagnostics
+# ============================================================================
+
+
+@pytest.mark.asyncio
+async def test_get_installation_token_diagnostics_success(
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    import sys
+    from datetime import UTC, datetime
+    from types import SimpleNamespace
+
+    from tests.repo.direct.conftest import _settings
+
+    client = DirectRepoClient(_settings())
+
+    fake_mod = sys.modules["robotsix_github_auth"]
+    monkeypatch.setattr(
+        fake_mod,
+        "mint_installation_token",
+        lambda **kw: SimpleNamespace(
+            token="ghs_fresh",
+            expires_at=datetime(2030, 1, 2, 3, 4, 5, tzinfo=UTC),
+            seconds_remaining=12345.6,
+            permissions={"pages": "write", "contents": "read"},
+        ),
+    )
+    # The resolved installation id differs from the configured one to prove
+    # the effective (resolved) id is surfaced rather than only the config value.
+    monkeypatch.setattr(
+        sys.modules["robotsix_github_auth._auth"],
+        "_resolve_installation_id",
+        lambda client, jwt_token, owner, repo: "99999",
+    )
+
+    details = await client.get_installation_token_diagnostics("org/repo")
+    assert details["app_id"] == "12345"
+    assert details["configured_installation_id"] == "67890"
+    assert details["resolved_installation_id"] == "99999"
+    assert details["expires_at"] == "2030-01-02T03:04:05+00:00"
+    assert details["seconds_remaining"] == 12345.6
+    assert details["permissions"] == {"pages": "write", "contents": "read"}
+
+
+@pytest.mark.asyncio
+async def test_get_installation_token_diagnostics_invalid_repo() -> None:
+    from tests.repo.direct.conftest import _settings
+
+    client = DirectRepoClient(_settings())
+    with pytest.raises(ValueError, match="owner/repo"):
+        await client.get_installation_token_diagnostics("not-a-repo")
+
+
+@pytest.mark.asyncio
+async def test_get_installation_token_diagnostics_missing_creds() -> None:
+    from tests.repo.direct.conftest import _settings
+
+    client = DirectRepoClient(_settings(github_app_id="", github_app_private_key=""))
+    with pytest.raises(RuntimeError, match="not configured"):
+        await client.get_installation_token_diagnostics("org/repo")
+
+
+@pytest.mark.asyncio
+async def test_get_installation_token_diagnostics_mint_error(
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    import sys
+
+    from tests.repo.direct.conftest import _settings
+
+    fake_mod = sys.modules["robotsix_github_auth"]
+
+    def _raise(**kw: object) -> object:
+        raise RuntimeError("boom")
+
+    monkeypatch.setattr(fake_mod, "mint_installation_token", _raise)
+
+    client = DirectRepoClient(_settings())
+    with pytest.raises(RuntimeError, match="Failed to mint a fresh"):
+        await client.get_installation_token_diagnostics("org/repo")

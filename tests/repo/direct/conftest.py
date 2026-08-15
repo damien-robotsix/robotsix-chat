@@ -38,6 +38,19 @@ def _mock_github_auth(monkeypatch: pytest.MonkeyPatch) -> None:
     def _fake_mint(**kw: object) -> object:
         return SimpleNamespace(token="ghs_test_installation_token")
 
+    def _fake_build_app_jwt(app_id: str, private_key: str) -> str:
+        return "fake-app-jwt"
+
+    def _fake_resolve_installation_id(
+        client: object, jwt_token: str, owner: str, repo: str
+    ) -> str:
+        return "67890"
+
     fake = SimpleNamespace()
     fake.mint_installation_token = _fake_mint
+    fake._auth = SimpleNamespace(
+        _build_app_jwt=_fake_build_app_jwt,
+        _resolve_installation_id=_fake_resolve_installation_id,
+    )
     monkeypatch.setitem(sys.modules, "robotsix_github_auth", fake)
+    monkeypatch.setitem(sys.modules, "robotsix_github_auth._auth", fake._auth)

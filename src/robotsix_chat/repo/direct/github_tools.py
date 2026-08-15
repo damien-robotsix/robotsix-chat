@@ -967,6 +967,64 @@ def build_github_tools(
             ticket_id=ticket_id,
         )
 
+    async def inspect_github_installation_token(
+        repo_full_name: str,
+    ) -> str:
+        """Inspect the GitHub App installation token's expiry and permission scope.
+
+        Mints a **fresh** installation token for *repo_full_name* (bypassing any
+        cached token) so the returned permission map reflects the App's current
+        grant — not a possibly-stale cached token.  Use this to distinguish
+        "the token was cached/stale" from "the App genuinely lacks a
+        permission" when a GitHub API call fails with a 403 permission error
+        such as ``lacks pages: write``.
+
+        **Read-only.** Does not modify any repository state and does not
+        require a ticket to be in BLOCKED state.
+
+        Args:
+            repo_full_name: GitHub ``owner/name`` (e.g. ``"robotsix/robotsix-chat"``).
+
+        Returns:
+            A report with the App id, configured and resolved installation ids,
+            token expiry timestamp, seconds remaining, and the token's
+            effective permission map.  A mismatch between the configured and
+            resolved installation ids is called out explicitly.
+
+        """
+        try:
+            details = await client.get_installation_token_diagnostics(repo_full_name)
+        except Exception as exc:
+            return f"Error inspecting installation token for {repo_full_name}: {exc}"
+
+        permissions: dict[str, str] = details["permissions"]
+        configured_id = details["configured_installation_id"]
+        resolved_id = details["resolved_installation_id"]
+        lines = [
+            f"GitHub App installation token diagnostic for `{repo_full_name}`:",
+            f"- App id: `{details['app_id']}`",
+            f"- Configured installation id: `{configured_id}`",
+            f"- Resolved installation id (for `{repo_full_name}`): `{resolved_id}`",
+            f"- Token expires at: `{details['expires_at']}` (UTC)",
+            f"- Seconds remaining: {details['seconds_remaining']}",
+        ]
+        if resolved_id != configured_id:
+            lines.append(
+                "  ⚠️ Mismatch: the resolved installation id differs from the "
+                "configured id — this repo is installed under a different "
+                "installation of the App than the one in config. The permission "
+                "map below reflects the resolved installation."
+            )
+        lines.append("- Permissions (effective scope):")
+        if not permissions:
+            lines.append(
+                "  - (none returned — the installation may have no permissions granted)"
+            )
+        else:
+            for name in sorted(permissions):
+                lines.append(f"  - `{name}`: `{permissions[name]}`")
+        return "\n".join(lines)
+
     return [
         push_direct_repo_branch,
         open_direct_repo_pr,
@@ -981,4 +1039,5 @@ def build_github_tools(
         reset_implement_spawn_counter,
         apply_patch_to_file,
         push_patch_to_pr_branch,
+        inspect_github_installation_token,
     ]

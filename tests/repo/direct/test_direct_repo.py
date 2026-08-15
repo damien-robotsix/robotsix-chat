@@ -72,10 +72,10 @@ def test_build_direct_repo_tools_disabled() -> None:
     assert build_direct_repo_tools(DirectRepoSettings(enabled=False)) == []
 
 
-def test_build_direct_repo_tools_returns_thirteen_tools() -> None:
-    """Verify that enabled direct_repo returns the thirteen expected tools."""
+def test_build_direct_repo_tools_returns_fourteen_tools() -> None:
+    """Verify that enabled direct_repo returns the fourteen expected tools."""
     tools = build_direct_repo_tools(_settings())
-    assert len(tools) == 13
+    assert len(tools) == 14
     names = [t.__name__ for t in tools]
     assert "push_direct_repo_branch" in names
     assert "open_direct_repo_pr" in names
@@ -90,6 +90,7 @@ def test_build_direct_repo_tools_returns_thirteen_tools() -> None:
     assert "reset_implement_spawn_counter" in names
     assert "apply_patch_to_file" in names
     assert "push_patch_to_pr_branch" in names
+    assert "inspect_github_installation_token" in names
 
 
 # ---------------------------------------------------------------------------
@@ -314,12 +315,13 @@ def test_merge_tools_returned() -> None:
     assert "merge_direct_repo_pr" in names
     assert "arm_direct_repo_auto_merge" in names
     # Expected set: push, open_pr, update_branch, check_merge_conflict,
-    # merge, auto-merge, reset, apply_patch
+    # merge, auto-merge, reset, apply_patch, token inspection
     assert sorted(names) == [
         "apply_patch_to_file",
         "arm_direct_repo_auto_merge",
         "check_direct_repo_auto_merge",
         "check_pr_merge_conflict",
+        "inspect_github_installation_token",
         "list_open_prs",
         "merge_direct_repo_pr",
         "open_direct_repo_pr",
@@ -1099,6 +1101,100 @@ async def test_list_open_prs_api_error(
 
     out = await fn(org_name="org")
     assert "Error listing open PRs for org 'org'" in out
+
+
+# ---------------------------------------------------------------------------
+# inspect_github_installation_token
+# ---------------------------------------------------------------------------
+
+
+@pytest.mark.asyncio
+async def test_inspect_github_installation_token_reports_scope(
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    """The diagnostic tool reports expiry and the effective permission map."""
+
+    async def _fake_diagnostics(self: Any, repo_full_name: str) -> dict[str, Any]:
+        return {
+            "app_id": "12345",
+            "configured_installation_id": "67890",
+            "resolved_installation_id": "67890",
+            "expires_at": "2030-01-02T03:04:05+00:00",
+            "seconds_remaining": 12345.6,
+            "permissions": {"pages": "write", "contents": "read"},
+        }
+
+    monkeypatch.setattr(
+        "robotsix_chat.repo.direct.client."
+        "DirectRepoClient.get_installation_token_diagnostics",
+        _fake_diagnostics,
+    )
+
+    tools = build_direct_repo_tools(_settings())
+    fn = [t for t in tools if t.__name__ == "inspect_github_installation_token"][0]
+
+    out = await fn("org/repo")
+    assert "GitHub App installation token diagnostic for `org/repo`" in out
+    assert "App id: `12345`" in out
+    assert "Configured installation id: `67890`" in out
+    assert "Resolved installation id (for `org/repo`): `67890`" in out
+    assert "Token expires at: `2030-01-02T03:04:05+00:00` (UTC)" in out
+    assert "Seconds remaining: 12345.6" in out
+    assert "`pages`: `write`" in out
+    assert "`contents`: `read`" in out
+    assert "Mismatch" not in out
+
+
+@pytest.mark.asyncio
+async def test_inspect_github_installation_token_reports_id_mismatch(
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    """A resolved/configured installation id mismatch is called out explicitly."""
+
+    async def _fake_diagnostics(self: Any, repo_full_name: str) -> dict[str, Any]:
+        return {
+            "app_id": "12345",
+            "configured_installation_id": "67890",
+            "resolved_installation_id": "99999",
+            "expires_at": "2030-01-02T03:04:05+00:00",
+            "seconds_remaining": 12345.6,
+            "permissions": {"pages": "write"},
+        }
+
+    monkeypatch.setattr(
+        "robotsix_chat.repo.direct.client."
+        "DirectRepoClient.get_installation_token_diagnostics",
+        _fake_diagnostics,
+    )
+
+    tools = build_direct_repo_tools(_settings())
+    fn = [t for t in tools if t.__name__ == "inspect_github_installation_token"][0]
+
+    out = await fn("org/repo")
+    assert "Resolved installation id (for `org/repo`): `99999`" in out
+    assert "Mismatch" in out
+
+
+@pytest.mark.asyncio
+async def test_inspect_github_installation_token_error(
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    """Diagnostic failures are surfaced as an error message, not raised."""
+
+    async def _raise(self: Any, repo_full_name: str) -> dict[str, Any]:
+        raise RuntimeError("mint failed")
+
+    monkeypatch.setattr(
+        "robotsix_chat.repo.direct.client."
+        "DirectRepoClient.get_installation_token_diagnostics",
+        _raise,
+    )
+
+    tools = build_direct_repo_tools(_settings())
+    fn = [t for t in tools if t.__name__ == "inspect_github_installation_token"][0]
+
+    out = await fn("org/repo")
+    assert "Error inspecting installation token for org/repo: mint failed" in out
 
 
 # ---------------------------------------------------------------------------
@@ -2046,7 +2142,11 @@ def test_tool_docstrings_forbid_merge() -> None:
     """
     merge_tool_names = {"merge_direct_repo_pr", "arm_direct_repo_auto_merge"}
     # Read-only tools that don't require BLOCKED state
-    readonly_tool_names = {"check_direct_repo_auto_merge", "list_open_prs"}
+    readonly_tool_names = {
+        "check_direct_repo_auto_merge",
+        "list_open_prs",
+        "inspect_github_installation_token",
+    }
 
     tools = build_direct_repo_tools(_settings())
     for tool in tools:
@@ -2210,7 +2310,7 @@ def test_direct_fix_available_when_enabled() -> None:
     tools = build_direct_repo_tools(_settings(direct_fix_enabled=True))
     names = [t.__name__ for t in tools]
     assert "direct_fix" in names
-    assert len(tools) == 15  # 13 base + direct_fix + patch_direct_repo_file
+    assert len(tools) == 16  # 14 base + direct_fix + patch_direct_repo_file
 
 
 @pytest.mark.asyncio
