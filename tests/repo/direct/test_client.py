@@ -1753,10 +1753,18 @@ async def test_get_installation_token_diagnostics_success(
             permissions={"pages": "write", "contents": "read"},
         ),
     )
+    # The resolved installation id differs from the configured one to prove
+    # the effective (resolved) id is surfaced rather than only the config value.
+    monkeypatch.setattr(
+        sys.modules["robotsix_github_auth._auth"],
+        "_resolve_installation_id",
+        lambda client, jwt_token, owner, repo: "99999",
+    )
 
     details = await client.get_installation_token_diagnostics("org/repo")
     assert details["app_id"] == "12345"
     assert details["configured_installation_id"] == "67890"
+    assert details["resolved_installation_id"] == "99999"
     assert details["expires_at"] == "2030-01-02T03:04:05+00:00"
     assert details["seconds_remaining"] == 12345.6
     assert details["permissions"] == {"pages": "write", "contents": "read"}

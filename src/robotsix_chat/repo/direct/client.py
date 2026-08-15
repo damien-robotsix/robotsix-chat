@@ -472,6 +472,12 @@ class DirectRepoClient:
         token was cached/stale" from "the App genuinely lacks the
         permission" when a GitHub API call fails with a 403 permission error.
 
+        The returned dict also carries both ``configured_installation_id``
+        (from settings) and ``resolved_installation_id`` (the installation
+        GitHub actually uses for the repo).  When these differ, the repo is
+        installed under a different installation of the App than the one in
+        config — the permission map reflects the resolved one.
+
         Raises:
             RuntimeError: When GitHub App credentials are missing or the
                 token cannot be minted (e.g. the repo has no installation).
@@ -491,12 +497,36 @@ class DirectRepoClient:
             raise ValueError("repo_full_name must be 'owner/repo'.")
 
         from robotsix_github_auth import mint_installation_token
+        from robotsix_github_auth._auth import (
+            _build_app_jwt,
+            _resolve_installation_id,
+        )
+
+        app_id = self._s.github_app_id
+        private_key = self._s.github_app_private_key.get_secret_value()
+
+        def _resolve_installation() -> str:
+            """Resolve the installation id GitHub uses for ``owner/repo``.
+
+            ``mint_installation_token`` resolves the id internally when no
+            ``installation_id`` is passed, but does not expose it on the
+            returned ``InstallationToken``.  We resolve it separately so the
+            report can surface the *effective* installation — the one the
+            token (and its permission map) actually belongs to — rather than
+            only the configured value.
+            """
+            import httpx
+
+            jwt_token = _build_app_jwt(app_id, private_key)
+            with httpx.Client() as client:
+                return str(_resolve_installation_id(client, jwt_token, owner, repo))
 
         try:
+            resolved_installation_id = await asyncio.to_thread(_resolve_installation)
             result = await asyncio.to_thread(
                 mint_installation_token,
-                app_id=self._s.github_app_id,
-                private_key=self._s.github_app_private_key.get_secret_value(),
+                app_id=app_id,
+                private_key=private_key,
                 owner=owner,
                 repo=repo,
             )
@@ -507,8 +537,9 @@ class DirectRepoClient:
             ) from exc
 
         return {
-            "app_id": self._s.github_app_id,
+            "app_id": app_id,
             "configured_installation_id": self._s.github_app_installation_id,
+            "resolved_installation_id": resolved_installation_id,
             "expires_at": result.expires_at.isoformat(),
             "seconds_remaining": round(result.seconds_remaining, 1),
             "permissions": dict(result.permissions),

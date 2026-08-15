@@ -986,8 +986,10 @@ def build_github_tools(
             repo_full_name: GitHub ``owner/name`` (e.g. ``"robotsix/robotsix-chat"``).
 
         Returns:
-            A report with the App id, installation id, token expiry timestamp,
-            seconds remaining, and the token's effective permission map.
+            A report with the App id, configured and resolved installation ids,
+            token expiry timestamp, seconds remaining, and the token's
+            effective permission map.  A mismatch between the configured and
+            resolved installation ids is called out explicitly.
 
         """
         try:
@@ -996,14 +998,24 @@ def build_github_tools(
             return f"Error inspecting installation token for {repo_full_name}: {exc}"
 
         permissions: dict[str, str] = details["permissions"]
+        configured_id = details["configured_installation_id"]
+        resolved_id = details["resolved_installation_id"]
         lines = [
             f"GitHub App installation token diagnostic for `{repo_full_name}`:",
             f"- App id: `{details['app_id']}`",
-            f"- Configured installation id: `{details['configured_installation_id']}`",
+            f"- Configured installation id: `{configured_id}`",
+            f"- Resolved installation id (for `{repo_full_name}`): `{resolved_id}`",
             f"- Token expires at: `{details['expires_at']}` (UTC)",
             f"- Seconds remaining: {details['seconds_remaining']}",
-            "- Permissions (effective scope):",
         ]
+        if resolved_id != configured_id:
+            lines.append(
+                "  ⚠️ Mismatch: the resolved installation id differs from the "
+                "configured id — this repo is installed under a different "
+                "installation of the App than the one in config. The permission "
+                "map below reflects the resolved installation."
+            )
+        lines.append("- Permissions (effective scope):")
         if not permissions:
             lines.append(
                 "  - (none returned — the installation may have no permissions granted)"

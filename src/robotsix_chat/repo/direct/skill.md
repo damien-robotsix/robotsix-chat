@@ -185,13 +185,14 @@ Instead:
 
 1. Call **`inspect_github_installation_token`** with the `owner/repo` that failed.
 1. Read the reported **token expiry timestamp** and **permission map**:
-   - **Permission present** (e.g. `pages: write` or `pages: admin`) but the request still failed →
+   - **Permission present** (e.g. `pages: write`) but the request still failed →
      the earlier request used a cached/stale token. A fresh token has now been minted; retry the
      operation, and if it still fails, re-check below.
    - **Permission missing** → the App installation genuinely lacks the permission; caching is NOT
      the cause. Give the user the exact steps below to grant it.
-1. Also compare the reported **installation id** with the App/installation the user changed. If the
-   grant was made on a different App or installation, the configured installation still lacks the
+1. Compare the reported **resolved installation id** with the App/installation the user changed —
+   and note any mismatch with the **configured installation id** (the report calls it out). If the
+   grant was made on a different App or installation, the resolved installation still lacks the
    permission — point the user at the right one.
 
 **Granting a permission (exact GitHub UI paths):**

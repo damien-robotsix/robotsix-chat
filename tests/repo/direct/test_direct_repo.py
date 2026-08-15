@@ -1118,6 +1118,7 @@ async def test_inspect_github_installation_token_reports_scope(
         return {
             "app_id": "12345",
             "configured_installation_id": "67890",
+            "resolved_installation_id": "67890",
             "expires_at": "2030-01-02T03:04:05+00:00",
             "seconds_remaining": 12345.6,
             "permissions": {"pages": "write", "contents": "read"},
@@ -1136,10 +1137,42 @@ async def test_inspect_github_installation_token_reports_scope(
     assert "GitHub App installation token diagnostic for `org/repo`" in out
     assert "App id: `12345`" in out
     assert "Configured installation id: `67890`" in out
+    assert "Resolved installation id (for `org/repo`): `67890`" in out
     assert "Token expires at: `2030-01-02T03:04:05+00:00` (UTC)" in out
     assert "Seconds remaining: 12345.6" in out
     assert "`pages`: `write`" in out
     assert "`contents`: `read`" in out
+    assert "Mismatch" not in out
+
+
+@pytest.mark.asyncio
+async def test_inspect_github_installation_token_reports_id_mismatch(
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    """A resolved/configured installation id mismatch is called out explicitly."""
+
+    async def _fake_diagnostics(self: Any, repo_full_name: str) -> dict[str, Any]:
+        return {
+            "app_id": "12345",
+            "configured_installation_id": "67890",
+            "resolved_installation_id": "99999",
+            "expires_at": "2030-01-02T03:04:05+00:00",
+            "seconds_remaining": 12345.6,
+            "permissions": {"pages": "write"},
+        }
+
+    monkeypatch.setattr(
+        "robotsix_chat.repo.direct.client."
+        "DirectRepoClient.get_installation_token_diagnostics",
+        _fake_diagnostics,
+    )
+
+    tools = build_direct_repo_tools(_settings())
+    fn = [t for t in tools if t.__name__ == "inspect_github_installation_token"][0]
+
+    out = await fn("org/repo")
+    assert "Resolved installation id (for `org/repo`): `99999`" in out
+    assert "Mismatch" in out
 
 
 @pytest.mark.asyncio
