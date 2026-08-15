@@ -383,6 +383,239 @@ def build_github_tools(
 
         return "\n".join(lines)
 
+    async def check_ci_health(
+        repo_full_name: str,
+        branch: str = "",
+    ) -> str:
+        """Check recent CI history for a repository branch and classify failures.
+
+        Lists the most recent workflow runs on *branch* (default: the
+        repository's default branch) and compares the latest run against the
+        most recent green run.  Use this BEFORE asserting that a CI failure is
+        pre-existing — never rely on cached or inferred status.  This is the
+        first step when a deployment is blocked because a dependent PR cannot
+        merge due to CI failures on the base branch.
+
+        **Read-only.** Does not modify any state and does not require a ticket
+        to be in BLOCKED state.
+
+        Args:
+            repo_full_name: GitHub ``owner/name`` (e.g.
+                ``"robotsix/robotsix-chat"``).
+            branch: Branch to inspect.  Defaults to the repository's default
+                branch when empty.
+
+        Returns:
+            A multi-line summary of recent runs plus a verdict: whether the
+            latest failure is pre-existing (an earlier recent run was green)
+            and whether a rerun or escalation is recommended.
+
+        """
+        if component_request is None and (
+            scope_error := await client.check_installation_scope(repo_full_name)
+        ):
+            return scope_error
+
+        actions_client = ActionsClient(settings)
+        target_branch = branch or await actions_client.get_default_branch(
+            repo_full_name
+        )
+
+        try:
+            runs = await actions_client.list_workflow_runs(
+                repo_full_name, branch=target_branch, per_page=20
+            )
+        except Exception as exc:
+            return f"Error checking CI health for {repo_full_name}: {exc}"
+
+        lines = [f"CI health for {repo_full_name} branch '{target_branch}':"]
+        if not runs:
+            lines.append("No recent workflow runs found.")
+            lines.append(
+                "Recommendation: escalate — there is no CI history available "
+                "to compare against."
+            )
+            return "\n".join(lines)
+
+        lines.append(f"{len(runs)} recent run(s):")
+        for r in runs:
+            lines.append(
+                f"  - {r.get('name', '?')} (run {r.get('id')}): "
+                f"status={r.get('status')}, conclusion={r.get('conclusion')}"
+            )
+
+        latest = runs[0]
+        latest_conclusion = (latest.get("conclusion") or "").lower()
+        recent_green = next(
+            (r for r in runs if (r.get("conclusion") or "").lower() == "success"),
+            None,
+        )
+
+        failing = {"failure", "cancelled", "timed_out", "startup_failure"}
+        if latest_conclusion in failing and recent_green is not None:
+            lines.append(
+                "Verdict: PRE-EXISTING failure — the latest run is failing but "
+                f"an earlier recent run ({recent_green.get('name', '?')} run "
+                f"{recent_green.get('id')}) was green, so branch "
+                f"'{target_branch}' is red independently of any dependent PR."
+            )
+            lines.append(
+                "Recommendation: rerun the failing run or file a CI "
+                "stabilization ticket."
+            )
+        elif latest_conclusion == "success":
+            lines.append("Verdict: GREEN — the latest run on this branch succeeded.")
+        elif latest_conclusion in failing:
+            lines.append(
+                "Verdict: FAILING but no green run in the recent window — "
+                "cannot confirm the failure is pre-existing from this history "
+                "alone; widen the window or inspect the failing job logs."
+            )
+        else:
+            lines.append(
+                f"Verdict: latest run is '{latest.get('status')}' "
+                f"(conclusion='{latest.get('conclusion')}') — no final verdict yet."
+            )
+
+        return "\n".join(lines)
+
+    async def rerun_ci_workflow(
+        repo_full_name: str,
+        branch: str = "",
+        run_id: int = 0,
+    ) -> str:
+        """Re-run a failed CI workflow run on a repository branch.
+
+        When *run_id* is provided it re-runs that specific run; otherwise it
+        re-runs the most recent failed run on *branch* (default: the
+        repository's default branch).  Use this after ``check_ci_health``
+        confirms a CI failure when a deployment is blocked by a dependent PR
+        that cannot merge.
+
+        **This is a confirmation-gated mutation.** Only re-run after the
+        operator has explicitly consented in the conversation.  The endpoint
+        triggers a new CI run (consuming Actions minutes); it does not modify
+        repository source.
+
+        **No BLOCKED-state requirement.** This is a follow-up remediation
+        operation, like merge/auto-merge — it does not require a ticket to be
+        in BLOCKED state.
+
+        Args:
+            repo_full_name: GitHub ``owner/name``.
+            branch: Branch whose latest failed run should be re-run when
+                *run_id* is not supplied.
+            run_id: Specific workflow run id to re-run (optional).
+
+        Returns:
+            A status message, or an error describing why the re-run failed.
+
+        """
+        if component_request is None and (
+            scope_error := await client.check_installation_scope(repo_full_name)
+        ):
+            return scope_error
+
+        actions_client = ActionsClient(settings)
+        if not run_id:
+            target_branch = branch or await actions_client.get_default_branch(
+                repo_full_name
+            )
+            try:
+                runs = await actions_client.list_workflow_runs(
+                    repo_full_name, branch=target_branch, per_page=20
+                )
+            except Exception as exc:
+                return f"Error listing workflow runs for {repo_full_name}: {exc}"
+            failed = next(
+                (
+                    r
+                    for r in runs
+                    if (r.get("conclusion") or "").lower()
+                    in {"failure", "cancelled", "timed_out", "startup_failure"}
+                ),
+                None,
+            )
+            if failed is None:
+                return (
+                    f"No failed workflow run found on '{target_branch}' in "
+                    f"{repo_full_name} — nothing to re-run."
+                )
+            resolved_id = failed.get("id")
+            if not isinstance(resolved_id, int):
+                return "Error: could not determine the failed run id."
+            run_id = resolved_id
+
+        return await actions_client.rerun_workflow_run(repo_full_name, run_id)
+
+    async def file_ci_stabilization_ticket(
+        repo_full_name: str,
+        branch: str = "",
+        summary: str = "",
+    ) -> str:
+        """File a dedicated CI-stabilization ticket on the board.
+
+        Escalates a CI failure to a human operator by creating a board ticket
+        that flags the repository/branch for CI stabilization.  Use this when
+        a deployment is blocked because a dependent PR cannot merge due to
+        pre-existing CI failures and a simple re-run is not appropriate or
+        has not resolved the problem.
+
+        **No BLOCKED-state requirement.** Filing a ticket is an escalation
+        action and does not require a ticket to already be in BLOCKED state.
+
+        Args:
+            repo_full_name: GitHub ``owner/name`` with the failing CI.
+            branch: Branch with the failing CI (default: repository default).
+            summary: Short description of the failure to include in the ticket
+                body (optional).
+
+        Returns:
+            The created ticket id and title, or an error message.
+
+        """
+        if component_request is None and (
+            scope_error := await client.check_installation_scope(repo_full_name)
+        ):
+            return scope_error
+
+        actions_client = ActionsClient(settings)
+        target_branch = branch or await actions_client.get_default_branch(
+            repo_full_name
+        )
+
+        title = f"CI stabilization needed: {repo_full_name} ({target_branch})"
+        body_lines = [
+            f"CI on `{repo_full_name}` branch `{target_branch}` is failing and "
+            f"may be blocking dependent PRs from merging.",
+        ]
+        if summary:
+            body_lines.append("")
+            body_lines.append(f"Summary: {summary}")
+        body_lines.append("")
+        body_lines.append(
+            "Filed by the robotsix-chat agent as a CI-stabilization "
+            "escalation. Verify the failure, re-run CI if it looks transient, "
+            "and remediate the root cause."
+        )
+
+        try:
+            ticket_id = await board.create_ticket(
+                title=title,
+                description="\n".join(body_lines),
+                kind="task",
+                source="agent",
+            )
+        except Exception as exc:
+            return f"Error filing CI stabilization ticket for {repo_full_name}: {exc}"
+
+        if not ticket_id:
+            return (
+                f"Error filing CI stabilization ticket for {repo_full_name}: "
+                f"board API did not return a ticket id."
+            )
+        return f"Filed CI stabilization ticket {ticket_id}: {title}"
+
     async def list_open_prs(
         org_name: str,
     ) -> str:
@@ -1031,6 +1264,9 @@ def build_github_tools(
         update_pr_branch,
         check_pr_merge_conflict,
         verify_pr_ci_status,
+        check_ci_health,
+        rerun_ci_workflow,
+        file_ci_stabilization_ticket,
         recover_auto_merge,
         check_direct_repo_auto_merge,
         list_open_prs,

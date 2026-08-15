@@ -31,6 +31,88 @@ state.
 
 ______________________________________________________________________
 
+## Agent tool: `check_ci_health`
+
+Check recent CI history for a repository branch and classify failures. Lists the most recent
+workflow runs on the branch (default: the repository's default branch) and compares the latest run
+against the most recent green run, so the agent can verify whether a CI failure is pre-existing on
+the base branch rather than caused by a dependent PR.
+
+**Read-only.** Does not modify any repository state and does not require a ticket to be in BLOCKED
+state.
+
+### Preconditions
+
+- Repository must be within the GitHub App installation scope.
+
+### Returned information
+
+- Up to 20 recent workflow runs on the branch, each with name, run id, status, and conclusion.
+- A verdict classifying the latest failure as pre-existing (an earlier run was green), green, or
+  inconclusive, plus a recommendation to rerun or escalate.
+
+### Error responses
+
+| Condition                        | Message                                                     |
+| -------------------------------- | ----------------------------------------------------------- |
+| Repo not in installation scope   | `The robotsix-mill GitHub App is not installed on 'owner/name'` |
+| GitHub Actions unreachable       | `Error checking CI health for owner/name: <detail>`         |
+
+______________________________________________________________________
+
+## Agent tool: `rerun_ci_workflow`
+
+Re-run a failed CI workflow run. Without a `run_id`, re-runs the most recent failed run on the given
+branch (default: the repository's default branch).
+
+**This is a confirmation-gated mutation.** Re-run only after the operator has explicitly consented
+in the conversation. The operator's own direct request or a clear affirmative answer to your
+proposal IS that consent — once given, state the exact repo, branch, and run id and re-run without
+re-asking. Ask only when consent has not yet been clearly given. The endpoint triggers a new CI run
+(consuming Actions minutes); it does not modify repository source.
+
+### Preconditions
+
+- Repository must be within the GitHub App installation scope.
+- A completed (failed) workflow run must exist on the target branch when `run_id` is omitted.
+
+### Error responses
+
+| Condition                      | Message                                                                       |
+| ------------------------------ | ----------------------------------------------------------------------------- |
+| Repo not in installation scope | `The robotsix-mill GitHub App is not installed on 'owner/name'`               |
+| No failed run found            | `No failed workflow run found on '<branch>' in owner/name — nothing to re-run.` |
+| GitHub Actions error           | `Error rerunning workflow run <id>: <detail>`                                 |
+
+______________________________________________________________________
+
+## Agent tool: `file_ci_stabilization_ticket`
+
+File a dedicated CI-stabilization ticket on the board, flagging the repository/branch to a human
+operator for remediation. Use this when a dependent PR cannot merge due to pre-existing CI failures
+and a simple re-run is not appropriate or did not resolve the problem.
+
+**Mutation.** Creates a board ticket — no confirmation gating required (it is a normal escalation
+action, not a repository-state change). Does not require a ticket to be in BLOCKED state.
+
+### Preconditions
+
+- Repository must be within the GitHub App installation scope.
+
+### Returned information
+
+- The created ticket id and title, e.g.
+  `Filed CI stabilization ticket <id>: CI stabilization needed: owner/name (main)`.
+
+### Error responses
+
+| Condition                      | Message                                                             |
+| ------------------------------ | ------------------------------------------------------------------- |
+| Repo not in installation scope | `The robotsix-mill GitHub App is not installed on 'owner/name'`     |
+| Board API failure              | `Error filing CI stabilization ticket for owner/name: <detail>`     |
+
+______________________________________________________________________
+
 ## Agent tool: `list_open_prs`
 
 List every open pull request across an organization's repositories in a single batched GitHub Search

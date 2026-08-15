@@ -116,6 +116,62 @@ class ActionsClient:
             )
             return []
 
+    # -- default branch ----------------------------------------------------
+
+    async def get_default_branch(self, repo_full_name: str) -> str:
+        """Return the repository's default branch name.
+
+        Calls ``GET /repos/{owner}/{repo}`` and reads ``default_branch``.
+        Falls back to ``"main"`` when the metadata cannot be fetched.
+        """
+        try:
+            repo = await self._client._get_json(f"/repos/{repo_full_name}")
+        except Exception:
+            logger.debug(
+                "get_default_branch: could not fetch repo metadata for %s",
+                repo_full_name,
+            )
+            return "main"
+        return repo.get("default_branch") or "main"
+
+    # -- workflow run re-run -----------------------------------------------
+
+    async def rerun_workflow_run(
+        self,
+        repo_full_name: str,
+        run_id: int,
+    ) -> str:
+        """Re-run all jobs in a completed workflow run.
+
+        Calls ``POST /repos/{owner}/{repo}/actions/runs/{run_id}/rerun``.
+        Never raises — returns a success/error message string.
+        """
+        url = (
+            f"{self._client._base_url}/repos/{repo_full_name}"
+            f"/actions/runs/{run_id}/rerun"
+        )
+        try:
+            result = await self._client._http_with_retry(
+                "POST",
+                url,
+                headers=await self._client._gh_headers(),
+                timeout=self._client._s.timeout,
+            )
+        except Exception as exc:
+            return f"Error rerunning workflow run {run_id}: {exc}"
+        if result.error:
+            return f"Error rerunning workflow run {run_id}: {result.error}"
+        if result.status_code and result.status_code >= 400:
+            body = (result.text or "").strip()[:200]
+            suffix = f": {body}" if body else ""
+            return (
+                f"Error rerunning workflow run {run_id}: "
+                f"HTTP {result.status_code}{suffix}"
+            )
+        return (
+            f"Workflow run {run_id} on {repo_full_name} re-run triggered successfully."
+        )
+
     # -- workflow run jobs -------------------------------------------------
 
     async def get_workflow_run_jobs(
