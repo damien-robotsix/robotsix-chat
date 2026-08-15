@@ -580,7 +580,11 @@ async def _run_periodic_turn(
 
     no_change_cap = env.settings.subsessions.auto_stop_no_change_runs
     no_change_cap_override = checkpoint.get("auto_stop_no_change_runs")
-    if isinstance(no_change_cap_override, int) and no_change_cap_override >= 1:
+    if (
+        not isinstance(no_change_cap_override, bool)
+        and isinstance(no_change_cap_override, int)
+        and no_change_cap_override >= 1
+    ):
         no_change_cap = no_change_cap_override
     if consecutive_no_change >= no_change_cap:
         logger.warning(
