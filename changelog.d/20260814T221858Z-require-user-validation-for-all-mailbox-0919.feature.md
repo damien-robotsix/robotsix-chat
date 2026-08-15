@@ -1,0 +1,1 @@
+Bulk mail actions (batch archive, batch delete, and mass move of messages into archive subfolders) now require explicit per-group operator confirmation before execution. The assistant presents grouped cards with proposed destinations and message counts and never acts on default triage alone.

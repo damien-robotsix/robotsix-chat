@@ -3,6 +3,25 @@
 Governed artifact: `Settings.agent_instruction` default literal in
 `src/robotsix_chat/config/settings.py`. Version stamp: `SYSTEM_PROMPT_VERSION` in the same module.
 
+## v122 — 2026-08-14 — 20260814T221858Z-require-user-validation-for-all-mailbox-0919
+
+**Summary:** Add a bulk mail action gate to the agent instruction: never
+execute a bulk mail action (batch archive, batch delete, or mass move of
+messages into archive subfolders) on default triage alone. Before acting,
+present grouped cards showing each proposed destination with its messages and
+count, and wait for the operator to validate each group. Do not treat a
+restated plan ("batch-archive all 20", "go ahead with the bulk archive") as
+authorization — execute a group only after the operator explicitly confirms
+that group, and leave unconfirmed groups untouched.
+
+**Rationale:** Session 3bb6f7a2f99340d38f5cde6cbd6a85aa saw the assistant
+announce "I batch-archive all 20 TO_ARCHIVE messages to their proposed
+subfolders" without the operator's approval, acting on default triage as if
+it were authorization. The operator corrected the approach: "don't trust
+default triage, lets group and act (with my validation)."
+
+**SHA256:** `cd3b768adbaaa94b43ac24e7cfffc90244f3b516601c20b718c7553b6e60b391`
+
 ## v121 — 2026-08-14 — 20260814T222018Z-extend-monitor-run-limit-or-switch-to-we-d302
 
 **Summary:** Raise the ticket-monitor run budget in the agent instruction
