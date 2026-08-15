@@ -72,10 +72,10 @@ def test_build_direct_repo_tools_disabled() -> None:
     assert build_direct_repo_tools(DirectRepoSettings(enabled=False)) == []
 
 
-def test_build_direct_repo_tools_returns_twelve_tools() -> None:
-    """Verify that enabled direct_repo returns the twelve expected tools."""
+def test_build_direct_repo_tools_returns_thirteen_tools() -> None:
+    """Verify that enabled direct_repo returns the thirteen expected tools."""
     tools = build_direct_repo_tools(_settings())
-    assert len(tools) == 12
+    assert len(tools) == 13
     names = [t.__name__ for t in tools]
     assert "push_direct_repo_branch" in names
     assert "open_direct_repo_pr" in names
@@ -84,6 +84,7 @@ def test_build_direct_repo_tools_returns_twelve_tools() -> None:
     assert "verify_pr_ci_status" in names
     assert "recover_auto_merge" in names
     assert "check_direct_repo_auto_merge" in names
+    assert "list_open_prs" in names
     assert "merge_direct_repo_pr" in names
     assert "arm_direct_repo_auto_merge" in names
     assert "reset_implement_spawn_counter" in names
@@ -319,6 +320,7 @@ def test_merge_tools_returned() -> None:
         "arm_direct_repo_auto_merge",
         "check_direct_repo_auto_merge",
         "check_pr_merge_conflict",
+        "list_open_prs",
         "merge_direct_repo_pr",
         "open_direct_repo_pr",
         "push_direct_repo_branch",
@@ -1007,6 +1009,96 @@ async def test_check_pr_merge_conflict_rejects_non_blocked(
     )
     assert "Refused" in out
     assert "BLOCKED" in out
+
+
+# ---------------------------------------------------------------------------
+# list_open_prs
+# ---------------------------------------------------------------------------
+
+
+@pytest.mark.asyncio
+async def test_list_open_prs_groups_by_repo(
+    respx_mock: respx.MockRouter,
+) -> None:
+    """Open PRs are batched into one search query and grouped by repo."""
+    settings = _settings()
+    _prepopulate_installation_token(settings)
+
+    respx_mock.get(url__startswith="https://api.github.com/search/issues").mock(
+        return_value=httpx.Response(
+            200,
+            text=json.dumps(
+                {
+                    "items": [
+                        {
+                            "number": 12,
+                            "title": "Add batch PR listing",
+                            "html_url": "https://github.com/org/repo-a/pull/12",
+                            "user": {"login": "octocat"},
+                            "draft": False,
+                            "repository_url": "https://api.github.com/repos/org/repo-a",
+                        },
+                        {
+                            "number": 3,
+                            "title": "Draft feature",
+                            "html_url": "https://github.com/org/repo-b/pull/3",
+                            "user": {"login": "hubot"},
+                            "draft": True,
+                            "repository_url": "https://api.github.com/repos/org/repo-b",
+                        },
+                    ]
+                }
+            ),
+        )
+    )
+
+    tools = build_direct_repo_tools(settings)
+    fn = [t for t in tools if t.__name__ == "list_open_prs"][0]
+
+    out = await fn(org_name="org")
+    assert "Open PRs across org 'org' — 2 total:" in out
+    assert "org/repo-a" in out
+    assert "org/repo-b" in out
+    assert "#12 Add batch PR listing (by octocat)" in out
+    assert "#3 Draft feature [draft] (by hubot)" in out
+
+
+@pytest.mark.asyncio
+async def test_list_open_prs_no_results(
+    respx_mock: respx.MockRouter,
+) -> None:
+    """Empty search results produce a clear no-open-PRs message."""
+    settings = _settings()
+    _prepopulate_installation_token(settings)
+
+    respx_mock.get(url__startswith="https://api.github.com/search/issues").mock(
+        return_value=httpx.Response(200, text=json.dumps({"items": []}))
+    )
+
+    tools = build_direct_repo_tools(settings)
+    fn = [t for t in tools if t.__name__ == "list_open_prs"][0]
+
+    out = await fn(org_name="org")
+    assert "No open PRs found for org 'org'" in out
+
+
+@pytest.mark.asyncio
+async def test_list_open_prs_api_error(
+    respx_mock: respx.MockRouter,
+) -> None:
+    """Search API failures are surfaced as an error message, not raised."""
+    settings = _settings()
+    _prepopulate_installation_token(settings)
+
+    respx_mock.get(url__startswith="https://api.github.com/search/issues").mock(
+        return_value=httpx.Response(422, text="Validation Failed")
+    )
+
+    tools = build_direct_repo_tools(settings)
+    fn = [t for t in tools if t.__name__ == "list_open_prs"][0]
+
+    out = await fn(org_name="org")
+    assert "Error listing open PRs for org 'org'" in out
 
 
 # ---------------------------------------------------------------------------
@@ -1954,7 +2046,7 @@ def test_tool_docstrings_forbid_merge() -> None:
     """
     merge_tool_names = {"merge_direct_repo_pr", "arm_direct_repo_auto_merge"}
     # Read-only tools that don't require BLOCKED state
-    readonly_tool_names = {"check_direct_repo_auto_merge"}
+    readonly_tool_names = {"check_direct_repo_auto_merge", "list_open_prs"}
 
     tools = build_direct_repo_tools(_settings())
     for tool in tools:
@@ -2118,7 +2210,7 @@ def test_direct_fix_available_when_enabled() -> None:
     tools = build_direct_repo_tools(_settings(direct_fix_enabled=True))
     names = [t.__name__ for t in tools]
     assert "direct_fix" in names
-    assert len(tools) == 14  # 12 base + direct_fix + patch_direct_repo_file
+    assert len(tools) == 15  # 13 base + direct_fix + patch_direct_repo_file
 
 
 @pytest.mark.asyncio

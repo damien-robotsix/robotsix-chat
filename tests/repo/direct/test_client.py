@@ -904,6 +904,85 @@ async def test_get_pr_error_raises(respx_mock: respx.MockRouter) -> None:
 
 
 # ============================================================================
+# DirectRepoClient — search_open_prs
+# ============================================================================
+
+
+@pytest.mark.asyncio
+async def test_search_open_prs_single_page(respx_mock: respx.MockRouter) -> None:
+    from tests.repo.direct.conftest import _prepopulate_installation_token, _settings
+
+    s = _settings()
+    _prepopulate_installation_token(s)
+    client = DirectRepoClient(s)
+
+    respx_mock.get(
+        "https://api.github.com/search/issues"
+        "?q=type%3Apr%20state%3Aopen%20org%3Aorg&per_page=100&page=1"
+    ).mock(
+        return_value=httpx.Response(
+            200,
+            text=json.dumps(
+                {
+                    "total_count": 1,
+                    "items": [
+                        {
+                            "number": 7,
+                            "title": "Batch PR listing",
+                            "repository_url": "https://api.github.com/repos/org/repo1",
+                        }
+                    ],
+                }
+            ),
+        )
+    )
+
+    items = await client.search_open_prs(org_name="org")
+    assert len(items) == 1
+    assert items[0]["number"] == 7
+
+
+@pytest.mark.asyncio
+async def test_search_open_prs_paginates(respx_mock: respx.MockRouter) -> None:
+    from tests.repo.direct.conftest import _prepopulate_installation_token, _settings
+
+    s = _settings()
+    _prepopulate_installation_token(s)
+    client = DirectRepoClient(s)
+
+    page1 = [{"number": i} for i in range(100)]
+    respx_mock.get(
+        "https://api.github.com/search/issues"
+        "?q=type%3Apr%20state%3Aopen%20org%3Aorg&per_page=100&page=1"
+    ).mock(return_value=httpx.Response(200, text=json.dumps({"items": page1})))
+    page2 = [{"number": i} for i in range(100, 130)]
+    respx_mock.get(
+        "https://api.github.com/search/issues"
+        "?q=type%3Apr%20state%3Aopen%20org%3Aorg&per_page=100&page=2"
+    ).mock(return_value=httpx.Response(200, text=json.dumps({"items": page2})))
+
+    items = await client.search_open_prs(org_name="org")
+    assert len(items) == 130
+
+
+@pytest.mark.asyncio
+async def test_search_open_prs_error_raises(respx_mock: respx.MockRouter) -> None:
+    from tests.repo.direct.conftest import _prepopulate_installation_token, _settings
+
+    s = _settings()
+    _prepopulate_installation_token(s)
+    client = DirectRepoClient(s)
+
+    respx_mock.get(
+        "https://api.github.com/search/issues"
+        "?q=type%3Apr%20state%3Aopen%20org%3Aorg&per_page=100&page=1"
+    ).mock(return_value=httpx.Response(422, text="Validation Failed"))
+
+    with pytest.raises(RuntimeError, match="GitHub API GET"):
+        await client.search_open_prs(org_name="org")
+
+
+# ============================================================================
 # DirectRepoClient — push_commit_to_branch
 # ============================================================================
 
