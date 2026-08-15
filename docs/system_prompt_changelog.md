@@ -3,6 +3,24 @@
 Governed artifact: `Settings.agent_instruction` default literal in
 `src/robotsix_chat/config/settings.py`. Version stamp: `SYSTEM_PROMPT_VERSION` in the same module.
 
+## v118 — 2026-08-14 — improve-detection-and-communication-of-r-3c48
+
+**Summary:** Add a diagnosis step to the stuck-draft detection bullet: before
+forcing a stalled draft ticket forward or offering activation, inspect the
+ticket spec and history for the root cause — missing required fields (empty
+title/body/kind, absent acceptance criteria, no repo or component), unresolved
+dependencies or prerequisites, or workflow blockages (fingerprint guard, board
+denylist, approval-gate misconfiguration) — and communicate that root cause to
+the operator in the same message.  Never merely offer to "activate" a stuck
+draft ticket without explaining why it was never picked up.
+
+**Rationale:** Session fbd3ce5b65ff4cb591e4a7b8384a5504 saw the assistant
+repeatedly offer to activate stuck draft tickets (de7d, d3b8, 718f) without
+diagnosing why they remained drafted, producing a repetitive
+detection → activation-request loop instead of informed decision-making.
+
+**SHA256:** `30598bd98cacb18c99debd9cfba3896a6d6b2eca62679c4b37b4101028a4f10f`
+
 ## v117 — 2026-08-14 — provide-immediate-structured-status-summary-6617
 
 **Summary:** Add an Autonomy bullet that requires the assistant, when the user
@@ -20,7 +38,7 @@ proactively fetch live state in response to "what is the status now?" but only
 report it after the user followed up with another request — an avoidable round
 of back-and-forth and a surprise block.
 
-**SHA256:** `082e3b709adcf0fbd77cc2bca8b696b867536da0fe29d661846910508aa4368d`
+**SHA256:** `082e3b709adcf0fbd77cc2bca8b696b867536da0fe29d661846910508aa4368d` (chore: Improve detection and communication of root causes for stalled tickets (20260814T213722Z-improve-detection-and-communication-of-r-3c48))
 
 ## v116 — 2026-08-14 — handle-typos-or-ambiguous-references-via-4617
 
