@@ -94,14 +94,14 @@ class MailClient:
         data = f"message_id={quote(message_id)}&triage_action={quote(triage_action)}"
         return await self._post_form("/move", data)
 
-    async def delete_email(self, message_id: str) -> str:
-        """Call ``POST /delete`` with form-encoded *message_id*.
+    async def delete_email(self, message_id: str, account: str) -> str:
+        """Call ``POST /delete`` with form-encoded *message_id* and *account*.
 
         Returns a success message on 3xx, or the error body on 4xx.
         Never raises.
         """
         data = f"message_id={quote(message_id)}"
-        return await self._post_form("/delete", data)
+        return await self._post_form("/delete", data, params={"account": account})
 
     async def archive_email(self, message_id: str) -> str:
         """Call ``POST /archive`` with form-encoded *message_id*.
@@ -344,7 +344,9 @@ class MailClient:
             return result.error
         return result.text  # type: ignore[return-value]
 
-    async def _post_form(self, path: str, data: str) -> str:
+    async def _post_form(
+        self, path: str, data: str, params: dict[str, str] | None = None
+    ) -> str:
         """Perform a POST with form-encoded body, treating 3xx as success."""
         url = f"{self._base_url}{path}"
         headers = {**self._headers, "Content-Type": "application/x-www-form-urlencoded"}
@@ -354,6 +356,7 @@ class MailClient:
             headers=headers,
             timeout=self._timeout,
             content=data,
+            params=params,
             follow_redirects=False,
             label="Mail API",
         )

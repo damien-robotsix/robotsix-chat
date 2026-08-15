@@ -99,11 +99,14 @@ def build_mail_tools(settings: MailSettings) -> list[Callable[..., Any]]:
         """
         return await client.move_email(message_id, triage_action)
 
-    async def delete_mail_email(message_id: str) -> str:
+    async def delete_mail_email(message_id: str, account: str) -> str:
         """Delete an email from the board permanently.
 
         Args:
             message_id: The email's unique message identifier.
+            account: The account identifier to delete from.  Call
+                ``list_mail_accounts`` first to discover the available
+                account identifiers.
 
         Returns:
             A success or error message.
@@ -111,7 +114,7 @@ def build_mail_tools(settings: MailSettings) -> list[Callable[..., Any]]:
         Never raises.
 
         """
-        return await client.delete_email(message_id)
+        return await client.delete_email(message_id, account)
 
     async def archive_mail_email(message_id: str) -> str:
         """Archive an email (mark it as processed without deleting).

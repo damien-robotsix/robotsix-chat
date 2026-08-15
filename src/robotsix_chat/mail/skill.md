@@ -39,6 +39,10 @@ pass its `account_id` to `get_mail_board` (e.g. `get_mail_board(account_id="acct
 `account_id` is given, `get_mail_board` returns the server's default account — do not assume that
 covers every account the user asks about.
 
+Deleting mail requires an account too: `delete_mail_email` has a required `account` argument, and
+the server returns a 404 when it is omitted. Pass the account identifier you discovered via
+`list_mail_accounts` (e.g. `delete_mail_email(message_id="msg-123", account="acct_2")`).
+
 ## Read-only tools
 
 | Tool                    | Description                                                               |
@@ -54,7 +58,7 @@ covers every account the user asks about.
 | Tool                            | Description                                                           |
 | ------------------------------- | --------------------------------------------------------------------- |
 | `move_mail_email`               | Move an email to a different triage column.                           |
-| `delete_mail_email`             | Permanently delete an email from the board.                           |
+| `delete_mail_email`             | Permanently delete an email from the board (requires `account`).      |
 | `archive_mail_email`            | Archive an email (mark as processed).                                 |
 | `run_mail_triage`               | Re-classify the inbox with the configured triage rules.               |
 | `rename_archive_folder`         | Rename an archive subfolder in-place on the IMAP server.              |
