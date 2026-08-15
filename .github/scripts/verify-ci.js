@@ -113,7 +113,21 @@ module.exports = async ({github, context, core}) => {
     // causes confusing double-reporting (e.g. "Pre-commit hooks=failure,
     // All CI checks passed=failure") without adding any information.
     const isAggregate = (r) => (r.name || '').startsWith('All CI checks');
-    others = runs.filter((r) => !isSelf(r) && !isDeploy(r) && !isScorecard(r) && !isAggregate(r));
+    // The "Chat microbenchmarks" job runs only on pushes to main and is
+    // intentionally informational: it is not in the `needs:` list of the
+    // "All CI checks passed" merge gate, and its only downstream consumer is
+    // the benchmark-history artifact upload. Exclude it from the release gate
+    // so a benchmark flake (or an LLM/hardware timing regression that does
+    // not affect correctness) never blocks publishing an image.
+    const isBenchmark = (r) => (r.name || '') === 'Chat microbenchmarks';
+    others = runs.filter(
+      (r) =>
+        !isSelf(r) &&
+        !isDeploy(r) &&
+        !isScorecard(r) &&
+        !isAggregate(r) &&
+        !isBenchmark(r)
+    );
     const pending = others.filter((r) => r.status !== 'completed');
 
     if (others.length === 0 || pending.length === 0) break;
