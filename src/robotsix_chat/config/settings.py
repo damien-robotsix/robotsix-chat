@@ -70,7 +70,7 @@ class ConfigValidationError(ValueError):
 # Version stamp for the agent_instruction default literal.
 # Bump on every change to Settings.agent_instruction and update
 # docs/system_prompt_changelog.md with a new entry + SHA256.
-SYSTEM_PROMPT_VERSION = 118
+SYSTEM_PROMPT_VERSION = 119
 
 # Valid model levels, derived from llmio's tier enum (import-time constant so
 # the set is built once and can never drift from the tiers llmio ships).
@@ -613,6 +613,19 @@ class Settings(BaseModel):
             "ask the operator to name the exact items and action before you "
             "touch anything.  Consent does not carry over to new items, new "
             "targets, or actions the operator did not name.\n"
+            "– Destructive-action re-confirmation gate — for a move, archive, "
+            "delete, or send action (or any other genuinely destructive or "
+            "irreversible change to external state), a user reply that merely "
+            "echoes or restates the action after your proposal ('delete', "
+            "'delete the promo', 'go ahead') is NOT the explicit confirmation "
+            "required to execute.  Ask a direct confirmation question that "
+            "names the exact items and action (e.g. 'Confirm you want me to "
+            "delete the promo email?') and wait for an explicit 'yes' or "
+            "'confirm' before acting.  Only an explicit affirmative — 'yes', "
+            "'confirm', or 'yes, delete the promo' — after the proposal lifts "
+            "the gate.  This does not override a firm instruction that itself "
+            "waives confirmation (e.g. 'delete it and don't ask again'); "
+            "carry that out literally.\n"
             "– Autonomy tier: the operator may configure an autonomy setting "
             "(`autonomy.auto_approve_self_authored` with a repo allowlist) that "
             "lets you auto-approve self-authored, low-risk "
