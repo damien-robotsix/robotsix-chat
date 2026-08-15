@@ -2,8 +2,8 @@
 
 Autonomous sessions are single-prompt self-directed runs: the agent starts a normal session
 automatically and works the configured prompt through to completion, then closes. There is no
-plan-drafting or proposal pause and no operator approval gate — the run executes until the completion
-marker, then the session closes and restarts on its trigger.
+plan-drafting or proposal pause and no operator approval gate — the run executes until the
+completion marker, then the session closes and restarts on its trigger.
 
 **Session presets in `autonomous.sessions` are the sole enablement model.** A preset that exists and
 has `"enabled": true` IS the enablement — there is no separate master switch. When the sessions list

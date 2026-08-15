@@ -171,11 +171,11 @@ then schedules a fresh run via `_auto_restart()` — immediately for `on_close` 
 
 All autonomous lifecycle work is moved off the startup/lifespan critical path:
 
-| Operation                                   | Where it runs                              | Blocking? |
-| ------------------------------------------- | ------------------------------------------ | --------- |
-| Resume completed sessions                   | Skipped; retired + replaced by bootstrap   | Never     |
-| Resume executing sessions                   | Left as-is; agent schedules continuations  | Never     |
-| Single-prompt run (kickoff)                 | Background task via `_schedule_background` | Never     |
+| Operation                   | Where it runs                              | Blocking? |
+| --------------------------- | ------------------------------------------ | --------- |
+| Resume completed sessions   | Skipped; retired + replaced by bootstrap   | Never     |
+| Resume executing sessions   | Left as-is; agent schedules continuations  | Never     |
+| Single-prompt run (kickoff) | Background task via `_schedule_background` | Never     |
 
 `resume_sessions()` (called from the lifespan) iterates persisted autonomous sessions, leaves each
 executing session as-is (no synthetic re-prompt), then calls `ensure_all_active_sessions()` to
