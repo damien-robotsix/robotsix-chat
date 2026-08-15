@@ -17,10 +17,10 @@ def test_build_direct_repo_tools_disabled() -> None:
     assert build_direct_repo_tools(DirectRepoSettings(enabled=False)) == []
 
 
-def test_build_direct_repo_tools_returns_thirteen_tools() -> None:
-    """Verify that enabled direct_repo returns the thirteen expected tools."""
+def test_build_direct_repo_tools_returns_fourteen_tools() -> None:
+    """Verify that enabled direct_repo returns the fourteen expected tools."""
     tools = build_direct_repo_tools(_settings())
-    assert len(tools) == 13
+    assert len(tools) == 14
     names = [t.__name__ for t in tools]
     assert "push_direct_repo_branch" in names
     assert "open_direct_repo_pr" in names
@@ -35,3 +35,4 @@ def test_build_direct_repo_tools_returns_thirteen_tools() -> None:
     assert "reset_implement_spawn_counter" in names
     assert "apply_patch_to_file" in names
     assert "push_patch_to_pr_branch" in names
+    assert "inspect_github_installation_token" in names
