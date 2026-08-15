@@ -417,8 +417,14 @@ def spawn_subsession(
 
     cfg = env.settings.subsessions
 
-    if auto_stop_no_change_runs is not None and auto_stop_no_change_runs < 1:
-        raise SubsessionNoChangeThresholdError("auto_stop_no_change_runs must be >= 1")
+    if auto_stop_no_change_runs is not None and (
+        isinstance(auto_stop_no_change_runs, bool)
+        or not isinstance(auto_stop_no_change_runs, int)
+        or auto_stop_no_change_runs < 1
+    ):
+        raise SubsessionNoChangeThresholdError(
+            "auto_stop_no_change_runs must be an integer >= 1"
+        )
 
     # Per-session capacity check: reject spawns when the owning
     # session already holds its configured share of the pool.

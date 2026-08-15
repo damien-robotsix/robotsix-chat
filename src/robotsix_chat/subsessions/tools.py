@@ -183,9 +183,9 @@ def _build_spawn_and_control_tools(
         auto_stop_no_change_runs are for kind="periodic" only.
         auto_stop_no_change_runs overrides the global
         subsessions.auto_stop_no_change_runs auto-stop threshold for
-        this monitor only (must be >= 1). For a long-lived ticket
-        monitor that naturally progresses over days (e.g. waiting on
-        human review or CI), pass a higher value such as 50 so it does
+        this monitor only (must be an integer >= 1). For a long-lived
+        ticket monitor that naturally progresses over days (e.g. waiting
+        on human review or CI), pass a higher value such as 50 so it does
         not auto-stop after the default 3 consecutive NO_CHANGE runs.
 
         dedup_key is for kind="user_chat", kind="periodic", and
@@ -606,9 +606,10 @@ def _build_set_checkpoint_tool(sub_id: str, registry: SubsessionRegistry) -> Any
 
         Only the most recent call's data is kept — each call REPLACES the
         entire checkpoint, so include ALL the fields you want to keep.
-        Exception: for wait_for_event monitors the ``ticket_id`` key is
-        system-owned and is preserved automatically even when it is omitted,
-        so the monitor keeps its target ticket across restarts.
+        Exceptions (system-owned keys are preserved automatically even
+        when omitted): for ``wait_for_event`` monitors the ``ticket_id``
+        key, and for ``periodic`` monitors the ``auto_stop_no_change_runs``
+        override.  All other keys are replaced wholesale.
         """
         if not isinstance(data, dict):
             return "set_checkpoint: data must be a dict of string keys."

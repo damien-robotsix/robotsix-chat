@@ -26,6 +26,7 @@ __all__ = [
     "SubsessionIntervalError",
     "SubsessionKind",
     "SubsessionLevelError",
+    "SubsessionNoChangeThresholdError",
     "SubsessionPeriodicSpawnError",
     "SubsessionStatus",
     "SubsessionUserChatSpawnError",

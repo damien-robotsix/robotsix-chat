@@ -22,7 +22,7 @@ The assistant calls `spawn_subsession` with:
 | `model_level`             | Capability level 1–4 picked by difficulty (cheap tiers for simple polling)                                       |
 | `interval_seconds`        | How often to re-run, in seconds. Minimum is 60 seconds; 1800 (30 minutes) is a common choice                     |
 | `max_runs`                | (optional) Cap on the number of runs; omitted means run until closed                                             |
-| `auto_stop_no_change_runs` | (optional) Per-monitor override of `subsessions.auto_stop_no_change_runs` (must be ≥ 1). Set higher for long-lived ticket monitors that progress over days (e.g. waiting on human review or CI). |
+| `auto_stop_no_change_runs` | (optional) Per-monitor override of `subsessions.auto_stop_no_change_runs` (must be an integer ≥ 1). Set higher for long-lived ticket monitors that progress over days (e.g. waiting on human review or CI). |
 | `include_previous_result` | Set to `true` so each run can compare against the prior state                                                    |
 | `dedup_key`               | When monitoring a ticket, set to the ticket id (e.g. `"5f1c"`) — prevents duplicate monitors for the same ticket |
 

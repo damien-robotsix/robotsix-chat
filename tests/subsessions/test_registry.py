@@ -1034,6 +1034,93 @@ def test_update_checkpoint_does_not_fabricate_ticket_id_for_wait_for_event() -> 
     assert refreshed.checkpoint == {"last_known_state": "open"}
 
 
+# ---------------------------------------------------------------------------
+# update_checkpoint auto_stop_no_change_runs preservation for PERIODIC
+# ---------------------------------------------------------------------------
+
+
+def test_update_checkpoint_preserves_auto_stop_no_change_runs_for_periodic() -> None:
+    """Replacing a PERIODIC checkpoint never drops its per-spawn override."""
+    registry = SubsessionRegistry(store_path=None)
+    info = _create(
+        registry,
+        kind=SubsessionKind.PERIODIC,
+        title="long-lived monitor",
+        interval_seconds=60.0,
+        checkpoint={
+            "ticket_id": "tick-1",
+            "auto_stop_no_change_runs": 50,
+            "last_known_state": "open",
+        },
+    )
+
+    registry.update_checkpoint(
+        info.id, {"last_known_state": "code_review", "pr_number": 42}
+    )
+
+    refreshed = registry.get(info.id)
+    assert refreshed is not None
+    assert refreshed.checkpoint == {
+        "auto_stop_no_change_runs": 50,
+        "last_known_state": "code_review",
+        "pr_number": 42,
+    }
+
+
+def test_update_checkpoint_keeps_explicit_auto_stop_override() -> None:
+    """An explicit valid override in the replacement is kept, not overwritten."""
+    registry = SubsessionRegistry(store_path=None)
+    info = _create(
+        registry,
+        kind=SubsessionKind.PERIODIC,
+        title="long-lived monitor",
+        interval_seconds=60.0,
+        checkpoint={"auto_stop_no_change_runs": 50},
+    )
+
+    registry.update_checkpoint(info.id, {"auto_stop_no_change_runs": 75})
+
+    refreshed = registry.get(info.id)
+    assert refreshed is not None
+    assert refreshed.checkpoint == {"auto_stop_no_change_runs": 75}
+
+
+def test_update_checkpoint_does_not_fabricate_auto_stop_no_change_runs() -> None:
+    """No override is injected when the PERIODIC checkpoint never had one."""
+    registry = SubsessionRegistry(store_path=None)
+    info = _create(
+        registry,
+        kind=SubsessionKind.PERIODIC,
+        title="default monitor",
+        interval_seconds=60.0,
+        checkpoint={"ticket_id": "tick-1"},
+    )
+
+    registry.update_checkpoint(info.id, {"last_known_state": "open"})
+
+    refreshed = registry.get(info.id)
+    assert refreshed is not None
+    assert refreshed.checkpoint == {"last_known_state": "open"}
+
+
+def test_update_checkpoint_does_not_preserve_invalid_auto_stop_override() -> None:
+    """A non-int / bool override in the prior checkpoint is not preserved."""
+    registry = SubsessionRegistry(store_path=None)
+    info = _create(
+        registry,
+        kind=SubsessionKind.PERIODIC,
+        title="bogus monitor",
+        interval_seconds=60.0,
+        checkpoint={"auto_stop_no_change_runs": 2.5},
+    )
+
+    registry.update_checkpoint(info.id, {"last_known_state": "open"})
+
+    refreshed = registry.get(info.id)
+    assert refreshed is not None
+    assert refreshed.checkpoint == {"last_known_state": "open"}
+
+
 def test_create_raises_dedup_error_for_checkpoint_ticket_id_match() -> None:
     """``create`` raises ``SubsessionDedupError`` on checkpoint ticket_id match.
 

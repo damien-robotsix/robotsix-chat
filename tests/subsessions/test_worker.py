@@ -313,6 +313,22 @@ def test_periodic_no_change_threshold_below_one_is_rejected() -> None:
     assert env.registry.list_for_owner(OWNER) == []
 
 
+def test_periodic_no_change_threshold_non_int_is_rejected() -> None:
+    """A non-int auto_stop_no_change_runs is rejected (bool is an int in Python)."""
+    env = build_env()
+
+    for bad_value in (2.5, "50", True):
+        with pytest.raises(SubsessionNoChangeThresholdError):
+            _spawn(
+                env,
+                kind=SubsessionKind.PERIODIC,
+                interval_seconds=60.0,
+                auto_stop_no_change_runs=bad_value,
+            )
+
+    assert env.registry.list_for_owner(OWNER) == []
+
+
 def test_build_periodic_input_includes_loop_guard_instructions() -> None:
     """The periodic turn input includes CI workflow loop guard instructions."""
     from robotsix_chat.subsessions.models import SubsessionInfo, SubsessionKind
