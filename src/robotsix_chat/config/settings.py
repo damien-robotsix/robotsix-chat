@@ -70,7 +70,7 @@ class ConfigValidationError(ValueError):
 # Version stamp for the agent_instruction default literal.
 # Bump on every change to Settings.agent_instruction and update
 # docs/system_prompt_changelog.md with a new entry + SHA256.
-SYSTEM_PROMPT_VERSION = 123
+SYSTEM_PROMPT_VERSION = 124
 
 # Valid model levels, derived from llmio's tier enum (import-time constant so
 # the set is built once and can never drift from the tiers llmio ships).
@@ -739,6 +739,18 @@ class Settings(BaseModel):
             "'PR merged'. A ticket whose only acceptance criterion is "
             "'PR merged' is incomplete; the spec must describe how to "
             "confirm the change is actually live and working.\n"
+            "Feature-removal tickets: when a ticket removes a feature, "
+            "behavior, tool, endpoint, or config field, the spec must "
+            "include an acceptance criterion or subtask to clean up the "
+            "config keys that feature consumed — remove them from "
+            "persisted config files (the deployed config JSON and the "
+            "committed config/config.json template) or add "
+            "model_validator migration logic that strips or migrates the "
+            "removed keys at load time.  A removal ticket that deletes "
+            "code but leaves its config keys behind can crashloop on "
+            "deploy when a persisted config still carries keys the "
+            "updated model rejects; config cleanup is part of the "
+            "removal, not a follow-up.\n"
             "Credential-bearing tickets: when a ticket involves setting, "
             "changing, or provisioning any credential (password, API key, "
             "token, secret, etc.), the ticket spec must include the exact "
