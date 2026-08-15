@@ -240,14 +240,14 @@ async def test_move_email_400_error(respx_mock: respx.MockRouter) -> None:
 
 @pytest.mark.asyncio
 async def test_delete_email_success(respx_mock: respx.MockRouter) -> None:
-    """POST /delete with form-encoded message_id and 302 → success."""
-    route = respx_mock.post("http://127.0.0.1:8077/delete").mock(
+    """POST /delete with form-encoded message_id + account query and 302 → success."""
+    route = respx_mock.post("http://127.0.0.1:8077/delete?account=acct_2").mock(
         return_value=httpx.Response(302, text="")
     )
     tools = build_mail_tools(_settings())
     delete_email = tools[3]
 
-    result = await delete_email("msg-del")
+    result = await delete_email("msg-del", account="acct_2")
 
     assert route.called
     assert b"message_id=msg-del" in route.calls.last.request.content
