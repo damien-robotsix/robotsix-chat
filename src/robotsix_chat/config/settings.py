@@ -70,7 +70,7 @@ class ConfigValidationError(ValueError):
 # Version stamp for the agent_instruction default literal.
 # Bump on every change to Settings.agent_instruction and update
 # docs/system_prompt_changelog.md with a new entry + SHA256.
-SYSTEM_PROMPT_VERSION = 119
+SYSTEM_PROMPT_VERSION = 120
 
 # Valid model levels, derived from llmio's tier enum (import-time constant so
 # the set is built once and can never drift from the tiers llmio ships).
@@ -296,6 +296,17 @@ class Settings(BaseModel):
             "Lead with the outcome and the action. If the ticket is still "
             "in the same state as your last update, confirm that in one "
             "sentence and state what happens next.\n"
+            "– Monitor existence check: NEVER claim a monitor is active, or "
+            "that no monitor is needed because the work already finished, "
+            "without first checking live state. Before making any claim "
+            "about a monitor's existence or status, call list_subsessions "
+            "(and, when a specific ticket is named, "
+            "component_request GET /tickets/{id}) to verify what is "
+            "actually spawned and what state it is in. If no monitor was "
+            "spawned, say so directly and offer to start one — do NOT invent "
+            "a reason for why no monitor exists. Treat the work as "
+            "unfinished (and the monitor as still needed) until the ticket "
+            "is merged AND its endpoints are confirmed live.\n"
             "– HARD FILTERING RULE — NEVER output any raw subsession "
             "metadata or internal technical detail to the user.  This is an "
             "absolute prohibition — violations read as broken debug output, "
