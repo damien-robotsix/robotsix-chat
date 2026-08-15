@@ -1,0 +1,1 @@
+The assistant now verifies live state (list_subsessions and component_request GET /tickets/{id}) before claiming a monitor is active or absent, and states directly that no monitor exists and offers to start one instead of inventing a reason.
