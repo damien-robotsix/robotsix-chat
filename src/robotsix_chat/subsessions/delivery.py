@@ -241,12 +241,16 @@ _REASON_PHRASES: dict[str, str] = {
 # a broken tool loop can't chain-react unboundedly.
 _MAX_REACTION_DEPTH = 3
 
-# Seconds to wait for additional subsession outcomes to arrive before
-# delivering a batch.  When multiple outcomes close within this window
-# they are delivered in a single agent turn with a consolidation
-# instruction, instead of producing N separate reaction turns that each
-# emit a near-identical "no change" reply.
-_BATCH_WINDOW_SECONDS = 0.5
+# Maximum seconds to hold pending subsession outcomes before a safety
+# flush fires.  The primary delivery trigger is a natural breakpoint —
+# the next user turn, via :meth:`ParentDelivery.flush_pending_reactions` —
+# so outcomes that arrive while the user is away are consolidated into a
+# single summary instead of producing N separate reaction turns that each
+# emit a near-identical "no change" reply.  This timeout is only a
+# fallback so outcomes for an idle or autonomous session are never held
+# indefinitely; each new outcome resets the window, so a quiet period
+# still batches closely-arriving outcomes.
+_BATCH_WINDOW_SECONDS = 30.0
 
 
 # -- patterns for sanitizing reaction replies --------------------------------
@@ -405,10 +409,14 @@ class ParentDelivery:
         acknowledge the outcome as a note and stay on its plan, preventing
         the agent from dropping its work and re-requesting approval.
 
-        *batch_window_seconds* controls how long to wait for additional
-        subsession outcomes before delivering a batch.  Set to 0 to
-        disable batching (every outcome fires its own reaction turn
-        immediately, preserving the pre-batching behavior).
+        *batch_window_seconds* is the maximum time pending subsession
+        outcomes are held before a safety flush fires.  The primary flush
+        happens at a natural breakpoint — the next user turn (see
+        :meth:`flush_pending_reactions`) — so outcomes that arrive while
+        the user is away are consolidated into a single summary.  The
+        safety flush keeps outcomes for idle or autonomous sessions from
+        being held indefinitely.  Set to 0 to disable holding (every
+        outcome fires its own reaction turn immediately).
         """
         self._store = conversation_store
         self._registry = registry
@@ -436,7 +444,7 @@ class ParentDelivery:
             str, list[tuple[SubsessionInfo, str, str, str]]
         ] = {}
         # _pending_timers maps session_id → asyncio.Task that flushes the
-        # batch after _BATCH_WINDOW_SECONDS.
+        # batch after _BATCH_WINDOW_SECONDS (the safety-flush fallback).
         self._pending_timers: dict[str, asyncio.Task[None]] = {}
 
     def set_agent(self, agent: ChatAgent) -> None:
@@ -595,11 +603,14 @@ class ParentDelivery:
     ) -> None:
         """Schedule a background task to react to *outcome* in the main chat.
 
-        Outcomes that arrive within ``_BATCH_WINDOW_SECONDS`` of each other
-        are batched: the first outcome starts a timer; subsequent outcomes
-        arriving before the timer fires are added to the same batch.  When
-        the timer fires all pending outcomes are delivered in a single
-        consolidated agent turn instead of N separate near-identical replies.
+        Outcomes accumulate in a pending queue rather than firing an
+        immediate reaction turn.  They are delivered at a natural
+        breakpoint — the next user turn, via
+        :meth:`flush_pending_reactions` — or, as a safety fallback, when
+        the ``_BATCH_WINDOW_SECONDS`` hold window elapses with no further
+        outcomes.  Either path delivers all pending outcomes in a single
+        consolidated agent turn instead of N separate near-identical
+        replies.
 
         The task is fire-and-forget — errors are logged, never surfaced
         to the caller.
@@ -661,28 +672,35 @@ class ParentDelivery:
     # Outcome batching (fire-and-forget)
     # ------------------------------------------------------------------
 
-    async def _flush_pending_reactions(self, session_id: str) -> None:
-        """Wait for the batch window, then drain all pending outcomes.
+    async def flush_pending_reactions(self, session_id: str) -> bool:
+        """Deliver any pending outcomes for *session_id* immediately.
 
-        When the timer fires, all outcomes that accumulated for
-        *session_id* are delivered in a single consolidated agent turn
-        (or a single ``_react_in_main_chat`` call when only one outcome
-        arrived).  Depth is incremented here so all outcomes in the batch
-        count as one reaction turn.
+        Called at a natural breakpoint — the start of the next user turn —
+        so subsession outcomes that accumulated while the user was away
+        are consolidated into one summary before the agent processes the
+        new message.  Cancels the safety-flush timer and drains the
+        pending queue.
+
+        Returns ``True`` when at least one outcome was delivered and
+        ``False`` when nothing was pending.
         """
-        if self._batch_window_seconds > 0:
-            try:
-                await asyncio.sleep(self._batch_window_seconds)
-            except asyncio.CancelledError:
-                # Timer was cancelled because a new outcome arrived before
-                # the window closed — the new outcome started its own timer.
-                return
+        timer = self._pending_timers.pop(session_id, None)
+        if timer is not None and not timer.done():
+            timer.cancel()
+        return await self._drain_pending_outcomes(session_id)
 
+    async def _drain_pending_outcomes(self, session_id: str) -> bool:
+        """Pop and deliver all pending outcomes for *session_id*.
+
+        Depth is incremented once here so all outcomes in the batch count
+        as one reaction turn; the reaction turn (or batched turn)
+        decrements it in its ``finally`` block.
+        """
         outcomes = self._pending_outcomes.pop(session_id, [])
         self._pending_timers.pop(session_id, None)
 
         if not outcomes:
-            return
+            return False
 
         # Increment depth once for the entire batch.
         depth = self._reaction_depth.get(session_id, 0) + 1
@@ -693,6 +711,28 @@ class ParentDelivery:
             await self._safe_react(info, outcome, reason, label)
         else:
             await self._safe_react_batched(session_id, outcomes)
+        return True
+
+    async def _flush_pending_reactions(self, session_id: str) -> None:
+        """Safety-flush timer: hold the batch window, then drain outcomes.
+
+        This is the fallback that fires when no natural breakpoint (user
+        turn) has flushed the outcomes within ``_BATCH_WINDOW_SECONDS``.
+        When the timer fires, all outcomes that accumulated for
+        *session_id* are delivered in a single consolidated agent turn
+        (or a single ``_react_in_main_chat`` call when only one outcome
+        arrived).
+        """
+        if self._batch_window_seconds > 0:
+            try:
+                await asyncio.sleep(self._batch_window_seconds)
+            except asyncio.CancelledError:
+                # Timer was cancelled because a new outcome arrived before
+                # the window closed (the new outcome restarted the window)
+                # or because a user-turn flush drained the queue already.
+                return
+
+        await self._drain_pending_outcomes(session_id)
 
     async def _safe_react_batched(
         self,

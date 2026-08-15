@@ -4,6 +4,7 @@ from __future__ import annotations
 
 import base64
 import json
+from unittest.mock import AsyncMock
 
 import pytest
 
@@ -96,6 +97,21 @@ async def test_chat_endpoint_opens_with_heartbeat() -> None:
     assert response.status_code == 200
     # The response text should contain the heartbeat comment before data frames
     assert ": keepalive" in response.text
+
+
+@pytest.mark.asyncio
+async def test_chat_endpoint_flushes_pending_subsession_outcomes_before_turn() -> None:
+    """Pending subsession outcomes flush before the user's message is processed."""
+    delivery = AsyncMock()
+    delivery.flush_pending_reactions.return_value = True
+
+    async with mock_app(tokens=["ok"], subsession_delivery=delivery) as f:
+        response = await f.client.post(
+            "/chat", json={"message": "hello", "session_id": "sess-1"}
+        )
+
+    assert response.status_code == 200
+    delivery.flush_pending_reactions.assert_awaited_once_with("sess-1")
 
 
 # ---------------------------------------------------------------------------

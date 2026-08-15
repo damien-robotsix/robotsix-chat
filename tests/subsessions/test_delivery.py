@@ -1625,6 +1625,96 @@ async def test_deliver_summary_single_outcome_bypasses_batch() -> None:
 
 
 @pytest.mark.asyncio
+async def test_flush_pending_reactions_drains_immediately_without_window() -> None:
+    """``flush_pending_reactions`` delivers pending outcomes right away.
+
+    The natural-breakpoint flush must not wait for the safety window: two
+    outcomes that arrived while the user was away are consolidated into a
+    single agent turn the moment the next user turn begins.
+    """
+    store = MagicMock()
+    store.history.return_value = []
+    registry = MagicMock()
+    agent = _fake_agent(["All monitors: no changes."])
+    delivery = _build_delivery(
+        store=store,
+        registry=registry,
+        agent=agent,
+        batch_window_seconds=1000,  # safety flush would not fire during test
+    )
+    info_a = _make_info(
+        sub_id="sub-aaaaaaaa",
+        kind=SubsessionKind.PERIODIC,
+        title="Monitor Alpha",
+    )
+    info_b = _make_info(
+        sub_id="sub-bbbbbbbb",
+        kind=SubsessionKind.PERIODIC,
+        title="Monitor Beta",
+    )
+
+    await delivery.deliver_summary(info_a, "No change detected.", "paused")
+    await delivery.deliver_summary(info_b, "Also no change.", "paused")
+
+    flushed = await delivery.flush_pending_reactions("owner-sess-1")
+
+    assert flushed is True
+    # Both outcomes delivered as one consolidated batch turn.
+    assert store.record_for_session.call_count == 1
+    prompt: str = store.record_for_session.call_args[0][1]
+    assert "Monitor Alpha" in prompt
+    assert "Monitor Beta" in prompt
+    assert "CONSOLIDATION RULE" in prompt
+    # Pending state drained and the safety timer cleared.
+    assert "owner-sess-1" not in delivery._pending_outcomes
+    assert "owner-sess-1" not in delivery._pending_timers
+
+
+@pytest.mark.asyncio
+async def test_flush_pending_reactions_returns_false_when_nothing_pending() -> None:
+    """Flushing a session with no pending outcomes is a no-op returning False."""
+    store = MagicMock()
+    delivery = _build_delivery(store=store, batch_window_seconds=1000)
+
+    flushed = await delivery.flush_pending_reactions("owner-sess-1")
+
+    assert flushed is False
+    store.record_for_session.assert_not_called()
+
+
+@pytest.mark.asyncio
+async def test_flush_pending_reactions_cancels_pending_safety_timer() -> None:
+    """The user-turn flush cancels the outstanding safety-flush timer."""
+    store = MagicMock()
+    store.history.return_value = []
+    registry = MagicMock()
+    agent = _fake_agent(["Noted."])
+    delivery = _build_delivery(
+        store=store,
+        registry=registry,
+        agent=agent,
+        batch_window_seconds=1000,
+    )
+    info = _make_info(
+        sub_id="sub-cccccccc",
+        kind=SubsessionKind.TASK,
+        title="Solo task",
+    )
+
+    await delivery.deliver_summary(info, "Task done.", "completed")
+
+    timer = delivery._pending_timers.get("owner-sess-1")
+    assert timer is not None
+    await delivery.flush_pending_reactions("owner-sess-1")
+
+    # Let the cancelled timer task finish its cancellation cleanup.
+    await asyncio.gather(timer, return_exceptions=True)
+    assert timer.cancelled()
+    assert "owner-sess-1" not in delivery._pending_timers
+    assert store.record_for_session.call_count == 1
+
+
+@pytest.mark.asyncio
 async def test_batch_with_autonomous_executing_degrades_to_individual_calls() -> None:
     """When an autonomous session is executing, degrade to individual calls.
 
