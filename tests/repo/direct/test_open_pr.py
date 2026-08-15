@@ -122,6 +122,7 @@ def test_merge_tools_returned() -> None:
         "arm_direct_repo_auto_merge",
         "check_direct_repo_auto_merge",
         "check_pr_merge_conflict",
+        "list_open_prs",
         "merge_direct_repo_pr",
         "open_direct_repo_pr",
         "push_direct_repo_branch",
