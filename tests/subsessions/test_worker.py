@@ -359,6 +359,9 @@ def test_build_periodic_input_includes_loop_guard_instructions() -> None:
     # Programmatic gate language.
     assert "PROGRAMMATIC GATE" in result
     assert "will REJECT any summary" in result
+    # Deploy-complete config/status check for opt-in feature flags.
+    assert "config/status check" in result
+    assert "continuation.enabled" in result
 
 
 def test_build_periodic_input_pre_authorized_via_dedup_key() -> None:
