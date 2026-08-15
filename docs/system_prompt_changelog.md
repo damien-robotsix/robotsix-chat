@@ -3,6 +3,23 @@
 Governed artifact: `Settings.agent_instruction` default literal in
 `src/robotsix_chat/config/settings.py`. Version stamp: `SYSTEM_PROMPT_VERSION` in the same module.
 
+## v124 — 2026-08-15 — 20260815T205903Z-remove-feature-tickets-should-include-co-9b21
+
+**Summary:** Add a feature-removal config-cleanup rule to the agent
+instruction: when filing a ticket that removes a feature, behavior, tool,
+endpoint, or config field, the spec must include an acceptance criterion or
+subtask to clean up the consumed config keys — either removing them from
+persisted config files (the deployed config JSON and the committed
+config/config.json template) or adding model_validator migration logic that
+strips/migrates the removed keys at load time.
+
+**Rationale:** Session c6ec565c203c4a4db04fbccab72168a6 filed the
+remove-legal-guardrails ticket without a config-cleanup subtask, and the
+removal shipped with its stale config keys still present in persisted
+config, causing a production crashloop on deploy.
+
+**SHA256:** `31bf791529c2b191f12ebaa2738a6942bfd47915baf8a84aaef20da6c447817c`
+
 ## v123 — 2026-08-15 — 20260815T145410Z-prevent-duplicate-ticket-creation-when-m-29ac
 
 **Summary:** Add a ticket-filing dedup instruction to the agent
