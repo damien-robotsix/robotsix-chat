@@ -3,6 +3,21 @@
 Governed artifact: `Settings.agent_instruction` default literal in
 `src/robotsix_chat/config/settings.py`. Version stamp: `SYSTEM_PROMPT_VERSION` in the same module.
 
+## v121 — 2026-08-14 — 20260814T222018Z-extend-monitor-run-limit-or-switch-to-we-d302
+
+**Summary:** Raise the ticket-monitor run budget in the agent instruction
+from a 30-minute interval / max 60 runs to a 1-hour interval / max 600 runs.
+This keeps a spawned monitor alive through multi-day code-review and CI
+cycles instead of exhausting its run budget and silently dropping automated
+tracking.
+
+**Rationale:** The background monitor for ticket 563d hit its 60-run limit
+three consecutive times before the ticket was merged, requiring manual
+re-spawning and leaving the user without automated tracking for extended
+periods.
+
+**SHA256:** `9f420e714d113100651f62cbf86b4dae8836b2196b7c3d2908862765374a09ed`
+
 ## v120 — 2026-08-14 — never-claim-a-monitor-exists-without-ver-3d06
 
 **Summary:** Add a Monitor existence check bullet to the agent instruction:

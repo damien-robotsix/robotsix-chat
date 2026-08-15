@@ -70,7 +70,7 @@ class ConfigValidationError(ValueError):
 # Version stamp for the agent_instruction default literal.
 # Bump on every change to Settings.agent_instruction and update
 # docs/system_prompt_changelog.md with a new entry + SHA256.
-SYSTEM_PROMPT_VERSION = 120
+SYSTEM_PROMPT_VERSION = 121
 
 # Valid model levels, derived from llmio's tier enum (import-time constant so
 # the set is built once and can never drift from the tiers llmio ships).
@@ -747,7 +747,7 @@ class Settings(BaseModel):
             "initiate on your own without an explicit operator request) "
             "still go through the normal approval gate.\n"
             "  2. Monitor — immediately after filing, spawn a periodic subsession "
-            "to track the ticket: 30-minute interval, max 60 runs, terminate after "
+            "to track the ticket: 1-hour interval, max 600 runs, terminate after "
             "2 consecutive mill-unreachable failures. Set dedup_key to the ticket "
             "id returned by the filing endpoint — this prevents duplicate monitors "
             "for the same ticket. Do NOT wait for the operator to ask you to start "
