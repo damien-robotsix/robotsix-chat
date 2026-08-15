@@ -31,6 +31,7 @@ from .models import (
     SubsessionIntervalError,
     SubsessionKind,
     SubsessionLevelError,
+    SubsessionNoChangeThresholdError,
     SubsessionPeriodicSpawnError,
     SubsessionUserChatSpawnError,
     SubsessionWaitForEventSpawnError,
@@ -124,6 +125,7 @@ def _build_spawn_and_control_tools(
         model_level: int | None = None,
         interval_seconds: float | None = None,
         max_runs: int | None = None,
+        auto_stop_no_change_runs: int | None = None,
         include_previous_result: bool = False,
         inherit_context: bool = False,
         dedup_key: str | None = None,
@@ -177,8 +179,14 @@ def _build_spawn_and_control_tools(
         key may be set in a location the server does not read.
         Recommend the operator verify the `llmio.api_key` field in the
         server's JSON config file.
-        interval_seconds (minimum applies) and max_runs are
-        for kind="periodic" only.
+        interval_seconds (minimum applies), max_runs, and
+        auto_stop_no_change_runs are for kind="periodic" only.
+        auto_stop_no_change_runs overrides the global
+        subsessions.auto_stop_no_change_runs auto-stop threshold for
+        this monitor only (must be >= 1). For a long-lived ticket
+        monitor that naturally progresses over days (e.g. waiting on
+        human review or CI), pass a higher value such as 50 so it does
+        not auto-stop after the default 3 consecutive NO_CHANGE runs.
 
         dedup_key is for kind="user_chat", kind="periodic", and
         kind="wait_for_event": a short,
@@ -351,6 +359,7 @@ def _build_spawn_and_control_tools(
                 interval_seconds=interval_seconds,
                 include_previous_result=include_previous_result,
                 max_runs=max_runs,
+                auto_stop_no_change_runs=auto_stop_no_change_runs,
                 inherit_context=inherit_context,
                 dedup_key=dedup_key,
                 checkpoint=checkpoint,
@@ -377,6 +386,7 @@ def _build_spawn_and_control_tools(
             SubsessionDepthError,
             SubsessionIntervalError,
             SubsessionLevelError,
+            SubsessionNoChangeThresholdError,
             SubsessionPeriodicSpawnError,
             SubsessionWaitForEventSpawnError,
             SubsessionUserChatSpawnError,

@@ -81,6 +81,10 @@ class SubsessionIntervalError(ValueError):
     """Raised when a periodic interval is below the configured minimum."""
 
 
+class SubsessionNoChangeThresholdError(ValueError):
+    """Raised when a per-spawn no-change threshold is below 1."""
+
+
 class SubsessionLevelError(ValueError):
     """Raised when the requested model level is invalid or unusable."""
 

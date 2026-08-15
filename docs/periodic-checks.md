@@ -22,6 +22,7 @@ The assistant calls `spawn_subsession` with:
 | `model_level`             | Capability level 1–4 picked by difficulty (cheap tiers for simple polling)                                       |
 | `interval_seconds`        | How often to re-run, in seconds. Minimum is 60 seconds; 1800 (30 minutes) is a common choice                     |
 | `max_runs`                | (optional) Cap on the number of runs; omitted means run until closed                                             |
+| `auto_stop_no_change_runs` | (optional) Per-monitor override of `subsessions.auto_stop_no_change_runs` (must be ≥ 1). Set higher for long-lived ticket monitors that progress over days (e.g. waiting on human review or CI). |
 | `include_previous_result` | Set to `true` so each run can compare against the prior state                                                    |
 | `dedup_key`               | When monitoring a ticket, set to the ticket id (e.g. `"5f1c"`) — prevents duplicate monitors for the same ticket |
 
@@ -35,7 +36,9 @@ you are only bothered when something substantive happened. For minor but notable
 replies with a single concise line; full reports are reserved for substantive changes (first-time
 blocking, completion, failure, or transitions requiring user action). After a configurable number of
 consecutive `NO_CHANGE` runs (`subsessions.auto_stop_no_change_runs`, default 3) the subsession
-closes itself.
+closes itself. The threshold can be overridden per monitor at spawn time via the
+`auto_stop_no_change_runs` parameter — useful for long-lived ticket monitors that naturally
+progress over days, where the default 3-run window is too aggressive.
 
 ### Auto-stop, auto-pause, and failure notifications
 
