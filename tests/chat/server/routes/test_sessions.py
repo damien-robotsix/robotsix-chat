@@ -9,6 +9,7 @@ import pytest
 from starlette.exceptions import HTTPException
 from starlette.requests import Request
 
+from robotsix_chat.autonomous.models import AutonomousState
 from robotsix_chat.chat.events import SSE_AUTONOMOUS_STATE_TYPE
 from robotsix_chat.chat.server.routes.sessions import (
     _cleanup_session,
@@ -854,6 +855,7 @@ async def test_delete_autonomous_session_forgets_and_restarts() -> None:
     mock_runner.bootstrap_owner = "autonomous"
     mock_runner.is_autonomous.return_value = True
     mock_runner.is_autonomous_owner.return_value = True
+    mock_runner.get_state.return_value = AutonomousState.executing
 
     state = MagicMock(
         conversation_store=mock_store,
@@ -876,6 +878,47 @@ async def test_delete_autonomous_session_forgets_and_restarts() -> None:
     )
     mock_runner.forget_session.assert_called_once_with("auto-1")
     mock_runner.ensure_active_session.assert_called_once_with("autonomous")
+
+
+@pytest.mark.asyncio
+async def test_delete_autonomous_session_in_countdown_hides_without_restart() -> None:
+    """Deleting a completed autonomous session hides it without restarting.
+
+    The already-scheduled ``_auto_restart`` re-creates it at the next run.
+    """
+    mock_store = MagicMock()
+    mock_store.history.return_value = []
+    mock_store.delete_session.return_value = {
+        "deleted": True,
+        "active_session_id": "",
+    }
+    mock_store.owner_for_session.return_value = "autonomous"
+    mock_runner = MagicMock()
+    mock_runner.bootstrap_owner = "autonomous"
+    mock_runner.is_autonomous.return_value = True
+    mock_runner.is_autonomous_owner.return_value = True
+    mock_runner.get_state.return_value = AutonomousState.completed
+
+    state = MagicMock(
+        conversation_store=mock_store,
+        subsession_registry=None,
+        feedback_runner=None,
+        autonomous_runner=mock_runner,
+    )
+    request = _make_request(
+        method="DELETE",
+        query_string="owner_id=autonomous",
+        path_params={"session_id": "auto-1"},
+        app_state=state,
+    )
+
+    response = await sessions_delete_endpoint(request)
+    assert response.status_code == 200
+    mock_store.delete_session.assert_called_once_with(
+        "autonomous", "auto-1", create_replacement=False
+    )
+    mock_runner.forget_session.assert_called_once_with("auto-1")
+    mock_runner.ensure_active_session.assert_not_called()
 
 
 @pytest.mark.asyncio
