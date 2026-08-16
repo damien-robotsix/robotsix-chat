@@ -135,9 +135,7 @@ def _rebuild_inbox(entry: Mapping[str, object]) -> list[InboxMessage]:
                     role=role,
                     text=text,
                     timestamp=(
-                        float(timestamp)
-                        if isinstance(timestamp, (int, float))
-                        else 0.0
+                        float(timestamp) if isinstance(timestamp, (int, float)) else 0.0
                     ),
                 )
             )
