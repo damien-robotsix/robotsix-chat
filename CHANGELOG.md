@@ -69,6 +69,14 @@ Everything below predates the release-please migration and was
 maintained by hand or by towncrier. It is kept verbatim; new entries
 are added above by release-please.
 
+## [0.17.0](https://github.com/damien-robotsix/robotsix-chat/compare/v0.16.0...v0.17.0) (2026-08-16)
+
+
+### Features
+
+* Add CI health verification and remediation escalation for blocked merges (20260815T145653Z-add-ci-health-verification-and-remediati-646c) ([#1466](https://github.com/damien-robotsix/robotsix-chat/issues/1466)) ([5347416](https://github.com/damien-robotsix/robotsix-chat/commit/5347416e9e2e28cb47a38925bbe3c4deaba4494e))
+* Add cognee ingestion-structure comparison tool for regression testing (20260809T092559Z-add-cognee-ingestion-structure-compariso-d5ea) ([#1488](https://github.com/damien-robotsix/robotsix-chat/issues/1488)) ([8a6cd8a](https://github.com/damien-robotsix/robotsix-chat/commit/8a6cd8affedac9cbf0dc108f178ff28262dbc59b))
+
 ## [0.16.0](https://github.com/damien-robotsix/robotsix-chat/compare/v0.15.1...v0.16.0) (2026-08-16)
 
 
