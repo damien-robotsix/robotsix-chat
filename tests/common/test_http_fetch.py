@@ -1,18 +1,13 @@
-"""Dedicated unit tests for the shared HTTP-fetch helpers.
+"""Unit tests for :mod:`robotsix_chat.common.http_fetch`.
 
-Covers the three internal helpers in :mod:`robotsix_chat.common.http_fetch`:
-
-- :func:`_host_is_private` — SSRF protection against private/internal IPs
-- :func:`_check_hostname_allowlist` — hostname allowlist enforcement
-- :func:`_validate_url_scheme` — restricts to http/https only
+Covers the three SSRF / allowlist / URL-scheme helpers directly,
+without going through http_probe or public_fetch tool wrappers.
 """
 
 from __future__ import annotations
 
 import socket
 from unittest import mock
-
-import pytest
 
 from robotsix_chat.common.http_fetch import (
     _check_hostname_allowlist,
@@ -21,134 +16,175 @@ from robotsix_chat.common.http_fetch import (
 )
 
 # ---------------------------------------------------------------------------
-# helpers
+# _host_is_private
 # ---------------------------------------------------------------------------
 
 
-def _addrinfo(ip: str) -> list[tuple]:
-    """Return a single-entry ``getaddrinfo``-shaped list for *ip*."""
-    return [
-        (
-            socket.AF_INET if ":" not in ip else socket.AF_INET6,
-            socket.SOCK_STREAM,
-            6,
-            "",
-            (ip, 0),
+def _mock_addrinfo(*ip_strings: str):
+    """Build a ``socket.getaddrinfo`` return for one or more IP strings."""
+    results = []
+    for ip_str in ip_strings:
+        results.append(
+            (
+                socket.AF_INET,
+                socket.SOCK_STREAM,
+                6,
+                "",
+                (ip_str, 0),
+            )
         )
-    ]
+    return results
 
 
-# ---------------------------------------------------------------------------
-# _host_is_private — private IPv4 ranges
-# ---------------------------------------------------------------------------
+class TestHostIsPrivate:
+    """Unit tests for :func:`_host_is_private` SSRF guard."""
 
+    def test_public_ip_is_not_private(self):
+        """A public IP (93.184.216.34) is not private."""
+        with mock.patch(
+            "robotsix_chat.common.http_fetch.socket.getaddrinfo",
+            return_value=_mock_addrinfo("93.184.216.34"),
+        ):
+            assert _host_is_private("example.com") is False
 
-@pytest.mark.parametrize(
-    "ip_address,description",
-    [
-        ("127.0.0.1", "loopback (127.0.0.0/8)"),
-        ("10.1.2.3", "class-A private (10.0.0.0/8)"),
-        ("172.16.0.1", "class-B private low (172.16.0.0/12)"),
-        ("172.31.255.255", "class-B private high (172.16.0.0/12)"),
-        ("192.168.1.1", "class-C private (192.168.0.0/16)"),
-        ("169.254.1.1", "link-local (169.254.0.0/16)"),
-        ("0.0.0.1", "this-network (0.0.0.0/8)"),
-    ],
-)
-def test_host_is_private_ipv4_blocked(ip_address: str, description: str) -> None:
-    """Private IPv4 addresses are detected as private."""
-    with mock.patch(
-        "robotsix_chat.common.http_fetch.socket.getaddrinfo",
-        return_value=_addrinfo(ip_address),
-    ):
-        assert _host_is_private(ip_address) is True, description
+    def test_loopback_v4_is_private(self):
+        """127.0.0.1 is loopback and treated as private."""
+        with mock.patch(
+            "robotsix_chat.common.http_fetch.socket.getaddrinfo",
+            return_value=_mock_addrinfo("127.0.0.1"),
+        ):
+            assert _host_is_private("localhost") is True
 
+    def test_private_10x_is_private(self):
+        """10.x.x.x is RFC 1918 private."""
+        with mock.patch(
+            "robotsix_chat.common.http_fetch.socket.getaddrinfo",
+            return_value=_mock_addrinfo("10.1.2.3"),
+        ):
+            assert _host_is_private("internal") is True
 
-# ---------------------------------------------------------------------------
-# _host_is_private — private IPv6 ranges
-# ---------------------------------------------------------------------------
+    def test_private_172_16_x_is_private(self):
+        """172.16.x.x (lower bound of RFC 1918 /12) is private."""
+        with mock.patch(
+            "robotsix_chat.common.http_fetch.socket.getaddrinfo",
+            return_value=_mock_addrinfo("172.16.99.99"),
+        ):
+            assert _host_is_private("internal") is True
 
+    def test_private_172_31_x_is_private(self):
+        """172.31.x.x (upper bound of RFC 1918 /12) is private."""
+        with mock.patch(
+            "robotsix_chat.common.http_fetch.socket.getaddrinfo",
+            return_value=_mock_addrinfo("172.31.255.255"),
+        ):
+            assert _host_is_private("internal") is True
 
-@pytest.mark.parametrize(
-    "ip_address,description",
-    [
-        ("::1", "loopback (::1/128)"),
-        ("fc00::1", "unique-local low (fc00::/7)"),
-        ("fdff::1", "unique-local high (fc00::/7)"),
-        ("fe80::1", "link-local (fe80::/10)"),
-    ],
-)
-def test_host_is_private_ipv6_blocked(ip_address: str, description: str) -> None:
-    """Private IPv6 addresses are detected as private."""
-    with mock.patch(
-        "robotsix_chat.common.http_fetch.socket.getaddrinfo",
-        return_value=_addrinfo(ip_address),
-    ):
-        assert _host_is_private(ip_address) is True, description
+    def test_private_192_168_x_is_private(self):
+        """192.168.x.x is RFC 1918 private."""
+        with mock.patch(
+            "robotsix_chat.common.http_fetch.socket.getaddrinfo",
+            return_value=_mock_addrinfo("192.168.0.1"),
+        ):
+            assert _host_is_private("internal") is True
 
+    def test_link_local_v4_is_private(self):
+        """169.254.x.x link-local is treated as private."""
+        with mock.patch(
+            "robotsix_chat.common.http_fetch.socket.getaddrinfo",
+            return_value=_mock_addrinfo("169.254.1.1"),
+        ):
+            assert _host_is_private("linklocal") is True
 
-# ---------------------------------------------------------------------------
-# _host_is_private — public IPs pass
-# ---------------------------------------------------------------------------
+    def test_loopback_v6_is_private(self):
+        """::1 is the IPv6 loopback address."""
+        with mock.patch(
+            "robotsix_chat.common.http_fetch.socket.getaddrinfo",
+            return_value=_mock_addrinfo("::1"),
+        ):
+            assert _host_is_private("localhost6") is True
 
+    def test_unique_local_v6_is_private(self):
+        """fc00::/7 is the IPv6 unique-local range."""
+        with mock.patch(
+            "robotsix_chat.common.http_fetch.socket.getaddrinfo",
+            return_value=_mock_addrinfo("fc00::1"),
+        ):
+            assert _host_is_private("ula") is True
 
-@pytest.mark.parametrize(
-    "ip_address,description",
-    [
-        ("8.8.8.8", "Google DNS (public IPv4)"),
-        ("93.184.216.34", "example.com (public IPv4)"),
-        ("2001:4860:4860::8888", "Google DNS (public IPv6)"),
-    ],
-)
-def test_host_is_private_public_passes(ip_address: str, description: str) -> None:
-    """Public IP addresses are not detected as private."""
-    with mock.patch(
-        "robotsix_chat.common.http_fetch.socket.getaddrinfo",
-        return_value=_addrinfo(ip_address),
-    ):
-        assert _host_is_private(ip_address) is False, description
+    def test_link_local_v6_is_private(self):
+        """fe80::/10 is the IPv6 link-local range."""
+        with mock.patch(
+            "robotsix_chat.common.http_fetch.socket.getaddrinfo",
+            return_value=_mock_addrinfo("fe80::1"),
+        ):
+            assert _host_is_private("linklocal6") is True
 
+    def test_ipv4_mapped_loopback_is_private(self):
+        """::ffff:127.0.0.1 is a mapped loopback — private."""
+        with mock.patch(
+            "robotsix_chat.common.http_fetch.socket.getaddrinfo",
+            return_value=_mock_addrinfo("::ffff:127.0.0.1"),
+        ):
+            assert _host_is_private("mapped-loopback") is True
 
-# ---------------------------------------------------------------------------
-# _host_is_private — IPv4-mapped IPv6 (defence in depth)
-# ---------------------------------------------------------------------------
+    def test_ipv4_mapped_arbitrary_v4_in_private_range(self):
+        """Defence-in-depth: mapped address embedding a private IPv4."""
+        with mock.patch(
+            "robotsix_chat.common.http_fetch.socket.getaddrinfo",
+            return_value=_mock_addrinfo("::ffff:10.0.0.1"),
+        ):
+            assert _host_is_private("mapped-private") is True
 
+    def test_ipv4_mapped_public_v4_is_private(self):
+        """All mapped addresses are private (::ffff:0:0/96 range check)."""
+        with mock.patch(
+            "robotsix_chat.common.http_fetch.socket.getaddrinfo",
+            return_value=_mock_addrinfo("::ffff:93.184.216.34"),
+        ):
+            assert _host_is_private("mapped-public") is True
 
-def test_host_is_private_ipv4_mapped_private_embedded() -> None:
-    """IPv4-mapped address with private embedded IPv4 is blocked."""
-    # ::ffff:10.0.0.1 → embedded IPv4 10.0.0.1 is private
-    with mock.patch(
-        "robotsix_chat.common.http_fetch.socket.getaddrinfo",
-        return_value=_addrinfo("::ffff:10.0.0.1"),
-    ):
-        assert _host_is_private("::ffff:10.0.0.1") is True
+    def test_unresolvable_host_is_private(self):
+        """A host that fails DNS resolution is treated as private (safe default)."""
+        with mock.patch(
+            "robotsix_chat.common.http_fetch.socket.getaddrinfo",
+            side_effect=socket.gaierror("Name or service not known"),
+        ):
+            assert _host_is_private("no-such-host.invalid") is True
 
+    def test_dual_stack_public_first(self):
+        """First IP public, second private → host is private (any match wins)."""
+        with mock.patch(
+            "robotsix_chat.common.http_fetch.socket.getaddrinfo",
+            return_value=_mock_addrinfo("93.184.216.34", "10.0.0.1"),
+        ):
+            assert _host_is_private("dual") is True
 
-def test_host_is_private_ipv4_mapped_public_embedded() -> None:
-    """IPv4-mapped address with public embedded IPv4 is still blocked.
+    def test_dual_stack_private_first(self):
+        """First resolved IP is private → host is private."""
+        with mock.patch(
+            "robotsix_chat.common.http_fetch.socket.getaddrinfo",
+            return_value=_mock_addrinfo("10.0.0.1", "93.184.216.34"),
+        ):
+            assert _host_is_private("dual") is True
 
-    Even when the embedded IPv4 is public, the mapped address itself falls
-    within ``::ffff:0:0/96`` which is listed in ``_PRIVATE_NETWORKS``.
-    """
-    with mock.patch(
-        "robotsix_chat.common.http_fetch.socket.getaddrinfo",
-        return_value=_addrinfo("::ffff:8.8.8.8"),
-    ):
-        assert _host_is_private("::ffff:8.8.8.8") is True
+    def test_all_zero_ip_is_private(self):
+        """0.0.0.0 is in the private networks."""
+        with mock.patch(
+            "robotsix_chat.common.http_fetch.socket.getaddrinfo",
+            return_value=_mock_addrinfo("0.0.0.0"),
+        ):
+            assert _host_is_private("zero") is True
 
-
-# ---------------------------------------------------------------------------
-# _host_is_private — unresolvable host
-# ---------------------------------------------------------------------------
-
-
-def test_host_is_private_gaierror_treated_as_unsafe() -> None:
-    """A host that cannot be resolved is treated as private (unsafe)."""
-    with mock.patch(
-        "robotsix_chat.common.http_fetch.socket.getaddrinfo",
-        side_effect=socket.gaierror("Name or service not known"),
-    ):
-        assert _host_is_private("does-not-exist.invalid") is True
+    def test_invalid_ip_string_skipped(self):
+        """A malformed IP in getaddrinfo result is silently skipped."""
+        with mock.patch(
+            "robotsix_chat.common.http_fetch.socket.getaddrinfo",
+            return_value=[
+                (socket.AF_INET, socket.SOCK_STREAM, 6, "", ("not-an-ip", 0)),
+                (socket.AF_INET, socket.SOCK_STREAM, 6, "", ("93.184.216.34", 0)),
+            ],
+        ):
+            assert _host_is_private("broken-dns") is False
 
 
 # ---------------------------------------------------------------------------
@@ -156,64 +192,76 @@ def test_host_is_private_gaierror_treated_as_unsafe() -> None:
 # ---------------------------------------------------------------------------
 
 
-def test_check_hostname_allowlist_allowed_host_passes() -> None:
-    """An allowlisted host returns ``None`` (no error)."""
-    result = _check_hostname_allowlist(
-        hostname="example.com",
-        allowed_hosts={"example.com", "example.org"},
-        fleet_hosts=set(),
-        tool_name="test-tool",
-    )
-    assert result is None
+class TestCheckHostnameAllowlist:
+    """Unit tests for :func:`_check_hostname_allowlist`."""
 
+    def test_empty_allowed_hosts_passes(self):
+        """An empty allowlist permits any hostname."""
+        assert _check_hostname_allowlist("any.host", set(), set(), "test_tool") is None
 
-def test_check_hostname_allowlist_non_allowed_host_fails() -> None:
-    """A non-allowlisted host returns an error message."""
-    result = _check_hostname_allowlist(
-        hostname="evil.com",
-        allowed_hosts={"example.com"},
-        fleet_hosts=set(),
-        tool_name="test-tool",
-    )
-    assert result is not None
-    assert "'evil.com'" in result
-    assert "test-tool" in result
-    assert "'example.com'" in result
+    def test_exact_host_in_allowlist_passes(self):
+        """Exact hostname match in allowed_hosts passes."""
+        assert (
+            _check_hostname_allowlist(
+                "example.com", {"example.com"}, set(), "test_tool"
+            )
+            is None
+        )
 
+    def test_host_not_in_allowlist_returns_error(self):
+        """A hostname not in the allowlist returns a descriptive error."""
+        err = _check_hostname_allowlist("evil.com", {"example.com"}, set(), "test_tool")
+        assert err is not None
+        assert "Hostname 'evil.com'" in err
+        assert "not in the test_tool allowlist" in err
+        assert "['example.com']" in err
 
-def test_check_hostname_allowlist_fleet_host_implicit_pass() -> None:
-    """Fleet component hosts pass the allowlist check implicitly."""
-    result = _check_hostname_allowlist(
-        hostname="internal-fleet.local",
-        allowed_hosts={"example.com"},
-        fleet_hosts={"internal-fleet.local"},
-        tool_name="test-tool",
-    )
-    assert result is None
+    def test_fleet_auth_host_implicitly_allowed(self):
+        """A fleet_auth host passes even when not in main allowed_hosts."""
+        assert (
+            _check_hostname_allowlist(
+                "deploy.robotsix.net",
+                {"example.com"},
+                {"deploy.robotsix.net"},
+                "test_tool",
+            )
+            is None
+        )
 
+    def test_block_message_includes_both_lists_sorted(self):
+        """Block message lists sorted union of allowed_hosts and fleet_auth_hosts."""
+        err = _check_hostname_allowlist(
+            "bad.host",
+            {"z.example", "a.example"},
+            {"b.internal"},
+            "probe_tool",
+        )
+        assert err is not None
+        # sorted union: ['a.example', 'b.internal', 'z.example']
+        assert "['a.example', 'b.internal', 'z.example']" in err
+        assert "Hostname 'bad.host'" in err
+        assert "probe_tool allowlist" in err
 
-def test_check_hostname_allowlist_empty_allowlist_passes_all() -> None:
-    """An empty allowlist means any hostname is permitted."""
-    result = _check_hostname_allowlist(
-        hostname="anything.example",
-        allowed_hosts=set(),
-        fleet_hosts=set(),
-        tool_name="test-tool",
-    )
-    assert result is None
+    def test_host_in_both_lists_passes(self):
+        """A host present in both allowed_hosts and fleet_auth_hosts passes."""
+        assert (
+            _check_hostname_allowlist(
+                "shared.host", {"shared.host"}, {"shared.host"}, "tool"
+            )
+            is None
+        )
 
-
-def test_check_hostname_allowlist_fleet_host_in_error_message() -> None:
-    """Error message includes fleet hosts in sorted allowed list."""
-    result = _check_hostname_allowlist(
-        hostname="evil.com",
-        allowed_hosts={"example.com"},
-        fleet_hosts={"fleet.local"},
-        tool_name="test-tool",
-    )
-    assert result is not None
-    assert "fleet.local" in result
-    assert "'example.com'" in result
+    def test_fleet_auth_implicit_bypass_even_when_allowlist_has_other_hosts(self):
+        """Fleet auth hosts pass even though not in the main allowed_hosts."""
+        assert (
+            _check_hostname_allowlist(
+                "auth-only.host",
+                {"other.host"},
+                {"auth-only.host"},
+                "tool",
+            )
+            is None
+        )
 
 
 # ---------------------------------------------------------------------------
@@ -221,29 +269,32 @@ def test_check_hostname_allowlist_fleet_host_in_error_message() -> None:
 # ---------------------------------------------------------------------------
 
 
-def test_validate_url_scheme_http_passes() -> None:
-    """``http`` scheme is allowed."""
-    assert _validate_url_scheme("http") is None
+class TestValidateUrlScheme:
+    """Unit tests for :func:`_validate_url_scheme`."""
 
+    def test_http_passes(self):
+        """The ``http`` scheme is allowed."""
+        assert _validate_url_scheme("http") is None
 
-def test_validate_url_scheme_https_passes() -> None:
-    """``https`` scheme is allowed."""
-    assert _validate_url_scheme("https") is None
+    def test_https_passes(self):
+        """The ``https`` scheme is allowed."""
+        assert _validate_url_scheme("https") is None
 
+    def test_ftp_rejected(self):
+        """The ``ftp`` scheme is rejected with an error message."""
+        err = _validate_url_scheme("ftp")
+        assert err is not None
+        assert "ftp" in err
 
-@pytest.mark.parametrize(
-    "scheme",
-    ["ftp", "file", "gopher", "ws", "wss", "data", "javascript"],
-)
-def test_validate_url_scheme_disallowed_schemes_fail(scheme: str) -> None:
-    """Non-http/https schemes are rejected."""
-    result = _validate_url_scheme(scheme)
-    assert result is not None
-    assert scheme in result
-    assert "only http and https" in result
+    def test_file_rejected(self):
+        """The ``file`` scheme is rejected with an error message."""
+        err = _validate_url_scheme("file")
+        assert err is not None
+        assert "file" in err
 
-
-def test_validate_url_scheme_empty_string_fails() -> None:
-    """An empty scheme string is rejected."""
-    result = _validate_url_scheme("")
-    assert result is not None
+    def test_arbitrary_scheme_rejected(self):
+        """An arbitrary scheme (gopher) is rejected."""
+        err = _validate_url_scheme("gopher")
+        assert err is not None
+        assert "gopher" in err
+        assert "http and https" in err
