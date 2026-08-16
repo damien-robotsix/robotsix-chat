@@ -290,6 +290,76 @@ async def test_cognee_remember_never_raises(
     await mem.remember("hello", "hi")  # must not raise
 
 
+@pytest.mark.asyncio
+async def test_ingest_structure_fixture_returns_metrics(
+    cognee_memory: tuple[CogneeMemory, Any],
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    """Fixture ingestion cognifies an isolated dataset and measures the graph."""
+    mem, fake = cognee_memory
+
+    fake.forget = AsyncMock(return_value={"status": "success"})
+    fake.add = AsyncMock(return_value=types.SimpleNamespace(dataset_id="fixture-ds"))
+    fake.cognify = AsyncMock(return_value=None)
+
+    modules_pkg = types.ModuleType("cognee.modules")
+    graph_pkg = types.ModuleType("cognee.modules.graph")
+    users_pkg = types.ModuleType("cognee.modules.users")
+    graph_methods = types.ModuleType("cognee.modules.graph.methods")
+    users_methods = types.ModuleType("cognee.modules.users.methods")
+
+    graph_methods.get_formatted_graph_data = AsyncMock(
+        return_value={
+            "nodes": [
+                {
+                    "id": "n1",
+                    "type": "Entity",
+                    "label": "Alice Chen",
+                    "properties": {},
+                },
+                {
+                    "id": "n2",
+                    "type": "Entity",
+                    "label": "Acme Robotics",
+                    "properties": {},
+                },
+                {
+                    "id": "s1",
+                    "type": "TextSummary",
+                    "label": "summary",
+                    "properties": {"text": "twelve chars"},
+                },
+            ],
+            "edges": [
+                {"source": "n1", "target": "n2", "label": "leads"},
+                {"source": "n1", "target": "n1", "label": "SELF"},
+            ],
+        }
+    )
+    users_methods.get_default_user = AsyncMock(return_value=object())
+
+    modules_pkg.graph = graph_pkg
+    modules_pkg.users = users_pkg
+    graph_pkg.methods = graph_methods
+    users_pkg.methods = users_methods
+    fake.modules = modules_pkg
+
+    for mod in (modules_pkg, graph_pkg, users_pkg, graph_methods, users_methods):
+        monkeypatch.setitem(sys.modules, mod.__name__, mod)
+
+    metrics = await mem.ingest_structure_fixture()
+
+    fake.forget.assert_awaited_once_with(dataset="ingestion_structure_check")
+    fake.add.assert_awaited_once()
+    fake.cognify.assert_awaited_once_with(datasets="ingestion_structure_check")
+    assert metrics["dataset_id"] == "fixture-ds"
+    assert metrics["entity_count"] == 2
+    assert metrics["relation_count"] == 1  # the synthetic SELF edge is filtered
+    assert metrics["summary_count"] == 1
+    assert metrics["summary_lengths"] == [12]
+    assert metrics["total_summary_length"] == 12
+
+
 # ---------------------------------------------------------------------------
 # Warm start — regression: cold-start cost billed to the first turns
 # ---------------------------------------------------------------------------
