@@ -752,7 +752,7 @@ class CogneeMemory:
         # ``forget`` raises ValueError when the dataset does not exist yet.
         try:
             await cognee.forget(dataset=_INGESTION_FIXTURE_DATASET)
-        except BaseException:
+        except Exception:
             logger.debug(
                 "ingestion structure check: no previous fixture dataset to drop",
                 exc_info=True,

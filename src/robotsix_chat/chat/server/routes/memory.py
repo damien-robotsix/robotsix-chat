@@ -9,6 +9,8 @@ before/after without touching production memory.
 from __future__ import annotations
 
 import logging
+from collections.abc import Awaitable
+from typing import Any, cast
 
 from starlette.requests import Request
 from starlette.responses import JSONResponse
@@ -36,7 +38,7 @@ async def memory_ingestion_structure_endpoint(request: Request) -> JSONResponse:
         )
 
     try:
-        metrics = await run()
+        metrics = await cast(Awaitable[dict[str, Any]], run())
     except Exception:
         logger.warning(
             "memory/ingestion-structure: fixture ingestion failed",
