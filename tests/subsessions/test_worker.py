@@ -727,10 +727,12 @@ async def test_periodic_max_idle_runs_pauses_after_consecutive_no_change() -> No
     assert info.status is SubsessionStatus.PAUSED
     assert info.close_reason == "paused"
     assert info.summary == (
-        "Auto-paused after 3 consecutive no-change runs. "
-        "The monitor will resume when the ticket's state changes, "
-        "or you can resume it now by sending a message to this "
-        "subsession via message_subsession."
+        "Auto-paused after 3 consecutive no-change runs "
+        "(no-change pause 1/3; the monitor will auto-close after 3 "
+        "such pauses if the ticket never changes). The monitor will "
+        "resume when the ticket's state changes, or you can resume it "
+        "now by sending a message to this subsession via "
+        "message_subsession."
     )
     assert len(agent.calls) == 3
 
@@ -740,6 +742,44 @@ async def test_periodic_max_idle_runs_pauses_after_consecutive_no_change() -> No
     _sid, frame = notifications[0]
     assert frame["title"] == f"Monitor auto-paused: {info.title}"
     assert f" — {info.summary}" in str(frame["body"])
+    assert frame["urgency"] == "low"
+
+
+@pytest.mark.asyncio
+async def test_periodic_auto_closes_after_repeated_no_change_pauses() -> None:
+    """Repeated no-change pauses auto-close the monitor instead of pausing again."""
+    # 6 NO_CHANGE replies: 3 to auto-pause the first time, then 3 more
+    # after the auto-resume timeout to reach the second pause — which
+    # hits the pause limit and closes the monitor.
+    agent = FakeAgent(["NO_CHANGE"] * 6)
+    sink = RecordingSink()
+    env = build_env(
+        agent=agent,
+        settings=make_settings(
+            max_idle_runs=3,
+            auto_stop_no_change_runs=10,
+            max_no_change_pauses=2,
+            paused_monitor_auto_resume_seconds=0.05,
+        ),
+        event_sink=sink,
+    )
+
+    sub_id = _spawn(env, kind=SubsessionKind.PERIODIC, interval_seconds=0.02)
+    await _await_worker(env, sub_id)
+
+    info = env.registry.get(sub_id)
+    assert info is not None
+    assert info.status is SubsessionStatus.CLOSED
+    assert info.close_reason == "no_change_pause_limit"
+    assert "2 consecutive pauses" in (info.summary or "")
+    assert "reassess" in (info.summary or "").lower()
+    assert len(agent.calls) == 6
+
+    # Auto-pause, auto-resume (timeout), then auto-close notifications.
+    notifications = sink.of_type(SSE_NOTIFICATION_TYPE)
+    assert len(notifications) == 3
+    _sid, frame = notifications[-1]
+    assert frame["title"] == f"Monitor auto-closed: {info.title}"
     assert frame["urgency"] == "low"
 
 
