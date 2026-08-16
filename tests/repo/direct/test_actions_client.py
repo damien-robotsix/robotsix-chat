@@ -233,6 +233,25 @@ async def test_list_workflow_runs_returns_empty_on_error(
 
 
 @pytest.mark.asyncio
+async def test_list_workflow_runs_raise_on_error(
+    respx_mock: respx.MockRouter,
+) -> None:
+    """list_workflow_runs re-raises when raise_on_error=True."""
+    from tests.repo.direct.conftest import _prepopulate_installation_token, _settings
+
+    settings = _settings()
+    _prepopulate_installation_token(settings)
+
+    respx_mock.get(
+        "https://api.github.com/repos/org/repo/actions/runs?per_page=10"
+    ).mock(return_value=httpx.Response(403, text="Forbidden"))
+
+    client = ActionsClient(settings)
+    with pytest.raises(RuntimeError):
+        await client.list_workflow_runs("org/repo", raise_on_error=True)
+
+
+@pytest.mark.asyncio
 async def test_list_workflow_runs_respects_per_page(
     respx_mock: respx.MockRouter,
 ) -> None:
@@ -260,6 +279,94 @@ async def test_list_workflow_runs_respects_per_page(
     await client.list_workflow_runs("org/repo", per_page=0)
     last_url = str(route.calls.last.request.url)
     assert "per_page=1" in last_url
+
+
+# ---------------------------------------------------------------------------
+# get_default_branch
+# ---------------------------------------------------------------------------
+
+
+@pytest.mark.asyncio
+async def test_get_default_branch_returns_branch(
+    respx_mock: respx.MockRouter,
+) -> None:
+    """get_default_branch reads default_branch from repo metadata."""
+    from tests.repo.direct.conftest import _prepopulate_installation_token, _settings
+
+    settings = _settings()
+    _prepopulate_installation_token(settings)
+
+    respx_mock.get("https://api.github.com/repos/org/repo").mock(
+        return_value=httpx.Response(
+            200,
+            text=json.dumps({"default_branch": "develop"}),
+        )
+    )
+
+    client = ActionsClient(settings)
+    assert await client.get_default_branch("org/repo") == "develop"
+
+
+@pytest.mark.asyncio
+async def test_get_default_branch_falls_back_on_error(
+    respx_mock: respx.MockRouter,
+) -> None:
+    """get_default_branch returns 'main' when repo metadata is unavailable."""
+    from tests.repo.direct.conftest import _prepopulate_installation_token, _settings
+
+    settings = _settings()
+    _prepopulate_installation_token(settings)
+
+    respx_mock.get("https://api.github.com/repos/org/repo").mock(
+        return_value=httpx.Response(403, text="Forbidden")
+    )
+
+    client = ActionsClient(settings)
+    assert await client.get_default_branch("org/repo") == "main"
+
+
+# ---------------------------------------------------------------------------
+# rerun_workflow_run
+# ---------------------------------------------------------------------------
+
+
+@pytest.mark.asyncio
+async def test_rerun_workflow_run_success(
+    respx_mock: respx.MockRouter,
+) -> None:
+    """rerun_workflow_run POSTs to the rerun endpoint and reports success."""
+    from tests.repo.direct.conftest import _prepopulate_installation_token, _settings
+
+    settings = _settings()
+    _prepopulate_installation_token(settings)
+
+    route = respx_mock.post(
+        "https://api.github.com/repos/org/repo/actions/runs/42/rerun"
+    ).mock(return_value=httpx.Response(201, text=""))
+
+    client = ActionsClient(settings)
+    result = await client.rerun_workflow_run("org/repo", 42)
+    assert "re-run triggered successfully" in result
+    assert route.called
+
+
+@pytest.mark.asyncio
+async def test_rerun_workflow_run_error(
+    respx_mock: respx.MockRouter,
+) -> None:
+    """rerun_workflow_run reports an error message on API failure."""
+    from tests.repo.direct.conftest import _prepopulate_installation_token, _settings
+
+    settings = _settings()
+    _prepopulate_installation_token(settings)
+
+    respx_mock.post("https://api.github.com/repos/org/repo/actions/runs/42/rerun").mock(
+        return_value=httpx.Response(403, text="Forbidden")
+    )
+
+    client = ActionsClient(settings)
+    result = await client.rerun_workflow_run("org/repo", 42)
+    assert "Error rerunning workflow run 42" in result
 
 
 # ---------------------------------------------------------------------------

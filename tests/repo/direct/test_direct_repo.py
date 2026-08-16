@@ -72,16 +72,19 @@ def test_build_direct_repo_tools_disabled() -> None:
     assert build_direct_repo_tools(DirectRepoSettings(enabled=False)) == []
 
 
-def test_build_direct_repo_tools_returns_fourteen_tools() -> None:
-    """Verify that enabled direct_repo returns the fourteen expected tools."""
+def test_build_direct_repo_tools_returns_seventeen_tools() -> None:
+    """Verify that enabled direct_repo returns the seventeen expected tools."""
     tools = build_direct_repo_tools(_settings())
-    assert len(tools) == 14
+    assert len(tools) == 17
     names = [t.__name__ for t in tools]
     assert "push_direct_repo_branch" in names
     assert "open_direct_repo_pr" in names
     assert "update_pr_branch" in names
     assert "check_pr_merge_conflict" in names
     assert "verify_pr_ci_status" in names
+    assert "check_ci_health" in names
+    assert "rerun_ci_workflow" in names
+    assert "file_ci_stabilization_ticket" in names
     assert "recover_auto_merge" in names
     assert "check_direct_repo_auto_merge" in names
     assert "list_open_prs" in names
@@ -319,8 +322,10 @@ def test_merge_tools_returned() -> None:
     assert sorted(names) == [
         "apply_patch_to_file",
         "arm_direct_repo_auto_merge",
+        "check_ci_health",
         "check_direct_repo_auto_merge",
         "check_pr_merge_conflict",
+        "file_ci_stabilization_ticket",
         "inspect_github_installation_token",
         "list_open_prs",
         "merge_direct_repo_pr",
@@ -328,6 +333,7 @@ def test_merge_tools_returned() -> None:
         "push_direct_repo_branch",
         "push_patch_to_pr_branch",
         "recover_auto_merge",
+        "rerun_ci_workflow",
         "reset_implement_spawn_counter",
         "update_pr_branch",
         "verify_pr_ci_status",
@@ -1195,6 +1201,306 @@ async def test_inspect_github_installation_token_error(
 
     out = await fn("org/repo")
     assert "Error inspecting installation token for org/repo: mint failed" in out
+
+
+# ---------------------------------------------------------------------------
+# check_ci_health
+# ---------------------------------------------------------------------------
+
+
+@pytest.mark.asyncio
+async def test_check_ci_health_flags_pre_existing_failure(
+    respx_mock: respx.MockRouter,
+) -> None:
+    """A failing latest run with an earlier green run is pre-existing."""
+    settings = _settings()
+    _prepopulate_installation_token(settings)
+
+    respx_mock.get(
+        url__startswith="https://api.github.com/installation/repositories"
+    ).mock(
+        return_value=httpx.Response(
+            200,
+            text=json.dumps({"repositories": [{"full_name": "org/repo"}]}),
+        )
+    )
+    respx_mock.get("https://api.github.com/repos/org/repo").mock(
+        return_value=httpx.Response(200, text=json.dumps({"default_branch": "main"}))
+    )
+    respx_mock.get(
+        url__startswith="https://api.github.com/repos/org/repo/actions/runs"
+    ).mock(
+        return_value=httpx.Response(
+            200,
+            text=json.dumps(
+                {
+                    "workflow_runs": [
+                        {
+                            "id": 2,
+                            "name": "CI",
+                            "status": "completed",
+                            "conclusion": "failure",
+                        },
+                        {
+                            "id": 1,
+                            "name": "CI",
+                            "status": "completed",
+                            "conclusion": "success",
+                        },
+                    ]
+                }
+            ),
+        )
+    )
+
+    tools = build_direct_repo_tools(settings)
+    fn = [t for t in tools if t.__name__ == "check_ci_health"][0]
+
+    out = await fn(repo_full_name="org/repo")
+    assert "PRE-EXISTING failure" in out
+    assert "branch 'main'" in out
+
+
+@pytest.mark.asyncio
+async def test_check_ci_health_reports_green(
+    respx_mock: respx.MockRouter,
+) -> None:
+    """A successful latest run reports the branch as green."""
+    settings = _settings()
+    _prepopulate_installation_token(settings)
+
+    respx_mock.get(
+        url__startswith="https://api.github.com/installation/repositories"
+    ).mock(
+        return_value=httpx.Response(
+            200,
+            text=json.dumps({"repositories": [{"full_name": "org/repo"}]}),
+        )
+    )
+    respx_mock.get("https://api.github.com/repos/org/repo").mock(
+        return_value=httpx.Response(200, text=json.dumps({"default_branch": "main"}))
+    )
+    respx_mock.get(
+        url__startswith="https://api.github.com/repos/org/repo/actions/runs"
+    ).mock(
+        return_value=httpx.Response(
+            200,
+            text=json.dumps(
+                {
+                    "workflow_runs": [
+                        {
+                            "id": 3,
+                            "name": "CI",
+                            "status": "completed",
+                            "conclusion": "success",
+                        }
+                    ]
+                }
+            ),
+        )
+    )
+
+    tools = build_direct_repo_tools(settings)
+    fn = [t for t in tools if t.__name__ == "check_ci_health"][0]
+
+    out = await fn(repo_full_name="org/repo")
+    assert "Verdict: GREEN" in out
+
+
+@pytest.mark.asyncio
+async def test_check_ci_health_reports_api_error(
+    respx_mock: respx.MockRouter,
+) -> None:
+    """An Actions API failure is surfaced, not reported as 'no runs'."""
+    settings = _settings()
+    _prepopulate_installation_token(settings)
+
+    respx_mock.get(
+        url__startswith="https://api.github.com/installation/repositories"
+    ).mock(
+        return_value=httpx.Response(
+            200,
+            text=json.dumps({"repositories": [{"full_name": "org/repo"}]}),
+        )
+    )
+    respx_mock.get("https://api.github.com/repos/org/repo").mock(
+        return_value=httpx.Response(200, text=json.dumps({"default_branch": "main"}))
+    )
+    respx_mock.get(
+        url__startswith="https://api.github.com/repos/org/repo/actions/runs"
+    ).mock(return_value=httpx.Response(403, text="Forbidden"))
+
+    tools = build_direct_repo_tools(settings)
+    fn = [t for t in tools if t.__name__ == "check_ci_health"][0]
+
+    out = await fn(repo_full_name="org/repo")
+    assert "Error checking CI health for org/repo" in out
+    assert "No recent workflow runs found" not in out
+
+
+# ---------------------------------------------------------------------------
+# rerun_ci_workflow
+# ---------------------------------------------------------------------------
+
+
+@pytest.mark.asyncio
+async def test_rerun_ci_workflow_reruns_latest_failed(
+    respx_mock: respx.MockRouter,
+) -> None:
+    """The latest failed run is re-run when no run_id is supplied."""
+    settings = _settings()
+    _prepopulate_installation_token(settings)
+
+    respx_mock.get(
+        url__startswith="https://api.github.com/installation/repositories"
+    ).mock(
+        return_value=httpx.Response(
+            200,
+            text=json.dumps({"repositories": [{"full_name": "org/repo"}]}),
+        )
+    )
+    respx_mock.get("https://api.github.com/repos/org/repo").mock(
+        return_value=httpx.Response(200, text=json.dumps({"default_branch": "main"}))
+    )
+    respx_mock.get(
+        url__startswith="https://api.github.com/repos/org/repo/actions/runs"
+    ).mock(
+        return_value=httpx.Response(
+            200,
+            text=json.dumps(
+                {
+                    "workflow_runs": [
+                        {
+                            "id": 7,
+                            "name": "CI",
+                            "status": "completed",
+                            "conclusion": "failure",
+                        }
+                    ]
+                }
+            ),
+        )
+    )
+    route = respx_mock.post(
+        "https://api.github.com/repos/org/repo/actions/runs/7/rerun"
+    ).mock(return_value=httpx.Response(201, text=""))
+
+    tools = build_direct_repo_tools(settings)
+    fn = [t for t in tools if t.__name__ == "rerun_ci_workflow"][0]
+
+    out = await fn(repo_full_name="org/repo")
+    assert "re-run triggered successfully" in out
+    assert route.called
+
+
+@pytest.mark.asyncio
+async def test_rerun_ci_workflow_no_failed_run(
+    respx_mock: respx.MockRouter,
+) -> None:
+    """No failed run on the branch produces a clear no-op message."""
+    settings = _settings()
+    _prepopulate_installation_token(settings)
+
+    respx_mock.get(
+        url__startswith="https://api.github.com/installation/repositories"
+    ).mock(
+        return_value=httpx.Response(
+            200,
+            text=json.dumps({"repositories": [{"full_name": "org/repo"}]}),
+        )
+    )
+    respx_mock.get("https://api.github.com/repos/org/repo").mock(
+        return_value=httpx.Response(200, text=json.dumps({"default_branch": "main"}))
+    )
+    respx_mock.get(
+        url__startswith="https://api.github.com/repos/org/repo/actions/runs"
+    ).mock(return_value=httpx.Response(200, text=json.dumps({"workflow_runs": []})))
+
+    tools = build_direct_repo_tools(settings)
+    fn = [t for t in tools if t.__name__ == "rerun_ci_workflow"][0]
+
+    out = await fn(repo_full_name="org/repo")
+    assert "No failed workflow run found" in out
+
+
+@pytest.mark.asyncio
+async def test_rerun_ci_workflow_reports_api_error(
+    respx_mock: respx.MockRouter,
+) -> None:
+    """An Actions API failure while listing runs is surfaced as an error."""
+    settings = _settings()
+    _prepopulate_installation_token(settings)
+
+    respx_mock.get(
+        url__startswith="https://api.github.com/installation/repositories"
+    ).mock(
+        return_value=httpx.Response(
+            200,
+            text=json.dumps({"repositories": [{"full_name": "org/repo"}]}),
+        )
+    )
+    respx_mock.get("https://api.github.com/repos/org/repo").mock(
+        return_value=httpx.Response(200, text=json.dumps({"default_branch": "main"}))
+    )
+    respx_mock.get(
+        url__startswith="https://api.github.com/repos/org/repo/actions/runs"
+    ).mock(return_value=httpx.Response(403, text="Forbidden"))
+
+    tools = build_direct_repo_tools(settings)
+    fn = [t for t in tools if t.__name__ == "rerun_ci_workflow"][0]
+
+    out = await fn(repo_full_name="org/repo")
+    assert "Error listing workflow runs for org/repo" in out
+    assert "No failed workflow run found" not in out
+
+
+# ---------------------------------------------------------------------------
+# file_ci_stabilization_ticket
+# ---------------------------------------------------------------------------
+
+
+@pytest.mark.asyncio
+async def test_file_ci_stabilization_ticket_creates_ticket(
+    respx_mock: respx.MockRouter,
+) -> None:
+    """A CI stabilization escalation files a board ticket and returns its id."""
+    settings = _settings()
+    _prepopulate_installation_token(settings)
+
+    respx_mock.get(
+        url__startswith="https://api.github.com/installation/repositories"
+    ).mock(
+        return_value=httpx.Response(
+            200,
+            text=json.dumps({"repositories": [{"full_name": "org/repo"}]}),
+        )
+    )
+    respx_mock.get("https://api.github.com/repos/org/repo").mock(
+        return_value=httpx.Response(200, text=json.dumps({"default_branch": "main"}))
+    )
+    respx_mock.post("http://127.0.0.1:8077/tickets").mock(
+        return_value=httpx.Response(
+            201,
+            text=json.dumps(
+                {"id": "t-ci", "title": "CI stabilization", "state": "draft"}
+            ),
+        )
+    )
+    respx_mock.get("http://127.0.0.1:8077/tickets/t-ci").mock(
+        return_value=httpx.Response(
+            200,
+            text=json.dumps(
+                {"id": "t-ci", "title": "CI stabilization", "state": "draft"}
+            ),
+        )
+    )
+
+    tools = build_direct_repo_tools(settings)
+    fn = [t for t in tools if t.__name__ == "file_ci_stabilization_ticket"][0]
+
+    out = await fn(repo_full_name="org/repo", summary="Flaky e2e step")
+    assert "t-ci" in out
+    assert "CI stabilization needed" in out
 
 
 # ---------------------------------------------------------------------------
@@ -2310,7 +2616,7 @@ def test_direct_fix_available_when_enabled() -> None:
     tools = build_direct_repo_tools(_settings(direct_fix_enabled=True))
     names = [t.__name__ for t in tools]
     assert "direct_fix" in names
-    assert len(tools) == 16  # 14 base + direct_fix + patch_direct_repo_file
+    assert len(tools) == 19  # 17 base + direct_fix + patch_direct_repo_file
 
 
 @pytest.mark.asyncio
