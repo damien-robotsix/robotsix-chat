@@ -188,6 +188,7 @@ modules:
       - src/robotsix_chat/chat/server/routes/errors.py
       - src/robotsix_chat/chat/server/routes/events.py
       - src/robotsix_chat/chat/server/routes/github.py
+      - src/robotsix_chat/chat/server/routes/memory.py
       - src/robotsix_chat/chat/server/routes/mill_events.py
       - src/robotsix_chat/chat/server/routes/sessions.py
       - src/robotsix_chat/chat/server/routes/subsessions.py
@@ -219,6 +220,7 @@ modules:
       - tests/chat/server/routes/test_chat.py
       - tests/chat/server/routes/test_events.py
       - tests/chat/server/routes/test_github.py
+      - tests/chat/server/routes/test_memory.py
       - tests/chat/server/routes/test_mill_events.py
       - tests/chat/server/routes/test_draft.py
       - tests/chat/server/routes/test_errors.py

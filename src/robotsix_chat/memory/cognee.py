@@ -45,6 +45,18 @@ _MAX_RECALL_CHARS = 4000
 # discarded — only the lazy initialisation it forces matters.
 _WARMUP_QUERY = "warm up"
 
+# Fixed sample document for the ingestion-structure regression check.  It is
+# intentionally entity- and relation-rich so a model/config change that thins
+# extraction shows up as a drop in the counts returned by
+# :meth:`CogneeMemory.ingest_structure_fixture`.
+_INGESTION_FIXTURE_DOCUMENT = (
+    "Alice Chen, a robotics engineer at Acme Robotics, leads the navigation "
+    "team. Bob Patel, a data scientist at Acme Robotics, reports to Alice. "
+    "Together they built the NavMesh localization pipeline in Q3 2025, which "
+    "reduced docking failures by 40 percent."
+)
+_INGESTION_FIXTURE_DATASET = "ingestion_structure_check"
+
 # First 16 bytes of every SQLite database file.
 _SQLITE_MAGIC = b"SQLite format 3\x00"
 
@@ -720,6 +732,68 @@ class CogneeMemory:
                 await asyncio.sleep(self._settings.write_throttle_seconds)
 
         await _remember()
+
+    async def ingest_structure_fixture(self) -> dict[str, Any]:
+        """Ingest the fixed sample document and return structural metrics.
+
+        Regression-check hook for model/config changes: a fixed document is
+        added to an isolated dataset, cognified, and the resulting graph is
+        measured (entity count, relation count, and summary lengths).  The
+        fixture dataset is dropped first, so every run starts from a clean,
+        directly comparable graph and never touches the production memory
+        dataset.
+        """
+        await self.setup()
+        import cognee
+        from cognee.modules.graph.methods import get_formatted_graph_data
+        from cognee.modules.users.methods import get_default_user
+
+        # Best-effort: remove a leftover fixture dataset from a previous run.
+        # ``forget`` raises ValueError when the dataset does not exist yet.
+        try:
+            await cognee.forget(dataset=_INGESTION_FIXTURE_DATASET)
+        except Exception:
+            logger.debug(
+                "ingestion structure check: no previous fixture dataset to drop",
+                exc_info=True,
+            )
+
+        add_result = await cognee.add(
+            _INGESTION_FIXTURE_DOCUMENT,
+            dataset_name=_INGESTION_FIXTURE_DATASET,
+        )
+        dataset_id = getattr(add_result, "dataset_id", None)
+        if dataset_id is None and isinstance(add_result, dict):
+            dataset_id = next(iter(add_result), None)
+        if dataset_id is None:
+            raise RuntimeError("cognee.add returned no dataset id")
+
+        await cognee.cognify(datasets=_INGESTION_FIXTURE_DATASET)
+
+        user = await get_default_user()
+        graph = await get_formatted_graph_data(dataset_id, user)
+        nodes: list[dict[str, Any]] = graph.get("nodes", [])
+        edges: list[dict[str, Any]] = graph.get("edges", [])
+
+        entity_count = sum(1 for n in nodes if n.get("type") == "Entity")
+        summaries = [n for n in nodes if n.get("type") == "TextSummary"]
+        summary_lengths = [
+            len(str((n.get("properties") or {}).get("text") or "")) for n in summaries
+        ]
+        # The graph engine fabricates ``SELF`` edges for isolated nodes, which
+        # would mask a relation-extraction regression as a non-zero count.
+        relation_count = sum(1 for e in edges if e.get("label") != "SELF")
+
+        return {
+            "status": "ok",
+            "dataset_name": _INGESTION_FIXTURE_DATASET,
+            "dataset_id": str(dataset_id),
+            "entity_count": entity_count,
+            "relation_count": relation_count,
+            "summary_count": len(summaries),
+            "summary_lengths": summary_lengths,
+            "total_summary_length": sum(summary_lengths),
+        }
 
     # -- write-failure tracking & self-heal -------------------------------
 
