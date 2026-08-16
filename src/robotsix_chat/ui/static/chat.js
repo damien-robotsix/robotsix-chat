@@ -736,8 +736,16 @@ import { processSSEStream } from "./sse-parser.js";
     var url = apiBase() + "/sessions/" + encodeURIComponent(sid) +
               "?owner_id=" + encodeURIComponent(ownerFor(sid));
     return fetch(url, { method: "DELETE" }).then(function (r) {
-      if (!r.ok && r.status !== 404) throw new Error("delete failed");
-      return r.json().catch(function () { return {}; });
+      return r.json().catch(function () { return {}; }).then(function (data) {
+        if (!r.ok) {
+          // Surface a refused delete (including 404) instead of letting the
+          // card silently reappear after the next refresh.
+          throw new Error(
+            (data && data.error) || "Delete failed (HTTP " + r.status + ")"
+          );
+        }
+        return data;
+      });
     }).then(function (data) {
       // If we closed the active session, switch to the server-chosen
       // replacement (it always returns one) so the chat view stays valid.
@@ -745,8 +753,9 @@ import { processSSEStream } from "./sse-parser.js";
         switchSession(data.active_session_id);
       }
       refreshSessions();
-    }).catch(function () {
-      // Best-effort: refresh anyway so the list reflects server state.
+    }).catch(function (err) {
+      showError("Delete failed: " + (err && err.message ? err.message : err));
+      // Refresh anyway so the list reflects authoritative server state.
       refreshSessions();
     });
   }
