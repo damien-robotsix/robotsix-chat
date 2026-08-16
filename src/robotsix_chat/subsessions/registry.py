@@ -223,6 +223,7 @@ class RegistryStore:
         store_path: Path | None,
         subs: dict[str, SubsessionInfo],
         inboxes: dict[str, deque[InboxMessage]],
+        in_flight: dict[str, list[InboxMessage]],
         wake_events: dict[str, asyncio.Event],
         by_owner: dict[str, set[str]],
     ) -> None:
@@ -230,6 +231,7 @@ class RegistryStore:
         self._store_path = store_path
         self._subs = subs
         self._inboxes = inboxes
+        self._in_flight = in_flight
         self._wake_events = wake_events
         self._by_owner = by_owner
 
@@ -265,7 +267,11 @@ class RegistryStore:
         for info in self._subs.values():
             entry = info.snapshot(with_transcript=True)
             inbox = self._inboxes.get(info.id)
+            in_flight = self._in_flight.get(info.id)
             entry["inbox"] = [message.as_dict() for message in inbox] if inbox else []
+            entry["in_flight_inbox"] = (
+                [message.as_dict() for message in in_flight] if in_flight else []
+            )
             entries.append(entry)
         # Write-then-rename so a crash or container kill mid-write can never
         # truncate the store.
@@ -285,6 +291,7 @@ class RegistryStore:
         for info in terminal[: max(0, len(terminal) - _MAX_TERMINAL_ENTRIES)]:
             self._subs.pop(info.id, None)
             self._inboxes.pop(info.id, None)
+            self._in_flight.pop(info.id, None)
             self._wake_events.pop(info.id, None)
             owner_set = self._by_owner.get(info.owner_session_id)
             if owner_set is not None:
@@ -471,8 +478,12 @@ class SubsessionRegistry:
         self._subs: dict[str, SubsessionInfo] = {}
         # sub_id → asyncio.Task (strong ref so workers are not GC'd).
         self._running: dict[str, asyncio.Task[None]] = {}
-        # sub_id → inbox deque (runtime only — NOT persisted).
+        # sub_id → inbox deque of queued operator/steering messages.
         self._inboxes: dict[str, deque[InboxMessage]] = {}
+        # sub_id → drained inbox messages awaiting turn completion.  These
+        # are persisted so a restart between ``drain_inbox`` and the
+        # completed turn does not lose the operator's message.
+        self._in_flight: dict[str, list[InboxMessage]] = {}
         # sub_id → wake event, set whenever the inbox gains a message.
         self._wake_events: dict[str, asyncio.Event] = {}
         # owner_session_id → set of sub_ids (whole tree, incl. terminal).
@@ -486,7 +497,12 @@ class SubsessionRegistry:
 
         # Extracted collaborators.
         self._store = RegistryStore(
-            store_path, self._subs, self._inboxes, self._wake_events, self._by_owner
+            store_path,
+            self._subs,
+            self._inboxes,
+            self._in_flight,
+            self._wake_events,
+            self._by_owner,
         )
         self._index = RegistryIndex(self._subs, self._by_owner, self._running, self)
 
@@ -536,6 +552,7 @@ class SubsessionRegistry:
         dedup_key: str | None = None,
         retry_count: int = 0,
         event_timeout_seconds: float | None = None,
+        inbox: list[InboxMessage] | None = None,
     ) -> SubsessionInfo:
         """Register a new subsession and publish ``subsession_started``.
 
@@ -556,6 +573,9 @@ class SubsessionRegistry:
         starting blank.  *checkpoint* seeds task-specific state (e.g.
         monitored ticket id and last-known state) so recovery can
         decide whether to resume the monitoring loop or close.
+        *inbox* seeds queued inbox messages (re-enqueued on resume) and
+        wakes the inbox event so they are drained at the next turn
+        boundary.
         """
         if sub_id is not None and sub_id in self._subs:
             return self._subs[sub_id]
@@ -604,8 +624,10 @@ class SubsessionRegistry:
             event_timeout_seconds=event_timeout_seconds,
         )
         self._subs[info.id] = info
-        self._inboxes[info.id] = deque()
+        self._inboxes[info.id] = deque(inbox) if inbox else deque()
         self._wake_events[info.id] = asyncio.Event()
+        if inbox:
+            self._wake_events[info.id].set()
         self._by_owner[owner_session_id].add(info.id)
         if dedup_key is not None:
             self._active_dedup_keys[dedup_key] = info.id
@@ -716,6 +738,10 @@ class SubsessionRegistry:
         info.turn_history.append((turn_input, reply))
         if len(info.turn_history) > _MAX_TURN_HISTORY_ENTRIES:
             del info.turn_history[:-_MAX_TURN_HISTORY_ENTRIES]
+        # The drained inbox messages for this turn are now consumed —
+        # clear them from the persisted in-flight buffer so a later
+        # restart does not re-deliver already-processed messages.
+        self._in_flight.pop(sub_id, None)
         self._store.persist()
 
     def enqueue_message(self, sub_id: str, role: str, text: str) -> bool:
@@ -746,7 +772,13 @@ class SubsessionRegistry:
         return True
 
     def drain_inbox(self, sub_id: str) -> list[InboxMessage]:
-        """Return and clear all queued inbox messages; reset the wake event."""
+        """Return and clear all queued inbox messages; reset the wake event.
+
+        The drained messages are moved into the persisted in-flight buffer
+        (cleared by :meth:`append_turn_history` on turn completion) so a
+        restart between ``drain_inbox`` and the completed turn does not
+        lose the operator's message.
+        """
         inbox = self._inboxes.get(sub_id)
         event = self._wake_events.get(sub_id)
         if event is not None:
@@ -755,8 +787,7 @@ class SubsessionRegistry:
             return []
         messages = list(inbox)
         inbox.clear()
-        # Persist immediately so a restart after the drain does not
-        # re-deliver messages that were already handed to the worker.
+        self._in_flight.setdefault(sub_id, []).extend(messages)
         self._store.persist()
         logger.info(
             "Subsession %s: drained %d inbox message(s) — inbox size=0.",
@@ -826,6 +857,13 @@ class SubsessionRegistry:
                 parent_id=info.parent_id,
             )
 
+        # Drop any queued / in-flight inbox messages: a terminal
+        # subsession can no longer deliver them, and leaving them in the
+        # store would resurrect stale messages if the record is reopened
+        # or a future restart re-enqueues them.
+        self._inboxes.pop(info.id, None)
+        self._in_flight.pop(info.id, None)
+        self._wake_events.pop(info.id, None)
         self._publish(info.owner_session_id, frame)
         self._store.persist()
         for callback in self._close_callbacks:

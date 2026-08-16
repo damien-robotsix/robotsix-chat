@@ -373,6 +373,7 @@ def spawn_subsession(
     dedup_key: str | None = None,
     retry_count: int = 0,
     event_timeout_seconds: float | None = None,
+    inbox: list[InboxMessage] | None = None,
 ) -> str:
     """Validate, register, and launch a subsession worker; return its id.
 
@@ -399,6 +400,10 @@ def spawn_subsession(
     for long-lived ticket monitors that naturally progress over days
     (waiting on human review or CI) so they are not auto-stopped after
     a handful of ``NO_CHANGE`` runs.
+
+    *inbox* seeds queued inbox messages (re-enqueued on resume) and
+    wakes the inbox event so they are drained at the next turn
+    boundary.
     """
     # Idempotency guard: if the subsession already exists (duplicate
     # spawn / resume race), return the existing id without launching
@@ -637,6 +642,7 @@ def spawn_subsession(
             dedup_key=dedup_key,
             retry_count=retry_count,
             event_timeout_seconds=event_timeout_seconds,
+            inbox=inbox,
         )
     except SubsessionDedupError as exc:
         logger.info(

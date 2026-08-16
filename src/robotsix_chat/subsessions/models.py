@@ -142,7 +142,7 @@ class InboxMessage:
     timestamp: float
 
     def as_dict(self) -> dict[str, object]:
-        """Return the JSON-serialisable form used by the store."""
+        """Return the JSON-serialisable form used by the persistence store."""
         return {"role": self.role, "text": self.text, "timestamp": self.timestamp}
 
 
