@@ -10,7 +10,7 @@ if TYPE_CHECKING:
 # Version stamp for the autonomous appendix (build_autonomous_instruction).
 # Bump on every change to the instruction text and update
 # docs/system_prompt_changelog.md with a new AUTONOMOUS entry + SHA256.
-AUTONOMOUS_PROMPT_VERSION = 23
+AUTONOMOUS_PROMPT_VERSION = 24
 
 
 def build_autonomous_instruction(settings: Settings) -> str:
@@ -22,6 +22,7 @@ def build_autonomous_instruction(settings: Settings) -> str:
     """
     completion_marker = settings.autonomous.completion_marker
     stale_threshold = settings.autonomous.stale_monitor_runs_before_completion
+    queue_tolerance = settings.autonomous.queue_tolerance_runs_before_escalation
     auto_approve = settings.autonomy.auto_approve_self_authored
     allowlist = settings.autonomy.auto_approve_repo_allowlist
     routine_secret = settings.autonomy.auto_approve_routine_secret_provisioning
@@ -122,6 +123,20 @@ def build_autonomous_instruction(settings: Settings) -> str:
         "into per-module tickets, or isolate the configuration step from "
         "the code change).  This reduces operator cognitive load and "
         "speeds up unblocking.\n"
+        "\n"
+        "SERIAL-BOARD QUEUE TOLERANCE — before escalating a stall: the "
+        "board processes tickets serially (one at a time), so a monitored "
+        "ticket with zero activity is NOT necessarily stalled — it may "
+        "simply be queued behind earlier items in the wave.  Before "
+        "auto-stopping a monitor or reporting a stall, accept up to "
+        f"{queue_tolerance} consecutive NO_CHANGE cycles as queue wait.  "
+        "During that window, check the board's queue (GET /tickets with "
+        "relevant filters, ordered by position or creation time) and "
+        "verify whether earlier-queued tickets are actively being worked.  "
+        "If they are, keep the monitor running and treat the inactivity "
+        "as queue wait — do NOT auto-stop or escalate.  Only escalate when "
+        "the queue ahead of the ticket is empty or idle AND the ticket "
+        "has still made no progress after the queue-tolerance window.\n"
         "\n"
         "Monitor re-activation guard: before offering to resume, wake, or "
         "re-activate any paused or auto-paused monitor, verify that the "

@@ -14,6 +14,7 @@ class TestBuildAutonomousInstruction:
         self,
         completion_marker: str = "---AUTONOMOUS COMPLETE---",
         stale_threshold: int = 3,
+        queue_tolerance: int = 3,
         auto_approve: bool = False,
         allowlist: list[str] | None = None,
         suppress_no_change: bool = False,
@@ -22,6 +23,7 @@ class TestBuildAutonomousInstruction:
         settings = MagicMock()
         settings.autonomous.completion_marker = completion_marker
         settings.autonomous.stale_monitor_runs_before_completion = stale_threshold
+        settings.autonomous.queue_tolerance_runs_before_escalation = queue_tolerance
         settings.autonomy.auto_approve_self_authored = auto_approve
         settings.autonomy.auto_approve_repo_allowlist = allowlist or []
         settings.autonomy.suppress_no_change_monitors = suppress_no_change
@@ -37,6 +39,8 @@ class TestBuildAutonomousInstruction:
         assert "COMPLETION" in result
         assert "Stale monitor completion" in result
         assert "Stall guard response" in result
+        assert "SERIAL-BOARD QUEUE TOLERANCE" in result
+        assert "3 consecutive NO_CHANGE cycles as queue wait" in result
         assert "3 or more consecutive cycles" in result
         assert "MUTATION AUTHORIZATION" in result
         assert "read-only work" in result
@@ -63,6 +67,13 @@ class TestBuildAutonomousInstruction:
         assert "---CUSTOM COMPLETE---" in result
         assert "---AUTONOMOUS COMPLETE---" not in result
         assert "5 or more consecutive cycles" in result
+
+    def test_custom_queue_tolerance(self) -> None:
+        """Custom queue tolerance is injected into the serial-board guidance."""
+        settings = self._make_settings(queue_tolerance=7)
+        result = build_autonomous_instruction(settings)
+        assert "7 consecutive NO_CHANGE cycles as queue wait" in result
+        assert "3 consecutive NO_CHANGE cycles as queue wait" not in result
 
     def test_autonomy_tier_section_present(self) -> None:
         """AUTONOMY TIER section is always present, with tier status."""

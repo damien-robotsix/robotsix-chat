@@ -244,6 +244,7 @@
     "max_idle_auto_turns": 5,
     "continue_interval_seconds": 45.0,
     "stale_monitor_runs_before_completion": 3,
+    "queue_tolerance_runs_before_escalation": 3,
     "sessions": [
       {
         "name": "default"
