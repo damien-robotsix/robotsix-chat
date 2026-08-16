@@ -29,11 +29,11 @@ jobs:
   lint-workflows:
     permissions:
       contents: read       # checkout the repo
-    uses: damien-robotsix/robotsix-github-workflows/.github/workflows/lint-workflows.yml@44f210c7429969be62eb8cc4f53bfbd3b744da16  # main
+    uses: damien-robotsix/robotsix-github-workflows/.github/workflows/lint-workflows.yml@454851ccfdba26ba4d08f3effea09258dfc3fe2f  # main
     with:
       run-actionlint: false  # run locally below to avoid Checks API dependency
       run-zizmor: true
-      sarif-workflows: "python-ci.yml scan-container.yml"
+      sarif-workflows: "ci.yml scan-container.yml"
 
   actionlint:
     name: lint-workflows / actionlint
