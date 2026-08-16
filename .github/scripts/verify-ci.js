@@ -101,12 +101,6 @@ module.exports = async ({github, context, core}) => {
       const name = r.name || '';
       return name.endsWith(' / Deploy') || /\bDeploy\b/.test(name);
     };
-    // The OpenSSF Scorecard workflow ("Scorecard analysis" check run) is being
-    // retired fleet-wide and its `publish_results` step fails transiently
-    // against the Scorecard API for reasons unrelated to this codebase. It
-    // must not gate releases: exclude it here (a separate ticket removes the
-    // workflow from this repo entirely).
-    const isScorecard = (r) => (r.name || '') === 'Scorecard analysis';
     // The "All CI checks passed" aggregate check run is a GitHub-internal
     // summary check run whose conclusion is purely derivative of the
     // individual job check runs already monitored by the loop. Including it
@@ -124,7 +118,6 @@ module.exports = async ({github, context, core}) => {
       (r) =>
         !isSelf(r) &&
         !isDeploy(r) &&
-        !isScorecard(r) &&
         !isAggregate(r) &&
         !isBenchmark(r)
     );
