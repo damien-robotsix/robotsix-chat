@@ -72,10 +72,10 @@ def test_build_direct_repo_tools_disabled() -> None:
     assert build_direct_repo_tools(DirectRepoSettings(enabled=False)) == []
 
 
-def test_build_direct_repo_tools_returns_seventeen_tools() -> None:
-    """Verify that enabled direct_repo returns the seventeen expected tools."""
+def test_build_direct_repo_tools_returns_eighteen_tools() -> None:
+    """Verify that enabled direct_repo returns the eighteen expected tools."""
     tools = build_direct_repo_tools(_settings())
-    assert len(tools) == 17
+    assert len(tools) == 18
     names = [t.__name__ for t in tools]
     assert "push_direct_repo_branch" in names
     assert "open_direct_repo_pr" in names
@@ -90,6 +90,7 @@ def test_build_direct_repo_tools_returns_seventeen_tools() -> None:
     assert "list_open_prs" in names
     assert "merge_direct_repo_pr" in names
     assert "arm_direct_repo_auto_merge" in names
+    assert "enable_repo_pages" in names
     assert "reset_implement_spawn_counter" in names
     assert "apply_patch_to_file" in names
     assert "push_patch_to_pr_branch" in names

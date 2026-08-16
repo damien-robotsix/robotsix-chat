@@ -252,8 +252,8 @@ token, then reads the site back so the result reports its current status.
 same class of mutation as `set_repo_security_and_analysis`. Only enable when the operator has
 explicitly consented in the conversation. The operator's own direct request (e.g. "enable GitHub
 Pages on robotsix-chat") or a clear affirmative answer to your proposal IS that consent — once
-given, state the exact repository and enable it without re-asking. Ask only when consent has not
-yet been clearly given.
+given, state the exact repository and enable it without re-asking. Ask only when consent has not yet
+been clearly given.
 
 ### Preconditions
 
@@ -272,12 +272,12 @@ yet been clearly given.
 
 ### Error responses
 
-| Condition                       | Message                                                                                            |
-| ------------------------------- | -------------------------------------------------------------------------------------------------- |
-| Repo not in installation scope  | `The robotsix-mill GitHub App is not installed on 'owner/name'`                                    |
-| Missing `pages: write` (403)    | `Error enabling GitHub Pages on owner/name: permission denied — ...`                               |
-| Invalid build type              | `Error: build_type must be 'workflow' or 'legacy', got ...`                                        |
-| Other API failure               | `Error enabling GitHub Pages on owner/name: <detail>`                                              |
+| Condition                      | Message                                                              |
+| ------------------------------ | -------------------------------------------------------------------- |
+| Repo not in installation scope | `The robotsix-mill GitHub App is not installed on 'owner/name'`      |
+| Missing `pages: write` (403)   | `Error enabling GitHub Pages on owner/name: permission denied — ...` |
+| Invalid build type             | `Error: build_type must be 'workflow' or 'legacy', got ...`          |
+| Other API failure              | `Error enabling GitHub Pages on owner/name: <detail>`                |
 
 ______________________________________________________________________
 
