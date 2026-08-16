@@ -537,8 +537,8 @@ auto-stopping a monitor or reporting a stall, the agent accepts up to
 `autonomous.queue_tolerance_runs_before_escalation` (default 3) consecutive `NO_CHANGE` cycles as
 queue wait. During that window it checks the board's queue and verifies whether earlier-queued
 tickets are actively being worked; if they are, the monitor stays alive and the inactivity is
-treated as queue wait. It escalates only when the queue ahead of the ticket is empty or idle and
-the ticket has still made no progress after the tolerance window.
+treated as queue wait. It escalates only when the queue ahead of the ticket is empty or idle and the
+ticket has still made no progress after the tolerance window.
 
 ### Operator-driven completion (explicit)
 
@@ -549,9 +549,9 @@ short, non-substantive messages several times in a row. This lets the operator c
 promptly when they are satisfied and all actionable work is done but periodic monitors have not yet
 accumulated enough `NO_CHANGE` cycles to auto-close.
 
-| Config key                                        | Default | Description                                                                   |
-| ------------------------------------------------- | ------- | ----------------------------------------------------------------------------- |
-| `autonomous.stale_monitor_runs_before_completion` | `3`     | Consecutive `NO_CHANGE` cycles before a periodic monitor is considered stale. |
-| `autonomous.queue_tolerance_runs_before_escalation` | `3`   | Consecutive `NO_CHANGE` cycles accepted as queue wait before escalating a stall. |
+| Config key                                          | Default | Description                                                                      |
+| --------------------------------------------------- | ------- | -------------------------------------------------------------------------------- |
+| `autonomous.stale_monitor_runs_before_completion`   | `3`     | Consecutive `NO_CHANGE` cycles before a periodic monitor is considered stale.    |
+| `autonomous.queue_tolerance_runs_before_escalation` | `3`     | Consecutive `NO_CHANGE` cycles accepted as queue wait before escalating a stall. |
 
 See [Configuration](configuration.md#autonomous) for the full autonomous settings reference.
