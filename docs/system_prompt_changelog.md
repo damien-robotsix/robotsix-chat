@@ -17,9 +17,10 @@ user for the next logical decision across all themes.
 **Rationale:** Session 3ca68ff067df426fb8e578003cc46e35 — after compaction,
 the assistant ignored the consolidation instruction and re-asked the user to
 confirm merging the 9 approved PRs even though that decision had already been
-presented, wasting turns and frustrating the user. The delivery reaction
-prompts already carried this precedence rule, but the main agent instruction
-did not.
+presented, wasting turns and frustrating the user. This change adds the
+explicit no-re-pose precedence clause to both the main agent instruction and
+the delivery reaction prompt templates (`_REACT_PROMPT_TEMPLATE` and
+`_BATCH_REACT_PROMPT_TEMPLATE` in `src/robotsix_chat/subsessions/delivery.py`).
 
 **SHA256:** `78e41eb3c0fdc3f9c70c4d9c6019437c81fe22c042fd6ea2e115988623a15ce3`
 
