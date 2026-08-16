@@ -2274,7 +2274,7 @@ async def _subsession_worker(
                 await _subsession_worker(
                     env,
                     sub_id,
-                    retry_input=in_flight_inbox if in_flight_inbox else None,
+                    retry_input=in_flight_inbox or None,
                 )
                 return
 

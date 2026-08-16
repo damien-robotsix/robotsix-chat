@@ -281,6 +281,69 @@ async def test_user_chat_waits_between_turns_and_closes_via_close_state() -> Non
     assert "[assistant] hi there" in reply
 
 
+@pytest.mark.asyncio
+async def test_user_chat_retry_redelivers_drained_operator_answer() -> None:
+    """A failed turn re-delivers its drained operator answer on retry.
+
+    Regression test for the answer-loss bug: a user_chat turn drains the
+    operator's inbox message and then raises. The retry path must feed that
+    drained message back into the retry turn instead of discarding it (which
+    made the subsession re-ask its original question).
+    """
+
+    class FailSecondTurnAgent(FakeAgent):
+        """Succeed on the first turn, raise on the second."""
+
+        def __init__(self) -> None:
+            super().__init__(["what is the answer?"])
+            self._turn = 0
+
+        async def stream(self, message: str, **kwargs: Any) -> AsyncIterator[str]:
+            self._turn += 1
+            if self._turn == 2:
+                raise RuntimeError("boom")
+            async for chunk in super().stream(message, **kwargs):
+                yield chunk
+
+    first_agent = FailSecondTurnAgent()
+    retry_agent = FakeAgent(["got your answer"])
+    factory = CapturingAgentFactory(first_agent, retry_agent)
+    env = build_env(agent_factory=factory)
+
+    sub_id = _spawn(env, kind=SubsessionKind.USER_CHAT, prompt="ask the question")
+    await wait_until(
+        lambda: env.registry.get(sub_id).status is SubsessionStatus.WAITING  # type: ignore[union-attr]
+    )
+    assert len(first_agent.calls) == 1
+
+    # The operator answers; the worker drains it for the second turn, which
+    # then raises and re-enters the worker via the retry path.
+    env.registry.enqueue_message(sub_id, "user", "the operator answer")
+
+    # The retry worker is re-created with a fresh agent; wait for its turn.
+    await wait_until(lambda: len(factory.captured) >= 2)
+    await wait_until(lambda: len(retry_agent.calls) >= 1)
+
+    assert retry_agent.calls[0]["message"] == "the operator answer"
+    assert "ask the question" not in retry_agent.calls[0]["message"]
+
+    info = env.registry.get(sub_id)
+    assert info is not None
+    assert info.retry_count == 1
+
+    # Close the retry worker so the task reaches a terminal state.
+    close_state = factory.captured[1]["close_state"]
+    close_state.requested = True
+    close_state.summary = "closed after answer"
+    env.registry.enqueue_message(sub_id, "user", "thanks, done")
+    await _await_worker(env, sub_id)
+
+    info = env.registry.get(sub_id)
+    assert info is not None
+    assert info.status is SubsessionStatus.CLOSED
+    assert info.close_reason == "completed"
+
+
 # ---------------------------------------------------------------------------
 # periodic kind
 # ---------------------------------------------------------------------------
