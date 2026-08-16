@@ -69,6 +69,13 @@ Everything below predates the release-please migration and was
 maintained by hand or by towncrier. It is kept verbatim; new entries
 are added above by release-please.
 
+## [0.15.1](https://github.com/damien-robotsix/robotsix-chat/compare/v0.15.0...v0.15.1) (2026-08-16)
+
+
+### Bug Fixes
+
+* Autonomous sessions cannot be dismissed from the session list while counting down to next run (20260816T091433Z-autonomous-sessions-cannot-be-dismissed-21d2) ([#1481](https://github.com/damien-robotsix/robotsix-chat/issues/1481)) ([77f46d7](https://github.com/damien-robotsix/robotsix-chat/commit/77f46d7e234566c71c237c3343f50bd9ff7c2842))
+
 ## [0.15.0](https://github.com/damien-robotsix/robotsix-chat/compare/v0.14.0...v0.15.0) (2026-08-16)
 
 
