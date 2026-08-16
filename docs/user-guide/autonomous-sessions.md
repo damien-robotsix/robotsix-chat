@@ -37,6 +37,18 @@ Autonomous sessions surface in the operator's session list under their pseudo-ow
 `[AUTONOMOUS]` badge and (optionally) a session color accent, so they are easy to distinguish from
 interactive chats.
 
+The UI lists all of them with a single query — `GET /sessions?owner_id=autonomous`. Because named
+presets are stored under `autonomous:<name>`, the backend expands the bootstrap `autonomous` owner
+to include every `autonomous:*` sub-scope, so every preset appears in one merged list. When adding a
+new scoped owner id, make sure the session-list handler's prefix expansion covers it — otherwise the
+session runs but never surfaces in the list.
+
+The UI lists all of them with a single query — `GET /sessions?owner_id=autonomous`. Because named
+presets are stored under `autonomous:<name>`, the backend expands the bootstrap `autonomous` owner
+to include every `autonomous:*` sub-scope, so every preset appears in one merged list. When adding a
+new scoped owner id, make sure the session-list handler's prefix expansion covers it — otherwise the
+session runs but never surfaces in the list.
+
 ______________________________________________________________________
 
 ## Getting started (default preset)
