@@ -1201,6 +1201,13 @@ def test_reason_phrase_for_max_runs_escalated_is_human_readable() -> None:
     assert "run limit" in _REASON_PHRASES["max_runs_escalated"]
 
 
+def test_reason_phrase_for_no_change_pause_limit_is_human_readable() -> None:
+    """The no_change_pause_limit reason must not leak its raw internal code."""
+    assert "no_change_pause_limit" in _REASON_PHRASES
+    assert _REASON_PHRASES["no_change_pause_limit"] != "no_change_pause_limit"
+    assert "pause" in _REASON_PHRASES["no_change_pause_limit"]
+
+
 # ---------------------------------------------------------------------------
 # _sanitize_reaction_reply — stripping internal metadata from reaction output
 # ---------------------------------------------------------------------------

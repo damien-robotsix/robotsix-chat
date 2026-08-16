@@ -144,6 +144,7 @@ def make_settings(
     min_interval_seconds: float = 0.01,
     auto_stop_no_change_runs: int = 3,
     max_idle_runs: int = 0,
+    max_no_change_pauses: int = 3,
     human_approval_timeout_runs: int = 3,
     human_approval_timeout_seconds: float = 300.0,
     pre_authorized_ticket_patterns: list[str] | None = None,
@@ -179,6 +180,7 @@ def make_settings(
             min_interval_seconds=min_interval_seconds,
             auto_stop_no_change_runs=auto_stop_no_change_runs,
             max_idle_runs=max_idle_runs,
+            max_no_change_pauses=max_no_change_pauses,
             human_approval_timeout_runs=human_approval_timeout_runs,
             human_approval_timeout_seconds=human_approval_timeout_seconds,
             pre_authorized_ticket_patterns=(

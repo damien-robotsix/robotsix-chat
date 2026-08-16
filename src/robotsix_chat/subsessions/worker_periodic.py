@@ -324,6 +324,13 @@ async def _run_periodic_turn(
 
     suppressed = _is_no_change(reply) or _is_duplicate_reply(reply, previous_result)
     consecutive_no_change = 0 if not _is_no_change(reply) else consecutive_no_change + 1
+    if not _is_no_change(reply):
+        # Progress observed (a non-NO_CHANGE reply) — clear the no-change
+        # pause counter so a later idle stretch starts a fresh budget.
+        cp = info.checkpoint or {}
+        if cp.get("no_change_pause_count"):
+            cp["no_change_pause_count"] = 0
+            registry.update_checkpoint(sub_id, cp)
     runs = info.runs + 1
     if info.interval_seconds is None:  # pragma: no cover - spawn validates
         raise RuntimeError("periodic subsession without an interval")
@@ -559,17 +566,110 @@ async def _run_periodic_turn(
 
     idle_cap = env.settings.subsessions.max_idle_runs
     if idle_cap > 0 and consecutive_no_change >= idle_cap:
-        logger.info(
-            "Subsession %s: auto-pausing after %d consecutive no-change runs.",
-            sub_id,
-            consecutive_no_change,
+        # -- no-change pause escalation -----------------------------------
+        # A monitor that auto-pauses, gets auto-resumed by the paused-wait
+        # loop's timeout, and auto-pauses again without the ticket ever
+        # changing state would otherwise repeat the same pause message
+        # forever.  Track how many consecutive no-change pauses this
+        # monitor has entered and close it with a reassessment
+        # recommendation once the limit is reached.
+        pause_cap = env.settings.subsessions.max_no_change_pauses
+        pause_count_raw = checkpoint.get("no_change_pause_count")
+        pause_count = (
+            pause_count_raw
+            if (
+                isinstance(pause_count_raw, int)
+                and not isinstance(pause_count_raw, bool)
+            )
+            else 0
         )
-        summary = (
-            f"Auto-paused after {idle_cap} consecutive no-change runs. "
-            f"The monitor will resume when the ticket's state changes, "
-            f"or you can resume it now by sending a message to this "
-            f"subsession via message_subsession."
-        )
+        pause_count += 1
+
+        if pause_cap > 0 and pause_count >= pause_cap:
+            logger.warning(
+                "Subsession %s: auto-paused %d consecutive times without "
+                "ticket progress (limit=%d) — closing with a reassessment "
+                "recommendation.",
+                sub_id,
+                pause_count,
+                pause_cap,
+            )
+            elapsed = _format_duration(registry.now() - info.created_at)
+            ticket_id_raw = checkpoint.get("ticket_id")
+            ticket_id = ticket_id_raw if isinstance(ticket_id_raw, str) else ""
+            last_known = checkpoint.get("last_known_state", "")
+            summary = (
+                f"Monitor auto-closed after {pause_count} consecutive "
+                f"pauses with no change to the tracked ticket."
+            )
+            if isinstance(last_known, str) and last_known:
+                summary += f" The ticket has remained '{last_known}' for {elapsed}."
+            else:
+                summary += f" No changes were detected over {elapsed}."
+            summary += (
+                " Recommend reassessing whether this ticket still needs "
+                "active monitoring, or respawning the monitor with a "
+                "longer polling interval."
+            )
+            closed = registry.mark_closed(
+                sub_id,
+                summary=summary,
+                reason="no_change_pause_limit",
+                closed_by="system",
+            )
+            if closed is not None:
+                await env.delivery.deliver_summary(
+                    closed, summary, "no_change_pause_limit"
+                )
+            if env.event_sink is not None:
+                env.event_sink.publish(
+                    info.owner_session_id,
+                    {
+                        "type": SSE_NOTIFICATION_TYPE,
+                        "title": f"Monitor auto-closed: {info.title}",
+                        "body": (
+                            f"Tracked ticket {ticket_id} ({last_known}) — {summary}"
+                        ),
+                        "urgency": "low",
+                        "link": ticket_id,
+                    },
+                )
+            return None
+
+        checkpoint["no_change_pause_count"] = pause_count
+        registry.update_checkpoint(sub_id, checkpoint)
+
+        if pause_cap > 0:
+            logger.info(
+                "Subsession %s: auto-pausing after %d consecutive no-change runs "
+                "(pause %d/%d).",
+                sub_id,
+                consecutive_no_change,
+                pause_count,
+                pause_cap,
+            )
+        else:
+            logger.info(
+                "Subsession %s: auto-pausing after %d consecutive no-change runs.",
+                sub_id,
+                consecutive_no_change,
+            )
+        if pause_cap > 0:
+            summary = (
+                f"Auto-paused after {idle_cap} consecutive no-change runs "
+                f"(no-change pause {pause_count}/{pause_cap}; the monitor "
+                f"will auto-close after {pause_cap} such pauses if the "
+                f"ticket never changes). The monitor will resume when the "
+                f"ticket's state changes, or you can resume it now by "
+                f"sending a message to this subsession via message_subsession."
+            )
+        else:
+            summary = (
+                f"Auto-paused after {idle_cap} consecutive no-change runs. "
+                f"The monitor will resume when the ticket's state changes, "
+                f"or you can resume it now by sending a message to this "
+                f"subsession via message_subsession."
+            )
         paused = registry.mark_paused(
             sub_id,
             summary=summary,
