@@ -63,6 +63,9 @@ from .github import (
 from .mail import (
     mail_archive_root_check_endpoint,
 )
+from .memory import (
+    memory_ingestion_structure_endpoint,
+)
 from .mill_events import (
     mill_events_endpoint,
 )
@@ -136,6 +139,7 @@ __all__ = [
     "history_endpoint",
     "http_exception_handler",
     "mail_archive_root_check_endpoint",
+    "memory_ingestion_structure_endpoint",
     "mill_events_endpoint",
     "not_found_handler",
     "prune_endpoint",
