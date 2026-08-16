@@ -3,6 +3,27 @@
 Governed artifact: `Settings.agent_instruction` default literal in
 `src/robotsix_chat/config/settings.py`. Version stamp: `SYSTEM_PROMPT_VERSION` in the same module.
 
+## v125 — 2026-08-16 — 20260816T091216Z-improve-consolidation-rule-adherence-whe-7d1a
+
+**Summary:** Strengthen the multi-subsession consolidation instruction in
+`agent_instruction`: the consolidation now explicitly takes precedence over
+ANY pending sub-conversation threads, open questions, or approval prompts in
+the conversation history — the assistant must not re-pose an earlier
+question or re-request a decision that has already been presented (for
+example, do not ask again whether to merge approved PRs). Once consolidated,
+the assistant must either give the overall recommendation directly or ask the
+user for the next logical decision across all themes.
+
+**Rationale:** Session 3ca68ff067df426fb8e578003cc46e35 — after compaction,
+the assistant ignored the consolidation instruction and re-asked the user to
+confirm merging the 9 approved PRs even though that decision had already been
+presented, wasting turns and frustrating the user. This change adds the
+explicit no-re-pose precedence clause to both the main agent instruction and
+the delivery reaction prompt templates (`_REACT_PROMPT_TEMPLATE` and
+`_BATCH_REACT_PROMPT_TEMPLATE` in `src/robotsix_chat/subsessions/delivery.py`).
+
+**SHA256:** `78e41eb3c0fdc3f9c70c4d9c6019437c81fe22c042fd6ea2e115988623a15ce3`
+
 ## v124 — 2026-08-15 — 20260815T205903Z-remove-feature-tickets-should-include-co-9b21
 
 **Summary:** Add a feature-removal config-cleanup rule to the agent
