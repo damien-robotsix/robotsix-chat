@@ -1,0 +1,1 @@
+`scripts/regenerate_schema.py` now supports `--check`: on schema drift it prints a unified diff between the committed and generated `config/config.schema.json`, making it easy to see exactly what changed instead of guessing from a bare "stale" message. The CI `check-config-schema` job uses this new flag.
