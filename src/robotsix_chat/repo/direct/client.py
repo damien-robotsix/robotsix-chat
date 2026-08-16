@@ -17,7 +17,7 @@ import asyncio
 import base64
 import json
 import logging
-from typing import TYPE_CHECKING, Any
+from typing import TYPE_CHECKING, Any, cast
 from urllib.parse import quote
 
 from robotsix_chat.common.github_auth import _build_github_app_auth_headers
@@ -841,6 +841,125 @@ class DirectRepoClient:
             return f"Error updating security settings: {exc}"
         except Exception as exc:
             return f"Error updating security settings: {exc}"
+
+    async def _get_pages_site(self, repo_full_name: str) -> dict[str, Any] | None:
+        """Return the GitHub Pages site JSON for a repo, or None on failure.
+
+        Used for read-back verification after enabling/updating Pages.
+        Never raises — callers degrade gracefully when the read-back fails.
+        """
+        try:
+            return cast(
+                "dict[str, Any] | None",
+                await self._get_json(f"/repos/{repo_full_name}/pages"),
+            )
+        except RuntimeError:
+            return None
+
+    @staticmethod
+    def _format_pages_result(
+        repo_full_name: str,
+        verb: str,
+        site: dict[str, Any] | None,
+        build_type: str,
+    ) -> str:
+        """Format an enable/update Pages result, including read-back status."""
+        lines = [f"GitHub Pages {verb} on {repo_full_name} (build_type: {build_type})."]
+        if site:
+            lines.append(f"Site status: {site.get('status', 'unknown')}")
+            reported_build_type = site.get("build_type", "unknown")
+            if reported_build_type != build_type:
+                lines.append(f"Reported build type: {reported_build_type}")
+            html_url = site.get("html_url", "")
+            if html_url:
+                lines.append(f"Site URL: {html_url}")
+        else:
+            lines.append("Site status: could not be read back.")
+        return "\n".join(lines)
+
+    async def enable_pages(
+        self,
+        repo_full_name: str,
+        build_type: str = "workflow",
+    ) -> str:
+        """Enable GitHub Pages built from a workflow on a repository.
+
+        Calls ``POST /repos/{owner}/{repo}/pages`` with *build_type* and
+        then reads the resulting site back so the result includes its
+        current status.  Idempotent: a 409 (Pages already enabled) is
+        treated as success — switching the build type via ``PUT`` when it
+        differs from the requested value.  A 403 is reported as a clear
+        permission error rather than raised.
+
+        Never raises — returns a success/error message string.
+        """
+        if build_type not in {"workflow", "legacy"}:
+            return (
+                f"Error: build_type must be 'workflow' or 'legacy', got {build_type!r}"
+            )
+
+        try:
+            result = await self._http_with_retry(
+                "POST",
+                f"{self._base_url}/repos/{repo_full_name}/pages",
+                headers=await self._gh_headers(),
+                timeout=self._s.timeout,
+                json_body={"build_type": build_type},
+                label="GitHub API",
+            )
+        except Exception as exc:
+            return f"Error enabling GitHub Pages on {repo_full_name}: {exc}"
+
+        if result.error is None and result.status_code in (200, 201, 204):
+            site = await self._get_pages_site(repo_full_name)
+            return self._format_pages_result(
+                repo_full_name, "enabled", site, build_type
+            )
+
+        if result.status_code == 403:
+            return (
+                f"Error enabling GitHub Pages on {repo_full_name}: permission "
+                f"denied — the GitHub App installation token lacks "
+                f"'pages: write'. Use inspect_github_installation_token to "
+                f"confirm the current permission scope, then grant Pages "
+                f"read/write access and retry."
+            )
+
+        if result.status_code == 409:
+            existing = await self._get_pages_site(repo_full_name)
+            if existing is not None and existing.get("build_type") == build_type:
+                return self._format_pages_result(
+                    repo_full_name, "already enabled", existing, build_type
+                )
+            # Pages exists under a different build_type — switch via PUT.
+            try:
+                updated = await self._http_with_retry(
+                    "PUT",
+                    f"{self._base_url}/repos/{repo_full_name}/pages",
+                    headers=await self._gh_headers(),
+                    timeout=self._s.timeout,
+                    json_body={"build_type": build_type},
+                    label="GitHub API",
+                )
+            except Exception as exc:
+                return (
+                    f"GitHub Pages is already enabled on {repo_full_name} but "
+                    f"switching build_type to {build_type!r} failed: {exc}"
+                )
+            if updated.error is None:
+                site = await self._get_pages_site(repo_full_name)
+                return self._format_pages_result(
+                    repo_full_name, "updated", site, build_type
+                )
+            return (
+                f"Error updating GitHub Pages build_type on {repo_full_name}: "
+                f"{updated.error}"
+            )
+
+        return (
+            f"Error enabling GitHub Pages on {repo_full_name}: "
+            f"{result.error or f'HTTP {result.status_code}'}"
+        )
 
     # -- merge helpers -----------------------------------------------------
 

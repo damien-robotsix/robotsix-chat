@@ -72,10 +72,10 @@ def test_build_direct_repo_tools_disabled() -> None:
     assert build_direct_repo_tools(DirectRepoSettings(enabled=False)) == []
 
 
-def test_build_direct_repo_tools_returns_seventeen_tools() -> None:
-    """Verify that enabled direct_repo returns the seventeen expected tools."""
+def test_build_direct_repo_tools_returns_eighteen_tools() -> None:
+    """Verify that enabled direct_repo returns the eighteen expected tools."""
     tools = build_direct_repo_tools(_settings())
-    assert len(tools) == 17
+    assert len(tools) == 18
     names = [t.__name__ for t in tools]
     assert "push_direct_repo_branch" in names
     assert "open_direct_repo_pr" in names
@@ -90,6 +90,7 @@ def test_build_direct_repo_tools_returns_seventeen_tools() -> None:
     assert "list_open_prs" in names
     assert "merge_direct_repo_pr" in names
     assert "arm_direct_repo_auto_merge" in names
+    assert "enable_repo_pages" in names
     assert "reset_implement_spawn_counter" in names
     assert "apply_patch_to_file" in names
     assert "push_patch_to_pr_branch" in names
@@ -325,6 +326,7 @@ def test_merge_tools_returned() -> None:
         "check_ci_health",
         "check_direct_repo_auto_merge",
         "check_pr_merge_conflict",
+        "enable_repo_pages",
         "file_ci_stabilization_ticket",
         "inspect_github_installation_token",
         "list_open_prs",
@@ -2616,7 +2618,7 @@ def test_direct_fix_available_when_enabled() -> None:
     tools = build_direct_repo_tools(_settings(direct_fix_enabled=True))
     names = [t.__name__ for t in tools]
     assert "direct_fix" in names
-    assert len(tools) == 19  # 17 base + direct_fix + patch_direct_repo_file
+    assert len(tools) == 20  # 18 base + direct_fix + patch_direct_repo_file
 
 
 @pytest.mark.asyncio
