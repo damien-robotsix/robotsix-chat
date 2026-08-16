@@ -70,7 +70,13 @@ RUN rm -rf /usr/local/lib/python3.14/site-packages/pip \
 # claude-sdk subscription transport spawns the `claude` CLI as a subprocess.
 # Build-only packages and caches are pruned in the same layer.
 RUN apt-get update \
-    && apt-get install --only-upgrade -y --no-install-recommends liblzma5="5.8.*" \
+    && apt-get install --only-upgrade -y --no-install-recommends \
+        liblzma5="5.8.*" \
+        util-linux="2.41.5-0+deb13u1" \
+        libblkid1="2.41.5-0+deb13u1" \
+        libmount1="2.41.5-0+deb13u1" \
+        libsmartcols1="2.41.5-0+deb13u1" \
+        libuuid1="2.41.5-0+deb13u1" \
     && apt-get install -y --no-install-recommends curl="8.*" gnupg="2.*" \
     && mkdir -p /etc/apt/keyrings \
     && curl -fsSL https://deb.nodesource.com/gpgkey/nodesource-repo.gpg.key \
