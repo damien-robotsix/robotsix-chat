@@ -1750,8 +1750,17 @@ async def _run_wait_for_event_turn(
     return [], previous_result, consecutive_no_change
 
 
-async def _subsession_worker(env: SubsessionEnv, sub_id: str) -> None:
-    """Drive one subsession to a terminal state (see module docstring)."""
+async def _subsession_worker(
+    env: SubsessionEnv,
+    sub_id: str,
+    retry_input: list[InboxMessage] | None = None,
+) -> None:
+    """Drive one subsession to a terminal state (see module docstring).
+
+    ``retry_input`` carries the inbox messages that were in flight when a
+    user_chat / task turn failed, so the retry re-processes the drained
+    operator answer instead of re-asking the original question.
+    """
     from .worker_periodic import _build_periodic_input
 
     registry = env.registry
@@ -1783,6 +1792,7 @@ async def _subsession_worker(env: SubsessionEnv, sub_id: str) -> None:
         consecutive_no_change = info.consecutive_no_change
         first_turn = True
         pending: list[InboxMessage] = []
+        in_flight_inbox: list[InboxMessage] | None = None
 
         # -- checkpoint ticket_id repair on resume ---------------------
         # Event-driven monitors need ticket_id in the checkpoint to
@@ -1841,6 +1851,11 @@ async def _subsession_worker(env: SubsessionEnv, sub_id: str) -> None:
             pending, previous_result, consecutive_no_change = result
             # Fall through to the main loop — the subsession is now RUNNING.
 
+        # Retry re-entry: carry the in-flight drained inbox messages so a
+        # failed turn never discards the operator's answer.
+        if retry_input is not None:
+            pending = list(retry_input)
+
         # -- component_request availability check ----------------------
         _cd = getattr(env.settings, "central_deploy", None)
         _cd_url = getattr(_cd, "url", "") if _cd is not None else ""
@@ -1871,6 +1886,7 @@ async def _subsession_worker(env: SubsessionEnv, sub_id: str) -> None:
             return
 
         while True:
+            in_flight_inbox = None
             # -- verify the subsession is still alive --------------------
             info = registry.get(sub_id)
             if info is None or not info.is_active:
@@ -1964,11 +1980,16 @@ async def _subsession_worker(env: SubsessionEnv, sub_id: str) -> None:
                     registry=registry,
                 )
             elif first_turn:
-                turn_input = info.prompt
-                if info.kind is SubsessionKind.USER_CHAT:
-                    turn_input = _USER_CHAT_FIRST_TURN_NOTE + "\n\n" + turn_input
+                if retry_input is not None:
+                    turn_input = _render_turn_input(pending)
+                    in_flight_inbox = pending
+                else:
+                    turn_input = info.prompt
+                    if info.kind is SubsessionKind.USER_CHAT:
+                        turn_input = _USER_CHAT_FIRST_TURN_NOTE + "\n\n" + turn_input
             else:
                 turn_input = _render_turn_input(pending)
+                in_flight_inbox = pending
             first_turn = False
 
             try:
@@ -2242,7 +2263,19 @@ async def _subsession_worker(env: SubsessionEnv, sub_id: str) -> None:
                     max_retries,
                     error_msg,
                 )
-                await _subsession_worker(env, sub_id)
+                if in_flight_inbox:
+                    logger.warning(
+                        "Subsession %s: re-delivering %d drained inbox "
+                        "message(s) on retry that would otherwise have "
+                        "been discarded.",
+                        sub_id,
+                        len(in_flight_inbox),
+                    )
+                await _subsession_worker(
+                    env,
+                    sub_id,
+                    retry_input=in_flight_inbox if in_flight_inbox else None,
+                )
                 return
 
         # -- exhausted retries or non-retryable kind ------------------
