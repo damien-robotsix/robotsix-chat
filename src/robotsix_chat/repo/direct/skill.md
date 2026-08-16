@@ -242,6 +242,45 @@ been clearly given.
 
 ______________________________________________________________________
 
+## Agent tool: `enable_repo_pages`
+
+Enable GitHub Pages built from a GitHub Actions workflow on a repository. Calls
+`POST /repos/{owner}/{repo}/pages` with `build_type: workflow` using the GitHub App installation
+token, then reads the site back so the result reports its current status.
+
+**This is a confirmation-gated mutation.** Enabling Pages changes live repository settings — the
+same class of mutation as `set_repo_security_and_analysis`. Only enable when the operator has
+explicitly consented in the conversation. The operator's own direct request (e.g. "enable GitHub
+Pages on robotsix-chat") or a clear affirmative answer to your proposal IS that consent — once
+given, state the exact repository and enable it without re-asking. Ask only when consent has not
+yet been clearly given.
+
+### Preconditions
+
+- Repository must be within the GitHub App installation scope.
+- The GitHub App installation must hold the `pages: write` permission.
+
+### Behaviour
+
+- **Fresh enable** — creates the Pages site with `build_type: workflow` and reports the resulting
+  site status (`built`, `building`, etc.), build type, and site URL.
+- **Already enabled** — a 409 (Pages already exists) is treated as success. When the existing build
+  type differs from the requested one, the build type is switched via `PUT`; otherwise the existing
+  site status is reported without error.
+- **Permission denied** — a 403 is reported as a permission error pointing at
+  `inspect_github_installation_token`, never as a crash.
+
+### Error responses
+
+| Condition                       | Message                                                                                            |
+| ------------------------------- | -------------------------------------------------------------------------------------------------- |
+| Repo not in installation scope  | `The robotsix-mill GitHub App is not installed on 'owner/name'`                                    |
+| Missing `pages: write` (403)    | `Error enabling GitHub Pages on owner/name: permission denied — ...`                               |
+| Invalid build type              | `Error: build_type must be 'workflow' or 'legacy', got ...`                                        |
+| Other API failure               | `Error enabling GitHub Pages on owner/name: <detail>`                                              |
+
+______________________________________________________________________
+
 ## Other direct-repo tools (read-only or gated on BLOCKED state)
 
 The following tools are available for push/PR operations. They require the ticket to be in BLOCKED

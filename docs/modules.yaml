@@ -267,6 +267,7 @@ modules:
       - tests/repo/direct/test_client.py
       - tests/repo/direct/test_direct_fix.py
       - tests/repo/direct/test_direct_repo.py
+      - tests/repo/direct/test_enable_pages.py
       - tests/repo/direct/test_github_auth_dependency.py
       - tests/repo/direct/test_merge.py
       - tests/repo/direct/test_open_pr.py
