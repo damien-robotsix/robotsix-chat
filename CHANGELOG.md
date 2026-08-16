@@ -69,6 +69,19 @@ Everything below predates the release-please migration and was
 maintained by hand or by towncrier. It is kept verbatim; new entries
 are added above by release-please.
 
+## [0.14.0](https://github.com/damien-robotsix/robotsix-chat/compare/v0.13.0...v0.14.0) (2026-08-16)
+
+
+### Features
+
+* Autonomous sessions: remove the continue/re-prompt system — drive each session with a single prompt (base autonomous instruction + preset custom prompt) (20260815T203247Z-autonomous-sessions-remove-the-continue-1820) ([#1469](https://github.com/damien-robotsix/robotsix-chat/issues/1469)) ([0b03f95](https://github.com/damien-robotsix/robotsix-chat/commit/0b03f955432901670124a923f1fe042e9f8496e3))
+
+
+### Bug Fixes
+
+* Chat UI: completed autonomous subsessions reappear after manual close/delete (20260815T210057Z-chat-ui-completed-autonomous-subsessions-42b1) ([#1473](https://github.com/damien-robotsix/robotsix-chat/issues/1473)) ([46c9ae8](https://github.com/damien-robotsix/robotsix-chat/commit/46c9ae8f2c4f7ca5664ee583590c7443e925c3f4))
+* Monitor should escalate or auto-resolve recurring pause/wake cycles (20260815T205908Z-monitor-should-escalate-or-auto-resolve-0ba7) ([#1472](https://github.com/damien-robotsix/robotsix-chat/issues/1472)) ([bdf96cd](https://github.com/damien-robotsix/robotsix-chat/commit/bdf96cdfd95c48f99087bc8569f941d23b00bd0c))
+
 ## [0.13.0](https://github.com/damien-robotsix/robotsix-chat/compare/v0.12.0...v0.13.0) (2026-08-15)
 
 
