@@ -69,6 +69,25 @@ Everything below predates the release-please migration and was
 maintained by hand or by towncrier. It is kept verbatim; new entries
 are added above by release-please.
 
+## [0.15.0](https://github.com/damien-robotsix/robotsix-chat/compare/v0.14.0...v0.15.0) (2026-08-16)
+
+
+### Features
+
+* Add automatic epic decomposition guidance when implement agent exhausts spawns (20260805T105242Z-add-automatic-epic-decomposition-guidanc-06bc) ([#1318](https://github.com/damien-robotsix/robotsix-chat/issues/1318)) ([dab3e59](https://github.com/damien-robotsix/robotsix-chat/commit/dab3e595e6f1a9916646158e9931450733383816))
+* Background task budget exhaustion prevents large-scale ticket operations (20260805T123214Z-background-task-budget-exhaustion-preven-2bac) ([#1320](https://github.com/damien-robotsix/robotsix-chat/issues/1320)) ([4444ab7](https://github.com/damien-robotsix/robotsix-chat/commit/4444ab7d083b1868342cf3632f03712a4a2b7d71))
+
+
+### Bug Fixes
+
+* Persist undelivered subsession inbox messages across restart (all kinds) (20260816T080201Z-persist-undelivered-subsession-inbox-mes-1b76) ([#1476](https://github.com/damien-robotsix/robotsix-chat/issues/1476)) ([304e4e8](https://github.com/damien-robotsix/robotsix-chat/commit/304e4e8c2a4f521dace74f91dddda4ef477f6866))
+* Subsession worker retry path discards drained inbox messages — re-enqueue on turn failure (20260816T080211Z-subsession-worker-retry-path-discards-dr-558f) ([#1477](https://github.com/damien-robotsix/robotsix-chat/issues/1477)) ([c840eef](https://github.com/damien-robotsix/robotsix-chat/commit/c840eefb6db87307b5508297309c907650adc8de))
+
+
+### Documentation
+
+* Per-preset autonomous sessions were invisible in the UI due to owner-scope mismatch (20260810T082151Z-per-preset-autonomous-sessions-were-invi-2f73) ([#1374](https://github.com/damien-robotsix/robotsix-chat/issues/1374)) ([afd2bbc](https://github.com/damien-robotsix/robotsix-chat/commit/afd2bbcc158547f879aeb97f9a684c88f124b8bb))
+
 ## [0.14.0](https://github.com/damien-robotsix/robotsix-chat/compare/v0.13.0...v0.14.0) (2026-08-16)
 
 
