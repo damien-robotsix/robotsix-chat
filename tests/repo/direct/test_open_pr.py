@@ -120,8 +120,10 @@ def test_merge_tools_returned() -> None:
     assert sorted(names) == [
         "apply_patch_to_file",
         "arm_direct_repo_auto_merge",
+        "check_ci_health",
         "check_direct_repo_auto_merge",
         "check_pr_merge_conflict",
+        "file_ci_stabilization_ticket",
         "inspect_github_installation_token",
         "list_open_prs",
         "merge_direct_repo_pr",
@@ -129,6 +131,7 @@ def test_merge_tools_returned() -> None:
         "push_direct_repo_branch",
         "push_patch_to_pr_branch",
         "recover_auto_merge",
+        "rerun_ci_workflow",
         "reset_implement_spawn_counter",
         "update_pr_branch",
         "verify_pr_ci_status",
