@@ -899,6 +899,47 @@ def build_github_tools(
             result += f"\nPR: {pr_title}\nBranches: {head_base_branches}"
         return result
 
+    async def enable_repo_pages(
+        repo_full_name: str,
+        build_type: str = "workflow",
+    ) -> str:
+        """Enable GitHub Pages built from a workflow on a repository.
+
+        Enables Pages via ``POST /repos/{owner}/{repo}/pages`` with
+        ``build_type: workflow`` and reads the resulting site status back.
+        Idempotent — a repo that already has Pages returns an
+        already-enabled result instead of an error.
+
+        **This is a confirmation-gated mutation.**  This changes live
+        repository settings.  Before calling this tool you MUST obtain
+        explicit operator approval in the conversation (the same class of
+        mutation as ``set_repo_security_and_analysis``).  State the exact
+        repository and wait for the operator to confirm before proceeding.
+
+        **No BLOCKED-state requirement.** This is a confirmation-gated
+        tool — it does not require a ticket to be in BLOCKED state.
+
+        **Scope:** *repo_full_name* must be within the robotsix-mill GitHub
+        App's current installation scope (checked dynamically at call time).
+
+        Args:
+            repo_full_name: GitHub ``owner/name`` (e.g.
+                ``"robotsix/robotsix-chat"``).
+            build_type: Pages build type — ``"workflow"`` (default, built
+                via GitHub Actions) or ``"legacy"``.
+
+        Returns:
+            A message reporting the enable result and the resulting Pages
+            site status, or an actionable error (e.g. permission denied).
+
+        """
+        if error := await assert_in_scope(client, repo_full_name):
+            return error
+        return await client.enable_pages(
+            repo_full_name=repo_full_name,
+            build_type=build_type,
+        )
+
     async def reset_implement_spawn_counter(ticket_id: str) -> str:
         """Reset the implement-agent spawn counter for a blocked ticket.
 
@@ -1278,6 +1319,7 @@ def build_github_tools(
         list_open_prs,
         merge_direct_repo_pr,
         arm_direct_repo_auto_merge,
+        enable_repo_pages,
         reset_implement_spawn_counter,
         apply_patch_to_file,
         push_patch_to_pr_branch,

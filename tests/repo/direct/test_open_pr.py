@@ -123,6 +123,7 @@ def test_merge_tools_returned() -> None:
         "check_ci_health",
         "check_direct_repo_auto_merge",
         "check_pr_merge_conflict",
+        "enable_repo_pages",
         "file_ci_stabilization_ticket",
         "inspect_github_installation_token",
         "list_open_prs",
