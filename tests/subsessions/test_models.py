@@ -8,7 +8,7 @@ from robotsix_chat.subsessions import (
     SubsessionKind,
     SubsessionStatus,
 )
-from robotsix_chat.subsessions.models import TranscriptEntry
+from robotsix_chat.subsessions.models import InboxMessage, TranscriptEntry
 
 
 def _info(**overrides: object) -> SubsessionInfo:
@@ -126,6 +126,17 @@ def test_transcript_entry_as_dict() -> None:
         "role": "parent",
         "text": "steer left",
         "timestamp": 9.0,
+    }
+
+
+def test_inbox_message_as_dict() -> None:
+    """``InboxMessage.as_dict`` returns the JSON-serialisable form."""
+    message = InboxMessage(role="user", text="deploy the fix", timestamp=9.5)
+
+    assert message.as_dict() == {
+        "role": "user",
+        "text": "deploy the fix",
+        "timestamp": 9.5,
     }
 
 

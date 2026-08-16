@@ -222,7 +222,12 @@ class RegistryStore:
         except OSError:
             logger.warning("Could not create parent dir for %s", self._store_path)
             return
-        entries = [info.snapshot(with_transcript=True) for info in self._subs.values()]
+        entries: list[dict[str, object]] = []
+        for info in self._subs.values():
+            entry = info.snapshot(with_transcript=True)
+            inbox = self._inboxes.get(info.id)
+            entry["inbox"] = [message.as_dict() for message in inbox] if inbox else []
+            entries.append(entry)
         # Write-then-rename so a crash or container kill mid-write can never
         # truncate the store.
         tmp_path = self._store_path.with_suffix(self._store_path.suffix + ".tmp")
@@ -575,6 +580,26 @@ class SubsessionRegistry:
         self._wake_events[info.id] = asyncio.Event()
         self._by_owner[info.owner_session_id].add(info.id)
 
+    def restore_inbox(self, sub_id: str, messages: list[InboxMessage]) -> None:
+        """Restore undelivered inbox messages persisted before a restart.
+
+        Called by the startup resume hook immediately after a resumed
+        subsession is re-registered/spawned.  Populates the deque and sets
+        the wake event so the worker drains the restored messages on its
+        next turn boundary, then persists so the on-disk inbox matches the
+        in-memory state (``create``/``restore`` wrote an empty deque first).
+        """
+        if not messages:
+            return
+        inbox = self._inboxes.get(sub_id)
+        if inbox is None:
+            return
+        inbox.extend(messages)
+        event = self._wake_events.get(sub_id)
+        if event is not None:
+            event.set()
+        self._store.persist()
+
     def set_status(
         self,
         sub_id: str,
@@ -655,6 +680,12 @@ class SubsessionRegistry:
         if inbox is None:
             return False
         inbox.append(InboxMessage(role=role, text=text, timestamp=self._clock()))
+        logger.info(
+            "Subsession %s: enqueued inbox message (role=%s) — inbox size=%d.",
+            sub_id,
+            role,
+            len(inbox),
+        )
         self.append_transcript(sub_id, role, text)
         event = self._wake_events.get(sub_id)
         if event is not None:
@@ -671,6 +702,14 @@ class SubsessionRegistry:
             return []
         messages = list(inbox)
         inbox.clear()
+        # Persist immediately so a restart after the drain does not
+        # re-deliver messages that were already handed to the worker.
+        self._store.persist()
+        logger.info(
+            "Subsession %s: drained %d inbox message(s) — inbox size=0.",
+            sub_id,
+            len(messages),
+        )
         return messages
 
     async def wait_for_inbox(self, sub_id: str, timeout: float | None) -> bool:

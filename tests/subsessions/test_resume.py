@@ -23,7 +23,12 @@ from robotsix_chat.subsessions.resume import (
 from robotsix_chat.subsessions.worker import (
     _build_ancestor_context,
 )
-from tests.common.subsession_fakes import FakeAgent, build_env, make_settings
+from tests.common.subsession_fakes import (
+    FakeAgent,
+    build_env,
+    make_settings,
+    wait_until,
+)
 
 OWNER = "sess-main"
 
@@ -1688,3 +1693,39 @@ async def test_resume_wait_for_event_does_not_respawn_explicitly_closed(
     assert info is not None
     assert info.status is SubsessionStatus.CLOSED
     assert wfe.id not in registry2._running
+
+
+@pytest.mark.asyncio
+async def test_resume_restores_undelivered_user_chat_message_once(
+    tmp_path: Path,
+) -> None:
+    """A message enqueued before restart is delivered exactly once on resume."""
+    store_path = tmp_path / "subsessions.json"
+    registry1 = SubsessionRegistry(store_path=store_path)
+    chat = registry1.create(
+        kind=SubsessionKind.USER_CHAT,
+        owner_session_id=OWNER,
+        parent_id=None,
+        depth=1,
+        title="side chat",
+        prompt="what should we do?",
+        model_level=3,
+    )
+    registry1.set_status(chat.id, SubsessionStatus.WAITING)
+    assert registry1.enqueue_message(chat.id, "user", "deploy the fix") is True
+    registry1.persist()
+
+    agent = FakeAgent(["sure, deploying", "acknowledged"])
+    registry2 = SubsessionRegistry(store_path=store_path)
+    env = build_env(agent=agent, registry=registry2, settings=make_settings())
+
+    resume_subsessions(env)
+
+    await wait_until(lambda: any(c["message"] == "deploy the fix" for c in agent.calls))
+    assert sum(1 for c in agent.calls if c["message"] == "deploy the fix") == 1
+
+    worker = registry2._running.get(chat.id)
+    registry2.cancel_and_close(chat.id, reason="teardown", closed_by="system")
+    if worker is not None:
+        with contextlib.suppress(asyncio.CancelledError):
+            await asyncio.wait_for(worker, 2.0)

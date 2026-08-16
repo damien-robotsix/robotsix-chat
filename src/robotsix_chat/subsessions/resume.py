@@ -14,6 +14,7 @@ from typing import TYPE_CHECKING, TypedDict
 
 from .models import (
     ACTIVE_STATUSES,
+    InboxMessage,
     SubsessionInfo,
     SubsessionKind,
     SubsessionStatus,
@@ -108,6 +109,38 @@ def _rebuild_checkpoint(entry: Mapping[str, object]) -> dict[str, object] | None
     if isinstance(raw, dict):
         return {str(k): v for k, v in raw.items()}
     return None
+
+
+def _rebuild_inbox(entry: Mapping[str, object]) -> list[InboxMessage]:
+    """Reconstruct undelivered inbox messages from a persisted entry."""
+    raw = entry.get("inbox")
+    if not isinstance(raw, list):
+        return []
+    messages: list[InboxMessage] = []
+    for item in raw:
+        if not isinstance(item, dict):
+            continue
+        role = _entry_str(item, "role")
+        text = _entry_str(item, "text")
+        if not role or not text:
+            continue
+        messages.append(
+            InboxMessage(
+                role=role,
+                text=text,
+                timestamp=_entry_float(item, "timestamp"),
+            )
+        )
+    return messages
+
+
+def _restore_inbox(
+    registry: SubsessionRegistry,
+    sub_id: str,
+    entry: Mapping[str, object],
+) -> None:
+    """Restore any persisted undelivered inbox messages for *sub_id*."""
+    registry.restore_inbox(sub_id, _rebuild_inbox(entry))
 
 
 # -- typed dicts ----------------------------------------------------------
@@ -300,6 +333,7 @@ def _resume_periodic_entry(
         dedup_key=dedup_key,
         retry_count=retry_count,
     )
+    _restore_inbox(env.registry, sub_id, entry)
     # Restore PAUSED state so the worker enters the wait loop instead of
     # running an agent turn on a subsession that was auto-paused.
     if original_status == "paused":
@@ -353,6 +387,7 @@ def _resume_wait_for_event_entry(
         retry_count=retry_count,
         event_timeout_seconds=event_timeout_seconds,
     )
+    _restore_inbox(env.registry, sub_id, entry)
     return _ResumeFate(
         owner_session_id=owner,
         sub_id=sub_id,
@@ -416,6 +451,7 @@ def _resume_user_chat_entry(
         retry_count=retry_count,
         turn_history=turn_history,
     )
+    _restore_inbox(env.registry, sub_id, entry)
     return _ResumeFate(
         owner_session_id=owner,
         sub_id=sub_id,
@@ -464,6 +500,7 @@ def _resume_task_entry(
         dedup_key=dedup_key,
         retry_count=retry_count,
     )
+    _restore_inbox(env.registry, sub_id, entry)
     return _ResumeFate(
         owner_session_id=owner,
         sub_id=sub_id,

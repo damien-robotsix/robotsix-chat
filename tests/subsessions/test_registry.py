@@ -6,6 +6,7 @@ import asyncio
 import contextlib
 import json
 from pathlib import Path
+from typing import cast
 
 import pytest
 
@@ -439,6 +440,26 @@ def test_load_persisted_round_trips(tmp_path: Path) -> None:
     assert entry["status"] == SubsessionStatus.SLEEPING.value
     assert entry["runs"] == 4
     assert entry["interval_seconds"] == 60.0
+
+
+def test_inbox_round_trips_through_persist_and_drain(tmp_path: Path) -> None:
+    """Undelivered inbox messages survive persist; drained ones are cleared."""
+    store_path = tmp_path / "subsessions.json"
+    registry = SubsessionRegistry(store_path=store_path)
+    info = _create(registry, kind=SubsessionKind.USER_CHAT)
+    assert registry.enqueue_message(info.id, "user", "answer after restart") is True
+
+    reloaded = SubsessionRegistry(store_path=store_path).load_persisted()
+    (persisted,) = cast(list[dict[str, object]], reloaded[0]["inbox"])
+    assert persisted["role"] == "user"
+    assert persisted["text"] == "answer after restart"
+    assert isinstance(persisted["timestamp"], float)
+
+    drained = registry.drain_inbox(info.id)
+    assert [m.text for m in drained] == ["answer after restart"]
+
+    reloaded_after_drain = SubsessionRegistry(store_path=store_path).load_persisted()
+    assert reloaded_after_drain[0]["inbox"] == []
 
 
 def test_load_persisted_missing_or_corrupt_returns_empty(tmp_path: Path) -> None:
