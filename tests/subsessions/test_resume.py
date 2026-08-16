@@ -1721,9 +1721,7 @@ async def test_resume_restores_undelivered_user_chat_message_once(
 
     resume_subsessions(env)
 
-    await wait_until(
-        lambda: any(c["message"] == "deploy the fix" for c in agent.calls)
-    )
+    await wait_until(lambda: any(c["message"] == "deploy the fix" for c in agent.calls))
     assert sum(1 for c in agent.calls if c["message"] == "deploy the fix") == 1
 
     worker = registry2._running.get(chat.id)
