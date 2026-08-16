@@ -195,7 +195,6 @@ async def sessions_delete_endpoint(request: Request) -> JSONResponse:
 
     runner = request.app.state.autonomous_runner
     is_autonomous = runner is not None and runner.is_autonomous(session_id)
-    is_autonomous_owner = runner is not None and runner.is_autonomous_owner(owner_id)
 
     # 1. Close the session's subsessions.
     subsessions_closed = _cleanup_session(session_id, request)
@@ -203,13 +202,37 @@ async def sessions_delete_endpoint(request: Request) -> JSONResponse:
     # 2. Delete the conversation/session itself.
     store: ConversationStore = request.app.state.conversation_store
 
+    # Resolve the concrete owner scope before deleting.  ``GET /sessions``
+    # merges the bootstrap ``autonomous`` owner with every per-preset
+    # ``autonomous:<name>`` sub-scope into a single list, and the client
+    # routes the delete back to the bootstrap owner it fetched the list
+    # from.  A completed preset session actually lives under its sub-scope
+    # owner, so a delete aimed at the bootstrap owner is a silent no-op
+    # (404) and the card reappears on the next refresh.  Re-target the
+    # delete to the session's real owner only when the caller supplied the
+    # merged bootstrap owner, so ordinary operator sessions keep their
+    # ownership check intact.
+    delete_owner_id = owner_id
+    if (
+        runner is not None
+        and owner_id == runner.bootstrap_owner
+        and runner.is_autonomous_owner(owner_id)
+    ):
+        actual_owner = store.owner_for_session(session_id)
+        if actual_owner is not None and runner.is_autonomous_owner(actual_owner):
+            delete_owner_id = actual_owner
+
+    is_autonomous_owner = runner is not None and runner.is_autonomous_owner(
+        delete_owner_id
+    )
+
     # Capture history before deletion (for the feedback run).
     deletion_turns = store.history(session_id)
 
     # Never spawn an empty husk under the autonomous pseudo-owner; the runner
     # starts a fresh, properly-tracked replacement below instead.
     result = store.delete_session(
-        owner_id, session_id, create_replacement=not is_autonomous_owner
+        delete_owner_id, session_id, create_replacement=not is_autonomous_owner
     )
 
     if not result.get("deleted"):
@@ -230,13 +253,13 @@ async def sessions_delete_endpoint(request: Request) -> JSONResponse:
     # -- session carryover persistence ------------------------------------
     # Save an action-plan summary to the knowledge store so the assistant
     # can pick up pending work in a new session.
-    await _persist_carryover(request, store, session_id, owner_id)
+    await _persist_carryover(request, store, session_id, delete_owner_id)
 
     # Autonomous cleanup: forget the runner's record and auto-restart so the
     # operator always has one live autonomous run (auto-restart always).
     if is_autonomous and runner is not None:
         runner.forget_session(session_id)
-        runner.ensure_active_session(owner_id)
+        runner.ensure_active_session(delete_owner_id)
 
     return JSONResponse(
         {
