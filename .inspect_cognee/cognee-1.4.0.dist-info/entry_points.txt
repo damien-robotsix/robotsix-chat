@@ -1,0 +1,2 @@
+[console_scripts]
+cognee-cli = cognee.cli._cognee:main
