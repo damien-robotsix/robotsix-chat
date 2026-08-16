@@ -1194,6 +1194,19 @@ def test_react_prompt_templates_compress_repeated_monitor_closures() -> None:
         assert "never repeat a closure notice" in text
 
 
+def test_react_prompt_templates_prioritize_consolidation_over_pending_threads() -> None:
+    """Consolidation must override pending sub-conversation threads."""
+    for template in (
+        _REACT_PROMPT_TEMPLATE,
+        _BATCH_REACT_PROMPT_TEMPLATE,
+    ):
+        text = template.lower()
+        assert "pending sub-conversation" in text
+        assert "do not re-pose an earlier question" in text
+        assert "next logical decision across all themes" in text
+        assert "merge approved prs" in text
+
+
 def test_reason_phrase_for_max_runs_escalated_is_human_readable() -> None:
     """The max_runs_escalated reason must not leak its raw internal code."""
     assert "max_runs_escalated" in _REASON_PHRASES
