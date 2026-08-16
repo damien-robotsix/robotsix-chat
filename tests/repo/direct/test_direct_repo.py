@@ -326,6 +326,7 @@ def test_merge_tools_returned() -> None:
         "check_ci_health",
         "check_direct_repo_auto_merge",
         "check_pr_merge_conflict",
+        "enable_repo_pages",
         "file_ci_stabilization_ticket",
         "inspect_github_installation_token",
         "list_open_prs",
@@ -2617,7 +2618,7 @@ def test_direct_fix_available_when_enabled() -> None:
     tools = build_direct_repo_tools(_settings(direct_fix_enabled=True))
     names = [t.__name__ for t in tools]
     assert "direct_fix" in names
-    assert len(tools) == 19  # 17 base + direct_fix + patch_direct_repo_file
+    assert len(tools) == 20  # 18 base + direct_fix + patch_direct_repo_file
 
 
 @pytest.mark.asyncio

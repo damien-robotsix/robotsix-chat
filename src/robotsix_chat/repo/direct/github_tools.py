@@ -916,6 +916,9 @@ def build_github_tools(
         mutation as ``set_repo_security_and_analysis``).  State the exact
         repository and wait for the operator to confirm before proceeding.
 
+        **No BLOCKED-state requirement.** This is a confirmation-gated
+        tool — it does not require a ticket to be in BLOCKED state.
+
         **Scope:** *repo_full_name* must be within the robotsix-mill GitHub
         App's current installation scope (checked dynamically at call time).
 
