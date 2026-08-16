@@ -9,6 +9,7 @@ from starlette.exceptions import HTTPException
 from starlette.requests import Request
 from starlette.responses import JSONResponse
 
+from robotsix_chat.autonomous.models import AutonomousState
 from robotsix_chat.chat.conversation import ConversationStore
 from robotsix_chat.config.constants import level_display_name
 
@@ -258,8 +259,15 @@ async def sessions_delete_endpoint(request: Request) -> JSONResponse:
     # Autonomous cleanup: forget the runner's record and auto-restart so the
     # operator always has one live autonomous run (auto-restart always).
     if is_autonomous and runner is not None:
+        was_countdown = runner.get_state(session_id) is AutonomousState.completed
         runner.forget_session(session_id)
-        runner.ensure_active_session(delete_owner_id)
+        # A completed autonomous session is in its inter-run countdown: the
+        # ``_auto_restart`` task scheduled at completion will spawn the fresh
+        # session when the next run actually fires.  Deleting it must hide the
+        # entry immediately WITHOUT auto-restarting right now — otherwise the
+        # card reappears instantly and the discard looks like a no-op.
+        if not was_countdown:
+            runner.ensure_active_session(delete_owner_id)
 
     return JSONResponse(
         {
