@@ -2449,7 +2449,27 @@ Governed artifact: `build_autonomous_instruction()` in
 The hash is computed on the output of `build_autonomous_instruction(Settings())` — i.e. with all
 autonomous settings at their pydantic field defaults
 (``completion_marker="---AUTONOMOUS COMPLETE---"``,
-``stale_monitor_runs_before_completion=3``).
+``stale_monitor_runs_before_completion=3``,
+``queue_tolerance_runs_before_escalation=3``).
+
+## AUTONOMOUS v24 — 2026-08-16 — prevent-false-stall-alarms-for-queued-ti-6481
+
+**Summary:** Add a serial-board queue-tolerance rule to the autonomous
+protocol.  Before auto-stopping a monitor or escalating a stall, the agent
+accepts up to ``queue_tolerance_runs_before_escalation`` consecutive NO_CHANGE
+cycles as queue wait, then checks the board's queue (GET /tickets ordered by
+position/creation time) and verifies whether earlier-queued tickets are
+actively being worked.  If they are, the monitor stays alive and the
+inactivity is treated as queue wait; escalation happens only when the queue
+ahead is empty or idle and the ticket still has made no progress.
+
+**Rationale:** Three separate monitors (trade-execution, convergence
+early-stop, and reset-endpoints) auto-stopped on false stall detection
+because the board processes tickets serially and the tracked tickets were
+simply queued behind earlier wave items.  The tolerance window prevents
+re-spawning fresh monitors for tickets that are merely waiting their turn.
+
+**SHA256:** `77841f6656ce41f05fcfbc6be83fcc6166f9b3719512b33166cafd38f8c8dfdb`
 
 ## AUTONOMOUS v23 — 2026-08-13 — avoid-suggesting-stale-disconnected-moni-7f5e
 

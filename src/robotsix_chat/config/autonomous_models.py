@@ -89,6 +89,9 @@ class AutonomousSettings(BaseModel):
             cap.
         stale_monitor_runs_before_completion: Number of consecutive NO_CHANGE
             cycles after which a periodic monitor is considered 'stale'.
+        queue_tolerance_runs_before_escalation: Number of consecutive
+            NO_CHANGE monitor cycles to accept as queue wait before
+            escalating a possible stall on a serial board.
         sessions: List of named autonomous session definitions.  An explicit
             empty list is migrated to the built-in default preset on load so
             the default session is always surfaced.  Each entry defines a
@@ -121,6 +124,16 @@ class AutonomousSettings(BaseModel):
             "autonomous session complete even while the monitor is still "
             "running.  Monitors continue in the background.  "
             "Env override: ``AUTONOMOUS_STALE_MONITOR_RUNS_BEFORE_COMPLETION``."
+        ),
+    )
+    queue_tolerance_runs_before_escalation: int = Field(
+        default=3,
+        description=(
+            "Number of consecutive NO_CHANGE monitor cycles to accept as "
+            "queue wait before escalating a possible stall when the board "
+            "processes tickets serially.  During this window the agent "
+            "checks whether earlier-queued tickets are actively being "
+            "worked before auto-stopping a monitor or reporting a stall."
         ),
     )
     sessions: list[AutonomousSessionDefinition] = Field(
