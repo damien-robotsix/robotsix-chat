@@ -18,6 +18,7 @@ from robotsix_chat.subsessions import (
 )
 from robotsix_chat.subsessions.resume import (
     _entry_last_assistant_text,
+    _entry_recent_user_texts,
 )
 from robotsix_chat.subsessions.worker import (
     _build_ancestor_context,
@@ -620,6 +621,117 @@ async def test_resume_user_chat_no_augmentation_when_no_transcript(
     # No restart note should be added — prompt stays as-is.
     assert "restarted after a server restart" not in resumed.prompt
     assert resumed.prompt == "Ask the user a question"
+
+    worker = registry2._running.get(user_chat.id)
+    if worker is not None:
+        registry2.cancel_and_close(user_chat.id, reason="teardown", closed_by="system")
+        with contextlib.suppress(asyncio.CancelledError):
+            await asyncio.wait_for(worker, 2.0)
+
+
+def test_entry_recent_user_texts_after_last_completed_turn() -> None:
+    """Only user/parent transcript entries after the last turn are returned."""
+    turn_history = [("Which environment?", "Staging, please.")]
+    entry = {
+        "transcript": [
+            {"role": "assistant", "text": "Staging, please.", "timestamp": 1.0},
+            {
+                "role": "parent",
+                "text": "No, deploy to production instead.",
+                "timestamp": 2.0,
+            },
+        ]
+    }
+    assert _entry_recent_user_texts(entry, turn_history) == [
+        ("parent", "No, deploy to production instead.")
+    ]
+
+
+def test_entry_recent_user_texts_skips_messages_from_completed_turns() -> None:
+    """User/parent messages whose turn already completed are not re-injected."""
+    turn_history = [
+        ("Which environment?", "Staging, please."),
+        ("No, deploy to production instead.", "Understood, deploying."),
+    ]
+    entry = {
+        "transcript": [
+            {"role": "assistant", "text": "Staging, please.", "timestamp": 1.0},
+            {
+                "role": "parent",
+                "text": "No, deploy to production instead.",
+                "timestamp": 2.0,
+            },
+            {"role": "assistant", "text": "Understood, deploying.", "timestamp": 3.0},
+        ]
+    }
+    assert _entry_recent_user_texts(entry, turn_history) == []
+
+
+def test_entry_recent_user_texts_without_turn_history_includes_all() -> None:
+    """With no completed turns yet, every user/parent message is recent."""
+    entry = {
+        "transcript": [
+            {"role": "parent", "text": "Use production.", "timestamp": 1.0},
+        ]
+    }
+    assert _entry_recent_user_texts(entry, []) == [("parent", "Use production.")]
+
+
+@pytest.mark.asyncio
+async def test_resume_user_chat_injects_operator_answer_into_first_turn(
+    tmp_path: Path,
+) -> None:
+    """A user_chat resumed after restart sees an answer given just before it.
+
+    The operator's answer was transcripted at enqueue time but never became
+    a completed turn, so it is absent from ``turn_history``.  The resume
+    hook must retain the prior turn history and inject the undelivered
+    answer into the first resumed turn's input.
+    """
+    store_path = tmp_path / "subsessions.json"
+    registry1 = SubsessionRegistry(store_path=store_path)
+    user_chat = registry1.create(
+        kind=SubsessionKind.USER_CHAT,
+        owner_session_id=OWNER,
+        parent_id=None,
+        depth=1,
+        title="decision chat",
+        prompt="Ask the user about the deployment strategy",
+        model_level=3,
+    )
+    # A completed turn whose reply is recorded in turn_history + transcript.
+    registry1.append_turn_history(
+        user_chat.id, "Which environment?", "Staging, please."
+    )
+    registry1.append_transcript(user_chat.id, "assistant", "Staging, please.")
+    # The operator's answer lands just before restart and is only
+    # transcripted — no matching turn_history entry exists yet.
+    registry1.append_transcript(
+        user_chat.id, "parent", "No, deploy to production instead."
+    )
+    registry1.set_status(user_chat.id, SubsessionStatus.WAITING)
+
+    gate = asyncio.Event()
+    agent = FakeAgent(["Understood — deploying to production."], gate=gate)
+    registry2 = SubsessionRegistry(store_path=store_path)
+    env = build_env(agent=agent, registry=registry2, settings=make_settings())
+    resume_subsessions(env)
+
+    # The worker seeds its agent-visible history from info.turn_history and
+    # blocks on the gate after recording its first call.
+    for _ in range(200):
+        if agent.calls:
+            break
+        await asyncio.sleep(0.01)
+    assert agent.calls, "resumed worker never reached its first agent turn"
+
+    first_call = agent.calls[0]
+    assert "No, deploy to production instead." in first_call["message"]
+    assert first_call["history"] == [("Which environment?", "Staging, please.")]
+
+    resumed = registry2.get(user_chat.id)
+    assert resumed is not None
+    assert resumed.turn_history == [("Which environment?", "Staging, please.")]
 
     worker = registry2._running.get(user_chat.id)
     if worker is not None:
