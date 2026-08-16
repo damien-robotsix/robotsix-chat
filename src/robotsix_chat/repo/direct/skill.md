@@ -53,10 +53,10 @@ state.
 
 ### Error responses
 
-| Condition                        | Message                                                     |
-| -------------------------------- | ----------------------------------------------------------- |
-| Repo not in installation scope   | `The robotsix-mill GitHub App is not installed on 'owner/name'` |
-| GitHub Actions unreachable       | `Error checking CI health for owner/name: <detail>`         |
+| Condition                      | Message                                                         |
+| ------------------------------ | --------------------------------------------------------------- |
+| Repo not in installation scope | `The robotsix-mill GitHub App is not installed on 'owner/name'` |
+| GitHub Actions unreachable     | `Error checking CI health for owner/name: <detail>`             |
 
 ______________________________________________________________________
 
@@ -78,12 +78,12 @@ re-asking. Ask only when consent has not yet been clearly given. The endpoint tr
 
 ### Error responses
 
-| Condition                      | Message                                                                       |
-| ------------------------------ | ----------------------------------------------------------------------------- |
-| Repo not in installation scope | `The robotsix-mill GitHub App is not installed on 'owner/name'`               |
+| Condition                      | Message                                                                         |
+| ------------------------------ | ------------------------------------------------------------------------------- |
+| Repo not in installation scope | `The robotsix-mill GitHub App is not installed on 'owner/name'`                 |
 | No failed run found            | `No failed workflow run found on '<branch>' in owner/name — nothing to re-run.` |
-| GitHub Actions unreachable     | `Error listing workflow runs for owner/name: <detail>`                        |
-| GitHub Actions error           | `Error rerunning workflow run <id>: <detail>`                                 |
+| GitHub Actions unreachable     | `Error listing workflow runs for owner/name: <detail>`                          |
+| GitHub Actions error           | `Error rerunning workflow run <id>: <detail>`                                   |
 
 ______________________________________________________________________
 
@@ -107,10 +107,10 @@ action, not a repository-state change). Does not require a ticket to be in BLOCK
 
 ### Error responses
 
-| Condition                      | Message                                                             |
-| ------------------------------ | ------------------------------------------------------------------- |
-| Repo not in installation scope | `The robotsix-mill GitHub App is not installed on 'owner/name'`     |
-| Board API failure              | `Error filing CI stabilization ticket for owner/name: <detail>`     |
+| Condition                      | Message                                                         |
+| ------------------------------ | --------------------------------------------------------------- |
+| Repo not in installation scope | `The robotsix-mill GitHub App is not installed on 'owner/name'` |
+| Board API failure              | `Error filing CI stabilization ticket for owner/name: <detail>` |
 
 ______________________________________________________________________
 
