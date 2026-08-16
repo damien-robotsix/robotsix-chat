@@ -69,6 +69,13 @@ Everything below predates the release-please migration and was
 maintained by hand or by towncrier. It is kept verbatim; new entries
 are added above by release-please.
 
+## [0.16.0](https://github.com/damien-robotsix/robotsix-chat/compare/v0.15.1...v0.16.0) (2026-08-16)
+
+
+### Features
+
+* Prevent false stall alarms for queued tickets in linear boards (20260816T065424Z-prevent-false-stall-alarms-for-queued-ti-6481) ([#1484](https://github.com/damien-robotsix/robotsix-chat/issues/1484)) ([c1c3a23](https://github.com/damien-robotsix/robotsix-chat/commit/c1c3a23c0788dad8414c621ba5202f983e47d3c6))
+
 ## [0.15.1](https://github.com/damien-robotsix/robotsix-chat/compare/v0.15.0...v0.15.1) (2026-08-16)
 
 
