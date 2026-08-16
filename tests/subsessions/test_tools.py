@@ -94,6 +94,7 @@ def test_subsession_agent_gets_complete_tool_too() -> None:
         "complete_subsession",
         "set_checkpoint",
         "self_update_subsession",
+        "spawn_continuation",
     ]
 
 
@@ -109,6 +110,7 @@ def test_agent_at_max_depth_gets_only_complete_tool() -> None:
         "complete_subsession",
         "set_checkpoint",
         "self_update_subsession",
+        "spawn_continuation",
     ]
 
 
@@ -1528,3 +1530,174 @@ async def test_self_update_multiple_fields_at_once() -> None:
     assert info.prompt == "watch T-42 and T-99"
     assert info.interval_seconds == 300.0
     assert info.max_runs == 20
+
+
+# ---------------------------------------------------------------------------
+# spawn_continuation tool
+# ---------------------------------------------------------------------------
+
+
+@pytest.mark.asyncio
+async def test_spawn_continuation_spawns_sibling_and_closes_current() -> None:
+    """``spawn_continuation`` spawns a new TASK sibling and closes the caller."""
+    agent = FakeAgent(["done quickly"])
+    env = build_env(agent=agent)
+    info = _register(
+        env, kind=SubsessionKind.TASK, sub_id="sub-src", title="Batch triage"
+    )
+    close_state = CloseState()
+    tools = build_subsession_tools(
+        env, ctx=_ctx(subsession_id=info.id, depth=1), close_state=close_state
+    )
+    spawn_cont = _by_name(tools, "spawn_continuation")
+
+    result = await spawn_cont(
+        summary="Processed tickets A through M (13 of 200).",
+        resume_instructions="Continue from ticket N (id: TICK-N).",
+    )
+
+    # Verify return message.
+    assert "Continuation spawned as subsession " in result
+    assert "now closed" in result
+
+    # Verify current subsession is closed.
+    current = env.registry.get(info.id)
+    assert current is not None
+    assert current.status is SubsessionStatus.CLOSED
+    assert current.close_reason == "continued"
+
+    # Verify close_state was signalled.
+    assert close_state.requested is True
+    assert close_state.summary == "Processed tickets A through M (13 of 200)."
+    assert close_state.delivery_done is True
+
+    # Verify the continuation subsession exists and is a sibling.
+    infos = env.registry.list_for_owner(OWNER)
+    tasks = [i for i in infos if i.kind is SubsessionKind.TASK and i.id != info.id]
+    assert len(tasks) == 1
+    continuation = tasks[0]
+    assert continuation.depth == info.depth
+    assert continuation.parent_id == info.parent_id
+    assert continuation.title == "Batch triage"
+    assert continuation.model_level == info.model_level
+
+    # Verify the continuation prompt includes the original + context.
+    # The original prompt is "p" (from _register default), not the title.
+    assert continuation.prompt.startswith("p\n\n=== CONTINUATION CONTEXT ===")
+    assert "TICK-N" in continuation.prompt
+    assert "Do NOT re-process" in continuation.prompt
+
+    await wait_until(lambda: not continuation.is_active)
+
+
+@pytest.mark.asyncio
+async def test_spawn_continuation_carries_checkpoint_forward() -> None:
+    """The continuation inherits the caller's checkpoint data."""
+    agent = FakeAgent(["done quickly"])
+    env = build_env(agent=agent)
+    info = _register(
+        env,
+        kind=SubsessionKind.TASK,
+        sub_id="sub-cp",
+        title="Triage",
+        checkpoint={"last_processed": "TICK-42", "page": 3},
+    )
+    close_state = CloseState()
+    tools = build_subsession_tools(
+        env, ctx=_ctx(subsession_id=info.id, depth=1), close_state=close_state
+    )
+    spawn_cont = _by_name(tools, "spawn_continuation")
+
+    await spawn_cont(
+        summary="Processed 42 tickets.",
+        resume_instructions="Continue from TICK-43.",
+    )
+
+    infos = env.registry.list_for_owner(OWNER)
+    continuation = [i for i in infos if i.id != info.id][0]
+    assert continuation.checkpoint == {"last_processed": "TICK-42", "page": 3}
+
+    await wait_until(lambda: not continuation.is_active)
+
+
+@pytest.mark.asyncio
+async def test_spawn_continuation_inactive_subsession_returns_error() -> None:
+    """Calling spawn_continuation on a closed subsession returns an error."""
+    env = build_env()
+    info = _register(env, kind=SubsessionKind.TASK, sub_id="sub-dead")
+    env.registry.mark_closed(info.id, summary="done", reason="completed")
+    close_state = CloseState()
+    tools = build_subsession_tools(
+        env, ctx=_ctx(subsession_id=info.id, depth=1), close_state=close_state
+    )
+    spawn_cont = _by_name(tools, "spawn_continuation")
+
+    result = await spawn_cont(
+        summary="Should fail.",
+        resume_instructions="Continue from X.",
+    )
+
+    assert "no longer active" in result
+
+
+@pytest.mark.asyncio
+async def test_spawn_continuation_strips_retry_notice_from_prompt() -> None:
+    """The continuation prompt omits any retry-notice prefix from the original."""
+    agent = FakeAgent(["done quickly"])
+    env = build_env(agent=agent)
+    info = _register(
+        env,
+        kind=SubsessionKind.TASK,
+        sub_id="sub-retry",
+        title="Triage",
+        prompt="[RETRY 2/3 — error: timeout]\n\nTriage all open tickets.",
+    )
+    close_state = CloseState()
+    tools = build_subsession_tools(
+        env, ctx=_ctx(subsession_id=info.id, depth=1), close_state=close_state
+    )
+    spawn_cont = _by_name(tools, "spawn_continuation")
+
+    await spawn_cont(
+        summary="Partial progress.",
+        resume_instructions="Continue from TICK-10.",
+    )
+
+    infos = env.registry.list_for_owner(OWNER)
+    continuation = [i for i in infos if i.id != info.id][0]
+    # The retry notice must be stripped.
+    assert "[RETRY" not in continuation.prompt
+    assert "Triage all open tickets." in continuation.prompt
+    assert "=== CONTINUATION CONTEXT ===" in continuation.prompt
+
+    await wait_until(lambda: not continuation.is_active)
+
+
+@pytest.mark.asyncio
+async def test_spawn_continuation_capacity_error_reports_gracefully() -> None:
+    """When the capacity is full, the continuation fails.
+
+    The current subsession is already closed — the error message explains this.
+    """
+    agent = FakeAgent(["done quickly"])
+    env = build_env(agent=agent, settings=make_settings(max_concurrent=1))
+    # Occupy the single capacity slot with an active subsession.
+    _register(env, kind=SubsessionKind.TASK, sub_id="blocker")
+    info = _register(env, kind=SubsessionKind.TASK, sub_id="sub-full")
+    close_state = CloseState()
+    tools = build_subsession_tools(
+        env, ctx=_ctx(subsession_id=info.id, depth=1), close_state=close_state
+    )
+    spawn_cont = _by_name(tools, "spawn_continuation")
+
+    result = await spawn_cont(
+        summary="Tried to continue.",
+        resume_instructions="Continue from X.",
+    )
+
+    # The current subsession was closed before the spawn attempt.
+    assert info.status is SubsessionStatus.CLOSED
+    # The error message explains the situation.
+    assert "could not be spawned" in result
+    assert "capacity" in result.lower()
+    assert close_state.requested is True
