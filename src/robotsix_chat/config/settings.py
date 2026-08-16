@@ -150,6 +150,66 @@ class Settings(BaseModel):
             the system prompt instructs the agent that these actions are
             pre-authorized and any safety gates on them are lifted —
             the agent should execute them without asking.  Default ``[]``.
+        compaction_min_turns: Minimum number of user/assistant turns before
+            the compaction boundary is evaluated.  Default ``3``.
+        memory: Long-term conversation memory (cognee).  See
+            :class:`~robotsix_chat.config.models.MemorySettings`.
+        central_deploy: Central-deploy roster and component-access settings.
+            See :class:`~robotsix_chat.config.models.CentralDeploySettings`.
+        mail: Auto-mail board server access.  See
+            :class:`~robotsix_chat.config.models.MailSettings`.
+        conversation: Conversation history and persistence settings.  See
+            :class:`~robotsix_chat.config.models.ConversationSettings`.
+        diagnostics: Diagnostics capture and systemic fix surfacing.  See
+            :class:`~robotsix_chat.config.models.DiagnosticsSettings`.
+        refdocs: Read-only reference-docs tool for the agent.  See
+            :class:`~robotsix_chat.config.models.RefDocsSettings`.
+        render_url: URL-to-screenshot rendering tool.  See
+            :class:`~robotsix_chat.config.models.RenderUrlSettings`.
+        knowledge: In-memory knowledge-base settings for the agent's
+            durable operational notes.  See
+            :class:`~robotsix_chat.config.models.KnowledgeSettings`.
+        self_review: Self-review tool that lets the agent review and
+            improve its own replies.  See
+            :class:`~robotsix_chat.config.models.SelfReviewSettings`.
+        version_check: Self-version-check tool comparing the running
+            version against the latest GitHub release.  See
+            :class:`~robotsix_chat.config.models.VersionCheckSettings`.
+        component_client: Cross-component agent calling (board, auto-mail,
+            etc.).  See :class:`~robotsix_chat.config.models.ComponentClientSettings`.
+        direct_repo: Direct-repo push-branch, open-PR, and direct-fix
+            capability via the GitHub App.  See
+            :class:`~robotsix_chat.config.models.DirectRepoSettings`.
+        github_security: Repository security-feature toggles via the
+            GitHub App installation.  See
+            :class:`~robotsix_chat.config.models.GitHubSecuritySettings`.
+        github_actions: GitHub Actions workflow run and log inspection.
+            See :class:`~robotsix_chat.config.models.GitHubActionsSettings`.
+        repo_study: Temporary local repo workspaces for the agent to
+            fetch and study.  See
+            :class:`~robotsix_chat.config.models.RepoStudySettings`.
+        lifecycle: Deploy-lifecycle API access (service status, health,
+            restart).  See :class:`~robotsix_chat.config.models.LifecycleSettings`.
+        notification: Slack notification delivery via webhook.  See
+            :class:`~robotsix_chat.config.models.NotificationSettings`.
+        http_probe: HTTP endpoint health probing.  See
+            :class:`~robotsix_chat.config.models.HttpProbeSettings`.
+        docker_digest: Docker image digest resolution for pinning
+            base images.  See
+            :class:`~robotsix_chat.config.models.DockerDigestSettings`.
+        public_fetch: Public HTTP fetching and site change monitoring.
+            See :class:`~robotsix_chat.config.models.PublicFetchSettings`.
+        sftp: SFTP config-restore settings.  See
+            :class:`~robotsix_chat.config.models.SftpSettings`.
+        feedback: Automated feedback analysis that files improvement
+            tickets at compaction and session-end boundaries.  See
+            :class:`~robotsix_chat.config.models.FeedbackSettings`.
+        autonomous: Autonomous auto-continue loop — keeps the agent
+            working across turns without the user.  See
+            :class:`~robotsix_chat.config.models.AutonomousSettings`.
+        autonomy: Operator-facing autonomy controls (auto-approve
+            self-authored tickets, suppress no-change monitors).  See
+            :class:`~robotsix_chat.config.models.AutonomySettings`.
 
     """
 
