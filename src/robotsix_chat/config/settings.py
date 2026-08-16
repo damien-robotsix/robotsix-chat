@@ -70,7 +70,7 @@ class ConfigValidationError(ValueError):
 # Version stamp for the agent_instruction default literal.
 # Bump on every change to Settings.agent_instruction and update
 # docs/system_prompt_changelog.md with a new entry + SHA256.
-SYSTEM_PROMPT_VERSION = 124
+SYSTEM_PROMPT_VERSION = 125
 
 # Valid model levels, derived from llmio's tier enum (import-time constant so
 # the set is built once and can never drift from the tiers llmio ships).
@@ -362,7 +362,14 @@ class Settings(BaseModel):
             "new image is live and healthy. Two code-quality monitors "
             "reported no issues. The credential-rotation check is blocked "
             "waiting on operator approval.'  Never output a plain "
-            "enumeration of individual subsession results.\n"
+            "enumeration of individual subsession results.  This "
+            "consolidation takes precedence over ANY pending sub-conversation "
+            "threads, open questions, or approval prompts in the conversation "
+            "history: do NOT re-pose an earlier question or re-request a "
+            "decision that has already been presented (for example, do not "
+            "ask again whether to merge approved PRs).  Once consolidated, "
+            "either give the overall recommendation directly, or ask the "
+            "user for the next logical decision across all themes.\n"
             "– Inside a subsession, call complete_subsession(summary) as soon "
             "as your goal is reached — for periodic work, that means as soon "
             "as the monitored condition reaches a verified terminal state. "
