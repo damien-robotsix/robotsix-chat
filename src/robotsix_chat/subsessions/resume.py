@@ -172,6 +172,49 @@ def _entry_last_assistant_text(entry: Mapping[str, object]) -> str:
     return ""
 
 
+def _entry_recent_user_texts(
+    entry: Mapping[str, object],
+    turn_history: list[tuple[str, str]],
+) -> list[tuple[str, str]]:
+    """Return user/parent transcript entries posted after the last completed turn.
+
+    ``user_chat`` subsessions transcript user messages at enqueue time but
+    only append the assistant reply once a turn completes.  A restart that
+    lands between those two events leaves a user message that never made it
+    into ``turn_history`` — the resumed worker would otherwise never see it,
+    so the resume note re-injects it.
+    """
+    transcript_raw = entry.get("transcript")
+    if not isinstance(transcript_raw, list):
+        return []
+
+    last_reply = turn_history[-1][1] if turn_history else None
+    cutoff = -1
+    if last_reply:
+        for idx in range(len(transcript_raw) - 1, -1, -1):
+            item = transcript_raw[idx]
+            if not isinstance(item, dict):
+                continue
+            if item.get("role") == "assistant" and item.get("text") == last_reply:
+                cutoff = idx
+                break
+
+    recent: list[tuple[str, str]] = []
+    for item in transcript_raw[cutoff + 1 :]:
+        if not isinstance(item, dict):
+            continue
+        role = item.get("role")
+        text = item.get("text")
+        if (
+            isinstance(role, str)
+            and role in {"user", "parent"}
+            and isinstance(text, str)
+            and text
+        ):
+            recent.append((role, text))
+    return recent
+
+
 # -- kind-specific resume helpers -----------------------------------------
 
 
@@ -333,6 +376,15 @@ def _resume_user_chat_entry(
 
     checkpoint = _rebuild_checkpoint(entry)
     common = _entry_to_common_kwargs(entry)
+    turn_history = _rebuild_turn_history(entry)
+    recent_user_texts = _entry_recent_user_texts(entry, turn_history)
+    if recent_user_texts:
+        logger.warning(
+            "user_chat resume %s: %d transcript message(s) newer than the "
+            "last completed turn will be re-injected into the first turn",
+            sub_id,
+            len(recent_user_texts),
+        )
     last_text = _entry_last_assistant_text(entry)
     if last_text:
         common["prompt"] = (
@@ -340,6 +392,16 @@ def _resume_user_chat_entry(
             f"[System note: this subsession was restarted after a "
             f"server restart. The assistant's last delivered state "
             f"was:]\n\n{last_text[:2000]}"
+        )
+    if recent_user_texts:
+        joined = "\n\n".join(
+            f"[{role}] {text[:2000]}" for role, text in recent_user_texts
+        )
+        common["prompt"] = (
+            f"{common['prompt']}\n\n"
+            f"[System note: the following message(s) arrived after the last "
+            f"completed turn and may not have been seen by the assistant "
+            f"yet:]\n\n{joined}"
         )
     dedup_key = _entry_opt_str(entry, "dedup_key")
     retry_count = _entry_retry_count(entry)
@@ -352,6 +414,7 @@ def _resume_user_chat_entry(
         checkpoint=checkpoint,
         dedup_key=dedup_key,
         retry_count=retry_count,
+        turn_history=turn_history,
     )
     return _ResumeFate(
         owner_session_id=owner,
