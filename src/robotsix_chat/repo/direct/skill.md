@@ -181,7 +181,7 @@ given. The endpoint modifies live repository state.
 
 ______________________________________________________________________
 
-| Repo not in installation scope    | `The robotsix-mill GitHub App is not installed on 'owner/name'`           |
+| Repo not in installation scope | `The robotsix-mill GitHub App is not installed on 'owner/name'` |
 
 ______________________________________________________________________
 
@@ -205,12 +205,12 @@ the appropriate tool for cleaning up abandoned or superseded PRs where merging i
 
 ### Error responses
 
-| Condition                       | Message                                                         |
-| ------------------------------- | --------------------------------------------------------------- |
-| PR already closed (merged)      | `is already closed (merged)`                                    |
-| PR already closed (unmerged)    | `is already closed (unmerged)`                                  |
-| PR not found                    | `Error fetching PR #N in owner/name` (HTTP 404)                 |
-| Repo not in installation scope  | `The robotsix-mill GitHub App is not installed on 'owner/name'` |
+| Condition                      | Message                                                         |
+| ------------------------------ | --------------------------------------------------------------- |
+| PR already closed (merged)     | `is already closed (merged)`                                    |
+| PR already closed (unmerged)   | `is already closed (unmerged)`                                  |
+| PR not found                   | `Error fetching PR #N in owner/name` (HTTP 404)                 |
+| Repo not in installation scope | `The robotsix-mill GitHub App is not installed on 'owner/name'` |
 
 ______________________________________________________________________
 
