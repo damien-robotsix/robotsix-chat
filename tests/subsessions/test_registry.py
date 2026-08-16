@@ -6,6 +6,7 @@ import asyncio
 import contextlib
 import json
 from pathlib import Path
+from typing import cast
 
 import pytest
 
@@ -449,7 +450,7 @@ def test_inbox_round_trips_through_persist_and_drain(tmp_path: Path) -> None:
     assert registry.enqueue_message(info.id, "user", "answer after restart") is True
 
     reloaded = SubsessionRegistry(store_path=store_path).load_persisted()
-    (persisted,) = reloaded[0]["inbox"]
+    (persisted,) = cast(list[dict[str, object]], reloaded[0]["inbox"])
     assert persisted["role"] == "user"
     assert persisted["text"] == "answer after restart"
     assert isinstance(persisted["timestamp"], float)
