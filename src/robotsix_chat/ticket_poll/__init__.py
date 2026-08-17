@@ -546,8 +546,10 @@ def build_mark_ticket_ready_tool(
         to approve a user-requested ticket in the same turn it was filed.
 
         This is a state mutation — only call it when the transition is
-        authorized (operator consent, or a standing directive for the
-        specific ticket / gate).
+        authorized: operator consent, a standing directive for the
+        specific ticket / gate, or the auto-drive promotable-draft
+        branch (subsessions.auto_drive_promote_ready_drafts ON and the
+        ticket matching pre_authorized_ticket_patterns).
 
         Args:
             ticket_id: The ticket ID to transition (e.g.

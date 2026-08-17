@@ -1080,6 +1080,24 @@ async def _run_user_chat_turn(env: SubsessionEnv, sub_id: str) -> list[InboxMess
 _PAUSED_WAIT_TIMEOUT_SECONDS: float = 300.0
 
 
+def _draft_decision_comment_posted(info: SubsessionInfo) -> bool:
+    """Return True when the operator-decision comment for an unchanged
+    draft ticket has already been posted.
+
+    The auto-drive monitor records ``auto_drive_comment_posted`` in its
+    checkpoint after posting its one operator-decision comment for a
+    promotable draft.  When that flag is set and the checkpoint still
+    carries ``last_known_state='draft'``, the ticket is waiting on the
+    operator — the worker must skip agent turns and wait event-driven
+    instead of burning its run budget re-driving an unchanged draft.
+    """
+    checkpoint = info.checkpoint or {}
+    last_known = checkpoint.get("last_known_state")
+    if not (isinstance(last_known, str) and last_known.lower() == "draft"):
+        return False
+    return bool(checkpoint.get("auto_drive_comment_posted"))
+
+
 async def _query_mill_ticket_state(
     board_url: str, ticket_id: str, sub_id: str
 ) -> str | None:
@@ -2144,6 +2162,43 @@ async def _subsession_worker(
                 # Parent is now closed — proceed as a one-shot task below.
 
             if info.kind is SubsessionKind.PERIODIC:
+                # -- promotable-draft wait: once the operator-decision
+                #    comment for an unchanged draft is posted, skip the
+                #    agent turn and wait event-driven for the operator's
+                #    promote/close transition.  This guarantees the run
+                #    budget (e.g. a 60-run cap) is never exhausted
+                #    re-driving an unchanged promotable draft.  Steering
+                #    messages are never dropped: when the inbox holds a
+                #    pending message, fall through and run the agent turn
+                #    so the message reaches the monitor.
+                if _draft_decision_comment_posted(info) and not pending:
+                    logger.info(
+                        "Subsession %s: draft decision comment already "
+                        "posted — waiting event-driven for the operator.",
+                        sub_id,
+                    )
+                    # Mirror the post-turn QUEUED path: mark SLEEPING so
+                    # the registry shows the worker waiting, not running
+                    # an agent turn, then long-poll without consuming runs.
+                    registry.set_status(
+                        sub_id,
+                        SubsessionStatus.SLEEPING,
+                        runs=info.runs,
+                        next_run_at=registry.now()
+                        + (info.interval_seconds or 60.0),
+                    )
+                    result = await _queued_wait_loop(
+                        env,
+                        info,
+                        sub_id,
+                        previous_result,
+                        consecutive_no_change,
+                    )
+                    if result is None:
+                        return
+                    pending, previous_result, consecutive_no_change = result
+                    continue
+
                 # -- run guard: prevent duplicate execution of run N -----
                 next_run = info.runs + 1
                 if not registry.claim_run(sub_id, next_run):
@@ -2171,6 +2226,13 @@ async def _subsession_worker(
                     previous_result,
                     steering,
                     pre_authorized_patterns=env.settings.subsessions.pre_authorized_ticket_patterns,
+                    auto_drive_promote_ready_drafts=bool(
+                        getattr(
+                            env.settings.subsessions,
+                            "auto_drive_promote_ready_drafts",
+                            False,
+                        )
+                    ),
                     sub_id=sub_id,
                     registry=registry,
                 )

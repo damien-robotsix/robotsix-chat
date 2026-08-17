@@ -43,6 +43,7 @@ def _build_periodic_input(
     previous_result: str | None,
     steering: list[InboxMessage],
     pre_authorized_patterns: list[str] | None = None,
+    auto_drive_promote_ready_drafts: bool = False,
     *,
     sub_id: str = "",
     registry: SubsessionRegistry | None = None,
@@ -173,11 +174,12 @@ def _build_periodic_input(
     # Inject the PRE-AUTHORIZED instruction BEFORE the
     # decision-blocked paragraph so it has priority — a monitor that
     # sees both must follow the pre-authorized directive.
-    if (
+    pre_authorized = bool(
         pre_authorized_patterns
         and ticket_id
         and _is_ticket_pre_authorized(ticket_id, pre_authorized_patterns)
-    ):
+    )
+    if pre_authorized:
         parts.append(
             "PRE-AUTHORIZED TICKET: this ticket has been pre-authorized "
             "under a standing operator directive.  The "
@@ -201,6 +203,83 @@ def _build_periodic_input(
         "guidance so the operator can act on it rather than waiting for "
         "the auto-stop timeout.\n\n"
     )
+    # Promotable-draft branch: the auto-drive monitor must not loop
+    # silently on a draft ticket that already has a complete,
+    # refine-passed spec and no blocking review.  Two outcomes, decided
+    # by the opt-in gate + pre-authorization:
+    #   - gate ON + pre-authorized  -> auto-promote into the ready queue
+    #   - otherwise                 -> post exactly one operator-decision
+    #                                  comment, then wait event-driven
+    promotable_draft_definition = (
+        "A PROMOTABLE DRAFT is a ticket where ALL of the following "
+        "hold: (1) its state is 'draft'; (2) it carries a refine-passed "
+        "spec — spec_markdown is present and contains the sections "
+        "'## Problem', '## Scope', '## Acceptance criteria', and "
+        "'## Out of scope / constraints' (or the ticket is otherwise "
+        "marked refine-complete by the mill's status metadata); "
+        "(3) it has no open blocking review thread.  Drafts with an "
+        "incomplete spec, a failed refine, or an open blocking review "
+        "are NOT promotable — never promote them, never comment on "
+        "them, and follow the normal rules above instead."
+    )
+    if auto_drive_promote_ready_drafts and pre_authorized:
+        parts.append(
+            "DRAFT TICKETS — AUTO-PROMOTE BRANCH (the "
+            "auto_drive_promote_ready_drafts gate is ON and this ticket "
+            "matches a pre_authorized_ticket_patterns entry):\n"
+            + promotable_draft_definition
+            + "\n"
+            f"When the monitored ticket ({ticket_id}) is a promotable "
+            "draft, call mark_ticket_ready(ticket_id, justification="
+            "'auto-drive: refine-passed spec, no blocking review, "
+            "pre-authorized promotion') to transition it out of draft "
+            "into the ready queue.  This ticket is pre-authorized under "
+            "a standing operator directive, so no per-ticket approval "
+            "is required.  Do NOT post an operator-decision comment in "
+            "this branch.  After the transition succeeds, reply "
+            f"{_QUEUED_SENTINEL} (and nothing else) so the monitor "
+            "switches to event-driven waiting while the implement stage "
+            "picks the ticket up — do not burn the run budget "
+            "re-driving a ticket that has left draft.  If "
+            "mark_ticket_ready fails with a permanent error (4xx), do "
+            "NOT retry it run after run — fall back to the "
+            "operator-decision comment below.\n\n"
+        )
+    else:
+        parts.append(
+            "DRAFT TICKETS — OPERATOR-DECISION BRANCH (the "
+            "auto_drive_promote_ready_drafts gate is OFF or this ticket "
+            "does not match a pre_authorized_ticket_patterns entry):\n"
+            + promotable_draft_definition
+            + "\n"
+            "When the monitored ticket is a promotable draft:\n"
+            "  - If the checkpoint already carries "
+            "'auto_drive_comment_posted' set to true, do NOT repost "
+            f"any comment.  Reply {_QUEUED_SENTINEL} (and nothing else) "
+            "and let the system wait event-driven for the operator's "
+            "decision.\n"
+            "  - Otherwise, post EXACTLY ONE operator-decision comment "
+            "on the ticket: call component_request('mill', 'POST', "
+            f"'/tickets/{ticket_id}/comments', json_body={{'body': "
+            "'[AUTO_DRIVE] This draft has a complete, refine-passed "
+            "spec and no open blocking review.  Awaiting an operator "
+            "decision: promote it to ready (mark_ticket_ready) or "
+            "close it with a reason.'}}).  Then call set_checkpoint "
+            "with the existing checkpoint fields (ticket_id, "
+            "last_known_state, human_approval_since if present) PLUS "
+            "'auto_drive_comment_posted': true — the checkpoint is "
+            "replaced wholesale, so re-include every existing field.  "
+            "Then reply "
+            f"{_QUEUED_SENTINEL} (and nothing else) so the monitor "
+            "stops consuming its run budget while the ticket waits for "
+            "the operator.  Never post a second comment — one comment "
+            "per ticket is the hard limit, enforced by the checkpoint "
+            "flag.\n"
+            "If the comment POST fails (component_request error, "
+            "non-2xx), do NOT fabricate success — leave the checkpoint "
+            "flag unset so the next run retries, and reply "
+            f"{_NO_CHANGE_SENTINEL}.\n\n"
+        )
     parts.append(
         "Terminal-state double-check + loop guard: before calling "
         "complete_subsession for a done or closed ticket, you MUST verify "
@@ -521,6 +600,47 @@ async def _run_periodic_turn(
         if closed is not None:
             await env.delivery.deliver_summary(closed, summary, "max_runs")
         return None
+
+    # -- promotable-draft wait: when the operator-decision comment for
+    #    an unchanged draft is already posted (checkpoint flag set and
+    #    last_known_state still 'draft'), route into the queued wait
+    #    loop.  This saves the run budget: the ticket is waiting on the
+    #    operator, not progressing, and no further agent turns are
+    #    useful until the ticket leaves draft.
+    checkpoint = info.checkpoint or {}
+    last_known = checkpoint.get("last_known_state", "")
+    if (
+        isinstance(last_known, str)
+        and last_known.lower() == "draft"
+        and bool(checkpoint.get("auto_drive_comment_posted"))
+    ):
+        ticket_id_raw = checkpoint.get("ticket_id")
+        ticket_id = ticket_id_raw if isinstance(ticket_id_raw, str) else ""
+        logger.info(
+            "Subsession %s: ticket %s still draft with the "
+            "operator-decision comment posted — entering event-driven "
+            "wait.",
+            sub_id,
+            ticket_id,
+        )
+        registry.set_status(
+            sub_id,
+            SubsessionStatus.SLEEPING,
+            runs=runs,
+            next_run_at=registry.now() + (info.interval_seconds or 60.0),
+            last_result=reply,
+        )
+        result = await _queued_wait_loop(
+            env,
+            info,
+            sub_id,
+            previous_result,
+            consecutive_no_change,
+        )
+        if result is None:
+            return None
+        pending, previous_result, _ = result
+        return pending, previous_result, 0
 
     # Human-approval timeout: when the checkpoint's last_known_state is
     # human_issue_approval and the subsession has produced enough

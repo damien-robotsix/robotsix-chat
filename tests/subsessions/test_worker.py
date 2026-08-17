@@ -34,6 +34,7 @@ from robotsix_chat.subsessions.worker import (
     CloseState,
     SubsessionContext,
     SubsessionEnv,
+    _draft_decision_comment_posted,
     _event_wait_loop,
     _format_worker_error,
     _is_duplicate_reply,
@@ -3566,3 +3567,223 @@ async def test_event_wait_loop_closes_when_no_ticket_id_and_no_dedup_key() -> No
     assert refreshed.status is SubsessionStatus.CLOSED
     assert refreshed.close_reason == "missing_ticket_id"
     assert "no recoverable ticket_id" in (refreshed.summary or "").lower()
+
+
+# ---------------------------------------------------------------------------
+# auto-drive promotable-draft branch
+# ---------------------------------------------------------------------------
+
+
+def test_draft_decision_comment_posted_helper() -> None:
+    """The draft-decision guard fires only for a comment-posted, still-draft ticket."""
+    from robotsix_chat.subsessions import SubsessionInfo, SubsessionKind
+
+    def _info(checkpoint: dict[str, object] | None) -> SubsessionInfo:
+        return SubsessionInfo(
+            id="sub-guard",
+            kind=SubsessionKind.PERIODIC,
+            owner_session_id="sess-1",
+            parent_id=None,
+            depth=1,
+            title="monitor",
+            prompt="watch ticket",
+            model_level=3,
+            status=SubsessionStatus.RUNNING,
+            created_at=0.0,
+            last_activity_at=0.0,
+            checkpoint=checkpoint,
+        )
+
+    # No checkpoint — not posted.
+    assert not _draft_decision_comment_posted(_info(None))
+    # Flag set but ticket left draft — not posted (state changed).
+    assert not _draft_decision_comment_posted(
+        _info(
+            {
+                "ticket_id": "T-1",
+                "last_known_state": "ready",
+                "auto_drive_comment_posted": True,
+            }
+        )
+    )
+    # Still draft but flag unset — comment not posted yet.
+    assert not _draft_decision_comment_posted(
+        _info({"ticket_id": "T-1", "last_known_state": "draft"})
+    )
+    # Draft + flag set — posted.
+    assert _draft_decision_comment_posted(
+        _info(
+            {
+                "ticket_id": "T-1",
+                "last_known_state": "draft",
+                "auto_drive_comment_posted": True,
+            }
+        )
+    )
+
+
+def test_build_periodic_input_promotable_draft_default_is_operator_decision() -> None:
+    """Default (gate off): the prompt instructs the operator-decision comment.
+
+    The gate defaults to False — the monitor must NEVER auto-promote a
+    draft.  It must instead post exactly one [AUTO_DRIVE] operator-decision
+    comment and then reply QUEUED.
+    """
+    from robotsix_chat.subsessions.models import SubsessionInfo, SubsessionKind
+
+    info = SubsessionInfo(
+        id="sub-x",
+        kind=SubsessionKind.PERIODIC,
+        owner_session_id="sess-1",
+        parent_id=None,
+        depth=1,
+        title="monitor",
+        prompt="watch ticket TICKET-9",
+        model_level=3,
+        status="active",  # type: ignore[arg-type]
+        created_at=0.0,
+        last_activity_at=0.0,
+        interval_seconds=60.0,
+        dedup_key="TICKET-9",
+        checkpoint={"ticket_id": "TICKET-9", "last_known_state": "draft"},
+    )
+
+    result = _build_periodic_input(info, previous_result=None, steering=[])
+
+    # Operator-decision branch present, auto-promote branch absent.
+    assert "DRAFT TICKETS — OPERATOR-DECISION BRANCH" in result
+    assert "AUTO-PROMOTE BRANCH" not in result
+    # The classification and idempotency guarantees are spelled out.
+    assert "PROMOTABLE DRAFT" in result
+    assert "## Problem" in result
+    assert "## Acceptance criteria" in result
+    assert "[AUTO_DRIVE]" in result
+    assert "auto_drive_comment_posted" in result
+    assert "EXACTLY ONE" in result
+    # The monitor must not burn runs after posting — it replies QUEUED.
+    assert "QUEUED" in result
+    # Non-promotable drafts are left untouched.
+    assert "NOT promotable" in result
+
+
+def test_build_periodic_input_promotable_draft_gate_on_pre_authorized_promotes() -> None:
+    """Gate ON + pre-authorized ticket: the prompt instructs auto-promotion."""
+    from robotsix_chat.subsessions.models import SubsessionInfo, SubsessionKind
+
+    info = SubsessionInfo(
+        id="sub-x",
+        kind=SubsessionKind.PERIODIC,
+        owner_session_id="sess-1",
+        parent_id=None,
+        depth=1,
+        title="monitor",
+        prompt="watch ticket TICKET-9",
+        model_level=3,
+        status="active",  # type: ignore[arg-type]
+        created_at=0.0,
+        last_activity_at=0.0,
+        interval_seconds=60.0,
+        dedup_key="TICKET-9",
+        checkpoint={"ticket_id": "TICKET-9", "last_known_state": "draft"},
+    )
+
+    result = _build_periodic_input(
+        info,
+        previous_result=None,
+        steering=[],
+        pre_authorized_patterns=["TICKET-*"],
+        auto_drive_promote_ready_drafts=True,
+    )
+
+    # Auto-promote branch present, operator-decision branch absent.
+    assert "DRAFT TICKETS — AUTO-PROMOTE BRANCH" in result
+    assert "OPERATOR-DECISION BRANCH" not in result
+    assert "mark_ticket_ready" in result
+    # The monitor still must not burn runs after the transition.
+    assert "QUEUED" in result
+    # Non-promotable drafts are left untouched.
+    assert "NOT promotable" in result
+
+
+def test_build_periodic_input_promotable_draft_gate_on_not_pre_authorized() -> None:
+    """Gate ON but ticket NOT pre-authorized: still the comment branch.
+
+    The auto-promote branch requires BOTH the opt-in gate and a matching
+    pre_authorized_ticket_patterns entry — a gate without authorization
+    must not promote.
+    """
+    from robotsix_chat.subsessions.models import SubsessionInfo, SubsessionKind
+
+    info = SubsessionInfo(
+        id="sub-x",
+        kind=SubsessionKind.PERIODIC,
+        owner_session_id="sess-1",
+        parent_id=None,
+        depth=1,
+        title="monitor",
+        prompt="watch ticket OTHER-3",
+        model_level=3,
+        status="active",  # type: ignore[arg-type]
+        created_at=0.0,
+        last_activity_at=0.0,
+        interval_seconds=60.0,
+        dedup_key="OTHER-3",
+        checkpoint={"ticket_id": "OTHER-3", "last_known_state": "draft"},
+    )
+
+    result = _build_periodic_input(
+        info,
+        previous_result=None,
+        steering=[],
+        pre_authorized_patterns=["TICKET-*"],
+        auto_drive_promote_ready_drafts=True,
+    )
+
+    assert "DRAFT TICKETS — OPERATOR-DECISION BRANCH" in result
+    assert "AUTO-PROMOTE BRANCH" not in result
+    assert "[AUTO_DRIVE]" in result
+
+
+@pytest.mark.asyncio
+async def test_periodic_draft_comment_posted_skips_agent_turns() -> None:
+    """A comment-posted, unchanged draft consumes NO further runs.
+
+    Once the monitor's checkpoint carries ``auto_drive_comment_posted``
+    with ``last_known_state='draft'``, the worker must skip the agent
+    turn and wait event-driven — the run budget (e.g. a 60-run cap) is
+    never exhausted re-driving the unchanged draft.
+    """
+    agent = FakeAgent(["NO_CHANGE"] * 3)
+    env = build_env(agent=agent, settings=make_settings())
+
+    sub_id = _spawn(
+        env,
+        kind=SubsessionKind.PERIODIC,
+        interval_seconds=0.02,
+        title="draft monitor",
+    )
+    assert env.registry.update_checkpoint(
+        sub_id,
+        {
+            "ticket_id": "TICKET-DRAFT",
+            "last_known_state": "draft",
+            "auto_drive_comment_posted": True,
+        },
+    )
+    # Let the worker reach its first loop iteration.
+    await asyncio.sleep(0.15)
+
+    info = env.registry.get(sub_id)
+    assert info is not None
+    # No agent turn was run — the comment is already posted.
+    assert agent.calls == []
+    assert info.runs == 0
+    # The worker is waiting (SLEEPING), not closed, not failed.
+    assert info.status is SubsessionStatus.SLEEPING
+    assert info.close_reason is None
+
+    # Cancel the waiting worker to end the test cleanly.
+    task = env.registry._running.get(sub_id)
+    if task is not None and not task.done():
+        task.cancel()
+    await asyncio.sleep(0.05)

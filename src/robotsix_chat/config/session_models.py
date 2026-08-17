@@ -79,6 +79,15 @@ class SubsessionsSettings(BaseModel):
             auto-escalates immediately (reason ``pre_authorized_approval``)
             instead of waiting for ``human_approval_timeout_runs``.
             Default ``[]``.
+        auto_drive_promote_ready_drafts: Opt-in gate for the auto-drive
+            monitor's promotable-draft branch.  When ``True`` and a
+            monitored ticket is a promotable draft (state ``draft``,
+            refine-complete spec, no open blocking review thread) whose
+            ID matches ``pre_authorized_ticket_patterns``, the monitor
+            transitions it into the ready queue.  When ``False`` (the
+            default) the monitor never auto-promotes — it posts at most
+            one operator-decision comment and waits.
+            Default ``False``.
         run_timeout_seconds: Hard per-run timeout for a single subsession
             agent turn (recall + LLM call + delivery).  On expiry the run
             is marked failed and the schedule continues instead of staying
@@ -215,6 +224,19 @@ class SubsessionsSettings(BaseModel):
             "human_issue_approval gate is bypassed — the system "
             "auto-escalates immediately (reason 'pre_authorized_approval') "
             "instead of waiting for human_approval_timeout_runs."
+        ),
+    )
+    auto_drive_promote_ready_drafts: bool = Field(
+        default=False,
+        description=(
+            "Opt-in gate for the auto-drive monitor's promotable-draft "
+            "branch.  When a monitored ticket is a promotable draft "
+            "(state 'draft', refine-complete spec, no open blocking "
+            "review thread) and its ID matches a "
+            "pre_authorized_ticket_patterns entry, the monitor "
+            "transitions it into the ready queue instead of posting an "
+            "operator-decision comment.  Default False — drafts are "
+            "never auto-promoted without this opt-in."
         ),
     )
     run_timeout_seconds: float = 600.0
