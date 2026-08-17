@@ -2452,6 +2452,31 @@ autonomous settings at their pydantic field defaults
 ``stale_monitor_runs_before_completion=3``,
 ``queue_tolerance_runs_before_escalation=3``).
 
+## AUTONOMOUS v26 — 2026-08-17 — 20260801T122105Z-pause-or-stop-monitor-when-ticket-reache-c813
+
+**Summary:** Add a human-review pause-compliance rule to the autonomous
+protocol.  When a subsession or monitor recommends pausing a monitor because
+the tracked ticket is blocked on human review — e.g. a ticket in
+`human_mr_approval` state awaiting PR/MR review, or a `human_issue_approval`
+ticket awaiting an operator decision — the assistant must honor the
+recommendation and pause the monitor instead of leaving it polling.  A
+human-review wait makes no progress through further polling: the system
+notifies through merge detection and ticket-update events when the PR is
+approved/merged or the ticket transitions, and a paused monitor resumes
+automatically when the tracked ticket updates.  The rule also forbids
+re-announcing an unchanged human-review wait status: report it once (ticket,
+gate, and required human action), then stay silent until the ticket actually
+changes state or the operator asks for an update.
+
+**Rationale:** Session 0a4f5fe4b29f4a83ae2eb62bd94cd71f — a follow-up CI-fix
+ticket reached `human_mr_approval` awaiting PR #99 review, and the subsession
+recommended pausing the monitor because a human action was required and the
+system would notify via merge detection.  The assistant did not pause the
+monitor, so it kept polling unnecessarily and re-announcing the same status
+without new information.
+
+**SHA256:** `80face84ccee69bd1d1fe7340c1f37b5d16fdc5f1048691ea762d2a193a5ea3f`
+
 ## AUTONOMOUS v25 — 2026-08-13 — clarify-release-please-pr-identification-eae5
 
 **Summary:** Add a default identification rule for release PRs.  When an

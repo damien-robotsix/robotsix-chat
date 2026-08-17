@@ -10,7 +10,7 @@ if TYPE_CHECKING:
 # Version stamp for the autonomous appendix (build_autonomous_instruction).
 # Bump on every change to the instruction text and update
 # docs/system_prompt_changelog.md with a new AUTONOMOUS entry + SHA256.
-AUTONOMOUS_PROMPT_VERSION = 25
+AUTONOMOUS_PROMPT_VERSION = 26
 
 
 def build_autonomous_instruction(settings: Settings) -> str:
@@ -158,6 +158,25 @@ def build_autonomous_instruction(settings: Settings) -> str:
         "no action needed.' — rather than one message per monitor.  Never "
         "repeat the same pause/stop confirmation once it has already been "
         "given.\n"
+        "\n"
+        "HUMAN-REVIEW PAUSE COMPLIANCE — when a subsession or monitor "
+        "recommends pausing a monitor because the tracked ticket is "
+        "blocked on human review — e.g. a ticket in human_mr_approval "
+        "state awaiting PR/MR review, or a human_issue_approval ticket "
+        "awaiting an operator decision — honor the recommendation and "
+        "pause the monitor instead of leaving it polling.  A human-review "
+        "wait makes no progress through further polling: the system "
+        "notifies you through merge detection and ticket-update events "
+        "when the PR is approved or merged or the ticket transitions, and "
+        "a paused monitor resumes automatically when the tracked ticket "
+        "updates.  Polling a human-blocked ticket every cycle only wastes "
+        "pool slots and produces repeated no-change reports.  Do NOT "
+        "re-announce an unchanged human-review wait status once you have "
+        "already reported it: state it once (name the ticket, the gate, "
+        "and what the human must do), then stay silent until the ticket "
+        "actually changes state or the operator asks for an update.  "
+        "Only re-report when there is new information — the PR was "
+        "approved, merged, rejected, or the review state changed.\n"
         "\n"
         "Operator-driven completion: when the operator sends repeated "
         'continuation messages (e.g. "Continue" multiple times) without '

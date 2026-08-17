@@ -42,6 +42,9 @@ class TestBuildAutonomousInstruction:
         assert "SERIAL-BOARD QUEUE TOLERANCE" in result
         assert "3 consecutive NO_CHANGE cycles as queue wait" in result
         assert "3 or more consecutive cycles" in result
+        assert "HUMAN-REVIEW PAUSE COMPLIANCE" in result
+        assert "human_mr_approval" in result
+        assert "merge detection" in result
         assert "MUTATION AUTHORIZATION" in result
         assert "read-only work" in result
         assert "CONSENT SCOPING" in result
