@@ -25,14 +25,16 @@ from .models import (
     SubsessionUserChatSpawnError,
     TranscriptEntry,
 )
-from .registry import SubsessionRegistry
+from .registry import OWNER_CLOSED_REASON, SubsessionRegistry
 from .resume import resume_subsessions
+from .slot_budget import SLOT_BUDGET_QUEUED, SlotBudget, SlotBudgetQueueFullError
 from .tools import build_subsession_tools
 from .watcher import watch_paused_monitors
 from .worker import (
     CloseState,
     SubsessionContext,
     SubsessionEnv,
+    attach_slot_budget,
     spawn_subsession,
 )
 
@@ -57,9 +59,13 @@ def load_subsessions_skill() -> str:
 
 __all__ = [
     "ACTIVE_STATUSES",
+    "OWNER_CLOSED_REASON",
+    "SLOT_BUDGET_QUEUED",
     "CloseState",
     "InboxMessage",
     "ParentDelivery",
+    "SlotBudget",
+    "SlotBudgetQueueFullError",
     "SubsessionCapacityError",
     "SubsessionContext",
     "SubsessionDedupError",
@@ -75,6 +81,7 @@ __all__ = [
     "SubsessionStatus",
     "SubsessionUserChatSpawnError",
     "TranscriptEntry",
+    "attach_slot_budget",
     "build_subsession_tools",
     "load_subsessions_skill",
     "resume_subsessions",

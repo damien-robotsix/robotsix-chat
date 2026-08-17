@@ -162,6 +162,8 @@ def make_settings(
     max_runs_escalation_threshold: int = 3,
     max_runs_progress_extension: int = 20,
     max_runs_progress_window: int = 5,
+    monitor_slot_budget: int = 0,
+    monitor_slot_queue_max: int = 32,
     llmio_api_key: str = "",
 ) -> SimpleNamespace:
     """Build a settings stand-in with test-friendly (tiny) intervals.
@@ -207,6 +209,8 @@ def make_settings(
             max_runs_escalation_threshold=max_runs_escalation_threshold,
             max_runs_progress_extension=max_runs_progress_extension,
             max_runs_progress_window=max_runs_progress_window,
+            monitor_slot_budget=monitor_slot_budget,
+            monitor_slot_queue_max=monitor_slot_queue_max,
         ),
         central_deploy=SimpleNamespace(url="https://central-deploy.example.com"),
         llmio_api_key=SecretStr(llmio_api_key),
@@ -239,7 +243,7 @@ def build_env(
         run_serializer=RunSerializer(),
         batch_window_seconds=0,
     )
-    return SubsessionEnv(
+    env = SubsessionEnv(
         settings=settings,
         registry=registry,
         delivery=delivery,
@@ -247,6 +251,11 @@ def build_env(
         agent_factory=agent_factory,
         event_sink=event_sink,
     )
+    # Wire the per-conversation slot-budget manager (no-op when disabled).
+    from robotsix_chat.subsessions.worker import attach_slot_budget
+
+    attach_slot_budget(env)
+    return env
 
 
 async def wait_until(

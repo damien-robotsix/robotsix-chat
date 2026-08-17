@@ -252,6 +252,7 @@ def run_server_from_config(agent: ChatAgent | None = None) -> None:
         SubsessionRegistry,
         resume_subsessions,
     )
+    from robotsix_chat.subsessions.worker import attach_slot_budget
 
     event_bus = EventBus()
 
@@ -326,6 +327,12 @@ def run_server_from_config(agent: ChatAgent | None = None) -> None:
         agent_factory=_subsession_agent_factory,
         event_sink=event_bus,
     )
+
+    # Per-conversation slot-budget manager: governs how new monitors are
+    # admitted when a conversation's monitor pool is at capacity (reuse a
+    # paused slot, else queue — never evict a live monitor).  No-op when
+    # disabled by config (monitor_slot_budget <= 0).
+    attach_slot_budget(env)
 
     # -- autonomous agent factory ------------------------------------------
     # Creates an agent with the autonomous protocol supplement injected into

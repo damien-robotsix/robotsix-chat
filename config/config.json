@@ -136,7 +136,9 @@
     "transient_error_backoff_cap": 30.0,
     "max_runs_escalation_threshold": 3,
     "max_runs_progress_extension": 20,
-    "max_runs_progress_window": 5
+    "max_runs_progress_window": 5,
+    "monitor_slot_budget": 8,
+    "monitor_slot_queue_max": 32
   },
   "direct_repo": {
     "enabled": false,

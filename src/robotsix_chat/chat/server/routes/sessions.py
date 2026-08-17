@@ -15,6 +15,7 @@ from robotsix_chat.config.autonomous_models import (
     DEFAULT_TRIGGER_INTERVAL_SECONDS,
 )
 from robotsix_chat.config.constants import level_display_name
+from robotsix_chat.subsessions.registry import OWNER_CLOSED_REASON
 
 from ._shared import _get_session_id, _parse_json_body, build_transcript
 from .chat import ChatAgent
@@ -34,7 +35,7 @@ def _cleanup_session(session_id: str, request: Request) -> int:
     registry: SubsessionRegistry | None = request.app.state.subsession_registry
     if registry is None:
         return 0
-    return registry.close_all_for_owner(session_id, reason="session closed")
+    return registry.close_all_for_owner(session_id, reason=OWNER_CLOSED_REASON)
 
 
 def _require_owner_id(request: Request) -> str:
