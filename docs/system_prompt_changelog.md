@@ -2474,6 +2474,25 @@ autonomous settings at their pydantic field defaults
 ``stale_monitor_runs_before_completion=3``,
 ``queue_tolerance_runs_before_escalation=3``).
 
+## AUTONOMOUS v27 — 2026-08-14 — remove-verbose-prose-planning-phase-befo-70b1
+
+**Summary:** Add a no-planning-prose rule to the autonomous protocol.  The
+assistant must not emit a multi-paragraph "Plan:" section before (or instead
+of) acting: after a one-sentence subject statement it must make the first
+actionable tool call immediately — the sequence of tool calls IS the plan.
+The former PLANNING / PLAN DRAFTING lifecycle steps become SUBJECT SELECTION
+/ STATE VERIFICATION: the requirement to load knowledge notes and live board
+state (list_knowledge_notes, component_request GET /tickets) before acting is
+kept, but it is performed with tool calls and no plan prose is interleaved.
+The rule applies to every autonomous task, including the release gate.
+
+**Rationale:** Session 02e8cda16c0b42ba91fe4a1ebdc94bab — in three separate
+sessions the assistant generated a multi-paragraph prose "Plan:" section
+before making any tool calls when executing the release gate, adding latency
+and token cost without user benefit (the plan is not shown or used directly).
+
+**SHA256:** `a79c4177994da2baf60f8e9a8be51c5fb084b991245c756e4f93d7934b831b71`
+
 ## AUTONOMOUS v26 — 2026-08-17 — pause-or-stop-monitor-when-ticket-reache-c813
 
 **Summary:** Add a human-review pause-compliance rule to the autonomous
