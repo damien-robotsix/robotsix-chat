@@ -133,12 +133,12 @@ dedicated **presets editor** rather than a raw JSON text area. It lets operators
 and delete presets without hand-editing JSON.
 
 Each enabled/disabled preset is shown as a row summarizing its **name**, **trigger type**
-(`periodic` or `on_close`), the **interval** (periodic only, shown in seconds), and whether it is
+the **interval** (seconds between runs), and whether it is
 **disabled**.
 
 - **Edit** — click **Edit** on a row to open an inline form. You can change the preset **name**, its
   custom **prompt**, the **trigger** type, and, for `periodic` triggers, the **interval (s)**. The
-  interval field is hidden when the trigger is `on_close`. The **Enabled** checkbox toggles whether
+  interval is the whole scheduling contract. The **Enabled** checkbox toggles whether
   the preset creates a session (unchecking disables it without deleting it). Click **Save** to
   commit the change.
 - **Add** — click **+ Add Preset** to insert a new preset (defaults: `periodic` trigger, 45 s
@@ -154,7 +154,7 @@ manual config-file edits. Note this editor configures the *presets* list only; t
 pending-subsession wait, session color) remains separate and unchanged.
 
 See [Autonomous sessions](autonomous-sessions.md) for the full preset-key reference (`name`,
-`prompt`, `trigger_type`, `trigger_interval_seconds`, `enabled`).
+`prompt`, `trigger_interval_seconds`, `enabled`).
 
 ## Endpoint details
 

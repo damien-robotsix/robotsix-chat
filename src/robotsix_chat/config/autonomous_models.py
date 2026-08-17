@@ -2,20 +2,21 @@
 
 from __future__ import annotations
 
-import enum
 from typing import Any
 
 from pydantic import BaseModel, ConfigDict, Field, model_validator
 
+# Delay between one autonomous run completing and the next starting, when a
+# preset does not set its own.  One hour: frequent enough for a "continuous"
+# preset to feel live, far enough apart that a restart storm cannot turn it
+# into a spin loop (the old 45 s default did exactly that).
+DEFAULT_TRIGGER_INTERVAL_SECONDS = 3600.0
 
-class TriggerType(enum.StrEnum):
-    """How an autonomous session is re-triggered after completion."""
-
-    periodic = "periodic"
-    """Wait ``trigger_interval_seconds``, then restart."""
-
-    on_close = "on_close"
-    """Restart immediately when the previous run completes (continuous mode)."""
+# What the retired ``on_close`` trigger becomes on load.  Presets written
+# under the old model carry a placeholder ``trigger_interval_seconds`` that
+# the runner *ignored* (45 s on the shipped default), so honouring it now
+# would restart the session every 45 s.  Adopt the standard interval instead.
+_RETIRED_CONTINUOUS_TRIGGER = "on_close"
 
 
 class AutonomousSessionDefinition(BaseModel):
@@ -31,11 +32,10 @@ class AutonomousSessionDefinition(BaseModel):
         prompt: Custom kickoff prompt appended to the autonomous protocol
             supplement.  When empty, the agent uses the standard "Begin a new
             autonomous session and work it to completion" prompt.
-        trigger_type: How the session is re-triggered after completion —
-            ``"periodic"`` (wait ``trigger_interval_seconds``) or
-            ``"on_close"`` (restart immediately, continuous mode).
-        trigger_interval_seconds: Delay between completion and restart for
-            ``periodic`` trigger.  Ignored for ``on_close``.  Default 45 s.
+        trigger_interval_seconds: Delay between one run completing and the
+            next starting.  Every preset is periodic — there is exactly one
+            scheduling model — so a "continuous" preset is just a short
+            interval.  Default 1 h.
         enabled: When ``False``, the definition is skipped — no session is
             created for it.
         self_refine: When ``True``, after each run completes an LLM
@@ -51,8 +51,38 @@ class AutonomousSessionDefinition(BaseModel):
 
     name: str
     prompt: str = ""
-    trigger_type: TriggerType = TriggerType.periodic
-    trigger_interval_seconds: float = Field(default=45.0, ge=0.0)
+    trigger_interval_seconds: float = Field(
+        default=DEFAULT_TRIGGER_INTERVAL_SECONDS, ge=0.0
+    )
+
+    @model_validator(mode="before")
+    @classmethod
+    def _migrate_retired_trigger_type(cls, data: Any) -> Any:
+        """Drop the retired ``trigger_type`` key, rescuing the interval.
+
+        Presets used to choose between ``"periodic"`` and ``"on_close"``.
+        There is now one scheduling model — every preset waits
+        ``trigger_interval_seconds`` — so the key is removed rather than
+        kept as a single-valued enum.  ``extra="forbid"`` means a stored
+        config carrying it would fail to load, so strip it here.
+
+        ``on_close`` presets need their interval replaced, not kept: the
+        runner ignored ``trigger_interval_seconds`` for them, so the stored
+        value is a meaningless placeholder (45 s on the shipped default) that
+        would now fire the session every 45 seconds.
+        """
+        if not isinstance(data, dict):
+            return data
+        if "trigger_type" not in data:
+            return data
+        data = dict(data)
+        was_continuous = str(data.pop("trigger_type", "")) == (
+            _RETIRED_CONTINUOUS_TRIGGER
+        )
+        if was_continuous:
+            data["trigger_interval_seconds"] = DEFAULT_TRIGGER_INTERVAL_SECONDS
+        return data
+
     max_auto_turns: int = Field(
         default=20,
         description=(

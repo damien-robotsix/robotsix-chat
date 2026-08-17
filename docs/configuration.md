@@ -645,8 +645,7 @@ Each entry in `autonomous.sessions` is an `AutonomousSessionDefinition` object:
 | ------------------------------ | --------- | ------------ | ------------------------------------------------------------------------------------------------------------------------------------------------------------------------ |
 | `name`                         | `string`  | *(required)* | Unique identifier for this session definition.                                                                                                                           |
 | `prompt`                       | `string`  | `""`         | Custom kickoff prompt. When empty, the standard "Begin a new autonomous session and work it to completion" prompt is used.                                               |
-| `trigger_type`                 | `string`  | `"periodic"` | Restart strategy: `"periodic"` (wait `trigger_interval_seconds`) or `"on_close"` (continuous mode).                                                                      |
-| `trigger_interval_seconds`     | `number`  | `45.0`       | Delay between completion and restart for `"periodic"` trigger. Ignored for `"on_close"`.                                                                                 |
+| `trigger_interval_seconds`     | `number`  | `3600.0`     | Delay between one run completing and the next starting. Every preset is periodic; the schedule is persisted across restarts.                                             |
 | `max_auto_turns`               | `integer` | `20`         | Retained for config compatibility. No longer used — autonomous runs receive a single prompt.                                                                             |
 | `enabled`                      | `boolean` | `true`       | When `false`, the definition is skipped — no session is created for it.                                                                                                  |
 | `self_refine`                  | `boolean` | `false`      | When `true`, after each run completes an LLM refinement step proposes an updated prompt addendum that folds in the run's feedback. The next run uses the refined prompt. |
@@ -672,7 +671,6 @@ time, and summary.
     {
       "name": "default",
       "prompt": "",
-      "trigger_type": "periodic",
       "trigger_interval_seconds": 45.0,
       "max_auto_turns": 20,
       "enabled": true
@@ -680,7 +678,6 @@ time, and summary.
     {
       "name": "continuous-triage",
       "prompt": "Begin an autonomous triage session.  Scan open tickets and investigate the oldest unassigned item.",
-      "trigger_type": "on_close",
       "max_auto_turns": 30,
       "enabled": true
     }
