@@ -509,6 +509,177 @@ async def test_merge_pr_github_405(
 
 
 # ---------------------------------------------------------------------------
+# close_direct_repo_pr
+# ---------------------------------------------------------------------------
+
+
+@pytest.mark.asyncio
+async def test_close_pr_success(
+    respx_mock: respx.MockRouter,
+) -> None:
+    """PR is open → close succeeds."""
+    settings = _settings()
+    _prepopulate_installation_token(settings)
+
+    respx_mock.get(
+        url__startswith="https://api.github.com/installation/repositories"
+    ).mock(
+        return_value=httpx.Response(
+            200,
+            text=json.dumps({"repositories": [{"full_name": "org/repo"}]}),
+        )
+    )
+    respx_mock.get("https://api.github.com/repos/org/repo/pulls/42").mock(
+        return_value=httpx.Response(
+            200,
+            text=json.dumps(
+                {
+                    "title": "Abandoned PR",
+                    "html_url": "https://github.com/org/repo/pull/42",
+                    "state": "open",
+                    "merged": False,
+                }
+            ),
+        )
+    )
+    respx_mock.patch("https://api.github.com/repos/org/repo/pulls/42").mock(
+        return_value=httpx.Response(
+            200,
+            text=json.dumps(
+                {
+                    "state": "closed",
+                }
+            ),
+        )
+    )
+
+    tools = build_direct_repo_tools(settings)
+    fn = [t for t in tools if t.__name__ == "close_direct_repo_pr"][0]
+
+    out = await fn(
+        repo_full_name="org/repo",
+        pr_number=42,
+        pr_title="Abandoned PR",
+        head_base_branches="fix/t-42 → main",
+    )
+    assert "has been closed" in out.lower()
+    assert "Abandoned PR" in out
+
+
+@pytest.mark.asyncio
+async def test_close_pr_already_closed_merged(
+    respx_mock: respx.MockRouter,
+) -> None:
+    """PR is already closed (merged) → no-op with diagnostic."""
+    settings = _settings()
+    _prepopulate_installation_token(settings)
+
+    respx_mock.get(
+        url__startswith="https://api.github.com/installation/repositories"
+    ).mock(
+        return_value=httpx.Response(
+            200,
+            text=json.dumps({"repositories": [{"full_name": "org/repo"}]}),
+        )
+    )
+    respx_mock.get("https://api.github.com/repos/org/repo/pulls/43").mock(
+        return_value=httpx.Response(
+            200,
+            text=json.dumps(
+                {
+                    "title": "Already merged PR",
+                    "state": "closed",
+                    "merged": True,
+                }
+            ),
+        )
+    )
+
+    tools = build_direct_repo_tools(settings)
+    fn = [t for t in tools if t.__name__ == "close_direct_repo_pr"][0]
+
+    out = await fn(
+        repo_full_name="org/repo",
+        pr_number=43,
+        pr_title="Already merged PR",
+        head_base_branches="fix/t-43 → main",
+    )
+    assert "already closed" in out.lower()
+    assert "merged" in out.lower()
+
+
+@pytest.mark.asyncio
+async def test_close_pr_already_closed_unmerged(
+    respx_mock: respx.MockRouter,
+) -> None:
+    """PR is already closed (unmerged) → no-op with diagnostic."""
+    settings = _settings()
+    _prepopulate_installation_token(settings)
+
+    respx_mock.get(
+        url__startswith="https://api.github.com/installation/repositories"
+    ).mock(
+        return_value=httpx.Response(
+            200,
+            text=json.dumps({"repositories": [{"full_name": "org/repo"}]}),
+        )
+    )
+    respx_mock.get("https://api.github.com/repos/org/repo/pulls/44").mock(
+        return_value=httpx.Response(
+            200,
+            text=json.dumps(
+                {
+                    "title": "Already closed PR",
+                    "state": "closed",
+                    "merged": False,
+                }
+            ),
+        )
+    )
+
+    tools = build_direct_repo_tools(settings)
+    fn = [t for t in tools if t.__name__ == "close_direct_repo_pr"][0]
+
+    out = await fn(
+        repo_full_name="org/repo",
+        pr_number=44,
+        pr_title="Already closed PR",
+        head_base_branches="fix/t-44 → main",
+    )
+    assert "already closed" in out.lower()
+    assert "unmerged" in out.lower()
+
+
+@pytest.mark.asyncio
+async def test_close_pr_out_of_scope(
+    respx_mock: respx.MockRouter,
+) -> None:
+    """Repo not in installation scope → close refused."""
+    settings = _settings()
+
+    respx_mock.get(
+        url__startswith="https://api.github.com/installation/repositories"
+    ).mock(
+        return_value=httpx.Response(
+            200,
+            text=json.dumps({"repositories": [{"full_name": "org/other"}]}),
+        )
+    )
+
+    tools = build_direct_repo_tools(settings)
+    fn = [t for t in tools if t.__name__ == "close_direct_repo_pr"][0]
+
+    out = await fn(
+        repo_full_name="org/repo",
+        pr_number=1,
+        pr_title="Any",
+        head_base_branches="fix → main",
+    )
+    assert "not installed" in out.lower()
+    assert "install" in out.lower()
+
+
+# ---------------------------------------------------------------------------
 # arm_direct_repo_auto_merge
 # ---------------------------------------------------------------------------
 
@@ -812,12 +983,16 @@ def test_tool_docstrings_forbid_merge() -> None:
     Descriptive uses of "merge" (e.g. "merge conflicts",
     "mergeable") are fine — they describe state, not a merge action.
 
-    The merge_direct_repo_pr and arm_direct_repo_auto_merge tools are
-    the exception — they are confirmation-gated merge tools that do not
-    require BLOCKED state (they are follow-up operations on already-created
-    PRs).
+    The merge_direct_repo_pr, close_direct_repo_pr, and
+    arm_direct_repo_auto_merge tools are the exception — they are
+    confirmation-gated mutation tools that do not require BLOCKED
+    state (they are follow-up operations on already-created PRs).
     """
-    merge_tool_names = {"merge_direct_repo_pr", "arm_direct_repo_auto_merge"}
+    merge_tool_names = {
+        "merge_direct_repo_pr",
+        "arm_direct_repo_auto_merge",
+        "close_direct_repo_pr",
+    }
     # Read-only tools that don't require BLOCKED state
     readonly_tool_names = {"check_direct_repo_auto_merge"}
 

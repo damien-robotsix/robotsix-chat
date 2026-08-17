@@ -116,13 +116,14 @@ def test_merge_tools_returned() -> None:
     assert "merge_direct_repo_pr" in names
     assert "arm_direct_repo_auto_merge" in names
     # Expected set: push, open_pr, update_branch, check_merge_conflict,
-    # merge, auto-merge, reset, apply_patch, token inspection
+    # merge, auto-merge, close, reset, apply_patch, token inspection
     assert sorted(names) == [
         "apply_patch_to_file",
         "arm_direct_repo_auto_merge",
         "check_ci_health",
         "check_direct_repo_auto_merge",
         "check_pr_merge_conflict",
+        "close_direct_repo_pr",
         "enable_repo_pages",
         "file_ci_stabilization_ticket",
         "inspect_github_installation_token",

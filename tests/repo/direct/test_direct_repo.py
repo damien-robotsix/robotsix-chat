@@ -72,10 +72,10 @@ def test_build_direct_repo_tools_disabled() -> None:
     assert build_direct_repo_tools(DirectRepoSettings(enabled=False)) == []
 
 
-def test_build_direct_repo_tools_returns_eighteen_tools() -> None:
-    """Verify that enabled direct_repo returns the eighteen expected tools."""
+def test_build_direct_repo_tools_returns_nineteen_tools() -> None:
+    """Verify that enabled direct_repo returns the nineteen expected tools."""
     tools = build_direct_repo_tools(_settings())
-    assert len(tools) == 18
+    assert len(tools) == 19
     names = [t.__name__ for t in tools]
     assert "push_direct_repo_branch" in names
     assert "open_direct_repo_pr" in names
@@ -89,6 +89,7 @@ def test_build_direct_repo_tools_returns_eighteen_tools() -> None:
     assert "check_direct_repo_auto_merge" in names
     assert "list_open_prs" in names
     assert "merge_direct_repo_pr" in names
+    assert "close_direct_repo_pr" in names
     assert "arm_direct_repo_auto_merge" in names
     assert "enable_repo_pages" in names
     assert "reset_implement_spawn_counter" in names
@@ -319,13 +320,14 @@ def test_merge_tools_returned() -> None:
     assert "merge_direct_repo_pr" in names
     assert "arm_direct_repo_auto_merge" in names
     # Expected set: push, open_pr, update_branch, check_merge_conflict,
-    # merge, auto-merge, reset, apply_patch, token inspection
+    # merge, auto-merge, close, reset, apply_patch, token inspection
     assert sorted(names) == [
         "apply_patch_to_file",
         "arm_direct_repo_auto_merge",
         "check_ci_health",
         "check_direct_repo_auto_merge",
         "check_pr_merge_conflict",
+        "close_direct_repo_pr",
         "enable_repo_pages",
         "file_ci_stabilization_ticket",
         "inspect_github_installation_token",
@@ -2448,7 +2450,11 @@ def test_tool_docstrings_forbid_merge() -> None:
     require BLOCKED state (they are follow-up operations on already-created
     PRs).
     """
-    merge_tool_names = {"merge_direct_repo_pr", "arm_direct_repo_auto_merge"}
+    merge_tool_names = {
+        "merge_direct_repo_pr",
+        "arm_direct_repo_auto_merge",
+        "close_direct_repo_pr",
+    }
     # Read-only tools that don't require BLOCKED state
     readonly_tool_names = {
         "check_direct_repo_auto_merge",
@@ -2618,7 +2624,7 @@ def test_direct_fix_available_when_enabled() -> None:
     tools = build_direct_repo_tools(_settings(direct_fix_enabled=True))
     names = [t.__name__ for t in tools]
     assert "direct_fix" in names
-    assert len(tools) == 20  # 18 base + direct_fix + patch_direct_repo_file
+    assert len(tools) == 21  # 19 base + direct_fix + patch_direct_repo_file
 
 
 @pytest.mark.asyncio
