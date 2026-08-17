@@ -39,6 +39,8 @@ nd = "nd"
 [default.extend-identifiers]
 mkdocs = "mkdocs"
 mkdocstrings = "mkdocstrings"
+anc = "anc"
+ancId = "ancId"
 
 [files]
 extend-exclude = [
