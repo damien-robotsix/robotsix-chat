@@ -291,6 +291,62 @@ class MailClient:
             return result.error
         return result.text  # type: ignore[return-value]
 
+    async def archive_delete_message(self, uid: str, folder: str) -> str:
+        """Call ``POST /archive-message-delete`` with a JSON body.
+
+        Permanently deletes a single message from an archive subfolder
+        on the IMAP server.  The message is identified by its IMAP
+        *uid* (as returned by ``GET /archive/<folder>/messages``)
+        together with the *folder* it lives in.
+
+        Client-side path-escape protection rejects *folder* values that
+        contain ``..``, null bytes, or absolute paths before the
+        request is sent.
+
+        Args:
+            uid: The message's unique IMAP UID, as returned by
+                ``browse_archive_folder``.
+            folder: The archive subfolder path containing the message
+                (e.g. ``"Projects/Acme"``).
+
+        Returns:
+            JSON success/error object as text.
+
+        Never raises — errors become a diagnostic string.
+
+        """
+        if not folder or "\x00" in folder:
+            return (
+                "error: invalid folder path — path must not be empty "
+                "or contain null bytes"
+            )
+        if folder.startswith("/"):
+            return (
+                "error: invalid folder path — absolute paths are not "
+                "allowed (must be relative to the archive root)"
+            )
+        if ".." in folder.split("/"):
+            return (
+                "error: invalid folder path — '..' traversal is not "
+                "allowed (must be under the archive root)"
+            )
+        if not uid:
+            return "error: invalid uid — uid must not be empty"
+
+        url = f"{self._base_url}/archive-message-delete"
+        json_body: dict[str, object] = {"uid": uid, "folder": folder}
+        result = await safe_http_request(
+            "POST",
+            url,
+            headers=self._headers,
+            timeout=self._timeout,
+            json_body=json_body,
+            label="Mail API",
+        )
+        if result.error:
+            return result.error
+        return result.text  # type: ignore[return-value]
+
     async def archive_rename_folder(self, old_path: str, new_path: str) -> str:
         """Call ``POST /archive-rename-folder`` with a JSON body.
 
