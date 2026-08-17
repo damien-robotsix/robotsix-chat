@@ -41,12 +41,19 @@ def _make_settings(**autonomous: object) -> MagicMock:
     return settings
 
 
-def _make_definition(name: str, prompt: str = "") -> SimpleNamespace:
+def _make_definition(
+    name: str,
+    prompt: str = "",
+    *,
+    trigger_type: str = "periodic",
+    trigger_interval_seconds: float = 45.0,
+) -> SimpleNamespace:
     """Return a mock autonomous session definition matching config shapes."""
     return SimpleNamespace(
         name=name,
         prompt=prompt,
-        trigger_interval_seconds=45.0,
+        trigger_type=SimpleNamespace(value=trigger_type),
+        trigger_interval_seconds=trigger_interval_seconds,
         max_auto_turns=20,
         enabled=True,
         self_refine=False,
@@ -62,6 +69,10 @@ class TestAutonomousRunnerSessionRegistry:
         monkeypatch.setattr(AutonomousRunner, "_save_sessions", MagicMock())
         monkeypatch.setattr(
             AutonomousRunner, "_load_sessions", MagicMock(return_value={})
+        )
+        monkeypatch.setattr(AutonomousRunner, "_save_scheduler_state", MagicMock())
+        monkeypatch.setattr(
+            AutonomousRunner, "_load_scheduler_state", MagicMock(return_value={})
         )
 
     def test_create_session(self) -> None:
@@ -116,6 +127,10 @@ class TestCompletionMarkerDetection:
         monkeypatch.setattr(
             AutonomousRunner, "_load_sessions", MagicMock(return_value={})
         )
+        monkeypatch.setattr(AutonomousRunner, "_save_scheduler_state", MagicMock())
+        monkeypatch.setattr(
+            AutonomousRunner, "_load_scheduler_state", MagicMock(return_value={})
+        )
 
     def _runner(self) -> AutonomousRunner:
         store = ConversationStore()
@@ -169,6 +184,10 @@ class TestAutoContinue:
         monkeypatch.setattr(AutonomousRunner, "_save_sessions", MagicMock())
         monkeypatch.setattr(
             AutonomousRunner, "_load_sessions", MagicMock(return_value={})
+        )
+        monkeypatch.setattr(AutonomousRunner, "_save_scheduler_state", MagicMock())
+        monkeypatch.setattr(
+            AutonomousRunner, "_load_scheduler_state", MagicMock(return_value={})
         )
 
     @pytest.mark.asyncio
@@ -410,6 +429,10 @@ class TestConversationStoreRegistration:
         monkeypatch.setattr(
             AutonomousRunner, "_load_sessions", MagicMock(return_value={})
         )
+        monkeypatch.setattr(AutonomousRunner, "_save_scheduler_state", MagicMock())
+        monkeypatch.setattr(
+            AutonomousRunner, "_load_scheduler_state", MagicMock(return_value={})
+        )
 
     def test_create_session_registers_in_conversation_store(self) -> None:
         """A created session appears in the owner's store listing."""
@@ -480,6 +503,10 @@ class TestAutonomousEventStreaming:
         monkeypatch.setattr(AutonomousRunner, "_save_sessions", MagicMock())
         monkeypatch.setattr(
             AutonomousRunner, "_load_sessions", MagicMock(return_value={})
+        )
+        monkeypatch.setattr(AutonomousRunner, "_save_scheduler_state", MagicMock())
+        monkeypatch.setattr(
+            AutonomousRunner, "_load_scheduler_state", MagicMock(return_value={})
         )
 
     @pytest.mark.asyncio
@@ -576,6 +603,10 @@ class TestCreateSessionSingleSessionInvariant:
         monkeypatch.setattr(
             AutonomousRunner, "_load_sessions", MagicMock(return_value={})
         )
+        monkeypatch.setattr(AutonomousRunner, "_save_scheduler_state", MagicMock())
+        monkeypatch.setattr(
+            AutonomousRunner, "_load_scheduler_state", MagicMock(return_value={})
+        )
 
     def test_create_session_returns_existing_when_open_exists(self) -> None:
         """An existing open session is returned unchanged."""
@@ -616,6 +647,10 @@ class TestResumeSessionsNonBlocking:
         monkeypatch.setattr(AutonomousRunner, "_save_sessions", MagicMock())
         monkeypatch.setattr(
             AutonomousRunner, "_load_sessions", MagicMock(return_value={})
+        )
+        monkeypatch.setattr(AutonomousRunner, "_save_scheduler_state", MagicMock())
+        monkeypatch.setattr(
+            AutonomousRunner, "_load_scheduler_state", MagicMock(return_value={})
         )
 
     @pytest.mark.asyncio
@@ -706,6 +741,123 @@ class TestResumeSessionsNonBlocking:
             assert matching[0].state is AutonomousState.executing
 
 
+class TestPersistedSchedulerState:
+    """Per-preset scheduler state survives restarts and gates re-triggering."""
+
+    @pytest.fixture
+    def persist_paths(self, tmp_path: Path, monkeypatch: pytest.MonkeyPatch) -> Path:
+        """Point the runner's persist paths at a per-test temp directory."""
+        monkeypatch.setattr(
+            "robotsix_chat.autonomous.runner.AUTONOMOUS_PERSIST_PATH",
+            str(tmp_path / "autonomous_sessions.json"),
+        )
+        monkeypatch.setattr(
+            "robotsix_chat.autonomous.runner.AUTONOMOUS_SCHEDULER_PERSIST_PATH",
+            str(tmp_path / "autonomous_scheduler_state.json"),
+        )
+        return tmp_path
+
+    def _build(self, settings: MagicMock) -> AutonomousRunner:
+        """Build a runner with auto-continue mocked to avoid live agent calls."""
+        runner = AutonomousRunner(
+            settings=settings,
+            conversation_store=ConversationStore(),
+            agent_factory=MagicMock(),
+            run_serializer=_make_run_serializer(),
+        )
+        runner._auto_continue = AsyncMock()  # type: ignore[method-assign]
+        return runner
+
+    @pytest.mark.asyncio
+    async def test_restart_within_interval_does_not_retrigger_weekly_preset(
+        self, persist_paths: Path
+    ) -> None:
+        """A weekly preset is not re-picked across restarts within its interval."""
+        settings = _make_settings()
+        settings.autonomous.sessions = [
+            _make_definition("release-review", trigger_interval_seconds=604800.0)
+        ]
+        runner = self._build(settings)
+        await asyncio.wait_for(runner.resume_sessions(), timeout=0.5)
+        active_id = runner.active_session_id_for_definition("release-review")
+        assert active_id is not None
+        aq = runner._sessions[active_id]
+        runner.check_reply_for_markers(aq.session_id, "---AUTONOMOUS COMPLETE---")
+        assert aq.state is AutonomousState.completed
+
+        # Two restarts: the completed session persists, but neither restart
+        # spawns a *new* executing session because the interval hasn't elapsed.
+        for _ in range(2):
+            restarted = self._build(settings)
+            await asyncio.wait_for(restarted.resume_sessions(), timeout=0.5)
+            assert restarted.active_session_id_for_definition("release-review") is None
+
+    @pytest.mark.asyncio
+    async def test_interval_elapsed_across_restart_fires_once(
+        self, persist_paths: Path
+    ) -> None:
+        """A preset due because its interval elapsed while down fires exactly once."""
+        settings = _make_settings()
+        settings.autonomous.sessions = [
+            _make_definition("release-review", trigger_interval_seconds=45.0)
+        ]
+        (persist_paths / "autonomous_scheduler_state.json").write_text(
+            json.dumps(
+                {
+                    "release-review": {
+                        "last_run_at": time.time() - 90.0,
+                        "last_completed_at": time.time() - 60.0,
+                        "last_outcome": "completed",
+                        "last_session_id": "previous-run",
+                    }
+                }
+            )
+        )
+        runner = self._build(settings)
+        await asyncio.wait_for(runner.resume_sessions(), timeout=0.5)
+
+        assert len(runner._sessions) == 1
+        aq = next(iter(runner._sessions.values()))
+        assert aq.definition_name == "release-review"
+        assert aq.state is AutonomousState.executing
+        assert aq.session_id != "previous-run"
+
+        # A second ensure call in the same process does not add another run.
+        runner.ensure_all_active_sessions()
+        assert len(runner._sessions) == 1
+
+    @pytest.mark.asyncio
+    async def test_delayed_fire_when_interval_elapses_while_running(
+        self, persist_paths: Path
+    ) -> None:
+        """A not-yet-due preset fires exactly once when its interval elapses."""
+        settings = _make_settings()
+        settings.autonomous.sessions = [
+            _make_definition("release-review", trigger_interval_seconds=0.1)
+        ]
+        first = self._build(settings)
+        await asyncio.wait_for(first.resume_sessions(), timeout=0.5)
+        active_id = first.active_session_id_for_definition("release-review")
+        assert active_id is not None
+        aq = first._sessions[active_id]
+        first.check_reply_for_markers(aq.session_id, "---AUTONOMOUS COMPLETE---")
+        assert aq.state is AutonomousState.completed
+
+        restarted = self._build(settings)
+        await asyncio.wait_for(restarted.resume_sessions(), timeout=0.5)
+        # The completed session from the previous run is loaded from disk,
+        # but no *new* executing session has been spawned — the preset is not
+        # yet due.
+        assert restarted.active_session_id_for_definition("release-review") is None
+
+        await asyncio.sleep(0.3)
+        active_id = restarted.active_session_id_for_definition("release-review")
+        assert active_id is not None
+        fired = restarted._sessions[active_id]
+        assert fired.state is AutonomousState.executing
+        assert fired.definition_name == "release-review"
+
+
 class TestNoContinuationInjection:
     """The single-prompt run never injects Continue or restart notices."""
 
@@ -714,6 +866,10 @@ class TestNoContinuationInjection:
         monkeypatch.setattr(AutonomousRunner, "_save_sessions", MagicMock())
         monkeypatch.setattr(
             AutonomousRunner, "_load_sessions", MagicMock(return_value={})
+        )
+        monkeypatch.setattr(AutonomousRunner, "_save_scheduler_state", MagicMock())
+        monkeypatch.setattr(
+            AutonomousRunner, "_load_scheduler_state", MagicMock(return_value={})
         )
 
     @pytest.mark.asyncio

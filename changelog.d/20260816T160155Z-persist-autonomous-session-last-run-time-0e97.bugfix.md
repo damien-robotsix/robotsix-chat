@@ -1,0 +1,1 @@
+Persist per-preset autonomous-session scheduler state (last-run timestamps/outcomes) to the component data volume so periodic/weekly presets are no longer re-triggered on every chat restart. Presets now fire on startup only when genuinely due and otherwise schedule a single delayed fire for the remaining interval.
