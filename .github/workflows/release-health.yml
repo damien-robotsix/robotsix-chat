@@ -11,8 +11,10 @@ name: Release health
 #                               needs are present AND that the GitHub App
 #                               actually grants the scoped permissions
 #                               release-please requests.
-#   2. monitor-release-please  — fails if the latest completed release-please
-#                               run concluded in anything but success.
+#   2. monitor-release-please  — fails when the most recent completed
+#                               release-please runs have ALL failed, signalling
+#                               a persistently broken pipeline (a single
+#                               transient run failure is tolerated).
 #
 # A red run here is the team's alert.  Fix the underlying cause and re-run
 # via the Actions UI (workflow_dispatch) to confirm the pipeline is healthy.
@@ -107,7 +109,7 @@ jobs:
             // release-please also triggers on every regular PR close, but its
             // single job's `if` is false there, yielding a `skipped` run that
             // is NOT a release failure.  Skip those (and cancelled runs) and
-            // judge by the first completed run that actually executed.
+            // judge by the most recent completed runs that actually executed.
             const meaningful = allRuns.filter(
               (r) =>
                 r.status === 'completed' &&
@@ -121,12 +123,31 @@ jobs:
               return;
             }
 
-            const latest = meaningful[0];
+            // A single failed run is usually a transient GitHub Actions
+            // infrastructure blip (e.g. the runner's "Set up job" step
+            // timing out), not a broken release pipeline — the next push
+            // re-runs release-please and self-heals.  Only alert when the
+            // failures are persistent: every one of the most recent
+            // REQUIRED_FAILURES completed runs must have failed.
+            const requiredFailures = 3;
+            const recent = meaningful.slice(0, requiredFailures);
+            const latest = recent[0];
             core.info(
-              `Latest completed ${workflowFile} run: #${latest.run_number} (${latest.conclusion}) ${latest.html_url}`
+              `Latest ${recent.length} completed ${workflowFile} runs: ` +
+                recent
+                  .map(
+                    (r) => `#${r.run_number} (${r.conclusion}) ${r.html_url}`
+                  )
+                  .join(', ')
             );
-            if (latest.conclusion !== 'success') {
+            const failedCount = recent.filter(
+              (r) => r.conclusion !== 'success'
+            ).length;
+            if (
+              recent.length >= requiredFailures &&
+              failedCount === requiredFailures
+            ) {
               core.setFailed(
-                `Latest ${workflowFile} run #${latest.run_number} concluded ${latest.conclusion} — automated releases are blocked. See ${latest.html_url}`
+                `The last ${requiredFailures} ${workflowFile} runs all concluded non-success — automated releases are blocked. Latest: #${latest.run_number} (${latest.conclusion}) ${latest.html_url}`
               );
             }
