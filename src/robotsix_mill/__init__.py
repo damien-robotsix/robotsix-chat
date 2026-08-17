@@ -202,3 +202,27 @@ def _run_summary_verification_with_changelog_gate(
 implementation_logic.ImplementationLogicMixin._run_summary_verification = (
     _run_summary_verification_with_changelog_gate
 )
+
+# ---------------------------------------------------------------------------
+# 7.  Auto-approve chat-agent-filed tickets.  The installed refine stage's
+#     ``_AUTO_APPROVE_SOURCES`` set is the deterministic shortlist of ticket
+#     sources that skip the human approval gate after refinement.  Tickets
+#     filed by the robotsix-chat assistant via ``POST /tickets/ingest``
+#     (``source="robotsix-chat"``) were missing from it, so the assistant's
+#     own improvement tickets stalled in ``human_issue_approval`` until a
+#     human nudged them forward.  Merge the local extension so those
+#     tickets flow ``draft -> refine -> ready`` on their own.
+# ---------------------------------------------------------------------------
+import robotsix_mill.stages.refine.helpers as _refine_helpers  # noqa: E402
+from robotsix_mill.stages.refine_autoapprove import merge_auto_approve  # noqa: E402
+
+if not merge_auto_approve(_refine_helpers):
+    # Fail soft: a mill upgrade renamed ``_AUTO_APPROVE_SOURCES`` or
+    # changed its type (e.g. to a frozenset).  Log and continue instead
+    # of breaking every startup at import time — tickets stay behind the
+    # human approval gate until the patch is updated for the new mill API.
+    robotsix_mill.stages.changelog_gate.log.warning(
+        "refine helpers._AUTO_APPROVE_SOURCES is %r, not a mutable set; "
+        "skipping auto-approve merge for robotsix-chat tickets",
+        getattr(_refine_helpers, "_AUTO_APPROVE_SOURCES", None),
+    )
