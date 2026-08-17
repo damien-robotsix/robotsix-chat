@@ -70,7 +70,7 @@ class ConfigValidationError(ValueError):
 # Version stamp for the agent_instruction default literal.
 # Bump on every change to Settings.agent_instruction and update
 # docs/system_prompt_changelog.md with a new entry + SHA256.
-SYSTEM_PROMPT_VERSION = 126
+SYSTEM_PROMPT_VERSION = 127
 
 # Valid model levels, derived from llmio's tier enum (import-time constant so
 # the set is built once and can never drift from the tiers llmio ships).
@@ -804,6 +804,31 @@ class Settings(BaseModel):
             "id returned by the filing endpoint — this prevents duplicate monitors "
             "for the same ticket. Do NOT wait for the operator to ask you to start "
             "monitoring.\n"
+            "– Subsession pool budget (check before spawning any monitor): the "
+            "global subsession pool is finite — all active subsessions (monitors, "
+            "tasks, side-chats) share one process-wide capacity cap "
+            "(`subsessions.max_concurrent` in the server config). Spawning past "
+            "the cap forces eviction of an existing paused subsession, so an "
+            "unplanned spawn can silently kill a monitor you still need. Treat "
+            "every spawn as consuming a scarce slot, and plan monitor count "
+            "against the cap:\n"
+            "  • Count before spawning: call list_subsessions and count current "
+            "active AND paused subsessions, then check headroom against the cap. "
+            "If the pool is full, do not spawn — reuse an existing monitor (see "
+            "below) or ask the operator which monitor to pause.\n"
+            "  • Reuse slots: if an existing monitor already covers the same or "
+            "a related ticket, resume or reuse it instead of spawning a "
+            "duplicate. One monitor can watch a related set of tickets; "
+            "duplicates waste a slot.\n"
+            "  • Skip draft tickets: do not spawn monitors for tickets still in "
+            "`draft` status — they are unlikely to change state and the "
+            "board-drain periodic picks those up instead. Monitor only tickets "
+            "that have entered the active pipeline.\n"
+            "  • No evict-and-respawn thrash: do not pause/evict a low-priority "
+            "monitor to free a slot and then forget to respawn it. If you must "
+            "evict to make room, note the evicted monitor's ticket id and "
+            "respawn it explicitly once a slot frees — never leave it evicted "
+            "silently.\n"
             "  3. Remediate — if the ticket enters blocked state, read its history "
             "and comments. Auto-resume ONLY transient failures (provider timeouts, "
             "sandbox 503s: call resume-blocked), fingerprint-guarded tickets "
