@@ -34,7 +34,9 @@ class TestBuildAutonomousInstruction:
         settings = self._make_settings()
         result = build_autonomous_instruction(settings)
         assert "---AUTONOMOUS COMPLETE---" in result
-        assert "PLANNING" in result
+        assert "SUBJECT SELECTION" in result
+        assert "NO PLANNING PROSE" in result
+        assert "STATE VERIFICATION" in result
         assert "EXECUTION" in result
         assert "COMPLETION" in result
         assert "Stale monitor completion" in result
@@ -59,6 +61,16 @@ class TestBuildAutonomousInstruction:
         result = build_autonomous_instruction(settings)
         assert "PROPOSAL" not in result
         assert "---PROPOSAL READY---" not in result
+
+    def test_no_planning_prose(self) -> None:
+        """The protocol forbids plan prose: first tool call, not a plan."""
+        settings = self._make_settings()
+        result = build_autonomous_instruction(settings)
+        assert "PLAN DRAFTING" not in result
+        assert "draft a step-by-step plan" not in result
+        assert "do NOT draft a plan" in result
+        assert "make the first actionable" in result
+        assert "release gate" in result
 
     def test_custom_completion_marker(self) -> None:
         """Custom completion marker is injected, the default is absent."""
