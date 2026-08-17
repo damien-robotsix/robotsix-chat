@@ -1,1 +1,0 @@
-Added a focus mode for subsession panels: a Focus button on each panel header (or Ctrl+Shift+F) expands one subsession to fill the screen while other panels are hidden; Esc or the ✕ Exit focus button restores the multi-panel layout. Background subsessions keep running and updating while unfocused, and layout changes are announced to screen readers.
