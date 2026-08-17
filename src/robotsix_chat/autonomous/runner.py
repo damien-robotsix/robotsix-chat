@@ -283,6 +283,17 @@ class AutonomousRunner:
         self._auto_tasks.add(task)
         task.add_done_callback(self._auto_tasks.discard)
 
+    def schedule_restart(self, owner_id: str) -> None:
+        """Schedule a throttled restart for *owner_id*.
+
+        Public wrapper that delegates to ``_auto_restart`` via
+        ``_schedule_background``.  Use this (rather than calling
+        ``ensure_active_session`` directly) from external call-sites
+        such as the sessions close/delete endpoints so the restart
+        respects the preset's ``trigger_interval_seconds`` throttle.
+        """
+        self._schedule_background(lambda: self._auto_restart(owner_id))
+
     def _publish_state(self, session_id: str) -> None:
         """Push an ``autonomous_state`` frame to connected browsers, if any."""
         if self._event_sink is None:

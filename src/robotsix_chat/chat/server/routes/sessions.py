@@ -267,7 +267,7 @@ async def sessions_delete_endpoint(request: Request) -> JSONResponse:
         # entry immediately WITHOUT auto-restarting right now — otherwise the
         # card reappears instantly and the discard looks like a no-op.
         if not was_countdown:
-            runner.ensure_active_session(delete_owner_id)
+            runner.schedule_restart(delete_owner_id)
 
     return JSONResponse(
         {
@@ -336,11 +336,20 @@ async def sessions_close_endpoint(request: Request) -> JSONResponse:
     await _persist_carryover(request, store, session_id, owner_id)
 
     # Autonomous cleanup: forget the runner's record (the store keeps the
-    # closed history) and auto-restart so the operator always has one live
-    # autonomous run (auto-restart always).
+    # closed history) and schedule a throttled restart when needed.
     if is_autonomous and runner is not None:
+        was_countdown = runner.get_state(session_id) is AutonomousState.completed
         runner.forget_session(session_id)
-        runner.ensure_active_session(owner_id)
+        # A completed autonomous session is in its inter-run countdown: the
+        # ``_auto_restart`` task scheduled at completion will spawn the fresh
+        # session when the next run actually fires.  Closing one must hide the
+        # entry immediately WITHOUT restarting right now — otherwise the card
+        # reappears instantly and the close looks like a no-op.
+        # An executing session closed by the operator restarts after the
+        # preset's ``trigger_interval_seconds`` throttle (immediate only for
+        # on_close presets).
+        if not was_countdown:
+            runner.schedule_restart(owner_id)
 
     return JSONResponse(
         {

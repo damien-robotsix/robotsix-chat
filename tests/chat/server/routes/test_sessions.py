@@ -877,7 +877,7 @@ async def test_delete_autonomous_session_forgets_and_restarts() -> None:
         "autonomous", "auto-1", create_replacement=False
     )
     mock_runner.forget_session.assert_called_once_with("auto-1")
-    mock_runner.ensure_active_session.assert_called_once_with("autonomous")
+    mock_runner.schedule_restart.assert_called_once_with("autonomous")
 
 
 @pytest.mark.asyncio
@@ -960,20 +960,23 @@ async def test_delete_autonomous_preset_session_retargets_to_subscope_owner() ->
     mock_store.delete_session.assert_called_once_with(
         "autonomous:nightly-audit", "auto-1", create_replacement=False
     )
-    mock_runner.ensure_active_session.assert_called_once_with(
-        "autonomous:nightly-audit"
-    )
+    mock_runner.schedule_restart.assert_called_once_with("autonomous:nightly-audit")
 
 
 @pytest.mark.asyncio
 async def test_close_autonomous_session_forgets_and_restarts() -> None:
-    """Closing an autonomous session purges the runner and auto-restarts."""
+    """Close an executing autonomous session and schedule a restart.
+
+    Closing while executing purges the runner and schedules a throttled
+    restart.
+    """
     mock_store = MagicMock()
     mock_store.history.return_value = []
     mock_store.close_session.return_value = {"closed": True}
     mock_runner = MagicMock()
     mock_runner.bootstrap_owner = "autonomous"
     mock_runner.is_autonomous.return_value = True
+    mock_runner.get_state.return_value = AutonomousState.executing
 
     state = MagicMock(
         conversation_store=mock_store,
@@ -991,7 +994,41 @@ async def test_close_autonomous_session_forgets_and_restarts() -> None:
     response = await sessions_close_endpoint(request)
     assert response.status_code == 200
     mock_runner.forget_session.assert_called_once_with("auto-1")
-    mock_runner.ensure_active_session.assert_called_once_with("autonomous")
+    mock_runner.schedule_restart.assert_called_once_with("autonomous")
+
+
+@pytest.mark.asyncio
+async def test_close_autonomous_countdown_no_restart() -> None:
+    """Hide a completed autonomous session without scheduling a restart.
+
+    The already-scheduled ``_auto_restart`` task re-creates it at the next
+    run.
+    """
+    mock_store = MagicMock()
+    mock_store.history.return_value = []
+    mock_store.close_session.return_value = {"closed": True}
+    mock_runner = MagicMock()
+    mock_runner.bootstrap_owner = "autonomous"
+    mock_runner.is_autonomous.return_value = True
+    mock_runner.get_state.return_value = AutonomousState.completed
+
+    state = MagicMock(
+        conversation_store=mock_store,
+        subsession_registry=None,
+        feedback_runner=None,
+        autonomous_runner=mock_runner,
+    )
+    request = _make_request(
+        method="POST",
+        query_string="owner_id=autonomous",
+        path_params={"session_id": "auto-1"},
+        app_state=state,
+    )
+
+    response = await sessions_close_endpoint(request)
+    assert response.status_code == 200
+    mock_runner.forget_session.assert_called_once_with("auto-1")
+    mock_runner.schedule_restart.assert_not_called()
 
 
 @pytest.mark.asyncio
