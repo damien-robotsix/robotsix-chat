@@ -281,6 +281,45 @@ async def test_spawn_tool_refused_for_closed_session() -> None:
 
 
 @pytest.mark.asyncio
+async def test_spawn_tool_allowed_after_session_reopened() -> None:
+    """A previously closed session reopened by an operator turn allows spawns."""
+    store = ConversationStore()
+    sid = str(store.create_session("owner-1")["session_id"])
+    store.close_session("owner-1", sid)
+    store.reopen_session(sid)  # simulates an operator turn in the chat endpoint
+    env = build_env(store=store)
+    ctx = SubsessionContext(owner_session_id=sid, subsession_id=None, depth=0)
+    spawn = _by_name(build_subsession_tools(env, ctx=ctx), "spawn_subsession")
+
+    result = await spawn("task", "t", "do it", model_level=3)
+
+    assert result.startswith("Started task subsession ")
+    assert len(env.registry.list_for_owner(sid)) == 1
+
+
+@pytest.mark.asyncio
+async def test_control_tools_not_affected_by_session_reopen() -> None:
+    """message_subsession and close_subsession are not gated on session closed."""
+    store = ConversationStore()
+    sid = str(store.create_session("owner-1")["session_id"])
+    store.close_session("owner-1", sid)
+    env = build_env(store=store)
+    ctx = SubsessionContext(owner_session_id=sid, subsession_id=None, depth=0)
+    tools = build_subsession_tools(env, ctx=ctx)
+    msg = _by_name(tools, "message_subsession")
+    cls = _by_name(tools, "close_subsession")
+
+    # message_subsession / close_subsession operate on registered subsessions,
+    # not on the parent session — they resolve the subsession id in scope.
+    # A closed session with no subsessions gets "not in this conversation's tree".
+    assert "in this conversation's tree" in await msg("nonexistent", "")
+    _register(env, owner=sid)
+    sub_id = env.registry.list_for_owner(sid)[0].id
+    result = await cls(sub_id)
+    assert result.startswith(f"Closed subsession {sub_id}.")
+
+
+@pytest.mark.asyncio
 async def test_spawn_tool_starts_a_worker() -> None:
     """A valid spawn starts the worker and reports the new id."""
     agent = FakeAgent(["done quickly"])
