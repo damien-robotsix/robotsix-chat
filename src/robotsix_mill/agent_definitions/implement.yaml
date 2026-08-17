@@ -83,6 +83,8 @@ system_prompt: |
 
   ## Verification-command consolidation
 
+  **Do NOT fan verification into many separate run_command calls.**
+
   Verification commands (`pytest`, `ruff`, `mypy`, `deptry`, `vulture`,
   `mypy-baseline`) are budgeted per session by the `run_command` tool:
   once the budget is spent, further separate invocations are refused with
