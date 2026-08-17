@@ -372,9 +372,23 @@ class CogneeMemory:
         cognee.config.set_llm_model(s.llm.model)
         cognee.config.set_llm_endpoint(s.llm.endpoint)
         cognee.config.set_llm_api_key(self._openrouter.key(alias).get_secret_value())
+        # Pin EVERY LLM pipeline stage to the configured model. cognee's
+        # per-stage routing (extraction / summarization / query) and its BAML
+        # fallback each carry their own default (``openai/gpt-5-mini``) when
+        # left empty; a pipeline step reading one of those directly would
+        # otherwise bill the untraced default model instead of the configured
+        # ``gpt-5-nano``. Setting them all to the same value guarantees no
+        # cognee step can silently fall back to its internal default.
         cognee.config.set_llm_config(
-            {"llm_max_completion_tokens": s.llm.max_completion_tokens}
+            {
+                "llm_max_completion_tokens": s.llm.max_completion_tokens,
+                "llm_extraction_model": s.llm.model,
+                "llm_summarization_model": s.llm.model,
+                "llm_query_model": s.llm.model,
+                "baml_llm_model": s.llm.model,
+            }
         )
+        self._flag_configured_llm_model_drift(s.llm.model)
 
         # Embeddings — remote OpenAI-compatible server (Ollama / bge-m3).
         cognee.config.set_embedding_config(
@@ -498,6 +512,44 @@ class CogneeMemory:
             "litellm Langfuse OTLP tracing configured for cognee traffic (%s)",
             endpoint,
         )
+
+    def _flag_configured_llm_model_drift(self, expected_model: str) -> None:
+        """Log an error if any cognee LLM stage resolved to a non-configured model.
+
+        ``set_llm_model``/``set_llm_config`` mutate cognee's process-global,
+        cached ``LLMConfig``. Read it back and flag every model-bearing field
+        that does not equal the configured value. This is the startup trip-wire
+        for the "unconfigured cognee LLM model" failure mode: a config-setter
+        no-op, or a stage silently falling back to cognee's internal default
+        (``openai/gpt-5-mini``), would otherwise burn OpenRouter credit
+        invisibly. Deliberately a LOG, never a raise — memory keeps working,
+        but the drift is impossible to miss.
+        """
+        try:
+            from cognee.infrastructure.llm import get_llm_config
+        except ImportError:
+            return
+        effective = get_llm_config()
+        stage_models = {
+            "llm_model": effective.llm_model,
+            "llm_extraction_model": effective.llm_extraction_model,
+            "llm_summarization_model": effective.llm_summarization_model,
+            "llm_query_model": effective.llm_query_model,
+            "baml_llm_model": effective.baml_llm_model,
+        }
+        drift = {
+            name: model
+            for name, model in stage_models.items()
+            if model != expected_model
+        }
+        if drift:
+            logger.error(
+                "cognee LLM model drift detected — configured %r but %s resolved "
+                "to %s; untraced default-model calls may be billed",
+                expected_model,
+                ", ".join(drift),
+                drift,
+            )
 
     # -- read -------------------------------------------------------------
 

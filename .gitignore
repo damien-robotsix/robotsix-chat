@@ -83,3 +83,8 @@ core
 # Node.js artifacts (accidentally created by pre-commit hook environments)
 node_modules/
 uv.lock.bak
+
+# Sandbox inspection dumps of third-party packages (e.g. `pip install --target`
+# into `.inspect_*` to read cognee/litellm sources offline).  Generated, never
+# committed — without this they flood the implement diff and trip scope-triage.
+.inspect_*/
