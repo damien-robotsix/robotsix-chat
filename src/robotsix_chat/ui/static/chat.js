@@ -1290,6 +1290,12 @@ import { processSSEStream } from "./sse-parser.js";
   // up over time and crowd out the running ones); toggled via the panel's
   // "Show closed" button.
   var showTerminalSubs = false;
+  // Focus mode: one subsession row fills the entire screen.
+  var focusedSubId = null;
+  // Most-recently expanded or interacted-with subsession (for keyboard shortcut).
+  var selectedSubId = null;
+  // Saved expanded state before focus (exact restore on exit).
+  var focusPrevExpanded = null;
 
   var SUBS_SNAPSHOT_FIELDS = [
     "subsession_id", "kind", "owner_session_id", "parent_id", "depth",
@@ -1447,6 +1453,16 @@ import { processSSEStream } from "./sse-parser.js";
       if (showTerminalSubs || !isSubsTerminal(order[i])) visible.push(order[i]);
     }
     updateSubsToggleTerminalButton(terminalCount);
+    // If the focused subsession is no longer visible (e.g. it was closed
+    // and terminal rows are hidden), exit focus mode gracefully — do not
+    // re-render from inside the render loop (pass false).
+    if (focusedSubId !== null) {
+      var focussed = false;
+      for (var v = 0; v < visible.length; v++) {
+        if (visible[v].subsession_id === focusedSubId) { focussed = true; break; }
+      }
+      if (!focussed || !subsById[focusedSubId]) exitSubsFocus(false);
+    }
     if (visible.length === 0) {
       subsList.innerHTML = "";
       var empty = document.createElement("div");
@@ -1510,7 +1526,9 @@ import { processSSEStream } from "./sse-parser.js";
       sub._rowEl = row;
     }
     row._subsId = sub.subsession_id;
-    row.className = "subs-row status-" + status + (terminal ? " terminal" : "");
+    row.className = "subs-row status-" + status +
+      (terminal ? " terminal" : "") +
+      (focusedSubId === sub.subsession_id ? " focused" : "");
     // Indent children under their parent (depth 1 = top level).
     row.style.marginLeft = (((sub.depth || 1) - 1) * 14) + "px";
 
@@ -1623,9 +1641,26 @@ import { processSSEStream } from "./sse-parser.js";
     }
     expandBtn.addEventListener("click", function () {
       sub.expanded = !sub.expanded;
+      selectedSubId = sub.subsession_id;
       renderSubsessionsList();
     });
     actionsDiv.appendChild(expandBtn);
+
+    // Focus button: expand one subsession to fill the screen.
+    var focusBtn = document.createElement("button");
+    focusBtn.type = "button";
+    focusBtn.className = "subs-action-btn subs-focus-btn";
+    var isFocused = focusedSubId === sub.subsession_id;
+    focusBtn.textContent = isFocused ? "✕ Exit focus" : "⛶ Focus";
+    focusBtn.title = isFocused
+      ? "Restore the multi-panel layout (Esc)"
+      : "Expand this subsession to fill the screen (Ctrl+Shift+F)";
+    focusBtn.setAttribute("aria-pressed", isFocused ? "true" : "false");
+    focusBtn.setAttribute("aria-label", focusBtn.textContent);
+    focusBtn.addEventListener("click", function () {
+      toggleSubsFocus(sub);
+    });
+    actionsDiv.appendChild(focusBtn);
 
     if (!terminal) {
       var closeBtn = document.createElement("button");
@@ -1777,6 +1812,10 @@ import { processSSEStream } from "./sse-parser.js";
       }
     });
 
+    msgArea.addEventListener("focus", function () {
+      selectedSubId = sub.subsession_id;
+    });
+
     sub._msgInput = msgArea;
     sub._msgBtn = sendMsgBtn;
     inputRow.appendChild(msgArea);
@@ -1855,6 +1894,84 @@ import { processSSEStream } from "./sse-parser.js";
         showError("Close failed: " + (err.message || "Network error"));
         renderSubsessionsList();
       });
+  }
+
+  // ---- Subsession focus mode -------------------------------------------
+
+  /** Expand *sub* to fill the screen; ESC / button restores the layout. */
+  function toggleSubsFocus(sub) {
+    if (focusedSubId === sub.subsession_id) {
+      exitSubsFocus();
+    } else {
+      enterSubsFocus(sub);
+    }
+  }
+
+  function enterSubsFocus(sub) {
+    // Ensure the panel is visible (shortcut may trigger while hidden).
+    openSubsessionsPanel();
+    // Switching focus from another subsession: restore that one's prior
+    // expanded state before saving this one's.
+    if (focusedSubId !== null && focusedSubId !== sub.subsession_id) {
+      var prev = subsById[focusedSubId];
+      if (prev && typeof focusPrevExpanded === "boolean") {
+        prev.expanded = focusPrevExpanded;
+      }
+    }
+    focusedSubId = sub.subsession_id;
+    selectedSubId = sub.subsession_id;
+    // Force the row open so the user can read the conversation.
+    focusPrevExpanded = sub.expanded;
+    sub.expanded = true;
+    document.body.classList.add("subs-focus-mode");
+    // Render fresh: add .focused to the row, rebuild header button text.
+    renderSubsessionsList();
+    var headerTitle = subsPanel.querySelector(".subs-header-title");
+    if (headerTitle) headerTitle.textContent = sub.title || "(untitled)";
+    announceScreenReader(
+      "Subsession \"" + (sub.title || "untitled") +
+      "\" focused — press Escape to restore the multi-panel layout."
+    );
+  }
+
+  function exitSubsFocus(rerender) {
+    var wasFocusedId = focusedSubId;
+    focusedSubId = null;
+    document.body.classList.remove("subs-focus-mode");
+    // Restore the expanded state the row had before focus.
+    var prevSub = wasFocusedId ? subsById[wasFocusedId] : null;
+    if (prevSub && typeof focusPrevExpanded === "boolean") {
+      prevSub.expanded = focusPrevExpanded;
+    }
+    focusPrevExpanded = null;
+    var headerTitle = subsPanel.querySelector(".subs-header-title");
+    if (headerTitle) headerTitle.textContent = "Subsessions";
+    if (rerender !== false) renderSubsessionsList();
+    announceScreenReader("Focus mode exited — multi-panel layout restored.");
+  }
+
+  /** Visible, non-terminal subsession for Ctrl+Shift+F shortcut. */
+  function getSelectedSub() {
+    var order = subsDisplayOrder();
+    var visible = [];
+    for (var i = 0; i < order.length; i++) {
+      if (showTerminalSubs || !isSubsTerminal(order[i])) visible.push(order[i]);
+    }
+    if (visible.length === 0) return null;
+    if (selectedSubId) {
+      for (var j = 0; j < visible.length; j++) {
+        if (visible[j].subsession_id === selectedSubId) return visible[j];
+      }
+    }
+    return visible[0];
+  }
+
+  /** Announce a layout change to screen readers via #sr-announce. */
+  function announceScreenReader(msg) {
+    var el = document.getElementById("sr-announce");
+    if (!el) return;
+    el.textContent = "";
+    window.setTimeout(function () { el.textContent = msg; }, 30);
   }
 
   // ---- Live countdown for periodic rows (wall-clock; 1s tick) ----------
@@ -3012,7 +3129,9 @@ import { processSSEStream } from "./sse-parser.js";
   });
 
   document.addEventListener("keydown", function (e) {
-    if (e.key === "Escape" && sessionsPanel.classList.contains("visible")) {
+    // Focus mode owns Escape for the subsessions panel.
+    if (e.key === "Escape" && focusedSubId === null &&
+        sessionsPanel.classList.contains("visible")) {
       sessionsPanel.classList.remove("visible");
       setSessionsPanelVisible(false);
       hideSessionsResizeHandle();
@@ -3128,6 +3247,12 @@ import { processSSEStream } from "./sse-parser.js";
     hideResizeHandle();
   });
 
+  var subsFocusExit = document.getElementById("subs-focus-exit");
+  subsFocusExit.addEventListener("click", function (e) {
+    e.stopPropagation();
+    exitSubsFocus();
+  });
+
   var subsToggleTerminal = document.getElementById("subs-toggle-terminal");
   subsToggleTerminal.addEventListener("click", function (e) {
     e.stopPropagation();
@@ -3140,10 +3265,25 @@ import { processSSEStream } from "./sse-parser.js";
   });
 
   document.addEventListener("keydown", function (e) {
+    // Escape exits focus mode first; panel-close second.
+    if (e.key === "Escape" && focusedSubId !== null) {
+      e.preventDefault();
+      exitSubsFocus();
+      return;
+    }
     if (e.key === "Escape" && subsPanel.classList.contains("visible")) {
       subsPanel.classList.remove("visible");
       setSubsPanelVisible(false);
       hideResizeHandle();
+    }
+  });
+
+  // Ctrl+Shift+F — focus/submit the currently-selected subsession.
+  document.addEventListener("keydown", function (e) {
+    if ((e.ctrlKey || e.metaKey) && e.shiftKey &&
+        (e.key === "F" || e.key === "f")) {
+      var sub = getSelectedSub();
+      if (sub) { e.preventDefault(); toggleSubsFocus(sub); }
     }
   });
 
@@ -3353,7 +3493,9 @@ import { processSSEStream } from "./sse-parser.js";
   });
 
   document.addEventListener("keydown", function (e) {
-    if (e.key === "Escape" && settingsPanel.classList.contains("visible")) {
+    // Focus mode owns Escape for the subsessions panel.
+    if (e.key === "Escape" && focusedSubId === null &&
+        settingsPanel.classList.contains("visible")) {
       closeSettingsPanel();
     }
   });

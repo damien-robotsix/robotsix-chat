@@ -43,8 +43,9 @@
 <div id="subsessions-resize-handle"></div>
 <div id="subsessions-panel">
   <div class="subs-header panel-header">
-    Subsessions
+    <span class="subs-header-title">Subsessions</span>
     <div class="subs-header-actions">
+      <button id="subs-focus-exit" class="toggle-terminal" title="Return to the multi-panel layout (Esc)" aria-label="Exit focus mode">&times; Exit focus</button>
       <button id="subs-toggle-terminal" class="toggle-terminal" style="display:none" title="Show closed/failed subsessions" aria-label="Toggle closed/failed subsessions"></button>
       <button class="dismiss" title="Close panel" aria-label="Close subsessions panel">&times;</button>
     </div>
@@ -111,5 +112,6 @@
 
 <script type="module" src="/static/chat.js"></script>
 
+<div id="sr-announce" class="sr-only" aria-live="polite"></div>
 </body>
 </html>

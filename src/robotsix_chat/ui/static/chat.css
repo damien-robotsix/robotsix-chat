@@ -1094,3 +1094,62 @@ body {
   color: #64748b; font-size: 0.78rem; font-style: italic;
   padding: 0.3rem 0; text-align: center;
 }
+
+/* ------------------------------------------------------------------ */
+/* Screen-reader-only utility                                          */
+/* ------------------------------------------------------------------ */
+.sr-only {
+  position: absolute; width: 1px; height: 1px; padding: 0; margin: -1px;
+  overflow: hidden; clip: rect(0, 0, 0, 0); white-space: nowrap;
+  border-width: 0;
+}
+
+/* ------------------------------------------------------------------ */
+/* Subsession focus mode: one panel fills the screen                   */
+/* ------------------------------------------------------------------ */
+body.subs-focus-mode #header,
+body.subs-focus-mode #content-wrap,
+body.subs-focus-mode #sessions-panel,
+body.subs-focus-mode #settings-panel,
+body.subs-focus-mode #sessions-resize-handle,
+body.subs-focus-mode #settings-resize-handle,
+body.subs-focus-mode #subsessions-resize-handle {
+  display: none !important;
+}
+
+body.subs-focus-mode #subsessions-panel.visible {
+  width: 100vw !important; max-width: 100vw !important; min-width: 0 !important;
+  z-index: 40; border-left: none; box-shadow: none; border-radius: 0;
+}
+
+body.subs-focus-mode #subsessions-list { overflow: hidden; }
+
+/* Hide every row except the focused one */
+body.subs-focus-mode #subsessions-list > .subs-row { display: none; }
+body.subs-focus-mode #subsessions-list > .subs-row.focused {
+  display: flex; flex-direction: column; flex: 1; min-height: 0;
+  margin: 0 !important; margin-left: 0 !important;
+  height: 100%; overflow-y: auto;
+  border-radius: 0; border: none; border-left: none;
+  padding: 0.75rem 1rem;
+}
+
+body.subs-focus-mode .subs-row.focused .subs-header { flex-shrink: 0; }
+
+body.subs-focus-mode .subs-row.focused .subs-body {
+  flex: 1; min-height: 0; display: flex; flex-direction: column;
+}
+
+/* Let the transcript fill available space instead of being capped */
+body.subs-focus-mode .subs-row.focused .subs-transcript {
+  max-height: none; flex: 1; min-height: 0; overflow-y: auto;
+}
+
+/* Show the exit-focus button in the panel header */
+#subs-focus-exit { display: none; }
+body.subs-focus-mode #subs-focus-exit {
+  display: inline-block;
+}
+
+/* Hide the dismiss button in focus mode — exit-focus replaces it */
+body.subs-focus-mode #subsessions-panel .dismiss { display: none; }
