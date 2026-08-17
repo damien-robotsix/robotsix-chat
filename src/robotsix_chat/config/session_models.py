@@ -155,6 +155,21 @@ class SubsessionsSettings(BaseModel):
             duplicate of the prior reply.  Set to ``0`` to disable
             adaptive extension.  Default ``5``.
             Env override: ``SUBSESSIONS_MAX_RUNS_PROGRESS_WINDOW``.
+        monitor_slot_budget: Maximum number of occupied monitor slots per
+            conversation (active + paused periodic subsessions).  When a
+            conversation reaches this budget, new monitor requests first
+            try to reuse the least-recently-active paused monitor; if
+            none is paused the request is queued rather than evicting a
+            live monitor.  Set to ``0`` to disable per-conversation slot
+            budgeting (all spawns proceed immediately).
+            Default ``8``.
+            Env override: ``SUBSESSIONS_MONITOR_SLOT_BUDGET``.
+        monitor_slot_queue_max: Maximum pending monitor-spawn requests
+            queued per conversation when the slot budget is exhausted
+            and no paused monitor is available for reuse.  A request
+            that would exceed this limit is rejected with a clear error.
+            Default ``32``.
+            Env override: ``SUBSESSIONS_MONITOR_SLOT_QUEUE_MAX``.
 
     """
 
@@ -333,6 +348,28 @@ class SubsessionsSettings(BaseModel):
             "other than ``NO_CHANGE`` and other than a verbatim duplicate "
             "of the prior reply.  Set to ``0`` to disable adaptive "
             "extension.  Default ``5``."
+        ),
+    )
+    monitor_slot_budget: int = Field(
+        default=8,
+        description=(
+            "Maximum number of occupied monitor slots per conversation "
+            "(active + paused periodic subsessions).  When a conversation "
+            "reaches this budget, new monitor requests first try to "
+            "reuse the least-recently-active paused monitor; if none is "
+            "paused the request is queued rather than evicting a live "
+            "monitor.  Set to ``0`` to disable per-conversation slot "
+            "budgeting (all spawns proceed immediately)."
+        ),
+    )
+    monitor_slot_queue_max: int = Field(
+        default=32,
+        description=(
+            "Maximum number of pending monitor-spawn requests queued per "
+            "conversation when the slot budget is exhausted and no paused "
+            "monitor is available for reuse.  A request that would exceed "
+            "this limit is rejected with a clear error instead of growing "
+            "the queue unbounded."
         ),
     )
     model_config = ConfigDict(extra="forbid")

@@ -48,7 +48,8 @@ from .models import (
     SubsessionStatus,
     SubsessionUserChatSpawnError,
 )
-from .registry import SubsessionRegistry
+from .registry import OWNER_CLOSED_REASON, SubsessionRegistry
+from .slot_budget import SLOT_BUDGET_QUEUED, SlotBudget, SlotBudgetQueueFullError
 
 if TYPE_CHECKING:
     from robotsix_chat.chat.conversation import ConversationStore
@@ -342,6 +343,11 @@ class SubsessionEnv:
     # Strong refs to worker tasks spawned via spawn_subsession (belt and
     # braces alongside the registry's _running map).
     _tasks: set[asyncio.Task[None]] = field(default_factory=set)
+    # Per-conversation slot-budget manager (optional).  When set (and
+    # enabled), spawn_subsession consults it before admitting a new
+    # monitor; when None, all spawns proceed as before.  Wired by
+    # :func:`attach_slot_budget`.
+    slot_budget: SlotBudget | None = None
 
 
 def spawn_subsession(
@@ -425,6 +431,83 @@ def spawn_subsession(
         raise SubsessionNoChangeThresholdError(
             "auto_stop_no_change_runs must be an integer >= 1"
         )
+
+    # Slot-budget admission for NEW monitors (periodic / wait_for_event).
+    # Resume calls (sub_id is not None) re-activate monitors that already
+    # existed before a restart — they are not new requests and are exempt.
+    # When the conversation is at its occupied-slot budget:
+    #   1. a paused monitor's slot is reclaimed (repurposed) for the new
+    #      request — occupied count stays unchanged, no live monitor is
+    #      evicted;
+    #   2. otherwise the request is queued (FIFO) instead of evicting an
+    #      active monitor; the queue drains when a slot frees.
+    if (
+        sub_id is None
+        and env.slot_budget is not None
+        and env.slot_budget.enabled
+        and kind in (SubsessionKind.PERIODIC, SubsessionKind.WAIT_FOR_EVENT)
+        and env.registry.count_occupied_for_owner(owner_session_id)
+        >= env.slot_budget.budget
+    ):
+        paused_id = env.registry.find_paused_for_reuse(owner_session_id)
+        if paused_id is not None:
+            logger.info(
+                "slot budget: conversation %s at budget (%d occupied); "
+                "reclaiming paused monitor %s to admit new %s monitor",
+                owner_session_id,
+                env.slot_budget.budget,
+                paused_id,
+                kind.value,
+            )
+            env.registry.cancel_and_close(
+                paused_id,
+                reason="slot_reclaimed",
+                closed_by="system",
+            )
+        else:
+            try:
+                env.slot_budget.enqueue(
+                    owner_session_id,
+                    {
+                        "kind": kind,
+                        "owner_session_id": owner_session_id,
+                        "parent_id": parent_id,
+                        "depth": depth,
+                        "title": title,
+                        "prompt": prompt,
+                        "model_level": model_level,
+                        "interval_seconds": interval_seconds,
+                        "include_previous_result": include_previous_result,
+                        "max_runs": max_runs,
+                        "auto_stop_no_change_runs": auto_stop_no_change_runs,
+                        "inherit_context": inherit_context,
+                        "sub_id": sub_id,
+                        "runs": runs,
+                        "completed_runs": completed_runs,
+                        "turn_history": turn_history,
+                        "checkpoint": checkpoint,
+                        "dedup_key": dedup_key,
+                        "retry_count": retry_count,
+                        "event_timeout_seconds": event_timeout_seconds,
+                    },
+                )
+            except SlotBudgetQueueFullError as exc:
+                raise SubsessionCapacityError(
+                    f"monitor slot budget for this conversation is full "
+                    f"({env.slot_budget.budget} occupied, no paused monitor "
+                    f"to reuse) and the pending queue is at its cap "
+                    f"({env.slot_budget.queue_max}) — close an idle monitor "
+                    f"before starting a new one"
+                ) from exc
+            logger.info(
+                "slot budget: conversation %s at budget (%d occupied, no "
+                "paused monitor); queued new %s monitor request (%d pending)",
+                owner_session_id,
+                env.slot_budget.budget,
+                kind.value,
+                env.slot_budget.pending_count(owner_session_id),
+            )
+            return SLOT_BUDGET_QUEUED
 
     # Per-session capacity check: reject spawns when the owning
     # session already holds its configured share of the pool.
@@ -577,6 +660,81 @@ def spawn_subsession(
     env._tasks.add(task)
     task.add_done_callback(env._tasks.discard)
     return info.id
+
+
+def attach_slot_budget(env: SubsessionEnv) -> SlotBudget | None:
+    """Create and wire the per-conversation slot-budget manager into *env*.
+
+    Returns ``None`` (and wires nothing) when slot budgeting is disabled
+    by config (``monitor_slot_budget <= 0``).  Otherwise sets
+    ``env.slot_budget`` and registers a registry close callback so the
+    pending queue drains whenever a monitor terminates and a slot frees.
+    """
+    cfg = env.settings.subsessions
+    budget = getattr(cfg, "monitor_slot_budget", 0)
+    if budget <= 0:
+        return None
+    slot_budget = SlotBudget(
+        budget=budget,
+        queue_max=getattr(cfg, "monitor_slot_queue_max", 32),
+    )
+    env.slot_budget = slot_budget
+
+    def _on_monitor_closed(info: SubsessionInfo) -> None:
+        if info.close_reason == "slot_reclaimed":
+            # The freed slot is being repurposed by the in-flight spawn
+            # that triggered the reclamation — draining here would admit
+            # a second monitor into the same slot.
+            return
+        if info.close_reason == OWNER_CLOSED_REASON:
+            # The conversation itself is being torn down — drop any
+            # pending monitor requests rather than spawning work for a
+            # dead session.
+            slot_budget.discard(info.owner_session_id)
+            return
+        _drain_slot_budget_queue(env, info.owner_session_id)
+
+    env.registry.add_close_callback(_on_monitor_closed)
+    return slot_budget
+
+
+def _drain_slot_budget_queue(env: SubsessionEnv, owner_session_id: str) -> None:
+    """Dequeue and spawn pending monitor requests while slots are free.
+
+    Called after a monitor terminates (its occupied slot frees).  Spawns
+    the oldest pending request per iteration and repeats until the queue
+    is empty or the conversation is back at budget.
+    """
+    slot_budget = env.slot_budget
+    if slot_budget is None or not slot_budget.enabled:
+        return
+    while env.registry.count_occupied_for_owner(owner_session_id) < slot_budget.budget:
+        request = slot_budget.pop_next(owner_session_id)
+        if request is None:
+            return
+        try:
+            sub_id = spawn_subsession(env=env, **request)
+        except Exception:
+            logger.exception(
+                "slot budget: failed to drain queued monitor request "
+                "for conversation %s — request re-queued",
+                owner_session_id,
+            )
+            # Keep the request's FIFO position and stop: retrying the
+            # whole queue here would risk a failure cascade.
+            slot_budget.requeue_front(owner_session_id, request)
+            return
+        if sub_id == SLOT_BUDGET_QUEUED:
+            # Defensive: the freed slot was consumed concurrently and the
+            # request re-queued itself — stop draining to avoid a loop.
+            return
+        logger.info(
+            "slot budget: drained queued %s monitor request for "
+            "conversation %s into freed slot (%s)",
+            request.get("kind"),
+            owner_session_id,
+            sub_id,
+        )
 
 
 def _validate_model_level(settings: Settings, model_level: int) -> None:

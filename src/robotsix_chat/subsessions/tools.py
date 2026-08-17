@@ -37,6 +37,7 @@ from .models import (
     SubsessionWaitForEventSpawnError,
 )
 from .registry import SubsessionRegistry
+from .slot_budget import SLOT_BUDGET_QUEUED
 from .worker import CloseState, SubsessionContext, SubsessionEnv, spawn_subsession
 
 logger = logging.getLogger(__name__)
@@ -395,6 +396,15 @@ def _build_spawn_and_control_tools(
             SubsessionUserChatSpawnError,
         ) as exc:
             return f"Could not start the subsession: {exc}"
+        if sub_id == SLOT_BUDGET_QUEUED:
+            return (
+                "The monitor request has been queued: this conversation is "
+                "at its monitor slot budget and every slot is occupied by "
+                "an active monitor. The monitor will start automatically "
+                "as soon as one of the current monitors closes and frees a "
+                "slot. Do NOT retry the request in a loop — retrying only "
+                "adds duplicate queue entries."
+            )
         if was_dedup:
             return (
                 f"Deduplicated: an active subsession for key "

@@ -248,6 +248,7 @@ _REASON_PHRASES: dict[str, str] = {
     "ticket_unreachable": "failed — ticket API unreachable",
     "missing_tool": "closed — required tool unavailable",
     "pre_authorized_approval": "auto-escalated (pre-authorized ticket)",
+    "slot_reclaimed": "replaced — slot reclaimed for a new monitor",
 }
 
 # Hard cap on how many consecutive reaction turns (triggered by subsession

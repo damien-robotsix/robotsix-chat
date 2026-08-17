@@ -50,6 +50,22 @@ from .models import (
 
 logger = logging.getLogger(__name__)
 
+# Subsession kinds that are "monitors" for slot-budget purposes: they
+# persist across turns watching a ticket and occupy a per-conversation
+# slot while active or paused.  One-shot task/user_chat subsessions are
+# transient work, not monitors, and never occupy a slot.
+_MONITOR_KINDS: frozenset[SubsessionKind] = frozenset(
+    {
+        SubsessionKind.PERIODIC,
+        SubsessionKind.WAIT_FOR_EVENT,
+    }
+)
+
+# Close reason used when a whole conversation (owner) is torn down.  The
+# slot-budget manager treats it specially: pending monitor requests are
+# discarded instead of being drained into a dead session.
+OWNER_CLOSED_REASON = "session closed"
+
 # Terminal entries retained in memory/persistence so the panel can show
 # recent history after a reload; older ones are pruned oldest-first.
 _MAX_TERMINAL_ENTRIES = 50
@@ -474,9 +490,23 @@ class SubsessionRegistry:
         )
         self._index = RegistryIndex(self._subs, self._by_owner, self._running, self)
 
+        # Observers notified after every terminal transition (a monitor
+        # closed/failed/interrupted — i.e. a slot freed).  The
+        # slot-budget manager registers here to drain pending queues.
+        self._close_callbacks: list[Callable[[SubsessionInfo], None]] = []
+
     # ------------------------------------------------------------------
     # lifecycle
     # ------------------------------------------------------------------
+
+    def add_close_callback(self, callback: Callable[[SubsessionInfo], None]) -> None:
+        """Register *callback* to run after every terminal transition.
+
+        The callback receives the closed record.  Used by the
+        slot-budget manager to drain per-conversation pending queues
+        when a monitor terminates and its slot frees.
+        """
+        self._close_callbacks.append(callback)
 
     def persist(self) -> None:
         """Write the full registry state to the JSON store.
@@ -798,6 +828,8 @@ class SubsessionRegistry:
 
         self._publish(info.owner_session_id, frame)
         self._store.persist()
+        for callback in self._close_callbacks:
+            callback(info)
         return info
 
     def mark_closed(
@@ -1142,6 +1174,49 @@ class SubsessionRegistry:
             and info.is_active
             and info.status is not SubsessionStatus.PAUSED
         )
+
+    def count_occupied_for_owner(self, owner_session_id: str) -> int:
+        """Return the number of occupied monitor slots for *owner_session_id*.
+
+        Occupied slots are active + paused monitors (``periodic`` and
+        ``wait_for_event`` subsessions): a PAUSED monitor's worker is
+        still alive (retaining its slot) even though it does not count
+        against the concurrency cap.  One-shot ``task``/``user_chat``
+        subsessions are not monitors and never occupy a slot.  The
+        slot-budget manager uses this count to decide when a
+        conversation is at capacity.
+        """
+        sub_ids = self._by_owner.get(owner_session_id, ())
+        return sum(
+            1
+            for sub_id in sub_ids
+            if (info := self._subs.get(sub_id)) is not None
+            and info.is_active
+            and info.kind in _MONITOR_KINDS
+        )
+
+    def find_paused_for_reuse(self, owner_session_id: str) -> str | None:
+        """Return the least-recently-active PAUSED monitor for *owner_session_id*.
+
+        Returns ``None`` when the owner has no paused monitor.
+
+        Used by the slot-budget manager to repurpose a paused monitor's
+        slot for a newly requested monitor when the conversation is at
+        budget — the reclaimed slot keeps the occupied count unchanged.
+        """
+        sub_ids = self._by_owner.get(owner_session_id, ())
+        best: SubsessionInfo | None = None
+        for sub_id in sub_ids:
+            info = self._subs.get(sub_id)
+            if info is None or not info.is_active:
+                continue
+            if info.kind not in _MONITOR_KINDS:
+                continue
+            if info.status is not SubsessionStatus.PAUSED:
+                continue
+            if best is None or info.last_activity_at < best.last_activity_at:
+                best = info
+        return best.id if best is not None else None
 
     _RECLAIMABLE_STATUSES: frozenset[SubsessionStatus] = frozenset(
         {
