@@ -45,6 +45,22 @@ def test_style_directive_is_non_empty() -> None:
     )
 
 
+def test_style_directive_documents_decision_options_format() -> None:
+    """The directive must document the ```suggestions decision-options frame.
+
+    The browser turns a ```suggestions fenced block into clickable reply
+    buttons; this governance guard ensures the agent-side format stays
+    documented so the agent actually emits it for multiple-choice decisions.
+    """
+    directive = _load_prompt_style()
+    assert directive, "Style directive is empty."
+    assert "```suggestions" in directive, (
+        f"Style directive in {_STYLE_PATH} must document the "
+        "```suggestions fenced block so agents emit structured "
+        "decision options in sessions and subsessions."
+    )
+
+
 def test_inject_skills_includes_style_directive() -> None:
     """``_inject_skills`` appends the style directive to the instruction.
 
