@@ -10,7 +10,7 @@ if TYPE_CHECKING:
 # Version stamp for the autonomous appendix (build_autonomous_instruction).
 # Bump on every change to the instruction text and update
 # docs/system_prompt_changelog.md with a new AUTONOMOUS entry + SHA256.
-AUTONOMOUS_PROMPT_VERSION = 27
+AUTONOMOUS_PROMPT_VERSION = 28
 
 
 def build_autonomous_instruction(settings: Settings) -> str:
@@ -28,6 +28,8 @@ def build_autonomous_instruction(settings: Settings) -> str:
     routine_secret = settings.autonomy.auto_approve_routine_secret_provisioning
     suppress_no_change = settings.autonomy.suppress_no_change_monitors
     auto_self_restart = settings.autonomy.auto_self_restart
+    auto_escalate_secret_scan = settings.autonomy.auto_escalate_secret_scan_alerts
+    operator_review_hours = settings.autonomy.operator_review_escalation_hours
 
     allowlist_str = ", ".join(allowlist) if allowlist else "(none)"
 
@@ -246,7 +248,9 @@ def build_autonomous_instruction(settings: Settings) -> str:
         f"allowlist=[{allowlist_str}], "
         f"routine_secret_provisioning={'ON' if routine_secret else 'OFF'}, "
         f"suppress_no_change_monitors={'ON' if suppress_no_change else 'OFF'}, "
-        f"auto_self_restart={'ON' if auto_self_restart else 'OFF'}.\n"
+        f"auto_self_restart={'ON' if auto_self_restart else 'OFF'}, "
+        f"auto_escalate_secret_scan={'ON' if auto_escalate_secret_scan else 'OFF'}, "
+        f"operator_review_escalation_hours={operator_review_hours}.\n"
         "\n"
         "AUTONOMY PREFERENCE PROBING — early in the session, before you reach "
         "any approval gate, proactively ask the operator about their "
@@ -396,6 +400,43 @@ def build_autonomous_instruction(settings: Settings) -> str:
         "  - When auto_self_restart is OFF, self_restart is a MUTATION "
         "requiring explicit operator authorization — follow the standard "
         "mutation rules.\n"
+        "\n"
+        "SECRET-SCAN ESCALATION (when auto_escalate_secret_scan_alerts is "
+        "ON):\n"
+        "  - When a ticket is blocked on a secret-scan alert — a verified "
+        "TruffleHog finding, a hardcoded or leaked credential, a secret "
+        "flagged in CI — do not merely pause.  Immediately start the "
+        "credential-rotation workflow: file a follow-up rotation ticket "
+        "that names each exposed secret, lists the rotation/revocation "
+        "steps, and links the blocking ticket; then notify the operator "
+        "with a summary whose recommended next step is 'rotate credentials "
+        "now' (preferred) versus 'close vs restore' when rotation is not "
+        "possible.\n"
+        "  - Prefer rotation (invalidate + reissue) over restoration, and "
+        "prefer immediate revocation over leaving the secret live while "
+        "the decision is pending.\n"
+        "  - You MUST NOT rotate, revoke, or rewrite credentials yourself "
+        "unless a tool you have is explicitly authorized for routine "
+        "secret provisioning; otherwise the rotation ticket is the "
+        "mechanism — the operator or the provisioning workflow executes "
+        "it.\n"
+        "  - When auto_escalate_secret_scan_alerts is OFF, do not "
+        "auto-file.  Surface the finding to the operator and ask whether "
+        "to rotate or restore the affected secrets before acting.\n"
+        "\n"
+        f"OPERATOR REVIEW ESCALATION — when you observe a ticket held for "
+        f"operator review or awaiting an operator reply (ASK_USER, "
+        f"awaiting approval, held-for-review) for more than "
+        f"{operator_review_hours} hours, do not let it age silently.  "
+        f"Check the ticket's history timestamps (component_request GET "
+        f"/tickets/<id>/history) to measure the wait, then re-prompt the "
+        f"operator with a compact summary: the ticket id and subject, how "
+        f"it is blocked, how long it has been waiting, and the pending "
+        f"decision with concrete options (e.g. 'close as declined', "
+        f"'restore and proceed', 'rotate credentials', or 'keep "
+        f"waiting').  Re-prompt at most once per threshold window — track "
+        f"that you have already reminded the operator for this window and "
+        f"do not spam repeated reminders every cycle.\n"
         "\n"
         "INFRASTRUCTURE DIAGNOSIS — EMPIRICAL VERIFICATION REQUIRED\n"
         "When you detect that infrastructure credentials appear to be "

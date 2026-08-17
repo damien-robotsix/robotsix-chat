@@ -292,3 +292,22 @@ class AutonomySettings(BaseModel):
             "explicit operator authorization."
         ),
     )
+    auto_escalate_secret_scan_alerts: bool = Field(
+        default=True,
+        description=(
+            "When True, the agent auto-escalates tickets blocked on a "
+            "secret-scan alert (e.g., TruffleHog verified secrets) by "
+            "filing a credential-rotation follow-up ticket and notifying "
+            "the operator with a summary and recommended next steps."
+        ),
+    )
+    operator_review_escalation_hours: int = Field(
+        default=48,
+        ge=1,
+        description=(
+            "Number of hours a ticket can remain in awaiting-operator "
+            "(ASK_USER / held-for-review) state before the agent re-prompts "
+            "the operator with a summary and asks whether to continue "
+            "waiting or take an alternative action."
+        ),
+    )

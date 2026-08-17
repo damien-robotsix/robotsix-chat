@@ -120,11 +120,24 @@
           "title": "Auto Approve Self Authored",
           "type": "boolean"
         },
+        "auto_escalate_secret_scan_alerts": {
+          "default": true,
+          "description": "When True, the agent auto-escalates tickets blocked on a secret-scan alert (e.g., TruffleHog verified secrets) by filing a credential-rotation follow-up ticket and notifying the operator with a summary and recommended next steps.",
+          "title": "Auto Escalate Secret Scan Alerts",
+          "type": "boolean"
+        },
         "auto_self_restart": {
           "default": false,
           "description": "When True, the agent may call self_restart without operator approval after deploying capability changes (code changes, component roster updates) that affect the agent's own behaviour.  The agent must announce the restart with a brief delay (e.g. 30 seconds) so the operator can interrupt if needed.  Self-restart for any other reason still requires explicit operator authorization.",
           "title": "Auto Self Restart",
           "type": "boolean"
+        },
+        "operator_review_escalation_hours": {
+          "default": 48,
+          "description": "Number of hours a ticket can remain in awaiting-operator (ASK_USER / held-for-review) state before the agent re-prompts the operator with a summary and asks whether to continue waiting or take an alternative action.",
+          "minimum": 1,
+          "title": "Operator Review Escalation Hours",
+          "type": "integer"
         },
         "suppress_no_change_monitors": {
           "default": false,

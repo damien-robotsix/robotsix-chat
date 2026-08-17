@@ -18,6 +18,8 @@ class TestBuildAutonomousInstruction:
         auto_approve: bool = False,
         allowlist: list[str] | None = None,
         suppress_no_change: bool = False,
+        auto_escalate_secret_scan: bool = True,
+        operator_review_hours: int = 48,
     ) -> MagicMock:
         """Build a mock Settings with the given autonomy parameters."""
         settings = MagicMock()
@@ -27,6 +29,8 @@ class TestBuildAutonomousInstruction:
         settings.autonomy.auto_approve_self_authored = auto_approve
         settings.autonomy.auto_approve_repo_allowlist = allowlist or []
         settings.autonomy.suppress_no_change_monitors = suppress_no_change
+        settings.autonomy.auto_escalate_secret_scan_alerts = auto_escalate_secret_scan
+        settings.autonomy.operator_review_escalation_hours = operator_review_hours
         return settings
 
     def test_includes_lifecycle_sections(self) -> None:
@@ -146,3 +150,29 @@ class TestBuildAutonomousInstruction:
         assert "human_mr_approval" in result
         assert "human_issue_approval" in result
         assert "pause the monitor" in result
+
+    def test_secret_scan_escalation_on(self) -> None:
+        """SECRET-SCAN ESCALATION directs auto-filing a rotation ticket."""
+        settings = self._make_settings(auto_escalate_secret_scan=True)
+        result = build_autonomous_instruction(settings)
+        assert "SECRET-SCAN ESCALATION" in result
+        assert "credential-rotation workflow" in result
+        assert "rotate credentials" in result
+        assert "close vs restore" in result
+        assert "auto_escalate_secret_scan=ON" in result
+
+    def test_secret_scan_escalation_off(self) -> None:
+        """When OFF, the agent surfaces findings instead of auto-filing."""
+        settings = self._make_settings(auto_escalate_secret_scan=False)
+        result = build_autonomous_instruction(settings)
+        assert "do not auto-file" in result
+        assert "auto_escalate_secret_scan=OFF" in result
+
+    def test_operator_review_escalation_threshold(self) -> None:
+        """OPERATOR REVIEW ESCALATION injects the configured hour threshold."""
+        settings = self._make_settings(operator_review_hours=24)
+        result = build_autonomous_instruction(settings)
+        assert "OPERATOR REVIEW ESCALATION" in result
+        assert "more than 24 hours" in result
+        assert "operator_review_escalation_hours=24" in result
+        assert "48 hours" not in result

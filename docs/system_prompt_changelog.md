@@ -2474,6 +2474,32 @@ autonomous settings at their pydantic field defaults
 ``stale_monitor_runs_before_completion=3``,
 ``queue_tolerance_runs_before_escalation=3``).
 
+## AUTONOMOUS v28 — 2026-08-16 — auto-escalate-tickets-needing-human-deci-1c7a
+
+**Summary:** Add two escalation policies to the autonomous protocol. First, a
+SECRET-SCAN ESCALATION section: when a ticket is blocked on a secret-scan alert
+(verified TruffleHog finding, hardcoded/leaked credential), the agent must not
+merely pause — it starts the credential-rotation workflow by filing a
+follow-up rotation ticket naming each exposed secret and notifies the operator
+with a 'rotate credentials now' (versus 'close vs restore') recommendation.
+Rotation is preferred over restoration; the agent must not itself rotate
+credentials unless a tool is explicitly authorized for routine secret
+provisioning. Second, an OPERATOR REVIEW ESCALATION section: when a ticket has
+been held for operator review (ASK_USER / awaiting approval) longer than
+`operator_review_escalation_hours` (default 48), the agent measures the wait
+from the ticket's history timestamps and re-prompts the operator with a compact
+summary and concrete options, at most once per threshold window. Both policies
+are surfaced in the AUTONOMY TIER display string and gated by the new
+`autonomy.auto_escalate_secret_scan_alerts` and
+`autonomy.operator_review_escalation_hours` settings.
+
+**Rationale:** Compaction from session 3ca68ff067df426fb8e578003cc46e35 — two
+tickets were stuck (a data-volume relocation PR held for operator review, and
+a CI-fix ticket with verified hardcoded secrets) and the assistant correctly
+paused but had no mechanism to auto-escalate or propose next steps.
+
+**SHA256:** `1c3d31cc1ce2e81fdc4628ffb7f7d83aa79d0d7b69ab56a0c0cba60abf0823aa`
+
 ## AUTONOMOUS v27 — 2026-08-14 — remove-verbose-prose-planning-phase-befo-70b1
 
 **Summary:** Add a no-planning-prose rule to the autonomous protocol.  The
