@@ -322,9 +322,7 @@ def _find_version_entry(
     return -1, None
 
 
-def _diff_dicts(
-    before: dict[str, Any], after: dict[str, Any]
-) -> list[dict[str, Any]]:
+def _diff_dicts(before: dict[str, Any], after: dict[str, Any]) -> list[dict[str, Any]]:
     """Compute a value-level diff between two config documents.
 
     Returns a list of changed key paths in dot-notation (nested keys, not
