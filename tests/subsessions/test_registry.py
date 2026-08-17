@@ -1206,7 +1206,6 @@ def test_update_checkpoint_does_not_fabricate_no_change_pause_count() -> None:
     assert refreshed.checkpoint == {"last_known_state": "open"}
 
 
-
 def test_update_checkpoint_preserves_recent_progress_flags_for_periodic() -> None:
     """Replacing a PERIODIC checkpoint keeps its rolling progress window."""
     registry = SubsessionRegistry(store_path=None)
