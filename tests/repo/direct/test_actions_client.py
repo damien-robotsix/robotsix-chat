@@ -945,13 +945,55 @@ def test_classify_startup_failure_per_workflow_config() -> None:
         "conclusion": "startup_failure",
     }
     latest_by_wf = {
-        11: {"id": 1, "workflow_id": 11, "name": "CI", "head_sha": "abc123", "conclusion": "startup_failure"},
-        12: {"id": 2, "workflow_id": 12, "name": "Lint", "head_sha": "abc123", "conclusion": "success"},
-        13: {"id": 3, "workflow_id": 13, "name": "Docs", "head_sha": "abc123", "conclusion": "failure"},
-        14: {"id": 4, "workflow_id": 14, "name": "Other", "head_sha": "def456", "conclusion": "success"},
-        15: {"id": 5, "workflow_id": 15, "name": "Pending", "head_sha": "abc123", "conclusion": None},
-        16: {"id": 6, "workflow_id": 16, "name": "Cancelled", "head_sha": "abc123", "conclusion": "cancelled"},
-        17: {"id": 7, "workflow_id": 17, "name": "AlsoDead", "head_sha": "abc123", "conclusion": "startup_failure"},
+        11: {
+            "id": 1,
+            "workflow_id": 11,
+            "name": "CI",
+            "head_sha": "abc123",
+            "conclusion": "startup_failure",
+        },
+        12: {
+            "id": 2,
+            "workflow_id": 12,
+            "name": "Lint",
+            "head_sha": "abc123",
+            "conclusion": "success",
+        },
+        13: {
+            "id": 3,
+            "workflow_id": 13,
+            "name": "Docs",
+            "head_sha": "abc123",
+            "conclusion": "failure",
+        },
+        14: {
+            "id": 4,
+            "workflow_id": 14,
+            "name": "Other",
+            "head_sha": "def456",
+            "conclusion": "success",
+        },
+        15: {
+            "id": 5,
+            "workflow_id": 15,
+            "name": "Pending",
+            "head_sha": "abc123",
+            "conclusion": None,
+        },
+        16: {
+            "id": 6,
+            "workflow_id": 16,
+            "name": "Cancelled",
+            "head_sha": "abc123",
+            "conclusion": "cancelled",
+        },
+        17: {
+            "id": 7,
+            "workflow_id": 17,
+            "name": "AlsoDead",
+            "head_sha": "abc123",
+            "conclusion": "startup_failure",
+        },
     }
 
     result = _classify_startup_failure(failing, latest_by_wf)
@@ -975,10 +1017,34 @@ def test_classify_startup_failure_account_or_runner_no_executed_siblings() -> No
         "conclusion": "startup_failure",
     }
     latest_by_wf = {
-        11: {"id": 1, "workflow_id": 11, "name": "CI", "head_sha": "abc123", "conclusion": "startup_failure"},
-        12: {"id": 2, "workflow_id": 12, "name": "Lint", "head_sha": "abc123", "conclusion": "startup_failure"},
-        13: {"id": 3, "workflow_id": 13, "name": "Docs", "head_sha": "abc123", "conclusion": "cancelled"},
-        14: {"id": 4, "workflow_id": 14, "name": "Wait", "head_sha": "abc123", "conclusion": None},
+        11: {
+            "id": 1,
+            "workflow_id": 11,
+            "name": "CI",
+            "head_sha": "abc123",
+            "conclusion": "startup_failure",
+        },
+        12: {
+            "id": 2,
+            "workflow_id": 12,
+            "name": "Lint",
+            "head_sha": "abc123",
+            "conclusion": "startup_failure",
+        },
+        13: {
+            "id": 3,
+            "workflow_id": 13,
+            "name": "Docs",
+            "head_sha": "abc123",
+            "conclusion": "cancelled",
+        },
+        14: {
+            "id": 4,
+            "workflow_id": 14,
+            "name": "Wait",
+            "head_sha": "abc123",
+            "conclusion": None,
+        },
     }
 
     result = _classify_startup_failure(failing, latest_by_wf)
@@ -1009,8 +1075,20 @@ def test_classify_startup_failure_timed_out_action_required_are_executed() -> No
 
     failing = {"id": 1, "head_sha": "abc123", "conclusion": "startup_failure"}
     latest_by_wf = {
-        12: {"id": 2, "workflow_id": 12, "name": "Slow", "head_sha": "abc123", "conclusion": "timed_out"},
-        13: {"id": 3, "workflow_id": 13, "name": "NeedsAction", "head_sha": "abc123", "conclusion": "action_required"},
+        12: {
+            "id": 2,
+            "workflow_id": 12,
+            "name": "Slow",
+            "head_sha": "abc123",
+            "conclusion": "timed_out",
+        },
+        13: {
+            "id": 3,
+            "workflow_id": 13,
+            "name": "NeedsAction",
+            "head_sha": "abc123",
+            "conclusion": "action_required",
+        },
     }
 
     result = _classify_startup_failure(failing, latest_by_wf)
@@ -1140,7 +1218,7 @@ async def test_check_latest_run_for_zero_jobs_visibility_none(
 async def test_check_latest_run_for_zero_jobs_classified_per_workflow_config(
     respx_mock: respx.MockRouter,
 ) -> None:
-    """Zero-job run with an executed sibling on the same commit → config, not billing."""
+    """Zero-job run with executed sibling on same commit → config, not billing."""
     from tests.repo.direct.conftest import _prepopulate_installation_token, _settings
 
     settings = _settings()

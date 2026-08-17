@@ -102,15 +102,15 @@ any job started, so there are no job logs. The tool classifies such runs by chec
 workflows on the **same commit** (`head_sha`):
 
 - If **any sibling workflow on the same commit reached job execution** (terminal conclusion
-  `success` / `failure` / `timed_out` / `action_required`), the account/runner plane is
-  provably fine → the failure is a **per-workflow config issue** (trigger, `permissions:`, or a
-  malformed reusable-workflow `uses:`).  Fix the workflow file itself.
-- If **no sibling reached job execution** (every workflow on the commit produced zero jobs, or
-  there are no siblings at all), it is an **account/runner issue** — file an
-  operator-action ticket.  Do **not** edit workflow files for this classification.
+  `success` / `failure` / `timed_out` / `action_required`), the account/runner plane is provably
+  fine → the failure is a **per-workflow config issue** (trigger, `permissions:`, or a malformed
+  reusable-workflow `uses:`). Fix the workflow file itself.
+- If **no sibling reached job execution** (every workflow on the commit produced zero jobs, or there
+  are no siblings at all), it is an **account/runner issue** — file an operator-action ticket. Do
+  **not** edit workflow files for this classification.
 
-Report the classification the tool returns verbatim.  Do not speculate a billing diagnosis when
-the classification says per-workflow config, and do not propose workflow-file edits when it says
+Report the classification the tool returns verbatim. Do not speculate a billing diagnosis when the
+classification says per-workflow config, and do not propose workflow-file edits when it says
 account/runner.
 
 The diagnosis is tailored to the repository's visibility:

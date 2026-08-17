@@ -193,17 +193,19 @@ def build_github_actions_tools(
             if not jobs:
                 # -- deterministic startup_failure classification --
                 run = await actions.get_workflow_run(repo_full_name, run_id)
-                if run:
+                classification = None
+                conclusion = None
+                if run is not None:
+                    conclusion = run.get("conclusion")
                     classification = await actions.classify_startup_failure_run(
                         repo_full_name, run
                     )
-                else:
-                    classification = None
                 if classification is not None:
-                    if classification.classification is StartupFailureClass.PER_WORKFLOW_CONFIG:
+                    classification_kind = classification.classification
+                    if classification_kind is StartupFailureClass.PER_WORKFLOW_CONFIG:
                         return (
                             f"Workflow run {run_id} on {repo_full_name} has no "
-                            f"jobs (conclusion: {run.get('conclusion')}) — "
+                            f"jobs (conclusion: {conclusion}) — "
                             f"{classification.summary}.  The account/runner "
                             f"plane is provably fine — the root cause "
                             f"is in this workflow's own file (trigger, "
@@ -211,7 +213,7 @@ def build_github_actions_tools(
                         )
                     return (
                         f"Workflow run {run_id} on {repo_full_name} has no "
-                        f"jobs (conclusion: {run.get('conclusion')}) — "
+                        f"jobs (conclusion: {conclusion}) — "
                         f"{classification.summary}.  Every workflow on this "
                         f"commit produced zero jobs, which points at the "
                         f"account/runner plane (Actions disabled "

@@ -1355,15 +1355,11 @@ async def test_check_ci_health_startup_failure_classified_per_workflow_config(
     ).mock(
         return_value=httpx.Response(
             200,
-            text=json.dumps(
-                {"repositories": [{"full_name": "org/repo"}]}
-            ),
+            text=json.dumps({"repositories": [{"full_name": "org/repo"}]}),
         )
     )
     respx_mock.get("https://api.github.com/repos/org/repo").mock(
-        return_value=httpx.Response(
-            200, text=json.dumps({"default_branch": "main"})
-        )
+        return_value=httpx.Response(200, text=json.dumps({"default_branch": "main"}))
     )
     # Main listing: latest run is startup_failure.
     respx_mock.get(

@@ -541,8 +541,7 @@ async def test_check_workflow_run_startup_failure_classified_per_workflow_config
     # Single-run metadata: startup_failure with head_sha.
     respx_mock.get(
         url=(
-            f"{dr.github_api_base_url}/repos/damien-robotsix/test-repo"
-            "/actions/runs/42"
+            f"{dr.github_api_base_url}/repos/damien-robotsix/test-repo/actions/runs/42"
         )
     ).respond(
         json={
@@ -621,8 +620,7 @@ async def test_check_workflow_run_startup_failure_classified_account_or_runner(
     ).respond(json={"jobs": []})
     respx_mock.get(
         url=(
-            f"{dr.github_api_base_url}/repos/damien-robotsix/test-repo"
-            "/actions/runs/42"
+            f"{dr.github_api_base_url}/repos/damien-robotsix/test-repo/actions/runs/42"
         )
     ).respond(
         json={

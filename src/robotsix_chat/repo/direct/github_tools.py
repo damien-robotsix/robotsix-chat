@@ -463,8 +463,7 @@ def build_github_tools(
             )
             if classification is not None:
                 lines.append(
-                    f"Startup-failure classification: "
-                    f"{classification.summary}"
+                    f"Startup-failure classification: {classification.summary}"
                 )
                 if (
                     classification.classification

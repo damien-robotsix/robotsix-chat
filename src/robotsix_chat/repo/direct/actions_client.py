@@ -12,7 +12,7 @@ from __future__ import annotations
 import logging
 from collections.abc import Mapping
 from dataclasses import dataclass
-from enum import Enum
+from enum import StrEnum
 from typing import TYPE_CHECKING, Any
 
 from robotsix_chat.common.http import safe_http_request
@@ -31,7 +31,7 @@ _JOB_EXECUTION_CONCLUSIONS: frozenset[str] = frozenset(
 )
 
 
-class StartupFailureClass(str, Enum):
+class StartupFailureClass(StrEnum):
     """Deterministic root-cause plane for a zero-job ``startup_failure`` run."""
 
     PER_WORKFLOW_CONFIG = "per_workflow_config"
@@ -76,6 +76,7 @@ def _classify_startup_failure(
         commit reached job execution; ``ACCOUNT_OR_RUNNER`` when every
         workflow on the commit produced zero jobs, or there are no
         siblings at all.
+
     """
     head_sha = failing_run.get("head_sha")
     failing_id = failing_run.get("id")
@@ -311,11 +312,13 @@ class ActionsClient:
         Returns:
             The run dict on success, ``None`` when the API call fails
             (logged at WARNING).
+
         """
         try:
-            return await self._client._get_json(
+            data = await self._client._get_json(
                 f"/repos/{repo_full_name}/actions/runs/{run_id}"
             )
+            return data if isinstance(data, dict) else None
         except RuntimeError as exc:
             logger.warning(
                 "Failed to get workflow run %d on %s: %s",
@@ -940,14 +943,10 @@ class ActionsClient:
         run_name = latest.get("name", str(run_id))
 
         # -- deterministic classification via sibling check --
-        classification = await self.classify_startup_failure_run(
-            repo_full_name, latest
-        )
+        classification = await self.classify_startup_failure_run(repo_full_name, latest)
         if classification is not None:
             conclusion = str(latest.get("conclusion") or "").lower()
-            conclusion_note = (
-                f" (conclusion: {conclusion})" if conclusion else ""
-            )
+            conclusion_note = f" (conclusion: {conclusion})" if conclusion else ""
             if classification.classification is StartupFailureClass.PER_WORKFLOW_CONFIG:
                 return (
                     f"CI STARTUP FAILURE (per-workflow config): workflow run "
@@ -1092,7 +1091,10 @@ class ActionsClient:
                     repo_full_name, run
                 )
                 if classification_result is not None:
-                    if classification_result.classification is StartupFailureClass.PER_WORKFLOW_CONFIG:
+                    if (
+                        classification_result.classification
+                        is StartupFailureClass.PER_WORKFLOW_CONFIG
+                    ):
                         return (
                             f"Workflow run '{run_name}' (id {run_id}) failed "
                             f"at startup (zero jobs) on "
