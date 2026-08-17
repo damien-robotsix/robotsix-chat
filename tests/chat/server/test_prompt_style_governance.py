@@ -90,6 +90,59 @@ def test_style_directive_documents_ticket_reference_rule() -> None:
     )
 
 
+
+
+def test_style_directive_has_output_style_section() -> None:
+    """The directive must carry an explicit ``## Output style`` section."""
+    directive = _load_prompt_style()
+    assert directive, "Style directive is empty."
+    assert "## Output style" in directive, (
+        f"Style directive in {_STYLE_PATH} must contain an explicit "
+        "'## Output style' section so the scannable-style rules are "
+        "recognizable as a dedicated block in the composed prompt."
+    )
+
+
+def test_style_directive_requires_tldr_first() -> None:
+    """The directive must instruct the agent to lead with a one-line TL;DR."""
+    directive = _load_prompt_style()
+    assert directive, "Style directive is empty."
+    assert "one-line TL;DR" in directive, (
+        f"Style directive in {_STYLE_PATH} must require a one-line "
+        "TL;DR before any detail."
+    )
+
+
+def test_style_directive_requires_bulleted_structure() -> None:
+    """The directive must instruct the agent to structure replies as bullets."""
+    directive = _load_prompt_style()
+    assert directive, "Style directive is empty."
+    assert "structure the body as bullet points" in directive, (
+        f"Style directive in {_STYLE_PATH} must require a bulleted "
+        "body structure (one idea per bullet)."
+    )
+
+
+def test_style_directive_requires_compact_replies() -> None:
+    """The directive must carry the compactness / length-cap guidance."""
+    directive = _load_prompt_style()
+    assert directive, "Style directive is empty."
+    assert "prefer the shortest form that fully answers" in directive, (
+        f"Style directive in {_STYLE_PATH} must instruct the agent to "
+        "keep replies compact and avoid padding."
+    )
+
+
+def test_style_directive_requires_fenced_code_blocks() -> None:
+    """The directive must require fenced code blocks for code/commands."""
+    directive = _load_prompt_style()
+    assert directive, "Style directive is empty."
+    assert "use fenced code blocks for code and commands" in directive, (
+        f"Style directive in {_STYLE_PATH} must require fenced code "
+        "blocks and forbid inlining multi-line code in prose."
+    )
+
+
 def test_inject_skills_includes_style_directive() -> None:
     """``_inject_skills`` appends the style directive to the instruction.
 
