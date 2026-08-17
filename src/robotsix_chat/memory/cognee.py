@@ -482,6 +482,21 @@ class CogneeMemory:
                 # attaches to it and cognee spans land in the MAIN Langfuse
                 # project. Forces a private, isolated provider instead.
                 skip_set_global=True,
+                # ``skip_set_global`` isolates the *exporter*, not the OTEL
+                # *context*. litellm resolves a parent span from the ambient
+                # context (``trace.get_current_span()``), and only creates the
+                # ``litellm_request`` GENERATION span when there is no parent
+                # (``opentelemetry.py``: ``should_create_primary_span``).
+                # cognee runs inside llmio's chat-turn span, so every recall /
+                # ingestion issued during a chat turn found a parent, skipped
+                # the generation span, and emitted only the ``raw_gen_ai_request``
+                # child — which carries no model, usage or cost. Langfuse then
+                # priced those calls at $0 while OpenRouter still billed them:
+                # 689 of 920 cognee calls on 2026-08-16 were costed at zero,
+                # leaving reconciliation with a 66-80% drift on this project.
+                # Detaching from the ambient context restores the generation
+                # span (and keeps cognee traces out of the chat trace tree).
+                ignore_context_propagation=True,
             )
         )
         litellm.callbacks.append(otel_logger)
