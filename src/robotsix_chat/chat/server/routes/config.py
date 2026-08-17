@@ -9,6 +9,13 @@ from the submitted payload is preserved, not blanked.
 
 ``GET /config/versions`` returns the version history (without full data).
 
+``GET /config/versions/{version}`` returns one version's stored document
+with secrets masked exactly like ``GET /config``.
+
+``GET /config/versions/{version}/diff`` returns a value-level diff of that
+version against the previous one — dot-notation key paths with ``old`` /
+``new`` values; secret leaves report only ``changed: true``, never values.
+
 ``POST /config/rollback`` reverts to a previous version and creates a new
 version entry (append-only history, never destructive).
 """
@@ -302,6 +309,81 @@ def _compute_changed_keys(before: dict[str, Any], after: dict[str, Any]) -> list
     return changed
 
 
+def _find_version_entry(
+    entries: list[dict[str, Any]], version: int
+) -> tuple[int, dict[str, Any] | None]:
+    """Return ``(index, entry)`` for *version* in *entries*.
+
+    Returns ``(-1, None)`` when no entry carries that version number.
+    """
+    for index, entry in enumerate(entries):
+        if entry.get("version") == version:
+            return index, entry
+    return -1, None
+
+
+def _diff_dicts(
+    before: dict[str, Any], after: dict[str, Any]
+) -> list[dict[str, Any]]:
+    """Compute a value-level diff between two config documents.
+
+    Returns a list of changed key paths in dot-notation (nested keys, not
+    just top-level names).  Non-secret leaf changes carry ``old`` and/or
+    ``new`` — the side absent from one document omits its key.  Secret
+    leaves carry only ``changed: true`` so values are never emitted; any
+    dict or list value attached to a non-secret change is passed through
+    :func:`_mask_secrets` first so no secret plaintext can leak.
+    """
+    _absent = object()
+
+    def _mask_value(value: Any) -> Any:
+        """Mask secrets nested inside a diff value (dicts and lists)."""
+        if isinstance(value, dict):
+            return _mask_secrets(value)
+        if isinstance(value, list):
+            return [_mask_value(item) for item in value]
+        return deepcopy(value)
+
+    def _change(
+        path: str, key: str, parent: tuple[str, ...], old: Any, new: Any
+    ) -> dict[str, Any]:
+        if _is_secret_leaf(key, parent):
+            return {"path": path, "changed": True}
+        change: dict[str, Any] = {"path": path}
+        if old is not _absent:
+            change["old"] = _mask_value(old)
+        if new is not _absent:
+            change["new"] = _mask_value(new)
+        return change
+
+    changes: list[dict[str, Any]] = []
+
+    def _walk(
+        before_value: Any, after_value: Any, path: str, parent: tuple[str, ...]
+    ) -> None:
+        if isinstance(before_value, dict) and isinstance(after_value, dict):
+            keys = set(before_value.keys()) | set(after_value.keys())
+            for key in sorted(keys):
+                sub_path = f"{path}.{key}" if path else key
+                old = before_value.get(key, _absent)
+                new = after_value.get(key, _absent)
+                if old == new:
+                    continue
+                if isinstance(old, dict) and isinstance(new, dict):
+                    _walk(old, new, sub_path, (*parent, key))
+                elif isinstance(old, dict) and new is _absent:
+                    _walk(old, {}, sub_path, (*parent, key))
+                elif isinstance(new, dict) and old is _absent:
+                    _walk({}, new, sub_path, (*parent, key))
+                else:
+                    changes.append(_change(sub_path, key, parent, old, new))
+        elif before_value != after_value:
+            changes.append(_change(path, "", parent, before_value, after_value))
+
+    _walk(before, after, "", ())
+    return changes
+
+
 # ---------------------------------------------------------------------------
 # JSON Schema (cached at module level)
 # ---------------------------------------------------------------------------
@@ -495,6 +577,83 @@ async def config_versions_endpoint(request: Request) -> JSONResponse:
             }
         )
     return JSONResponse(result)
+
+
+async def config_version_get_endpoint(request: Request) -> JSONResponse:
+    """Return one version's stored config document with secrets masked.
+
+    ``GET /config/versions/{version}`` — returns the exact document a
+    rollback to that version would restore (the ``data`` payload recorded
+    in the append-only history), with secret values masked exactly like
+    ``GET /config``.
+    """
+    config_path = _resolve_config_path_from_app(request)
+    version = request.path_params["version"]
+    vp = _versions_path(config_path)
+    entries = _read_versions(vp)
+
+    _index, entry = _find_version_entry(entries, version)
+    if entry is None:
+        available = sorted(e["version"] for e in entries)
+        return _problem_response(
+            404,
+            "Version not found",
+            f"version {version} not found; available: {available}",
+        )
+
+    data = entry.get("data")
+    if not isinstance(data, dict):
+        data = {}
+    masked = _mask_secrets(data)
+
+    response: dict[str, Any] = {
+        "version": entry["version"],
+        "timestamp": entry.get("timestamp"),
+    }
+    response.update(masked)
+    return JSONResponse(response)
+
+
+async def config_version_diff_endpoint(request: Request) -> JSONResponse:
+    """Return a value-level diff of one version against the previous one.
+
+    ``GET /config/versions/{version}/diff`` — changed key paths in
+    dot-notation with ``old`` / ``new`` values (secrets masked); secret
+    leaves report only ``changed: true``, never values.  Version 1 (or any
+    version with no recorded predecessor) diffs against an empty document.
+    """
+    config_path = _resolve_config_path_from_app(request)
+    version = request.path_params["version"]
+    vp = _versions_path(config_path)
+    entries = _read_versions(vp)
+
+    index, entry = _find_version_entry(entries, version)
+    if entry is None:
+        available = sorted(e["version"] for e in entries)
+        return _problem_response(
+            404,
+            "Version not found",
+            f"version {version} not found; available: {available}",
+        )
+
+    previous_entry = entries[index - 1] if index > 0 else None
+    before: dict[str, Any] = {}
+    if previous_entry is not None:
+        prev_data = previous_entry.get("data")
+        if isinstance(prev_data, dict):
+            before = prev_data
+    after = entry.get("data")
+    if not isinstance(after, dict):
+        after = {}
+
+    changes = _diff_dicts(before, after)
+    return JSONResponse(
+        {
+            "version": entry["version"],
+            "previous_version": previous_entry["version"] if previous_entry else 0,
+            "changes": changes,
+        }
+    )
 
 
 async def config_rollback_endpoint(request: Request) -> JSONResponse:

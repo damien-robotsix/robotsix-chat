@@ -885,6 +885,183 @@ def test_get_versions_no_history(tmp_path: Path) -> None:
 
 
 # ---------------------------------------------------------------------------
+# GET /config/versions/{version} — single version document (secrets masked)
+# ---------------------------------------------------------------------------
+
+
+def test_get_version_document_returns_masked_document(tmp_path: Path) -> None:
+    """GET /config/versions/{version} returns the stored doc, secrets masked."""
+    config_path = tmp_path / "config.json"
+    _write_config(
+        config_path,
+        {
+            "llmio_model_level": 3,
+            "memory": {"llm": {"model": "openrouter/openai/gpt-5-mini"}},
+            "openrouter": {"keys": {"robotsix-chat-cognee": "plain-secret-a"}},
+        },
+    )
+    client = _make_app(config_path)
+
+    # Bootstrap version history (v1), then save a change (v2).
+    client.get("/config")
+    client.put("/config", json={"server_port": 9000})
+
+    resp = client.get("/config/versions/1")
+    assert resp.status_code == 200
+    doc = resp.json()
+    assert doc["version"] == 1
+    assert "timestamp" in doc
+    assert doc["memory"]["llm"]["model"] == "openrouter/openai/gpt-5-mini"
+    # Set secrets are masked; no plaintext ever appears.
+    assert doc["openrouter"]["keys"]["robotsix-chat-cognee"] == "**********"
+    assert "plain-secret-a" not in resp.text
+
+
+def test_get_version_document_empty_secret_stays_empty(tmp_path: Path) -> None:
+    """Unset secret values stay unmasked (empty string) in the document."""
+    config_path = tmp_path / "config.json"
+    _write_config(config_path, {"openrouter": {"keys": {"robotsix-chat-cognee": ""}}})
+    client = _make_app(config_path)
+    client.get("/config")  # bootstrap v1
+
+    resp = client.get("/config/versions/1")
+    assert resp.status_code == 200
+    assert resp.json()["openrouter"]["keys"]["robotsix-chat-cognee"] == ""
+
+
+def test_get_version_document_unknown_version_returns_404(tmp_path: Path) -> None:
+    """Unknown version returns 404; non-integer segment also 404s."""
+    config_path = tmp_path / "config.json"
+    _write_config(config_path, {"llmio_model_level": 3})
+    client = _make_app(config_path)
+    client.get("/config")  # bootstrap v1
+
+    resp = client.get("/config/versions/999")
+    assert resp.status_code == 404
+
+    resp_bad = client.get("/config/versions/not-a-number")
+    assert resp_bad.status_code == 404
+
+
+# ---------------------------------------------------------------------------
+# GET /config/versions/{version}/diff — value-level diff vs previous version
+# ---------------------------------------------------------------------------
+
+
+def test_version_diff_reports_nested_changed_paths(tmp_path: Path) -> None:
+    """Diff reports dot-notation nested paths with old/new values.
+
+    Mirrors the incident: v2 changed several nested fields (continuation,
+    memory.llm.model, openrouter key), v3 reverted the model.  The v2 diff
+    surfaces all three changes; the v3 diff shows only the reversion.
+    """
+    config_path = tmp_path / "config.json"
+    _write_config(
+        config_path,
+        {
+            "llmio_model_level": 3,
+            "continuation": {"max_consecutive": 3},
+            "memory": {"llm": {"model": "openrouter/openai/gpt-5-mini"}},
+            "openrouter": {"keys": {"robotsix-chat-cognee": "secret-a"}},
+        },
+    )
+    client = _make_app(config_path)
+    client.get("/config")  # bootstrap v1
+
+    # v2: bump continuation max, switch model to nano, rotate the key.
+    client.put(
+        "/config",
+        json={
+            "continuation": {"max_consecutive": 5},
+            "memory": {"llm": {"model": "openrouter/openai/gpt-5-nano"}},
+            "openrouter": {"keys": {"robotsix-chat-cognee": "secret-b"}},
+        },
+    )
+    # v3: revert only the model.
+    client.put(
+        "/config",
+        json={"memory": {"llm": {"model": "openrouter/openai/gpt-5-mini"}}},
+    )
+
+    # --- v2 diff: three changed paths ---
+    resp2 = client.get("/config/versions/2/diff")
+    assert resp2.status_code == 200
+    body2 = resp2.json()
+    assert body2["version"] == 2
+    assert body2["previous_version"] == 1
+    by_path2 = {c["path"]: c for c in body2["changes"]}
+
+    assert by_path2["continuation.max_consecutive"] == {
+        "path": "continuation.max_consecutive",
+        "old": 3,
+        "new": 5,
+    }
+    assert by_path2["memory.llm.model"]["old"] == "openrouter/openai/gpt-5-mini"
+    assert by_path2["memory.llm.model"]["new"] == "openrouter/openai/gpt-5-nano"
+    # Secret key rotation: changed-only, no old/new values.
+    assert by_path2["openrouter.keys.robotsix-chat-cognee"] == {
+        "path": "openrouter.keys.robotsix-chat-cognee",
+        "changed": True,
+    }
+    assert "secret-a" not in resp2.text
+    assert "secret-b" not in resp2.text
+
+    # --- v3 diff: only the model reversion ---
+    resp3 = client.get("/config/versions/3/diff")
+    assert resp3.status_code == 200
+    body3 = resp3.json()
+    assert body3["version"] == 3
+    assert body3["previous_version"] == 2
+    by_path3 = {c["path"]: c for c in body3["changes"]}
+
+    assert len(by_path3) == 1
+    assert by_path3["memory.llm.model"]["old"] == "openrouter/openai/gpt-5-nano"
+    assert by_path3["memory.llm.model"]["new"] == "openrouter/openai/gpt-5-mini"
+
+
+def test_version_diff_first_version_diffs_empty_document(tmp_path: Path) -> None:
+    """Version 1 (no predecessor) diffs against an empty document."""
+    config_path = tmp_path / "config.json"
+    _write_config(
+        config_path,
+        {
+            "llmio_model_level": 3,
+            "memory": {"llm": {"model": "openrouter/openai/gpt-5-mini"}},
+        },
+    )
+    client = _make_app(config_path)
+    client.get("/config")  # bootstrap v1
+
+    resp = client.get("/config/versions/1/diff")
+    assert resp.status_code == 200
+    body = resp.json()
+    assert body["version"] == 1
+    assert body["previous_version"] == 0
+    by_path = {c["path"]: c for c in body["changes"]}
+
+    # llmio_model_level is added
+    assert by_path["llmio_model_level"] == {"path": "llmio_model_level", "new": 3}
+    assert "old" not in by_path["llmio_model_level"]
+    # Nested path added
+    assert by_path["memory.llm.model"] == {
+        "path": "memory.llm.model",
+        "new": "openrouter/openai/gpt-5-mini",
+    }
+    assert "old" not in by_path["memory.llm.model"]
+
+
+def test_version_diff_unknown_version_returns_404(tmp_path: Path) -> None:
+    """Diff of a nonexistent version returns 404."""
+    config_path = tmp_path / "config.json"
+    _write_config(config_path, {"llmio_model_level": 3})
+    client = _make_app(config_path)
+    client.get("/config")  # bootstrap v1
+
+    resp = client.get("/config/versions/999/diff")
+    assert resp.status_code == 404
+
+
+# ---------------------------------------------------------------------------
 # POST /config/rollback
 # ---------------------------------------------------------------------------
 
