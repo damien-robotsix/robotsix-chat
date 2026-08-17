@@ -2452,7 +2452,7 @@ autonomous settings at their pydantic field defaults
 ``stale_monitor_runs_before_completion=3``,
 ``queue_tolerance_runs_before_escalation=3``).
 
-## AUTONOMOUS v26 — 2026-08-17 — 20260801T122105Z-pause-or-stop-monitor-when-ticket-reache-c813
+## AUTONOMOUS v26 — 2026-08-17 — pause-or-stop-monitor-when-ticket-reache-c813
 
 **Summary:** Add a human-review pause-compliance rule to the autonomous
 protocol.  When a subsession or monitor recommends pausing a monitor because
