@@ -42,6 +42,9 @@ class TestBuildAutonomousInstruction:
         assert "SERIAL-BOARD QUEUE TOLERANCE" in result
         assert "3 consecutive NO_CHANGE cycles as queue wait" in result
         assert "3 or more consecutive cycles" in result
+        assert "HUMAN-REVIEW PAUSE COMPLIANCE" in result
+        assert "human_mr_approval" in result
+        assert "merge detection" in result
         assert "MUTATION AUTHORIZATION" in result
         assert "read-only work" in result
         assert "CONSENT SCOPING" in result
@@ -122,3 +125,12 @@ class TestBuildAutonomousInstruction:
         settings = self._make_settings(auto_approve=True, allowlist=["r"])
         result = build_autonomous_instruction(settings)
         assert "AUTONOMY TIER rules" in result
+
+    def test_human_review_pause_compliance_rule_present(self) -> None:
+        """HUMAN-REVIEW PAUSE COMPLIANCE rule is present in the prompt."""
+        settings = self._make_settings()
+        result = build_autonomous_instruction(settings)
+        assert "HUMAN-REVIEW PAUSE COMPLIANCE" in result
+        assert "human_mr_approval" in result
+        assert "human_issue_approval" in result
+        assert "pause the monitor" in result
