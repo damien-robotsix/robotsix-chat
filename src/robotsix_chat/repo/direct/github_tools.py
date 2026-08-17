@@ -471,14 +471,14 @@ def build_github_tools(
                     is StartupFailureClass.PER_WORKFLOW_CONFIG
                 ):
                     lines.append(
-                        "The account/runner/billing plane is provably fine "
+                        "The account/runner plane is provably fine "
                         "— diagnose this workflow's own file (trigger, "
                         "permissions, reusable-workflow ``uses:``)."
                     )
                 else:
                     lines.append(
                         "Every workflow on this commit produced zero jobs — "
-                        "treat as an account/runner/billing issue (operator "
+                        "treat as an account/runner issue (operator "
                         "action), NOT a workflow-file edit."
                     )
             return "\n".join(lines)

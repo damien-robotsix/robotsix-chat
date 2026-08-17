@@ -67,8 +67,8 @@ rejected.
 
 When the verified run is a `startup_failure` (zero jobs, no logs), report the tool's deterministic
 classification verbatim: a sibling workflow on the **same commit** that reached job execution means
-**per-workflow config issue** (not billing); zero siblings reaching job execution means
-**account/runner/billing issue** (operator action, not a workflow-file edit). Never speculate a
+**per-workflow config issue** (not an account-level problem); zero siblings reaching job execution means
+**account/runner issue** (operator action, not a workflow-file edit). Never speculate a
 billing diagnosis that contradicts the tool's classification — two monitors watching the same run
 must reach the same conclusion.
 

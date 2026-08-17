@@ -99,14 +99,14 @@ def _classify_startup_failure(
             summary=(
                 f"{len(executed)} sibling workflow(s) ran jobs on "
                 f"{head_sha} ({names}) → per-workflow config issue, "
-                f"not account/billing"
+                f"not an account-level problem"
             ),
         )
     return StartupFailureClassification(
         classification=StartupFailureClass.ACCOUNT_OR_RUNNER,
         summary=(
             f"no sibling workflow on {head_sha} reached job execution → "
-            f"account/runner/billing plane implicated (operator action, "
+            f"account/runner plane implicated (operator action, "
             f"not a workflow-file edit)"
         ),
     )
@@ -954,7 +954,7 @@ class ActionsClient:
                     f"'{run_name}' (id {run_id}) on {repo_full_name} branch "
                     f"'{branch}' has ZERO jobs{conclusion_note} — the CI "
                     f"workflow is not executing any jobs.  "
-                    f"{classification.summary} — the account/runner/billing "
+                    f"{classification.summary} — the account/runner "
                     f"plane is provably fine, so the root cause is in this "
                     f"workflow's own file (trigger, permissions, or "
                     f"reusable-workflow ``uses:``).  "
@@ -966,9 +966,9 @@ class ActionsClient:
                 f"'{branch}' has ZERO jobs{conclusion_note} — the CI "
                 f"workflow is not executing any jobs.  "
                 f"{classification.summary} — every workflow on this commit "
-                f"produced zero jobs, which points at the account/runner/"
-                f"billing plane (Actions disabled, billing lapse, or no "
-                f"available runners).  This is an operator-action ticket, "
+                f"produced zero jobs, which points at the account/runner "
+                f"plane (Actions disabled or no available "
+                f"runners).  This is an operator-action ticket, "
                 f"NOT a workflow-file edit.  "
                 f"PRs on this branch are not receiving CI coverage."
             )
@@ -1098,7 +1098,7 @@ class ActionsClient:
                             f"at startup (zero jobs) on "
                             f"{run.get('head_branch', '?')} — "
                             f"{classification_result.summary}.  "
-                            f"The account/runner/billing plane is provably fine "
+                            f"The account/runner plane is provably fine "
                             f"— the root cause is in this workflow's own file "
                             f"(trigger, permissions, or reusable-workflow "
                             f"``uses:``)."
@@ -1109,8 +1109,8 @@ class ActionsClient:
                         f"{run.get('head_branch', '?')} — "
                         f"{classification_result.summary}.  "
                         f"Every workflow on this commit produced zero jobs, "
-                        f"which points at the account/runner/billing plane "
-                        f"(Actions disabled, billing lapse, or no available "
+                        f"which points at the account/runner plane "
+                        f"(Actions disabled or no available "
                         f"runners).  This is an operator-action ticket, "
                         f"NOT a workflow-file edit."
                     )

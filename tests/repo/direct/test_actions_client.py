@@ -958,7 +958,7 @@ def test_classify_startup_failure_per_workflow_config() -> None:
     assert result.classification is StartupFailureClass.PER_WORKFLOW_CONFIG
     assert "2 sibling workflow(s) ran jobs on abc123" in result.summary
     assert "Lint, Docs" in result.summary
-    assert "not account/billing" in result.summary
+    assert "not an account-level problem" in result.summary
 
 
 def test_classify_startup_failure_account_or_runner_no_executed_siblings() -> None:
@@ -1214,7 +1214,7 @@ async def test_check_latest_run_for_zero_jobs_classified_per_workflow_config(
     assert diag is not None
     assert "per-workflow config" in diag
     assert "1 sibling workflow(s) ran jobs on abc123 (Lint)" in diag
-    assert "not account/billing" in diag
+    assert "not an account-level problem" in diag
     assert "root cause is in this workflow's own file" in diag
 
 

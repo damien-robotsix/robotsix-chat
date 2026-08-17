@@ -597,7 +597,7 @@ async def test_check_workflow_run_startup_failure_classified_per_workflow_config
     result = await check_run("test-repo", run_id=42)
     assert "2 sibling workflow(s)" in result
     assert "Lint" in result
-    assert "not account/billing" in result
+    assert "not an account-level problem" in result
     assert "root cause is in this workflow's own file" in result.lower()
     # Must NOT mention billing as a cause
     assert "billing" not in result.lower()

@@ -204,8 +204,8 @@ def build_github_actions_tools(
                         return (
                             f"Workflow run {run_id} on {repo_full_name} has no "
                             f"jobs (conclusion: {run.get('conclusion')}) — "
-                            f"{classification.summary}.  The account/runner/"
-                            f"billing plane is provably fine — the root cause "
+                            f"{classification.summary}.  The account/runner "
+                            f"plane is provably fine — the root cause "
                             f"is in this workflow's own file (trigger, "
                             f"permissions, or reusable-workflow ``uses:``)."
                         )
@@ -214,8 +214,8 @@ def build_github_actions_tools(
                         f"jobs (conclusion: {run.get('conclusion')}) — "
                         f"{classification.summary}.  Every workflow on this "
                         f"commit produced zero jobs, which points at the "
-                        f"account/runner/billing plane (Actions disabled, "
-                        f"billing lapse, or no available runners).  This is "
+                        f"account/runner plane (Actions disabled "
+                        f"or no available runners).  This is "
                         f"an operator-action ticket, NOT a workflow-file edit."
                     )
                 # -- fallback: no run metadata or sibling listing failed --

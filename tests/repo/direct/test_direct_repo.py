@@ -1432,7 +1432,7 @@ async def test_check_ci_health_startup_failure_classified_per_workflow_config(
     assert "STARTUP FAILURE" in out
     assert "1 sibling workflow(s) ran jobs on abc123 (Lint)" in out
     assert "per-workflow config issue" in out
-    assert "not account/billing" in out
+    assert "not an account-level problem" in out
 
 
 # ---------------------------------------------------------------------------
