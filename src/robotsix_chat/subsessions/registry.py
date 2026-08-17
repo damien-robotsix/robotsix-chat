@@ -191,7 +191,7 @@ def _preserve_periodic_progress_flags(
         return checkpoint
     merged = dict(checkpoint or {})
     merged["recent_progress_flags"] = previous["recent_progress_flags"]
-    return merged    return merged
+    return merged
 
 
 class RegistryStore:
@@ -1233,7 +1233,8 @@ class SubsessionRegistry:
         elif info.kind is SubsessionKind.PERIODIC:
             checkpoint = _preserve_periodic_auto_stop_no_change_runs(info, checkpoint)
             checkpoint = _preserve_periodic_no_change_pause_count(info, checkpoint)
-            checkpoint = _preserve_periodic_progress_flags(info, checkpoint)        info.checkpoint = checkpoint
+            checkpoint = _preserve_periodic_progress_flags(info, checkpoint)
+        info.checkpoint = checkpoint
         self._store.persist()
         return True
 
