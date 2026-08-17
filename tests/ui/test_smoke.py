@@ -73,6 +73,11 @@ class TestHtmlDomStructure:
         assert 'id="subsessions-list"' in ui_html
         assert 'id="subsessions-resize-handle"' in ui_html
 
+    def test_subsessions_announce_region(self, ui_html: str) -> None:
+        """A live region announces new subsession messages to screen readers."""
+        assert 'id="subs-announce"' in ui_html
+        assert 'aria-live="polite"' in ui_html
+
     def test_preview_tray(self, ui_html: str) -> None:
         """The image preview tray exists."""
         assert 'id="preview-tray"' in ui_html
@@ -296,6 +301,13 @@ class TestChatJsFunctions:
         assert 'id="sr-announce"' in ui_html
         assert 'aria-live="polite"' in ui_html
 
+    def test_subsession_unread_functions(self, static_js: str) -> None:
+        """Nested subsession unread-propagation helpers exist."""
+        funcs = self._functions_in(static_js)
+        assert "subsUnreadTotal" in funcs
+        assert "markSubsessionRead" in funcs
+        assert "applyPendingUnread" in funcs
+
     def test_relative_time_function(self, static_js: str) -> None:
         """Relative time formatting function exists."""
         assert "relativeTime" in self._functions_in(static_js)
@@ -326,3 +338,16 @@ class TestChatJsFunctions:
         assert "savePresetForm" in funcs
         assert "deletePreset" in funcs
         assert "addPreset" in funcs
+
+
+class TestChatCssUnreadStyles:
+    """chat.css must style nested subsession unread state accessibly."""
+
+    def test_subsession_unread_styles(self, static_css: str) -> None:
+        """Unread row + count-badge styles exist (color is not the only cue)."""
+        assert ".subs-row.subs-row-unread" in static_css
+        assert ".unread-badge" in static_css
+
+    def test_screen_reader_only_utility(self, static_css: str) -> None:
+        """The visually-hidden utility used by the announce region exists."""
+        assert ".sr-only" in static_css

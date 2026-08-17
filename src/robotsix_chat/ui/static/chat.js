@@ -1327,8 +1327,49 @@ import { processSSEStream } from "./sse-parser.js";
       transcriptLoaded: false,
       _transcriptLoading: false,
       _closing: false,
-      _draft: ""
+      _draft: "",
+      // Count of unread messages in this subsession's own transcript.
+      // Ancestor unread state is derived on the fly by subsUnreadTotal()
+      // (own count + every descendant's), so a nested child's message
+      // flags all of its ancestors.
+      unreadSelf: 0
     };
+  }
+
+  // Unread messages that arrived for a subsession whose row is not known
+  // yet (e.g. the message frame beat the subsession_started snapshot).
+  // Applied once the row appears; see applyPendingUnread.
+  var pendingUnread = {};
+
+  // Total unread messages shown on a subsession title: this subsession's
+  // own unread messages plus the totals of every descendant, so a nested
+  // child's message marks every ancestor in the chain. Computed on the
+  // fly rather than stored, which keeps it correct no matter what order
+  // parent/child frames arrive in.
+  function subsUnreadTotal(sub) {
+    if (!sub) return 0;
+    var total = sub.unreadSelf || 0;
+    for (var i = 0; i < subsOrder.length; i++) {
+      var child = subsById[subsOrder[i]];
+      if (child && child.parent_id === sub.subsession_id) {
+        total += subsUnreadTotal(child);
+      }
+    }
+    return total;
+  }
+
+  // Clear a subsession's own unread count. Ancestor totals are derived on
+  // the fly, so no propagation bookkeeping is needed here.
+  function markSubsessionRead(sub) {
+    if (sub) sub.unreadSelf = 0;
+  }
+
+  // Fold any queued unread messages into a newly-seen subsession row.
+  function applyPendingUnread(sub) {
+    var sid = sub.subsession_id;
+    if (!pendingUnread[sid]) return;
+    sub.unreadSelf = (sub.unreadSelf || 0) + pendingUnread[sid];
+    delete pendingUnread[sid];
   }
 
   function applySubsSnapshot(sub, snap) {
@@ -1371,12 +1412,19 @@ import { processSSEStream } from "./sse-parser.js";
     applySubsSnapshot(sub, frame);
     if (frame.reason !== undefined) sub.close_reason = frame.reason;
     sub._closing = false;
+    applyPendingUnread(sub);
     renderSubsessionsList();
   }
 
   function handleSubsessionMessage(frame) {
     var sub = subsById[frame.subsession_id];
-    if (!sub) return;  // unknown row — the next snapshot fetch picks it up
+    if (!sub) {
+      // Unknown row — remember the unread hit so it is applied when the
+      // subsession snapshot arrives.
+      pendingUnread[frame.subsession_id] =
+        (pendingUnread[frame.subsession_id] || 0) + 1;
+      return;
+    }
     var msg = {
       role: frame.role || "assistant",
       text: frame.text || "",
@@ -1384,8 +1432,32 @@ import { processSSEStream } from "./sse-parser.js";
     };
     if (!subsTranscriptHas(sub, msg)) sub.transcript.push(msg);
     if (frame.timestamp) sub.last_activity_at = frame.timestamp;
-    // Update the transcript in place — a full list re-render here would
-    // steal focus from the reply box while the user is typing.
+    // Mark this subsession unread and propagate the count up the parent
+    // chain, then refresh the affected rows' headers in place — a full
+    // list re-render here would steal focus from the reply box while the
+    // user is typing. A message landing in an expanded, visible row is
+    // already on screen, so it does not count as unread (otherwise it
+    // would leave a badge with no user action left to clear it).
+    var alreadyVisible = sub.expanded && subsPanel.classList.contains("visible");
+    if (!alreadyVisible) {
+      sub.unreadSelf = (sub.unreadSelf || 0) + 1;
+      renderSubsessionRow(sub);
+      var ancId = sub.parent_id;
+      while (ancId) {
+        var anc = subsById[ancId];
+        if (!anc) break;
+        renderSubsessionRow(anc);
+        ancId = anc.parent_id;
+      }
+      // Announce for screen-reader users (the badge/color change is visual).
+      var announceEl = document.getElementById("subs-announce");
+      if (announceEl) {
+        announceEl.textContent = "New message in subsession " +
+          (sub.title || "untitled");
+      }
+    }
+    // Update the transcript in place (the body is untouched by the header
+    // refresh above).
     if (sub.expanded && sub._transcriptEl) renderSubsTranscript(sub);
   }
 
@@ -1528,7 +1600,8 @@ import { processSSEStream } from "./sse-parser.js";
     row._subsId = sub.subsession_id;
     row.className = "subs-row status-" + status +
       (terminal ? " terminal" : "") +
-      (focusedSubId === sub.subsession_id ? " focused" : "");
+      (focusedSubId === sub.subsession_id ? " focused" : "") +
+      (subsUnreadTotal(sub) > 0 ? " subs-row-unread" : "");
     // Indent children under their parent (depth 1 = top level).
     row.style.marginLeft = (((sub.depth || 1) - 1) * 14) + "px";
 
@@ -1572,6 +1645,22 @@ import { processSSEStream } from "./sse-parser.js";
     titleSpan.textContent = sub.title || "(untitled)";
     if (sub.prompt) titleSpan.title = truncateText(sub.prompt, 200);
     titleLine.appendChild(titleSpan);
+
+    // Unread badge: shows the total unread messages in this subsession
+    // and all of its descendants (see subsUnreadTotal). Rendered as
+    // a count badge rather than color alone so the state is perceivable
+    // without color vision.
+    var unreadCount = subsUnreadTotal(sub);
+    if (unreadCount > 0) {
+      var unreadBadge = document.createElement("span");
+      unreadBadge.className = "unread-badge";
+      unreadBadge.textContent = unreadCount > 99 ? "99+" : String(unreadCount);
+      unreadBadge.title = unreadCount + " unread message" +
+        (unreadCount === 1 ? "" : "s") +
+        " (this subsession and its children)";
+      unreadBadge.setAttribute("aria-label", unreadBadge.title);
+      titleLine.appendChild(unreadBadge);
+    }
 
     var statusSpan = document.createElement("span");
     statusSpan.className = "subs-status status-" + status;
@@ -1642,6 +1731,9 @@ import { processSSEStream } from "./sse-parser.js";
     expandBtn.addEventListener("click", function () {
       sub.expanded = !sub.expanded;
       selectedSubId = sub.subsession_id;
+      // Opening the transcript is the "read" signal: clear this
+      // subsession's unread count (ancestor totals derive from it).
+      if (sub.expanded) markSubsessionRead(sub);
       renderSubsessionsList();
     });
     actionsDiv.appendChild(expandBtn);
@@ -2035,6 +2127,8 @@ import { processSSEStream } from "./sse-parser.js";
         if (!sid) continue;
         var sub = old[sid] || newSubsEntry();
         applySubsSnapshot(sub, snap);
+        // If unread messages arrived before this snapshot, fold them in.
+        applyPendingUnread(sub);
         subsById[sid] = sub;
         subsOrder.push(sid);
       }
@@ -3233,6 +3327,14 @@ import { processSSEStream } from "./sse-parser.js";
     subsPanel.classList.toggle("visible");
     setSubsPanelVisible(subsPanel.classList.contains("visible"));
     if (opening) {
+      // Opening the panel reveals every expanded transcript, so those
+      // subsessions are now read — clear their unread state and recompute
+      // ancestors so no badge sticks once the messages are on screen.
+      for (var i = 0; i < subsOrder.length; i++) {
+        var s = subsById[subsOrder[i]];
+        if (s && s.expanded) markSubsessionRead(s);
+      }
+      renderSubsessionsList();
       positionResizeHandle();
       document.documentElement.style.setProperty('--subsessions-width', subsPanel.getBoundingClientRect().width + 'px');
     } else {
