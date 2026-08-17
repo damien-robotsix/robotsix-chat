@@ -1,0 +1,1 @@
+Documented the `autonomous` owner-scope design: the session-list handler expands a bootstrap `autonomous` owner query over every `autonomous:<name>` preset sub-scope (merging them into one recency-sorted list), and only the bootstrap owner is eligible for lazy default creation — per-preset sub-scopes are never created on read.
