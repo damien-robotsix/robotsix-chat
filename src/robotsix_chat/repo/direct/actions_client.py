@@ -10,6 +10,9 @@ Shares the same GitHub App authentication plumbing as
 from __future__ import annotations
 
 import logging
+from collections.abc import Mapping
+from dataclasses import dataclass
+from enum import StrEnum
 from typing import TYPE_CHECKING, Any
 
 from robotsix_chat.common.http import safe_http_request
@@ -19,6 +22,95 @@ if TYPE_CHECKING:
     from robotsix_chat.repo.direct.client import DirectRepoClient
 
 logger = logging.getLogger(__name__)
+
+# Conclusions that prove a run reached real job execution — a terminal
+# verdict on actual jobs — as opposed to ``startup_failure`` (rejected
+# before any job), ``cancelled`` / ``stale``, or a pending status.
+_JOB_EXECUTION_CONCLUSIONS: frozenset[str] = frozenset(
+    {"success", "failure", "timed_out", "action_required"}
+)
+
+
+class StartupFailureClass(StrEnum):
+    """Deterministic root-cause plane for a zero-job ``startup_failure`` run."""
+
+    PER_WORKFLOW_CONFIG = "per_workflow_config"
+    ACCOUNT_OR_RUNNER = "account_or_runner"
+
+
+@dataclass(frozen=True)
+class StartupFailureClassification:
+    """Result of :func:`_classify_startup_failure`.
+
+    ``classification`` picks the root-cause plane; ``summary`` is a
+    one-line human-readable explanation.
+    """
+
+    classification: StartupFailureClass
+    summary: str
+
+
+def _classify_startup_failure(
+    failing_run: dict[str, Any],
+    latest_by_wf: Mapping[Any, dict[str, Any]],
+) -> StartupFailureClassification:
+    """Classify a ``startup_failure`` (zero-job) run deterministically — pure, no I/O.
+
+    An account-level cause (billing lapse, org-wide Actions disablement,
+    no available runners) zeroes out **every** workflow on a commit at once,
+    whereas a per-workflow config cause leaves sibling workflows on the same
+    commit running.  This helper turns that into a fact by checking
+    *latest_by_wf* for sibling runs on the failing run's ``head_sha`` whose
+    ``conclusion`` proves real job execution (``success`` / ``failure`` /
+    ``timed_out`` / ``action_required`` — NOT ``startup_failure``,
+    ``cancelled`` / ``stale``, or a pending status).
+
+    Args:
+        failing_run: The failing (zero-job) run dict.  Must carry
+            ``head_sha`` (string) and ``id`` (to exclude itself).
+        latest_by_wf: Mapping of ``workflow_id`` to the latest run dict
+            per workflow (sibling candidates on any branch).
+
+    Returns:
+        ``PER_WORKFLOW_CONFIG`` when at least one sibling on the same
+        commit reached job execution; ``ACCOUNT_OR_RUNNER`` when every
+        workflow on the commit produced zero jobs, or there are no
+        siblings at all.
+
+    """
+    head_sha = failing_run.get("head_sha")
+    failing_id = failing_run.get("id")
+
+    executed: list[dict[str, Any]] = []
+    for sibling in latest_by_wf.values():
+        if sibling.get("head_sha") != head_sha:
+            continue
+        if failing_id is not None and sibling.get("id") == failing_id:
+            continue
+        conclusion = str(sibling.get("conclusion") or "").lower()
+        if conclusion in _JOB_EXECUTION_CONCLUSIONS:
+            executed.append(sibling)
+
+    if executed:
+        names = ", ".join(
+            str(sibling.get("name") or "").strip() or "?" for sibling in executed
+        )
+        return StartupFailureClassification(
+            classification=StartupFailureClass.PER_WORKFLOW_CONFIG,
+            summary=(
+                f"{len(executed)} sibling workflow(s) ran jobs on "
+                f"{head_sha} ({names}) → per-workflow config issue, "
+                f"not an account-level problem"
+            ),
+        )
+    return StartupFailureClassification(
+        classification=StartupFailureClass.ACCOUNT_OR_RUNNER,
+        summary=(
+            f"no sibling workflow on {head_sha} reached job execution → "
+            f"account/runner plane implicated (operator action, "
+            f"not a workflow-file edit)"
+        ),
+    )
 
 
 class ActionsClient:
@@ -207,6 +299,34 @@ class ActionsClient:
                 exc,
             )
             return []
+
+    async def get_workflow_run(
+        self,
+        repo_full_name: str,
+        run_id: int,
+    ) -> dict[str, Any] | None:
+        """Fetch a single workflow run's metadata.
+
+        Calls ``GET /repos/{owner}/{repo}/actions/runs/{run_id}``.
+
+        Returns:
+            The run dict on success, ``None`` when the API call fails
+            (logged at WARNING).
+
+        """
+        try:
+            data = await self._client._get_json(
+                f"/repos/{repo_full_name}/actions/runs/{run_id}"
+            )
+            return data if isinstance(data, dict) else None
+        except RuntimeError as exc:
+            logger.warning(
+                "Failed to get workflow run %d on %s: %s",
+                run_id,
+                repo_full_name,
+                exc,
+            )
+            return None
 
     # -- workflow run annotations ------------------------------------------
 
@@ -733,6 +853,46 @@ class ActionsClient:
 
     # -- zero-job workflow detection ---------------------------------------
 
+    async def classify_startup_failure_run(
+        self,
+        repo_full_name: str,
+        failing_run: dict[str, Any],
+    ) -> StartupFailureClassification | None:
+        """Fetch sibling runs on the failing run's commit and classify it.
+
+        Calls :func:`_classify_startup_failure` after building the
+        per-workflow latest-run mapping from real sibling data.
+
+        Returns ``None`` when the run carries no ``head_sha`` or the
+        sibling listing fails (logged at DEBUG) — callers then fall
+        back to visibility-based wording.
+        """
+        head_sha = failing_run.get("head_sha")
+        if not isinstance(head_sha, str) or not head_sha:
+            return None
+        try:
+            sibling_runs = await self.list_workflow_runs(
+                repo_full_name,
+                head_sha=head_sha,
+                per_page=30,
+                raise_on_error=True,
+            )
+        except Exception:
+            logger.debug(
+                "classify_startup_failure_run: could not list sibling runs "
+                "for head_sha %s on %s",
+                head_sha,
+                repo_full_name,
+            )
+            return None
+
+        latest_by_wf: dict[Any, dict[str, Any]] = {}
+        for run in sibling_runs:
+            workflow_id = run.get("workflow_id")
+            if workflow_id is not None:
+                latest_by_wf.setdefault(workflow_id, run)
+        return _classify_startup_failure(failing_run, latest_by_wf)
+
     async def check_latest_run_for_zero_jobs(
         self,
         repo_full_name: str,
@@ -782,6 +942,37 @@ class ActionsClient:
 
         run_name = latest.get("name", str(run_id))
 
+        # -- deterministic classification via sibling check --
+        classification = await self.classify_startup_failure_run(repo_full_name, latest)
+        if classification is not None:
+            conclusion = str(latest.get("conclusion") or "").lower()
+            conclusion_note = f" (conclusion: {conclusion})" if conclusion else ""
+            if classification.classification is StartupFailureClass.PER_WORKFLOW_CONFIG:
+                return (
+                    f"CI STARTUP FAILURE (per-workflow config): workflow run "
+                    f"'{run_name}' (id {run_id}) on {repo_full_name} branch "
+                    f"'{branch}' has ZERO jobs{conclusion_note} — the CI "
+                    f"workflow is not executing any jobs.  "
+                    f"{classification.summary} — the account/runner "
+                    f"plane is provably fine, so the root cause is in this "
+                    f"workflow's own file (trigger, permissions, or "
+                    f"reusable-workflow ``uses:``).  "
+                    f"PRs on this branch are not receiving CI coverage."
+                )
+            return (
+                f"CI STARTUP FAILURE (account/runner): workflow run "
+                f"'{run_name}' (id {run_id}) on {repo_full_name} branch "
+                f"'{branch}' has ZERO jobs{conclusion_note} — the CI "
+                f"workflow is not executing any jobs.  "
+                f"{classification.summary} — every workflow on this commit "
+                f"produced zero jobs, which points at the account/runner "
+                f"plane (Actions disabled or no available "
+                f"runners).  This is an operator-action ticket, "
+                f"NOT a workflow-file edit.  "
+                f"PRs on this branch are not receiving CI coverage."
+            )
+
+        # -- fallback: no head_sha or sibling listing unavailable --
         is_private = await self.check_repo_visibility(repo_full_name)
         if is_private is True:
             return (
@@ -890,11 +1081,48 @@ class ActionsClient:
         signature is not detected.
         """
         for run in runs:
-            conclusion = str(run.get("conclusion", "")).lower()
-            if conclusion != "failure":
-                continue
             run_id = run.get("id")
             run_name = run.get("name", str(run_id))
+            conclusion = str(run.get("conclusion", "")).lower()
+
+            # startup_failure runs are always zero-job — classify by siblings.
+            if conclusion == "startup_failure":
+                classification_result = await self.classify_startup_failure_run(
+                    repo_full_name, run
+                )
+                if classification_result is not None:
+                    if (
+                        classification_result.classification
+                        is StartupFailureClass.PER_WORKFLOW_CONFIG
+                    ):
+                        return (
+                            f"Workflow run '{run_name}' (id {run_id}) failed "
+                            f"at startup (zero jobs) on "
+                            f"{run.get('head_branch', '?')} — "
+                            f"{classification_result.summary}.  "
+                            f"The account/runner plane is provably fine "
+                            f"— the root cause is in this workflow's own file "
+                            f"(trigger, permissions, or reusable-workflow "
+                            f"``uses:``)."
+                        )
+                    return (
+                        f"Workflow run '{run_name}' (id {run_id}) failed "
+                        f"at startup (zero jobs) on "
+                        f"{run.get('head_branch', '?')} — "
+                        f"{classification_result.summary}.  "
+                        f"Every workflow on this commit produced zero jobs, "
+                        f"which points at the account/runner plane "
+                        f"(Actions disabled or no available "
+                        f"runners).  This is an operator-action ticket, "
+                        f"NOT a workflow-file edit."
+                    )
+                # head_sha unavailable or listing failed — skip this run
+                # without emitting any speculative billing diagnosis.
+                continue
+
+            if conclusion != "failure":
+                continue
+
             # Runs that never started signal a configuration or billing issue.
             if "run_started_at" in run and not run.get("run_started_at"):
                 head_sha = run.get("head_sha")

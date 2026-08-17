@@ -1342,6 +1342,95 @@ async def test_check_ci_health_reports_api_error(
     assert "No recent workflow runs found" not in out
 
 
+@pytest.mark.asyncio
+async def test_check_ci_health_startup_failure_classified_per_workflow_config(
+    respx_mock: respx.MockRouter,
+) -> None:
+    """Startup failure run with a green sibling → per-workflow config verdict."""
+    settings = _settings()
+    _prepopulate_installation_token(settings)
+
+    respx_mock.get(
+        url__startswith="https://api.github.com/installation/repositories"
+    ).mock(
+        return_value=httpx.Response(
+            200,
+            text=json.dumps({"repositories": [{"full_name": "org/repo"}]}),
+        )
+    )
+    respx_mock.get("https://api.github.com/repos/org/repo").mock(
+        return_value=httpx.Response(200, text=json.dumps({"default_branch": "main"}))
+    )
+    # Main listing: latest run is startup_failure.
+    respx_mock.get(
+        url__startswith="https://api.github.com/repos/org/repo/actions/runs?per_page=20"
+    ).mock(
+        return_value=httpx.Response(
+            200,
+            text=json.dumps(
+                {
+                    "workflow_runs": [
+                        {
+                            "id": 42,
+                            "name": "CI",
+                            "workflow_id": 11,
+                            "status": "completed",
+                            "conclusion": "startup_failure",
+                            "head_sha": "abc123",
+                        },
+                        {
+                            "id": 1,
+                            "name": "CI",
+                            "workflow_id": 11,
+                            "status": "completed",
+                            "conclusion": "success",
+                        },
+                    ]
+                }
+            ),
+        )
+    )
+    # Sibling listing on the same commit: Lint ran successfully.
+    respx_mock.get(
+        "https://api.github.com/repos/org/repo/actions/runs?per_page=30&head_sha=abc123"
+    ).mock(
+        return_value=httpx.Response(
+            200,
+            text=json.dumps(
+                {
+                    "workflow_runs": [
+                        {
+                            "id": 42,
+                            "name": "CI",
+                            "workflow_id": 11,
+                            "status": "completed",
+                            "conclusion": "startup_failure",
+                            "head_sha": "abc123",
+                        },
+                        {
+                            "id": 43,
+                            "name": "Lint",
+                            "workflow_id": 12,
+                            "status": "completed",
+                            "conclusion": "success",
+                            "head_sha": "abc123",
+                        },
+                    ]
+                }
+            ),
+        )
+    )
+
+    tools = build_direct_repo_tools(settings)
+    fn = [t for t in tools if t.__name__ == "check_ci_health"][0]
+
+    out = await fn(repo_full_name="org/repo")
+    assert "STARTUP FAILURE" in out
+    assert "1 sibling workflow(s) ran jobs on abc123 (Lint)" in out
+    assert "per-workflow config issue" in out
+    assert "not an account-level problem" in out
+
+
 # ---------------------------------------------------------------------------
 # rerun_ci_workflow
 # ---------------------------------------------------------------------------
