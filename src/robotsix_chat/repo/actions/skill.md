@@ -95,6 +95,24 @@ Fetch recent workflow runs and diagnose common CI failure patterns. This is a re
 
 In particular, it detects **workflow infrastructure failures** — runs that complete with
 `conclusion: "failure"` but have zero jobs, or runs that never started (`run_started_at` is null).
+
+**Deterministic `startup_failure` classification (never guess billing vs. config).** A run whose
+conclusion is `startup_failure` produced **zero jobs** — GitHub rejected the workflow file before
+any job started, so there are no job logs. The tool classifies such runs by checking sibling
+workflows on the **same commit** (`head_sha`):
+
+- If **any sibling workflow on the same commit reached job execution** (terminal conclusion
+  `success` / `failure` / `timed_out` / `action_required`), the account/runner/billing plane is
+  provably fine → the failure is a **per-workflow config issue** (trigger, `permissions:`, or a
+  malformed reusable-workflow `uses:`).  Fix the workflow file itself.
+- If **no sibling reached job execution** (every workflow on the commit produced zero jobs, or
+  there are no siblings at all), it is an **account/runner/billing issue** — file an
+  operator-action ticket.  Do **not** edit workflow files for this classification.
+
+Report the classification the tool returns verbatim.  Do not speculate a billing diagnosis when
+the classification says per-workflow config, and do not propose workflow-file edits when it says
+account/runner.
+
 The diagnosis is tailored to the repository's visibility:
 
 - **Public repos:** billing is never the cause (GitHub Actions is free for public repos). The

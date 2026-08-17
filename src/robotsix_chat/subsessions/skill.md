@@ -65,6 +65,13 @@ the parent conversation is guaranteed to see — make it concise, self-contained
 status, and include the verification result in the summary. A summary without CI evidence is
 rejected.
 
+When the verified run is a `startup_failure` (zero jobs, no logs), report the tool's deterministic
+classification verbatim: a sibling workflow on the **same commit** that reached job execution means
+**per-workflow config issue** (not billing); zero siblings reaching job execution means
+**account/runner/billing issue** (operator action, not a workflow-file edit). Never speculate a
+billing diagnosis that contradicts the tool's classification — two monitors watching the same run
+must reach the same conclusion.
+
 ### `set_checkpoint`
 
 Persist arbitrary key/value data across restarts. Each call **replaces** the entire checkpoint, so

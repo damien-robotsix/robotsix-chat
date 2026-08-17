@@ -521,6 +521,159 @@ async def test_check_workflow_run_specific_run_no_jobs_visibility_none(
     assert "no jobs" in result.lower()
 
 
+@pytest.mark.asyncio
+async def test_check_workflow_run_startup_failure_classified_per_workflow_config(
+    respx_mock: respx.MockRouter,
+) -> None:
+    """Run with startup_failure + executed sibling → per-workflow config, no billing."""
+    dr = _direct_repo_settings()
+
+    respx_mock.get(
+        url__startswith=f"{dr.github_api_base_url}/installation/repositories"
+    ).respond(json={"repositories": [{"full_name": "damien-robotsix/test-repo"}]})
+    # Jobs: empty.
+    respx_mock.get(
+        url=(
+            f"{dr.github_api_base_url}/repos/damien-robotsix/test-repo"
+            "/actions/runs/42/jobs"
+        )
+    ).respond(json={"jobs": []})
+    # Single-run metadata: startup_failure with head_sha.
+    respx_mock.get(
+        url=(
+            f"{dr.github_api_base_url}/repos/damien-robotsix/test-repo"
+            "/actions/runs/42"
+        )
+    ).respond(
+        json={
+            "id": 42,
+            "name": "CI",
+            "workflow_id": 11,
+            "status": "completed",
+            "conclusion": "startup_failure",
+            "head_sha": "abc123",
+        }
+    )
+    # Sibling listing: Lint reached job execution on the same commit.
+    respx_mock.get(
+        url=(
+            f"{dr.github_api_base_url}/repos/damien-robotsix/test-repo"
+            "/actions/runs?per_page=30&head_sha=abc123"
+        )
+    ).respond(
+        json={
+            "workflow_runs": [
+                {
+                    "id": 42,
+                    "name": "CI",
+                    "workflow_id": 11,
+                    "status": "completed",
+                    "conclusion": "startup_failure",
+                    "head_sha": "abc123",
+                },
+                {
+                    "id": 43,
+                    "name": "Lint",
+                    "workflow_id": 12,
+                    "status": "completed",
+                    "conclusion": "success",
+                    "head_sha": "abc123",
+                },
+                {
+                    "id": 44,
+                    "name": "Docs",
+                    "workflow_id": 13,
+                    "status": "completed",
+                    "conclusion": "failure",
+                    "head_sha": "abc123",
+                },
+            ]
+        }
+    )
+
+    tools = build_github_actions_tools(_actions_settings(), dr)
+    check_run = tools[2]
+
+    result = await check_run("test-repo", run_id=42)
+    assert "2 sibling workflow(s)" in result
+    assert "Lint" in result
+    assert "not account/billing" in result
+    assert "root cause is in this workflow's own file" in result.lower()
+    # Must NOT mention billing as a cause
+    assert "billing" not in result.lower()
+
+
+@pytest.mark.asyncio
+async def test_check_workflow_run_startup_failure_classified_account_or_runner(
+    respx_mock: respx.MockRouter,
+) -> None:
+    """Run with startup_failure + no executed sibling → account/runner."""
+    dr = _direct_repo_settings()
+
+    respx_mock.get(
+        url__startswith=f"{dr.github_api_base_url}/installation/repositories"
+    ).respond(json={"repositories": [{"full_name": "damien-robotsix/test-repo"}]})
+    respx_mock.get(
+        url=(
+            f"{dr.github_api_base_url}/repos/damien-robotsix/test-repo"
+            "/actions/runs/42/jobs"
+        )
+    ).respond(json={"jobs": []})
+    respx_mock.get(
+        url=(
+            f"{dr.github_api_base_url}/repos/damien-robotsix/test-repo"
+            "/actions/runs/42"
+        )
+    ).respond(
+        json={
+            "id": 42,
+            "name": "CI",
+            "workflow_id": 11,
+            "status": "completed",
+            "conclusion": "startup_failure",
+            "head_sha": "abc123",
+        }
+    )
+    # All siblings also startup_failure.
+    respx_mock.get(
+        url=(
+            f"{dr.github_api_base_url}/repos/damien-robotsix/test-repo"
+            "/actions/runs?per_page=30&head_sha=abc123"
+        )
+    ).respond(
+        json={
+            "workflow_runs": [
+                {
+                    "id": 42,
+                    "name": "CI",
+                    "workflow_id": 11,
+                    "status": "completed",
+                    "conclusion": "startup_failure",
+                    "head_sha": "abc123",
+                },
+                {
+                    "id": 44,
+                    "name": "Lint",
+                    "workflow_id": 12,
+                    "status": "completed",
+                    "conclusion": "startup_failure",
+                    "head_sha": "abc123",
+                },
+            ]
+        }
+    )
+
+    tools = build_github_actions_tools(_actions_settings(), dr)
+    check_run = tools[2]
+
+    result = await check_run("test-repo", run_id=42)
+    assert "no sibling workflow" in result
+    assert "operator-action ticket" in result
+    assert "NOT a workflow-file edit" in result
+    # Must NOT mention billing as a cause (classification overrides it)
+    assert "billing" not in result.lower()
+
+
 # ---------------------------------------------------------------------------
 # check_workflow_run — branch filter
 # ---------------------------------------------------------------------------

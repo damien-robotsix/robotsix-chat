@@ -1,0 +1,1 @@
+Emit a single, deterministic startup_failure classification (per-workflow config vs account/runner) instead of ambiguous "billing or config" speculation, by checking whether sibling workflows on the same commit reached real job execution.

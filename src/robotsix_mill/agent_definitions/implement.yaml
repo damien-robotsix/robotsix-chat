@@ -365,6 +365,30 @@ system_prompt: |
      you continue with the CI fix itself.
 
 
+  ## Startup-failure classification (deterministic rule)
+
+  A ``startup_failure`` run produced **zero jobs** — GitHub rejected the
+  workflow file before any job started, so there are no job logs.  Never
+  guess between "billing problem" and "workflow config problem" for such
+  a run: classify it deterministically by checking the **sibling
+  workflows on the same commit** (``head_sha``):
+
+  - If **any sibling workflow on the same commit reached job execution**
+    (terminal conclusion ``success`` / ``failure`` / ``timed_out`` /
+    ``action_required``), the account/runner/billing plane is provably
+    fine → the failure is a **per-workflow config issue** (trigger,
+    ``permissions:``, or a malformed reusable-workflow ``uses:``).  Fix
+    the workflow file itself.
+  - If **no sibling reached job execution** (every workflow on the commit
+    produced zero jobs, or there are no siblings), it is an
+    **account/runner/billing issue** — an operator-action ticket.  Do
+    **NOT** edit workflow files for this classification.
+
+  When the ticket quotes a classification from ``check_workflow_run`` /
+  ``check_ci_health`` (or the CI-monitor notification), treat it as
+  authoritative — do not emit a contradictory root-cause diagnosis.
+
+
   ## CI billing and runner selection (private repos)
 
   **Runner minutes and paid/licensed CI are distinct concerns.**

@@ -927,6 +927,98 @@ async def test_diagnose_billing_failure_never_started_visibility_none(
 
 
 # ---------------------------------------------------------------------------
+# _classify_startup_failure (pure helper)
+# ---------------------------------------------------------------------------
+
+
+def test_classify_startup_failure_per_workflow_config() -> None:
+    """A sibling on the same commit that ran real jobs → per-workflow config."""
+    from robotsix_chat.repo.direct.actions_client import (
+        StartupFailureClass,
+        _classify_startup_failure,
+    )
+
+    failing = {
+        "id": 1,
+        "name": "CI",
+        "head_sha": "abc123",
+        "conclusion": "startup_failure",
+    }
+    latest_by_wf = {
+        11: {"id": 1, "workflow_id": 11, "name": "CI", "head_sha": "abc123", "conclusion": "startup_failure"},
+        12: {"id": 2, "workflow_id": 12, "name": "Lint", "head_sha": "abc123", "conclusion": "success"},
+        13: {"id": 3, "workflow_id": 13, "name": "Docs", "head_sha": "abc123", "conclusion": "failure"},
+        14: {"id": 4, "workflow_id": 14, "name": "Other", "head_sha": "def456", "conclusion": "success"},
+        15: {"id": 5, "workflow_id": 15, "name": "Pending", "head_sha": "abc123", "conclusion": None},
+        16: {"id": 6, "workflow_id": 16, "name": "Cancelled", "head_sha": "abc123", "conclusion": "cancelled"},
+        17: {"id": 7, "workflow_id": 17, "name": "AlsoDead", "head_sha": "abc123", "conclusion": "startup_failure"},
+    }
+
+    result = _classify_startup_failure(failing, latest_by_wf)
+    assert result.classification is StartupFailureClass.PER_WORKFLOW_CONFIG
+    assert "2 sibling workflow(s) ran jobs on abc123" in result.summary
+    assert "Lint, Docs" in result.summary
+    assert "not account/billing" in result.summary
+
+
+def test_classify_startup_failure_account_or_runner_no_executed_siblings() -> None:
+    """Every sibling on the commit is startup_failure/zero-job → account/runner."""
+    from robotsix_chat.repo.direct.actions_client import (
+        StartupFailureClass,
+        _classify_startup_failure,
+    )
+
+    failing = {
+        "id": 1,
+        "name": "CI",
+        "head_sha": "abc123",
+        "conclusion": "startup_failure",
+    }
+    latest_by_wf = {
+        11: {"id": 1, "workflow_id": 11, "name": "CI", "head_sha": "abc123", "conclusion": "startup_failure"},
+        12: {"id": 2, "workflow_id": 12, "name": "Lint", "head_sha": "abc123", "conclusion": "startup_failure"},
+        13: {"id": 3, "workflow_id": 13, "name": "Docs", "head_sha": "abc123", "conclusion": "cancelled"},
+        14: {"id": 4, "workflow_id": 14, "name": "Wait", "head_sha": "abc123", "conclusion": None},
+    }
+
+    result = _classify_startup_failure(failing, latest_by_wf)
+    assert result.classification is StartupFailureClass.ACCOUNT_OR_RUNNER
+    assert "no sibling workflow on abc123 reached job execution" in result.summary
+    assert "operator action" in result.summary
+
+
+def test_classify_startup_failure_account_or_runner_empty_mapping() -> None:
+    """Empty latest_by_wf (no siblings at all) → account/runner."""
+    from robotsix_chat.repo.direct.actions_client import (
+        StartupFailureClass,
+        _classify_startup_failure,
+    )
+
+    failing = {"id": 1, "head_sha": "abc123", "conclusion": "startup_failure"}
+    result = _classify_startup_failure(failing, {})
+    assert result.classification is StartupFailureClass.ACCOUNT_OR_RUNNER
+    assert "no sibling workflow on abc123 reached job execution" in result.summary
+
+
+def test_classify_startup_failure_timed_out_action_required_are_executed() -> None:
+    """'timed_out' and 'action_required' conclusions count as job execution."""
+    from robotsix_chat.repo.direct.actions_client import (
+        StartupFailureClass,
+        _classify_startup_failure,
+    )
+
+    failing = {"id": 1, "head_sha": "abc123", "conclusion": "startup_failure"}
+    latest_by_wf = {
+        12: {"id": 2, "workflow_id": 12, "name": "Slow", "head_sha": "abc123", "conclusion": "timed_out"},
+        13: {"id": 3, "workflow_id": 13, "name": "NeedsAction", "head_sha": "abc123", "conclusion": "action_required"},
+    }
+
+    result = _classify_startup_failure(failing, latest_by_wf)
+    assert result.classification is StartupFailureClass.PER_WORKFLOW_CONFIG
+    assert "2 sibling workflow(s)" in result.summary
+
+
+# ---------------------------------------------------------------------------
 # check_latest_run_for_zero_jobs
 # ---------------------------------------------------------------------------
 
@@ -1042,6 +1134,167 @@ async def test_check_latest_run_for_zero_jobs_visibility_none(
     # Must mention possible billing (neutral fallback)
     assert "billing" in diag.lower()
     assert "PRs on this branch are not receiving CI coverage" in diag
+
+
+@pytest.mark.asyncio
+async def test_check_latest_run_for_zero_jobs_classified_per_workflow_config(
+    respx_mock: respx.MockRouter,
+) -> None:
+    """Zero-job run with an executed sibling on the same commit → config, not billing."""
+    from tests.repo.direct.conftest import _prepopulate_installation_token, _settings
+
+    settings = _settings()
+    _prepopulate_installation_token(settings)
+
+    client = ActionsClient(settings)
+
+    # Latest run carries a head_sha and a startup_failure conclusion.
+    respx_mock.get(
+        "https://api.github.com/repos/org/repo/actions/runs?per_page=1&branch=main"
+    ).mock(
+        return_value=httpx.Response(
+            200,
+            text=json.dumps(
+                {
+                    "workflow_runs": [
+                        {
+                            "id": 42,
+                            "name": "CI",
+                            "workflow_id": 11,
+                            "status": "completed",
+                            "conclusion": "startup_failure",
+                            "head_sha": "abc123",
+                        }
+                    ]
+                }
+            ),
+        )
+    )
+
+    # Zero jobs for the failing run.
+    respx_mock.get("https://api.github.com/repos/org/repo/actions/runs/42/jobs").mock(
+        return_value=httpx.Response(
+            200,
+            text=json.dumps({"jobs": []}),
+        )
+    )
+
+    # Sibling listing on the same commit: CI failed at startup, Lint ran.
+    respx_mock.get(
+        "https://api.github.com/repos/org/repo/actions/runs?per_page=30&head_sha=abc123"
+    ).mock(
+        return_value=httpx.Response(
+            200,
+            text=json.dumps(
+                {
+                    "workflow_runs": [
+                        {
+                            "id": 42,
+                            "name": "CI",
+                            "workflow_id": 11,
+                            "status": "completed",
+                            "conclusion": "startup_failure",
+                            "head_sha": "abc123",
+                        },
+                        {
+                            "id": 43,
+                            "name": "Lint",
+                            "workflow_id": 12,
+                            "status": "completed",
+                            "conclusion": "success",
+                            "head_sha": "abc123",
+                        },
+                    ]
+                }
+            ),
+        )
+    )
+
+    diag = await client.check_latest_run_for_zero_jobs("org/repo", "main")
+    assert diag is not None
+    assert "per-workflow config" in diag
+    assert "1 sibling workflow(s) ran jobs on abc123 (Lint)" in diag
+    assert "not account/billing" in diag
+    assert "root cause is in this workflow's own file" in diag
+
+
+@pytest.mark.asyncio
+async def test_check_latest_run_for_zero_jobs_classified_account_or_runner(
+    respx_mock: respx.MockRouter,
+) -> None:
+    """Zero-job run with no executed sibling → account/runner, not a file edit."""
+    from tests.repo.direct.conftest import _prepopulate_installation_token, _settings
+
+    settings = _settings()
+    _prepopulate_installation_token(settings)
+
+    client = ActionsClient(settings)
+
+    respx_mock.get(
+        "https://api.github.com/repos/org/repo/actions/runs?per_page=1&branch=main"
+    ).mock(
+        return_value=httpx.Response(
+            200,
+            text=json.dumps(
+                {
+                    "workflow_runs": [
+                        {
+                            "id": 42,
+                            "name": "CI",
+                            "workflow_id": 11,
+                            "status": "completed",
+                            "conclusion": "startup_failure",
+                            "head_sha": "abc123",
+                        }
+                    ]
+                }
+            ),
+        )
+    )
+
+    respx_mock.get("https://api.github.com/repos/org/repo/actions/runs/42/jobs").mock(
+        return_value=httpx.Response(
+            200,
+            text=json.dumps({"jobs": []}),
+        )
+    )
+
+    # Every sibling on the commit also produced zero jobs.
+    respx_mock.get(
+        "https://api.github.com/repos/org/repo/actions/runs?per_page=30&head_sha=abc123"
+    ).mock(
+        return_value=httpx.Response(
+            200,
+            text=json.dumps(
+                {
+                    "workflow_runs": [
+                        {
+                            "id": 42,
+                            "name": "CI",
+                            "workflow_id": 11,
+                            "status": "completed",
+                            "conclusion": "startup_failure",
+                            "head_sha": "abc123",
+                        },
+                        {
+                            "id": 44,
+                            "name": "Lint",
+                            "workflow_id": 12,
+                            "status": "completed",
+                            "conclusion": "startup_failure",
+                            "head_sha": "abc123",
+                        },
+                    ]
+                }
+            ),
+        )
+    )
+
+    diag = await client.check_latest_run_for_zero_jobs("org/repo", "main")
+    assert diag is not None
+    assert "account/runner" in diag
+    assert "operator-action ticket" in diag
+    assert "NOT a workflow-file edit" in diag
 
 
 # ---------------------------------------------------------------------------

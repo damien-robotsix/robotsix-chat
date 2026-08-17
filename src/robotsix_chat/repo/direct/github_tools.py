@@ -42,7 +42,7 @@ def build_github_tools(
     """
     from robotsix_chat.common.unified_diff import apply_patch as _apply_patch
 
-    from .actions_client import ActionsClient
+    from .actions_client import ActionsClient, StartupFailureClass
 
     async def push_direct_repo_branch(
         ticket_id: str,
@@ -449,6 +449,40 @@ def build_github_tools(
 
         latest = runs[0]
         latest_conclusion = (latest.get("conclusion") or "").lower()
+
+        if latest_conclusion == "startup_failure":
+            # Zero-job run — classify deterministically via siblings on the
+            # same commit instead of guessing between billing and config.
+            lines.append(
+                "Verdict: STARTUP FAILURE — the latest run produced zero "
+                "jobs (GitHub rejected the workflow file before any job "
+                "started)."
+            )
+            classification = await actions_client.classify_startup_failure_run(
+                repo_full_name, latest
+            )
+            if classification is not None:
+                lines.append(
+                    f"Startup-failure classification: "
+                    f"{classification.summary}"
+                )
+                if (
+                    classification.classification
+                    is StartupFailureClass.PER_WORKFLOW_CONFIG
+                ):
+                    lines.append(
+                        "The account/runner/billing plane is provably fine "
+                        "— diagnose this workflow's own file (trigger, "
+                        "permissions, reusable-workflow ``uses:``)."
+                    )
+                else:
+                    lines.append(
+                        "Every workflow on this commit produced zero jobs — "
+                        "treat as an account/runner/billing issue (operator "
+                        "action), NOT a workflow-file edit."
+                    )
+            return "\n".join(lines)
+
         recent_green = next(
             (r for r in runs if (r.get("conclusion") or "").lower() == "success"),
             None,

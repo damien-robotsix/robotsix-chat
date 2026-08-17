@@ -47,7 +47,10 @@ def build_github_actions_tools(
     if not github_actions.enabled:
         return []
 
-    from robotsix_chat.repo.direct.actions_client import ActionsClient
+    from robotsix_chat.repo.direct.actions_client import (
+        ActionsClient,
+        StartupFailureClass,
+    )
 
     actions = ActionsClient(direct_repo)
     client = actions._client  # DirectRepoClient for scope checks
@@ -156,8 +159,13 @@ def build_github_actions_tools(
         Use this to investigate a CI failure that has no obvious cause.
         The tool inspects recent workflow runs and detects known failure
         signatures — including zero-job runs and never-started runs.
-        The diagnosis is visibility-aware: for public repos, billing is
-        never suggested as a cause; guidance focuses on trigger
+        A ``startup_failure`` run (zero jobs, no logs) is classified
+        deterministically by checking sibling workflows on the same commit
+        (``head_sha``): if any sibling reached real job execution, the
+        failure is a per-workflow config issue; only when every workflow
+        on the commit produced zero jobs is it an account/runner/billing
+        issue.  The diagnosis is visibility-aware: for public repos,
+        billing is never suggested as a cause; guidance focuses on trigger
         misconfigurations, missing reusable workflow files, and
         input-contract mismatches instead.
 
@@ -183,6 +191,34 @@ def build_github_actions_tools(
             # Single-run deep inspection
             jobs = await actions.get_workflow_run_jobs(repo_full_name, run_id)
             if not jobs:
+                # -- deterministic startup_failure classification --
+                run = await actions.get_workflow_run(repo_full_name, run_id)
+                if run:
+                    classification = await actions.classify_startup_failure_run(
+                        repo_full_name, run
+                    )
+                else:
+                    classification = None
+                if classification is not None:
+                    if classification.classification is StartupFailureClass.PER_WORKFLOW_CONFIG:
+                        return (
+                            f"Workflow run {run_id} on {repo_full_name} has no "
+                            f"jobs (conclusion: {run.get('conclusion')}) — "
+                            f"{classification.summary}.  The account/runner/"
+                            f"billing plane is provably fine — the root cause "
+                            f"is in this workflow's own file (trigger, "
+                            f"permissions, or reusable-workflow ``uses:``)."
+                        )
+                    return (
+                        f"Workflow run {run_id} on {repo_full_name} has no "
+                        f"jobs (conclusion: {run.get('conclusion')}) — "
+                        f"{classification.summary}.  Every workflow on this "
+                        f"commit produced zero jobs, which points at the "
+                        f"account/runner/billing plane (Actions disabled, "
+                        f"billing lapse, or no available runners).  This is "
+                        f"an operator-action ticket, NOT a workflow-file edit."
+                    )
+                # -- fallback: no run metadata or sibling listing failed --
                 is_private = await actions.check_repo_visibility(repo_full_name)
                 if is_private is True:
                     return (
