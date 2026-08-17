@@ -3,6 +3,27 @@
 Governed artifact: `Settings.agent_instruction` default literal in
 `src/robotsix_chat/config/settings.py`. Version stamp: `SYSTEM_PROMPT_VERSION` in the same module.
 
+## v127 — 2026-08-17 — 20260802T005540Z-treat-global-subsession-pool-capacity-as-4c54
+
+**Summary:** Add a subsession pool-budget subsection to the Ticket lifecycle
+section of `agent_instruction`: the global subsession pool is finite (all
+active subsessions share one process-wide cap, `subsessions.max_concurrent`),
+and spawning past the cap forces eviction of an existing paused subsession.
+Before spawning a monitor the assistant must call `list_subsessions` to count
+active AND paused subsessions and check headroom against the cap; reuse an
+existing monitor slot for related tickets instead of spawning duplicates; do
+not spawn monitors for tickets still in `draft` status (the board-drain
+periodic picks those up); and never pause/evict a low-priority monitor to
+free a slot and then forget to respawn it.
+
+**Rationale:** Session 132d3e1e203c427a934a623964892cb1 hit the global
+subsession-pool capacity cap twice while spawning monitors, each time
+evicting a low-priority paused monitor — thrash the agent then had to undo.
+The prompt gave no guidance that the pool is finite, so the agent spawned
+reactively and discovered the cap only on failure.
+
+**SHA256:** `60daf89fed4d3c28d02f26b3da9000cdcba21cbe5b0e44654b2ffbcec5032e23`
+
 ## v126 — 2026-08-02 — 20260802T005542Z-avoid-filing-chat-agent-capability-ticke-2adf
 
 **Summary:** Add a capability self-change rule to `agent_instruction`: when
