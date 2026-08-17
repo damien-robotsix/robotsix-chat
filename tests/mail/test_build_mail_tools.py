@@ -60,10 +60,10 @@ def test_build_mail_tools_disabled() -> None:
     assert build_mail_tools(MailSettings(enabled=False)) == []
 
 
-def test_build_mail_tools_returns_thirteen_tools() -> None:
-    """Verify that enabled mail returns thirteen discrete tools."""
+def test_build_mail_tools_returns_fourteen_tools() -> None:
+    """Verify that enabled mail returns fourteen discrete tools."""
     tools = build_mail_tools(_settings())
-    assert len(tools) == 13
+    assert len(tools) == 14
     names = [t.__name__ for t in tools]
     assert names == [
         "get_mail_board",
@@ -78,6 +78,7 @@ def test_build_mail_tools_returns_thirteen_tools() -> None:
         "rename_archive_folder",
         "cleanup_empty_archive_folders",
         "delete_archive_folder",
+        "delete_archive_message",
         "list_mail_accounts",
     ]
 
@@ -665,6 +666,77 @@ async def test_archive_delete_client_side_path_escape(
 
 
 # ---------------------------------------------------------------------------
+# MailClient — archive_delete_message (POST /archive-message-delete)
+# ---------------------------------------------------------------------------
+
+
+@pytest.mark.asyncio
+async def test_archive_delete_message_success(
+    respx_mock: respx.MockRouter,
+) -> None:
+    """POST /archive-message-delete with uid + folder returns success."""
+    route = respx_mock.post("http://127.0.0.1:8077/archive-message-delete").mock(
+        return_value=httpx.Response(200, text='{"deleted": "Projects/Acme:42"}')
+    )
+    tools = build_mail_tools(_settings())
+    delete_message = tools[12]
+
+    result = await delete_message("42", "Projects/Acme")
+
+    assert route.called
+    body = route.calls.last.request.content.decode()
+    assert '"uid":"42"' in body
+    assert '"folder":"Projects/Acme"' in body
+    assert "Projects/Acme:42" in result
+
+
+@pytest.mark.asyncio
+async def test_archive_delete_message_error(
+    respx_mock: respx.MockRouter,
+) -> None:
+    """POST /archive-message-delete on 400 returns an error string."""
+    respx_mock.post("http://127.0.0.1:8077/archive-message-delete").mock(
+        return_value=httpx.Response(400, text="message not found in folder")
+    )
+    tools = build_mail_tools(_settings())
+    delete_message = tools[12]
+
+    result = await delete_message("42", "Projects/Missing")
+
+    assert "Mail API error 400" in result
+    assert "message not found in folder" in result
+
+
+@pytest.mark.asyncio
+async def test_archive_delete_message_client_side_path_escape(
+    respx_mock: respx.MockRouter,
+) -> None:
+    """Client-side path-escape rejects traversal before sending a request."""
+    tools = build_mail_tools(_settings())
+    delete_message = tools[12]
+
+    # Absolute path
+    result = await delete_message("42", "/etc/passwd")
+    assert "absolute paths are not allowed" in result
+
+    # Dot-dot traversal
+    result = await delete_message("42", "Projects/../escape")
+    assert "'..' traversal is not allowed" in result
+
+    # Null byte
+    result = await delete_message("42", "foo\x00bar")
+    assert "null bytes" in result
+
+    # Empty folder
+    result = await delete_message("42", "")
+    assert "must not be empty" in result
+
+    # Empty uid
+    result = await delete_message("", "Projects/Acme")
+    assert "uid must not be empty" in result
+
+
+# ---------------------------------------------------------------------------
 # MailClient — list_accounts (GET /list-accounts)
 # ---------------------------------------------------------------------------
 
@@ -679,7 +751,7 @@ async def test_list_accounts_success(respx_mock: respx.MockRouter) -> None:
         )
     )
     tools = build_mail_tools(_settings())
-    list_accounts = tools[12]
+    list_accounts = tools[13]
 
     result = await list_accounts()
 
@@ -694,7 +766,7 @@ async def test_list_accounts_error(respx_mock: respx.MockRouter) -> None:
         return_value=httpx.Response(500, text="Internal error")
     )
     tools = build_mail_tools(_settings())
-    list_accounts = tools[12]
+    list_accounts = tools[13]
 
     result = await list_accounts()
 

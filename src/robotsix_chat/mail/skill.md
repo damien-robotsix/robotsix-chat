@@ -64,6 +64,7 @@ the server returns a 404 when it is omitted. Pass the account identifier you dis
 | `rename_archive_folder`         | Rename an archive subfolder in-place on the IMAP server.              |
 | `cleanup_empty_archive_folders` | Remove empty archive subfolders from the IMAP server.                 |
 | `delete_archive_folder`         | Delete a specific archive subfolder (empty-only unless `force=True`). |
+| `delete_archive_message`        | Permanently delete one archive message (by `uid` + folder).           |
 
 ## Agent tool: `list_archive_folders`
 
@@ -166,6 +167,33 @@ approval. Never delete an archive folder without the operator's explicit consent
 | Folder not found            | `folder not found`                              |
 | IMAP unreachable            | `IMAP not configured for this account` (503)    |
 | Malformed JSON body         | `Malformed JSON body` (HTTP 400)                |
+
+## Agent tool: `delete_archive_message`
+
+Permanently delete a single message from an archive subfolder on the IMAP server. The message is
+identified by its IMAP `uid` (as returned by `browse_archive_folder`) together with the folder it
+lives in.
+
+**This is a confirmation-gated mutation.** Before calling, state the message's `uid`, folder,
+subject, sender, and date in-chat and obtain explicit operator approval. Never delete an archive
+message without the operator's explicit consent.
+
+### Preconditions
+
+- The `uid` must match a message currently in the given archive subfolder (from
+  `browse_archive_folder`).
+- The folder path must be relative to the archive root (`..` and absolute paths are rejected
+  client-side).
+- The IMAP server must be reachable and authenticated.
+
+### Error responses
+
+| Condition                | Message                                       |
+| ------------------------ | --------------------------------------------- |
+| Message not found        | `message not found in folder`                 |
+| Folder path escapes root | `Folder path escapes archive root` (HTTP 400) |
+| IMAP unreachable         | `IMAP not configured for this account` (503)  |
+| Malformed JSON body      | `Malformed JSON body` (HTTP 400)              |
 
 ## Archive root (OVH-hosted accounts)
 

@@ -313,6 +313,37 @@ def build_mail_tools(settings: MailSettings) -> list[Callable[..., Any]]:
         """
         return await client.archive_delete(folder, force=force)
 
+    async def delete_archive_message(uid: str, folder: str) -> str:
+        """Delete a single message from an archive subfolder on the IMAP server.
+
+        **This is a confirmation-gated mutation.**  You MUST obtain
+        explicit operator approval before calling this function.  State:
+
+        * The message's ``uid`` and archive subfolder path (as returned
+          by ``browse_archive_folder``).
+        * The message's subject, sender, and date so the operator can
+          verify which message you are deleting.
+
+        Wait for a clear confirmation reply (e.g. "yes", "proceed",
+        "go ahead") from the operator before proceeding.  Silently
+        deleting archive messages without consent is prohibited.
+
+        Args:
+            uid: The message's unique IMAP UID, as returned by
+                ``browse_archive_folder``.
+            folder: The archive subfolder path containing the message
+                (e.g. "Projects/Acme").  Must be under the archive root —
+                path traversal sequences like ``..`` are rejected
+                server-side.
+
+        Returns:
+            JSON text with a success confirmation or error detail.
+
+        Never raises — errors become a diagnostic string.
+
+        """
+        return await client.archive_delete_message(uid, folder)
+
     async def list_mail_accounts() -> str:
         """List the mail accounts registered on the auto-mail board server.
 
@@ -340,5 +371,6 @@ def build_mail_tools(settings: MailSettings) -> list[Callable[..., Any]]:
         rename_archive_folder,
         cleanup_empty_archive_folders,
         delete_archive_folder,
+        delete_archive_message,
         list_mail_accounts,
     ]
