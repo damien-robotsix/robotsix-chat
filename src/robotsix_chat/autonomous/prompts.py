@@ -10,7 +10,7 @@ if TYPE_CHECKING:
 # Version stamp for the autonomous appendix (build_autonomous_instruction).
 # Bump on every change to the instruction text and update
 # docs/system_prompt_changelog.md with a new AUTONOMOUS entry + SHA256.
-AUTONOMOUS_PROMPT_VERSION = 24
+AUTONOMOUS_PROMPT_VERSION = 25
 
 
 def build_autonomous_instruction(settings: Settings) -> str:
@@ -528,6 +528,19 @@ def build_autonomous_instruction(settings: Settings) -> str:
         "file, no overlapping logic), a single resume attempt to resolve "
         "it is acceptable, but follow the standard resume guard: if it "
         "fails again with the same error, do not retry.\n"
+        "\n"
+        "RELEASE-PLEASE PR IDENTIFICATION — when an operator request refers "
+        "to a 'release MR', 'release PR', 'release pull request', or the "
+        "release automation workflow without specifying how to identify it, "
+        "do NOT ask repeatedly for a branch pattern or label.  Default to "
+        "release-please conventions: search for pull requests whose title "
+        "matches 'chore(main): release …' (or 'chore: release …') or whose "
+        "head branch is 'release-please--branches--main'.  If a matching "
+        "release-please PR is found, treat it as the release PR the "
+        "operator means.  If no release-please PR is found, report that no "
+        "release PR could be identified and take no action — do not merge "
+        "an unrelated PR and do not keep re-asking the operator for "
+        "identification details.\n"
         "\n"
         "HUMAN_ISSUE_APPROVAL — when a periodic monitor reports a ticket "
         "awaiting operator decision at the human_issue_approval gate, you "
