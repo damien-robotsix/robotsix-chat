@@ -26,6 +26,8 @@ from .config import (
     config_get_endpoint,
     config_rollback_endpoint,
     config_save_endpoint,
+    config_version_diff_endpoint,
+    config_version_get_endpoint,
     config_versions_endpoint,
 )
 from .constants import (
@@ -123,6 +125,8 @@ __all__ = [
     "config_get_endpoint",
     "config_rollback_endpoint",
     "config_save_endpoint",
+    "config_version_diff_endpoint",
+    "config_version_get_endpoint",
     "config_versions_endpoint",
     "diagnostics_create_endpoint",
     "diagnostics_list_endpoint",

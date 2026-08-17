@@ -100,6 +100,8 @@ from .routes import (
     config_get_endpoint,
     config_rollback_endpoint,
     config_save_endpoint,
+    config_version_diff_endpoint,
+    config_version_get_endpoint,
     config_versions_endpoint,
     diagnostics_create_endpoint,
     diagnostics_list_endpoint,
@@ -565,6 +567,16 @@ def create_app(
         Route("/config", config_get_endpoint, methods=["GET"]),
         Route("/config", config_save_endpoint, methods=["PUT"]),
         Route("/config/versions", config_versions_endpoint, methods=["GET"]),
+        Route(
+            "/config/versions/{version:int}",
+            config_version_get_endpoint,
+            methods=["GET"],
+        ),
+        Route(
+            "/config/versions/{version:int}/diff",
+            config_version_diff_endpoint,
+            methods=["GET"],
+        ),
         Route("/config/rollback", config_rollback_endpoint, methods=["POST"]),
         Route(
             "/mail/archive-root-check",
