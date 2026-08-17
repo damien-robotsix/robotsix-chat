@@ -385,6 +385,9 @@ import { processSSEStream } from "./sse-parser.js";
   // fetchSessions) and every per-session request must be scoped to their
   // real owner so history, replies, and the event stream reach them.
   var AUTONOMOUS_OWNER = "autonomous";
+  // Keep in sync with DEFAULT_TRIGGER_INTERVAL_SECONDS in
+  // config/autonomous_models.py. Every preset is periodic.
+  var DEFAULT_TRIGGER_INTERVAL_SECONDS = 3600;
   function ownerFor(sid) {
     for (var oi = 0; oi < sessionsList.length; oi++) {
       var s = sessionsList[oi];
@@ -3936,10 +3939,10 @@ import { processSSEStream } from "./sse-parser.js";
 
     var detail = document.createElement("span");
     detail.className = "preset-detail";
-    var intervalText = preset.trigger_type === "periodic"
-      ? ", " + preset.trigger_interval_seconds + "s"
-      : "";
-    detail.textContent = preset.trigger_type + intervalText
+    var interval = preset.trigger_interval_seconds != null
+      ? preset.trigger_interval_seconds
+      : DEFAULT_TRIGGER_INTERVAL_SECONDS;
+    detail.textContent = "every " + interval + "s"
       + (preset.enabled === false ? " (disabled)" : "");
     summary.appendChild(detail);
 
@@ -4004,35 +4007,17 @@ import { processSSEStream } from "./sse-parser.js";
     promptRow.appendChild(promptInput);
     form.appendChild(promptRow);
 
-    // Trigger type
-    var triggerRow = makeFormRow("Trigger");
-    var triggerSelect = document.createElement("select");
-    var optPeriodic = document.createElement("option");
-    optPeriodic.value = "periodic";
-    optPeriodic.textContent = "periodic";
-    var optOnClose = document.createElement("option");
-    optOnClose.value = "on_close";
-    optOnClose.textContent = "on_close";
-    triggerSelect.appendChild(optPeriodic);
-    triggerSelect.appendChild(optOnClose);
-    triggerSelect.value = preset.trigger_type || "periodic";
-    triggerRow.appendChild(triggerSelect);
-    form.appendChild(triggerRow);
-
-    // Interval (shown when trigger is periodic)
+    // Interval — the whole scheduling contract. Every preset is periodic;
+    // a "continuous" preset is just a short interval.
     var intervalRow = makeFormRow("Interval (s)");
     var intervalInput = document.createElement("input");
     intervalInput.type = "number";
     intervalInput.step = "any";
     intervalInput.min = "0";
-    intervalInput.value = preset.trigger_interval_seconds != null ? preset.trigger_interval_seconds : 45;
+    intervalInput.value = preset.trigger_interval_seconds != null
+      ? preset.trigger_interval_seconds
+      : DEFAULT_TRIGGER_INTERVAL_SECONDS;
     intervalRow.appendChild(intervalInput);
-    if (preset.trigger_type === "on_close") {
-      intervalRow.style.display = "none";
-    }
-    triggerSelect.addEventListener("change", function () {
-      intervalRow.style.display = triggerSelect.value === "periodic" ? "" : "none";
-    });
     form.appendChild(intervalRow);
 
     // Enabled
@@ -4059,8 +4044,8 @@ import { processSSEStream } from "./sse-parser.js";
       var newPreset = {
         name: nameInput.value.trim(),
         prompt: promptInput.value,
-        trigger_type: triggerSelect.value,
-        trigger_interval_seconds: Number(intervalInput.value) || 45,
+        trigger_interval_seconds:
+          Number(intervalInput.value) || DEFAULT_TRIGGER_INTERVAL_SECONDS,
         enabled: enabledCheck.checked
       };
       savePresetForm(row, path, index, newPreset);
@@ -4161,8 +4146,7 @@ import { processSSEStream } from "./sse-parser.js";
     var emptyPreset = {
       name: "",
       prompt: "",
-      trigger_type: "periodic",
-      trigger_interval_seconds: 45,
+      trigger_interval_seconds: DEFAULT_TRIGGER_INTERVAL_SECONDS,
       enabled: true
     };
     showPresetForm(row, emptyPreset, -1, path);

@@ -18,6 +18,9 @@ from robotsix_chat.chat.events import (
     autonomous_state_frame,
     autonomous_token_frame,
 )
+from robotsix_chat.config.autonomous_models import (
+    DEFAULT_TRIGGER_INTERVAL_SECONDS,
+)
 from robotsix_chat.subsessions.worker import _is_no_change
 
 if TYPE_CHECKING:
@@ -48,9 +51,10 @@ _OWNER_ID_PREFIX = "autonomous:"
 # to the settings panel).
 AUTONOMOUS_PERSIST_PATH = "/data/autonomous_sessions.json"
 
-# Hardcoded default trigger interval (seconds) for synthesized sessions
-# and fallback when a session definition lacks ``trigger_interval_seconds``.
-_DEFAULT_TRIGGER_INTERVAL = 45.0
+# Fallback when a session definition lacks ``trigger_interval_seconds``.
+# Shared with the config model so the schema default and the runtime default
+# cannot drift apart.
+_DEFAULT_TRIGGER_INTERVAL = DEFAULT_TRIGGER_INTERVAL_SECONDS
 
 
 class AutonomousRunner:
@@ -73,6 +77,9 @@ class AutonomousRunner:
         self._event_sink = event_sink
         self._refinement_store = refinement_store
         self._persist_path = Path(AUTONOMOUS_PERSIST_PATH)
+        # owner_id -> earliest ts at which that preset may start its next run.
+        # Populated by ``_load_sessions``, so it must exist first.
+        self._next_fire: dict[str, float] = {}
         self._sessions: dict[str, AutonomousSession] = self._load_sessions()
         # Strong references to in-flight autonomous run tasks (see asyncio
         # docs warning on create_task and weak references).
@@ -105,18 +112,51 @@ class AutonomousRunner:
             return AutonomousState.completed
         return AutonomousState.executing
 
+    # -- scheduling --------------------------------------------------------
+
+    @staticmethod
+    def _interval_for(defn: dict[str, Any] | None) -> float:
+        """Seconds to wait between one run of *defn* completing and the next."""
+        if not defn:
+            return _DEFAULT_TRIGGER_INTERVAL
+        raw = defn.get("trigger_interval_seconds", _DEFAULT_TRIGGER_INTERVAL)
+        try:
+            return max(0.0, float(raw))
+        except TypeError, ValueError:
+            return _DEFAULT_TRIGGER_INTERVAL
+
+    def _set_next_fire(self, owner_id: str, delay: float) -> float:
+        """Record when *owner_id* may next start a run, and persist it."""
+        next_fire = time.time() + max(0.0, delay)
+        self._next_fire[owner_id] = next_fire
+        self._save_sessions()
+        return next_fire
+
+    def _is_due(self, owner_id: str) -> bool:
+        """Whether *owner_id* has reached its next scheduled run.
+
+        A preset with no recorded schedule has never run under this store and
+        is due immediately, which is what bootstraps a fresh deployment.
+        """
+        next_fire = self._next_fire.get(owner_id)
+        return next_fire is None or time.time() >= next_fire
+
     def _save_sessions(self) -> None:
         """Persist the in-memory session registry to disk."""
         try:
-            data = {}
+            sessions = {}
             for sid, aq in self._sessions.items():
-                data[sid] = {
+                sessions[sid] = {
                     "session_id": aq.session_id,
                     "owner_id": aq.owner_id,
                     "state": aq.state.value,
                     "auto_turn_count": aq.auto_turn_count,
                     "definition_name": aq.definition_name,
                 }
+            # ``next_fire`` is what stops a restart from re-running every
+            # preset: without it the runner had no memory of when a preset
+            # last ran, so a daily job fired again on every boot.
+            data = {"sessions": sessions, "next_fire": dict(self._next_fire)}
             self._persist_path.parent.mkdir(parents=True, exist_ok=True)
             self._persist_path.write_text(json.dumps(data, indent=2))
         except Exception:
@@ -138,8 +178,23 @@ class AutonomousRunner:
                 self._persist_path,
             )
             return {}
+        # Stores written before the schedule was persisted are a bare
+        # ``{session_id: entry}`` map; the current shape wraps that in
+        # ``{"sessions": ..., "next_fire": ...}``.  Read both so an upgrade
+        # keeps its in-flight sessions.
+        if isinstance(raw, dict) and "sessions" in raw:
+            entries = raw.get("sessions") or {}
+            next_fire = raw.get("next_fire") or {}
+        else:
+            entries = raw
+            next_fire = {}
+        for owner_id, ts in next_fire.items():
+            try:
+                self._next_fire[owner_id] = float(ts)
+            except TypeError, ValueError:
+                logger.warning("Ignoring unparsable next_fire for %s", owner_id)
         sessions: dict[str, AutonomousSession] = {}
-        for sid, entry in raw.items():
+        for sid, entry in entries.items():
             try:
                 sessions[sid] = AutonomousSession(
                     session_id=entry["session_id"],
@@ -172,9 +227,6 @@ class AutonomousRunner:
                 d.name: {
                     "name": d.name,
                     "prompt": d.prompt,
-                    "trigger_type": d.trigger_type.value
-                    if hasattr(d.trigger_type, "value")
-                    else d.trigger_type,
                     "trigger_interval_seconds": d.trigger_interval_seconds,
                     "max_auto_turns": d.max_auto_turns,
                     "enabled": d.enabled,
@@ -186,8 +238,7 @@ class AutonomousRunner:
             }
             if definitions:
                 preset_summary = ", ".join(
-                    f"{name} (trigger={d['trigger_type']},"
-                    f" interval={d['trigger_interval_seconds']}s)"
+                    f"{name} (interval={d['trigger_interval_seconds']}s)"
                     for name, d in sorted(definitions.items())
                 )
                 logger.info(
@@ -447,16 +498,27 @@ class AutonomousRunner:
         *,
         schedule_kickoff: bool = True,
         definition_name: str = "",
-    ) -> AutonomousSession:
-        """Guarantee *owner_id* has exactly one open (non-completed) session.
+        force: bool = False,
+    ) -> AutonomousSession | None:
+        """Open a session for *owner_id* if one is missing and it is due.
 
-        Implements the "auto-restart always" guarantee: the operator always
-        has one live autonomous run.  When an open session already exists it
-        is returned unchanged.  Otherwise any completed sessions for
-        *owner_id* are retired — dropped from both the runner registry and the
-        conversation store (with ``create_replacement=False`` so the store
-        does not spawn an empty "New chat" husk) — and a fresh autonomous
-        session is started.
+        When an open session already exists it is returned unchanged.
+        Otherwise any completed sessions for *owner_id* are retired — dropped
+        from both the runner registry and the conversation store (with
+        ``create_replacement=False`` so the store does not spawn an empty
+        "New chat" husk) — and, **if the preset is due**, a fresh session is
+        started.
+
+        The due check is the difference between a schedule and a spin.  This
+        used to spawn unconditionally ("the operator always has one live
+        autonomous run"), which silently overrode the interval: closing a
+        daily preset restarted it immediately, and every server restart
+        re-ran all of them.  With every preset now periodic, honouring the
+        schedule is the only coherent behaviour — so a preset that is not yet
+        due stays closed and ``None`` is returned.
+
+        *force* bypasses the due check for callers that ARE the schedule (the
+        ``_auto_restart`` timer) or an explicit operator "run now".
 
         *definition_name* is passed through to :meth:`create_session` when a
         new session is spawned.
@@ -464,6 +526,14 @@ class AutonomousRunner:
         for aq in self._sessions.values():
             if aq.owner_id == owner_id and aq.state is not AutonomousState.completed:
                 return aq
+
+        if not force and not self._is_due(owner_id):
+            logger.info(
+                "Autonomous session not due yet: owner_id=%s next_fire_ts=%.3f",
+                owner_id,
+                self._next_fire.get(owner_id, 0.0),
+            )
+            return None
 
         # No open session — retire completed ones so they neither accumulate
         # nor leave an orphaned store entry that the UI cannot resolve.
@@ -497,24 +567,14 @@ class AutonomousRunner:
         or 0 for on-close trigger (immediate restart).
         """
         defn = self._definition_for_owner(owner_id)
-        trigger_type = defn.get("trigger_type", "periodic") if defn else "periodic"
         preset_name = defn.get("name", "unknown") if defn else "unknown"
-        if trigger_type == "on_close":
-            delay = 0.0
-        else:
-            interval = (
-                defn.get("trigger_interval_seconds", _DEFAULT_TRIGGER_INTERVAL)
-                if defn
-                else _DEFAULT_TRIGGER_INTERVAL
-            )
-            delay = max(0.0, float(interval))
-        next_fire_ts = time.time() + delay
+        delay = self._interval_for(defn)
+        next_fire_ts = self._set_next_fire(owner_id, delay)
         logger.info(
             "Autonomous session restart scheduled: preset=%s owner_id=%s "
-            "trigger=%s delay=%.0fs next_fire_ts=%.3f",
+            "delay=%.0fs next_fire_ts=%.3f",
             preset_name,
             owner_id,
-            trigger_type,
             delay,
             next_fire_ts,
         )
@@ -522,16 +582,17 @@ class AutonomousRunner:
             if delay:
                 await asyncio.sleep(delay)
             logger.info(
-                "Autonomous session restart firing: preset=%s owner_id=%s "
-                "trigger=%s fire_ts=%.3f",
+                "Autonomous session restart firing: preset=%s owner_id=%s fire_ts=%.3f",
                 preset_name,
                 owner_id,
-                trigger_type,
                 time.time(),
             )
+            # The timer is the authority here: fire even though the schedule
+            # this task just slept out is now due.
             self.ensure_active_session(
                 owner_id,
                 definition_name=defn["name"] if defn else "",
+                force=True,
             )
         except asyncio.CancelledError:
             logger.debug("Auto-restart task cancelled for owner %s", owner_id)
@@ -639,21 +700,14 @@ class AutonomousRunner:
         aq.state = AutonomousState.completed
         preset_name = aq.definition_name or "unknown"
         defn = self._definition_for_owner(aq.owner_id)
-        trigger_type = defn.get("trigger_type", "periodic") if defn else "periodic"
-        interval = (
-            defn.get("trigger_interval_seconds", _DEFAULT_TRIGGER_INTERVAL)
-            if defn
-            else _DEFAULT_TRIGGER_INTERVAL
-        )
-        next_fire = time.time() + (0.0 if trigger_type == "on_close" else interval)
+        interval = self._interval_for(defn)
+        next_fire = self._set_next_fire(aq.owner_id, interval)
         logger.info(
             "Autonomous session completed: preset=%s session_id=%s "
-            "owner_id=%s trigger=%s interval=%.0fs "
-            "next_fire_ts=%.3f",
+            "owner_id=%s interval=%.0fs next_fire_ts=%.3f",
             preset_name,
             session_id,
             aq.owner_id,
-            trigger_type,
             interval,
             next_fire,
         )
@@ -756,10 +810,9 @@ class AutonomousRunner:
     async def resume_sessions(self) -> None:
         """Handle autonomous sessions on server restart.
 
-        - Sessions in ``completed`` state: skipped (not re-run).  The
-          auto-restart guarantee in :meth:`ensure_all_active_sessions`
-          then retires them and starts a fresh session for their
-          definition.
+        - Sessions in ``completed`` state: skipped (not re-run).
+          :meth:`ensure_all_active_sessions` then retires them, and starts a
+          fresh session for their definition only once it is due.
         - Sessions in ``executing`` state: left as-is.  The session has
           already received its single prompt; resumption is the agent's
           responsibility via the continuation-scheduling mechanism, not a
@@ -768,11 +821,10 @@ class AutonomousRunner:
           wiped store), auto-start one session per enabled definition so
           autonomous mode is not permanently idle.
 
-        **Startup semantics for periodic presets:** each enabled periodic
-        preset fires at t=0 (startup), not after one full interval.
-        ``trigger_interval_seconds`` is the delay *between completion
-        and the next restart*, not an initial delay.  The first run
-        begins immediately at startup via :meth:`ensure_all_active_sessions`.
+        **Startup semantics:** a preset that has never run starts at t=0;
+        one that ran recently waits out the remainder of its interval.  The
+        schedule is persisted, so a restart no longer re-runs every preset —
+        see :meth:`ensure_all_active_sessions`.
         """
         logger.info(
             "Autonomous session runner resuming: %d persisted sessions, "
@@ -826,29 +878,31 @@ class AutonomousRunner:
         self.ensure_all_active_sessions()
 
     def ensure_all_active_sessions(self) -> None:
-        """Guarantee one open session per enabled definition (e.g. on startup).
+        """Open a session for each enabled definition that is due.
 
-        **Periodic presets fire at t=0 (startup).**  The
-        ``trigger_interval_seconds`` is the delay between a completed run
-        and the next restart — not an initial delay.  This method
-        bootstraps every enabled definition immediately, so the first
-        run of a periodic preset begins at startup rather than after
-        one full interval.
+        A preset that has never run under this store has no recorded
+        schedule and so starts immediately — that is what bootstraps a fresh
+        deployment.  One that ran recently keeps its place in the schedule
+        and is left closed until its interval elapses.
+
+        This used to fire every preset at t=0 on every startup, which made
+        ``trigger_interval_seconds`` meaningless across restarts: a daily
+        preset re-ran on each boot, and a restart during an incident could
+        re-run all of them minutes apart.
         """
         startup_ts = time.time()
         for name in self._definitions:
             owner_id = self._owner_id_for_definition(name)
             defn = self._definitions.get(name, {})
-            trigger_type = defn.get("trigger_type", "periodic")
-            interval = defn.get("trigger_interval_seconds", _DEFAULT_TRIGGER_INTERVAL)
+            interval = self._interval_for(defn)
             logger.info(
                 "Autonomous session startup: ensuring preset=%s "
-                "owner_id=%s trigger=%s interval=%.0fs startup_ts=%.3f",
+                "owner_id=%s interval=%.0fs startup_ts=%.3f next_fire_ts=%.3f",
                 name,
                 owner_id,
-                trigger_type,
                 interval,
                 startup_ts,
+                self._next_fire.get(owner_id, 0.0),
             )
             self.ensure_active_session(
                 owner_id,

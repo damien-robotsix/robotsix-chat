@@ -69,7 +69,6 @@ def autonomous_runner(store, tmp_path, monkeypatch) -> AutonomousRunner:
         SimpleNamespace(
             name="default",
             prompt="",
-            trigger_type=SimpleNamespace(value="periodic"),
             trigger_interval_seconds=45.0,
             max_auto_turns=20,
             enabled=True,
@@ -282,7 +281,9 @@ class TestAutonomousDefinitionsListEndpoint:
         for d in r.json()["definitions"]:
             assert "name" in d
             assert "prompt" in d
-            assert "trigger_type" in d
+            # ``trigger_type`` is retired — every preset is periodic, so the
+            # interval is the whole scheduling contract.
+            assert "trigger_type" not in d
             assert "trigger_interval_seconds" in d
             assert "enabled" in d
             assert "owner_id" in d

@@ -172,8 +172,9 @@ A run begins with the definition's single kickoff prompt and closes when the age
 completion marker. There is no `Continue.` loop and no turn/idle caps — the agent works through the
 prompt in one turn, using its tools, subsessions, and the continuation-scheduling mechanism as
 needed, then emits the marker. Completion is automatic: the runner marks the session `completed`,
-then schedules a fresh run via `_auto_restart()` — immediately for `on_close` presets, or after
-`trigger_interval_seconds` for `periodic` presets. The operator never closes sessions manually.
+then schedules a fresh run via `_auto_restart()` after `trigger_interval_seconds`. Every preset is
+periodic, and the next-fire time is persisted, so a restart resumes the schedule rather than
+re-running every preset. The operator never closes sessions manually.
 
 ### Non-blocking startup (never blocks chat)
 

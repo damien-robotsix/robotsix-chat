@@ -10,7 +10,6 @@ from .autonomous_models import (
     AutonomousSessionDefinition,
     AutonomousSettings,
     AutonomySettings,
-    TriggerType,
 )
 from .component_models import (
     ComponentClientSettings,
@@ -113,7 +112,6 @@ __all__ = [
     "SelfReviewSettings",
     "SftpSettings",
     "SubsessionsSettings",
-    "TriggerType",
     "VersionCheckSettings",
     "VolumeToolsSettings",
 ]

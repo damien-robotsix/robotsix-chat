@@ -948,3 +948,57 @@ def test_real_config_json_is_valid_and_loads() -> None:
     settings = Settings.model_validate(data)
     assert settings.public_fetch.enabled is False
     assert settings.public_fetch.max_body_bytes == 1_048_576
+
+
+class TestRetiredTriggerTypeMigration:
+    """Stored presets naming the retired ``trigger_type`` must still load.
+
+    ``AutonomousSessionDefinition`` forbids extra keys, so a config written
+    under the old two-trigger model would fail validation outright — chat
+    would refuse to start on an existing deployment.
+    """
+
+    def test_periodic_preset_keeps_its_interval(self) -> None:
+        """A periodic preset's configured interval is preserved."""
+        from robotsix_chat.config.autonomous_models import (
+            AutonomousSessionDefinition,
+        )
+
+        d = AutonomousSessionDefinition.model_validate(
+            {
+                "name": "cost-review",
+                "trigger_type": "periodic",
+                "trigger_interval_seconds": 86400.0,
+            }
+        )
+        assert d.trigger_interval_seconds == 86400.0
+        assert not hasattr(d, "trigger_type")
+
+    def test_continuous_preset_adopts_the_standard_interval(self) -> None:
+        """``on_close`` presets drop their placeholder interval.
+
+        The runner ignored ``trigger_interval_seconds`` for ``on_close``, so
+        the stored 45 s is meaningless — honouring it would restart the
+        session every 45 seconds.
+        """
+        from robotsix_chat.config.autonomous_models import (
+            DEFAULT_TRIGGER_INTERVAL_SECONDS,
+            AutonomousSessionDefinition,
+        )
+
+        d = AutonomousSessionDefinition.model_validate(
+            {
+                "name": "default",
+                "trigger_type": "on_close",
+                "trigger_interval_seconds": 45.0,
+            }
+        )
+        assert d.trigger_interval_seconds == DEFAULT_TRIGGER_INTERVAL_SECONDS
+
+    def test_default_interval_is_one_hour(self) -> None:
+        """A preset that sets no interval gets the standard one."""
+        from robotsix_chat.config.autonomous_models import (
+            AutonomousSessionDefinition,
+        )
+
+        assert AutonomousSessionDefinition(name="x").trigger_interval_seconds == 3600.0

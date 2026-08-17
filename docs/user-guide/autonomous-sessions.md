@@ -62,7 +62,6 @@ session:
     {
       "name": "default",
       "prompt": "",
-      "trigger_type": "periodic",
       "trigger_interval_seconds": 45.0,
       "max_auto_turns": 20,
       "enabled": true
@@ -89,8 +88,7 @@ Add entries under `autonomous.sessions` in the config to define named sessions. 
 | -------------------------- | ------------ | -------------------------------------------------------------------------------------------------------------------------- |
 | `name`                     | *(required)* | Unique identifier for the session definition.                                                                              |
 | `prompt`                   | `""`         | Custom kickoff prompt. When empty, the standard "begin a new autonomous session and work it to completion" prompt is used. |
-| `trigger_type`             | `"periodic"` | `"periodic"` (wait `trigger_interval_seconds`) or `"on_close"` (continuous).                                               |
-| `trigger_interval_seconds` | `45.0`       | Delay between completion and restart for `"periodic"`. Ignored for `"on_close"`.                                           |
+| `trigger_interval_seconds` | `3600.0`     | Delay between one run completing and the next starting.                                                                    |
 | `enabled`                  | `true`       | When `false`, the definition is skipped — no session is created for it.                                                    |
 
 Once `autonomous.sessions` is non-empty, each enabled definition becomes its own session with its
@@ -106,14 +104,12 @@ independently and cannot overlap with themselves.
     {
       "name": "default",
       "prompt": "",
-      "trigger_type": "periodic",
       "trigger_interval_seconds": 45.0,
       "enabled": true
     },
     {
       "name": "continuous-triage",
       "prompt": "Begin an autonomous triage session.  Scan open tickets and investigate the oldest unassigned item.",
-      "trigger_type": "on_close",
       "enabled": true
     }
   ]
@@ -124,12 +120,17 @@ ______________________________________________________________________
 
 ## Triggers
 
-A session's `trigger_type` controls how it is re-triggered after a run completes:
+Every preset is periodic: after a run completes the runner waits `trigger_interval_seconds`, then
+starts a fresh run. There is exactly one scheduling model — a "continuous" preset is simply one with
+a short interval.
 
-- **`periodic`** — after completion the runner waits `trigger_interval_seconds`, then starts a fresh
-  run. This is the default and matches the pre-existing single-session pacing.
-- **`on_close`** — the runner restarts the session immediately (continuous mode) as soon as the
-  previous run completes, rather than waiting for an interval.
+The schedule is persisted, so restarting the server does **not** re-run a preset that has already
+run recently. A preset that has never run starts immediately, which is what bootstraps a fresh
+deployment.
+
+> The retired `trigger_type` key (`"periodic"` / `"on_close"`) is accepted and ignored when loading
+> an existing config. An `on_close` preset adopts the standard interval, because its stored
+> `trigger_interval_seconds` was a placeholder the runner ignored.
 
 ### Manual one-shot trigger
 

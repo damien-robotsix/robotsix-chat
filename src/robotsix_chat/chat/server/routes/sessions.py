@@ -11,6 +11,9 @@ from starlette.responses import JSONResponse
 
 from robotsix_chat.autonomous.models import AutonomousState
 from robotsix_chat.chat.conversation import ConversationStore
+from robotsix_chat.config.autonomous_models import (
+    DEFAULT_TRIGGER_INTERVAL_SECONDS,
+)
 from robotsix_chat.config.constants import level_display_name
 
 from ._shared import _get_session_id, _parse_json_body, build_transcript
@@ -508,8 +511,7 @@ async def autonomous_definitions_list_endpoint(request: Request) -> JSONResponse
             {
               "name": "default",
               "prompt": "",
-              "trigger_type": "periodic",
-              "trigger_interval_seconds": 45.0,
+              "trigger_interval_seconds": 3600.0,
               "enabled": true,
               "owner_id": "autonomous",
               "active_session_id": "..."
@@ -558,8 +560,9 @@ async def autonomous_definitions_list_endpoint(request: Request) -> JSONResponse
             {
                 "name": name,
                 "prompt": defn.get("prompt", ""),
-                "trigger_type": defn.get("trigger_type", "periodic"),
-                "trigger_interval_seconds": defn.get("trigger_interval_seconds", 45.0),
+                "trigger_interval_seconds": defn.get(
+                    "trigger_interval_seconds", DEFAULT_TRIGGER_INTERVAL_SECONDS
+                ),
                 "enabled": defn.get("enabled", True),
                 "self_refine": defn.get("self_refine", False),
                 "self_refine_require_approval": defn.get(

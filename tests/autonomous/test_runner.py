@@ -5,6 +5,7 @@ from __future__ import annotations
 import asyncio
 import json
 import tempfile
+import time
 from pathlib import Path
 from types import SimpleNamespace
 from unittest.mock import AsyncMock, MagicMock
@@ -45,7 +46,6 @@ def _make_definition(name: str, prompt: str = "") -> SimpleNamespace:
     return SimpleNamespace(
         name=name,
         prompt=prompt,
-        trigger_type=SimpleNamespace(value="periodic"),
         trigger_interval_seconds=45.0,
         max_auto_turns=20,
         enabled=True,
@@ -749,3 +749,139 @@ class TestNoContinuationInjection:
         assert "Continue." not in captured_prompt[0]
         assert "SYSTEM RESTARTED" not in captured_prompt[0]
         assert "Begin a new autonomous session" in captured_prompt[0]
+
+
+class TestScheduleGovernsSpawning:
+    """A preset that is not due must stay closed.
+
+    ``ensure_active_session`` used to spawn unconditionally — the
+    "auto-restart always" guarantee — which silently overrode
+    ``trigger_interval_seconds``.  Closing a daily preset restarted it
+    within seconds, and every server restart re-ran all of them.  Observed
+    2026-08-17: three autonomous sessions live at once (default,
+    cost-review, release-review) where one was expected.
+    """
+
+    @pytest.fixture(autouse=True)
+    def _mock_persistence(self, monkeypatch) -> None:
+        monkeypatch.setattr(AutonomousRunner, "_save_sessions", MagicMock())
+        monkeypatch.setattr(
+            AutonomousRunner, "_load_sessions", MagicMock(return_value={})
+        )
+        monkeypatch.setattr(AutonomousRunner, "_schedule_background", MagicMock())
+
+    def _runner(self) -> AutonomousRunner:
+        return AutonomousRunner(
+            settings=_make_settings(sessions=[_make_definition("default")]),
+            conversation_store=ConversationStore(),
+            agent_factory=MagicMock(),
+            run_serializer=_make_run_serializer(),
+        )
+
+    def test_never_run_preset_starts_immediately(self) -> None:
+        """With no recorded schedule a preset bootstraps at once."""
+        runner = self._runner()
+        assert runner.ensure_active_session("autonomous") is not None
+
+    def test_not_due_preset_does_not_spawn(self) -> None:
+        """A preset whose interval has not elapsed stays closed."""
+        runner = self._runner()
+        aq = runner.ensure_active_session("autonomous")
+        assert aq is not None
+        # Complete it: that schedules the next run one interval out.
+        runner._mark_completed(aq.session_id, aq)
+        runner.forget_session(aq.session_id)
+
+        # This is the path the close/delete endpoints take.
+        assert runner.ensure_active_session("autonomous") is None
+
+    def test_force_bypasses_the_schedule(self) -> None:
+        """The restart timer and an explicit 'run now' still fire."""
+        runner = self._runner()
+        aq = runner.ensure_active_session("autonomous")
+        assert aq is not None
+        runner._mark_completed(aq.session_id, aq)
+        runner.forget_session(aq.session_id)
+
+        assert runner.ensure_active_session("autonomous", force=True) is not None
+
+    def test_due_preset_spawns_again(self) -> None:
+        """Once the interval has elapsed the preset runs again."""
+        runner = self._runner()
+        aq = runner.ensure_active_session("autonomous")
+        assert aq is not None
+        runner._mark_completed(aq.session_id, aq)
+        runner.forget_session(aq.session_id)
+
+        runner._next_fire["autonomous"] = time.time() - 1.0
+        assert runner.ensure_active_session("autonomous") is not None
+
+    def test_existing_open_session_is_returned_not_duplicated(self) -> None:
+        """An already-open session short-circuits the due check."""
+        runner = self._runner()
+        first = runner.ensure_active_session("autonomous")
+        second = runner.ensure_active_session("autonomous")
+        assert first is not None
+        assert second is first
+
+
+class TestSchedulePersistence:
+    """The next-fire schedule must survive a restart.
+
+    Without it the runner had no memory of when a preset last ran, so every
+    boot re-fired all of them — a daily job could run several times in
+    minutes across a few restarts.
+    """
+
+    def test_next_fire_round_trips_through_disk(self) -> None:
+        """A persisted schedule is reloaded and still suppresses spawning."""
+        with tempfile.TemporaryDirectory() as tmp:
+            path = Path(tmp) / "autonomous_sessions.json"
+
+            def _build() -> AutonomousRunner:
+                runner = AutonomousRunner(
+                    settings=_make_settings(sessions=[_make_definition("default")]),
+                    conversation_store=ConversationStore(),
+                    agent_factory=MagicMock(),
+                    run_serializer=_make_run_serializer(),
+                )
+                runner._persist_path = path
+                return runner
+
+            first = _build()
+            first._next_fire["autonomous"] = time.time() + 10_000
+            first._save_sessions()
+
+            second = _build()
+            second._next_fire.clear()
+            second._sessions = second._load_sessions()
+            assert second._next_fire.get("autonomous") is not None
+            assert second.ensure_active_session("autonomous") is None
+
+    def test_legacy_flat_store_still_loads(self) -> None:
+        """A pre-schedule store (bare session map) is read without loss."""
+        with tempfile.TemporaryDirectory() as tmp:
+            path = Path(tmp) / "autonomous_sessions.json"
+            path.write_text(
+                json.dumps(
+                    {
+                        "sess-1": {
+                            "session_id": "sess-1",
+                            "owner_id": "autonomous",
+                            "state": "executing",
+                            "auto_turn_count": 2,
+                            "definition_name": "default",
+                        }
+                    }
+                )
+            )
+            runner = AutonomousRunner(
+                settings=_make_settings(sessions=[_make_definition("default")]),
+                conversation_store=ConversationStore(),
+                agent_factory=MagicMock(),
+                run_serializer=_make_run_serializer(),
+            )
+            runner._persist_path = path
+            loaded = runner._load_sessions()
+            assert "sess-1" in loaded
+            assert loaded["sess-1"].auto_turn_count == 2

@@ -2,7 +2,7 @@
   "$defs": {
     "AutonomousSessionDefinition": {
       "additionalProperties": false,
-      "description": "Definition of one named autonomous session.\n\nEach definition maps to one autonomous session owner (``autonomous:<name>``\nwhen the preset name is not ``\"default\"``, otherwise the bare\n``autonomous`` pseudo-owner).  The runner respects per-definition prompts,\ntrigger type, and the enabled flag independently.\n\nAttributes:\n    name: Unique identifier for this session definition.\n    prompt: Custom kickoff prompt appended to the autonomous protocol\n        supplement.  When empty, the agent uses the standard \"Begin a new\n        autonomous session and work it to completion\" prompt.\n    trigger_type: How the session is re-triggered after completion \u2014\n        ``\"periodic\"`` (wait ``trigger_interval_seconds``) or\n        ``\"on_close\"`` (restart immediately, continuous mode).\n    trigger_interval_seconds: Delay between completion and restart for\n        ``periodic`` trigger.  Ignored for ``on_close``.  Default 45 s.\n    enabled: When ``False``, the definition is skipped \u2014 no session is\n        created for it.\n    self_refine: When ``True``, after each run completes an LLM\n        refinement step proposes an updated prompt addendum that folds\n        in the run's feedback.  The next run uses the refined prompt.\n        Default ``False`` (static presets keep running verbatim).\n    self_refine_require_approval: When ``True``, refinements enter\n        ``pending`` state and require operator approval before they\n        take effect.  When ``False``, refinements are auto-accepted.\n        Default ``False``.",
+      "description": "Definition of one named autonomous session.\n\nEach definition maps to one autonomous session owner (``autonomous:<name>``\nwhen the preset name is not ``\"default\"``, otherwise the bare\n``autonomous`` pseudo-owner).  The runner respects per-definition prompts,\ntrigger type, and the enabled flag independently.\n\nAttributes:\n    name: Unique identifier for this session definition.\n    prompt: Custom kickoff prompt appended to the autonomous protocol\n        supplement.  When empty, the agent uses the standard \"Begin a new\n        autonomous session and work it to completion\" prompt.\n    trigger_interval_seconds: Delay between one run completing and the\n        next starting.  Every preset is periodic \u2014 there is exactly one\n        scheduling model \u2014 so a \"continuous\" preset is just a short\n        interval.  Default 1 h.\n    enabled: When ``False``, the definition is skipped \u2014 no session is\n        created for it.\n    self_refine: When ``True``, after each run completes an LLM\n        refinement step proposes an updated prompt addendum that folds\n        in the run's feedback.  The next run uses the refined prompt.\n        Default ``False`` (static presets keep running verbatim).\n    self_refine_require_approval: When ``True``, refinements enter\n        ``pending`` state and require operator approval before they\n        take effect.  When ``False``, refinements are auto-accepted.\n        Default ``False``.",
       "properties": {
         "enabled": {
           "default": true,
@@ -35,14 +35,10 @@
           "type": "boolean"
         },
         "trigger_interval_seconds": {
-          "default": 45.0,
+          "default": 3600.0,
           "minimum": 0.0,
           "title": "Trigger Interval Seconds",
           "type": "number"
-        },
-        "trigger_type": {
-          "$ref": "#/$defs/TriggerType",
-          "default": "periodic"
         }
       },
       "required": [
@@ -1428,15 +1424,6 @@
       },
       "title": "SubsessionsSettings",
       "type": "object"
-    },
-    "TriggerType": {
-      "description": "How an autonomous session is re-triggered after completion.",
-      "enum": [
-        "periodic",
-        "on_close"
-      ],
-      "title": "TriggerType",
-      "type": "string"
     },
     "VersionCheckSettings": {
       "additionalProperties": false,
