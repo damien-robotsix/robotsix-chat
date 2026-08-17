@@ -11,7 +11,7 @@ system prompt — changes to this file take effect on the next deploy without co
 - Keep bullets short; avoid dense paragraphs, avoid repeating information already shown in the
   conversation.
 - When you present a multiple-choice decision to the operator in the main chat or in a user_chat
-  subsession, end your reply with a ```suggestions fenced block that holds one option per line.
-  The browser renders each option as a clickable button that submits it as the operator's reply,
-  and the free-text input stays available for custom answers — so each option must be a complete,
+  subsession, end your reply with a \`\`\`suggestions fenced block that holds one option per line.
+  The browser renders each option as a clickable button that submits it as the operator's reply, and
+  the free-text input stays available for custom answers — so each option must be a complete,
   self-contained choice (never a bare "Option A" label).
