@@ -69,6 +69,24 @@ Everything below predates the release-please migration and was
 maintained by hand or by towncrier. It is kept verbatim; new entries
 are added above by release-please.
 
+## [0.18.0](https://github.com/damien-robotsix/robotsix-chat/compare/v0.17.0...v0.18.0) (2026-08-17)
+
+
+### Features
+
+* Add archive message-delete endpoint by uid+folder (20260809T104603Z-add-archive-message-delete-endpoint-by-u-978a) ([#1500](https://github.com/damien-robotsix/robotsix-chat/issues/1500)) ([fef1079](https://github.com/damien-robotsix/robotsix-chat/commit/fef1079506fb894232ae73da9f232528cd7a3192))
+* Add capability to close PRs via GitHub API (20260809T065320Z-add-capability-to-close-prs-via-github-a-519f) ([#1331](https://github.com/damien-robotsix/robotsix-chat/issues/1331)) ([a8450ec](https://github.com/damien-robotsix/robotsix-chat/commit/a8450ec39e74fb4bfa2075179f38eaa768be0f91))
+* Add robotsix-chat rule: reference tickets by full ID + short name with a session map (20260801T104232Z-add-a-guideline-for-concise-trackable-ti-fb6d) ([#1504](https://github.com/damien-robotsix/robotsix-chat/issues/1504)) ([07f8309](https://github.com/damien-robotsix/robotsix-chat/commit/07f8309ec3a306f6f05c55f9e78c5c97047165d8))
+* Auto-escalate tickets needing human decision after stall or secret detection (20260816T135530Z-auto-escalate-tickets-needing-human-deci-1c7a) ([#1503](https://github.com/damien-robotsix/robotsix-chat/issues/1503)) ([1eee356](https://github.com/damien-robotsix/robotsix-chat/commit/1eee35655e15e5c0521e5884dde2875d8095025c))
+* Filed capability/improvement tickets stall in draft state (20260815T203750Z-filed-capability-improvement-tickets-sta-decd) ([#1502](https://github.com/damien-robotsix/robotsix-chat/issues/1502)) ([c643ff4](https://github.com/damien-robotsix/robotsix-chat/commit/c643ff4344786680929e4d99be62baacf1f1bc79))
+* Implement adaptive run limits for long-running ticket monitors (20260815T141902Z-implement-adaptive-run-limits-for-long-r-65fc) ([#1492](https://github.com/damien-robotsix/robotsix-chat/issues/1492)) ([68b3ad0](https://github.com/damien-robotsix/robotsix-chat/commit/68b3ad0243d82ef3a0a187332d9d43ffa5a867e8))
+* UI: focus mode for subsession panels — temporarily expand one subsession to full screen (20260801T083900Z-ui-focus-mode-for-subsession-panels-temp-6e9c) ([#1494](https://github.com/damien-robotsix/robotsix-chat/issues/1494)) ([58667e7](https://github.com/damien-robotsix/robotsix-chat/commit/58667e7adee20cfbe9b7dfe2e329a71def062f37))
+
+
+### Documentation
+
+* UI: render multiple-choice decisions as clickable buttons in sessions and subsessions (20260801T082819Z-ui-render-multiple-choice-decisions-as-c-1ff4) ([#1493](https://github.com/damien-robotsix/robotsix-chat/issues/1493)) ([0fcd9ba](https://github.com/damien-robotsix/robotsix-chat/commit/0fcd9ba785c399badc7543a6f9b3e4a1634965a3))
+
 ## [0.17.0](https://github.com/damien-robotsix/robotsix-chat/compare/v0.16.0...v0.17.0) (2026-08-16)
 
 
