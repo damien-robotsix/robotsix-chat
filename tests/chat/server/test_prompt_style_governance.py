@@ -61,6 +61,35 @@ def test_style_directive_documents_decision_options_format() -> None:
     )
 
 
+def test_style_directive_documents_ticket_reference_rule() -> None:
+    """The directive must document the full-ID + short-name ticket reference rule.
+
+    Guards the five clauses of the session ticket-reference convention:
+    first-reference format, no bare truncations, session ticket map,
+    stale short-form resolution, and the failure rationale.
+    """
+    directive = _load_prompt_style()
+    assert directive, "Style directive is empty."
+    assert "full ID" in directive and "short name" in directive, (
+        f"Style directive in {_STYLE_PATH} must name the ticket reference "
+        "rule (full ID + short name)."
+    )
+    assert "never refer to a ticket by a bare truncated suffix" in directive, (
+        f"Style directive in {_STYLE_PATH} must forbid bare truncated ticket suffixes."
+    )
+    assert "re-surface it whenever more than one ticket is under discussion" in (
+        directive
+    ), (
+        f"Style directive in {_STYLE_PATH} must require the session ticket "
+        "map to be re-surfaced for multi-ticket discussions and status "
+        "summaries."
+    )
+    assert "re-derive the full ID from the live source" in directive, (
+        f"Style directive in {_STYLE_PATH} must require stale short forms "
+        "to be resolved against the live source."
+    )
+
+
 def test_inject_skills_includes_style_directive() -> None:
     """``_inject_skills`` appends the style directive to the instruction.
 
