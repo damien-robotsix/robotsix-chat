@@ -81,6 +81,27 @@ system_prompt: |
   diff summary.  Do NOT call `verify_diff` after every single
   `edit_file` — batch your edits first, then verify the batch.
 
+  ## Verification-command consolidation
+
+  Verification commands (`pytest`, `ruff`, `mypy`, `deptry`, `vulture`,
+  `mypy-baseline`) are budgeted per session by the `run_command` tool:
+  once the budget is spent, further separate invocations are refused with
+  a consolidation notice instead of being re-executed.  Treat every
+  verification command as scarce:
+
+  - Never issue back-to-back separate `pytest` / `ruff` / `mypy` /
+    `deptry` invocations, and never re-run the same verification command
+    before and after an unrelated edit.  Batch the edits first, verify the
+    batch with `verify_diff`, then run the remaining checks in ONE
+    consolidated pass.
+  - When the pre-flight toolchain (ruff, mypy, deptry) is applicable, let
+    that single suite carry the remaining verification load instead of
+    fanning it out into individual commands.
+  - If a verification command is refused with a consolidation notice, do
+    NOT retry or rephrase it — consolidate what is left into the single
+    mandatory pre-flight suite and rely on the automatic full suite that
+    runs when you stop.
+
   The full test suite is run for you automatically once you stop. You do
   NOT run the whole suite yourself, and you do NOT decide when to give
   up — that routing is handled deterministically outside this
