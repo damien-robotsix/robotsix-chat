@@ -344,6 +344,15 @@ class MessageCoalescer:
                 store.begin(session_id) if had_session else (None, None)
             )
 
+            # An operator turn reopens a previously closed session: the
+            # conversation is live again, so the agent may spawn/steer
+            # subsessions regardless of any earlier operator close.  Only
+            # the operator-driven chat path reopens — background drivers
+            # (e.g. the autonomous runner) record turns without it, so a
+            # closed session that nobody messages stays closed.
+            if had_session:
+                store.reopen_session(session_id)
+
             # Idempotency check on the first pending message's message_id.
             first_msg = pending[0]
             if first_msg.message_id and session_id:

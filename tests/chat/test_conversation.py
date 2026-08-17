@@ -556,6 +556,38 @@ def test_close_session_persists_closed_flag(tmp_path: Path) -> None:
     assert sessions[0]["closed"] is True
 
 
+def test_reopen_session_clears_closed_flag() -> None:
+    """Reopening a closed session flips it back to open."""
+    store = _store()
+    sid = str(store.create_session("owner-1")["session_id"])
+    store.close_session("owner-1", sid)
+    assert store.is_session_closed(sid) is True
+
+    assert store.reopen_session(sid) is True
+    assert store.is_session_closed(sid) is False
+
+
+def test_reopen_session_is_idempotent_for_open_and_unknown() -> None:
+    """Reopening an open or unknown session is a no-op returning False."""
+    store = _store()
+    sid = str(store.create_session("owner-1")["session_id"])
+
+    assert store.reopen_session(sid) is False  # already open
+    assert store.reopen_session("ghost") is False  # unknown
+
+
+def test_reopen_session_persists_open_flag(tmp_path: Path) -> None:
+    """A reopened session stays open after a persist→load round-trip."""
+    path = tmp_path / "conversations.json"
+    store1 = _store(persist_path=path)
+    sid = str(store1.create_session("owner-1")["session_id"])
+    store1.close_session("owner-1", sid)
+    store1.reopen_session(sid)
+
+    store2 = _store(persist_path=path)
+    assert store2.is_session_closed(sid) is False
+
+
 # -- compaction (in place) + legacy continuation routing ------------------
 
 

@@ -991,6 +991,25 @@ class ConversationStore:
             return False
         return session.closed
 
+    def reopen_session(self, session_id: str) -> bool:
+        """Clear the ``closed`` flag on *session_id* (idempotent).
+
+        Returns ``True`` when the session was closed and is now open again;
+        ``False`` when the session is unknown or was already open.
+
+        An operator turn reopens a closed session — the conversation is
+        still live as long as the operator keeps messaging it, so
+        subsession spawning and steering must work again.  Background
+        drivers (the autonomous runner) never call this; only the chat
+        endpoint does, on operator-initiated turns.
+        """
+        session = self._sessions.get(session_id)
+        if session is None or not session.closed:
+            return False
+        session.closed = False
+        self._persist()
+        return True
+
     def compact_session(
         self,
         owner_id: str,  # noqa: ARG002 — kept for call-site clarity
