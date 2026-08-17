@@ -3666,7 +3666,9 @@ def test_build_periodic_input_promotable_draft_default_is_operator_decision() ->
     assert "NOT promotable" in result
 
 
-def test_build_periodic_input_promotable_draft_gate_on_pre_authorized_promotes() -> None:
+def test_build_periodic_input_promotable_draft_gate_on_pre_authorized_promotes() -> (
+    None
+):
     """Gate ON + pre-authorized ticket: the prompt instructs auto-promotion."""
     from robotsix_chat.subsessions.models import SubsessionInfo, SubsessionKind
 

@@ -1081,8 +1081,7 @@ _PAUSED_WAIT_TIMEOUT_SECONDS: float = 300.0
 
 
 def _draft_decision_comment_posted(info: SubsessionInfo) -> bool:
-    """Return True when the operator-decision comment for an unchanged
-    draft ticket has already been posted.
+    """Return True if the operator-decision comment has already been posted.
 
     The auto-drive monitor records ``auto_drive_comment_posted`` in its
     checkpoint after posting its one operator-decision comment for a
@@ -2184,8 +2183,7 @@ async def _subsession_worker(
                         sub_id,
                         SubsessionStatus.SLEEPING,
                         runs=info.runs,
-                        next_run_at=registry.now()
-                        + (info.interval_seconds or 60.0),
+                        next_run_at=registry.now() + (info.interval_seconds or 60.0),
                     )
                     result = await _queued_wait_loop(
                         env,
