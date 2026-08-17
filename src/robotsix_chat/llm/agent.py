@@ -149,6 +149,73 @@ def _is_session_binding_error(exc: BaseException) -> bool:
     return any(marker in text for marker in _SESSION_BIND_ERRORS)
 
 
+class _SdkSessionState:
+    """Whether this turn's deterministic SDK session exists on the CLI's disk.
+
+    :func:`_sdk_session_uuid` derives the id from the chat session, so *every*
+    attempt in a turn targets the SAME CLI session.  The first attempt that
+    runs with a create-binding materialises the transcript, which means any
+    later attempt in that turn — a tier fallback, say — has to bind ``resume``
+    instead.
+
+    Recomputing ``bool(message_history)`` per attempt cannot see that: on a new
+    chat the history stays empty for the whole turn, so the fallback tier asked
+    the CLI to create an id the primary attempt had just created and the CLI
+    refused with ``Session ID <uuid> is already in use``.  With no self-heal on
+    the fallback path the turn died outright — every new chat broke whenever
+    the configured tier was out of credits (observed 2026-08-17, level 4 out of
+    credits; existing chats were fine because their history is non-empty).
+    """
+
+    __slots__ = ("exists",)
+
+    def __init__(self, *, exists: bool) -> None:
+        self.exists = exists
+
+
+async def _run_bound_to_sdk_session(
+    handle: Any,
+    session_id: str | None,
+    state: _SdkSessionState,
+    run: Callable[[], Any],
+) -> Any:
+    """Run *run* with *handle* bound to this turn's SDK session.
+
+    Binds from shared turn state rather than from the message history, so a
+    second attempt in the same turn resumes the session an earlier attempt
+    created.  Keeps the flip-once self-heal for when the CLI's transcript store
+    and *state* disagree — now on the fallback path too, which previously had
+    no recovery at all.
+    """
+    if not session_id:
+        return await run()
+
+    used_resuming = state.exists
+    _bind_sdk_session(handle, session_id, resuming=used_resuming)
+    if not used_resuming:
+        # The CLI writes the transcript as the session starts, so treat the id
+        # as taken even if this attempt goes on to fail for an unrelated reason
+        # (an exhausted tier, say).  Being wrong here is recoverable — the
+        # flip below corrects it — whereas not marking it is what broke turns.
+        state.exists = True
+
+    try:
+        return await run()
+    except Exception as exc:
+        if not _is_session_binding_error(exc):
+            raise
+        logger.warning(
+            "sdk session binding failed (%s) — retrying with the opposite binding",
+            exc,
+        )
+        # The CLI is the authority on which direction is real; believe it.
+        # Either way the transcript exists once the retry has run, so later
+        # attempts in this turn must resume.
+        _bind_sdk_session(handle, session_id, resuming=not used_resuming)
+        state.exists = True
+        return await run()
+
+
 def _build_message_history(history: list[Turn] | None) -> list[Any] | None:
     """Convert ``(user, assistant)`` turns into a pydantic-ai message history.
 
@@ -547,6 +614,9 @@ class LlmioChatAgent:
         level = self._model_level if model_level is None else model_level
         provider = create_model(level=level, **self._provider_kwargs(level))
         message_history = _build_message_history(history)
+        # One binding decision per TURN, shared by the primary attempt and any
+        # tier fallback — see :class:`_SdkSessionState`.
+        sdk_session = _SdkSessionState(exists=bool(message_history))
 
         # Compute effective tools once: static tools + per-request tools from
         # the factory (which captures client_id lexically so delegation works
@@ -610,8 +680,6 @@ class LlmioChatAgent:
             # prompt on every turn.  Without this the 24.6:1 input:output ratio
             # on fable-5 is almost entirely static-prefix re-billing — pure
             # cap-headroom waste on the Claude subscription.
-            if session_id:
-                _bind_sdk_session(handle, session_id, resuming=bool(message_history))
             try:
                 with (
                     _trace_session(
@@ -619,25 +687,12 @@ class LlmioChatAgent:
                     ),
                     _activity_context(on_activity),
                 ):
-                    try:
-                        return await handle.run(prompt, message_history=message_history)
-                    except Exception as exc:
-                        # The chat session and the CLI's transcript store can
-                        # disagree about whether this SDK session exists.  Flip
-                        # the binding once and re-run; retrying as-is can never
-                        # succeed, because the id is derived deterministically
-                        # from the chat session.
-                        if not (session_id and _is_session_binding_error(exc)):
-                            raise
-                        logger.warning(
-                            "sdk session binding failed (%s) — retrying with the "
-                            "opposite binding",
-                            exc,
-                        )
-                        _bind_sdk_session(
-                            handle, session_id, resuming=not bool(message_history)
-                        )
-                        return await handle.run(prompt, message_history=message_history)
+                    return await _run_bound_to_sdk_session(
+                        handle,
+                        session_id,
+                        sdk_session,
+                        lambda: handle.run(prompt, message_history=message_history),
+                    )
             finally:
                 handle.close()
 
@@ -675,6 +730,7 @@ class LlmioChatAgent:
                 level=level,
                 trace_name=trace_name,
                 credential_is_dead=isinstance(exc, ClaudeSDKAuthError),
+                sdk_session=sdk_session,
             )
 
         # The loop above always either raises or breaks with `result` set.
@@ -696,6 +752,7 @@ class LlmioChatAgent:
         level: int | None = None,
         trace_name: str | None = None,
         credential_is_dead: bool = False,
+        sdk_session: _SdkSessionState | None = None,
     ) -> Any:
         """Retry the same turn at a different tier when this one cannot serve.
 
@@ -732,6 +789,13 @@ class LlmioChatAgent:
         fail fast — a harmless, cheap redundant call, not a bug — before the
         loop falls back to the next tier.
         """
+        # Direct callers (tests, future entry points) may not supply turn
+        # state; derive it the same way the primary path does.
+        state = (
+            sdk_session
+            if sdk_session is not None
+            else _SdkSessionState(exists=bool(message_history))
+        )
         tier_config = TierConfig()
         level_by_model = {
             getattr(tier_config, level.value).model: int(
@@ -761,11 +825,6 @@ class LlmioChatAgent:
                     builtin_tools=False,
                     web_tools=True,  # see the primary handle above
                 )
-                # Same session binding as the primary handle path.
-                if session_id:
-                    _bind_sdk_session(
-                        fallback_handle, session_id, resuming=bool(message_history)
-                    )
                 try:
                     with (
                         _trace_session(
@@ -773,8 +832,16 @@ class LlmioChatAgent:
                         ),
                         _activity_context(on_activity),
                     ):
-                        return await fallback_handle.run(
-                            prompt, message_history=message_history
+                        # Same shared binding state as the primary handle path,
+                        # so this resumes the session the primary attempt
+                        # created instead of trying to create it again.
+                        return await _run_bound_to_sdk_session(
+                            fallback_handle,
+                            session_id,
+                            state,
+                            lambda: fallback_handle.run(
+                                prompt, message_history=message_history
+                            ),
                         )
                 finally:
                     fallback_handle.close()

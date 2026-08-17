@@ -1300,3 +1300,133 @@ class TestSessionBindingErrorDetection:
 
         assert not _is_session_binding_error(RuntimeError("rate limit exceeded"))
         assert not _is_session_binding_error(RuntimeError("connection reset"))
+
+
+class TestSdkSessionStateAcrossAttempts:
+    """A second attempt in the same turn must resume, not re-create.
+
+    The SDK session id is derived deterministically from the chat session, so
+    every attempt in a turn targets the same CLI session.  Binding from
+    ``bool(message_history)`` per attempt cannot see that the previous attempt
+    already created it: on a NEW chat the history stays empty all turn, so the
+    tier fallback asked the CLI to create an id the primary attempt had just
+    created and got "Session ID <uuid> is already in use".  The fallback path
+    had no flip-once self-heal, so the turn died — every new chat broke while
+    the configured tier was out of credits (observed 2026-08-17).
+    """
+
+    class _Handle:
+        """Records the options each run was bound with."""
+
+        def __init__(self, fail_with: Exception | None = None) -> None:
+            self._build_options = lambda sp: SimpleNamespace(
+                session_id=None, resume=None
+            )
+            self.bindings: list[tuple[Any, Any]] = []
+            self._fail_with = fail_with
+
+        async def run(self) -> str:
+            opts = self._build_options("system prompt")
+            self.bindings.append((opts.session_id, opts.resume))
+            if self._fail_with is not None:
+                exc, self._fail_with = self._fail_with, None
+                raise exc
+            return "ok"
+
+    @pytest.mark.asyncio
+    async def test_new_chat_second_attempt_resumes(self) -> None:
+        """The fallback attempt resumes the session the primary created."""
+        from robotsix_chat.llm.agent import (
+            _run_bound_to_sdk_session,
+            _SdkSessionState,
+        )
+
+        # A brand-new chat: no history for the whole turn.
+        state = _SdkSessionState(exists=False)
+
+        primary = self._Handle()
+        await _run_bound_to_sdk_session(primary, "chat-1", state, primary.run)
+        # First attempt creates: --session-id set, --resume unset.
+        assert primary.bindings[0][0] is not None
+        assert primary.bindings[0][1] is None
+
+        fallback = self._Handle()
+        await _run_bound_to_sdk_session(fallback, "chat-1", state, fallback.run)
+        # Second attempt in the SAME turn must resume, despite empty history.
+        assert fallback.bindings[0][0] is None, "fallback must not re-create the id"
+        assert fallback.bindings[0][1] is not None, "fallback must resume"
+
+    @pytest.mark.asyncio
+    async def test_primary_failure_still_marks_the_session_created(self) -> None:
+        """An exhausted tier still leaves the transcript behind.
+
+        This is the real-world shape: the primary attempt creates the session
+        and *then* dies on exhausted credits, so the fallback must resume.
+        """
+        from robotsix_chat.llm.agent import (
+            _run_bound_to_sdk_session,
+            _SdkSessionState,
+        )
+
+        state = _SdkSessionState(exists=False)
+        primary = self._Handle(fail_with=RuntimeError("out of usage credits"))
+        with pytest.raises(RuntimeError):
+            await _run_bound_to_sdk_session(primary, "chat-1", state, primary.run)
+        assert state.exists is True
+
+        fallback = self._Handle()
+        await _run_bound_to_sdk_session(fallback, "chat-1", state, fallback.run)
+        assert fallback.bindings[0][1] is not None, "fallback must resume"
+
+    @pytest.mark.asyncio
+    async def test_fallback_path_self_heals_on_binding_error(self) -> None:
+        """A binding error flips the binding and re-runs — on any path.
+
+        The fallback path previously had no self-heal at all, so a stale
+        state guess was unrecoverable.
+        """
+        from robotsix_chat.llm.agent import (
+            _run_bound_to_sdk_session,
+            _SdkSessionState,
+        )
+
+        # State says "not created", but the CLI disagrees.
+        state = _SdkSessionState(exists=False)
+        handle = self._Handle(
+            fail_with=RuntimeError("Error: Session ID abc is already in use.")
+        )
+        result = await _run_bound_to_sdk_session(handle, "chat-1", state, handle.run)
+
+        assert result == "ok"
+        assert len(handle.bindings) == 2, "should have re-run once"
+        # First tried to create, then flipped to resume.
+        assert handle.bindings[0][0] is not None
+        assert handle.bindings[1][1] is not None
+        assert state.exists is True
+
+    @pytest.mark.asyncio
+    async def test_existing_chat_resumes_from_the_start(self) -> None:
+        """A chat with history resumes on the very first attempt."""
+        from robotsix_chat.llm.agent import (
+            _run_bound_to_sdk_session,
+            _SdkSessionState,
+        )
+
+        state = _SdkSessionState(exists=True)
+        handle = self._Handle()
+        await _run_bound_to_sdk_session(handle, "chat-1", state, handle.run)
+        assert handle.bindings[0][0] is None
+        assert handle.bindings[0][1] is not None
+
+    @pytest.mark.asyncio
+    async def test_no_session_id_runs_unbound(self) -> None:
+        """Without a chat session there is nothing to bind."""
+        from robotsix_chat.llm.agent import (
+            _run_bound_to_sdk_session,
+            _SdkSessionState,
+        )
+
+        state = _SdkSessionState(exists=False)
+        handle = self._Handle()
+        assert await _run_bound_to_sdk_session(handle, None, state, handle.run) == "ok"
+        assert handle.bindings == [(None, None)]
