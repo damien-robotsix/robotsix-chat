@@ -279,6 +279,23 @@ class TestChatJsFunctions:
         assert "loadSubsTranscript" in funcs
         assert "closeSubsession" in funcs
 
+    def test_subsession_focus_mode(self, static_js: str) -> None:
+        """Subsession focus-mode functions and state exist."""
+        funcs = self._functions_in(static_js)
+        assert "toggleSubsFocus" in funcs
+        assert "enterSubsFocus" in funcs
+        assert "exitSubsFocus" in funcs
+        assert "getSelectedSub" in funcs
+        vars_ = self._vars_in(static_js)
+        assert "focusedSubId" in vars_
+        assert "selectedSubId" in vars_
+
+    def test_subsession_focus_controls(self, ui_html: str) -> None:
+        """Focus-mode exit button and screen-reader announcer exist."""
+        assert 'id="subs-focus-exit"' in ui_html
+        assert 'id="sr-announce"' in ui_html
+        assert 'aria-live="polite"' in ui_html
+
     def test_relative_time_function(self, static_js: str) -> None:
         """Relative time formatting function exists."""
         assert "relativeTime" in self._functions_in(static_js)
