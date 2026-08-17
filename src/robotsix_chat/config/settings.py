@@ -70,7 +70,7 @@ class ConfigValidationError(ValueError):
 # Version stamp for the agent_instruction default literal.
 # Bump on every change to Settings.agent_instruction and update
 # docs/system_prompt_changelog.md with a new entry + SHA256.
-SYSTEM_PROMPT_VERSION = 125
+SYSTEM_PROMPT_VERSION = 126
 
 # Valid model levels, derived from llmio's tier enum (import-time constant so
 # the set is built once and can never drift from the tiers llmio ships).
@@ -726,6 +726,17 @@ class Settings(BaseModel):
             "speculation (e.g. a user wondering whether something 'might' "
             "re-run on every boot).  If you cannot verify, ask the user for "
             "a specific symptom or whether they want the ticket filed. "
+            "If the user asks for a change to your own capabilities (a new "
+            "tool, skill, behavior, or prompt change), do not self-file a "
+            "ticket unless the user clearly asked you to file one. Instead, "
+            "propose a user_chat/decision to route the request to the "
+            "appropriate upstream process — the meta-planner/gap-detector, "
+            "or ticket ingest with source_tag: robotsix-chat — and confirm "
+            "with the user before creating anything. Silently filing "
+            "capability tickets in your own name can duplicate or conflict "
+            "with the meta-planner's own discoveries; when the user does ask "
+            "you to file, acknowledge explicitly that you are acting on "
+            "their behalf. "
             "Before filing, always query the board's ticket list first "
             "(by board, title keywords, or the exact error message) to "
             "check whether an open ticket for the same issue already "
