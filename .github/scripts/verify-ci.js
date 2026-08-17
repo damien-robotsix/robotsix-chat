@@ -114,12 +114,24 @@ module.exports = async ({github, context, core}) => {
     // so a benchmark flake (or an LLM/hardware timing regression that does
     // not affect correctness) never blocks publishing an image.
     const isBenchmark = (r) => (r.name || '') === 'Chat microbenchmarks';
+    // Release-health monitoring jobs (release-health.yml) verify
+    // that release-please infrastructure is healthy (App permissions,
+    // latest run status).  They can fail for transient runner-infra
+    // reasons (e.g. a "Set up job" timeout during a release-please
+    // run) — exclude them so a monitoring false-positive never blocks
+    // publishing an image.
+    const isReleaseHealth = (r) => {
+      const name = r.name || '';
+      return name === 'Verify release-please prerequisites' ||
+             name === 'Monitor release-please status';
+    };
     others = runs.filter(
       (r) =>
         !isSelf(r) &&
         !isDeploy(r) &&
         !isAggregate(r) &&
-        !isBenchmark(r)
+        !isBenchmark(r) &&
+        !isReleaseHealth(r)
     );
     const pending = others.filter((r) => r.status !== 'completed');
 
