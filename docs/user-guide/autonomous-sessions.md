@@ -88,7 +88,7 @@ Add entries under `autonomous.sessions` in the config to define named sessions. 
 | -------------------------- | ------------ | -------------------------------------------------------------------------------------------------------------------------- |
 | `name`                     | *(required)* | Unique identifier for the session definition.                                                                              |
 | `prompt`                   | `""`         | Custom kickoff prompt. When empty, the standard "begin a new autonomous session and work it to completion" prompt is used. |
-| `trigger_interval_seconds` | `3600.0`     | Delay between one run completing and the next starting.                                                                   |
+| `trigger_interval_seconds` | `3600.0`     | Delay between one run completing and the next starting.                                                                    |
 | `enabled`                  | `true`       | When `false`, the definition is skipped — no session is created for it.                                                    |
 
 Once `autonomous.sessions` is non-empty, each enabled definition becomes its own session with its
@@ -120,17 +120,17 @@ ______________________________________________________________________
 
 ## Triggers
 
-Every preset is periodic: after a run completes the runner waits
-`trigger_interval_seconds`, then starts a fresh run. There is exactly one scheduling
-model — a "continuous" preset is simply one with a short interval.
+Every preset is periodic: after a run completes the runner waits `trigger_interval_seconds`, then
+starts a fresh run. There is exactly one scheduling model — a "continuous" preset is simply one with
+a short interval.
 
-The schedule is persisted, so restarting the server does **not** re-run a preset that
-has already run recently. A preset that has never run starts immediately, which is what
-bootstraps a fresh deployment.
+The schedule is persisted, so restarting the server does **not** re-run a preset that has already
+run recently. A preset that has never run starts immediately, which is what bootstraps a fresh
+deployment.
 
-> The retired `trigger_type` key (`"periodic"` / `"on_close"`) is accepted and ignored
-> when loading an existing config. An `on_close` preset adopts the standard interval,
-> because its stored `trigger_interval_seconds` was a placeholder the runner ignored.
+> The retired `trigger_type` key (`"periodic"` / `"on_close"`) is accepted and ignored when loading
+> an existing config. An `on_close` preset adopts the standard interval, because its stored
+> `trigger_interval_seconds` was a placeholder the runner ignored.
 
 ### Manual one-shot trigger
 

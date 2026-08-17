@@ -132,17 +132,15 @@ The `autonomous.sessions` array — the named autonomous-subsession presets — 
 dedicated **presets editor** rather than a raw JSON text area. It lets operators view, create, edit,
 and delete presets without hand-editing JSON.
 
-Each enabled/disabled preset is shown as a row summarizing its **name**, **trigger type**
-the **interval** (seconds between runs), and whether it is
-**disabled**.
+Each enabled/disabled preset is shown as a row summarizing its **name**, its **interval** (seconds
+between runs), and whether it is **disabled**.
 
 - **Edit** — click **Edit** on a row to open an inline form. You can change the preset **name**, its
-  custom **prompt**, the **trigger** type, and, for `periodic` triggers, the **interval (s)**. The
-  interval is the whole scheduling contract. The **Enabled** checkbox toggles whether
-  the preset creates a session (unchecking disables it without deleting it). Click **Save** to
-  commit the change.
-- **Add** — click **+ Add Preset** to insert a new preset (defaults: `periodic` trigger, 45 s
-  interval, enabled). Fill in the fields and click **Add**.
+  custom **prompt**, and the **interval (s)**. Every preset is periodic, so the interval is the
+  whole scheduling contract. The **Enabled** checkbox toggles whether the preset creates a session
+  (unchecking disables it without deleting it). Click **Save** to commit the change.
+- **Add** — click **+ Add Preset** to insert a new preset (defaults: 3600 s interval, enabled). Fill
+  in the fields and click **Add**.
 - **Delete** — click **Del** on a row to remove that preset.
 
 Like the rest of the settings form, the presets edits are only persisted when the panel's **Save**
