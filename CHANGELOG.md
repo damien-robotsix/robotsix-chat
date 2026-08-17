@@ -69,6 +69,17 @@ Everything below predates the release-please migration and was
 maintained by hand or by towncrier. It is kept verbatim; new entries
 are added above by release-please.
 
+## [0.18.1](https://github.com/damien-robotsix/robotsix-chat/compare/v0.18.0...v0.18.1) (2026-08-17)
+
+
+### Bug Fixes
+
+* Autonomous session close endpoint ignores trigger_interval_seconds — respawns immediately (20260816T204148Z-autonomous-session-close-endpoint-ignore-4358) ([#1514](https://github.com/damien-robotsix/robotsix-chat/issues/1514)) ([2422259](https://github.com/damien-robotsix/robotsix-chat/commit/24222599972e77a740c6ab9e8ef99db7520788ef))
+* bind the SDK session from per-turn state, not message history ([#1510](https://github.com/damien-robotsix/robotsix-chat/issues/1510)) ([1a88284](https://github.com/damien-robotsix/robotsix-chat/commit/1a88284221052aee6d4d74409f9f79c5ade8459f))
+* CI failure: Release image on main (20260817T202331Z-ci-failure-release-image-on-main-81cf) ([#1517](https://github.com/damien-robotsix/robotsix-chat/issues/1517)) ([5650692](https://github.com/damien-robotsix/robotsix-chat/commit/5650692785111b1d7953e2aeb27357edbd3bd2e2))
+* CI workflow startup failure misdiagnosed as billing problem in some subsession leaves conflicting conclusions (20260802T101143Z-ci-workflow-startup-failure-misdiagnosed-c4e3) ([#1511](https://github.com/damien-robotsix/robotsix-chat/issues/1511)) ([45071cd](https://github.com/damien-robotsix/robotsix-chat/commit/45071cd3d2ac00f7150682795b5a5e613817a9fd))
+* one scheduling model for autonomous presets, honoured and persisted ([#1513](https://github.com/damien-robotsix/robotsix-chat/issues/1513)) ([a4f1e1e](https://github.com/damien-robotsix/robotsix-chat/commit/a4f1e1ed5e4e6861f65e71dbd5e8e2f24fd11001))
+
 ## [0.18.0](https://github.com/damien-robotsix/robotsix-chat/compare/v0.17.0...v0.18.0) (2026-08-17)
 
 
