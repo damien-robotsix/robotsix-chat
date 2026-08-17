@@ -214,6 +214,15 @@ implementation_logic.ImplementationLogicMixin._run_summary_verification = (
 #     tickets flow ``draft -> refine -> ready`` on their own.
 # ---------------------------------------------------------------------------
 import robotsix_mill.stages.refine.helpers as _refine_helpers  # noqa: E402
-from robotsix_mill.stages.refine_autoapprove import EXTRA_AUTO_APPROVE_SOURCES  # noqa: E402
+from robotsix_mill.stages.refine_autoapprove import merge_auto_approve  # noqa: E402
 
-_refine_helpers._AUTO_APPROVE_SOURCES.update(EXTRA_AUTO_APPROVE_SOURCES)
+if not merge_auto_approve(_refine_helpers):
+    # Fail soft: a mill upgrade renamed ``_AUTO_APPROVE_SOURCES`` or
+    # changed its type (e.g. to a frozenset).  Log and continue instead
+    # of breaking every startup at import time — tickets stay behind the
+    # human approval gate until the patch is updated for the new mill API.
+    robotsix_mill.stages.changelog_gate.log.warning(
+        "refine helpers._AUTO_APPROVE_SOURCES is %r, not a mutable set; "
+        "skipping auto-approve merge for robotsix-chat tickets",
+        getattr(_refine_helpers, "_AUTO_APPROVE_SOURCES", None),
+    )
