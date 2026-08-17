@@ -533,7 +533,8 @@ async def test_periodic_run_delivers_result_frame_only() -> None:
     """
     sink = RecordingSink()
     agent = FakeAgent(["report 1", "report 2"])
-    env = build_env(agent=agent, event_sink=sink)
+    settings = make_settings(max_runs_progress_extension=0)
+    env = build_env(agent=agent, event_sink=sink, settings=settings)
 
     sub_id = _spawn(
         env,
@@ -569,7 +570,9 @@ async def test_periodic_max_runs_escalation_threshold_reached() -> None:
     """Monitor closes with 'max_runs_escalated' when threshold is reached."""
     sink = RecordingSink()
     agent = FakeAgent(["report 1"])
-    settings = make_settings(max_runs_escalation_threshold=2)
+    settings = make_settings(
+        max_runs_escalation_threshold=2, max_runs_progress_extension=0
+    )
     env = build_env(agent=agent, event_sink=sink, settings=settings)
 
     sub_id = _spawn(
@@ -598,7 +601,9 @@ async def test_periodic_max_runs_below_escalation_threshold() -> None:
     """Below threshold, closes with 'max_runs' and persists incremented count."""
     sink = RecordingSink()
     agent = FakeAgent(["report 1"])
-    settings = make_settings(max_runs_escalation_threshold=3)
+    settings = make_settings(
+        max_runs_escalation_threshold=3, max_runs_progress_extension=0
+    )
     env = build_env(agent=agent, event_sink=sink, settings=settings)
 
     sub_id = _spawn(
@@ -629,7 +634,9 @@ async def test_periodic_max_runs_escalation_disabled_when_threshold_zero() -> No
     """A threshold of 0 disables escalation entirely."""
     sink = RecordingSink()
     agent = FakeAgent(["report 1"])
-    settings = make_settings(max_runs_escalation_threshold=0)
+    settings = make_settings(
+        max_runs_escalation_threshold=0, max_runs_progress_extension=0
+    )
     env = build_env(agent=agent, event_sink=sink, settings=settings)
 
     sub_id = _spawn(
@@ -656,7 +663,9 @@ async def test_periodic_max_runs_escalation_no_checkpoint() -> None:
     """No checkpoint: count starts at 1, below threshold."""
     sink = RecordingSink()
     agent = FakeAgent(["report 1"])
-    settings = make_settings(max_runs_escalation_threshold=2)
+    settings = make_settings(
+        max_runs_escalation_threshold=2, max_runs_progress_extension=0
+    )
     env = build_env(agent=agent, event_sink=sink, settings=settings)
 
     sub_id = _spawn(
@@ -675,6 +684,66 @@ async def test_periodic_max_runs_escalation_no_checkpoint() -> None:
     assert info.close_reason == "max_runs"
     assert info.checkpoint is not None
     assert info.checkpoint.get("max_runs_exhausted_count") == 1
+
+
+@pytest.mark.asyncio
+async def test_periodic_max_runs_extends_on_progress_then_auto_stops() -> None:
+    """A monitor making progress extends its budget instead of closing at cap.
+
+    When a non-suppressed reply (progress) is observed within the window,
+    the max_runs cap is raised; the monitor then continues and only stops
+    once it accumulates enough consecutive NO_CHANGE runs.
+    """
+    sink = RecordingSink()
+    agent = FakeAgent(["report 1", "report 2", "NO_CHANGE", "NO_CHANGE", "NO_CHANGE"])
+    settings = make_settings(
+        max_runs_progress_extension=20,
+        max_runs_progress_window=5,
+    )
+    env = build_env(agent=agent, event_sink=sink, settings=settings)
+
+    sub_id = _spawn(
+        env,
+        kind=SubsessionKind.PERIODIC,
+        interval_seconds=0.02,
+        max_runs=2,
+        title="watch",
+    )
+    await _await_worker(env, sub_id)
+
+    info = env.registry.get(sub_id)
+    assert info is not None
+    assert info.status is SubsessionStatus.CLOSED
+    assert info.close_reason == "no_change_auto_stop"
+    assert info.runs == 5
+    assert info.max_runs == 22
+
+
+@pytest.mark.asyncio
+async def test_periodic_max_runs_no_progress_does_not_extend() -> None:
+    """Without recent progress the monitor still closes at the hard cap."""
+    sink = RecordingSink()
+    agent = FakeAgent(["NO_CHANGE"])
+    settings = make_settings(
+        max_runs_progress_extension=20,
+        max_runs_progress_window=5,
+    )
+    env = build_env(agent=agent, event_sink=sink, settings=settings)
+
+    sub_id = _spawn(
+        env,
+        kind=SubsessionKind.PERIODIC,
+        interval_seconds=0.02,
+        max_runs=1,
+        title="watch",
+    )
+    await _await_worker(env, sub_id)
+
+    info = env.registry.get(sub_id)
+    assert info is not None
+    assert info.status is SubsessionStatus.CLOSED
+    assert info.close_reason == "max_runs"
+    assert info.max_runs == 1
 
 
 @pytest.mark.asyncio
@@ -1226,7 +1295,8 @@ async def test_periodic_human_approval_timeout_by_wall_clock() -> None:
 async def test_periodic_steering_message_wakes_the_sleep_early() -> None:
     """A queued message interrupts the inter-run sleep and feeds the run."""
     agent = FakeAgent(["baseline", "focused report"])
-    env = build_env(agent=agent)
+    settings = make_settings(max_runs_progress_extension=0)
+    env = build_env(agent=agent, settings=settings)
 
     # A long interval — the test only finishes quickly if the wake works.
     sub_id = _spawn(
@@ -1948,7 +2018,8 @@ async def test_run_guard_records_executed_runs() -> None:
 async def test_run_guard_survives_duplicate_worker_race() -> None:
     """Concurrent spawn attempts cannot produce duplicate run-1 execution."""
     agent = FakeAgent(["run-1-result", "run-1-dup", "run-2-result"])
-    env = build_env(agent=agent)
+    settings = make_settings(max_runs_progress_extension=0)
+    env = build_env(agent=agent, settings=settings)
 
     # Simulate a race: create the subsession manually, then call
     # spawn_subsession with the same sub_id while the first worker
@@ -2555,6 +2626,7 @@ async def test_periodic_transient_error_retried_then_succeeds() -> None:
         settings=make_settings(
             transient_error_max_retries=2,
             transient_error_backoff_base=0.0,
+            max_runs_progress_extension=0,
         ),
     )
 

@@ -140,6 +140,21 @@ class SubsessionsSettings(BaseModel):
             the monitor closes with reason ``max_runs_escalated``.
             Set to ``0`` to disable escalation.  Default ``3``.
             Env override: ``SUBSESSIONS_MAX_RUNS_ESCALATION_THRESHOLD``.
+        max_runs_progress_extension: Number of additional runs granted
+            to a periodic subsession when it reaches its ``max_runs``
+            cap but has observed progress within the recent window (a
+            non-``NO_CHANGE``, non-duplicate reply — i.e. the agent
+            acknowledged a state transition or reported activity).  The
+            extended cap is clamped by ``periodic_max_total_runs``.
+            Set to ``0`` to disable adaptive extension.  Default ``20``.
+            Env override: ``SUBSESSIONS_MAX_RUNS_PROGRESS_EXTENSION``.
+        max_runs_progress_window: Number of recent runs inspected for
+            progress when a periodic subsession reaches its ``max_runs``
+            cap.  A run counts as progress when the agent replies with
+            something other than ``NO_CHANGE`` and other than a verbatim
+            duplicate of the prior reply.  Set to ``0`` to disable
+            adaptive extension.  Default ``5``.
+            Env override: ``SUBSESSIONS_MAX_RUNS_PROGRESS_WINDOW``.
 
     """
 
@@ -295,6 +310,29 @@ class SubsessionsSettings(BaseModel):
             "follow-up ticket is created on the board and the monitor "
             "closes with reason ``max_runs_escalated``.  Set to ``0`` "
             "to disable escalation.  Default ``3``."
+        ),
+    )
+    max_runs_progress_extension: int = Field(
+        default=20,
+        description=(
+            "Number of additional runs granted to a periodic subsession "
+            "when it reaches its ``max_runs`` cap but has observed "
+            "progress within the recent window (a non-``NO_CHANGE``, "
+            "non-duplicate reply — i.e. the agent acknowledged a state "
+            "transition or reported activity).  The extended cap is "
+            "clamped by ``periodic_max_total_runs``.  Set to ``0`` to "
+            "disable adaptive extension.  Default ``20``."
+        ),
+    )
+    max_runs_progress_window: int = Field(
+        default=5,
+        description=(
+            "Number of recent runs inspected for progress when a "
+            "periodic subsession reaches its ``max_runs`` cap.  A run "
+            "counts as progress when the agent replies with something "
+            "other than ``NO_CHANGE`` and other than a verbatim duplicate "
+            "of the prior reply.  Set to ``0`` to disable adaptive "
+            "extension.  Default ``5``."
         ),
     )
     model_config = ConfigDict(extra="forbid")
