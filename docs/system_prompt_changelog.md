@@ -3,6 +3,28 @@
 Governed artifact: `Settings.agent_instruction` default literal in
 `src/robotsix_chat/config/settings.py`. Version stamp: `SYSTEM_PROMPT_VERSION` in the same module.
 
+## v126 — 2026-08-02 — 20260802T005542Z-avoid-filing-chat-agent-capability-ticke-2adf
+
+**Summary:** Add a capability self-change rule to `agent_instruction`: when
+the user asks for a change to the assistant's own capabilities (a new tool,
+skill, behavior, or prompt change), the assistant must not self-file a ticket
+unless the user clearly asked it to file one. Instead it should propose a
+`user_chat`/decision to route the request to the appropriate upstream process
+— the meta-planner/gap-detector, or ticket ingest with `source_tag:
+robotsix-chat` — and confirm with the user before creating anything. When the
+user does ask the assistant to file, it must acknowledge explicitly that it
+is acting on the user's behalf.
+
+**Rationale:** Session 132d3e1e203c427a934a623964892cb1 — several capability
+tickets (decision buttons, focus mode, unread propagation, reply-style file)
+were filed by the chat agent in the conversation, but capability-gap tickets
+are owned by the meta-planner/gap-detector in robotsix-mill. The chat agent's
+silent self-filing duplicated and conflicted with the meta-planner's own
+discoveries, so the prompt now routes such requests through an explicit
+decision/confirmation step.
+
+**SHA256:** `dc34df235d6aa5c135a94af942828a702f511cb575bcb23a15c6e31583bda85a`
+
 ## v125 — 2026-08-16 — 20260816T091216Z-improve-consolidation-rule-adherence-whe-7d1a
 
 **Summary:** Strengthen the multi-subsession consolidation instruction in
