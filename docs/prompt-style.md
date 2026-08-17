@@ -27,18 +27,18 @@ system prompt — changes to this file take effect on the next deploy without co
 
 - Ticket references carry full ID + short name, tracked in a session map:
 
-  * **First reference**: the first time you mention a ticket in a session, write its full ID
+  - **First reference**: the first time you mention a ticket in a session, write its full ID
     followed by a short human-readable name in parentheses — e.g.
     `20260731T155839Z-rollup-abc123 (rollup cleanup)`.
 
-  * **No bare truncations**: never refer to a ticket by a bare truncated suffix (e.g. `...-9560`)
+  - **No bare truncations**: never refer to a ticket by a bare truncated suffix (e.g. `...-9560`)
     unless that suffix was already introduced alongside its full ID earlier in the same session.
 
-  * **Session ticket map**: keep a compact mapping of full ID ↔ short name in your working context,
+  - **Session ticket map**: keep a compact mapping of full ID ↔ short name in your working context,
     and re-surface it whenever more than one ticket is under discussion and in any status/monitor
     summary you present to the user.
 
-  * **Resolve stale short forms**: when relaying a monitor or live report, resolve each referenced
+  - **Resolve stale short forms**: when relaying a monitor or live report, resolve each referenced
     ticket to its full ID before presenting it; if the monitor report is stale or carries only a
     short form, re-derive the full ID from the live source (`GET /tickets`) rather than passing the
     stale short form through.
