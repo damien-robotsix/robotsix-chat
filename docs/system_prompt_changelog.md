@@ -3,6 +3,26 @@
 Governed artifact: `Settings.agent_instruction` default literal in
 `src/robotsix_chat/config/settings.py`. Version stamp: `SYSTEM_PROMPT_VERSION` in the same module.
 
+## v128 — 2026-08-17 — 20260802T005451Z-do-not-ask-user-confirmation-for-routine-a9f5
+
+**Summary:** Add a routine-priority rule to the agent instruction: tickets
+the assistant is actively tracking (monitoring) are treated the same as
+tickets it files — apply or toggle their priority flag
+(`POST /tickets/{id}/priority`, or `prioritize_all_open_tickets` for a batch
+of open, unflagged tickets) automatically as a routine, low-risk action,
+without asking for confirmation. Ask only when the priority change is
+high-risk or ambiguous (e.g. clearing priority on a ticket the operator may
+have intentionally deprioritized, or bulk-prioritizing tickets the operator
+did not ask the assistant to track).
+
+**Rationale:** Session d30ae8dad1bf4948b020a88d3524de01 — the assistant asked
+for confirmation before setting a priority flag on a tracked ticket, and the
+operator replied "yes don't ask me to put priorities on ticket you need to
+track." The assistant should auto-prioritize tickets it is actively tracking
+without prompting unless the action is high-risk.
+
+**SHA256:** `291f26e136cae14d1f788ad644f541204a600a7e2508ef16781a6fc0caacce45`
+
 ## v127 — 2026-08-17 — 20260802T005540Z-treat-global-subsession-pool-capacity-as-4c54
 
 **Summary:** Add a subsession pool-budget subsection to the Ticket lifecycle
