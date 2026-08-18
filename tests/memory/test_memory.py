@@ -1608,8 +1608,6 @@ async def test_frozen_store_warning_not_spammy(
     caplog: Any,
 ) -> None:
     """After the first frozen-store alert, the start time resets to avoid spam."""
-    import logging
-
     mem, _ = cognee_memory
     mem._settings.frozen_store_alert_minutes = 0.0
 
