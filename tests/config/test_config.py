@@ -513,7 +513,7 @@ def test_diagnostics_disabled_ok() -> None:
 def test_self_review_enabled_by_default() -> None:
     """Self review is on by default, with sensible defaults present."""
     settings = Settings()
-    assert settings.self_review.enabled is True
+    assert settings.self_review.enabled is False
     assert settings.self_review.recent_activity_limit == 20
 
 

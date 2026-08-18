@@ -1164,7 +1164,7 @@
       "description": "Self-review tool \u2014 a read-only digest of live conversation activity.\n\nWhen enabled, the agent gains a ``read_recent_activity`` tool that\nreads the in-process :class:`~robotsix_chat.chat.conversation.ConversationStore`\n(short-lived per-client conversation turns) and returns a human-readable\nmulti-session digest.  This is a deliberate, explicit, cross-client\nsnapshot \u2014 complementary to, but independent of, the optional cognee\nepisodic memory subsystem (``src/robotsix_chat/memory/``).\n\nDefault-disabled so behaviour is unchanged unless explicitly turned on.\n\nAttributes:\n    enabled: Master switch. When ``True``, the ``read_recent_activity``\n        tool is attached to the agent.\n    recent_activity_limit: Maximum number of conversations returned by\n        the tool (clamps the caller's ``limit`` argument).",
       "properties": {
         "enabled": {
-          "default": true,
+          "default": false,
           "title": "Enabled",
           "type": "boolean"
         },

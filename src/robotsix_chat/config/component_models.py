@@ -54,7 +54,7 @@ class SelfReviewSettings(BaseModel):
 
     """
 
-    enabled: bool = True
+    enabled: bool = False
     recent_activity_limit: int = 20
     model_config = ConfigDict(extra="forbid")
 
