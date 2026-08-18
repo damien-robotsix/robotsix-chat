@@ -272,6 +272,18 @@ test files, tests/subsessions/test_watcher.py has no event_sink references, and 
 builds env without an event_sink. PR #1066 (failing-CI resume branch) shipped untested the same way.
 Both new event-emission paths merged uncovered.
 
+**Rule:** When adding or removing a tool from `build_github_tools` or `build_direct_repo_tools`,
+update the tool-count assertions (`len(tools) == N`) in ALL test files that reference the tool list
+(`test_direct_repo.py`, `test_direct_fix.py`, `test_open_pr.py`, `test_build_tools.py`). Run the
+full test suite before committing to catch stale counts.
+
+**Rationale:** PR #1486 burned 3 CI-fix cycles because the initial commit had stale tool-count
+assertions in multiple test files. Each new tool predictably requires updating these counts;
+forgetting them wastes a CI rebuild cycle.
+
+**Provenance:** proposed by retrospect from
+20260816T135725Z-add-github-pages-enablement-tool-to-chat-605a
+
 ## Feature flags and activation
 
 **Rule:** Any feature gated behind a runtime flag (`enabled: false`, a feature toggle, or a config
