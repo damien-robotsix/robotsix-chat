@@ -58,6 +58,10 @@ def autonomous_runner(store, tmp_path, monkeypatch) -> AutonomousRunner:
     # Prevent background tasks (from approve/reject) from leaking across
     # xdist workers or between tests sharing an event loop.
     monkeypatch.setattr(AutonomousRunner, "_schedule_background", MagicMock())
+    monkeypatch.setattr(AutonomousRunner, "_save_scheduler_state", MagicMock())
+    monkeypatch.setattr(
+        AutonomousRunner, "_load_scheduler_state", MagicMock(return_value={})
+    )
     settings = MagicMock()
     settings.autonomous.completion_marker = "---AUTONOMOUS COMPLETE---"
     settings.autonomous.continue_interval_seconds = 45.0
@@ -107,6 +111,10 @@ class TestChatAcceptsAutonomousMessages:
         monkeypatch.setattr(AutonomousRunner, "_save_sessions", MagicMock())
         monkeypatch.setattr(
             AutonomousRunner, "_load_sessions", MagicMock(return_value={})
+        )
+        monkeypatch.setattr(AutonomousRunner, "_save_scheduler_state", MagicMock())
+        monkeypatch.setattr(
+            AutonomousRunner, "_load_scheduler_state", MagicMock(return_value={})
         )
 
     @pytest.mark.asyncio
@@ -172,6 +180,10 @@ class TestRunnerWiring:
         monkeypatch.setattr(
             AutonomousRunner, "_load_sessions", MagicMock(return_value={})
         )
+        monkeypatch.setattr(AutonomousRunner, "_save_scheduler_state", MagicMock())
+        monkeypatch.setattr(
+            AutonomousRunner, "_load_scheduler_state", MagicMock(return_value={})
+        )
 
     @pytest.mark.asyncio
     async def test_runner_on_app_state(self, client):
@@ -188,6 +200,10 @@ class TestSessionsListAutonomousAnnotation:
         monkeypatch.setattr(AutonomousRunner, "_save_sessions", MagicMock())
         monkeypatch.setattr(
             AutonomousRunner, "_load_sessions", MagicMock(return_value={})
+        )
+        monkeypatch.setattr(AutonomousRunner, "_save_scheduler_state", MagicMock())
+        monkeypatch.setattr(
+            AutonomousRunner, "_load_scheduler_state", MagicMock(return_value={})
         )
 
     @pytest.mark.asyncio
@@ -244,6 +260,10 @@ class TestAutonomousDefinitionsListEndpoint:
         monkeypatch.setattr(AutonomousRunner, "_save_sessions", MagicMock())
         monkeypatch.setattr(
             AutonomousRunner, "_load_sessions", MagicMock(return_value={})
+        )
+        monkeypatch.setattr(AutonomousRunner, "_save_scheduler_state", MagicMock())
+        monkeypatch.setattr(
+            AutonomousRunner, "_load_scheduler_state", MagicMock(return_value={})
         )
 
     @pytest.mark.asyncio
@@ -322,6 +342,10 @@ class TestAutonomousDefinitionsRunEndpoint:
         monkeypatch.setattr(AutonomousRunner, "_save_sessions", MagicMock())
         monkeypatch.setattr(
             AutonomousRunner, "_load_sessions", MagicMock(return_value={})
+        )
+        monkeypatch.setattr(AutonomousRunner, "_save_scheduler_state", MagicMock())
+        monkeypatch.setattr(
+            AutonomousRunner, "_load_scheduler_state", MagicMock(return_value={})
         )
 
     @pytest.mark.asyncio
