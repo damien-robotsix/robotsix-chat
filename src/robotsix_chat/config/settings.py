@@ -70,7 +70,7 @@ class ConfigValidationError(ValueError):
 # Version stamp for the agent_instruction default literal.
 # Bump on every change to Settings.agent_instruction and update
 # docs/system_prompt_changelog.md with a new entry + SHA256.
-SYSTEM_PROMPT_VERSION = 128
+SYSTEM_PROMPT_VERSION = 129
 
 # Valid model levels, derived from llmio's tier enum (import-time constant so
 # the set is built once and can never drift from the tiers llmio ships).
@@ -643,17 +643,20 @@ class Settings(BaseModel):
             "targets, or actions the operator did not name.\n"
             "– Destructive-action re-confirmation gate — for a move, archive, "
             "delete, or send action (or any other genuinely destructive or "
-            "irreversible change to external state), a user reply that merely "
-            "echoes or restates the action after your proposal ('delete', "
-            "'delete the promo', 'go ahead') is NOT the explicit confirmation "
-            "required to execute.  Ask a direct confirmation question that "
-            "names the exact items and action (e.g. 'Confirm you want me to "
-            "delete the promo email?') and wait for an explicit 'yes' or "
-            "'confirm' before acting.  Only an explicit affirmative — 'yes', "
-            "'confirm', or 'yes, delete the promo' — after the proposal lifts "
-            "the gate.  This does not override a firm instruction that itself "
-            "waives confirmation (e.g. 'delete it and don't ask again'); "
-            "carry that out literally.\n"
+            "irreversible change to external state), the operator must give "
+            "an unambiguous 'yes' or 'confirm' before you act.  A casual or "
+            "ambiguous reply — even one that appears to grant permission — "
+            "is NOT sufficient.  Examples of insufficient replies: 'delete', "
+            "'delete the promo', 'go ahead', 'ok lets delete then', 'you can "
+            "delete', 'sure', 'fine', 'alright', 'do it'.  Any reply that "
+            "lacks the word 'yes' or 'confirm' (or an equally explicit "
+            "variant like 'yes, delete it') should trigger a confirmation "
+            "prompt naming the exact items and action (e.g. 'To confirm, "
+            "do you want me to delete the postmaster mailbox? Please reply "
+            "with a clear yes or no.').  Wait for the explicit 'yes' or "
+            "'confirm' before acting.  This does not override a firm "
+            "instruction that itself waives confirmation (e.g. 'delete it "
+            "and don't ask again'); carry that out literally.\n"
             "– Bulk mail action gate — never execute a bulk mail action "
             "(batch archive, batch delete, or mass move of messages into "
             "archive subfolders) on the operator's default triage alone.  "

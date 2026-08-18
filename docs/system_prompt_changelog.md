@@ -3,6 +3,27 @@
 Governed artifact: `Settings.agent_instruction` default literal in
 `src/robotsix_chat/config/settings.py`. Version stamp: `SYSTEM_PROMPT_VERSION` in the same module.
 
+## v129 — 2026-08-17 — 20260816T144325Z-enforce-explicit-confirmation-for-state-1760
+
+**Summary:** Strengthen the destructive-action re-confirmation gate in
+`agent_instruction`: casual or ambiguous replies that appear to grant
+permission (e.g. 'ok lets delete then', 'you can delete', 'sure', 'fine',
+'alright') are now explicitly listed as insufficient confirmation.  Any reply
+that lacks the word 'yes' or 'confirm' (or an equally explicit variant) must
+trigger a re-confirmation prompt naming the exact items and action.  The
+example prompt is updated to use the clarifying 'To confirm, do you want me
+to …? Please reply with a clear yes or no.' template.
+
+**Rationale:** Session 3d7458ea4dcb4a3c8d1f1b3dce740f86 — the user said 'you
+can delete the postmaster full mail, I will handle later' and later 'ok lets
+delete then'.  The assistant interpreted these as permission to delete, but
+the instructions explicitly state that any move/archive/delete/send requires
+explicit operator confirmation.  Casual language that lacks a clear 'yes' or
+'confirm' should trigger a re-confirmation prompt before executing any
+destructive action.
+
+**SHA256:** `12f8aad9d7bed44d208bae9f88253b5f37017a3249c0dfe136a210cb41b86e6d`
+
 ## v128 — 2026-08-17 — 20260802T005451Z-do-not-ask-user-confirmation-for-routine-a9f5
 
 **Summary:** Add a routine-priority rule to the agent instruction: tickets
