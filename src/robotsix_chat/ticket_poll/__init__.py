@@ -1,4 +1,4 @@
-"""Mill board API tools — ticket polling and PR merging.
+"""Mill board API tools — ticket polling, PR merging, and ticket filing.
 
 Routes through ``component_request`` (roster-based connectivity) when
 available, falling back to the direct ``board_api_base_url`` otherwise.
@@ -16,6 +16,12 @@ state.
 Also provides ``mark_ticket_ready(ticket_id)`` — a dedicated state-transition
 tool that calls ``POST /tickets/{id}/mark-ready`` to force a stalled ticket
 out of ``draft`` / ``human_issue_approval`` into ``ready``.
+
+Also provides ``file_ticket(title, description, kind, repo_id)`` — a
+dedicated ticket-creation tool that calls ``POST /tickets/ingest`` on
+the mill board API to file a new ticket.  Use this when the user grants
+autonomy and you identify a deferred improvement that should be tracked
+as a ticket — it avoids recurring manual decisions.
 
 Exposes :func:`build_ticket_poll_tools` and
 :func:`build_merge_pull_request_tool` — factories returning the LLM tools.
@@ -44,6 +50,7 @@ if TYPE_CHECKING:
     from robotsix_chat.config import Settings
 
 __all__ = [
+    "build_file_ticket_tool",
     "build_find_ticket_by_pr_tool",
     "build_mark_ticket_ready_tool",
     "build_merge_pull_request_tool",
@@ -932,6 +939,145 @@ def build_prioritize_all_open_tickets_tool(
         )
 
     return [prioritize_all_open_tickets]
+
+
+def build_file_ticket_tool(
+    settings: Settings,
+    *,
+    component_request: Callable[..., Any] | None = None,
+) -> list[Callable[..., Any]]:
+    """Return the ``file_ticket`` tool.
+
+    The tool calls the mill board's ``POST /tickets/ingest`` endpoint to
+    file a new ticket.  It routes through *component_request*
+    (roster-based connectivity) when available, falling back to the
+    direct ``board_api_base_url`` otherwise.
+
+    Use this tool to create a ticket for a deferred improvement or
+    follow-up task — especially when the user has granted autonomy and
+    the improvement would prevent recurring manual decisions.  The tool
+    sends a single-ticket payload (wrapped in a list for the bulk ingest
+    endpoint) and returns the created ticket's ID on success.
+
+    Args:
+        settings: Full application settings.
+        component_request: The roster-based request callable, or ``None``
+            when the component roster is unavailable.
+
+    Returns:
+        A one-element list containing the ``file_ticket`` async callable,
+        or ``[]`` when neither *component_request* nor
+        ``board_api_base_url`` are available.
+
+    """
+    conn = _board_connection(settings, component_request)
+    if conn is None:
+        return []
+    board_url, board_token, timeout = conn
+
+    async def file_ticket(
+        title: str,
+        description: str = "",
+        kind: str = "task",
+        repo_id: str = "",
+    ) -> str:
+        """File a new ticket on the mill board.
+
+        Creates a ticket via ``POST /tickets/ingest``.  Routes through
+        the component roster when available, falling back to the direct
+        board API.
+
+        Use this to capture a deferred improvement, follow-up task, or
+        any actionable item you identify during a session — especially
+        when the user has granted autonomy.  Always mention the filed
+        ticket in your final summary so the user is aware.
+
+        Args:
+            title: Short, specific ticket title (required).
+            description: Detailed ticket body / acceptance criteria.
+            kind: Ticket kind — one of ``"task"``, ``"prompt"``,
+                ``"bug"``, ``"epic"``.  Defaults to ``"task"``.
+            repo_id: Target repository id (e.g. ``"robotsix-chat"``).
+                Defaults to the empty string — the board will assign
+                the ticket to a default repo when empty.
+
+        Returns:
+            A JSON string with ``ticket_id`` (the created ticket's ID)
+            on success, or ``error`` with a diagnostic message on
+            failure.
+
+        """
+        # Build the description body with a metadata footer matching the
+        # format expected by the mill's /tickets/ingest parser.
+        body_lines: list[str] = [description]
+        body_lines.append("")
+        body_lines.append(f"--- kind: {kind} | source: agent | origin: robotsix-chat")
+        body = "\n".join(body_lines)
+
+        payload: dict[str, Any] = {
+            "title": title,
+            "body": body,
+            "source_tag": "robotsix-chat-tool",
+        }
+        if repo_id:
+            payload["repo_id"] = repo_id
+
+        # The /tickets/ingest endpoint accepts a list of ticket payloads.
+        ingest_payload: list[dict[str, Any]] = [payload]
+
+        # Try component_request (roster-based) first.
+        if component_request is not None:
+            resp = await component_request(
+                "mill",
+                "POST",
+                "/tickets/ingest",
+                json_body=ingest_payload,
+            )
+            if not _component_response_is_error(resp):
+                return str(resp)
+            logger.info(
+                "file_ticket: roster path failed; falling back to direct board API"
+            )
+
+        # Direct fallback via board API.
+        url = f"{board_url}/tickets/ingest"
+        headers: dict[str, str] = {
+            "Content-Type": "application/json",
+            "Accept": "application/json",
+        }
+        if board_token:
+            headers["Authorization"] = f"Bearer {board_token}"
+
+        try:
+            async with httpx.AsyncClient(timeout=timeout) as client:
+                retry_client = RetryClient(client, config=_TICKET_POLL_RETRY_CONFIG)
+                response = await retry_client.post(
+                    url, headers=headers, json=ingest_payload
+                )
+                try:
+                    resp_body = response.json()
+                    body_str = json.dumps(resp_body)
+                except Exception:
+                    body_str = response.text
+                return f"HTTP {response.status_code}\n{body_str}"
+        except httpx.HTTPStatusError as exc:
+            try:
+                resp_body = exc.response.json()
+                body_str = json.dumps(resp_body)
+            except Exception:
+                body_str = exc.response.text
+            return f"HTTP {exc.response.status_code}\n{body_str}"
+        except httpx.ConnectError, httpx.ConnectTimeout, httpx.TimeoutException:
+            return f"Error filing ticket: board API request timed out after {timeout}s"
+        except Exception as exc:
+            logger.warning(
+                "file_ticket direct path failed for %r: %s",
+                title[:80],
+                exc,
+            )
+            return f"Error filing ticket: {exc}"
+
+    return [file_ticket]
 
 
 def build_ticket_poll_tools(

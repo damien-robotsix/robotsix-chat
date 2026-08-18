@@ -1,9 +1,10 @@
-# Ticket Poll — ticket-state lookup and PR merging via the component roster
+# Ticket Poll — ticket-state lookup, PR merging, and ticket filing via the component roster
 
-You have `ticket_poll`, `ticket_poll_batch`, `merge_pull_request`, and `find_ticket_by_pr` tools
-that interact with the mill board API. These tools route through `component_request` (roster-based
-connectivity) when available, falling back to the direct board API when the roster is unavailable —
-they are reliable as the primary path for checking ticket state and merging approved PRs.
+You have `ticket_poll`, `ticket_poll_batch`, `merge_pull_request`, `file_ticket`, and
+`find_ticket_by_pr` tools that interact with the mill board API. These tools route through
+`component_request` (roster-based connectivity) when available, falling back to the direct board API
+when the roster is unavailable — they are reliable as the primary path for checking ticket state,
+merging approved PRs, and filing new tickets.
 
 ## When to use it
 
@@ -23,6 +24,10 @@ they are reliable as the primary path for checking ticket state and merging appr
 - **Find ticket by PR** — use `find_ticket_by_pr` when you know a PR URL (e.g.
   `https://github.com/owner/repo/pull/656`) but not the associated ticket ID. This is a direct
   lookup — one API round-trip instead of enumerating all tickets and filtering client-side.
+- **File a new ticket** — use `file_ticket` to create a new ticket on the mill board. Use this when
+  you identify a deferred improvement, follow-up task, or actionable item during a session —
+  especially when the user has granted autonomy and the improvement would prevent recurring manual
+  decisions. Always mention the filed ticket in your final summary so the user is aware.
 
 ## Allowed operations
 
@@ -34,6 +39,7 @@ they are reliable as the primary path for checking ticket state and merging appr
 | `mark_ticket_ready`           | HTTP POST to force a stalled draft/human_issue_approval ticket to `ready`.   |
 | `find_ticket_by_pr`           | HTTP GET to find the ticket linked to a given PR URL.                        |
 | `prioritize_all_open_tickets` | Lists all open, unflagged tickets and sets priority on every one in a batch. |
+| `file_ticket`                 | HTTP POST to /tickets/ingest to file a new ticket on the board.              |
 
 The tool signatures are:
 
@@ -44,6 +50,7 @@ merge_pull_request(ticket_id: str) -> str
 mark_ticket_ready(ticket_id: str, justification: str = "") -> str
 find_ticket_by_pr(pr_url: str) -> str
 prioritize_all_open_tickets() -> str
+file_ticket(title: str, description: str = "", kind: str = "task", repo_id: str = "") -> str
 ```
 
 ## Lifecycle and priority mutation endpoints (via `component_request`)
@@ -60,7 +67,7 @@ causes 4xx errors and wastes turns.
 | Force to ready    | POST   | `/tickets/{id}/mark-ready`     | Transition a stalled `draft` / `human_issue_approval` ticket to `ready`. Body (optional): `{"justification": "why this ticket can move to ready"}`. Prefer the dedicated `mark_ticket_ready` tool. |
 | Mark done         | POST   | `/tickets/{id}/mark-done`      | Transition a ticket to the terminal `done` state.                                                                                                                                                  |
 | Merge PR          | POST   | `/tickets/{id}/merge-now`      | Prefer the dedicated `merge_pull_request` tool.                                                                                                                                                    |
-| File a new ticket | POST   | `/tickets/ingest`              | Submit a ticket spec for ingestion into the board.                                                                                                                                                 |
+| File a new ticket | POST   | `/tickets/ingest`              | Submit a ticket spec for ingestion into the board. Prefer the dedicated `file_ticket` tool.                                                                                                                                                 |
 | Read ticket state | GET    | `/tickets/{id}`                | Prefer the dedicated `ticket_poll` / `ticket_poll_batch` tools.                                                                                                                                    |
 | List tickets      | GET    | `/tickets`                     | Query parameters: `state`, `limit`, etc.                                                                                                                                                           |
 
@@ -140,6 +147,15 @@ A JSON string with these fields:
 This tool replaces the manual sequence of listing tickets, identifying unflagged ones, and toggling
 priority on each individually. Call it when the user asks to "prioritize tickets" or "prioritize all
 open tickets."
+
+### `file_ticket`
+
+A JSON string with these fields:
+
+- `ticket_id` — the created ticket's ID on success (e.g. `"20260816T161602Z-my-ticket-a3f2"`)
+- `error` — empty on success, or a diagnostic message on failure
+
+On success the response also includes the HTTP status from the board API (typically `HTTP 201`).
 
 ## ID resolution
 
