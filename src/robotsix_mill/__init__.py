@@ -311,3 +311,221 @@ def _handle_review_verdict_with_fragment_gate(
 
 
 _review.ReviewStage._handle_review_verdict = _handle_review_verdict_with_fragment_gate
+
+# ---------------------------------------------------------------------------
+# 9.  Patch the implement stage's agent-spawn abort handler so that a spawn
+#     that aborts before/without producing LLM work still leaves visible
+#     breadcrumbs.  ``_invoke_implement_agent`` re-raises transient causes
+#     without calling ``_finalize`` (deliberately — no spec fingerprint on
+#     an env failure), and any exception escaping its handlers is only
+#     caught by the worker's generic "processing crashed" log line.  Both
+#     paths leave no error on the ticket: the next preflight increments the
+#     spawn counter, and the ticket silently exhausts its spawn limit with
+#     no diagnosable root cause.  Record the exception in
+#     ``implement_summary.md`` (surfaced in the spawn-limit block note),
+#     emit a diagnostic event, and add a ticket comment — then re-raise so
+#     the worker's transient/fatal classification still owns retry/block
+#     routing.
+# ---------------------------------------------------------------------------
+import hashlib  # noqa: E402
+import logging  # noqa: E402
+
+from robotsix_mill.agents.runners.diagnostic_events import (  # noqa: E402
+    emit_diagnostic_event,
+)
+from robotsix_mill.stages.implement import phase_coordinator  # noqa: E402
+
+_spawn_abort_log = logging.getLogger("robotsix_mill.implement_spawn_abort")
+
+_original_invoke_implement_agent = (
+    implementation_logic.ImplementationLogicMixin._invoke_implement_agent
+)
+
+
+@classmethod
+def _invoke_implement_agent_with_abort_breadcrumbs(
+    cls,
+    ctx,
+    ticket,
+    repo_dir,
+    branch,
+    settings,
+    ic,
+    language_instructions,
+    agent_level,
+    resume_history,
+    extra_roots,
+    memory_board_id,
+    ws=None,
+    target_branch="main",
+):
+    """Run the original spawn, recording the abort before re-raising.
+
+    The original method handles ``AgentBudgetError`` / ``AgentRunError``
+    internally (``_finalize`` + BLOCKED outcome), but re-raises transient
+    causes — and any exception escaping its handlers propagates all the
+    way to the worker's bare log line.  Both escapes leave the ticket
+    untouched, so the next poll re-spawns and burns another spawn slot
+    with no visible error.  Record breadcrumbs on every exception that
+    escapes, then re-raise unchanged.
+    """
+    try:
+        return _original_invoke_implement_agent.__func__(
+            cls,
+            ctx,
+            ticket,
+            repo_dir,
+            branch,
+            settings,
+            ic,
+            language_instructions,
+            agent_level,
+            resume_history,
+            extra_roots,
+            memory_board_id,
+            ws,
+            target_branch,
+        )
+    except Exception as exc:
+        _record_implement_spawn_abort(ctx, ticket, exc, ws)
+        raise
+
+
+def _record_implement_spawn_abort(
+    ctx,
+    ticket,
+    exception,
+    ws=None,
+    *,
+    write_summary: bool = True,
+    dedup_comment: bool = False,
+) -> None:
+    """Log *exception* into the ticket's block note + emit a trace event.
+
+    Best-effort on all three sinks — an abort bookkeeping failure must
+    never mask the original exception.  The original exception is
+    re-raised by the caller so the worker's ``_handle_stage_error``
+    still decides retry vs block.
+
+    ``write_summary`` — append a ``[SPAWN ABORT]`` entry to
+    ``implement_summary.md`` so the spawn-limit block note's "Last
+    attempt summary tail" surfaces the genuine cause.  Disabled for
+    preflight aborts, which burn no spawn slot and should not touch
+    pass artifacts.
+
+    ``dedup_comment`` — skip the ticket comment when an identical
+    mill-authored comment already exists.  Preflight runs on every
+    poll cycle, so an outage must not pile one comment per cycle.
+    """
+    error_text = f"{type(exception).__name__}: {exception!s}"[:500]
+
+    # 1. Append to implement_summary.md so the spawn-limit block note's
+    #    "Last attempt summary tail" surfaces the genuine cause.
+    if write_summary:
+        try:
+            if ws is None:
+                ws = ctx.service.workspace(ticket)
+            summary_path = ws.artifacts_dir / "implement_summary.md"
+            existing = ""
+            try:
+                existing = summary_path.read_text(encoding="utf-8") or ""
+            except OSError:
+                existing = ""
+            summary_path.write_text(
+                existing + f"\n[SPAWN ABORT] {error_text}\n",
+                encoding="utf-8",
+            )
+        except Exception:
+            _spawn_abort_log.warning(
+                "%s: failed to write spawn-abort summary", ticket.id, exc_info=True
+            )
+
+    # 2. Emit a structured diagnostic event so the failure is
+    #    discoverable programmatically (e.g. by the periodic diagnostic
+    #    agent).  Deduplicated on (ticket_id, normalized_key).
+    try:
+        board_id = ctx.memory_board_id(ticket)
+        normalized_key = (
+            "IMPLEMENT_SPAWN_ABORT:"
+            + hashlib.sha256(
+                f"{ticket.id}:{type(exception).__name__}".encode()
+            ).hexdigest()[:16]
+        )
+        emit_diagnostic_event(
+            ctx.settings,
+            board_id,
+            category="IMPLEMENT_SPAWN_ABORT",
+            ticket_id=ticket.id,
+            reason=error_text,
+            normalized_key=normalized_key,
+        )
+    except Exception:
+        _spawn_abort_log.warning(
+            "%s: failed to emit spawn-abort diagnostic event",
+            ticket.id,
+            exc_info=True,
+        )
+
+    # 3. Add a ticket comment so the error is visible on the board
+    #    immediately, without waiting for the spawn-limit block note.
+    #    Authored by "mill" so it is filtered from implement feedback.
+    try:
+        comment_body = f"[implement-spawn-abort] {error_text}"
+        if dedup_comment:
+            for comment in ctx.service.list_comments(ticket.id):
+                if comment.body == comment_body and comment.author == "mill":
+                    break
+            else:
+                ctx.service.add_comment(ticket.id, comment_body, author="mill")
+        else:
+            ctx.service.add_comment(ticket.id, comment_body, author="mill")
+    except Exception:
+        _spawn_abort_log.warning(
+            "%s: failed to add spawn-abort comment", ticket.id, exc_info=True
+        )
+
+
+implementation_logic.ImplementationLogicMixin._invoke_implement_agent = (
+    _invoke_implement_agent_with_abort_breadcrumbs
+)
+
+# --- preflight abort handler ---------------------------------------------
+# The worker calls ``stage.preflight`` BEFORE the ticket root span opens
+# and outside its stage-error try/except.  An exception there escapes to
+# the consumer loop's bare "processing crashed" log line: no Langfuse
+# trace, no retry breadcrumb, no error on the ticket — and the next poll
+# re-runs preflight identically.  Record the abort, then route: transient
+# failures re-raise (preserving the silent self-retry that keeps an
+# outage from mass-blocking the board), while fatal failures return a
+# BLOCKED outcome whose note carries the exception so a human can act.
+_original_implement_preflight = phase_coordinator.PhaseCoordinatorMixin.preflight
+
+
+def _preflight_with_abort_breadcrumbs(self, ticket, ctx):
+    try:
+        return _original_implement_preflight(self, ticket, ctx)
+    except Exception as exc:
+        _record_implement_spawn_abort(
+            ctx,
+            ticket,
+            exc,
+            write_summary=False,
+            dedup_comment=True,
+        )
+        try:
+            from robotsix_mill.runtime.transient_errors import classify_stage_error
+
+            transient = classify_stage_error(exc) == "transient"
+        except Exception:
+            # Unknown classification — keep the established silent-retry
+            # behaviour rather than mass-blocking on a classifier bug.
+            transient = True
+        if transient:
+            raise
+        return Outcome(
+            State.BLOCKED,
+            f"implement preflight crashed: {type(exc).__name__}: {exc}"[:200],
+        )
+
+
+phase_coordinator.PhaseCoordinatorMixin.preflight = _preflight_with_abort_breadcrumbs
