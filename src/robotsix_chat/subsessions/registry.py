@@ -1460,6 +1460,49 @@ class SubsessionRegistry:
 
         return woken
 
+    def get_owner_session_ids_for_ticket(self, ticket_id: str) -> set[str]:
+        """Return owner session ids for every active subsession tracking *ticket_id*.
+
+        Covers WAIT_FOR_EVENT waiters, paused periodic monitors, and any
+        other active PERIODIC or WAIT_FOR_EVENT subsession whose checkpoint
+        carries *ticket_id*.  Used by the mill-events endpoint to target
+        blocked-transition notifications to the right conversations.
+        """
+        sessions: set[str] = set()
+
+        # 1) WAIT_FOR_EVENT waiters keyed directly by ticket_id.
+        for sub_id in self._event_waiters.get(ticket_id, ()):
+            info = self._subs.get(sub_id)
+            if info is not None and info.owner_session_id:
+                sessions.add(info.owner_session_id)
+
+        # 2) Paused periodic monitors — covered by the general scan below,
+        #    but included explicitly for clarity and to ensure they are
+        #    never missed.
+        for info in self.find_paused_periodic_by_ticket_id(ticket_id):
+            if info.owner_session_id:
+                sessions.add(info.owner_session_id)
+
+        # 3) Any other active PERIODIC / WAIT_FOR_EVENT subsessions whose
+        #    checkpoint carries the ticket_id (catch-all).
+        for info in self._subs.values():
+            if (
+                info.kind
+                not in (SubsessionKind.PERIODIC, SubsessionKind.WAIT_FOR_EVENT)
+                or not info.is_active
+            ):
+                continue
+            if info.owner_session_id in sessions:
+                continue
+            cp = info.checkpoint
+            if cp is None:
+                continue
+            cp_ticket_id = cp.get("ticket_id")
+            if isinstance(cp_ticket_id, str) and cp_ticket_id == ticket_id:
+                sessions.add(info.owner_session_id)
+
+        return sessions
+
     def is_duplicate_ticket_terminal(self, ticket_id: str, exclude_sub_id: str) -> bool:
         """Check for a duplicate terminal report for *ticket_id*.
 
