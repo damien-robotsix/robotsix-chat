@@ -1843,15 +1843,27 @@ async def test_resolve_pr_conflict_creates_merge_commit(
     client = DirectRepoClient(s)
 
     respx_mock.get("https://api.github.com/repos/org/repo/pulls/42").mock(
-        return_value=httpx.Response(200, text=json.dumps(_conflict_pr_json()))
+        side_effect=[
+            httpx.Response(200, text=json.dumps(_conflict_pr_json())),
+            httpx.Response(
+                200,
+                text=json.dumps(
+                    _conflict_pr_json(mergeable=True, mergeable_state="clean")
+                ),
+            ),
+        ]
     )
     respx_mock.get(
         "https://api.github.com/repos/org/repo/git/ref/heads/feature/x"
     ).mock(
-        return_value=httpx.Response(200, text=json.dumps({"object": {"sha": "head_sha"}}))
+        return_value=httpx.Response(
+            200, text=json.dumps({"object": {"sha": "head_sha"}})
+        )
     )
     respx_mock.get("https://api.github.com/repos/org/repo/git/ref/heads/main").mock(
-        return_value=httpx.Response(200, text=json.dumps({"object": {"sha": "base_sha"}}))
+        return_value=httpx.Response(
+            200, text=json.dumps({"object": {"sha": "base_sha"}})
+        )
     )
     respx_mock.get("https://api.github.com/repos/org/repo/git/commits/head_sha").mock(
         return_value=httpx.Response(
@@ -1863,7 +1875,9 @@ async def test_resolve_pr_conflict_creates_merge_commit(
     )
     trees_route = respx_mock.post(
         "https://api.github.com/repos/org/repo/git/trees"
-    ).mock(return_value=httpx.Response(201, text=json.dumps({"sha": "merged_tree_sha"})))
+    ).mock(
+        return_value=httpx.Response(201, text=json.dumps({"sha": "merged_tree_sha"}))
+    )
     commits_route = respx_mock.post(
         "https://api.github.com/repos/org/repo/git/commits"
     ).mock(
@@ -1882,6 +1896,7 @@ async def test_resolve_pr_conflict_creates_merge_commit(
     assert "resolved" in result
     assert "42" in result
     assert "merge_commit_sha" in result
+    assert "Re-checked mergeable: clean" in result
 
     # The tree overlays the resolved blob onto the head tree.
     tree_body = json.loads(trees_route.calls[0].request.content)
@@ -1907,6 +1922,75 @@ async def test_resolve_pr_conflict_creates_merge_commit(
 
 
 @pytest.mark.asyncio
+async def test_resolve_pr_conflict_ref_update_rejected(
+    respx_mock: respx.MockRouter,
+) -> None:
+    """Ref update returns 422 → error message, no force push."""
+    from tests.repo.direct.conftest import _prepopulate_installation_token, _settings
+
+    s = _settings()
+    _prepopulate_installation_token(s)
+    client = DirectRepoClient(s)
+
+    respx_mock.get("https://api.github.com/repos/org/repo/pulls/42").mock(
+        return_value=httpx.Response(200, text=json.dumps(_conflict_pr_json()))
+    )
+    respx_mock.get(
+        "https://api.github.com/repos/org/repo/git/ref/heads/feature/x"
+    ).mock(
+        return_value=httpx.Response(
+            200, text=json.dumps({"object": {"sha": "head_sha"}})
+        )
+    )
+    respx_mock.get("https://api.github.com/repos/org/repo/git/ref/heads/main").mock(
+        return_value=httpx.Response(
+            200, text=json.dumps({"object": {"sha": "base_sha"}})
+        )
+    )
+    respx_mock.get("https://api.github.com/repos/org/repo/git/commits/head_sha").mock(
+        return_value=httpx.Response(
+            200, text=json.dumps({"tree": {"sha": "head_tree_sha"}})
+        )
+    )
+    respx_mock.post("https://api.github.com/repos/org/repo/git/blobs").mock(
+        return_value=httpx.Response(201, text=json.dumps({"sha": "blob_sha"}))
+    )
+    respx_mock.post("https://api.github.com/repos/org/repo/git/trees").mock(
+        return_value=httpx.Response(201, text=json.dumps({"sha": "merged_tree_sha"}))
+    )
+    respx_mock.post("https://api.github.com/repos/org/repo/git/commits").mock(
+        return_value=httpx.Response(201, text=json.dumps({"sha": "merge_commit_sha"}))
+    )
+    # The ref update is rejected (e.g. another commit landed on head in between).
+    refs_route = respx_mock.patch(
+        "https://api.github.com/repos/org/repo/git/refs/heads/feature/x"
+    ).mock(
+        return_value=httpx.Response(
+            422,
+            text=json.dumps(
+                {
+                    "message": "Update is not a fast-forward",
+                }
+            ),
+        )
+    )
+
+    result = await client.resolve_pr_conflict(
+        repo_full_name="org/repo",
+        pr_number=42,
+        resolved_files=[{"path": "src/x.py", "content": "resolved content"}],
+        commit_message="merge: resolve conflicts",
+    )
+    assert "Error resolving conflict" in result
+    assert "42" in result
+    assert "org/repo" in result
+
+    # Verify force was not used.
+    ref_body = json.loads(refs_route.calls[0].request.content)
+    assert ref_body["force"] is False
+
+
+@pytest.mark.asyncio
 async def test_resolve_pr_conflict_already_mergeable_noop(
     respx_mock: respx.MockRouter,
 ) -> None:
@@ -1920,9 +2004,7 @@ async def test_resolve_pr_conflict_already_mergeable_noop(
     respx_mock.get("https://api.github.com/repos/org/repo/pulls/42").mock(
         return_value=httpx.Response(
             200,
-            text=json.dumps(
-                _conflict_pr_json(mergeable=True, mergeable_state="clean")
-            ),
+            text=json.dumps(_conflict_pr_json(mergeable=True, mergeable_state="clean")),
         )
     )
 
@@ -1950,7 +2032,9 @@ async def test_resolve_pr_conflict_mergeability_pending(
     respx_mock.get("https://api.github.com/repos/org/repo/pulls/42").mock(
         return_value=httpx.Response(
             200,
-            text=json.dumps(_conflict_pr_json(mergeable=None, mergeable_state="unknown")),
+            text=json.dumps(
+                _conflict_pr_json(mergeable=None, mergeable_state="unknown")
+            ),
         )
     )
 
@@ -2037,10 +2121,14 @@ async def test_resolve_pr_conflict_missing_path_in_files(
     respx_mock.get(
         "https://api.github.com/repos/org/repo/git/ref/heads/feature/x"
     ).mock(
-        return_value=httpx.Response(200, text=json.dumps({"object": {"sha": "head_sha"}}))
+        return_value=httpx.Response(
+            200, text=json.dumps({"object": {"sha": "head_sha"}})
+        )
     )
     respx_mock.get("https://api.github.com/repos/org/repo/git/ref/heads/main").mock(
-        return_value=httpx.Response(200, text=json.dumps({"object": {"sha": "base_sha"}}))
+        return_value=httpx.Response(
+            200, text=json.dumps({"object": {"sha": "base_sha"}})
+        )
     )
     respx_mock.get("https://api.github.com/repos/org/repo/git/commits/head_sha").mock(
         return_value=httpx.Response(

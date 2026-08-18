@@ -870,12 +870,26 @@ class DirectRepoClient:
                 f"{repo_full_name}: {exc}"
             )
 
+        # 6. Re-check mergeability after the ref update so the returned
+        #    string carries factual state, not a prediction.
+        recheck = await self.get_pr(repo_full_name=repo_full_name, pr_number=pr_number)
+        recheck_mergeable = recheck.get("mergeable")
+        recheck_state = recheck.get("mergeable_state", "unknown")
+        mergeable_label = (
+            "clean"
+            if recheck_mergeable is True
+            else "still computing"
+            if recheck_mergeable is None
+            else "still conflicting"
+        )
+
         return (
             f"Merge conflict on PR #{pr_number} in {repo_full_name} resolved.\n"
             f"Created merge commit {merge_commit_sha} on '{head_branch}' with "
             f"parents [head {head_sha[:7]}, base {base_sha[:7]}] — the base "
             f"branch '{base_branch}' is now an ancestor of the head branch.\n"
-            f"GitHub will recompute the PR as mergeable shortly."
+            f"Re-checked mergeable: {mergeable_label} "
+            f"(mergeable_state={recheck_state})."
         )
 
     async def get_pr(
