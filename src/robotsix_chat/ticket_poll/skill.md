@@ -155,8 +155,6 @@ A JSON string with these fields:
 - `ticket_id` — the created ticket's ID on success (e.g. `"20260816T161602Z-my-ticket-a3f2"`)
 - `error` — empty on success, or a diagnostic message on failure
 
-On success the response also includes the HTTP status from the board API (typically `HTTP 201`).
-
 ## ID resolution
 
 Both `ticket_poll` and `ticket_poll_batch` resolve paraphrased / abbreviated ticket IDs against the

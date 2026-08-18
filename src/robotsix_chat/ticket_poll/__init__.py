@@ -79,8 +79,41 @@ def _parse_json_body(body: str) -> tuple[dict[str, Any] | None, str]:
     """
     try:
         return json.loads(body), ""
-    except json.JSONDecodeError, TypeError:
+    except (json.JSONDecodeError, TypeError):
         return None, "Non-JSON response from board API"
+
+
+def _extract_ingested_ticket_id(response_data: Any) -> str:
+    r"""Extract the created ticket ID from a ``/tickets/ingest`` response.
+
+    *response_data* may be a parsed JSON dict, a parsed JSON list, a
+    raw JSON string, or a ``"HTTP <status>\n<body>"`` envelope string
+    from ``component_request``.
+    Returns the ticket ID string, or ``""`` when it cannot be found.
+    """
+    if isinstance(response_data, str):
+        # component_request envelope: "HTTP <status>\n<body>"
+        if response_data.startswith("HTTP "):
+            try:
+                newline = response_data.index("\n")
+            except ValueError:
+                return ""
+            response_data = response_data[newline + 1 :]
+        # Parse the (possibly enveloped) string as JSON.
+        try:
+            body = json.loads(response_data)
+        except (json.JSONDecodeError, ValueError):
+            return ""
+        return _extract_ingested_ticket_id(body)
+
+    if isinstance(response_data, list) and response_data:
+        response_data = response_data[0]
+
+    if isinstance(response_data, dict):
+        ticket_id = response_data.get("id") or response_data.get("ticket_id")
+        if isinstance(ticket_id, str):
+            return ticket_id
+    return ""
 
 
 def _component_response_is_error(resp: str) -> bool:
@@ -1034,7 +1067,11 @@ def build_file_ticket_tool(
                 json_body=ingest_payload,
             )
             if not _component_response_is_error(resp):
-                return str(resp)
+                ticket_id = _extract_ingested_ticket_id(resp)
+                return json.dumps(
+                    {"ticket_id": ticket_id, "error": ""},
+                    ensure_ascii=False,
+                )
             logger.info(
                 "file_ticket: roster path failed; falling back to direct board API"
             )
@@ -1056,26 +1093,44 @@ def build_file_ticket_tool(
                 )
                 try:
                     resp_body = response.json()
-                    body_str = json.dumps(resp_body)
                 except Exception:
-                    body_str = response.text
-                return f"HTTP {response.status_code}\n{body_str}"
+                    resp_body = response.text
+                ticket_id = _extract_ingested_ticket_id(resp_body)
+                return json.dumps(
+                    {"ticket_id": ticket_id, "error": ""},
+                    ensure_ascii=False,
+                )
         except httpx.HTTPStatusError as exc:
             try:
                 resp_body = exc.response.json()
-                body_str = json.dumps(resp_body)
             except Exception:
-                body_str = exc.response.text
-            return f"HTTP {exc.response.status_code}\n{body_str}"
+                resp_body = exc.response.text
+            ticket_id = _extract_ingested_ticket_id(resp_body)
+            return json.dumps(
+                {
+                    "ticket_id": ticket_id,
+                    "error": f"Board API returned HTTP {exc.response.status_code}",
+                },
+                ensure_ascii=False,
+            )
         except httpx.ConnectError, httpx.ConnectTimeout, httpx.TimeoutException:
-            return f"Error filing ticket: board API request timed out after {timeout}s"
+            return json.dumps(
+                {
+                    "ticket_id": "",
+                    "error": f"Board API request timed out after {timeout}s",
+                },
+                ensure_ascii=False,
+            )
         except Exception as exc:
             logger.warning(
                 "file_ticket direct path failed for %r: %s",
                 title[:80],
                 exc,
             )
-            return f"Error filing ticket: {exc}"
+            return json.dumps(
+                {"ticket_id": "", "error": str(exc)},
+                ensure_ascii=False,
+            )
 
     return [file_ticket]
 
