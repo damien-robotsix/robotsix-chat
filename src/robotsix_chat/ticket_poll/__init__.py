@@ -79,7 +79,7 @@ def _parse_json_body(body: str) -> tuple[dict[str, Any] | None, str]:
     """
     try:
         return json.loads(body), ""
-    except (json.JSONDecodeError, TypeError):
+    except json.JSONDecodeError, TypeError:
         return None, "Non-JSON response from board API"
 
 
@@ -102,7 +102,7 @@ def _extract_ingested_ticket_id(response_data: Any) -> str:
         # Parse the (possibly enveloped) string as JSON.
         try:
             body = json.loads(response_data)
-        except (json.JSONDecodeError, ValueError):
+        except json.JSONDecodeError, ValueError:
             return ""
         return _extract_ingested_ticket_id(body)
 
