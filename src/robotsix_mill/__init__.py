@@ -226,3 +226,88 @@ if not merge_auto_approve(_refine_helpers):
         "skipping auto-approve merge for robotsix-chat tickets",
         getattr(_refine_helpers, "_AUTO_APPROVE_SOURCES", None),
     )
+# ---------------------------------------------------------------------------
+# 8.  Patch the review stage's verdict handling to re-verify any changelog
+#     fragment claimed in the implement rebuttal (``implement.md``) against
+#     the committed branch diff.  The pre-ready gate above checks the
+#     working tree before ``ready``; this closes the post-ready gap where an
+#     implement agent claims a fragment during review but it is never
+#     committed — the reviewer must not accept the verbal claim.
+# ---------------------------------------------------------------------------
+import robotsix_mill.stages.review as _review  # noqa: E402
+from robotsix_mill.agents.reviewing import ReviewAsk  # noqa: E402
+from robotsix_mill.stages.changelog_gate import (  # noqa: E402
+    run_review_changelog_fragment_gate,
+)
+
+_original_handle_review_verdict = _review.ReviewStage._handle_review_verdict
+
+
+def _handle_review_verdict_with_fragment_gate(
+    self,
+    verdict,
+    ticket,
+    ctx,
+    ws,
+    s,
+    input_hash,
+    modified_paths,
+    repo_dir,
+):
+    """Verify a claimed changelog fragment before accepting a verdict.
+
+    When the implement rebuttal claims a fragment was added but the
+    committed diff does not contain it, force REQUEST_CHANGES (and enrich
+    the verdict's asks/comments) instead of trusting the claim.  A
+    NEEDS_DISCUSSION verdict is left untouched — it pauses for a human
+    decision rather than an implement rebuttal.
+    """
+    if verdict.verdict in ("APPROVE", "REQUEST_CHANGES"):
+        implement_md = ws.artifacts_dir / "implement.md"
+        rebuttal = (
+            implement_md.read_text(encoding="utf-8") if implement_md.exists() else ""
+        )
+        error = run_review_changelog_fragment_gate(
+            ticket.id,
+            repo_dir,
+            rebuttal,
+            modified_paths,
+        )
+        if error is not None:
+            _review.log.warning(
+                "%s: review changelog fragment gate failed — %s; "
+                "forcing REQUEST_CHANGES",
+                ticket.id,
+                error,
+            )
+            verdict.verdict = "REQUEST_CHANGES"
+            verdict.auto_merge_eligible = False
+            verdict.comments = (
+                f"Changelog fragment verification failed: {error}\n\n"
+                + (verdict.comments or "")
+            )
+            # Empty ``files_touched`` keeps the ask in-scope (file-less), so
+            # the ticket bounces back to implement instead of spawning a
+            # dependency ticket for the missing fragment.
+            verdict.request_changes = [
+                ReviewAsk(
+                    title=f"Commit changelog fragment for {ticket.id}",
+                    description=error,
+                    files_touched=[],
+                ),
+                *verdict.request_changes,
+            ]
+    return _original_handle_review_verdict(
+        self,
+        verdict,
+        ticket,
+        ctx,
+        ws,
+        s,
+        input_hash,
+        modified_paths,
+        repo_dir,
+    )
+
+
+_review.ReviewStage._handle_review_verdict = _handle_review_verdict_with_fragment_gate
