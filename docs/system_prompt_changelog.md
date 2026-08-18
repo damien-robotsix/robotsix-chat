@@ -7,13 +7,13 @@ Governed artifact: `Settings.agent_instruction` default literal in
 
 **Summary:** Add a TICKET SCOPE SPLIT rule to the ticket-filing guidance in
 `agent_instruction`: one ticket covers one subsystem or one acceptance
-criterion. A ticket spanning multiple subsystems (e.g. a new external client
-+ agent tool wiring + framework plumbing + tests) is too large for a single
-implement pass and will predictably block — the implement agent spends its
-whole budget exploring and ships nothing. Before filing such a request, the
-assistant must split it into separate, independently shippable tickets, one
-per subsystem (e.g. client with tests, tool registration, transcript
-visibility), filed in dependency order.
+criterion. A ticket spanning multiple subsystems (e.g. a new external
+client + agent tool wiring + framework plumbing + tests) is too large for a
+single implement pass and will predictably block — the implement agent
+spends its whole budget exploring and ships nothing. Before filing such a
+request, the assistant must split it into separate, independently shippable
+tickets, one per subsystem (e.g. client with tests, tool registration,
+transcript visibility), filed in dependency order.
 
 **Rationale:** The live-price invest ticket blocked three times with the same
 failure: the implement agent exhausted its entire time budget exploring and
