@@ -1259,6 +1259,18 @@ async def test_watcher_closes_monitor_after_consecutive_404s() -> None:
     assert reopened.close_reason == "ticket_deleted"
     assert "404" in (reopened.summary or "")
 
+    # Verify the stall notification was published before closing.
+    stall_notifications = [
+        (sid, f)
+        for sid, f in sink.frames
+        if f.get("type") == SSE_NOTIFICATION_TYPE
+        and "Monitor stalled" in (f.get("title") or "")
+    ]
+    assert len(stall_notifications) == 1
+    _, stall_frame = stall_notifications[0]
+    assert stall_frame["urgency"] == "medium"
+    assert "T-DELETED" in (stall_frame.get("body") or "")
+
 
 @pytest.mark.asyncio
 async def test_watcher_resets_404_counter_on_successful_response() -> None:
