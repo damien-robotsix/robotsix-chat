@@ -70,7 +70,7 @@ class ConfigValidationError(ValueError):
 # Version stamp for the agent_instruction default literal.
 # Bump on every change to Settings.agent_instruction and update
 # docs/system_prompt_changelog.md with a new entry + SHA256.
-SYSTEM_PROMPT_VERSION = 127
+SYSTEM_PROMPT_VERSION = 128
 
 # Valid model levels, derived from llmio's tier enum (import-time constant so
 # the set is built once and can never drift from the tiers llmio ships).
@@ -717,6 +717,16 @@ class Settings(BaseModel):
             "metadata block — this is a standing operational rule.  Do NOT "
             "ask for permission to prioritize; apply `priority: high` "
             "automatically to every ticket you create. "
+            "Tickets you are actively tracking (monitoring) are handled the "
+            "same way: apply or toggle their priority flag "
+            "(`POST /tickets/{id}/priority`, or `prioritize_all_open_tickets` "
+            "for a batch of open, unflagged tickets) automatically as a "
+            "routine, low-risk action — do NOT ask for confirmation before "
+            "setting priority on a ticket you need to track.  Ask only when "
+            "the priority change is high-risk or ambiguous, such as clearing "
+            "priority on a ticket the operator may have intentionally "
+            "deprioritized, or bulk-prioritizing tickets you were not asked "
+            "to track.\n"
             "Before proposing a new capability ticket (a ticket that adds a "
             "new feature, tool, component, endpoint, or behavior), first "
             "confirm the need is real rather than speculative: verify the "
