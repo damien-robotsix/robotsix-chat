@@ -2515,6 +2515,34 @@ autonomous settings at their pydantic field defaults
 ``stale_monitor_runs_before_completion=3``,
 ``queue_tolerance_runs_before_escalation=3``).
 
+## AUTONOMOUS v29 — 2026-08-17 — fix-autonomous-sessions-config-restart-guidance-b6e0
+
+**Summary:** Correct the OPERATOR CONFIGURATION GUIDANCE block inside
+`build_autonomous_instruction()` — the previous guidance falsely claimed
+that changes to `autonomous.sessions` take effect at the next run trigger
+with no restart needed.  In reality, definitions are resolved once at
+`AutonomousRunner` construction, so `autonomous.sessions` edits require a
+chat-service restart to take effect.  The guidance now states this
+truthfully.  Adds a CONFIG-APPLY-AND-VERIFY protocol that the agent MUST
+follow after making or authorizing an `autonomous.sessions` change: (a)
+when `auto_self_restart` is ON — arm a continuation via
+`schedule_continuation`, announce, `self_restart`, then verify via
+`GET /autonomous/definitions`; (b) when OFF — surface the pending restart
+as an explicit mutation requiring operator authorization and do NOT report
+the task complete until verified.  Also carves out `autonomous.sessions`
+changes in the AUTO SELF-RESTART block as a valid reason to auto-self-restart
+(when `auto_self_restart` is ON), making the two blocks consistent.
+
+**Rationale:** Ticket incident — an autonomous session that wrote an
+authorized `autonomous.sessions` change (adding a daily cost-review preset)
+left it silently pending: the agent noted a restart was needed but never
+triggered it or verified the session actually ran.  The false prompt claim
+("no server restart is needed") misled the agent, and the missing
+apply-and-verify protocol meant the change was reported as delivered while
+still inert on disk.
+
+**SHA256:** `d2c5bfff5e344e2ac1bc44c6bd34e6adb76ee55c83eab3c296a2e5f4ff408154`
+
 ## AUTONOMOUS v28 — 2026-08-16 — auto-escalate-tickets-needing-human-deci-1c7a
 
 **Summary:** Add two escalation policies to the autonomous protocol. First, a
