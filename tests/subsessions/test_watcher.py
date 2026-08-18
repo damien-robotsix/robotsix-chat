@@ -1242,9 +1242,21 @@ async def test_watcher_closes_monitor_after_consecutive_404s() -> None:
     # Poll interval short enough for several ticks.
     settings.subsessions.paused_monitor_poll_interval_seconds = 0.01
 
+    # Explicitly resolve nothing so the close path is exercised without
+    # depending on the real BoardClient's behaviour behind the mocked
+    # httpx.AsyncClient.
+    resolved_board = MagicMock()
+    resolved_board.resolve_ticket_ids = AsyncMock(return_value={})
+
     watcher_task = asyncio.create_task(watch_paused_monitors(env))
 
-    with patch("httpx.AsyncClient", MagicMock(return_value=mock_instance)):
+    with (
+        patch("httpx.AsyncClient", MagicMock(return_value=mock_instance)),
+        patch(
+            "robotsix_chat.subsessions.watcher.BoardClient",
+            MagicMock(return_value=resolved_board),
+        ),
+    ):
         # Let the watcher poll enough ticks to accumulate 3+ consecutive 404s.
         await asyncio.sleep(0.2)
 
