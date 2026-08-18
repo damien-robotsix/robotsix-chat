@@ -367,3 +367,182 @@ async def test_optional_fields_default_to_empty_string() -> None:
     }
     registry.route_mill_event.assert_called_once_with("t-min", expected_payload)
     mock_cache.put_from_mill_event.assert_called_once_with(expected_payload)
+
+
+# ---------------------------------------------------------------------------
+# Tests — blocked-transition notification
+# ---------------------------------------------------------------------------
+
+
+def _mock_event_bus() -> MagicMock:
+    """Return a MagicMock for the EventBus to capture publish calls."""
+    return MagicMock()
+
+
+def _mock_registry_with_owners(
+    owner_session_ids: set[str] | None = None,
+    *,
+    route_return_value: int = 0,
+) -> MagicMock:
+    """Registry mock with route_mill_event and get_owner_session_ids_for_ticket."""
+    registry = MagicMock()
+    registry.route_mill_event.return_value = route_return_value
+    registry.get_owner_session_ids_for_ticket.return_value = (
+        owner_session_ids if owner_session_ids is not None else set()
+    )
+    return registry
+
+
+@pytest.mark.asyncio
+async def test_blocked_transition_notifies_owner_sessions() -> None:
+    """Blocked transition publishes SSE notification + agent_message."""
+    async with mock_app() as f:
+        event_bus = _mock_event_bus()
+        f.app.state.event_bus = event_bus
+        registry = _mock_registry_with_owners(
+            {"session-1", "session-2"}, route_return_value=1
+        )
+        f.app.state.subsession_registry = registry
+
+        request = _make_mill_event_request(
+            {
+                "ticket_id": "t-blocked-1",
+                "old_state": "implementing",
+                "new_state": "blocked",
+            },
+            app=f.app,
+        )
+
+        with patch("robotsix_chat.ticket_poll.cache.ticket_state_cache") as mock_cache:
+            response = await mill_events_endpoint(request)
+
+    assert response.status_code == 200
+    assert json.loads(response.body) == {"status": "ok", "woken": 1}
+    registry.get_owner_session_ids_for_ticket.assert_called_once_with("t-blocked-1")
+
+    # Both session-1 and session-2 should get two publishes each
+    # (notification + agent_message).
+    assert event_bus.publish.call_count == 4
+    published_session_ids = {call.args[0] for call in event_bus.publish.call_args_list}
+    assert published_session_ids == {"session-1", "session-2"}
+
+    # First call to each session should be the SSE notification.
+    session1_calls = [
+        c for c in event_bus.publish.call_args_list if c.args[0] == "session-1"
+    ]
+    assert len(session1_calls) == 2
+    notification_frame = session1_calls[0].args[1]
+    assert notification_frame["type"] == "notification"
+    assert "BLOCKED" in notification_frame["title"]
+    assert notification_frame["urgency"] == "high"
+
+    agent_message = session1_calls[1].args[1]
+    assert agent_message["type"] == "agent_message"
+    assert "BLOCKED" in agent_message["text"]
+
+    mock_cache.put_from_mill_event.assert_called_once()
+
+
+@pytest.mark.asyncio
+async def test_blocked_transition_no_owners_still_returns_ok() -> None:
+    """Blocked transition with zero owner sessions returns 200 gracefully."""
+    async with mock_app() as f:
+        event_bus = _mock_event_bus()
+        f.app.state.event_bus = event_bus
+        registry = _mock_registry_with_owners(set(), route_return_value=0)
+        f.app.state.subsession_registry = registry
+
+        request = _make_mill_event_request(
+            {
+                "ticket_id": "t-blocked-2",
+                "old_state": "in_progress",
+                "new_state": "blocked",
+            },
+            app=f.app,
+        )
+
+        with patch("robotsix_chat.ticket_poll.cache.ticket_state_cache"):
+            response = await mill_events_endpoint(request)
+
+    assert response.status_code == 200
+    assert json.loads(response.body) == {"status": "ok", "woken": 0}
+    # No publishes because there are no owner sessions.
+    event_bus.publish.assert_not_called()
+
+
+@pytest.mark.asyncio
+async def test_blocked_to_blocked_transition_no_notification() -> None:
+    """old_state already blocked → no notification (transition was not INTO blocked)."""
+    async with mock_app() as f:
+        event_bus = _mock_event_bus()
+        f.app.state.event_bus = event_bus
+        registry = _mock_registry_with_owners({"session-1"}, route_return_value=1)
+        f.app.state.subsession_registry = registry
+
+        request = _make_mill_event_request(
+            {
+                "ticket_id": "t-blocked-3",
+                "old_state": "blocked",
+                "new_state": "blocked",
+            },
+            app=f.app,
+        )
+
+        with patch("robotsix_chat.ticket_poll.cache.ticket_state_cache"):
+            response = await mill_events_endpoint(request)
+
+    assert response.status_code == 200
+    # Should still route (monitors get woken even for blocked→blocked),
+    # but should NOT publish blocked notifications.
+    registry.route_mill_event.assert_called_once()
+    event_bus.publish.assert_not_called()
+
+
+@pytest.mark.asyncio
+async def test_non_blocked_transition_no_notification() -> None:
+    """A normal open→closed transition should not trigger blocked notification."""
+    async with mock_app() as f:
+        event_bus = _mock_event_bus()
+        f.app.state.event_bus = event_bus
+        registry = _mock_registry_with_owners({"session-1"}, route_return_value=1)
+        f.app.state.subsession_registry = registry
+
+        request = _make_mill_event_request(
+            {
+                "ticket_id": "t-normal",
+                "old_state": "open",
+                "new_state": "closed",
+            },
+            app=f.app,
+        )
+
+        with patch("robotsix_chat.ticket_poll.cache.ticket_state_cache"):
+            response = await mill_events_endpoint(request)
+
+    assert response.status_code == 200
+    event_bus.publish.assert_not_called()
+
+
+@pytest.mark.asyncio
+async def test_blocked_transition_no_event_bus_returns_ok() -> None:
+    """Blocked transition without event_bus on app state → graceful no-op."""
+    async with mock_app() as f:
+        # Do NOT set f.app.state.event_bus.
+        registry = _mock_registry_with_owners({"session-1"}, route_return_value=1)
+        f.app.state.subsession_registry = registry
+
+        request = _make_mill_event_request(
+            {
+                "ticket_id": "t-blocked-4",
+                "old_state": "implementing",
+                "new_state": "blocked",
+            },
+            app=f.app,
+        )
+
+        with patch("robotsix_chat.ticket_poll.cache.ticket_state_cache"):
+            response = await mill_events_endpoint(request)
+
+    assert response.status_code == 200
+    # No event_bus → no publish → graceful skip.
+    assert json.loads(response.body) == {"status": "ok", "woken": 1}

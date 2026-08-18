@@ -191,6 +191,28 @@ would otherwise go unnoticed until a monitor report:
 Notifications are published once per condition per subsession (tracked with an internal
 deduplication set), so they are not spammed on every poll cycle.
 
+### Blocked-transition notification (mill push)
+
+When a ticket transitions **into BLOCKED** from any other state — which happens when the automated
+implementation worker exhausts its retry budget — the `POST /mill-events` endpoint immediately
+pushes two notifications to every conversation that owns a monitor tracking the ticket:
+
+1. A **high-urgency SSE notification** (browser bubble) with the ticket id and a summary of what
+   happened.
+2. An **`agent_message` frame** that appears as an assistant chat bubble, informing the user inline
+   and offering a specific resume action ("ask me to inspect the ticket and decide whether to
+   resume it once the blocker is resolved").
+
+These fire **on the first blocked transition** (`old_state` ≠ `blocked`, `new_state` = `blocked`)
+and do not wait for the next periodic monitor tick — the user sees the alert within seconds of the
+mill push.  The existing monitor wake (via `route_mill_event`) still fires in parallel so the
+monitor can re-verify the ticket state and provide a detailed follow-up.
+
+Repeated `blocked → blocked` events (e.g. the monitor resumes and re-blocks on the same pipeline
+gate) do **not** trigger this notification — those are covered by the existing
+[reblock threshold detection](#blocked-resume-threshold-detection) mechanism (SSE notification at
+`paused_monitor_reblock_notify_threshold`, auto-close at `paused_monitor_max_reblock_resumes`).
+
 The poll interval is controlled by:
 
 | Config key                                              | Default | Description                                                                                                                                        |
