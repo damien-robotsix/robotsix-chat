@@ -5,6 +5,7 @@ from __future__ import annotations
 import asyncio
 import re
 import uuid
+from collections.abc import Callable
 from types import SimpleNamespace
 from typing import Any
 from unittest.mock import AsyncMock, MagicMock, call, patch
@@ -627,6 +628,111 @@ async def test_retry_on_transient_error() -> None:
     assert chunks == ["recovered reply"]
     assert provider.build_agent.call_count == 2  # fresh handle per attempt
     assert handle.close.call_count == 2
+
+
+# Stand-ins for claude_agent_sdk's transport failures.  robotsix_llmio's
+# is_claude_sdk_transient matches SDK exception classes by *name* (so it works
+# without the SDK installed), so local classes with the same names exercise the
+# real predicate end-to-end.
+class CLIConnectionError(Exception):
+    """Lost the control-protocol connection to the CLI."""
+
+
+class ClaudeSDKQueryTimeout(Exception):  # noqa: N818 — name must match the upstream SDK class (matched by name)
+    """Per-call wall-clock cap tripped on a stalled run."""
+
+
+@pytest.mark.asyncio
+@pytest.mark.parametrize(
+    "boom",
+    [
+        pytest.param(
+            lambda: RuntimeError("Claude Code returned an error result: success"),
+            id="degenerate-success-frame",
+        ),
+        pytest.param(
+            lambda: CLIConnectionError("control-protocol connection lost"),
+            id="claude-sdk-connection-error",
+        ),
+        pytest.param(
+            lambda: ClaudeSDKQueryTimeout("query timed out"),
+            id="claude-sdk-query-timeout",
+        ),
+    ],
+)
+async def test_retry_on_claude_sdk_transient_signature(
+    boom: Callable[[], BaseException],
+) -> None:
+    """Each Claude Agent SDK transient signature is retried and recovers.
+
+    Uses the REAL transient predicates (no patching): the degenerate-success
+    frame is matched by message and the transport failures by class name
+    inside ``is_claude_sdk_transient`` — so this test fails if the OR wiring
+    into the chat retry loop is ever dropped.
+    """
+    call_count = 0
+
+    async def fail_then_pass(
+        _message: str, *, message_history: object = None
+    ) -> MagicMock:
+        nonlocal call_count
+        call_count += 1
+        if call_count == 1:
+            raise boom()
+        result = MagicMock()
+        result.output = "recovered reply"
+        return result
+
+    handle = MagicMock()
+    handle.run = fail_then_pass
+    handle.close = MagicMock()
+
+    provider = MagicMock()
+    provider.build_agent.return_value = handle
+    create_model_patch = MagicMock(return_value=provider)
+
+    with (
+        patch("robotsix_chat.llm.agent.create_model", create_model_patch),
+        patch("robotsix_http.retry.asyncio.sleep", new=AsyncMock()),
+    ):
+        agent = LlmioChatAgent(model_level=3, instruction="Be helpful.")
+        chunks = [c async for c in agent.stream("hi")]
+
+    assert chunks == ["recovered reply"]
+    assert provider.build_agent.call_count == 2  # fresh handle per retry
+    assert handle.close.call_count == 2
+
+
+def test_chat_turn_transient_excludes_usage_and_auth() -> None:
+    """Usage-exhaustion and auth failures are NOT transient at the chat-turn loop.
+
+    Retrying either at this tier just repeats the identical failure; they must
+    propagate to the tier-fallback path instead.  Asserted against the REAL
+    combined predicate so the exclusion checks inside
+    ``is_claude_sdk_transient`` stay wired in.
+    """
+    from robotsix_llmio.claude_sdk import (
+        ClaudeSDKAuthError,
+        ClaudeSDKUsageExhaustedError,
+    )
+
+    from robotsix_chat.llm.agent import _is_chat_turn_transient
+
+    assert not _is_chat_turn_transient(
+        ClaudeSDKUsageExhaustedError("You're out of usage credits")
+    )
+    assert not _is_chat_turn_transient(
+        ClaudeSDKAuthError(
+            "Failed to authenticate. API Error: 401 OAuth access token has expired."
+        )
+    )
+    # Sanity anchor: the SDK signatures themselves stay transient.
+    assert _is_chat_turn_transient(
+        RuntimeError("Claude Code returned an error result: success")
+    )
+    assert _is_chat_turn_transient(
+        CLIConnectionError("control-protocol connection lost")
+    )
 
 
 @pytest.mark.asyncio

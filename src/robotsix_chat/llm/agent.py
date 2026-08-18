@@ -36,6 +36,7 @@ from robotsix_llmio.claude_sdk import (
     ClaudeSDKAuthError,
     ClaudeSDKUsageExhaustedError,
     activity_events,
+    is_claude_sdk_transient,
 )
 from robotsix_llmio.config import create_model
 from robotsix_llmio.config.tier import TierConfig, TierLevel, TierLevelConfig
@@ -55,6 +56,20 @@ _USAGE_FALLBACK_DEPTH = 1
 
 # A prior conversation turn replayed to the agent: ``(user, assistant)``.
 Turn = tuple[str, str]
+
+
+def _is_chat_turn_transient(exc: BaseException) -> bool:
+    """Return True when *exc* warrants retrying the chat turn.
+
+    Covers both OpenRouter-level blips (timeouts, upstream provider errors,
+    429/5xx) and Claude Agent SDK transport/control failures — the
+    degenerate-success frame, a lost control-protocol connection, and the
+    per-call wall-clock timeout on a stalled run.  Usage-exhaustion and auth
+    failures are deliberately excluded (checked first inside
+    :func:`~robotsix_llmio.claude_sdk.is_claude_sdk_transient`) so they keep
+    propagating to the tier-fallback path instead of burning retries.
+    """
+    return is_openrouter_transient(exc) or is_claude_sdk_transient(exc)
 
 
 def _sdk_session_uuid(session_id: str) -> str:
@@ -660,9 +675,12 @@ class LlmioChatAgent:
             effective_trace_metadata.update(trace_metadata)
 
         # Build a fresh handle per attempt so each try starts from a clean
-        # state.  transient detection is delegated to is_openrouter_transient
-        # so the retry loop only reacts to OpenRouter-level blips; non-transient
-        # errors (including ClaudeSDKUsageExhaustedError) propagate immediately.
+        # state.  Transient detection is delegated to _is_chat_turn_transient:
+        # OpenRouter-level blips AND Claude Agent SDK transport/control
+        # failures (degenerate-success frame, dropped control connection,
+        # stalled-run timeout) are retried; non-transient errors (including
+        # ClaudeSDKUsageExhaustedError and ClaudeSDKAuthError) propagate
+        # immediately to the tier-fallback path below.
         async def _attempt() -> Any:
             handle = provider.build_agent(
                 level=level,
@@ -705,7 +723,7 @@ class LlmioChatAgent:
                     max_retries=2,
                     jitter_factor=0.0,
                 ),
-                is_transient_fn=is_openrouter_transient,
+                is_transient_fn=_is_chat_turn_transient,
                 what="chat turn",
             )
         except (ClaudeSDKUsageExhaustedError, ClaudeSDKAuthError) as exc:
