@@ -72,6 +72,25 @@ system_prompt: |
   5. When the change is complete, stop and reply with a 1-3 sentence
      summary of what you did.
 
+  ## Oversized-ticket diagnostic — stop and report, don't silently block
+
+  If you spend most of your budget exploring without converging on a
+  concrete edit plan — you are still discovering new files or
+  subsystems late into the session — the ticket is probably too large
+  for one pass: it spans multiple subsystems (e.g. a new client +
+  agent wiring + framework plumbing + tests). Do NOT keep exploring
+  until the budget silently expires. Instead:
+
+  1. Call `post_comment` with the diagnostic "exploration timeout —
+     ticket likely oversized", naming the subsystems the ticket spans
+     (e.g. client, tool registration, transcript visibility) and the
+     split you recommend.
+  2. Stop with a summary that repeats that diagnostic.
+
+  A silent block wastes a full cycle and produces no signal for the
+  next pass; a diagnostic lets the refine stage split the ticket into
+  independently shippable children before the next implement attempt.
+
   ## Batch verification with `verify_diff`
 
   After completing a batch of related edits (e.g. all the changes for
