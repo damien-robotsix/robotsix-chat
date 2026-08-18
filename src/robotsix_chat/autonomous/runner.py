@@ -7,6 +7,7 @@ import json
 import logging
 import time
 from collections.abc import Callable, Coroutine
+from functools import partial
 from pathlib import Path
 from typing import TYPE_CHECKING, Any
 
@@ -56,6 +57,12 @@ AUTONOMOUS_PERSIST_PATH = "/data/autonomous_sessions.json"
 # cannot drift apart.
 _DEFAULT_TRIGGER_INTERVAL = DEFAULT_TRIGGER_INTERVAL_SECONDS
 
+# Hardcoded disk-persistence path for per-preset scheduler state (last-run
+# timestamps/outcomes).  Lives next to the session registry under the
+# component data volume so a preset's next-due time survives restarts and
+# container recreates — not just process restarts.
+AUTONOMOUS_SCHEDULER_PERSIST_PATH = "/data/autonomous_scheduler_state.json"
+
 
 class AutonomousRunner:
     """Owns autonomous-session lifecycle and drives single-prompt runs."""
@@ -81,6 +88,8 @@ class AutonomousRunner:
         # Populated by ``_load_sessions``, so it must exist first.
         self._next_fire: dict[str, float] = {}
         self._sessions: dict[str, AutonomousSession] = self._load_sessions()
+        self._scheduler_persist_path = Path(AUTONOMOUS_SCHEDULER_PERSIST_PATH)
+        self._scheduler_state: dict[str, dict[str, Any]] = self._load_scheduler_state()
         # Strong references to in-flight autonomous run tasks (see asyncio
         # docs warning on create_task and weak references).
         self._auto_tasks: set[asyncio.Task[None]] = set()
@@ -211,6 +220,90 @@ class AutonomousRunner:
             self._persist_path,
         )
         return sessions
+
+    def _load_scheduler_state(self) -> dict[str, dict[str, Any]]:
+        """Load persisted per-preset scheduler state from disk.
+
+        Returns an empty dict when the state file does not exist or cannot
+        be parsed.  Each entry is keyed by preset name and carries
+        ``last_run_at`` (run start), ``last_completed_at`` (run completion),
+        ``last_outcome`` and ``last_session_id``.
+        """
+        try:
+            if not self._scheduler_persist_path.exists():
+                return {}
+            raw = json.loads(self._scheduler_persist_path.read_text())
+        except Exception:
+            logger.exception(
+                "Failed to load autonomous scheduler state from %s",
+                self._scheduler_persist_path,
+            )
+            return {}
+        if not isinstance(raw, dict):
+            logger.warning(
+                "Ignoring malformed autonomous scheduler state from %s",
+                self._scheduler_persist_path,
+            )
+            return {}
+        state: dict[str, dict[str, Any]] = {}
+        for name, entry in raw.items():
+            if isinstance(entry, dict):
+                state[str(name)] = entry
+        logger.info(
+            "Loaded autonomous scheduler state for %d preset(s) from %s",
+            len(state),
+            self._scheduler_persist_path,
+        )
+        return state
+
+    def _save_scheduler_state(self) -> None:
+        """Persist the per-preset scheduler state to disk."""
+        try:
+            self._scheduler_persist_path.parent.mkdir(parents=True, exist_ok=True)
+            self._scheduler_persist_path.write_text(
+                json.dumps(self._scheduler_state, indent=2)
+            )
+        except Exception:
+            logger.exception("Failed to persist autonomous scheduler state")
+
+    def _record_scheduler_run_start(self, name: str, session_id: str) -> None:
+        """Record a run start for preset *name* in the scheduler state.
+
+        ``last_completed_at`` is left intact so the next-due computation can
+        keep using the most recent completed run when the current run is
+        interrupted before completing.
+        """
+        entry = self._scheduler_state.setdefault(name, {})
+        entry["last_run_at"] = time.time()
+        entry["last_outcome"] = "unknown"
+        entry["last_session_id"] = session_id
+        self._save_scheduler_state()
+
+    def _record_scheduler_run_completion(self, name: str) -> None:
+        """Record a completed run for preset *name* in the scheduler state."""
+        if not name:
+            return
+        entry = self._scheduler_state.setdefault(name, {})
+        entry["last_completed_at"] = time.time()
+        entry["last_outcome"] = "completed"
+        self._save_scheduler_state()
+
+    def _periodic_next_due(self, name: str, interval: float) -> float | None:
+        """Return the next-due timestamp for periodic preset *name*.
+
+        Computed from the persisted last-run state plus *interval*.
+        Returns ``None`` for a new/renamed preset with no persisted state
+        (first-run policy: treated as due immediately).
+        """
+        entry = self._scheduler_state.get(name)
+        if not isinstance(entry, dict):
+            return None
+        reference = entry.get("last_completed_at")
+        if reference is None:
+            reference = entry.get("last_run_at")
+        if reference is None:
+            return None
+        return float(reference) + float(interval)
 
     # -- session definitions (config) --------------------------------------
 
@@ -432,6 +525,11 @@ class AutonomousRunner:
         )
         self._sessions[session_id] = aq
         self._save_sessions()
+
+        # Record the run start in the per-preset scheduler state so a
+        # restart can compute next-due from the persisted last run.
+        if resolved_name and resolved_name in self._definitions:
+            self._record_scheduler_run_start(resolved_name, session_id)
 
         # Lifecycle log: session created.
         defn = self._definition_for_owner(owner_id)
@@ -712,6 +810,9 @@ class AutonomousRunner:
             next_fire,
         )
         self._save_sessions()
+        self._record_scheduler_run_completion(
+            aq.definition_name if aq.definition_name in self._definitions else ""
+        )
         self._publish_state(session_id)
         # Auto-restart always: schedule a fresh autonomous run (throttled)
         # so the operator always has one live session.
@@ -821,10 +922,16 @@ class AutonomousRunner:
           wiped store), auto-start one session per enabled definition so
           autonomous mode is not permanently idle.
 
-        **Startup semantics:** a preset that has never run starts at t=0;
-        one that ran recently waits out the remainder of its interval.  The
-        schedule is persisted, so a restart no longer re-runs every preset —
-        see :meth:`ensure_all_active_sessions`.
+        **Startup semantics for periodic presets:** a periodic preset fires
+        at startup only when it is genuinely due — the configured
+        ``trigger_interval_seconds`` has elapsed since the persisted last
+        run, or there is no persisted state yet (first-run policy).
+        ``trigger_interval_seconds`` is the delay *between completion and
+        the next run*, not an initial delay.  :meth:`ensure_all_active_sessions`
+        computes next-due from the persisted scheduler state and either fires
+        immediately (when due) or schedules a single delayed fire for the
+        remaining interval, so restarting the component never re-triggers a
+        preset that ran recently.
         """
         logger.info(
             "Autonomous session runner resuming: %d persisted sessions, "
@@ -877,34 +984,117 @@ class AutonomousRunner:
         # sessions were completed or closed.
         self.ensure_all_active_sessions()
 
+    async def _fire_periodic_when_due(
+        self, name: str, owner_id: str, delay: float, scheduled_due: float
+    ) -> None:
+        """Fire a periodic preset after *delay*, re-checking due-ness at fire time.
+
+        Re-checks the scheduler state before firing: a run that completed in
+        the meantime has moved the preset's next-due forward, and its
+        auto-restart task already owns the next fire; an open session means
+        the preset is already running.
+        """
+        try:
+            if delay:
+                await asyncio.sleep(delay)
+        except asyncio.CancelledError:
+            logger.debug("Delayed startup fire cancelled for preset %s", name)
+            return
+        defn = self._definitions.get(name, {})
+        interval = defn.get("trigger_interval_seconds", _DEFAULT_TRIGGER_INTERVAL)
+        if self.active_session_id_for_definition(name) is not None:
+            logger.info(
+                "Delayed startup fire for preset=%s skipped — an open "
+                "session already exists",
+                name,
+            )
+            return
+        next_due = self._periodic_next_due(name, interval)
+        if next_due is not None and next_due > scheduled_due:
+            logger.info(
+                "Delayed startup fire for preset=%s skipped — next-due moved "
+                "forward (a newer run's auto-restart owns the next fire)",
+                name,
+            )
+            return
+        logger.info(
+            "Delayed startup fire firing: preset=%s owner_id=%s fire_ts=%.3f",
+            name,
+            owner_id,
+            time.time(),
+        )
+        self.ensure_active_session(owner_id, definition_name=name)
+
     def ensure_all_active_sessions(self) -> None:
         """Open a session for each enabled definition that is due.
 
-        A preset that has never run under this store has no recorded
-        schedule and so starts immediately — that is what bootstraps a fresh
-        deployment.  One that ran recently keeps its place in the schedule
-        and is left closed until its interval elapses.
+        **Periodic presets honour persisted last-run state.**  The
+        ``trigger_interval_seconds`` is the delay between a completed run
+        and the next restart.  On startup a periodic preset fires immediately
+        only when it is genuinely due — no persisted state (new/renamed
+        preset, first-run policy) or the interval has elapsed since the
+        persisted last run.  Otherwise a delayed fire is scheduled for the
+        remaining interval so the preset runs exactly once when it becomes
+        due, even across restarts.
 
-        This used to fire every preset at t=0 on every startup, which made
-        ``trigger_interval_seconds`` meaningless across restarts: a daily
-        preset re-ran on each boot, and a restart during an incident could
-        re-run all of them minutes apart.
+        ``on_close`` presets (continuous mode) fire immediately whenever no
+        session is open, as before.
         """
-        startup_ts = time.time()
+        now = time.time()
         for name in self._definitions:
             owner_id = self._owner_id_for_definition(name)
             defn = self._definitions.get(name, {})
-            interval = self._interval_for(defn)
-            logger.info(
-                "Autonomous session startup: ensuring preset=%s "
-                "owner_id=%s interval=%.0fs startup_ts=%.3f next_fire_ts=%.3f",
-                name,
-                owner_id,
-                interval,
-                startup_ts,
-                self._next_fire.get(owner_id, 0.0),
-            )
-            self.ensure_active_session(
-                owner_id,
-                definition_name=name,
-            )
+            trigger_type = defn.get("trigger_type", "periodic")
+            interval = defn.get("trigger_interval_seconds", _DEFAULT_TRIGGER_INTERVAL)
+
+            # A preset with an open session is already running; its completion
+            # path owns the next fire.
+            if self.active_session_id_for_definition(name) is not None:
+                logger.info(
+                    "Autonomous session startup: preset=%s already has an "
+                    "open session — skipping startup fire",
+                    name,
+                )
+                continue
+
+            if trigger_type == "on_close":
+                logger.info(
+                    "Autonomous session startup: firing on_close preset=%s "
+                    "immediately (continuous mode)",
+                    name,
+                )
+                self.ensure_active_session(owner_id, definition_name=name)
+                continue
+
+            next_due = self._periodic_next_due(name, interval)
+            if next_due is None:
+                logger.info(
+                    "Autonomous session startup: preset=%s has no persisted "
+                    "last-run state (new/renamed) — firing immediately",
+                    name,
+                )
+                self.ensure_active_session(owner_id, definition_name=name)
+                continue
+
+            delay = max(0.0, next_due - now)
+            if delay <= 0.0:
+                logger.info(
+                    "Autonomous session startup: preset=%s is due "
+                    "(interval %.0fs elapsed since last run) — firing now",
+                    name,
+                    interval,
+                )
+                self.ensure_active_session(owner_id, definition_name=name)
+            else:
+                logger.info(
+                    "Autonomous session startup: preset=%s not due yet — "
+                    "scheduling delayed fire in %.0fs (next_due_ts=%.3f)",
+                    name,
+                    delay,
+                    next_due,
+                )
+                self._schedule_background(
+                    partial(
+                        self._fire_periodic_when_due, name, owner_id, delay, next_due
+                    )
+                )
