@@ -367,11 +367,11 @@ Post-restart auto-resume capability. When enabled, the agent gains tools to sche
 query a continuation that fires automatically on the next boot — used to resume work-in-progress
 after a self-restart without human intervention. Disabled by default.
 
-| JSON key                       | Type      | Default                     | Description                                                                                          |
-| ------------------------------ | --------- | --------------------------- | ---------------------------------------------------------------------------------------------------- |
-| `continuation.enabled`         | `boolean` | `false`                     | Master switch. When `false`, no continuation tools are offered.                                      |
-| `continuation.store_path`      | `string`  | `"/data/continuation.json"` | Path to the JSON persistence file. Must be on a persistent volume to survive container recreation.   |
-| `continuation.max_consecutive` | `integer` | `3`                         | Maximum consecutive auto-continuations before the guardrail blocks further automatic firing.         |
+| JSON key                       | Type      | Default                     | Description                                                                                        |
+| ------------------------------ | --------- | --------------------------- | -------------------------------------------------------------------------------------------------- |
+| `continuation.enabled`         | `boolean` | `false`                     | Master switch. When `false`, no continuation tools are offered.                                    |
+| `continuation.store_path`      | `string`  | `"/data/continuation.json"` | Path to the JSON persistence file. Must be on a persistent volume to survive container recreation. |
+| `continuation.max_consecutive` | `integer` | `3`                         | Maximum consecutive auto-continuations before the guardrail blocks further automatic firing.       |
 
 ### Subsessions
 
@@ -799,9 +799,9 @@ Local volume-directory listing. When enabled, the agent gains a `list_volume_fil
 returns the contents of a directory under the configured root path — a read-only,
 local-filesystem-only primitive with no remote access and no write capability. Enabled by default.
 
-| JSON key               | Type      | Default  | Description                                                                   |
-| ---------------------- | --------- | -------- | ----------------------------------------------------------------------------- |
-| `volume_tools.enabled` | `boolean` | `true`   | Master switch. When `false`, no `list_volume_files` tool is offered.          |
+| JSON key                 | Type      | Default   | Description                                                                   |
+| ------------------------ | --------- | --------- | ----------------------------------------------------------------------------- |
+| `volume_tools.enabled`   | `boolean` | `true`    | Master switch. When `false`, no `list_volume_files` tool is offered.          |
 | `volume_tools.root_path` | `string`  | `"/data"` | Root directory for volume file listings. Paths outside this root are refused. |
 
 ## Schema
