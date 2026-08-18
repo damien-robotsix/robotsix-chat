@@ -53,6 +53,27 @@ class TestHtmlDomStructure:
         """The error banner with dismiss button exists."""
         assert 'id="error-banner"' in ui_html
 
+    def test_config_panel_mount(self, ui_html: str) -> None:
+        """The shared ConfigPanel mount point exists (settings renderer is
+        delegated to @robotsix/ui; the bespoke form is gone)."""
+        assert 'id="config-panel-mount"' in ui_html
+        assert 'id="settings-form"' not in ui_html
+        assert 'id="settings-error"' not in ui_html
+        assert 'id="settings-actions"' not in ui_html
+
+    def test_settings_body_single_child(self, ui_html: str) -> None:
+        """``#settings-body`` holds exactly one child — the ConfigPanel mount."""
+        match = re.search(
+            r'<div id="settings-body">\s*(.*?)\s*</div>', ui_html, re.DOTALL
+        )
+        assert match is not None
+        body = match.group(1)
+        assert body.count('id="config-panel-mount"') == 1
+        assert "<button" not in body
+        assert "<span" not in body
+        assert "settings-save-btn" not in body
+        assert "settings-save-status" not in body
+
     def test_header_bar(self, ui_html: str) -> None:
         """The header with session/subsession toggles exists."""
         assert 'id="header"' in ui_html
@@ -338,6 +359,19 @@ class TestChatJsFunctions:
         assert "savePresetForm" in funcs
         assert "deletePreset" in funcs
         assert "addPreset" in funcs
+
+    def test_config_panel_initialiser(self, static_js: str) -> None:
+        """The one-time ConfigPanel initialiser exists in chat.js."""
+        assert "_initConfigPanel" in self._functions_in(static_js)
+        assert "mountConfigPanel" in static_js
+
+    def test_config_panel_degradation_message(self, static_js: str) -> None:
+        """The missing-vendor fallback message is present in-source.
+
+        Confirms the failure path (vanilla.js absent) shows the operator a
+        clear next step instead of a blank settings panel.
+        """
+        assert "Settings panel unavailable — vendor assets missing." in static_js
 
 
 class TestChatCssUnreadStyles:

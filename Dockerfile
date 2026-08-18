@@ -46,6 +46,15 @@ RUN uv export --frozen --no-emit-project --no-hashes \
     && rm -f /tmp/requirements.txt
 
 # ---------------------------------------------------------------------------
+# UI stage: fetch the shared @robotsix/ui settings renderer build (vanilla JS
+# + CSS, no bundler required) so it can be injected into site-packages below.
+# ---------------------------------------------------------------------------
+FROM node:22-alpine AS ui
+ARG ROBOTSIX_UI_VERSION=v0.1.6
+RUN apk add --no-cache git && \
+    npm install --no-save "github:damien-robotsix/robotsix-ui#${ROBOTSIX_UI_VERSION}"
+
+# ---------------------------------------------------------------------------
 # Runtime stage: copy the installed site-packages and console script from the
 # builder — no uv, no git, no compilers. Node.js + the claude CLI are the one
 # genuine runtime system dependency (claude-sdk transport spawns the CLI).
@@ -55,6 +64,11 @@ FROM python:3.14-slim@sha256:ce40764625a4ff50df3548277632e7f96c4e77fe75fa848aae9
 SHELL ["/bin/bash", "-o", "pipefail", "-c"]
 
 COPY --from=builder /usr/local/lib/python3.14/site-packages/ /usr/local/lib/python3.14/site-packages/
+RUN mkdir -p /usr/local/lib/python3.14/site-packages/robotsix_chat/ui/static/vendor
+COPY --from=ui /node_modules/@robotsix/ui/dist/vanilla.js \
+  /usr/local/lib/python3.14/site-packages/robotsix_chat/ui/static/vendor/vanilla.js
+COPY --from=ui /node_modules/@robotsix/ui/dist/style.css \
+  /usr/local/lib/python3.14/site-packages/robotsix_chat/ui/static/vendor/style.css
 COPY --from=builder /usr/local/bin/robotsix-chat /usr/local/bin/robotsix-chat
 COPY --from=builder /usr/local/bin/playwright /usr/local/bin/playwright
 
