@@ -1591,8 +1591,6 @@ async def test_frozen_store_warning_emitted(
     caplog: Any,
 ) -> None:
     """_record_write_failure emits WARNING when failures exceed threshold."""
-    import logging
-
     mem, _ = cognee_memory
     mem._settings.frozen_store_alert_minutes = 0.0  # alert on first failure
 
