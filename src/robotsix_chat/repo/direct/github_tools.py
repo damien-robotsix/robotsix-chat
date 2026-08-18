@@ -1327,6 +1327,90 @@ def build_github_tools(
             ticket_id=ticket_id,
         )
 
+    async def resolve_pr_conflict(
+        ticket_id: str,
+        repo_full_name: str,
+        pr_number: int,
+        resolved_files_json: str,
+        commit_message: str = "",
+    ) -> str:
+        """Resolve a PR's merge conflict by creating a merge commit on its head branch.
+
+        Use this tool when a PR opened for a blocked ticket has developed a
+        merge conflict with its base branch (e.g. after ``update_pr_branch``
+        returns 422, or ``check_pr_merge_conflict`` reports
+        ``mergeable=False``).  Pushing an ordinary commit to the head branch
+        does NOT clear a base↔head conflict — the base branch is still not an
+        ancestor of the head.  This tool clears the conflict by creating a
+        **merge commit** on the head branch whose parents are ``[head SHA,
+        base SHA]``.  Once base is an ancestor of head, GitHub recomputes the
+        PR as mergeable and the CI-fix chain can proceed.
+
+        The merge commit's tree is the head commit's tree with the resolved
+        file contents overlaid on top.  Conflicted paths SHOULD be listed in
+        *resolved_files_json* with their merged content; paths that are not
+        listed keep their head-branch content, so an empty list resolves
+        every conflict in favour of the head branch.
+
+        **Precondition:** The ticket identified by *ticket_id* MUST be in
+        BLOCKED state.  This tool will verify that and refuse otherwise.
+
+        **Scope:** When called through the component roster the GitHub App
+        installation scope check is bypassed — the mill already has its own
+        GitHub access.  For direct board-API calls, *repo_full_name* must be
+        within the robotsix-mill GitHub App's installation scope.
+
+        Args:
+            ticket_id: The blocked ticket this PR addresses (e.g.
+                ``"20250624T020652Z-my-ticket-a1b2"``).
+            repo_full_name: GitHub ``owner/name`` (e.g.
+                ``"robotsix/robotsix-chat"``).
+            pr_number: The PR number to resolve the conflict on.
+            resolved_files_json: JSON array of ``{"path": "...",
+                "content": "..."}`` objects describing the resolved
+                (merged) content of the conflicted files.  Paths are
+                relative to the repo root.  May be an empty array ``[]``
+                to accept the head-branch version of every file.
+            commit_message: Commit message.  Defaults to a message that
+                references the base/head branches and the *pr_number*.
+
+        Returns:
+            A status message with the merge commit SHA on success, or an
+            error message describing why the resolution was refused or failed.
+
+        """
+        if error := await assert_blocked_and_scoped(client, ticket_id, repo_full_name):
+            return error
+
+        try:
+            resolved_files: list[dict[str, str]] = json.loads(resolved_files_json)
+        except json.JSONDecodeError, TypeError:
+            return (
+                "Error: resolved_files_json must be a valid JSON array "
+                "of {path, content} objects."
+            )
+
+        if not isinstance(resolved_files, list):
+            return "Error: resolved_files_json must be a JSON array."
+
+        for f in resolved_files:
+            if not isinstance(f, dict) or not f.get("path"):
+                return (
+                    "Error: each resolved_files_json entry must be an object "
+                    "with a non-empty 'path' field."
+                )
+
+        msg = commit_message or (
+            f"merge: resolve conflicts on PR #{pr_number} for blocked ticket "
+            f"{ticket_id}"
+        )
+        return await client.resolve_pr_conflict(
+            repo_full_name=repo_full_name,
+            pr_number=pr_number,
+            resolved_files=resolved_files,
+            commit_message=msg,
+        )
+
     async def inspect_github_installation_token(
         repo_full_name: str,
     ) -> str:
@@ -1404,5 +1488,6 @@ def build_github_tools(
         reset_implement_spawn_counter,
         apply_patch_to_file,
         push_patch_to_pr_branch,
+        resolve_pr_conflict,
         inspect_github_installation_token,
     ]

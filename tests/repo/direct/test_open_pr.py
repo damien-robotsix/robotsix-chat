@@ -101,12 +101,14 @@ async def test_open_pr_allows_blocked_ticket(
 
 
 def test_merge_methods_exist_on_client() -> None:
-    """Verify that DirectRepoClient exposes merge_pr and arm_auto_merge."""
+    """Verify that DirectRepoClient exposes merge_pr, arm_auto_merge, resolve_pr_conflict."""
     client = DirectRepoClient(_settings())
     assert hasattr(client, "merge_pr")
     assert hasattr(client, "arm_auto_merge")
+    assert hasattr(client, "resolve_pr_conflict")
     assert callable(client.merge_pr)
     assert callable(client.arm_auto_merge)
+    assert callable(client.resolve_pr_conflict)
 
 
 def test_merge_tools_returned() -> None:
@@ -135,6 +137,7 @@ def test_merge_tools_returned() -> None:
         "recover_auto_merge",
         "rerun_ci_workflow",
         "reset_implement_spawn_counter",
+        "resolve_pr_conflict",
         "update_pr_branch",
         "verify_pr_ci_status",
     ]
