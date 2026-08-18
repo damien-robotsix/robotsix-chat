@@ -529,3 +529,76 @@ def _preflight_with_abort_breadcrumbs(self, ticket, ctx):
 
 
 phase_coordinator.PhaseCoordinatorMixin.preflight = _preflight_with_abort_breadcrumbs
+
+# ---------------------------------------------------------------------------
+# 10. Patch resume_blocked to refuse resuming tickets whose block event
+#     lacks an error summary or trace.  A ticket blocked by spawn-limit
+#     exhaustion from silent aborts (no LLM work produced, e.g. preflight
+#     or implement-spawn crashes caught only as bare exceptions) carries
+#     only generic boilerplate with no diagnosis; resuming it clears the
+#     counter and re-exhausts the budget invisibly.  The guard inspects
+#     the most recent BLOCKED event's note: if it lacks a diagnostic
+#     summary tail, exception marker, or spawn-abort breadcrumb, a
+#     "[needs-investigation]" comment is posted and the resume is refused
+#     (TransitionError) — keeping the ticket BLOCKED for manual review.
+# ---------------------------------------------------------------------------
+import re  # noqa: E402
+
+from robotsix_mill.core.models import Ticket  # noqa: E402
+from robotsix_mill.core.service import TransitionError  # noqa: E402
+from robotsix_mill.core.service._transition_mixin import (  # noqa: E402
+    _TransitionMixin,
+)
+
+_original_resume_blocked = _TransitionMixin.resume_blocked
+
+# Regex matching a note that carries a substantive diagnosis: a non-empty
+# summary tail, a spawn-abort breadcrumb, a ``SomethingError:/Exception:``
+# pattern, or a traceback marker.
+_DIAGNOSIS_RE = re.compile(
+    r"Last attempt summary tail:\s*\n\s*\S"  # non-empty summary tail
+    r"|\[SPAWN ABORT\]"  # spawn-abort breadcrumb line
+    r"|\b\w+(?:Error|Exception):\s"  # exception class + colon + message
+    r"|Traceback\b"  # Python traceback marker
+)
+
+_NEEDS_INVESTIGATION_BODY = (
+    "[needs-investigation] This blocked ticket has no error summary or trace "
+    "in its block event — resuming would re-exhaust the spawn budget "
+    "invisibly.  The ticket needs manual investigation to identify the "
+    "root cause before resuming."
+)
+
+
+def _resume_blocked_with_diagnosis_guard(
+    self, ticket_id: str, note: str = ""
+) -> Ticket:
+    """Refuse resume when the block event carries no diagnosis.
+
+    For BLOCKED tickets only (retry-attempt tickets are exempt), fetch
+    the most recent ``TicketEvent`` with ``state == BLOCKED`` and check
+    whether its ``note`` contains a substantive error summary or trace.
+    When no diagnosis is found the ticket is left BLOCKED, a
+    ``[needs-investigation]`` comment is posted, and a
+    :class:`TransitionError` is raised.
+    """
+    ticket = self.get(ticket_id)
+    if ticket is not None and ticket.state is State.BLOCKED:
+        events = self.history(ticket_id, order="desc", limit=50)
+        block_event = next((e for e in events if e.state == State.BLOCKED), None)
+        if block_event is None or not _DIAGNOSIS_RE.search(block_event.note or ""):
+            self.add_comment(
+                ticket_id,
+                _NEEDS_INVESTIGATION_BODY,
+                author="system",
+            )
+            raise TransitionError(
+                f"{ticket_id}: resume refused — the block event contains "
+                "no error summary or trace (likely a silent spawn abort "
+                "with no diagnosis).  See the [needs-investigation] comment "
+                "on the ticket."
+            )
+    return _original_resume_blocked(self, ticket_id, note=note)
+
+
+_TransitionMixin.resume_blocked = _resume_blocked_with_diagnosis_guard
