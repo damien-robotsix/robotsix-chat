@@ -8,6 +8,7 @@ from unittest.mock import MagicMock, patch
 import pytest
 from starlette.requests import Request
 
+from robotsix_chat.chat.events import SSE_AGENT_MESSAGE_TYPE, SSE_NOTIFICATION_TYPE
 from robotsix_chat.chat.server.routes.mill_events import mill_events_endpoint
 from tests.conftest import mock_app
 
@@ -432,12 +433,12 @@ async def test_blocked_transition_notifies_owner_sessions() -> None:
     ]
     assert len(session1_calls) == 2
     notification_frame = session1_calls[0].args[1]
-    assert notification_frame["type"] == "notification"
+    assert notification_frame["type"] == SSE_NOTIFICATION_TYPE
     assert "BLOCKED" in notification_frame["title"]
     assert notification_frame["urgency"] == "high"
 
     agent_message = session1_calls[1].args[1]
-    assert agent_message["type"] == "agent_message"
+    assert agent_message["type"] == SSE_AGENT_MESSAGE_TYPE
     assert "BLOCKED" in agent_message["text"]
 
     mock_cache.put_from_mill_event.assert_called_once()
