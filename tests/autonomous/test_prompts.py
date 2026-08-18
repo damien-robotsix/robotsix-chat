@@ -18,6 +18,7 @@ class TestBuildAutonomousInstruction:
         auto_approve: bool = False,
         allowlist: list[str] | None = None,
         suppress_no_change: bool = False,
+        auto_self_restart: bool = False,
         auto_escalate_secret_scan: bool = True,
         operator_review_hours: int = 48,
     ) -> MagicMock:
@@ -28,7 +29,9 @@ class TestBuildAutonomousInstruction:
         settings.autonomous.queue_tolerance_runs_before_escalation = queue_tolerance
         settings.autonomy.auto_approve_self_authored = auto_approve
         settings.autonomy.auto_approve_repo_allowlist = allowlist or []
+        settings.autonomy.auto_approve_routine_secret_provisioning = False
         settings.autonomy.suppress_no_change_monitors = suppress_no_change
+        settings.autonomy.auto_self_restart = auto_self_restart
         settings.autonomy.auto_escalate_secret_scan_alerts = auto_escalate_secret_scan
         settings.autonomy.operator_review_escalation_hours = operator_review_hours
         return settings
@@ -176,3 +179,58 @@ class TestBuildAutonomousInstruction:
         assert "more than 24 hours" in result
         assert "operator_review_escalation_hours=24" in result
         assert "48 hours" not in result
+
+    # -- config-restart guidance (spec: config-changes-requiring-restart) ----
+
+    def test_operator_config_guidance_no_false_restart_claim(self) -> None:
+        """False claim 'no server restart is needed' is removed from guidance."""
+        settings = self._make_settings()
+        result = build_autonomous_instruction(settings)
+        assert "OPERATOR CONFIGURATION GUIDANCE" in result
+        assert "no server restart is needed" not in result
+        assert "no server restart" not in result
+
+    def test_operator_config_guidance_truthful_restart_warning(self) -> None:
+        """Guidance warns that autonomous.sessions changes need a restart."""
+        settings = self._make_settings()
+        result = build_autonomous_instruction(settings)
+        assert "read only at server startup" in result
+        assert "do NOT take effect until the chat service restarts" in result
+        assert "CONFIG-APPLY-AND-VERIFY" in result
+
+    def test_config_apply_and_verify_section_present(self) -> None:
+        """CONFIG-APPLY-AND-VERIFY section exists with full protocol."""
+        settings = self._make_settings()
+        result = build_autonomous_instruction(settings)
+        assert "CONFIG-APPLY-AND-VERIFY" in result
+        assert "schedule_continuation" in result
+        assert "GET /autonomous/definitions" in result
+        assert "arm → announce → restart → verify" in result
+
+    def test_config_apply_and_verify_auto_restart_on_path(self) -> None:
+        """When auto_self_restart is ON, the ON path is described."""
+        settings = self._make_settings(auto_self_restart=True)
+        result = build_autonomous_instruction(settings)
+        assert "When auto_self_restart is ON" in result
+        assert "Arm a post-restart continuation" in result
+
+    def test_config_apply_and_verify_auto_restart_off_path(self) -> None:
+        """When auto_self_restart is OFF, the OFF path is described."""
+        settings = self._make_settings(auto_self_restart=False)
+        result = build_autonomous_instruction(settings)
+        assert "When auto_self_restart is OFF" in result
+        assert "MUTATION requiring explicit operator authorization" in result
+
+    def test_auto_self_restart_covers_session_definitions(self) -> None:
+        """AUTO SELF-RESTART lists autonomous.sessions changes as valid reason."""
+        settings = self._make_settings()
+        result = build_autonomous_instruction(settings)
+        assert "autonomous.sessions changes ARE a capability change" in result
+        assert "is a valid reason to auto-self-restart" in result
+
+    def test_config_apply_verify_mandates_completion_gate(self) -> None:
+        """Task is NOT complete until verification confirms the definition."""
+        settings = self._make_settings()
+        result = build_autonomous_instruction(settings)
+        assert "NOT complete until GET /autonomous/definitions" in result
+        assert "half-finished task" in result
