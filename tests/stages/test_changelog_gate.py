@@ -153,3 +153,103 @@ def test_changed_paths_merges_tracked_and_untracked(
         "src/robotsix_chat/chat/server/app.py",
         "changelog.d/entry.misc.md",
     }
+
+
+# ---------------------------------------------------------------------------
+# Review rebuttal gate
+# ---------------------------------------------------------------------------
+
+
+def test_review_gate_no_claim_passes(tmp_path: Path) -> None:
+    """A rebuttal with no affirmative fragment claim is not gated."""
+    assert (
+        _gate.run_review_changelog_fragment_gate(
+            _TICKET_ID,
+            tmp_path,
+            "Skip-Changelog: internal-only change.",
+            [],
+        )
+        is None
+    )
+
+
+def test_review_gate_negated_claim_passes(tmp_path: Path) -> None:
+    """'No changelog fragment added' is a skip note, not an added claim."""
+    assert (
+        _gate.run_review_changelog_fragment_gate(
+            _TICKET_ID,
+            tmp_path,
+            "No changelog fragment added — internal-only change.",
+            [],
+        )
+        is None
+    )
+
+
+def test_review_gate_committed_fragment_passes(tmp_path: Path) -> None:
+    """A claimed fragment present in the committed diff passes."""
+    slug = _gate._ticket_slug(_TICKET_ID)
+    assert (
+        _gate.run_review_changelog_fragment_gate(
+            _TICKET_ID,
+            tmp_path,
+            "Added a changelog fragment.",
+            [f"changelog.d/{slug}.misc.md"],
+        )
+        is None
+    )
+
+
+def test_review_gate_missing_fragment_fails(tmp_path: Path) -> None:
+    """A claimed fragment absent from disk and the diff is rejected."""
+    error = _gate.run_review_changelog_fragment_gate(
+        _TICKET_ID,
+        tmp_path,
+        "Added a changelog fragment.",
+        [],
+    )
+
+    assert error is not None
+    assert "not committed" in error
+    assert "does not exist on disk" in error
+
+
+def test_review_gate_uncommitted_fragment_fails(tmp_path: Path) -> None:
+    """A fragment only in the working tree (not committed) is rejected."""
+    slug = _gate._ticket_slug(_TICKET_ID)
+    fragment_dir = tmp_path / "changelog.d"
+    fragment_dir.mkdir()
+    (fragment_dir / f"{slug}.misc.md").write_text("entry\n")
+
+    error = _gate.run_review_changelog_fragment_gate(
+        _TICKET_ID,
+        tmp_path,
+        "Added a changelog fragment.",
+        [],
+    )
+
+    assert error is not None
+    assert "working tree but is not committed" in error
+
+
+def test_review_gate_explicit_path_claim_fails(tmp_path: Path) -> None:
+    """An explicit ``changelog.d/...`` mention is treated as a claim."""
+    slug = _gate._ticket_slug(_TICKET_ID)
+    error = _gate.run_review_changelog_fragment_gate(
+        _TICKET_ID,
+        tmp_path,
+        f"Wrote changelog.d/{slug}.misc.md.",
+        [],
+    )
+
+    assert error is not None
+    assert "not committed" in error
+
+
+def test_claims_changelog_fragment_boundaries() -> None:
+    """Affirmative phrases claim a fragment; negation/skip notes do not."""
+    assert _gate._claims_changelog_fragment("added a changelog fragment")
+    assert _gate._claims_changelog_fragment("changelog fragment created")
+    assert _gate._claims_changelog_fragment("changelog.d/entry.misc.md")
+    assert not _gate._claims_changelog_fragment("Skip-Changelog")
+    assert not _gate._claims_changelog_fragment("no changelog fragment added")
