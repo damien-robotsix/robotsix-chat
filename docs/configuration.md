@@ -361,6 +361,18 @@ HTTP client for inspecting and configuring remote component agents. Disabled by 
 | `component_client.timeout`    | `number`        | `240.0` | Per-request HTTP timeout (seconds).                                                     |
 | `component_client.components` | `array[object]` | `[]`    | List of component targets, each with `base_url` (string) and optional `label` (string). |
 
+### Continuation
+
+Post-restart auto-resume capability. When enabled, the agent gains tools to schedule, cancel, and
+query a continuation that fires automatically on the next boot — used to resume work-in-progress
+after a self-restart without human intervention. Disabled by default.
+
+| JSON key                       | Type      | Default                     | Description                                                                                        |
+| ------------------------------ | --------- | --------------------------- | -------------------------------------------------------------------------------------------------- |
+| `continuation.enabled`         | `boolean` | `false`                     | Master switch. When `false`, no continuation tools are offered.                                    |
+| `continuation.store_path`      | `string`  | `"/data/continuation.json"` | Path to the JSON persistence file. Must be on a persistent volume to survive container recreation. |
+| `continuation.max_consecutive` | `integer` | `3`                         | Maximum consecutive auto-continuations before the guardrail blocks further automatic firing.       |
+
 ### Subsessions
 
 Background sub-agent spawning configuration.
@@ -780,6 +792,17 @@ files when diagnostics detect they are missing. Disabled by default.
 | `sftp.private_key_passphrase` | `string` (secret) | `""`    | Passphrase for `private_key`, if the key is encrypted.                                                      |
 | `sftp.known_hosts`            | `string`          | `""`    | OpenSSH-format known-hosts entries for host key verification. When empty, host key verification is skipped. |
 | `sftp.remote_root`            | `string`          | `""`    | Optional base directory on the remote server to restrict all operations under (e.g. `/var/www`).            |
+
+### Volume Tools
+
+Local volume-directory listing. When enabled, the agent gains a `list_volume_files` tool that
+returns the contents of a directory under the configured root path — a read-only,
+local-filesystem-only primitive with no remote access and no write capability. Enabled by default.
+
+| JSON key                 | Type      | Default   | Description                                                                   |
+| ------------------------ | --------- | --------- | ----------------------------------------------------------------------------- |
+| `volume_tools.enabled`   | `boolean` | `true`    | Master switch. When `false`, no `list_volume_files` tool is offered.          |
+| `volume_tools.root_path` | `string`  | `"/data"` | Root directory for volume file listings. Paths outside this root are refused. |
 
 ## Schema
 
