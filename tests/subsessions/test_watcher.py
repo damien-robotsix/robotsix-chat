@@ -1270,6 +1270,88 @@ async def test_watcher_closes_monitor_after_consecutive_404s() -> None:
     _, stall_frame = stall_notifications[0]
     assert stall_frame["urgency"] == "medium"
     assert "T-DELETED" in (stall_frame.get("body") or "")
+    assert stall_frame["link"] == "https://mill.example.com/tickets/T-DELETED"
+
+
+@pytest.mark.asyncio
+async def test_watcher_resolves_stale_ticket_id_and_keeps_monitoring() -> None:
+    """Consecutive 404s that resolve to a different valid ID keep the monitor alive.
+
+    When ``BoardClient.resolve_ticket_ids`` maps the stored ID to a fresh
+    one, the watcher rewrites the checkpoint (new ID, cleared 404 counter),
+    publishes a low-urgency resolution notification with a full ticket URL,
+    and continues monitoring instead of closing.
+    """
+    settings = _settings_with_direct_repo()
+    sink = RecordingSink()
+    env = build_env(settings=settings, event_sink=sink)
+
+    info = _make_paused_monitor(env, ticket_id="T-STALE", last_known="open")
+
+    # The mill 404s for the stale ID but serves the resolved ID normally.
+    def _mill_get(url: str) -> MagicMock:
+        response = MagicMock()
+        if url.endswith("/T-STALE"):
+            response.status_code = 404
+            response.raise_for_status.side_effect = httpx.HTTPStatusError(
+                "not found", request=MagicMock(), response=response
+            )
+        else:
+            response.json.return_value = {"state": "open"}
+            response.raise_for_status.return_value = None
+        return response
+
+    mock_client = MagicMock()
+    mock_client.get = AsyncMock(side_effect=_mill_get)
+
+    mock_instance = MagicMock()
+    mock_instance.__aenter__ = AsyncMock(return_value=mock_client)
+    mock_instance.__aexit__ = AsyncMock(return_value=None)
+
+    resolved_board = MagicMock()
+    resolved_board.resolve_ticket_ids = AsyncMock(return_value={"T-STALE": "T-LIVE"})
+
+    watcher_task = asyncio.create_task(watch_paused_monitors(env))
+
+    with (
+        patch("httpx.AsyncClient", MagicMock(return_value=mock_instance)),
+        patch(
+            "robotsix_chat.subsessions.watcher.BoardClient",
+            MagicMock(return_value=resolved_board),
+        ),
+    ):
+        # Enough ticks to accumulate 3 consecutive 404s and then poll the
+        # resolved ID successfully.
+        await asyncio.sleep(0.2)
+
+    watcher_task.cancel()
+    with pytest.raises(asyncio.CancelledError):
+        _ = await watcher_task
+
+    # The monitor must still be paused (not closed as ticket_deleted),
+    # now tracking the resolved ID with a cleared 404 counter.
+    reopened = env.registry.get(info.id)
+    assert reopened is not None
+    assert reopened.status is SubsessionStatus.CLOSED
+    assert reopened.close_reason == "paused"
+    assert reopened.checkpoint is not None
+    assert reopened.checkpoint["ticket_id"] == "T-LIVE"
+    assert "_watcher_404_count" not in reopened.checkpoint
+
+    # Exactly one low-urgency resolution notification, linked to the
+    # resolved ticket's full board URL.
+    resolved_notifications = [
+        (sid, f)
+        for sid, f in sink.frames
+        if f.get("type") == SSE_NOTIFICATION_TYPE
+        and "ticket ID resolved" in (f.get("title") or "")
+    ]
+    assert len(resolved_notifications) == 1
+    _, resolved_frame = resolved_notifications[0]
+    assert resolved_frame["urgency"] == "low"
+    assert "T-STALE" in (resolved_frame.get("body") or "")
+    assert "T-LIVE" in (resolved_frame.get("body") or "")
+    assert resolved_frame["link"] == "https://mill.example.com/tickets/T-LIVE"
 
 
 @pytest.mark.asyncio

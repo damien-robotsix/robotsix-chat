@@ -426,7 +426,10 @@ async def watch_paused_monitors(env: SubsessionEnv) -> None:
                                                 f"continuing."
                                             ),
                                             "urgency": "low",
-                                            "link": resolved_id,
+                                            "link": (
+                                                f"{board_url.rstrip('/')}"
+                                                f"/tickets/{resolved_id}"
+                                            ),
                                         },
                                     )
                                 continue
@@ -452,7 +455,10 @@ async def watch_paused_monitors(env: SubsessionEnv) -> None:
                                             f"still needs tracking."
                                         ),
                                         "urgency": "medium",
-                                        "link": ticket_id,
+                                        "link": (
+                                            f"{board_url.rstrip('/')}"
+                                            f"/tickets/{ticket_id}"
+                                        ),
                                     },
                                 )
 
