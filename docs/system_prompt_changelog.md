@@ -3,6 +3,28 @@
 Governed artifact: `Settings.agent_instruction` default literal in
 `src/robotsix_chat/config/settings.py`. Version stamp: `SYSTEM_PROMPT_VERSION` in the same module.
 
+## v130 — 2026-08-16 — 20260816T204146Z-split-over-broad-invest-tickets-into-ind-6e72
+
+**Summary:** Add a TICKET SCOPE SPLIT rule to the ticket-filing guidance in
+`agent_instruction`: one ticket covers one subsystem or one acceptance
+criterion. A ticket spanning multiple subsystems (e.g. a new external client
++ agent tool wiring + framework plumbing + tests) is too large for a single
+implement pass and will predictably block — the implement agent spends its
+whole budget exploring and ships nothing. Before filing such a request, the
+assistant must split it into separate, independently shippable tickets, one
+per subsystem (e.g. client with tests, tool registration, transcript
+visibility), filed in dependency order.
+
+**Rationale:** The live-price invest ticket blocked three times with the same
+failure: the implement agent exhausted its entire time budget exploring and
+never wrote code, because the ticket bundled a new Alpaca client, tool
+registration, transcript-visibility logic, and tests into one pass. Splitting
+into three tickets unblocked it. The scoping rule makes the split the
+default behavior at filing time so oversized tickets never enter the
+implementation queue.
+
+**SHA256:** `c2b292e0941faf34247c25bd253bd87d6a56bf2bdfbff4ed71297c99c3de7b37`
+
 ## v129 — 2026-08-17 — 20260816T144325Z-enforce-explicit-confirmation-for-state-1760
 
 **Summary:** Strengthen the destructive-action re-confirmation gate in

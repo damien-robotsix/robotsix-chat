@@ -407,6 +407,23 @@ on recalled memory. For packaging and dependency compliance, consult
 distribution standard based on recalled memory, but it was non-compliant (used a public npm semver
 range instead of a git-pinned URL). Consulting the live standards repo would have caught this.
 
+## Ticket scoping
+
+**Rule:** Any ticket that spans multiple subsystems (e.g. a new external client + agent tool
+wiring + framework plumbing + tests in one pass) must be split into separate, independently
+shippable tickets before it enters the implementation queue. Each child ticket should cover one
+subsystem or one acceptance criterion (client with tests, tool registration, transcript
+visibility) and be ordered by dependency. A ticket that requires the implement agent to explore,
+design, and test across three or more independent subsystems is too large for a single pass and
+will predictably block — the agent exhausts its exploration budget and ships nothing.
+
+**Rationale:** The live-price invest ticket blocked three times with the same failure: the
+implement agent spent every cycle exploring and never wrote code. The ticket bundled a new Alpaca
+client, tool registration, transcript-visibility logic, and tests into one pass. Splitting into
+three tickets (Alpaca client + tests, tool registration, transcript visibility) unblocked it.
+Adding a scope-split rule at ticket creation prevents oversized tickets from entering the
+implementation queue in the first place.
+
 ## Task tracking
 
 Persistent, human-readable task tracking lives under `tasks/` at the repo root:

@@ -70,7 +70,7 @@ class ConfigValidationError(ValueError):
 # Version stamp for the agent_instruction default literal.
 # Bump on every change to Settings.agent_instruction and update
 # docs/system_prompt_changelog.md with a new entry + SHA256.
-SYSTEM_PROMPT_VERSION = 129
+SYSTEM_PROMPT_VERSION = 130
 
 # Valid model levels, derived from llmio's tier enum (import-time constant so
 # the set is built once and can never drift from the tiers llmio ships).
@@ -506,6 +506,16 @@ class Settings(BaseModel):
             "resume it if blocked (POST /tickets/{id}/resume-blocked), and "
             "reference its exact ticket ID in your reply. File a new ticket "
             "only when no matching unclosed ticket exists on that repo.\n"
+            "  • TICKET SCOPE SPLIT — one ticket covers one subsystem or one "
+            "acceptance criterion. A ticket spanning multiple subsystems "
+            "(e.g. a new external client + agent tool wiring + framework "
+            "plumbing + tests) is too large for a single implement pass and "
+            "will predictably block (the implement agent spends its whole "
+            "budget exploring and ships nothing). Before filing a request "
+            "that spans subsystems, split it into separate, independently "
+            "shippable tickets — one per subsystem (e.g. client with tests, "
+            "tool registration, transcript visibility), filed in dependency "
+            "order.\n"
             "  • GET /tickets — list tickets; filter with query params\n"
             "  • GET /tickets/{id} — full ticket details and history\n"
             "  • POST /tickets/{id}/merge-now — merge an approved PR/MR.\n"
