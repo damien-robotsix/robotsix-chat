@@ -8,6 +8,7 @@ from __future__ import annotations
 
 import asyncio
 import base64
+import logging
 import sys
 import time
 import types
@@ -245,6 +246,50 @@ async def test_cognee_configure_reads_openrouter_key(
     fake.config.set_llm_api_key.assert_called_once_with(
         "sk-or-x"  # pragma: allowlist secret
     )
+
+
+@pytest.mark.asyncio
+async def test_configure_pins_all_llm_stages_to_configured_model(
+    monkeypatch: pytest.MonkeyPatch, tmp_path: Any
+) -> None:
+    """Every cognee LLM stage is pinned so its default (gpt-5-mini) cannot leak."""
+    fake = _install_fake_cognee(monkeypatch)
+    mem = CogneeMemory(_enabled_settings(str(tmp_path / "cognee")))
+    await mem.setup()
+
+    fake.config.set_llm_config.assert_called_once_with(
+        {
+            "llm_max_completion_tokens": mem._settings.llm.max_completion_tokens,
+            "llm_extraction_model": mem._settings.llm.model,
+            "llm_summarization_model": mem._settings.llm.model,
+            "llm_query_model": mem._settings.llm.model,
+            "baml_llm_model": mem._settings.llm.model,
+        }
+    )
+
+
+def test_flag_configured_llm_model_drift_logs_error(
+    monkeypatch: pytest.MonkeyPatch, caplog: pytest.LogCaptureFixture
+) -> None:
+    """A stage that resolved away from the configured model is flagged loudly."""
+    mem = CogneeMemory(_enabled_settings("/data/cognee"))
+
+    fake_llm = types.ModuleType("cognee.infrastructure.llm")
+    fake_llm.get_llm_config = lambda: types.SimpleNamespace(
+        llm_model="openrouter/openai/gpt-5-nano",
+        llm_extraction_model="openrouter/openai/gpt-5-nano",
+        llm_summarization_model="openai/gpt-5-mini",
+        llm_query_model="openrouter/openai/gpt-5-nano",
+        baml_llm_model="openrouter/openai/gpt-5-nano",
+    )
+    monkeypatch.setitem(sys.modules, "cognee.infrastructure.llm", fake_llm)
+
+    with caplog.at_level(logging.ERROR, logger="robotsix_chat.memory.cognee"):
+        mem._flag_configured_llm_model_drift("openrouter/openai/gpt-5-nano")
+
+    assert "cognee LLM model drift detected" in caplog.text
+    assert "llm_summarization_model" in caplog.text
+    assert "gpt-5-mini" in caplog.text
 
 
 @pytest.mark.asyncio
@@ -1546,8 +1591,6 @@ async def test_frozen_store_warning_emitted(
     caplog: Any,
 ) -> None:
     """_record_write_failure emits WARNING when failures exceed threshold."""
-    import logging
-
     mem, _ = cognee_memory
     mem._settings.frozen_store_alert_minutes = 0.0  # alert on first failure
 
@@ -1565,8 +1608,6 @@ async def test_frozen_store_warning_not_spammy(
     caplog: Any,
 ) -> None:
     """After the first frozen-store alert, the start time resets to avoid spam."""
-    import logging
-
     mem, _ = cognee_memory
     mem._settings.frozen_store_alert_minutes = 0.0
 
