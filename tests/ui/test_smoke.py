@@ -54,8 +54,10 @@ class TestHtmlDomStructure:
         assert 'id="error-banner"' in ui_html
 
     def test_config_panel_mount(self, ui_html: str) -> None:
-        """The shared ConfigPanel mount point exists (settings renderer is
-        delegated to @robotsix/ui; the bespoke form is gone)."""
+        """The shared ConfigPanel mount point exists.
+
+        Settings renderer is delegated to @robotsix/ui; the bespoke form is gone.
+        """
         assert 'id="config-panel-mount"' in ui_html
         assert 'id="settings-form"' not in ui_html
         assert 'id="settings-error"' not in ui_html
