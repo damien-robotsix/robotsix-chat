@@ -51,9 +51,14 @@ RUN uv export --frozen --no-emit-project --no-hashes \
 # ---------------------------------------------------------------------------
 FROM node:22-alpine AS ui
 ARG ROBOTSIX_UI_VERSION=v0.1.6
+# hadolint ignore=DL3018
 RUN apk add --no-cache git && \
-    npm cache clean --force && \
-    npm install --no-save "github:damien-robotsix/robotsix-ui#${ROBOTSIX_UI_VERSION}"  # hadolint ignore=DL3016,DL3018
+    mkdir -p /node_modules/@robotsix/ui/dist && \
+    git clone --depth 1 --branch "${ROBOTSIX_UI_VERSION}" \
+      https://github.com/damien-robotsix/robotsix-ui.git /tmp/robotsix-ui && \
+    cp /tmp/robotsix-ui/dist/vanilla.js /node_modules/@robotsix/ui/dist/ && \
+    cp /tmp/robotsix-ui/dist/style.css /node_modules/@robotsix/ui/dist/ && \
+    rm -rf /tmp/robotsix-ui
 
 # ---------------------------------------------------------------------------
 # Runtime stage: copy the installed site-packages and console script from the
