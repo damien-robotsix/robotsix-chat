@@ -1041,3 +1041,106 @@ class TestSchedulePersistence:
             loaded = runner._load_sessions()
             assert "sess-1" in loaded
             assert loaded["sess-1"].auto_turn_count == 2
+
+
+class TestLegacyNextFireDoesNotStarvePresets:
+    """A legacy ``next_fire`` map must not veto the schedule that owns firing.
+
+    Two stores record the schedule: ``autonomous_scheduler_state.json``
+    (per-preset last-run state, consulted by ``ensure_all_active_sessions``)
+    and the older ``next_fire`` map inside ``autonomous_sessions.json``
+    (consulted by ``_is_due``).  An install upgraded across the introduction
+    of the former has a populated ``next_fire`` and no scheduler state, and
+    the two disagreed: startup computed "due, fire now" from the missing
+    state while ``_is_due`` refused from the stale map, so nothing fired and
+    nothing was rescheduled.  Observed in production 2026-08-20, where
+    cost-review had gone dormant with ``next_fire`` a day out.
+    """
+
+    @pytest.fixture
+    def persist_paths(self, tmp_path: Path, monkeypatch: pytest.MonkeyPatch) -> Path:
+        """Point the runner's persist paths at a per-test temp directory."""
+        monkeypatch.setattr(
+            "robotsix_chat.autonomous.runner.AUTONOMOUS_PERSIST_PATH",
+            str(tmp_path / "autonomous_sessions.json"),
+        )
+        monkeypatch.setattr(
+            "robotsix_chat.autonomous.runner.AUTONOMOUS_SCHEDULER_PERSIST_PATH",
+            str(tmp_path / "autonomous_scheduler_state.json"),
+        )
+        return tmp_path
+
+    def _build(self, settings: MagicMock) -> AutonomousRunner:
+        """Build a runner with auto-continue mocked to avoid live agent calls."""
+        runner = AutonomousRunner(
+            settings=settings,
+            conversation_store=ConversationStore(),
+            agent_factory=MagicMock(),
+            run_serializer=_make_run_serializer(),
+        )
+        runner._auto_continue = AsyncMock()  # type: ignore[method-assign]
+        return runner
+
+    def _write_legacy_next_fire(self, persist_paths: Path, owner: str, ts: float):
+        """Persist a sessions file carrying only a legacy ``next_fire`` entry."""
+        (persist_paths / "autonomous_sessions.json").write_text(
+            json.dumps({"sessions": {}, "next_fire": {owner: ts}})
+        )
+
+    @pytest.mark.asyncio
+    async def test_pending_next_fire_is_rearmed_after_restart(
+        self, persist_paths: Path
+    ) -> None:
+        """A preset whose fire is still pending re-arms and fires when due.
+
+        The starvation case: the in-process timer that owned the next fire
+        died with the previous process, and the only surviving record is the
+        legacy ``next_fire`` map.  Startup must recover a real schedule from
+        it rather than reading the preset as never-run and then being vetoed
+        by that same map.
+        """
+        settings = _make_settings()
+        settings.autonomous.sessions = [
+            _make_definition("cost-review", trigger_interval_seconds=0.2)
+        ]
+        # Mid-interval: fire is still ~0.1s away, and no scheduler state
+        # exists — exactly the upgraded-install shape.
+        self._write_legacy_next_fire(
+            persist_paths, "autonomous:cost-review", time.time() + 0.1
+        )
+        runner = self._build(settings)
+        await asyncio.wait_for(runner.resume_sessions(), timeout=0.5)
+
+        # Not due yet, so nothing has fired — but a re-arm is pending.
+        assert runner.active_session_id_for_definition("cost-review") is None
+        assert runner._auto_tasks
+
+        await asyncio.sleep(0.25)
+        assert runner.active_session_id_for_definition("cost-review") is not None
+
+    @pytest.mark.asyncio
+    async def test_seeding_keeps_a_recently_run_preset_dormant(
+        self, persist_paths: Path
+    ) -> None:
+        """Seeding preserves the schedule: a recent run stays dormant.
+
+        The complement of the test above — forcing the fire must not turn
+        into firing everything on every boot, which is the over-firing this
+        schedule was introduced to stop.
+        """
+        settings = _make_settings()
+        settings.autonomous.sessions = [
+            _make_definition("cost-review", trigger_interval_seconds=86400.0)
+        ]
+        # next_fire = last_completed_at + interval, so a next_fire nearly a
+        # full interval out implies the run completed moments ago.
+        self._write_legacy_next_fire(
+            persist_paths, "autonomous:cost-review", time.time() + 86000.0
+        )
+        runner = self._build(settings)
+        await asyncio.wait_for(runner.resume_sessions(), timeout=0.5)
+
+        assert runner.active_session_id_for_definition("cost-review") is None
+        # The implied completion time was recovered into the new store, so the
+        # next boot does not read this preset as never-run.
+        assert runner._scheduler_state["cost-review"]["last_completed_at"] > 0

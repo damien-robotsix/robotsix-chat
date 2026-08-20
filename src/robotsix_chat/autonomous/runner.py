@@ -98,6 +98,49 @@ class AutonomousRunner:
         # (``{"name": "default"}``), so a fresh config always has at least
         # that definition — there is no hidden injection.
         self._definitions = self._resolve_definitions()
+        self._seed_scheduler_state_from_next_fire()
+
+    def _seed_scheduler_state_from_next_fire(self) -> None:
+        """Back-fill scheduler state from the legacy ``next_fire`` map.
+
+        Two stores record the schedule: ``_scheduler_state`` (per-preset
+        last-run timestamps, consulted by :meth:`ensure_all_active_sessions`)
+        and the older ``_next_fire`` map (per-owner earliest-next-start,
+        consulted by :meth:`_is_due`).  An install that predates the
+        scheduler-state file has a populated ``_next_fire`` and no
+        ``_scheduler_state`` at all, which reads as "this preset has never
+        run" — so every preset would be treated as first-run and fire at
+        once on the next boot, the very thundering herd the persisted
+        schedule exists to prevent.
+
+        ``next_fire`` is ``last_completed_at + interval`` by construction, so
+        the completion time it implies is recoverable.  Seeding it keeps a
+        preset's place in the schedule across the upgrade.  Only fills gaps:
+        a preset that already has real recorded state is never touched.
+        """
+        seeded = False
+        for name in self._definitions:
+            if isinstance(self._scheduler_state.get(name), dict):
+                continue
+            next_fire = self._next_fire.get(self._owner_id_for_definition(name))
+            if next_fire is None:
+                continue
+            interval = self._interval_for(self._definitions.get(name, {}))
+            self._scheduler_state[name] = {
+                "last_completed_at": float(next_fire) - interval,
+                "last_outcome": "completed",
+                "seeded_from": "next_fire",
+            }
+            seeded = True
+            logger.info(
+                "Autonomous scheduler state seeded from legacy next_fire: "
+                "preset=%s implied_last_completed_ts=%.3f interval=%.0fs",
+                name,
+                float(next_fire) - interval,
+                interval,
+            )
+        if seeded:
+            self._save_scheduler_state()
 
     # -- settings accessors -----------------------------------------------
 
@@ -1023,7 +1066,11 @@ class AutonomousRunner:
             owner_id,
             time.time(),
         )
-        self.ensure_active_session(owner_id, definition_name=name)
+        # This task IS the schedule: it has slept out the remaining interval
+        # and re-checked due-ness above.  ``force`` skips ``_is_due``, whose
+        # legacy ``_next_fire`` map would otherwise veto the very fire it was
+        # scheduled to perform.
+        self.ensure_active_session(owner_id, definition_name=name, force=True)
 
     def ensure_all_active_sessions(self) -> None:
         """Open a session for each enabled definition that is due.
@@ -1063,7 +1110,7 @@ class AutonomousRunner:
                     "immediately (continuous mode)",
                     name,
                 )
-                self.ensure_active_session(owner_id, definition_name=name)
+                self.ensure_active_session(owner_id, definition_name=name, force=True)
                 continue
 
             next_due = self._periodic_next_due(name, interval)
@@ -1073,7 +1120,7 @@ class AutonomousRunner:
                     "last-run state (new/renamed) — firing immediately",
                     name,
                 )
-                self.ensure_active_session(owner_id, definition_name=name)
+                self.ensure_active_session(owner_id, definition_name=name, force=True)
                 continue
 
             delay = max(0.0, next_due - now)
@@ -1084,7 +1131,7 @@ class AutonomousRunner:
                     name,
                     interval,
                 )
-                self.ensure_active_session(owner_id, definition_name=name)
+                self.ensure_active_session(owner_id, definition_name=name, force=True)
             else:
                 logger.info(
                     "Autonomous session startup: preset=%s not due yet — "
