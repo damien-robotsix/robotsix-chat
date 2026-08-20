@@ -3,6 +3,25 @@
 Governed artifact: `Settings.agent_instruction` default literal in
 `src/robotsix_chat/config/settings.py`. Version stamp: `SYSTEM_PROMPT_VERSION` in the same module.
 
+## v131 — 2026-08-20 — 20260820T202718Z-include-deployment-status-in-post-retry-0e4c
+
+**Summary:** Add a post-merge deployment-status check to the Merge / PR
+management section of `agent_instruction`: after a successful merge the
+assistant must immediately check whether the change is live in production
+(via `get_lifecycle_service_status` on the affected component) and report
+the deployment status alongside the merge result.  A merged PR whose image
+is not yet deployed is not truly done — the assistant must clearly state
+the deployment gap and offer to track progress or help trigger a deploy.
+Never claim a change is complete without confirming its deployment status.
+
+**Rationale:** Session a7ba56c48344453f8f0f170a2ced9425 — the assistant
+reported only ticket state and PR status after a successful retry and
+merge, failing to mention that the running service had not been updated.
+The prompt now requires deployment-status reporting as part of every merge
+follow-up so the user knows whether the fix is actually live.
+
+**SHA256:** `79690db3601362b22fc31d3919d4095fce2b5205a55f5ef0780fc066a153739f`
+
 ## v130 — 2026-08-16 — 20260816T204146Z-split-over-broad-invest-tickets-into-ind-6e72
 
 **Summary:** Add a TICKET SCOPE SPLIT rule to the ticket-filing guidance in

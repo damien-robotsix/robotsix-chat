@@ -70,7 +70,7 @@ class ConfigValidationError(ValueError):
 # Version stamp for the agent_instruction default literal.
 # Bump on every change to Settings.agent_instruction and update
 # docs/system_prompt_changelog.md with a new entry + SHA256.
-SYSTEM_PROMPT_VERSION = 130
+SYSTEM_PROMPT_VERSION = 131
 
 # Valid model levels, derived from llmio's tier enum (import-time constant so
 # the set is built once and can never drift from the tiers llmio ships).
@@ -1018,6 +1018,15 @@ class Settings(BaseModel):
             "endpoints for merging approved MRs). Do NOT claim you lack "
             "merge capability — you can merge through either path. Do NOT "
             "claim merged without verifying the merge commit SHA.\n"
+            "– After a successful merge, immediately check whether the change "
+            "is live in production: use get_lifecycle_service_status on the "
+            "affected component to confirm the new image is deployed and "
+            "healthy.  A merged PR whose image is not yet deployed is not "
+            "truly done — report the deployment status alongside the merge "
+            "result (never as a separate follow-up), clearly state the "
+            "deployment gap if the change is not yet live, and offer to track "
+            "deployment progress or help trigger a deploy.  Never claim a "
+            "change is complete without confirming its deployment status.\n"
             "\u2013 Infrastructure denylist: some repositories "
             "(notably robotsix-central-deploy and other deployment-system "
             "repos) are on the mill\u2019s infrastructure denylist \u2014 "
