@@ -69,7 +69,8 @@ _LOCAL_AGENTS_RUNNERS = str(_LOCAL_DIR / "agents" / "runners")
 
 # The ``agents`` package load above (via ``import robotsix_mill``) already
 # pulled in ``runners`` → ``diagnostic_events``.  Force our local path into
-# ``__path__`` and then reload ``diagnostic_events`` from the shadow.
+# ``__path__`` and then reload the shadowed runner modules so the local
+# copies win regardless of import order.
 import robotsix_mill.agents.runners  # noqa: E402
 
 if _LOCAL_AGENTS_RUNNERS not in robotsix_mill.agents.runners.__path__:
@@ -78,6 +79,15 @@ if _LOCAL_AGENTS_RUNNERS not in robotsix_mill.agents.runners.__path__:
 if "robotsix_mill.agents.runners.diagnostic_events" in sys.modules:
     del sys.modules["robotsix_mill.agents.runners.diagnostic_events"]
 import robotsix_mill.agents.runners.diagnostic_events  # noqa: E402
+
+# ``diagnostic_check_recurring_ci`` registers itself (register_check
+# side-effect) against the installed ``diagnostic_checks`` registry when
+# ``diagnostic_runner`` imports it.  Eject any cached installed copy and
+# re-import from the shadow so the new ``MultiCauseCIFailureCheck`` is
+# registered instead of the installed check module.
+if "robotsix_mill.agents.runners.diagnostic_check_recurring_ci" in sys.modules:
+    del sys.modules["robotsix_mill.agents.runners.diagnostic_check_recurring_ci"]
+import robotsix_mill.agents.runners.diagnostic_check_recurring_ci  # noqa: E402
 
 # ---------------------------------------------------------------------------
 # 5.  Patch ``load_agent_definition`` to prefer local overrides in
