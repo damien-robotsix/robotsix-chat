@@ -51,7 +51,7 @@ RUN uv export --frozen --no-emit-project --no-hashes \
 # ---------------------------------------------------------------------------
 FROM node:22-alpine AS ui
 ARG ROBOTSIX_UI_VERSION=v0.1.6
-# hadolint ignore=DL3018
+# hadolint ignore=DL3016,DL3018
 RUN apk add --no-cache git && \
     for i in 1 2 3; do \
       npm install --no-save "github:damien-robotsix/robotsix-ui#${ROBOTSIX_UI_VERSION}" && break; \
