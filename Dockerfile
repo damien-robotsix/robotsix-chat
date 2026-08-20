@@ -53,12 +53,10 @@ FROM node:22-alpine AS ui
 ARG ROBOTSIX_UI_VERSION=v0.1.6
 # hadolint ignore=DL3018
 RUN apk add --no-cache git && \
-    mkdir -p /node_modules/@robotsix/ui/dist && \
-    git clone --depth 1 --branch "${ROBOTSIX_UI_VERSION}" \
-      https://github.com/damien-robotsix/robotsix-ui.git /tmp/robotsix-ui && \
-    cp /tmp/robotsix-ui/dist/vanilla.js /node_modules/@robotsix/ui/dist/ && \
-    cp /tmp/robotsix-ui/dist/style.css /node_modules/@robotsix/ui/dist/ && \
-    rm -rf /tmp/robotsix-ui
+    for i in 1 2 3; do \
+      npm install --no-save "github:damien-robotsix/robotsix-ui#${ROBOTSIX_UI_VERSION}" && break; \
+      sleep 2; \
+    done
 
 # ---------------------------------------------------------------------------
 # Runtime stage: copy the installed site-packages and console script from the
