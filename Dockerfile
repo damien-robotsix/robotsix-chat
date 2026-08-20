@@ -53,10 +53,19 @@ FROM node:22-alpine AS ui
 ARG ROBOTSIX_UI_VERSION=v0.1.6
 # hadolint ignore=DL3016,DL3018
 RUN apk add --no-cache git && \
-    for i in 1 2 3; do \
-      npm install --no-save "github:damien-robotsix/robotsix-ui#${ROBOTSIX_UI_VERSION}" && break; \
-      sleep 2; \
-    done
+    attempt=0; \
+    until npm install --no-save --progress=false "github:damien-robotsix/robotsix-ui#${ROBOTSIX_UI_VERSION}"; do \
+      attempt=$((attempt + 1)); \
+      if [ "${attempt}" -ge 3 ]; then \
+        echo "npm install failed after ${attempt} attempts" >&2; \
+        exit 1; \
+      fi; \
+      echo "npm install attempt ${attempt} failed; retrying in 10s..." >&2; \
+      npm cache clean --force; \
+      sleep 10; \
+    done && \
+    test -f /node_modules/@robotsix/ui/dist/vanilla.js && \
+    test -f /node_modules/@robotsix/ui/dist/style.css
 
 # ---------------------------------------------------------------------------
 # Runtime stage: copy the installed site-packages and console script from the
