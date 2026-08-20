@@ -129,6 +129,28 @@ def build_lifecycle_tools(
         """
         return await client.restart_service(service_name)
 
+    async def redeploy_lifecycle_service(service_name: str) -> str:
+        """Redeploy a lifecycle-managed service.
+
+        Sends a redeploy request to the deploy server, which pulls the
+        latest Docker image and recreates the container.  Use this when
+        a tracked component's Docker image has been updated (e.g. after
+        a PR merge) and the running service still serves the old
+        behavior.  The redeploy is permitted only when the deploy
+        server's per-repo access toggle is enabled for this component
+        — otherwise the call returns a 403 error.
+
+        Args:
+            service_name: The service identifier as returned by
+                ``list_lifecycle_services`` (e.g. ``"file-hub"``).
+
+        Returns:
+            The redeploy result or an error message (including 403 when
+            the per-repo access toggle is not enabled).
+
+        """
+        return await client.redeploy_service(service_name)
+
     async def self_restart() -> str:
         """Restart the agent's own service.
 
@@ -179,6 +201,7 @@ def build_lifecycle_tools(
         get_lifecycle_service_status,
         get_lifecycle_service_env,
         restart_lifecycle_service,
+        redeploy_lifecycle_service,
         update_lifecycle_service_env,
         self_restart,
     ]

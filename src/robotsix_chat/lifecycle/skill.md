@@ -15,6 +15,7 @@ not the lifecycle API. All secret values in environment responses are masked as 
 | `get_lifecycle_service_status` | `GET /services/{name}/status`        | Live status + health-check history.                           |
 | `get_lifecycle_service_env`    | `GET /services/{name}/env`           | Runtime environment (secrets masked).                         |
 | `restart_lifecycle_service`    | `POST /services/{name}/restart`      | Restart a service (requires per-repo access toggle).          |
+| `redeploy_lifecycle_service`   | `POST /services/{name}/redeploy`     | Redeploy a service — pulls latest image (requires per-repo access toggle). |
 | `self_restart`                 | `POST /chat/services/{name}/restart` | Restart this service (named via `lifecycle.service_name`).    |
 | `update_lifecycle_service_env` | `PUT /services/{name}/env`           | Update service environment (requires per-repo access toggle). |
 
@@ -32,6 +33,7 @@ per-repo access toggle is enabled for this component. When the toggle is not ena
 return a 403 error — the agent should treat that as "not permitted" and not retry:
 
 - `POST /services/{name}/restart` — restart a service
+- `POST /services/{name}/redeploy` — redeploy a service (pulls the latest image)
 - `PUT  /services/{name}/env` — update service environment
 
 **Enabling the toggle:** This is a per-repo setting in the central-deploy dashboard (labelled
@@ -80,7 +82,6 @@ attempts made and the last error received.
 The following endpoints remain forbidden — no tool exists for them and the agent must not attempt to
 reach them through any other path:
 
-- `POST /services/{name}/redeploy` — redeploy a service
 - `DELETE /services/{name}` — remove a service registration
 
 ## Safety

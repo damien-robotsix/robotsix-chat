@@ -44,8 +44,8 @@ def test_build_lifecycle_tools_disabled() -> None:
     assert build_lifecycle_tools(LifecycleSettings(enabled=False)) == []
 
 
-def test_build_lifecycle_tools_returns_six_tools_including_mutations() -> None:
-    """Enabled lifecycle returns six tools including mutation tools."""
+def test_build_lifecycle_tools_returns_seven_tools_including_mutations() -> None:
+    """Enabled lifecycle returns seven tools including mutation tools."""
     tools = build_lifecycle_tools(_settings())
     names = {t.__name__ for t in tools}
     assert names == {
@@ -53,6 +53,7 @@ def test_build_lifecycle_tools_returns_six_tools_including_mutations() -> None:
         "get_lifecycle_service_status",
         "get_lifecycle_service_env",
         "restart_lifecycle_service",
+        "redeploy_lifecycle_service",
         "update_lifecycle_service_env",
         "self_restart",
     }
@@ -267,6 +268,68 @@ async def test_restart_service_403_returns_error_string(
     out = await client.restart_service("chat")
     assert "Lifecycle" in out
     assert "403" in out
+
+
+# ---------------------------------------------------------------------------
+# LifecycleClient — redeploy_service
+# ---------------------------------------------------------------------------
+
+
+@pytest.mark.asyncio
+async def test_redeploy_service_success(
+    respx_mock: respx.MockRouter,
+) -> None:
+    """redeploy_service sends POST and returns formatted response."""
+    route = respx_mock.post("http://lifecycle:9000/services/chat/redeploy").mock(
+        return_value=httpx.Response(200, json={"status": "redeploying"})
+    )
+
+    client = LifecycleClient(_settings())
+    out = await client.redeploy_service("chat")
+    assert '"status": "redeploying"' in out
+    assert route.calls.last.request.headers["x-api-key"] == "test-api-key"
+
+
+@pytest.mark.asyncio
+async def test_redeploy_service_403_returns_error_string(
+    respx_mock: respx.MockRouter,
+) -> None:
+    """A 403 (toggle disabled) is returned as an error string, not raised."""
+    respx_mock.post("http://lifecycle:9000/services/chat/redeploy").mock(
+        return_value=httpx.Response(
+            403,
+            json={"error": 'Chat agent is not permitted to mutate service "chat".'},
+        )
+    )
+
+    client = LifecycleClient(_settings())
+    out = await client.redeploy_service("chat")
+    assert "Lifecycle" in out
+    assert "403" in out
+
+
+@pytest.mark.asyncio
+async def test_redeploy_lifecycle_service_tool_is_registered() -> None:
+    """The redeploy_lifecycle_service tool is returned by build_lifecycle_tools."""
+    tools = build_lifecycle_tools(_settings())
+    names = {t.__name__ for t in tools}
+    assert "redeploy_lifecycle_service" in names
+
+
+@pytest.mark.asyncio
+async def test_redeploy_lifecycle_service_tool_calls_client(
+    respx_mock: respx.MockRouter,
+) -> None:
+    """Calling the redeploy_lifecycle_service tool invokes client.redeploy_service."""
+    route = respx_mock.post("http://lifecycle:9000/services/chat/redeploy").mock(
+        return_value=httpx.Response(200, json={"status": "redeploying"})
+    )
+
+    tools = build_lifecycle_tools(_settings())
+    redeploy_tool = next(t for t in tools if t.__name__ == "redeploy_lifecycle_service")
+    out = await redeploy_tool("chat")
+    assert '"status": "redeploying"' in out
+    assert route.calls.last.request.headers["x-api-key"] == "test-api-key"
 
 
 # ---------------------------------------------------------------------------
