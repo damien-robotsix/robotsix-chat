@@ -1336,7 +1336,9 @@ async def test_remember_core_skips_sleep_when_zero(
 
 @pytest.mark.asyncio
 async def test_remember_retries_then_succeeds(
-    cognee_memory: tuple[CogneeMemory, Any], tmp_path: Any
+    cognee_memory: tuple[CogneeMemory, Any],
+    tmp_path: Any,
+    monkeypatch: pytest.MonkeyPatch,
 ) -> None:
     """A write that fails once is retried and lands — no backlog entry.
 
@@ -1345,10 +1347,11 @@ async def test_remember_retries_then_succeeds(
     afternoon each silently parked a conversation in the backlog on a single
     failed attempt.
     """
+    monkeypatch.setattr(asyncio, "sleep", AsyncMock())
+
     mem, fake = cognee_memory
     backlog = tmp_path / "backlog.jsonl"
     mem._settings.write_backlog_path = str(backlog)
-    mem._settings.remember_retry_backoff_seconds = 0.0
     mem._settings.remember_max_attempts = 3
 
     calls = {"n": 0}
@@ -1368,17 +1371,20 @@ async def test_remember_retries_then_succeeds(
 
 @pytest.mark.asyncio
 async def test_remember_backlogs_only_after_all_attempts(
-    cognee_memory: tuple[CogneeMemory, Any], tmp_path: Any
+    cognee_memory: tuple[CogneeMemory, Any],
+    tmp_path: Any,
+    monkeypatch: pytest.MonkeyPatch,
 ) -> None:
     """The backlog is the last resort, reached only when every attempt fails.
 
     Uses a lock-freeze signature: only transient faults are retried, so a
     deterministic error would (correctly) park after one attempt.
     """
+    monkeypatch.setattr(asyncio, "sleep", AsyncMock())
+
     mem, fake = cognee_memory
     backlog = tmp_path / "backlog.jsonl"
     mem._settings.write_backlog_path = str(backlog)
-    mem._settings.remember_retry_backoff_seconds = 0.0
     mem._settings.remember_max_attempts = 3
 
     fake.add = AsyncMock(side_effect=RuntimeError("database is locked"))
@@ -1653,6 +1659,31 @@ def test_is_lock_freeze_error() -> None:
     )
     assert _is_lock_freeze_error(Exception("LanceError: Deadlock detected"))
     assert not _is_lock_freeze_error(ValueError("no data found for the given query"))
+
+
+def test_is_memory_write_transient() -> None:
+    """Transient classification for memory write retries.
+
+    Covers TimeoutError (from asyncio.timeout) and lock-freeze signatures;
+    deterministic errors are not retried.
+    """
+    from robotsix_chat.memory.cognee import _is_memory_write_transient
+
+    # TimeoutError is always transient.
+    assert _is_memory_write_transient(TimeoutError("timed out"))
+    assert _is_memory_write_transient(TimeoutError())
+
+    # Lock-freeze signatures (via _is_lock_freeze_error) are transient.
+    assert _is_memory_write_transient(
+        RuntimeError("(sqlite3.OperationalError) database is locked")
+    )
+    assert _is_memory_write_transient(Exception("LanceError: Deadlock detected"))
+
+    # Deterministic errors are not transient — retrying them burns backoff for
+    # a guaranteed failure.
+    assert not _is_memory_write_transient(ValueError("invalid input"))
+    assert not _is_memory_write_transient(TypeError("bad type"))
+    assert not _is_memory_write_transient(KeyError("missing key"))
 
 
 def test_null_memory_status_not_degraded() -> None:

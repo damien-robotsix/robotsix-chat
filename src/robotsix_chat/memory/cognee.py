@@ -26,6 +26,8 @@ import time
 from pathlib import Path
 from typing import TYPE_CHECKING, Any, TypeVar
 
+from robotsix_http import RetryConfig, acall_with_retry
+
 if TYPE_CHECKING:
     from robotsix_chat.config import (
         LangfuseSettings,
@@ -74,6 +76,17 @@ _LOCK_FREEZE_RE = re.compile(
 def _is_lock_freeze_error(exc: BaseException) -> bool:
     """Return True if *exc* looks like the orphaned-lock / frozen-store fault."""
     return bool(_LOCK_FREEZE_RE.search(str(exc)))
+
+
+def _is_memory_write_transient(exc: Exception) -> bool:
+    """Return True if *exc* warrants retrying a memory write attempt.
+
+    Covers ``TimeoutError`` (from the per-attempt :func:`asyncio.timeout`)
+    and lock-freeze signatures recognised by :func:`_is_lock_freeze_error`.
+    """
+    if isinstance(exc, TimeoutError):
+        return True
+    return _is_lock_freeze_error(exc)
 
 
 # Process-wide recall gate, and the (limit, loop) it was built for.
@@ -690,9 +703,10 @@ class CogneeMemory:
         skips the write instead of leaking a stuck background task.
 
         Attempted up to ``remember_max_attempts`` times with exponential
-        backoff.  Only when every attempt fails is the exchange appended to a
-        durable JSONL backlog so it is not silently lost — subsequent
-        successful writes opportunistically drain the backlog.
+        backoff via :func:`robotsix_http.acall_with_retry`.  Only when every
+        attempt fails is the exchange appended to a durable JSONL backlog so
+        it is not silently lost — subsequent successful writes
+        opportunistically drain the backlog.
 
         The retry is not decoration: cognify is a multi-minute LLM pipeline
         contending with recall for cognee's stores, so a single slow pass was
@@ -702,63 +716,55 @@ class CogneeMemory:
         docstring already claiming "retries exhausted" for a code path that
         made exactly one attempt.
         """
-        attempts = max(1, self._settings.remember_max_attempts)
+        total_attempts = max(1, self._settings.remember_max_attempts)
         timeout = self._settings.remember_timeout_seconds
-        last_error = ""
 
-        for attempt in range(1, attempts + 1):
-            transient = False
+        def _on_retry(attempt: int, exc: Exception, delay: float) -> None:
+            logger.warning(
+                "memory write attempt %d/%d failed (%s: %s); retrying in %.0fs",
+                attempt + 1,
+                total_attempts,
+                type(exc).__name__,
+                exc,
+                delay,
+            )
+
+        async def _attempt() -> None:
+            async with asyncio.timeout(timeout):
+                await self._remember_core(
+                    user_message, assistant_message, session_id=session_id
+                )
+
+        try:
+            await acall_with_retry(  # type: ignore[unused-coroutine]  # _attempt is async — the generic resolves T=Coroutine[...]
+                _attempt,
+                config=RetryConfig(
+                    max_retries=total_attempts - 1,
+                    backoff_base=30.0,
+                    backoff_cap=120.0,
+                    jitter_factor=0.0,
+                    on_retry=_on_retry,
+                ),
+                is_transient_fn=_is_memory_write_transient,
+                what="memory write",
+            )
+            # Write succeeded → clear freeze/degraded tracking, drain backlog.
+            self._clear_degraded()
             try:
-                async with asyncio.timeout(timeout):
-                    await self._remember_core(
-                        user_message, assistant_message, session_id=session_id
-                    )
-                if attempt > 1:
-                    logger.info("memory write succeeded on attempt %d", attempt)
-                # Write succeeded → clear freeze/degraded tracking, drain backlog.
-                self._clear_degraded()
-                try:
-                    await self._drain_backlog()
-                except Exception:
-                    logger.exception(
-                        "Backlog drain failed after successful write — "
-                        "backlogged entries preserved for next drain"
-                    )
-                return
-            except TimeoutError:
-                last_error = f"timed out after {timeout:.0f}s"
-                transient = True
-            except Exception as exc:
-                last_error = f"{type(exc).__name__}: {exc}"
-                # Only transient faults are worth another pass. A deterministic
-                # error will fail identically on every attempt, and retrying it
-                # burns minutes of backoff for a guaranteed backlog entry.
-                transient = _is_lock_freeze_error(exc)
-
-            if not transient:
-                break
-
-            if attempt < attempts:
-                # Back off before retrying: an immediate retry would just
-                # re-enter the same store contention that caused the failure.
-                delay = self._settings.remember_retry_backoff_seconds * (
-                    2 ** (attempt - 1)
+                await self._drain_backlog()
+            except Exception:
+                logger.exception(
+                    "Backlog drain failed after successful write — "
+                    "backlogged entries preserved for next drain"
                 )
-                logger.warning(
-                    "memory write attempt %d/%d failed (%s); retrying in %.0fs",
-                    attempt,
-                    attempts,
-                    last_error,
-                    delay,
-                )
-                await asyncio.sleep(delay)
-
-        logger.warning(
-            "memory write failed (%s); queued to backlog",
-            last_error,
-        )
-        self._record_write_failure()
-        self._append_to_backlog(user_message, assistant_message, session_id)
+        except Exception:
+            logger.warning(
+                "memory write failed after %d attempts; queued to backlog",
+                total_attempts,
+                exc_info=True,
+            )
+            self._record_write_failure()
+            self._append_to_backlog(user_message, assistant_message, session_id)
 
     async def _remember_core(
         self,
