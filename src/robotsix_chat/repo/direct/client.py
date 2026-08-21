@@ -95,6 +95,10 @@ def _count_cycles_from_data(data: dict[str, Any]) -> int:
                 # reset it).  Count each resume event as 3 so the
                 # exhaustion gate is satisfied even when the board API
                 # clears the implement events on resume.
+                # Note: a resume can fire for non-exhaustion reasons
+                # (e.g. manual operator unblock).  The 'count as 3'
+                # heuristic over-approximates the gate to avoid
+                # blocking legitimate direct-fix access.
                 count += 3
         return count
 
