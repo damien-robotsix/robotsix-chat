@@ -902,20 +902,15 @@ async def watch_paused_monitors(env: SubsessionEnv) -> None:
                                 )
                                 continue
 
-                            # -- CI infrastructure health check -----------------------
-                            # Detect zero-job workflow runs on the PR's
-                            # branch.  This is NOT a code-level CI
-                            # failure (which the agent cannot fix and is
-                            # already handled by auto-pause escalation).
-                            # Instead, it signals that the CI
-                            # *infrastructure* is broken — the workflow
-                            # file parses but produces zero jobs
-                            # (misconfigured trigger, invalid conditional,
-                            # or billing issue).  When detected, emit a
-                            # high-urgency notification so the operator
-                            # can fix the infrastructure before code
-                            # issues pile up.
+                            # -- CI run tracking and infrastructure health check ----
+                            # Track the latest workflow run id per poll
+                            # cycle so we can detect when a push (e.g. a
+                            # formatting fix) lands on the PR branch but
+                            # does NOT trigger a new CI run — the watcher
+                            # would otherwise re-evaluate the same run on
+                            # every poll and report stale results.
                             pr_branch = pr_data.get("head", {}).get("ref")
+                            pr_head_sha = pr_data.get("head", {}).get("sha")
                             if isinstance(pr_branch, str) and pr_branch:
                                 try:
                                     from robotsix_chat.repo.direct import (
@@ -925,6 +920,69 @@ async def watch_paused_monitors(env: SubsessionEnv) -> None:
                                     actions = actions_client.ActionsClient(
                                         direct_repo_settings
                                     )
+
+                                    # -- run-ID tracking: detect stale CI runs --
+                                    if isinstance(pr_head_sha, str) and pr_head_sha:
+                                        latest_runs = await actions.list_workflow_runs(
+                                            repo_raw,
+                                            branch=pr_branch,
+                                            per_page=1,
+                                        )
+                                        if latest_runs:
+                                            latest_run = latest_runs[0]
+                                            latest_run_id = latest_run.get("id")
+                                            latest_run_head = latest_run.get("head_sha")
+                                            last_ci_run_id = checkpoint.get(
+                                                "last_ci_run_id"
+                                            )
+                                            last_ci_head_sha = checkpoint.get(
+                                                "last_ci_head_sha"
+                                            )
+
+                                            if latest_run_head != pr_head_sha:
+                                                logger.warning(
+                                                    "Watcher: subsession %s "
+                                                    "PR #%d in %s — latest CI "
+                                                    "run %s (head %s) does not "
+                                                    "match PR HEAD %s.  The "
+                                                    "most recent push may not "
+                                                    "have triggered a new CI "
+                                                    "run yet.",
+                                                    info.id,
+                                                    pr_number_raw,
+                                                    repo_raw,
+                                                    latest_run_id,
+                                                    latest_run_head,
+                                                    pr_head_sha,
+                                                )
+
+                                            if (
+                                                isinstance(last_ci_run_id, int)
+                                                and latest_run_id == last_ci_run_id
+                                                and pr_head_sha != last_ci_head_sha
+                                            ):
+                                                logger.warning(
+                                                    "Watcher: subsession %s "
+                                                    "PR #%d in %s — CI run "
+                                                    "%d unchanged since last "
+                                                    "poll but PR HEAD changed "
+                                                    "from %s to %s.  No new CI "
+                                                    "run has been triggered "
+                                                    "for the latest push.",
+                                                    info.id,
+                                                    pr_number_raw,
+                                                    repo_raw,
+                                                    latest_run_id,
+                                                    last_ci_head_sha,
+                                                    pr_head_sha,
+                                                )
+
+                                            checkpoint["last_ci_run_id"] = latest_run_id
+                                            checkpoint["last_ci_head_sha"] = pr_head_sha
+                                            env.registry.update_checkpoint(
+                                                info.id, checkpoint
+                                            )
+
                                     zero_job_msg = (
                                         await actions.check_latest_run_for_zero_jobs(
                                             repo_raw, pr_branch
