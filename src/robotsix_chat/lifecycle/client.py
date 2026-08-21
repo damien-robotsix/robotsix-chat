@@ -273,6 +273,10 @@ class LifecycleClient:
         """``POST /services/{name}/restart`` — restart a service."""
         return await self._post(f"/services/{service_name}/restart")
 
+    async def redeploy_service(self, service_name: str) -> str:
+        """``POST /services/{name}/redeploy`` — redeploy a service."""
+        return await self._post(f"/services/{service_name}/redeploy")
+
     async def self_restart(self) -> str:
         """Restart this service via ``POST /chat/services/{name}/restart``.
 
