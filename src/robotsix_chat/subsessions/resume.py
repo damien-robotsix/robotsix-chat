@@ -112,25 +112,33 @@ def _rebuild_checkpoint(entry: Mapping[str, object]) -> dict[str, object] | None
 
 
 def _rebuild_inbox(entry: Mapping[str, object]) -> list[InboxMessage]:
-    """Reconstruct undelivered inbox messages from a persisted entry."""
-    raw = entry.get("inbox")
-    if not isinstance(raw, list):
-        return []
+    """Reconstruct queued + in-flight inbox messages from a persisted entry.
+
+    In-flight messages (drained but never completed) are returned first so
+    the original delivery order is preserved across a restart.
+    """
     messages: list[InboxMessage] = []
-    for item in raw:
-        if not isinstance(item, dict):
+    for key in ("in_flight_inbox", "inbox"):
+        raw = entry.get(key)
+        if not isinstance(raw, list):
             continue
-        role = _entry_str(item, "role")
-        text = _entry_str(item, "text")
-        if not role or not text:
-            continue
-        messages.append(
-            InboxMessage(
-                role=role,
-                text=text,
-                timestamp=_entry_float(item, "timestamp"),
+        for item in raw:
+            if not isinstance(item, dict):
+                continue
+            role = item.get("role")
+            text = item.get("text")
+            timestamp = item.get("timestamp")
+            if not isinstance(role, str) or not isinstance(text, str):
+                continue
+            messages.append(
+                InboxMessage(
+                    role=role,
+                    text=text,
+                    timestamp=(
+                        float(timestamp) if isinstance(timestamp, (int, float)) else 0.0
+                    ),
+                )
             )
-        )
     return messages
 
 
@@ -332,8 +340,8 @@ def _resume_periodic_entry(
         checkpoint=checkpoint,
         dedup_key=dedup_key,
         retry_count=retry_count,
+        inbox=_rebuild_inbox(entry),
     )
-    _restore_inbox(env.registry, sub_id, entry)
     # Restore PAUSED state so the worker enters the wait loop instead of
     # running an agent turn on a subsession that was auto-paused.
     if original_status == "paused":
@@ -386,8 +394,8 @@ def _resume_wait_for_event_entry(
         dedup_key=dedup_key,
         retry_count=retry_count,
         event_timeout_seconds=event_timeout_seconds,
+        inbox=_rebuild_inbox(entry),
     )
-    _restore_inbox(env.registry, sub_id, entry)
     return _ResumeFate(
         owner_session_id=owner,
         sub_id=sub_id,
@@ -499,8 +507,8 @@ def _resume_task_entry(
         checkpoint=checkpoint,
         dedup_key=dedup_key,
         retry_count=retry_count,
+        inbox=_rebuild_inbox(entry),
     )
-    _restore_inbox(env.registry, sub_id, entry)
     return _ResumeFate(
         owner_session_id=owner,
         sub_id=sub_id,
