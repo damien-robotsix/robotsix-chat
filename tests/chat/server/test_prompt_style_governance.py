@@ -90,8 +90,6 @@ def test_style_directive_documents_ticket_reference_rule() -> None:
     )
 
 
-
-
 def test_style_directive_has_output_style_section() -> None:
     """The directive must carry an explicit ``## Output style`` section."""
     directive = _load_prompt_style()
