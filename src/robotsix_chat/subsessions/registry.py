@@ -861,9 +861,12 @@ class SubsessionRegistry:
         # subsession can no longer deliver them, and leaving them in the
         # store would resurrect stale messages if the record is reopened
         # or a future restart re-enqueues them.
+        #
+        # NOTE: the wake event is intentionally left in place — removing
+        # it breaks ``reopen`` (which does not recreate it), causing
+        # ``wait_for_inbox`` to spin in a tight loop instead of blocking.
         self._inboxes.pop(info.id, None)
         self._in_flight.pop(info.id, None)
-        self._wake_events.pop(info.id, None)
         self._publish(info.owner_session_id, frame)
         self._store.persist()
         for callback in self._close_callbacks:
