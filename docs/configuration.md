@@ -552,8 +552,6 @@ default.
 | `lifecycle.service_name`              | `string`          | `""`     | Name of this service as registered with the deploy server.                                                                                              |
 | `lifecycle.timeout`                   | `number`          | `30.0`   | Per-request HTTP timeout (seconds).                                                                                                                     |
 | `lifecycle.self_restart_max_retries`  | `integer`         | `3`      | Maximum number of retries for transient `self_restart` failures (5xx, timeouts, connection errors). 0 = no retries.                                     |
-| `lifecycle.self_restart_backoff_base` | `number`          | `1.0`    | Initial exponential-backoff delay in seconds. Doubled each retry: `base * 2^(attempt-1)`.                                                               |
-| `lifecycle.self_restart_backoff_cap`  | `number`          | `30.0`   | Maximum exponential-backoff delay in seconds (ceiling). Retries never wait longer than this.                                                            |
 
 ______________________________________________________________________
 

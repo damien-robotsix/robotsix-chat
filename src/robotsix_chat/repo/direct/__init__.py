@@ -34,7 +34,6 @@ requirements, and their confirmation-gated mutation policy.
 
 from __future__ import annotations
 
-import asyncio
 import json
 import logging
 from collections.abc import Callable
@@ -43,6 +42,8 @@ from typing import TYPE_CHECKING, Any, cast
 
 if TYPE_CHECKING:
     from robotsix_chat.config import DirectRepoSettings
+
+from robotsix_http import RetryConfig, acall_with_retry
 
 from .github_tools import build_github_tools
 
@@ -91,6 +92,9 @@ def build_direct_repo_tools(
     client = DirectRepoClient(settings)
     board = BoardClient(settings)
 
+    class _ComponentTicketError(Exception):
+        """Raised when component_request returns an ``"Error:"``-prefixed response."""
+
     async def _retry_component_ticket_fetch(
         component_req: Callable[..., Any],
         ticket_id: str,
@@ -100,23 +104,40 @@ def build_direct_repo_tools(
         """Call *component_req* for a ticket with retry on transient failures.
 
         Retries up to *max_retries* times with exponential backoff starting
-        at *backoff_base* seconds.  Returns the raw response string from the
-        last attempt (success or failure).
+        at *backoff_base* seconds via :func:`robotsix_http.acall_with_retry`.
+        Returns the raw response string from the last attempt (success or failure).
         """
-        last_resp = "Error: no response"
-        for attempt in range(max_retries):
-            if attempt > 0:
-                await asyncio.sleep(backoff_base * (2 ** (attempt - 1)))
+        if max_retries <= 0:
+            return "Error: no response"
+
+        async def _attempt() -> str:
             resp = cast(
                 "str",
                 await component_req("mill", "GET", f"/tickets/{ticket_id}"),
             )
             # Treat "Error:" prefixed responses as retryable — they indicate
             # a connectivity or routing failure, not a semantic error.
-            if not resp.startswith("Error:"):
-                return resp
-            last_resp = resp
-        return last_resp
+            if resp.startswith("Error:"):
+                raise _ComponentTicketError(resp)
+            return resp
+
+        try:
+            return cast(
+                "str",
+                await acall_with_retry(
+                    _attempt,
+                    config=RetryConfig(
+                        max_retries=max_retries - 1,
+                        backoff_base=backoff_base,
+                        backoff_cap=30.0,
+                        jitter_factor=0.0,
+                    ),
+                    is_transient_fn=lambda e: isinstance(e, _ComponentTicketError),
+                    what=f"component ticket fetch for {ticket_id}",
+                ),
+            )
+        except _ComponentTicketError as e:
+            return str(e)
 
     async def _get_ticket_state_via_component(
         component_req: Callable[..., Any],
