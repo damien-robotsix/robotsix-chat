@@ -1641,7 +1641,7 @@ async def test_deliver_summary_single_outcome_bypasses_batch() -> None:
     prompt: str = call_args[1]
     # Default template mentions "not actively conversing" — not the batch template.
     assert "not actively conversing" in prompt
-    assert "CONSOLIDATION RULE" in prompt  # present in single-outcome template too
+    assert "MANDATORY CONSOLIDATION GATE" in prompt
 
 
 @pytest.mark.asyncio

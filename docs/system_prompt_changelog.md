@@ -3,7 +3,7 @@
 Governed artifact: `Settings.agent_instruction` default literal in
 `src/robotsix_chat/config/settings.py`. Version stamp: `SYSTEM_PROMPT_VERSION` in the same module.
 
-## v132 — 2026-08-20 — 20260820T202718Z-include-deployment-status-in-post-retry-0e4c
+## v133 — 2026-08-20 — 20260820T202718Z-include-deployment-status-in-post-retry-0e4c
 
 **Summary:** Add a post-merge deployment-status check to the Merge / PR
 management section of `agent_instruction`: after a successful merge the
@@ -20,9 +20,9 @@ merge, failing to mention that the running service had not been updated.
 The prompt now requires deployment-status reporting as part of every merge
 follow-up so the user knows whether the fix is actually live.
 
-**SHA256:** `ab09f6737141959584934b0efcee9089fefb2ee7f983e24a578104d796a3f1a6`
+**SHA256:** `0069100641b9c1cc8bc5e966cebe9e737744a0b905be9cc709449d5d1bdb2df2`
 
-## v131 — 2026-08-17 — 20260816T204146Z-monitor-for-stalled-ticket-auto-closed-w-d453
+## v132 — 2026-08-17 — 20260816T204146Z-monitor-for-stalled-ticket-auto-closed-w-d453
 
 **Summary:** Extend the stuck-draft detection guidance in `agent_instruction`
 with an explicit escalation-on-failure rule: when a monitor's force-to-ready
@@ -45,7 +45,7 @@ blocked ticket as stalled.
 
 **SHA256:** `b9358ab17d02f07f394f53c9e5f9352e60f7095e84a323a0ba7466c56bf5182b`
 
-## v130 — 2026-08-16 — 20260816T204146Z-split-over-broad-invest-tickets-into-ind-6e72
+## v131 — 2026-08-16 — 20260816T204146Z-split-over-broad-invest-tickets-into-ind-6e72
 
 **Summary:** Add a TICKET SCOPE SPLIT rule to the ticket-filing guidance in
 `agent_instruction`: one ticket covers one subsystem or one acceptance
@@ -67,7 +67,7 @@ implementation queue.
 
 **SHA256:** `c2b292e0941faf34247c25bd253bd87d6a56bf2bdfbff4ed71297c99c3de7b37`
 
-## v129 — 2026-08-17 — 20260816T144325Z-enforce-explicit-confirmation-for-state-1760
+## v130 — 2026-08-17 — 20260816T144325Z-enforce-explicit-confirmation-for-state-1760
 
 **Summary:** Strengthen the destructive-action re-confirmation gate in
 `agent_instruction`: casual or ambiguous replies that appear to grant
@@ -88,7 +88,7 @@ destructive action.
 
 **SHA256:** `12f8aad9d7bed44d208bae9f88253b5f37017a3249c0dfe136a210cb41b86e6d`
 
-## v128 — 2026-08-17 — 20260802T005451Z-do-not-ask-user-confirmation-for-routine-a9f5
+## v129 — 2026-08-17 — 20260802T005451Z-do-not-ask-user-confirmation-for-routine-a9f5
 
 **Summary:** Add a routine-priority rule to the agent instruction: tickets
 the assistant is actively tracking (monitoring) are treated the same as
@@ -108,7 +108,7 @@ without prompting unless the action is high-risk.
 
 **SHA256:** `291f26e136cae14d1f788ad644f541204a600a7e2508ef16781a6fc0caacce45`
 
-## v127 — 2026-08-17 — 20260802T005540Z-treat-global-subsession-pool-capacity-as-4c54
+## v128 — 2026-08-17 — 20260802T005540Z-treat-global-subsession-pool-capacity-as-4c54
 
 **Summary:** Add a subsession pool-budget subsection to the Ticket lifecycle
 section of `agent_instruction`: the global subsession pool is finite (all
@@ -129,7 +129,7 @@ reactively and discovered the cap only on failure.
 
 **SHA256:** `60daf89fed4d3c28d02f26b3da9000cdcba21cbe5b0e44654b2ffbcec5032e23`
 
-## v126 — 2026-08-02 — 20260802T005542Z-avoid-filing-chat-agent-capability-ticke-2adf
+## v127 — 2026-08-02 — 20260802T005542Z-avoid-filing-chat-agent-capability-ticke-2adf
 
 **Summary:** Add a capability self-change rule to `agent_instruction`: when
 the user asks for a change to the assistant's own capabilities (a new tool,
@@ -151,6 +151,24 @@ decision/confirmation step.
 
 **SHA256:** `dc34df235d6aa5c135a94af942828a702f511cb575bcb23a15c6e31583bda85a`
 
+## v126 — 2026-08-09 — proactively-consolidate-and-summarize-mu-ae77
+
+**Summary:** Strengthen the subsession-outcome consolidation directive in
+`agent_instruction` from a soft "when multiple outcomes need to be reported"
+to a mandatory gate: "MANDATORY CONSOLIDATION — BEFORE responding to any user
+message, scan the conversation for pending subsession outcomes."  Also
+strengthens the consolidation language in the reaction-prompt templates
+(`delivery.py`) to use "MANDATORY CONSOLIDATION GATE — STOP" phrasing, making
+the rule harder for the model to skip.
+
+**Rationale:** In session fb77f57b, the assistant received several subsession
+outcomes and reported each individually with technical details instead of
+consolidating them into a single thematic summary.  The user had to ask for
+status updates and clarifications.  The prior consolidation rule existed but
+was phrased as a conditional suggestion and not consistently applied.
+
+**SHA256:** `cadf69204244fa1ceacf4e093afaab6dd5d214650d32ab80aa0ad37b668549b5`
+
 ## v125 — 2026-08-16 — 20260816T091216Z-improve-consolidation-rule-adherence-whe-7d1a
 
 **Summary:** Strengthen the multi-subsession consolidation instruction in
@@ -171,6 +189,7 @@ the delivery reaction prompt templates (`_REACT_PROMPT_TEMPLATE` and
 `_BATCH_REACT_PROMPT_TEMPLATE` in `src/robotsix_chat/subsessions/delivery.py`).
 
 **SHA256:** `78e41eb3c0fdc3f9c70c4d9c6019437c81fe22c042fd6ea2e115988623a15ce3`
+ (chore: Proactively consolidate and summarize multiple subsession outcomes (20260809T065239Z-proactively-consolidate-and-summarize-mu-ae77))
 
 ## v124 — 2026-08-15 — 20260815T205903Z-remove-feature-tickets-should-include-co-9b21
 
