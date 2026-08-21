@@ -1,0 +1,1 @@
+Subsession panels gain a focus mode: a focus/expand button per subsession row, a Ctrl+Shift+F keyboard shortcut, and Esc to exit. Entering focus mode applies a full-screen CSS overlay, announces the layout change via a screen-reader live region, and stores the previous expansion state so exiting restores the exact layout.
