@@ -48,19 +48,18 @@ RUN uv export --frozen --no-emit-project --no-hashes \
 # ---------------------------------------------------------------------------
 # UI stage: fetch the shared @robotsix/ui settings renderer build (vanilla JS
 # + CSS, no bundler required) so it can be injected into site-packages below.
-# node:22-alpine bundles npm 10.9.x, whose Arborist fails on `github:` git
-# dependencies with a deterministic "Tracker 'idealTree' already exists"
-# error (no retry helps). Pin npm 9 — the last major line that installs these
-# git deps cleanly — to work around the npm/cli regression.
+# `npm install` of a `github:` dependency fails with a deterministic "Tracker
+# 'idealTree' already exists" error when run from the filesystem root (/), so
+# install from a real project directory (/build) instead.
 # ---------------------------------------------------------------------------
 FROM node:22-alpine AS ui
 ARG ROBOTSIX_UI_VERSION=v0.1.6
+WORKDIR /build
 # hadolint ignore=DL3016,DL3018
 RUN apk add --no-cache git && \
-    npm install --global "npm@9.2.0" && \
     npm install --no-save --progress=false "github:damien-robotsix/robotsix-ui#${ROBOTSIX_UI_VERSION}" && \
-    test -f /node_modules/@robotsix/ui/dist/vanilla.js && \
-    test -f /node_modules/@robotsix/ui/dist/style.css
+    test -f node_modules/@robotsix/ui/dist/vanilla.js && \
+    test -f node_modules/@robotsix/ui/dist/style.css
 
 # ---------------------------------------------------------------------------
 # Runtime stage: copy the installed site-packages and console script from the
@@ -73,9 +72,9 @@ SHELL ["/bin/bash", "-o", "pipefail", "-c"]
 
 COPY --from=builder /usr/local/lib/python3.14/site-packages/ /usr/local/lib/python3.14/site-packages/
 RUN mkdir -p /usr/local/lib/python3.14/site-packages/robotsix_chat/ui/static/vendor
-COPY --from=ui /node_modules/@robotsix/ui/dist/vanilla.js \
+COPY --from=ui /build/node_modules/@robotsix/ui/dist/vanilla.js \
   /usr/local/lib/python3.14/site-packages/robotsix_chat/ui/static/vendor/vanilla.js
-COPY --from=ui /node_modules/@robotsix/ui/dist/style.css \
+COPY --from=ui /build/node_modules/@robotsix/ui/dist/style.css \
   /usr/local/lib/python3.14/site-packages/robotsix_chat/ui/static/vendor/style.css
 COPY --from=builder /usr/local/bin/robotsix-chat /usr/local/bin/robotsix-chat
 COPY --from=builder /usr/local/bin/playwright /usr/local/bin/playwright
