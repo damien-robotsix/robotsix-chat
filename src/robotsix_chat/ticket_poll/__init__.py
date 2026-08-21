@@ -989,8 +989,9 @@ def build_file_ticket_tool(
     Use this tool to create a ticket for a deferred improvement or
     follow-up task — especially when the user has granted autonomy and
     the improvement would prevent recurring manual decisions.  The tool
-    sends a single-ticket payload (wrapped in a list for the bulk ingest
-    endpoint) and returns the created ticket's ID on success.
+    sends a single ``TicketIngest`` object — mill's ingest endpoint
+    takes one ticket per call, not a list — and returns the created
+    ticket's ID on success.
 
     Args:
         settings: Full application settings.
@@ -1030,9 +1031,10 @@ def build_file_ticket_tool(
             description: Detailed ticket body / acceptance criteria.
             kind: Ticket kind — one of ``"task"``, ``"prompt"``,
                 ``"bug"``, ``"epic"``.  Defaults to ``"task"``.
-            repo_id: Target repository id (e.g. ``"robotsix-chat"``).
-                Defaults to the empty string — the board will assign
-                the ticket to a default repo when empty.
+            repo_id: Target repository id (e.g. ``"robotsix-chat"``),
+                as listed by ``GET /repos``.  Required — mill's ingest
+                endpoint has no default repo and rejects an empty or
+                missing value.
 
         Returns:
             A JSON string with ``ticket_id`` (the created ticket's ID)
@@ -1040,6 +1042,21 @@ def build_file_ticket_tool(
             failure.
 
         """
+        # repo_id is required by mill's TicketIngest model: omitting it
+        # is a 422 and an empty string is a 404 ("Unknown repo_id: ''").
+        # Fail here with something the agent can act on instead.
+        if not repo_id:
+            return json.dumps(
+                {
+                    "ticket_id": "",
+                    "error": (
+                        "repo_id is required — pass a registered repo id "
+                        "(see GET /repos). The board has no default repo."
+                    ),
+                },
+                ensure_ascii=False,
+            )
+
         # Build the description body with a metadata footer matching the
         # format expected by the mill's /tickets/ingest parser.
         body_lines: list[str] = [description]
@@ -1047,16 +1064,15 @@ def build_file_ticket_tool(
         body_lines.append(f"--- kind: {kind} | source: agent | origin: robotsix-chat")
         body = "\n".join(body_lines)
 
-        payload: dict[str, Any] = {
+        # One ticket per call: mill's /tickets/ingest takes a single
+        # TicketIngest object.  Wrapping it in a list made every call a
+        # 422, so this tool could never file a ticket.
+        ingest_payload: dict[str, Any] = {
+            "repo_id": repo_id,
             "title": title,
             "body": body,
             "source_tag": "robotsix-chat-tool",
         }
-        if repo_id:
-            payload["repo_id"] = repo_id
-
-        # The /tickets/ingest endpoint accepts a list of ticket payloads.
-        ingest_payload: list[dict[str, Any]] = [payload]
 
         # Try component_request (roster-based) first.
         if component_request is not None:
