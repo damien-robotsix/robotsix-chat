@@ -43,10 +43,10 @@ Only call `notify_user` for these three trigger classes, or when the user explic
 
 1. **Subsession chat opens** — a `user_chat` subsession was spawned and is waiting for the user's
    input (e.g. a decision escalation).
-2. **Subsession completes or raises something** — a task or periodic subsession finished, was
+1. **Subsession completes or raises something** — a task or periodic subsession finished, was
    blocked, or surfaced a condition the user must be informed of (e.g. "ticket approved and merged",
    "monitor found a failure", "decision needed").
-3. **State/result requiring user awareness** — anything blocking coherence or needing explicit user
+1. **State/result requiring user awareness** — anything blocking coherence or needing explicit user
    action (blocked subsession, capability gap filed as ticket, missing context).
 
 ## Safety

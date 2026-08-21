@@ -20,13 +20,13 @@
    Available extras: `claude-sdk` (default levels 3–4 transport), `openrouter` (levels 1–2),
    `tracing` (Langfuse), `memory` (cognee persistence).
 
-2. **Authenticate the Claude CLI** (one-time, subscription auth — no API key):
+1. **Authenticate the Claude CLI** (one-time, subscription auth — no API key):
 
    ```bash
    claude login
    ```
 
-3. **Run the server** — the committed `config/config.json` defaults (model level 3) work out of the
+1. **Run the server** — the committed `config/config.json` defaults (model level 3) work out of the
    box:
 
    ```bash
@@ -41,7 +41,7 @@
    ROBOTSIX_CONFIG_FILE=config/config.local.json uv run robotsix-chat
    ```
 
-4. **Open your browser** at [http://127.0.0.1:8000](http://127.0.0.1:8000).
+1. **Open your browser** at [http://127.0.0.1:8000](http://127.0.0.1:8000).
 
 ## Configuration
 

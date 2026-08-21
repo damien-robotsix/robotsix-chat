@@ -88,10 +88,10 @@ Production deployment is handled by the central-deploy dashboard; there is nothi
 1. Onboard the repo in the dashboard — preflight parses `deploy/docker-compose.yml`
    (`# central-deploy-contract-version: 1`) plus the config template (`config/config.json` +
    `config/config.schema.json`) and renders a typed config form.
-2. Fill the config form (secrets are masked), acknowledge that `chat-data` starts empty, confirm the
+1. Fill the config form (secrets are masked), acknowledge that `chat-data` starts empty, confirm the
    Claude-mount toggle, and deploy. Set `server_host` to `0.0.0.0` and `server_port` to `8080` so
    the container serves the published port.
-3. Authenticate Claude through central-deploy's **dashboard login flow**, which runs `claude login`
+1. Authenticate Claude through central-deploy's **dashboard login flow**, which runs `claude login`
    into the managed `claude-auth` volume (mounted at `/home/app/.claude`). No host `~/.claude` is
    involved.
 
@@ -126,10 +126,10 @@ and does not retry — the operation fails silently from the operator's perspect
 ### Enabling the toggle
 
 1. Open the **central-deploy dashboard**.
-2. Navigate to the **repo** (component) whose chat agent needs mutation access.
-3. Locate the **"Allow chat access"** (also labelled `chat_agent_mutatable` or `allow_chat_access`)
+1. Navigate to the **repo** (component) whose chat agent needs mutation access.
+1. Locate the **"Allow chat access"** (also labelled `chat_agent_mutatable` or `allow_chat_access`)
    setting in the per-repo configuration.
-4. Enable it, then save (or redeploy) the repo configuration.
+1. Enable it, then save (or redeploy) the repo configuration.
 
 After the toggle is enabled, the chat agent can successfully call mutation endpoints — no restart of
 the chat component is required; the deploy server enforces the gate on every request.

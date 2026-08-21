@@ -35,11 +35,11 @@ directly. The root `docker-compose.yml` remains the local-dev stack.
 
 1. In the central-deploy dashboard, start onboarding and point it at this repository. Preflight
    parses `deploy/docker-compose.yml` plus `config/config.schema.json` and `config/config.json`.
-2. Fill the typed config form (secrets are masked `SecretStr` fields). central-deploy writes the
+1. Fill the typed config form (secrets are masked `SecretStr` fields). central-deploy writes the
    merged config into the `chat-config` volume at the path declared by the
    `robotsix.deploy.config-target` label.
-3. Acknowledge that `chat-data` starts empty on first deploy and confirm the Claude-mount toggle.
-4. Deploy.
+1. Acknowledge that `chat-data` starts empty on first deploy and confirm the Claude-mount toggle.
+1. Deploy.
 
 ## Migrating from the old Watchtower stack
 
