@@ -3,6 +3,22 @@
 Governed artifact: `Settings.agent_instruction` default literal in
 `src/robotsix_chat/config/settings.py`. Version stamp: `SYSTEM_PROMPT_VERSION` in the same module.
 
+## v134 — 2026-08-20 — 20260814T213714Z-implement-auto-activation-of-drafted-tic-4cf4
+
+**Summary:** Extend the ticket-lifecycle rule so that tickets the assistant
+authors on its own (chores and feedback tickets) are transitioned out of
+`draft` / `human_issue_approval` to `ready` immediately after filing — the
+same as user-requested tickets — rather than being left in `draft` and
+requiring a manual propose-activation / await-confirmation cycle.
+
+**Rationale:** Assistant-filed tickets (e.g. capability tickets and feedback
+tickets) were consistently stuck in `draft`, forcing the assistant to manually
+propose activation and await operator confirmation before they entered the
+implementation pipeline.  Auto-activating self-authored tickets streamlines
+the workflow and reduces manual oversight.
+
+**SHA256:** `926ade93bbf3e46e7e9787ef439cc6b003037d9412743c08aff9e7e4450f585f`
+
 ## v133 — 2026-08-20 — 20260820T202718Z-include-deployment-status-in-post-retry-0e4c
 
 **Summary:** Add a post-merge deployment-status check to the Merge / PR

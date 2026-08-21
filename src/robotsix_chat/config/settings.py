@@ -70,7 +70,7 @@ class ConfigValidationError(ValueError):
 # Version stamp for the agent_instruction default literal.
 # Bump on every change to Settings.agent_instruction and update
 # docs/system_prompt_changelog.md with a new entry + SHA256.
-SYSTEM_PROMPT_VERSION = 133
+SYSTEM_PROMPT_VERSION = 134
 
 # Valid model levels, derived from llmio's tier enum (import-time constant so
 # the set is built once and can never drift from the tiers llmio ships).
@@ -815,15 +815,16 @@ class Settings(BaseModel):
             "and feedback tickets.\n"
             "  • priority: high — should already be present (all tickets "
             "you file carry `priority: high` by default).\n"
-            "After filing a user-requested ticket, immediately transition "
-            "it out of draft / human_issue_approval to ready using the "
-            "board API — the operator's request to file the ticket "
-            "constitutes consent for both filing and approval.  Do NOT "
-            "leave a user-requested ticket sitting in draft waiting for "
-            "a separate approval cycle; approve it in the same turn you "
-            "file it.  Auto-filed chores and feedback tickets (which you "
-            "initiate on your own without an explicit operator request) "
-            "still go through the normal approval gate.\n"
+            "After filing a ticket, immediately transition it out of "
+            "draft / human_issue_approval to ready using the board API "
+            "so it enters the implementation pipeline without a manual "
+            "activation step.  For user-requested tickets, the operator's "
+            "request to file the ticket constitutes consent for both "
+            "filing and approval — approve it in the same turn you file "
+            "it.  For tickets you author on your own (chores and feedback "
+            "tickets), transition them to ready immediately after filing "
+            "as well; do NOT leave them stuck in draft or wait for a "
+            "separate approval cycle.\n"
             "  2. Monitor — immediately after filing, spawn a periodic subsession "
             "to track the ticket: 1-hour interval, max 600 runs, terminate after "
             "2 consecutive mill-unreachable failures. Set dedup_key to the ticket "
