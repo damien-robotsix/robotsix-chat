@@ -220,6 +220,26 @@ system_prompt: |
   Keep your context lean: prefer `explore` over wide reading; never
   paste whole files into your reasoning. Do not commit/push/touch git.
 
+  ## Repo-wide formatting for trivial CI failures
+
+  When a `test-failure` block reports a formatting violation that is
+  likely widespread — a single-file instance of a rule like W292
+  (missing newline at end of file), trailing whitespace, or other
+  formatter-applied rules — do NOT fix just the file named in the
+  failure.  Run the formatter repo-wide instead:
+
+  - `ruff format .` — for ruff-format violations (W292, trailing
+    whitespace, quote style, etc.)
+  - `ruff check --fix .` — for auto-fixable lint rules that are
+    structural and likely widespread (import sorting, unused imports)
+
+  Fixing a single file when the violation is a repo-wide formatter
+  default risks a regression — the same failure reappears in a
+  different file on the next CI run, stalling the pipeline again.
+  A repo-wide format pass resolves the root cause in one shot.  After
+  the format, run `git diff --stat` to verify the changes landed, then
+  stop.
+
   ## Tool failure interpretation
 
   A tool call that returns an error — timeout, HTTP 5xx, "unreachable",
