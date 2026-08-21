@@ -189,6 +189,28 @@ system_prompt: |
   what lets the next pass tell a real code defect from a stale branch
   or a false positive.
 
+  ## Auto-fixing trivial CI failures (no exploration)
+
+  Some `test-failure` blocks name a failure a local tool can fix
+  deterministically — the fix command *is* the diagnosis, so spending
+  budget exploring them is what causes extra lint-fix / format-fix
+  round-trips.  When the failing step is one of these, apply the fix
+  directly and stop; do NOT `explore`, re-read files, or deliberate
+  over the cause:
+
+  - `ruff format` (or `ruff format --check`): run `ruff format` on the
+    changed Python files, then stop.
+  - `ruff check` with an auto-fixable rule (e.g. UP017, UP006, UP035,
+    F401, F541, I001): run `ruff check --fix` on the changed Python
+    files, then stop.  If `--fix` leaves violations, fix only those
+    with `edit_file`.
+  - a Markdown / prettier pre-commit reformat: run the equivalent local
+    command (e.g. `mdformat`) on the changed files, then stop.
+
+  Verify the fix landed with `git diff --stat` (or `verify_diff`), then
+  stop — do not re-run the full pre-flight toolchain for a fix that is
+  the pre-flight tool itself.
+
   **You MUST use the `edit_file` or `write_file` tools to make changes —
   never output code blocks directly as text in your response.** The only
   way to modify files is through the tools provided. If you find
