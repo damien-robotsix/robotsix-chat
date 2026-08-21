@@ -7,7 +7,6 @@ real network.
 from __future__ import annotations
 
 import time
-from email.utils import formatdate
 
 import httpx
 import pytest
@@ -25,7 +24,6 @@ from robotsix_chat.component_access.roster import (
 from robotsix_chat.component_access.tools import (
     _component_request_impl,
     _health_probe,
-    _parse_retry_after,
     build_component_access_tools,
 )
 from robotsix_chat.config import CentralDeploySettings, ComponentCredentials
@@ -1441,118 +1439,6 @@ async def test_patch_is_non_idempotent_no_retry_on_any_response(
     assert route.call_count == 1
 
 
-# -- _parse_retry_after ----------------------------------------------------
-
-
-def test_parse_retry_after_seconds() -> None:
-    """Integer-seconds Retry-After header is parsed directly."""
-    headers = httpx.Headers({"Retry-After": "120"})
-    assert _parse_retry_after(headers) == 120.0
-
-
-def test_parse_retry_after_seconds_float() -> None:
-    """Float-seconds Retry-After header is parsed as float."""
-    headers = httpx.Headers({"Retry-After": "0.5"})
-    assert _parse_retry_after(headers) == 0.5
-
-
-def test_parse_retry_after_negative_clamped() -> None:
-    """Negative Retry-After seconds are clamped to 0.0."""
-    headers = httpx.Headers({"Retry-After": "-10"})
-    assert _parse_retry_after(headers) == 0.0
-
-
-def test_parse_retry_after_http_date_future() -> None:
-    """HTTP-date Retry-After in the future returns positive seconds."""
-    future_ts = time.time() + 120.0
-    date_str = formatdate(future_ts, usegmt=True)
-    headers = httpx.Headers({"Retry-After": date_str})
-    result = _parse_retry_after(headers)
-    assert result is not None
-    assert result > 0.0
-    assert result <= 125.0  # allow small timing slop
-
-
-def test_parse_retry_after_http_date_past() -> None:
-    """HTTP-date Retry-After in the past is clamped to 0.0."""
-    past_ts = time.time() - 60.0
-    date_str = formatdate(past_ts, usegmt=True)
-    headers = httpx.Headers({"Retry-After": date_str})
-    assert _parse_retry_after(headers) == 0.0
-
-
-def test_parse_retry_after_missing() -> None:
-    """Missing Retry-After header returns None."""
-    headers = httpx.Headers({})
-    assert _parse_retry_after(headers) is None
-
-
-def test_parse_retry_after_unparsable() -> None:
-    """Unparsable Retry-After value returns None."""
-    headers = httpx.Headers({"Retry-After": "not-a-number-or-date"})
-    assert _parse_retry_after(headers) is None
-
-
-# -- 429 retry-after -------------------------------------------------------
-
-
-@pytest.mark.asyncio
-async def test_429_with_retry_after_seconds_sleeps_and_retries_get(
-    respx_mock: respx.MockRouter,
-) -> None:
-    """429 with Retry-After (seconds) — RetryClient exhausts, then retry succeeds.
-
-    RetryClient already retries 429 for GET (idempotent), but its
-    backoff is capped at 10 s and it only makes 3 total attempts.
-    After it gives up our handler catches the 429, honours the full
-    Retry-After window, and retries once with the raw client.
-    """
-    roster = [{"id": "mill", "base_url": "http://m:8080", "skill": "..."}]
-    # 3 attempts exhaust RetryClient (max_retries=2 → 3 total);
-    # the 4th is our manual post-wait retry.
-    _r429 = httpx.Response(
-        429,
-        json={"error": "rate-limited"},
-        headers={"Retry-After": "0.001"},
-    )
-    route = respx_mock.get("http://m:8080/tickets").mock(
-        side_effect=[
-            _r429,
-            _r429,
-            _r429,
-            httpx.Response(200, json={"ok": True}),
-        ]
-    )
-    result = await _component_request_impl(roster, "mill", "GET", "/tickets")
-    assert "HTTP 200" in result
-    assert route.call_count == 4
-
-
-@pytest.mark.asyncio
-async def test_429_with_retry_after_retry_fails(
-    respx_mock: respx.MockRouter,
-) -> None:
-    """429 with Retry-After — retry also fails, error message includes both details."""
-    roster = [{"id": "mill", "base_url": "http://m:8080", "skill": "..."}]
-    _r429 = httpx.Response(
-        429,
-        json={"error": "rate-limited"},
-        headers={"Retry-After": "0.001"},
-    )
-    route = respx_mock.get("http://m:8080/tickets").mock(
-        side_effect=[
-            _r429,
-            _r429,
-            _r429,
-            httpx.ConnectError("still down"),
-        ]
-    )
-    result = await _component_request_impl(roster, "mill", "GET", "/tickets")
-    assert "HTTP 429" in result
-    assert "retry failed" in result
-    assert route.call_count == 4
-
-
 @pytest.mark.asyncio
 async def test_429_without_retry_after_returns_immediately(
     respx_mock: respx.MockRouter,
@@ -1573,24 +1459,21 @@ async def test_429_without_retry_after_returns_immediately(
 async def test_429_with_retry_after_post_retries(
     respx_mock: respx.MockRouter,
 ) -> None:
-    """429 with Retry-After on POST — non-idempotent method still gets retry-after wait.
+    """429 on POST — non-idempotent method is not retried by RetryClient.
 
-    RetryClient won't retry POST on any HTTP response, so our handler
-    does the single post-wait retry.
+    RetryClient treats POST as non-idempotent and won't retry it on any
+    HTTP status, including 429.  The call fails immediately.
     """
     roster = [{"id": "mill", "base_url": "http://m:8080", "skill": "..."}]
     route = respx_mock.post("http://m:8080/tickets").mock(
-        side_effect=[
-            httpx.Response(
-                429,
-                json={"error": "rate-limited"},
-                headers={"Retry-After": "0.001"},
-            ),
-            httpx.Response(201, json={"created": True}),
-        ]
+        return_value=httpx.Response(
+            429,
+            json={"error": "rate-limited"},
+            headers={"Retry-After": "0.001"},
+        ),
     )
     result = await _component_request_impl(
         roster, "mill", "POST", "/tickets", {"title": "test"}
     )
-    assert "HTTP 201" in result
-    assert route.call_count == 2
+    assert "HTTP 429" in result
+    assert route.call_count == 1
