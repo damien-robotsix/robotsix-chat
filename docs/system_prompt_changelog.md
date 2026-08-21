@@ -3,7 +3,7 @@
 Governed artifact: `Settings.agent_instruction` default literal in
 `src/robotsix_chat/config/settings.py`. Version stamp: `SYSTEM_PROMPT_VERSION` in the same module.
 
-## v131 — 2026-08-20 — 20260820T202718Z-include-deployment-status-in-post-retry-0e4c
+## v132 — 2026-08-20 — 20260820T202718Z-include-deployment-status-in-post-retry-0e4c
 
 **Summary:** Add a post-merge deployment-status check to the Merge / PR
 management section of `agent_instruction`: after a successful merge the
@@ -20,7 +20,30 @@ merge, failing to mention that the running service had not been updated.
 The prompt now requires deployment-status reporting as part of every merge
 follow-up so the user knows whether the fix is actually live.
 
-**SHA256:** `79690db3601362b22fc31d3919d4095fce2b5205a55f5ef0780fc066a153739f`
+**SHA256:** `ab09f6737141959584934b0efcee9089fefb2ee7f983e24a578104d796a3f1a6`
+
+## v131 — 2026-08-17 — 20260816T204146Z-monitor-for-stalled-ticket-auto-closed-w-d453
+
+**Summary:** Extend the stuck-draft detection guidance in `agent_instruction`
+with an explicit escalation-on-failure rule: when a monitor's force-to-ready
+call fails (`mark_ticket_ready` returns an HTTP error such as 404 or 400),
+the transition did not succeed and the monitor must NOT silently auto-close
+as stalled.  Instead it must escalate before closing — report the exact API
+error plus the diagnosed root cause to the operator via `user_chat` and offer
+a concrete alternative advancement path (manual board push, re-filing under a
+fresh ID, or operator confirmation the ticket is genuinely obsolete).  Only
+after that escalation is delivered may the monitor close.
+
+**Rationale:** Session 286a6424a8b444a0962dd7d5af52f7fa — a monitor tracking a
+user-approved web UI ticket tried to advance it with the board's mark-ready
+API, got a 404, and then auto-closed as stalled.  The next assistant turn
+claimed to have pushed the ticket into the implementation queue despite the
+404, leaving a contradiction: either the monitor closed prematurely or the
+intervention succeeded despite the reported failure.  Monitors must escalate
+(ping the user or try an alternative advancement method) before closing a
+blocked ticket as stalled.
+
+**SHA256:** `b9358ab17d02f07f394f53c9e5f9352e60f7095e84a323a0ba7466c56bf5182b`
 
 ## v130 — 2026-08-16 — 20260816T204146Z-split-over-broad-invest-tickets-into-ind-6e72
 

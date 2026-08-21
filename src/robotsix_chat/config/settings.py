@@ -70,7 +70,7 @@ class ConfigValidationError(ValueError):
 # Version stamp for the agent_instruction default literal.
 # Bump on every change to Settings.agent_instruction and update
 # docs/system_prompt_changelog.md with a new entry + SHA256.
-SYSTEM_PROMPT_VERSION = 131
+SYSTEM_PROMPT_VERSION = 132
 
 # Valid model levels, derived from llmio's tier enum (import-time constant so
 # the set is built once and can never drift from the tiers llmio ships).
@@ -979,7 +979,16 @@ class Settings(BaseModel):
             "using the same board-API transition you use for user-requested "
             "tickets; otherwise surface a compact force-to-ready prompt to the "
             "operator that includes the diagnosed root cause, instead of "
-            "silently holding.\n"
+            "silently holding.  If the force-to-ready call fails — "
+            "mark_ticket_ready returns an HTTP error such as 404 or 400 — "
+            "the transition did NOT succeed: do not silently auto-close the "
+            "monitor as stalled.  Escalate before closing: report the exact "
+            "API error plus the diagnosed root cause to the operator via "
+            "user_chat and offer a concrete alternative advancement path "
+            "(the operator pushes the ticket manually, re-files it under a "
+            "fresh ID if the old ID no longer resolves, or confirms it is "
+            "genuinely obsolete).  Only after that escalation is delivered "
+            "may the monitor close.\n"
             "– Unresolved operator prerequisites: When a ticket you filed "
             "reaches completion but a further operator-only action is still "
             "required (e.g. provisioning a credential, secret, or token like "

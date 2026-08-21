@@ -372,6 +372,96 @@ async def watch_paused_monitors(env: SubsessionEnv) -> None:
                         checkpoint["_watcher_404_count"] = count
                         env.registry.update_checkpoint(info.id, checkpoint)
                         if count >= _MAX_WATCHER_404_FAILURES:
+                            # -- escalation: try to resolve the ticket ID --
+                            # A 404 can mean the ticket ID in the checkpoint
+                            # is stale or paraphrased.  Try resolution before
+                            # closing so we don't discard a live ticket.
+                            resolved_id: str | None = None
+                            try:
+                                direct_repo_settings = getattr(
+                                    env.settings, "direct_repo", None
+                                )
+                                if direct_repo_settings is not None:
+                                    board = BoardClient(direct_repo_settings)
+                                    resolved = await board.resolve_ticket_ids(
+                                        [ticket_id]
+                                    )
+                                    resolved_id = resolved.get(ticket_id)
+                            except Exception:
+                                logger.debug(
+                                    "Watcher: ticket ID resolution failed for "
+                                    "monitor %s (ticket %s) — proceeding to close.",
+                                    info.id,
+                                    ticket_id,
+                                )
+
+                            if resolved_id is not None and resolved_id != ticket_id:
+                                # The ticket ID was resolved to a different
+                                # valid ID — update the checkpoint and keep
+                                # monitoring instead of closing.
+                                logger.info(
+                                    "Watcher: resolved stale ticket ID %s → %s "
+                                    "for monitor %s — updating checkpoint and "
+                                    "continuing.",
+                                    ticket_id,
+                                    resolved_id,
+                                    info.id,
+                                )
+                                checkpoint["ticket_id"] = resolved_id
+                                checkpoint.pop("_watcher_404_count", None)
+                                env.registry.update_checkpoint(info.id, checkpoint)
+                                if env.event_sink is not None:
+                                    env.event_sink.publish(
+                                        info.owner_session_id,
+                                        {
+                                            "type": SSE_NOTIFICATION_TYPE,
+                                            "title": (
+                                                f"Monitor ticket ID resolved: "
+                                                f"{info.title}"
+                                            ),
+                                            "body": (
+                                                f"Stale ticket ID {ticket_id} "
+                                                f"resolved to {resolved_id} — "
+                                                f"monitor {info.id[:8]} "
+                                                f"continuing."
+                                            ),
+                                            "urgency": "low",
+                                            "link": (
+                                                f"{board_url.rstrip('/')}"
+                                                f"/tickets/{resolved_id}"
+                                            ),
+                                        },
+                                    )
+                                continue
+
+                            # -- escalation: notify the operator before closing --
+                            if env.event_sink is not None:
+                                env.event_sink.publish(
+                                    info.owner_session_id,
+                                    {
+                                        "type": SSE_NOTIFICATION_TYPE,
+                                        "title": (f"Monitor stalled: {info.title}"),
+                                        "body": (
+                                            f"Ticket {ticket_id} returned 404 "
+                                            f"for {count} consecutive watcher "
+                                            f"polls — the ticket no longer "
+                                            f"exists on the board or the "
+                                            f"monitor was spawned with a "
+                                            f"stale/paraphrased ID.  Closing "
+                                            f"monitor {info.id[:8]} to "
+                                            f"prevent futile polling.  "
+                                            f"Re-spawn the monitor with a "
+                                            f"valid ticket ID if the ticket "
+                                            f"still needs tracking."
+                                        ),
+                                        "urgency": "medium",
+                                        "link": (
+                                            f"{board_url.rstrip('/')}"
+                                            f"/tickets/{ticket_id}"
+                                        ),
+                                    },
+                                )
+
                             summary = (
                                 f"Ticket {ticket_id} returned 404 for "
                                 f"{count} consecutive watcher polls — "
