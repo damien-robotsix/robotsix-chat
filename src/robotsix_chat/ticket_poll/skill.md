@@ -163,8 +163,8 @@ narrative text (e.g. `...-my-ticket-a3f2`) and it will be mapped to the full tic
 Resolution tries, in order:
 
 1. **Exact match** — the candidate ID appears verbatim on the board.
-2. **Hash-suffix match** — the last 4 hex chars (e.g. `a3f2`) uniquely match one ticket.
-3. **Slug-substring match** — the non-timestamp portion appears as a substring of exactly one
+1. **Hash-suffix match** — the last 4 hex chars (e.g. `a3f2`) uniquely match one ticket.
+1. **Slug-substring match** — the non-timestamp portion appears as a substring of exactly one
    ticket's full ID.
 
 When resolution succeeds, the resolved full ID is used for the request and returned in the response.

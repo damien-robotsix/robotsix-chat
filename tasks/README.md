@@ -43,15 +43,15 @@ shown — no extra fields, no missing fields.
 ### READ (start of every conversation)
 
 1. Open `tasks/TASKS.md`.
-2. Scan the active tasks so you know what's in flight.
-3. If nothing is pending, that's fine — the file will just have a header.
+1. Scan the active tasks so you know what's in flight.
+1. If nothing is pending, that's fine — the file will just have a header.
 
 ### ADD (new work appears)
 
 1. Determine the next id by looking at the highest `T-NNNN` in **both** `TASKS.md` and `ARCHIVE.md`,
    then increment.
 
-2. Append a new section at the **bottom** of `tasks/TASKS.md`:
+1. Append a new section at the **bottom** of `tasks/TASKS.md`:
 
    ```markdown
    ## T-NNNN — Short title
@@ -72,9 +72,9 @@ shown — no extra fields, no missing fields.
 ### ARCHIVE (work is done)
 
 1. In `tasks/TASKS.md`, set `status: done` and bump `updated`.
-2. **Cut** the entire task section (heading + bullets) out of `TASKS.md`.
-3. **Paste** it at the bottom of `tasks/ARCHIVE.md` (below any existing archive entries).
-4. The active list stays focused; the history is preserved.
+1. **Cut** the entire task section (heading + bullets) out of `TASKS.md`.
+1. **Paste** it at the bottom of `tasks/ARCHIVE.md` (below any existing archive entries).
+1. The active list stays focused; the history is preserved.
 
 ## Feature request checklist
 

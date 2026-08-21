@@ -13,7 +13,7 @@ it (e.g. "you are missing the other mailbox, there are 3 of them"):
 
 1. **Query the live board first.** Call `get_mail_board` (which reads the live `/board-content`
    endpoint) and derive the account/mailbox count from the returned JSON before responding.
-2. **Acknowledge the correction against live data.** If the live count disagrees with what you said,
+1. **Acknowledge the correction against live data.** If the live count disagrees with what you said,
    accept the correction and restate the live count — do not re-argue from memory.
 
 ## Handling deletion / cleanup requests
@@ -25,10 +25,10 @@ about) overloads the user and makes it harder to act. Instead:
 
 1. **Confirm scope first.** Restate the specific requests you heard, by account, folder, or
    criterion — e.g. "You asked about newsletters, Lenovo, and Macif — here's my read on those."
-2. **Present only the matching subset.** Show just the candidates that fall under the user's stated
+1. **Present only the matching subset.** Show just the candidates that fall under the user's stated
    criteria. Omit mails that were already discussed or decided, and omit uncertain candidates the
    user did not ask about.
-3. **Wait for confirmation.** Do not enumerate further candidates, and do not perform any mutation,
+1. **Wait for confirmation.** Do not enumerate further candidates, and do not perform any mutation,
    until the user confirms the subset is correct or asks for more.
 
 ## Selecting an account
