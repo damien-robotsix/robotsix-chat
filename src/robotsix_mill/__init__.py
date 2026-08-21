@@ -612,3 +612,58 @@ def _resume_blocked_with_diagnosis_guard(
 
 
 _TransitionMixin.resume_blocked = _resume_blocked_with_diagnosis_guard
+
+
+# ---------------------------------------------------------------------------
+# 7.  Fix-ticket close cross-check.  A CI-fix ticket (spawned to repair a
+#     red main CI) that reaches DONE without any evidence of landing — no
+#     merged PR and no change on its branch — is a false close: the
+#     implement worker reported success but the repo never changed.  Before
+#     the automated DONE transition fires, verify one of those two signals;
+#     otherwise raise TransitionError so the worker escalates to BLOCKED
+#     instead of reporting done.
+# ---------------------------------------------------------------------------
+import robotsix_mill.stages.fix_close_verify  # noqa: E402
+from robotsix_mill.stages.fix_close_verify import (  # noqa: E402
+    is_fix_ticket,
+    verify_fix_ticket_landed,
+)
+
+_original_transition = _TransitionMixin.transition
+
+
+def _forge_for_board(settings, board_id):
+    """Best-effort forge adapter for *board_id* (``None`` when unresolvable)."""
+    try:
+        from robotsix_mill.config import get_repos_config
+        from robotsix_mill.forge import get_forge
+
+        repo_config = next(
+            (rc for rc in get_repos_config().repos.values() if rc.board_id == board_id),
+            None,
+        )
+        return get_forge(settings, repo_config=repo_config)
+    except Exception:
+        return None
+
+
+def _transition_with_fix_close_guard(
+    self, ticket_id: str, dst: State, note: str | None = None
+) -> Ticket:
+    """Run the fix-ticket close cross-check before a DONE transition."""
+    if dst is State.DONE:
+        ticket = self.get(ticket_id)
+        if ticket is not None and is_fix_ticket(ticket):
+            error = verify_fix_ticket_landed(
+                ticket,
+                self.workspace(ticket).repo_dir,
+                branch_prefix=self.settings.branch_prefix,
+                target_branch=self.settings.forge_target_branch,
+                forge=_forge_for_board(self.settings, ticket.board_id or ""),
+            )
+            if error is not None:
+                raise TransitionError(error)
+    return _original_transition(self, ticket_id, dst, note)
+
+
+_TransitionMixin.transition = _transition_with_fix_close_guard
