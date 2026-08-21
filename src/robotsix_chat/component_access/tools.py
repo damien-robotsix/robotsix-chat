@@ -6,12 +6,9 @@ in the roster — no per-component tools, no typed board operations.
 
 from __future__ import annotations
 
-import asyncio
 import json
 import logging
 from collections.abc import Callable
-from datetime import UTC, datetime
-from email.utils import parsedate_to_datetime
 from typing import TYPE_CHECKING, Any
 
 import httpx
@@ -35,34 +32,6 @@ _COMPONENT_RETRY_CONFIG = RetryConfig(
     backoff_cap=10.0,
     jitter_factor=0.5,
 )
-
-
-def _parse_retry_after(headers: httpx.Headers) -> float | None:
-    """Parse a ``Retry-After`` header into a float of seconds, or ``None``.
-
-    Per :rfc:`7231 §7.1.3` the value is either a delay in integer seconds
-    or an HTTP-date.  Returns the number of seconds to wait, clamped to
-    ≥ 0 (a past date yields 0.0), or ``None`` when the header is missing
-    or unparsable.
-    """
-    value = headers.get("Retry-After")
-    if value is None:
-        return None
-    # Delay-seconds (integer).
-    try:
-        seconds = float(value)
-        return max(0.0, seconds)
-    except ValueError:
-        pass
-    # HTTP-date.
-    try:
-        retry_dt = parsedate_to_datetime(value)
-        if retry_dt is None:
-            return None
-        delta = (retry_dt - datetime.now(tz=UTC)).total_seconds()
-        return max(0.0, delta)
-    except Exception:
-        return None
 
 
 async def _health_probe(base_url: str) -> bool:
@@ -266,64 +235,6 @@ async def _component_request_impl(
             # limits, service errors) — return the body so the caller can
             # inspect it.
             status = exc.status_code
-
-            # 429 with Retry-After: wait the full cooldown window, then
-            # attempt a single retry.  The library caps Retry-After to
-            # backoff_cap (10 s) and won't retry non-idempotent methods
-            # (POST / PATCH) at all, so this path handles long rate-limit
-            # windows (e.g. 300 s) that the agent would otherwise busy-poll
-            # inside its own conversation loop.
-            if status == 429:
-                retry_after = _parse_retry_after(exc.response.headers)
-                if retry_after is not None and retry_after > 0:
-                    logger.info(
-                        "component_request %s %s %s → 429, "
-                        "waiting %.0fs per Retry-After before single retry",
-                        component_id,
-                        method_upper,
-                        path,
-                        retry_after,
-                    )
-                    await asyncio.sleep(retry_after)
-                    try:
-                        resp = await client.request(
-                            method_upper,
-                            url,
-                            params=params,
-                            headers=headers,
-                            json=json_body,
-                            auth=auth_arg,
-                        )
-                    except Exception as retry_exc:
-                        logger.warning(
-                            "component_request %s %s %s "
-                            "retry after 429 wait failed: %s",
-                            component_id,
-                            method_upper,
-                            path,
-                            retry_exc,
-                        )
-                        return (
-                            f"HTTP 429 (rate-limited; waited "
-                            f"{retry_after:.0f}s then retry failed: "
-                            f"{retry_exc})"
-                        )
-                    # Retry succeeded.
-                    retry_status = resp.status_code
-                    try:
-                        retry_body = resp.json()
-                        retry_body_str = json.dumps(retry_body)
-                    except Exception:
-                        retry_body_str = _safe_text(resp)
-                    logger.info(
-                        "component_request %s %s %s → %d "
-                        "(ok, after 429 Retry-After wait)",
-                        component_id,
-                        method_upper,
-                        path,
-                        retry_status,
-                    )
-                    return _format_body(retry_status, retry_body_str)
 
             try:
                 body = exc.response.json()
