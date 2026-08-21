@@ -127,11 +127,7 @@ class MemorySettings(BaseModel):
         remember_max_attempts: How many times a write is attempted before the
             exchange is parked in the backlog.  Default 3.  Each attempt gets
             the full ``remember_timeout_seconds``; failures back off
-            exponentially from ``remember_retry_backoff_seconds``.
-        remember_retry_backoff_seconds: Base delay before retrying a failed
-            write, doubling per attempt.  Backoff matters more than the retry
-            count here — an immediate retry re-enters the same store
-            contention that caused the failure.  Default 30 s.
+            exponentially via :func:`robotsix_http.acall_with_retry`.
         write_backlog_path: Path to a durable JSONL backlog for exchanges that
             could not be persisted after retries are exhausted.  The backlog is
             drained opportunistically on subsequent successful writes.
@@ -190,7 +186,6 @@ class MemorySettings(BaseModel):
     deep_recall_timeout_seconds: float = 180.0
     remember_timeout_seconds: float = 900.0
     remember_max_attempts: int = 3
-    remember_retry_backoff_seconds: float = 30.0
     write_backlog_path: str = "/data/cognee/backlog.jsonl"
     datafusion_runtime_memory_limit: str = "256M"
     frozen_store_alert_minutes: float = 10.0
@@ -220,5 +215,26 @@ class MemorySettings(BaseModel):
                 "Ignoring legacy memory.langfuse — the memory project's "
                 "credentials now live in the top-level langfuse.projects "
                 "block, keyed by memory.langfuse_project"
+            )
+        return data
+
+    @model_validator(mode="before")
+    @classmethod
+    def _drop_legacy_remember_retry_backoff(cls, data: Any) -> Any:
+        """Strip the removed ``memory.remember_retry_backoff_seconds`` key.
+
+        The hand-rolled retry loop was replaced by
+        :func:`robotsix_http.acall_with_retry`; the backoff is now
+        hard-coded in the ``RetryConfig`` passed to that function.
+        Deployed configs written before the migration may still carry
+        this key; with ``extra="forbid"`` it would crash the container.
+        """
+        if isinstance(data, dict) and "remember_retry_backoff_seconds" in data:
+            data = {
+                k: v for k, v in data.items() if k != "remember_retry_backoff_seconds"
+            }
+            _logger.warning(
+                "Ignoring legacy memory.remember_retry_backoff_seconds — "
+                "retry backoff is now managed by robotsix_http.acall_with_retry"
             )
         return data
