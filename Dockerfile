@@ -48,22 +48,17 @@ RUN uv export --frozen --no-emit-project --no-hashes \
 # ---------------------------------------------------------------------------
 # UI stage: fetch the shared @robotsix/ui settings renderer build (vanilla JS
 # + CSS, no bundler required) so it can be injected into site-packages below.
+# node:22-alpine bundles npm 10.9.x, whose Arborist fails on `github:` git
+# dependencies with a deterministic "Tracker 'idealTree' already exists"
+# error (no retry helps). Pin npm 9 — the last major line that installs these
+# git deps cleanly — to work around the npm/cli regression.
 # ---------------------------------------------------------------------------
 FROM node:22-alpine AS ui
 ARG ROBOTSIX_UI_VERSION=v0.1.6
 # hadolint ignore=DL3016,DL3018
 RUN apk add --no-cache git && \
-    attempt=0; \
-    until npm install --no-save --progress=false "github:damien-robotsix/robotsix-ui#${ROBOTSIX_UI_VERSION}"; do \
-      attempt=$((attempt + 1)); \
-      if [ "${attempt}" -ge 3 ]; then \
-        echo "npm install failed after ${attempt} attempts" >&2; \
-        exit 1; \
-      fi; \
-      echo "npm install attempt ${attempt} failed; retrying in 10s..." >&2; \
-      npm cache clean --force; \
-      sleep 10; \
-    done && \
+    npm install --global "npm@9.2.0" && \
+    npm install --no-save --progress=false "github:damien-robotsix/robotsix-ui#${ROBOTSIX_UI_VERSION}" && \
     test -f /node_modules/@robotsix/ui/dist/vanilla.js && \
     test -f /node_modules/@robotsix/ui/dist/style.css
 
