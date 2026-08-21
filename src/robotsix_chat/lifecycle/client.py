@@ -337,9 +337,7 @@ class LifecycleClient:
                         backoff_cap=30.0,
                         jitter_factor=0.0,
                     ),
-                    is_transient_fn=lambda e: isinstance(
-                        e, _TransientLifecycleError
-                    ),
+                    is_transient_fn=lambda e: isinstance(e, _TransientLifecycleError),
                     what="self_restart",
                 ),
             )
