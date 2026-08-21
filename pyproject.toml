@@ -122,7 +122,7 @@ robotsix-config = { git = "https://github.com/damien-robotsix/robotsix-config.gi
 robotsix-llmio = { git = "https://github.com/damien-robotsix/robotsix-llmio.git", rev = "4d9ea9cd39379146a7292947baa9669ce324ca42" }  # pragma: allowlist secret
 # robotsix-modules: same SHA as robotsix-mill (coherent-set rule).
 robotsix-modules = { git = "https://github.com/damien-robotsix/robotsix-modules.git", rev = "d7c5e59980516de6e050db02ff54aef4e15ff5c3" }  # pragma: allowlist secret
-robotsix-http = { git = "https://github.com/damien-robotsix/robotsix-http.git", rev = "ba90d55ea2bcbd02f605f392e837cea7b485d73d" }  # pragma: allowlist secret
+robotsix-http = { git = "https://github.com/damien-robotsix/robotsix-http.git", rev = "13e6e9ab330f9be3b8b1e7bc2694210f7d9e5848" }  # pragma: allowlist secret
 robotsix-github-auth = { git = "https://github.com/damien-robotsix/robotsix-github-auth.git", rev = "e6214c41fd743120aa987bacb4e9b2bc88e73943" }  # pragma: allowlist secret
 
 # Force pypdf>=6.15.0 (transitive dep of cognee) to resolve GHSA-fwg2-594c-jp42.
@@ -131,6 +131,16 @@ robotsix-github-auth = { git = "https://github.com/damien-robotsix/robotsix-gith
 constraint-dependencies = [
     "pypdf>=6.15.0",
     "anyio>=4.14.2",
+]
+# robotsix-llmio still pins robotsix-http at ba90d55ea; this repo needs
+# 13e6e9ab for the POST-retry fix (a read-timed-out POST was retried and
+# duplicated the side effect).  The two exact-rev pins are otherwise
+# irreconcilable, and ba90d55ea is an ancestor of 13e6e9ab, so unifying on
+# the newer rev is safe — llmio uses only robotsix_http.retry (the
+# domain-neutral primitives), not the method-gated RetryClient the fix
+# touches.  Same pattern as robotsix-mill's override.
+override-dependencies = [
+    "robotsix-http @ git+https://github.com/damien-robotsix/robotsix-http.git@13e6e9ab330f9be3b8b1e7bc2694210f7d9e5848",
 ]
 
 [tool.ruff]

@@ -17,6 +17,7 @@ import respx
 from robotsix_chat.config import DirectRepoSettings, Settings
 from robotsix_chat.ticket_poll import (
     _check_unexpected_terminal,
+    build_file_ticket_tool,
     build_find_ticket_by_pr_tool,
     build_mark_ticket_ready_tool,
     build_merge_pull_request_tool,
@@ -1571,3 +1572,111 @@ async def test_find_ticket_by_pr_skips_non_dict_entries(
     data = json.loads(result)
     assert data["ticket_id"] is None
     assert "No ticket found" in data["error"]
+
+
+# ---------------------------------------------------------------------------
+# build_file_ticket_tool
+# ---------------------------------------------------------------------------
+
+
+@pytest.mark.asyncio
+async def test_file_ticket_sends_a_single_object_not_a_list(
+    respx_mock: respx.MockRouter,
+) -> None:
+    """The ingest payload must be one TicketIngest object.
+
+    Regression guard: the tool used to wrap the payload in a list, which
+    mill's ``TicketIngest`` model rejects with 422 — so ``file_ticket``
+    could never actually file a ticket.
+    """
+    route = respx_mock.post("http://board:8077/tickets/ingest").mock(
+        return_value=httpx.Response(201, json={"ticket_id": "t-new", "deduped": False})
+    )
+
+    tools = build_file_ticket_tool(_settings())
+    result = json.loads(
+        await tools[0](
+            title="Wallet value shows cash",
+            description="details",
+            repo_id="robotsix-invest",
+        )
+    )
+
+    assert route.called
+    sent = json.loads(route.calls[0].request.content)
+    assert isinstance(sent, dict), f"payload must be an object, got {type(sent)}"
+    assert sent["repo_id"] == "robotsix-invest"
+    assert sent["title"] == "Wallet value shows cash"
+    assert sent["source_tag"] == "robotsix-chat-tool"
+    assert "details" in sent["body"]
+
+    assert result["ticket_id"] == "t-new"
+    assert result["error"] == ""
+
+
+@pytest.mark.asyncio
+async def test_file_ticket_requires_repo_id(respx_mock: respx.MockRouter) -> None:
+    """An empty repo_id fails fast — mill has no default repo.
+
+    Mill answers a missing repo_id with 422 and an empty one with
+    ``404 Unknown repo_id: ''``; neither is actionable for the agent.
+    """
+    route = respx_mock.post("http://board:8077/tickets/ingest").mock(
+        return_value=httpx.Response(201, json={"ticket_id": "unreachable"})
+    )
+
+    tools = build_file_ticket_tool(_settings())
+    result = json.loads(await tools[0](title="No repo", description="details"))
+
+    assert not route.called, "must not call the board without a repo_id"
+    assert result["ticket_id"] == ""
+    assert "repo_id is required" in result["error"]
+
+
+@pytest.mark.asyncio
+async def test_file_ticket_roster_path_sends_a_single_object() -> None:
+    """The component_request (roster) path sends an object too."""
+    captured: dict[str, Any] = {}
+
+    async def _component_request(
+        component_id: str,
+        method: str,
+        path: str,
+        json_body: Any = None,
+        **_kw: Any,
+    ) -> str:
+        captured["component_id"] = component_id
+        captured["method"] = method
+        captured["path"] = path
+        captured["json_body"] = json_body
+        return 'HTTP 201\n{"ticket_id": "t-roster-new", "deduped": false}'
+
+    tools = build_file_ticket_tool(_settings(), component_request=_component_request)
+    result = json.loads(
+        await tools[0](title="Roster ticket", description="d", repo_id="robotsix-chat")
+    )
+
+    assert captured["path"] == "/tickets/ingest"
+    assert captured["method"] == "POST"
+    assert isinstance(captured["json_body"], dict)
+    assert captured["json_body"]["repo_id"] == "robotsix-chat"
+    assert result["ticket_id"] == "t-roster-new"
+    assert result["error"] == ""
+
+
+@pytest.mark.asyncio
+async def test_file_ticket_reports_dedup_hit(respx_mock: respx.MockRouter) -> None:
+    """A 200 + deduped=true resolves to the existing ticket id."""
+    respx_mock.post("http://board:8077/tickets/ingest").mock(
+        return_value=httpx.Response(
+            200, json={"ticket_id": "t-existing", "deduped": True}
+        )
+    )
+
+    tools = build_file_ticket_tool(_settings())
+    result = json.loads(
+        await tools[0](title="Dup", description="d", repo_id="robotsix-invest")
+    )
+
+    assert result["ticket_id"] == "t-existing"
+    assert result["error"] == ""
