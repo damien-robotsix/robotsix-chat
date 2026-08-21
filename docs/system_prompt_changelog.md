@@ -20,7 +20,7 @@ merge, failing to mention that the running service had not been updated.
 The prompt now requires deployment-status reporting as part of every merge
 follow-up so the user knows whether the fix is actually live.
 
-**SHA256:** `b1be66938cc49120df6965287701f89a884d2ffef03da306687a2d1652f7cf36`
+**SHA256:** `0069100641b9c1cc8bc5e966cebe9e737744a0b905be9cc709449d5d1bdb2df2`
 
 ## v132 — 2026-08-17 — 20260816T204146Z-monitor-for-stalled-ticket-auto-closed-w-d453
 
