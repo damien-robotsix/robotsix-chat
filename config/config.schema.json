@@ -1241,7 +1241,7 @@
           "type": "integer"
         },
         "default_model_level": {
-          "default": 2,
+          "default": 3,
           "title": "Default Model Level",
           "type": "integer"
         },

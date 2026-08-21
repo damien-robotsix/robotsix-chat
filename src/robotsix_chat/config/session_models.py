@@ -199,7 +199,7 @@ class SubsessionsSettings(BaseModel):
         ),
     )
     max_depth: int = 3
-    default_model_level: int = 2
+    default_model_level: int = 3
     min_interval_seconds: float = 60.0
     auto_stop_no_change_runs: int = 3
     max_idle_runs: int = 15
