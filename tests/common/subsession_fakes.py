@@ -140,7 +140,7 @@ def make_settings(
     max_concurrent_per_session: int = 0,
     stale_reclaim_seconds: float = 0.0,
     max_depth: int = 3,
-    default_model_level: int = 2,
+    default_model_level: int = 3,
     min_interval_seconds: float = 0.01,
     auto_stop_no_change_runs: int = 3,
     max_idle_runs: int = 0,
