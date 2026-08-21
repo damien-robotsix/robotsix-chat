@@ -105,8 +105,8 @@ data no longer validates.
 ## Operator workflow
 
 1. Click the **⚙ Settings** button in the header bar.
-2. Browse the config sections — nested objects are shown as collapsible sections.
-3. Edit the fields you want to change:
+1. Browse the config sections — nested objects are shown as collapsible sections.
+1. Edit the fields you want to change:
    - **Text fields** — free-form string input.
    - **Number fields** — numeric input (step "1" for integers, "any" for floats).
    - **Boolean fields** — checkbox.
@@ -116,13 +116,13 @@ data no longer validates.
      instead of a raw JSON text area.
    - **Secret fields** — password input; value shows as `"**********"`; leave unchanged to keep the
      current secret.
-4. Click **Save**.
+1. Click **Save**.
    - **Success** — the panel shows "Saved (vN)" (where N is the new version number) and reloads the
      form from the server.
    - **Validation failure** — the panel displays the pydantic validation error and highlights
      affected fields with a red border. You must fix the error before the save is accepted.
    - **Server error** — the panel shows the error message.
-5. Close the panel with the **×** button, the **Escape** key, or by clicking the gear button again.
+1. Close the panel with the **×** button, the **Escape** key, or by clicking the gear button again.
 
 The panel remembers its open/closed state in `localStorage` across page reloads.
 

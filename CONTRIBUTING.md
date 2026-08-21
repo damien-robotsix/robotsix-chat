@@ -80,13 +80,13 @@ the deleted fragments together.
 After `pre-commit install`, the following hooks run on staged files:
 
 1. **pre-commit-hooks** — trailing whitespace, file endings, YAML/TOML syntax
-2. **ruff** — lint with auto-fix, then format
-3. **mypy** — strict type checking
-4. **uv audit** — dependency vulnerability scan (only when `uv.lock` changes)
-5. **detect-secrets** — secret leakage prevention
-6. **markdownlint-cli2** — structural Markdown linting (broken links, duplicate headings, missing
+1. **ruff** — lint with auto-fix, then format
+1. **mypy** — strict type checking
+1. **uv audit** — dependency vulnerability scan (only when `uv.lock` changes)
+1. **detect-secrets** — secret leakage prevention
+1. **markdownlint-cli2** — structural Markdown linting (broken links, duplicate headings, missing
    alt text)
-7. **mdformat** — consistent Markdown formatting (100-char wrap, 2-space indentation, numbered
+1. **mdformat** — consistent Markdown formatting (100-char wrap, 2-space indentation, numbered
    lists)
 
 To run all hooks without committing: `pre-commit run --all-files`

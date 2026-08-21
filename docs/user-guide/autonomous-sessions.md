@@ -24,11 +24,11 @@ Each session run follows the same flow:
 
 1. **Start** — the runner kicks off exactly one agent turn with the session's kickoff prompt (or the
    standard "begin a new autonomous session and work it to completion" prompt when empty).
-2. **Execute** — the agent works autonomously in that single turn, using its tools, subsessions, and
+1. **Execute** — the agent works autonomously in that single turn, using its tools, subsessions, and
    the continuation-scheduling mechanism as needed.
-3. **Complete** — when the agent emits the completion marker (`---AUTONOMOUS COMPLETE---` by
+1. **Complete** — when the agent emits the completion marker (`---AUTONOMOUS COMPLETE---` by
    default) the session is marked `completed`.
-4. **Re-trigger** — completion is automatic: the runner closes the session and schedules a fresh run
+1. **Re-trigger** — completion is automatic: the runner closes the session and schedules a fresh run
    per the session's trigger (see [Triggers](#triggers)).
 
 ### The `[AUTONOMOUS]` badge
