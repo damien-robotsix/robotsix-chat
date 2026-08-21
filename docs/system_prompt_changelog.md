@@ -3,6 +3,22 @@
 Governed artifact: `Settings.agent_instruction` default literal in
 `src/robotsix_chat/config/settings.py`. Version stamp: `SYSTEM_PROMPT_VERSION` in the same module.
 
+## v134 — 2026-08-20 — 20260814T213714Z-implement-auto-activation-of-drafted-tic-4cf4
+
+**Summary:** Extend the ticket-lifecycle rule so that tickets the assistant
+authors on its own (chores and feedback tickets) are transitioned out of
+`draft` / `human_issue_approval` to `ready` immediately after filing — the
+same as user-requested tickets — rather than being left in `draft` and
+requiring a manual propose-activation / await-confirmation cycle.
+
+**Rationale:** Assistant-filed tickets (e.g. capability tickets and feedback
+tickets) were consistently stuck in `draft`, forcing the assistant to manually
+propose activation and await operator confirmation before they entered the
+implementation pipeline.  Auto-activating self-authored tickets streamlines
+the workflow and reduces manual oversight.
+
+**SHA256:** `926ade93bbf3e46e7e9787ef439cc6b003037d9412743c08aff9e7e4450f585f`
+
 ## v133 — 2026-08-20 — 20260820T202718Z-include-deployment-status-in-post-retry-0e4c
 
 **Summary:** Add a post-merge deployment-status check to the Merge / PR
@@ -340,21 +356,6 @@ report it after the user followed up with another request — an avoidable round
 of back-and-forth and a surprise block.
 
 **SHA256:** `082e3b709adcf0fbd77cc2bca8b696b867536da0fe29d661846910508aa4368d` (chore: Improve detection and communication of root causes for stalled tickets (20260814T213722Z-improve-detection-and-communication-of-r-3c48))
-## v117 — 2026-08-14 — auto-activate-self-authored-tickets-4cf4
-
-**Summary:** Extend the ticket-lifecycle rule so that tickets the assistant
-authors on its own (chores and feedback tickets) are transitioned out of
-`draft` / `human_issue_approval` to `ready` immediately after filing — the
-same as user-requested tickets — rather than being left in `draft` and
-requiring a manual propose-activation / await-confirmation cycle.
-
-**Rationale:** Assistant-filed tickets (e.g. capability tickets and feedback
-tickets) were consistently stuck in `draft`, forcing the assistant to manually
-propose activation and await operator confirmation before they entered the
-implementation pipeline.  Auto-activating self-authored tickets streamlines
-the workflow and reduces manual oversight.
-
-**SHA256:** `0f46f6a2c91bc1a4d2fa5b6449c066bed0ec5234ed2cd76a6f0237bff8d21835`
 
 ## v116 — 2026-08-14 — handle-typos-or-ambiguous-references-via-4617
 
