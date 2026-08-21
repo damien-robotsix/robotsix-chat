@@ -168,6 +168,7 @@ status updates and clarifications.  The prior consolidation rule existed but
 was phrased as a conditional suggestion and not consistently applied.
 
 **SHA256:** `cadf69204244fa1ceacf4e093afaab6dd5d214650d32ab80aa0ad37b668549b5`
+
 ## v125 — 2026-08-16 — 20260816T091216Z-improve-consolidation-rule-adherence-whe-7d1a
 
 **Summary:** Strengthen the multi-subsession consolidation instruction in
@@ -662,7 +663,6 @@ struggles with".  Reverting restores tier ordering that matches the level table
 in `robotsix_chat/config/constants.py`.
 
 **SHA256:** `f17c5a6047806a12019261a63b91360ec7f410aab187c852db6dd5f70bcf3e10`
-
 
 ## v100 — 2026-08-10 — standards-enforcement-bootstrap-pr-lacke-34f4
 
