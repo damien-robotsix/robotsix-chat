@@ -12,11 +12,12 @@ endpoints for configuration access.
 
 from __future__ import annotations
 
-import asyncio
 import json
 import logging
-from typing import Any
+from typing import Any, cast
 from urllib.parse import urlparse
+
+from robotsix_http import RetryConfig, acall_with_retry
 
 from robotsix_chat.common.http import safe_http_request
 from robotsix_chat.config import LifecycleSettings
@@ -70,6 +71,10 @@ def _validate_http_url(url: str) -> bool:
         return bool(parsed.scheme in _KNOWN_SCHEMES and parsed.netloc)
     except Exception:
         return False
+
+
+class _TransientLifecycleError(Exception):
+    """Raised when a lifecycle API call returns a transient error string."""
 
 
 def _is_transient_error(result: str) -> bool:
@@ -290,8 +295,7 @@ class LifecycleClient:
         ``service_name`` is not configured.
 
         On transient failures this method retries with exponential
-        backoff (configurable via ``self_restart_max_retries``,
-        ``self_restart_backoff_base``, and ``self_restart_backoff_cap``)
+        backoff (configurable via ``self_restart_max_retries``)
         before reporting failure.  Non-retryable errors (e.g. 4xx client
         errors) are returned immediately.
         """
@@ -311,53 +315,42 @@ class LifecycleClient:
 
         path = f"/chat/services/{name}/restart"
         max_retries = self._s.self_restart_max_retries
-        backoff_base = self._s.self_restart_backoff_base
-        backoff_cap = self._s.self_restart_backoff_cap
 
-        last_result: str | None = None
-        for attempt in range(max_retries + 1):
-            if attempt > 0:
-                delay = min(backoff_base * (2 ** (attempt - 1)), backoff_cap)
-                logger.warning(
-                    "self_restart retry %d/%d after %.1fs",
-                    attempt,
-                    max_retries,
-                    delay,
-                )
-                await asyncio.sleep(delay)
+        attempts = 0
 
+        async def _attempt() -> str:
+            nonlocal attempts
+            attempts += 1
             result = await self._post(path)
-
-            # Retry only on transient errors: 5xx or network-level failures
-            # (timeouts, connection errors).  4xx errors are not retryable.
             if _is_transient_error(result):
-                last_result = result
-                continue
+                raise _TransientLifecycleError(result)
+            return result
 
+        try:
+            result = cast(
+                "str",
+                await acall_with_retry(
+                    _attempt,
+                    config=RetryConfig(
+                        max_retries=max_retries,
+                        backoff_base=1.0,
+                        backoff_cap=30.0,
+                        jitter_factor=0.0,
+                    ),
+                    is_transient_fn=lambda e: isinstance(e, _TransientLifecycleError),
+                    what="self_restart",
+                ),
+            )
             # Success responses (valid JSON, not a lifecycle error string)
             # don't start with "Lifecycle" — return them as-is.
             if not result.startswith("Lifecycle"):
                 return result
-
             # Non-retryable error (e.g. 4xx, URL protocol) — return a
             # diagnostic report so the agent can self-remediate.
-            # attempts_made: if we had transient failures before this
-            # non-transient one, count all attempts; otherwise just 1.
-            attempts_made = (attempt + 1) if last_result is not None else 1
-            return _diagnose_self_restart_failure(result, attempts_made, max_retries)
-
-        # All retries exhausted.
-        logger.error(
-            "self_restart failed after %d retries (max %d): %s",
-            max_retries,
-            max_retries,
-            last_result,
-        )
-        return _diagnose_self_restart_failure(
-            last_result or "(unknown error)",
-            max_retries + 1,
-            max_retries,
-        )
+            return _diagnose_self_restart_failure(result, attempts, max_retries)
+        except _TransientLifecycleError as e:
+            # All retries exhausted on transient errors.
+            return _diagnose_self_restart_failure(str(e), attempts, max_retries)
 
     async def update_service_env(self, service_name: str, env: dict[str, Any]) -> str:
         """``PUT /services/{name}/env`` — update service environment."""

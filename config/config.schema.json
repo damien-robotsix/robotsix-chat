@@ -732,16 +732,6 @@
           "title": "Enabled",
           "type": "boolean"
         },
-        "self_restart_backoff_base": {
-          "default": 1.0,
-          "title": "Self Restart Backoff Base",
-          "type": "number"
-        },
-        "self_restart_backoff_cap": {
-          "default": 30.0,
-          "title": "Self Restart Backoff Cap",
-          "type": "number"
-        },
         "self_restart_max_retries": {
           "default": 3,
           "title": "Self Restart Max Retries",
