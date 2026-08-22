@@ -3,6 +3,32 @@
 Governed artifact: `Settings.agent_instruction` default literal in
 `src/robotsix_chat/config/settings.py`. Version stamp: `SYSTEM_PROMPT_VERSION` in the same module.
 
+## v135 — 2026-08-22 — 20260822T174744Z-governance-once-the-operator-approves-a-e78d
+
+**Summary:** Extend the ticket-lifecycle rule with explicit coverage for
+operator-approved improvement proposals: when the assistant surfaces an
+improvement proposal (e.g., a cost optimization, configuration change, or
+monitoring enhancement) and the operator explicitly approves it, that
+approval authorizes the full ticket lifecycle — file the ticket AND advance
+it past `human_issue_approval` to `ready` in the same turn via
+`mark_ticket_ready`.  The operator's "yes, do it" covers both filing and
+gate advancement; do NOT re-prompt for ticket approval on a proposal the
+operator already approved.  This applies only to the ticket that directly
+implements the just-approved proposal; unrelated tickets still follow normal
+gating rules.  Hard gates (PR merges, destructive actions, sensitive-path
+changes, cross-repo infra, ambiguous scope) are preserved.
+
+**Rationale:** The daily cost-optimization pass (and similar improvement
+proposals) required double approval: the operator approved the proposal,
+the assistant filed the ticket, and then the assistant asked the operator
+to approve the same ticket again at the `human_issue_approval` gate.  The
+existing auto-approval rules (v134) covered user-requested and
+self-authored tickets but did not explicitly address the operator-approved
+proposal pattern, causing the assistant to conservatively gate.  This
+change closes that gap.
+
+**SHA256:** `8d2265b93a8229a82ea3be4aef991f96f10b77da67dee2138808d728f05fffde`
+
 ## v134 — 2026-08-20 — 20260814T213714Z-implement-auto-activation-of-drafted-tic-4cf4
 
 **Summary:** Extend the ticket-lifecycle rule so that tickets the assistant
@@ -2634,6 +2660,45 @@ autonomous settings at their pydantic field defaults
 (``completion_marker="---AUTONOMOUS COMPLETE---"``,
 ``stale_monitor_runs_before_completion=3``,
 ``queue_tolerance_runs_before_escalation=3``).
+
+## AUTONOMOUS v32 — 2026-08-22 — 20260822T174744Z-governance-once-the-operator-approves-a-e78d
+
+**Summary:** Extend the MUTATION AUTHORIZATION exceptions to match the
+v31 HUMAN_ISSUE_APPROVAL rules: operator-preapproved proposals (where
+the operator explicitly approved a surfaced improvement) are now also
+listed as pre-authorized for both ticket filing and approval, alongside
+user-requested tickets.
+
+**Rationale:** The v31 changelog added operator-preapproved proposals to
+the HUMAN_ISSUE_APPROVAL section but the MUTATION AUTHORIZATION section's
+exception lists still only mentioned user-requested tickets.  This could
+cause the agent to treat operator-preapproved proposals as gated in the
+mutation-authorization check even though the later HUMAN_ISSUE_APPROVAL
+section permits them.  Making the exceptions consistent eliminates the
+ambiguity.
+
+**SHA256:** `b8f0677ee670aa81e962460a008289fcae3feb0ba0262ef3c56e1d0df7d3a5e8`
+
+## AUTONOMOUS v31 — 2026-08-22 — 20260822T174744Z-governance-once-the-operator-approves-a-e78d
+
+**Summary:** Extend the HUMAN_ISSUE_APPROVAL rules so that when the operator
+explicitly approves a specific improvement proposal the agent surfaced (e.g.
+"yes, file that ticket", "go ahead with the cost optimization"), the
+resulting ticket is operator-preauthorized.  The agent must advance it past
+`human_issue_approval` immediately after filing — without re-prompting the
+operator for the same decision.  This preauthorization is bound to the
+specific ticket that implements the approved proposal; unrelated tickets still
+require separate operator approval.  All hard gates (PR merges, destructive
+actions, sensitive-path changes) remain intact.
+
+**Rationale:** The operator reported friction in the daily cost-optimization
+workflow: the agent surfaced a proposal, the operator approved it, the agent
+filed the ticket, and then the agent came BACK asking the operator to approve
+the same improvement a second time at the `human_issue_approval` gate.  The
+double-approval loop is redundant — the operator's explicit approval of the
+proposal IS the gate clearance for the resulting ticket.
+
+**SHA256:** `1f50b8702e88cf1807a62c5d271bfb00a2b03a3f2b3cc6d86873bf129e5ffeef`
 
 ## AUTONOMOUS v30 — 2026-08-21 — 20260821T095543Z-make-periodic-subsession-surfacing-durab-c136
 

@@ -10,7 +10,7 @@ if TYPE_CHECKING:
 # Version stamp for the autonomous appendix (build_autonomous_instruction).
 # Bump on every change to the instruction text and update
 # docs/system_prompt_changelog.md with a new AUTONOMOUS entry + SHA256.
-AUTONOMOUS_PROMPT_VERSION = 30
+AUTONOMOUS_PROMPT_VERSION = 32
 
 
 def build_autonomous_instruction(settings: Settings) -> str:
@@ -527,12 +527,16 @@ def build_autonomous_instruction(settings: Settings) -> str:
         "  - Merging PRs (POST /tickets/{id}/merge-now)\n"
         "  - Filing new tickets (POST /tickets/ingest)\n"
         "    (except user-requested tickets filed in direct response to "
-        "the operator's explicit instruction \u2014 these are pre-authorized "
+        "the operator's explicit instruction, and operator-preapproved "
+        "proposals where the operator explicitly approved a surfaced "
+        "improvement \u2014 these are pre-authorized "
         "for both filing and approval; see HUMAN_ISSUE_APPROVAL below)\n"
         "  - Approving human_issue_approval tickets (transitioning a ticket "
         "out of human_issue_approval to ready or any other active state)\n"
         "    (except user-requested tickets filed in the same turn at the "
-        "operator's direct request \u2014 these are pre-authorized and must be "
+        "operator's direct request, and operator-preapproved proposals "
+        "where the operator explicitly approved a surfaced improvement "
+        "\u2014 these are pre-authorized and must be "
         "approved immediately after filing)\n"
         "  - Modifying configuration, deploying, or restarting services\n"
         "\n"
