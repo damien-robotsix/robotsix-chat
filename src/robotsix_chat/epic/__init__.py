@@ -103,15 +103,13 @@ def build_decompose_epic_tool(
     board_client = BoardClient(settings.direct_repo)
 
     async def _list_epic_children(epic_id: str) -> tuple[list[dict[str, Any]], str]:
-        """Fetch tickets whose ``epic_id`` matches *epic_id*.
+        """Fetch tickets whose ``parent_id`` matches *epic_id*.
 
-        Tries ``GET /tickets?epic_id={epic_id}`` first, falling back to
-        client-side filtering of ``GET /tickets``.
+        Calls ``GET /tickets/{epic_id}/children`` on the board API via
+        the roster-first path, falling back to the direct board API.
         """
-        params: dict[str, str] = {"epic_id": epic_id}
         if component_request is not None:
-            qs = "&".join(f"{k}={v}" for k, v in params.items())
-            path = f"/tickets?{qs}"
+            path = f"/tickets/{epic_id}/children"
             resp = await component_request("mill", "GET", path)
             if not resp.startswith("Error:"):
                 try:
@@ -144,14 +142,14 @@ def build_decompose_epic_tool(
                 "falling back to direct board API"
             )
 
-        url = f"{board_url}/tickets"
+        url = f"{board_url}/tickets/{epic_id}/children"
         headers: dict[str, str] = {"Accept": "application/json"}
         if board_token:
             headers["Authorization"] = f"Bearer {board_token}"
         try:
             async with httpx.AsyncClient(timeout=timeout) as client:
                 retry_client = RetryClient(client, config=_EPIC_RETRY_CONFIG)
-                response = await retry_client.get(url, headers=headers, params=params)
+                response = await retry_client.get(url, headers=headers)
                 response.raise_for_status()
                 data = response.json()
         except Exception as exc:
