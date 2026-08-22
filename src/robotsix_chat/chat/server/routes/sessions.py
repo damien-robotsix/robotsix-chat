@@ -76,7 +76,7 @@ async def sessions_list_endpoint(request: Request) -> JSONResponse:
             {
               "session_id": "...", "title": "...",
               "last_active": 1.0, "turn_count": 3, "closed": false,
-              "model_level": 3, "model_name": "opus",
+              "model_level": 3, "model_name": "...",
               "model_escalated": false
             },
             ...
