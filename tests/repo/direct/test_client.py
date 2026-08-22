@@ -2144,3 +2144,96 @@ async def test_resolve_pr_conflict_missing_path_in_files(
     )
     assert "Error resolving conflict" in result
     assert "'path'" in result
+
+
+@pytest.mark.asyncio
+async def test_resolve_pr_conflict_empty_resolved_files_success(
+    respx_mock: respx.MockRouter,
+) -> None:
+    """resolved_files=[] creates a merge commit with no blobs.
+
+    Every conflict is resolved in favour of the head branch.
+    """
+    from tests.repo.direct.conftest import _prepopulate_installation_token, _settings
+
+    s = _settings()
+    _prepopulate_installation_token(s)
+    client = DirectRepoClient(s)
+
+    # Two PR fetches: first returns dirty (mergeable=False), second returns
+    # clean after the merge commit lands (the re-check at step 6).
+    respx_mock.get("https://api.github.com/repos/org/repo/pulls/42").mock(
+        side_effect=[
+            httpx.Response(
+                200,
+                text=json.dumps(_conflict_pr_json()),
+            ),
+            httpx.Response(
+                200,
+                text=json.dumps(
+                    _conflict_pr_json(mergeable=True, mergeable_state="clean")
+                ),
+            ),
+        ]
+    )
+    respx_mock.get(
+        "https://api.github.com/repos/org/repo/git/ref/heads/feature/x"
+    ).mock(
+        return_value=httpx.Response(
+            200, text=json.dumps({"object": {"sha": "head_sha"}})
+        )
+    )
+    respx_mock.get("https://api.github.com/repos/org/repo/git/ref/heads/main").mock(
+        return_value=httpx.Response(
+            200, text=json.dumps({"object": {"sha": "base_sha"}})
+        )
+    )
+    respx_mock.get("https://api.github.com/repos/org/repo/git/commits/head_sha").mock(
+        return_value=httpx.Response(
+            200, text=json.dumps({"tree": {"sha": "head_tree_sha"}})
+        )
+    )
+    # The blob endpoint is intentionally NOT mocked — _git_create_tree_items
+    # returns [] for empty resolved_files, so no blob is ever created.  If
+    # this test ever hits the blob endpoint, respx will raise and the test
+    # will fail, verifying the empty-list path produces zero blob uploads.
+    trees_route = respx_mock.post(
+        "https://api.github.com/repos/org/repo/git/trees"
+    ).mock(
+        return_value=httpx.Response(201, text=json.dumps({"sha": "merged_tree_sha"}))
+    )
+    commits_route = respx_mock.post(
+        "https://api.github.com/repos/org/repo/git/commits"
+    ).mock(
+        return_value=httpx.Response(201, text=json.dumps({"sha": "merge_commit_sha"}))
+    )
+    refs_route = respx_mock.patch(
+        "https://api.github.com/repos/org/repo/git/refs/heads/feature/x"
+    ).mock(return_value=httpx.Response(200, text=json.dumps({"ok": True})))
+
+    result = await client.resolve_pr_conflict(
+        repo_full_name="org/repo",
+        pr_number=42,
+        resolved_files=[],
+        commit_message="merge: resolve conflicts",
+    )
+    assert "resolved" in result
+    assert "42" in result
+    assert "merge_commit_sha" in result
+    assert "Re-checked mergeable: clean" in result
+
+    # The tree overlays NO changes onto the head tree — resolved_files was
+    # empty, so the tree body carries an empty "tree" list.
+    tree_body = json.loads(trees_route.calls[0].request.content)
+    assert tree_body["base_tree"] == "head_tree_sha"
+    assert tree_body["tree"] == []
+
+    # The commit has parents [head SHA, base SHA] — base becomes an ancestor.
+    commit_body = json.loads(commits_route.calls[0].request.content)
+    assert commit_body["parents"] == ["head_sha", "base_sha"]
+    assert commit_body["tree"] == "merged_tree_sha"
+    assert commit_body["message"] == "merge: resolve conflicts"
+
+    # The head ref is fast-forwarded (force=False) to the merge commit.
+    ref_body = json.loads(refs_route.calls[0].request.content)
+    assert ref_body == {"sha": "merge_commit_sha", "force": False}
