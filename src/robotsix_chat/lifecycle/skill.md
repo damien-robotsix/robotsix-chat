@@ -70,9 +70,9 @@ such as 403 Forbidden or 404 Not Found) are returned immediately without retryin
 
 Retry parameters are configurable via the `lifecycle` settings:
 
-| Setting                               | Default | Description                                                                                            |
-| ------------------------------------- | ------- | ------------------------------------------------------------------------------------------------------ |
-| `lifecycle.self_restart_max_retries`  | `3`     | Maximum retries for transient failures. The initial attempt + retries = `max_retries + 1` total calls. |
+| Setting                              | Default | Description                                                                                            |
+| ------------------------------------ | ------- | ------------------------------------------------------------------------------------------------------ |
+| `lifecycle.self_restart_max_retries` | `3`     | Maximum retries for transient failures. The initial attempt + retries = `max_retries + 1` total calls. |
 
 When all retries are exhausted the method returns a combined error message describing the number of
 attempts made and the last error received.

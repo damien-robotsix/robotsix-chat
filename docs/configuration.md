@@ -543,15 +543,15 @@ ______________________________________________________________________
 Deploy-lifecycle API client for inspecting and restarting the agent's own service. Disabled by
 default.
 
-| JSON key                              | Type              | Default  | Description                                                                                                                                             |
-| ------------------------------------- | ----------------- | -------- | ------------------------------------------------------------------------------------------------------------------------------------------------------- |
-| `lifecycle.enabled`                   | `boolean`         | `false`  | Master switch.                                                                                                                                          |
-| `lifecycle.base_url`                  | `string`          | `""`     | Base URL of the deploy-lifecycle API (no trailing slash). If the URL has no scheme (e.g. `central-deploy:8100`), `default_protocol` is prepended.       |
-| `lifecycle.default_protocol`          | `string`          | `"http"` | Protocol scheme prepended when `base_url` lacks one (e.g. `"https"` for TLS). Ignored when `base_url` already has a recognised scheme (`http`/`https`). |
-| `lifecycle.api_key`                   | `string` (secret) | `""`     | Optional API key for the deploy-lifecycle API.                                                                                                          |
-| `lifecycle.service_name`              | `string`          | `""`     | Name of this service as registered with the deploy server.                                                                                              |
-| `lifecycle.timeout`                   | `number`          | `30.0`   | Per-request HTTP timeout (seconds).                                                                                                                     |
-| `lifecycle.self_restart_max_retries`  | `integer`         | `3`      | Maximum number of retries for transient `self_restart` failures (5xx, timeouts, connection errors). 0 = no retries.                                     |
+| JSON key                             | Type              | Default  | Description                                                                                                                                             |
+| ------------------------------------ | ----------------- | -------- | ------------------------------------------------------------------------------------------------------------------------------------------------------- |
+| `lifecycle.enabled`                  | `boolean`         | `false`  | Master switch.                                                                                                                                          |
+| `lifecycle.base_url`                 | `string`          | `""`     | Base URL of the deploy-lifecycle API (no trailing slash). If the URL has no scheme (e.g. `central-deploy:8100`), `default_protocol` is prepended.       |
+| `lifecycle.default_protocol`         | `string`          | `"http"` | Protocol scheme prepended when `base_url` lacks one (e.g. `"https"` for TLS). Ignored when `base_url` already has a recognised scheme (`http`/`https`). |
+| `lifecycle.api_key`                  | `string` (secret) | `""`     | Optional API key for the deploy-lifecycle API.                                                                                                          |
+| `lifecycle.service_name`             | `string`          | `""`     | Name of this service as registered with the deploy server.                                                                                              |
+| `lifecycle.timeout`                  | `number`          | `30.0`   | Per-request HTTP timeout (seconds).                                                                                                                     |
+| `lifecycle.self_restart_max_retries` | `integer`         | `3`      | Maximum number of retries for transient `self_restart` failures (5xx, timeouts, connection errors). 0 = no retries.                                     |
 
 ______________________________________________________________________
 
