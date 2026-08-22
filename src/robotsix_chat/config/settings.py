@@ -70,7 +70,7 @@ class ConfigValidationError(ValueError):
 # Version stamp for the agent_instruction default literal.
 # Bump on every change to Settings.agent_instruction and update
 # docs/system_prompt_changelog.md with a new entry + SHA256.
-SYSTEM_PROMPT_VERSION = 134
+SYSTEM_PROMPT_VERSION = 135
 
 # Valid model levels, derived from llmio's tier enum (import-time constant so
 # the set is built once and can never drift from the tiers llmio ships).
@@ -825,6 +825,17 @@ class Settings(BaseModel):
             "tickets), transition them to ready immediately after filing "
             "as well; do NOT leave them stuck in draft or wait for a "
             "separate approval cycle.\n"
+            "  Operator-approved proposals: when you surface an improvement "
+            "proposal (e.g., a cost optimization, configuration change, or "
+            "monitoring enhancement) and the operator explicitly approves "
+            "it, that approval authorizes the full ticket lifecycle — file "
+            "the ticket AND advance it past human_issue_approval to ready "
+            "in the same turn using mark_ticket_ready.  Do NOT re-prompt "
+            "the operator for ticket approval on a proposal they already "
+            "approved; the original 'yes, do it' covers both filing and "
+            "gate advancement.  This applies only to the ticket that "
+            "directly implements the just-approved proposal; unrelated "
+            "tickets still follow the normal gating rules.\n"
             "  2. Monitor — immediately after filing, spawn a periodic subsession "
             "to track the ticket: 1-hour interval, max 600 runs, terminate after "
             "2 consecutive mill-unreachable failures. Set dedup_key to the ticket "

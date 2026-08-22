@@ -3,6 +3,32 @@
 Governed artifact: `Settings.agent_instruction` default literal in
 `src/robotsix_chat/config/settings.py`. Version stamp: `SYSTEM_PROMPT_VERSION` in the same module.
 
+## v135 — 2026-08-22 — 20260822T174744Z-governance-once-the-operator-approves-a-e78d
+
+**Summary:** Extend the ticket-lifecycle rule with explicit coverage for
+operator-approved improvement proposals: when the assistant surfaces an
+improvement proposal (e.g., a cost optimization, configuration change, or
+monitoring enhancement) and the operator explicitly approves it, that
+approval authorizes the full ticket lifecycle — file the ticket AND advance
+it past `human_issue_approval` to `ready` in the same turn via
+`mark_ticket_ready`.  The operator's "yes, do it" covers both filing and
+gate advancement; do NOT re-prompt for ticket approval on a proposal the
+operator already approved.  This applies only to the ticket that directly
+implements the just-approved proposal; unrelated tickets still follow normal
+gating rules.  Hard gates (PR merges, destructive actions, sensitive-path
+changes, cross-repo infra, ambiguous scope) are preserved.
+
+**Rationale:** The daily cost-optimization pass (and similar improvement
+proposals) required double approval: the operator approved the proposal,
+the assistant filed the ticket, and then the assistant asked the operator
+to approve the same ticket again at the `human_issue_approval` gate.  The
+existing auto-approval rules (v134) covered user-requested and
+self-authored tickets but did not explicitly address the operator-approved
+proposal pattern, causing the assistant to conservatively gate.  This
+change closes that gap.
+
+**SHA256:** `8d2265b93a8229a82ea3be4aef991f96f10b77da67dee2138808d728f05fffde`
+
 ## v134 — 2026-08-20 — 20260814T213714Z-implement-auto-activation-of-drafted-tic-4cf4
 
 **Summary:** Extend the ticket-lifecycle rule so that tickets the assistant
