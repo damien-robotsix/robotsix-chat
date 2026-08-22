@@ -177,9 +177,7 @@
     "api_key": "",
     "service_name": "",
     "timeout": 30.0,
-    "self_restart_max_retries": 3,
-    "self_restart_backoff_base": 1.0,
-    "self_restart_backoff_cap": 30.0
+    "self_restart_max_retries": 3
   },
   "notification": {
     "enabled": true
