@@ -307,7 +307,7 @@ async def test_open_pr_allows_blocked_ticket(
 
 
 def test_merge_methods_exist_on_client() -> None:
-    """Verify that DirectRepoClient exposes merge_pr, arm_auto_merge, resolve_pr_conflict."""
+    """DirectRepoClient exposes merge_pr, arm_auto_merge, resolve_pr_conflict."""
     client = DirectRepoClient(_settings())
     assert hasattr(client, "merge_pr")
     assert hasattr(client, "arm_auto_merge")

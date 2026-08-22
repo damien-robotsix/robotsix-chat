@@ -88,7 +88,7 @@ def build_github_tools(
         """
         try:
             files: list[dict[str, str]] = json.loads(files_json)
-        except (json.JSONDecodeError, TypeError):
+        except json.JSONDecodeError, TypeError:
             return (
                 "Error: files_json must be a valid JSON array "
                 "of {path, content} objects."
@@ -1384,7 +1384,7 @@ def build_github_tools(
 
         try:
             resolved_files: list[dict[str, str]] = json.loads(resolved_files_json)
-        except (json.JSONDecodeError, TypeError):
+        except json.JSONDecodeError, TypeError:
             return (
                 "Error: resolved_files_json must be a valid JSON array "
                 "of {path, content} objects."
