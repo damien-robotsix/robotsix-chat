@@ -69,6 +69,51 @@ Everything below predates the release-please migration and was
 maintained by hand or by towncrier. It is kept verbatim; new entries
 are added above by release-please.
 
+## [0.19.0](https://github.com/damien-robotsix/robotsix-chat/compare/v0.18.1...v0.19.0) (2026-08-22)
+
+
+### Features
+
+* Add per-conversation subsession slot-budget manager to stop monitor eviction thrash (20260802T005543Z-add-a-per-subsession-slot-reclamation-bu-0b5e) ([#1508](https://github.com/damien-robotsix/robotsix-chat/issues/1508)) ([836d7be](https://github.com/damien-robotsix/robotsix-chat/commit/836d7be57f7fc8ac327ade327c37cace980ac66a))
+* Auto-advance tickets stalled in draft on invest board (20260820T230208Z-auto-advance-tickets-stalled-in-draft-on-a123) ([#1564](https://github.com/damien-robotsix/robotsix-chat/issues/1564)) ([942cb70](https://github.com/damien-robotsix/robotsix-chat/commit/942cb70d50c09b83c08aa2af2469aca125c65423))
+* Auto-drive monitor: promote or surface refine-complete draft tickets instead of looping silently (20260802T101143Z-auto-drive-monitor-could-not-transition-e2ff) ([#1509](https://github.com/damien-robotsix/robotsix-chat/issues/1509)) ([aab79cd](https://github.com/damien-robotsix/robotsix-chat/commit/aab79cd117841cd66cc8cde67a2eea5af92daf96))
+* Automate service image update after merge of file-hub web UI (20260820T215739Z-automate-service-image-update-after-merg-00e5) ([#1551](https://github.com/damien-robotsix/robotsix-chat/issues/1551)) ([b050582](https://github.com/damien-robotsix/robotsix-chat/commit/b050582c97637548ef4feda420b923eb8e868f56))
+* Bump the robotsix-llmio pin to 9c97345 — model-agnostic routing + new level-2 binding (20260822T173548Z-bump-the-robotsix-llmio-pin-to-9c97345-m-07b0) ([#1582](https://github.com/damien-robotsix/robotsix-chat/issues/1582)) ([0f762a0](https://github.com/damien-robotsix/robotsix-chat/commit/0f762a0d6b809a3c2b03a790124c45ba83321dcc))
+* cost: route routine background subsession turns off the Opus frontier tier to protect Claude weekly-cap headroom (20260822T162911Z-cost-route-routine-background-subsession-ed68) ([#1578](https://github.com/damien-robotsix/robotsix-chat/issues/1578)) ([50fedaf](https://github.com/damien-robotsix/robotsix-chat/commit/50fedaf05c2097e3b2559f76e9b69170f9970784))
+* Detect single-ticket multi-cause CI flakiness and file a hardening ticket (20260801T122105Z-add-root-cause-hardening-for-recurring-c-6462) ([#1505](https://github.com/damien-robotsix/robotsix-chat/issues/1505)) ([0b17daf](https://github.com/damien-robotsix/robotsix-chat/commit/0b17dafab01a49794a3ee8e7107e9968e9a04da4))
+* Drop central_deploy.api_token schema field — deploy-api-key provisioning retired (20260821T101912Z-drop-central-deploy-api-token-schema-fie-09c9) ([#1574](https://github.com/damien-robotsix/robotsix-chat/issues/1574)) ([d870156](https://github.com/damien-robotsix/robotsix-chat/commit/d870156333607ff17f258943919172f382a3382b))
+* Enable the assistant to file tickets for recurring deferred improvements (20260816T161602Z-enable-the-assistant-to-file-tickets-for-14db) ([#1529](https://github.com/damien-robotsix/robotsix-chat/issues/1529)) ([a143a08](https://github.com/damien-robotsix/robotsix-chat/commit/a143a084967e6aa98648295e965618a8d31071b7))
+* Graceful handling of model tier failures for background monitors (20260821T093540Z-graceful-handling-of-model-tier-failures-841a) ([#1570](https://github.com/damien-robotsix/robotsix-chat/issues/1570)) ([d492681](https://github.com/damien-robotsix/robotsix-chat/commit/d4926816d4fa4bb020fe94b1993c75a4f5b1a154))
+* Handle automated implementation retry exhaustion gracefully with clear user messaging (20260816T203447Z-handle-automated-implementation-retry-ex-335e) ([#1531](https://github.com/damien-robotsix/robotsix-chat/issues/1531)) ([09e7b1c](https://github.com/damien-robotsix/robotsix-chat/commit/09e7b1c7d88463f782469ca1f2b3dcf5973426e2))
+* Include deployment status in post-retry summary (20260820T202718Z-include-deployment-status-in-post-retry-0e4c) ([#1547](https://github.com/damien-robotsix/robotsix-chat/issues/1547)) ([0dc0cca](https://github.com/damien-robotsix/robotsix-chat/commit/0dc0ccaea7e7bf03d9cd501ea1b6fc40a7cf2ba2))
+* Migrate memory/cognee.py remember() to robotsix_http.acall_with_retry (20260821T090804Z-migrate-memory-cognee-py-remember-to-rob-d72f) ([#1566](https://github.com/damien-robotsix/robotsix-chat/issues/1566)) ([f8c1e1b](https://github.com/damien-robotsix/robotsix-chat/commit/f8c1e1b8fc2619e989ffb8bc8dd1c8c6cf26d6ed))
+* Remove specific model names from chat — resolve display names from llmio's tier config (20260822T165420Z-remove-specific-model-names-from-chat-re-c2a7) ([#1579](https://github.com/damien-robotsix/robotsix-chat/issues/1579)) ([17d7023](https://github.com/damien-robotsix/robotsix-chat/commit/17d70230419fdb6632d3eb17b5edaee244fac22c))
+* System prompt: bake scannable reply style (TL;DR + bullets) into robotsix-chat deployed prompt (20260801T110614Z-system-prompt-enforce-synthetic-scannabl-191e) ([#1552](https://github.com/damien-robotsix/robotsix-chat/issues/1552)) ([3b9207b](https://github.com/damien-robotsix/robotsix-chat/commit/3b9207b8bfdc5f2c7b98610daa3b29a3f5a3b33c))
+* Tooling gap: no conflict-resolution or force-push capability for PR branches (20260802T101143Z-tooling-gap-no-conflict-resolution-or-fo-e100) ([#1576](https://github.com/damien-robotsix/robotsix-chat/issues/1576)) ([9d40539](https://github.com/damien-robotsix/robotsix-chat/commit/9d4053996d6d6470059c734a20d1b3c066e97c43))
+
+
+### Bug Fixes
+
+* **autonomous:** stop legacy next_fire from starving periodic presets ([#1550](https://github.com/damien-robotsix/robotsix-chat/issues/1550)) ([ef425be](https://github.com/damien-robotsix/robotsix-chat/commit/ef425be90675e351b51caa5d8cc8b767b7c28220))
+* Background tracking tasks frequently die on model-tier 404 errors (20260821T093611Z-background-tracking-tasks-frequently-die-0c8f) ([#1569](https://github.com/damien-robotsix/robotsix-chat/issues/1569)) ([f744dee](https://github.com/damien-robotsix/robotsix-chat/commit/f744dee7c114cf0217a8c207556f1fe663c58f66))
+* completeness_check scan: 4 findings (2026-08-09) (20260809T041629Z-completeness-check-scan-4-findings-2026-23fc) ([#1524](https://github.com/damien-robotsix/robotsix-chat/issues/1524)) ([9c748c8](https://github.com/damien-robotsix/robotsix-chat/commit/9c748c861c248747dec632bd0acd533dfd00a87a))
+* Config changes requiring restart not explicitly followed up (20260809T131843Z-config-changes-requiring-restart-not-exp-6267) ([#1525](https://github.com/damien-robotsix/robotsix-chat/issues/1525)) ([e8d960a](https://github.com/damien-robotsix/robotsix-chat/commit/e8d960aeaa4ad418c7caf79addec627fc546387d))
+* **deps:** bump robotsix-llmio for the refreshed DeepSeek routing policy ([#1560](https://github.com/damien-robotsix/robotsix-chat/issues/1560)) ([a56dc72](https://github.com/damien-robotsix/robotsix-chat/commit/a56dc72c3be824268411061faf5be0ab304d1ef9))
+* Detect and escalate empty-diff false-close pattern from implement worker (20260820T225955Z-detect-and-escalate-empty-diff-false-clo-a6f2) ([#1562](https://github.com/damien-robotsix/robotsix-chat/issues/1562)) ([d41a476](https://github.com/damien-robotsix/robotsix-chat/commit/d41a476e8898a8426763926029146f727fc79cf2))
+* Enforce explicit confirmation for state-mutating operations (20260816T144325Z-enforce-explicit-confirmation-for-state-1760) ([#1526](https://github.com/damien-robotsix/robotsix-chat/issues/1526)) ([e6d09be](https://github.com/damien-robotsix/robotsix-chat/commit/e6d09be999d3690d1d9a7ec833d2435cf05d528e))
+* Fix decompose_epic tool returning incorrect parent-child data (20260822T173059Z-fix-decompose-epic-tool-returning-incorr-c075) ([#1581](https://github.com/damien-robotsix/robotsix-chat/issues/1581)) ([8c4ef45](https://github.com/damien-robotsix/robotsix-chat/commit/8c4ef45ad59833a7f32ea713628cb35c3ea8db82))
+* Make periodic subsession surfacing durable instead of memory-based (20260821T095543Z-make-periodic-subsession-surfacing-durab-c136) ([#1571](https://github.com/damien-robotsix/robotsix-chat/issues/1571)) ([a670609](https://github.com/damien-robotsix/robotsix-chat/commit/a6706095cd28ee507b9539cdec98f5e174b34d34))
+* Monitor for stalled ticket auto-closed without clear resolution (20260816T204146Z-monitor-for-stalled-ticket-auto-closed-w-d453) ([#1535](https://github.com/damien-robotsix/robotsix-chat/issues/1535)) ([9913874](https://github.com/damien-robotsix/robotsix-chat/commit/99138740fd6809e66c2e1927019143f6b2cd3960))
+* Monitor should verify CI re-run after a push before reporting status (20260820T230218Z-monitor-should-verify-ci-re-run-after-a-3e18) ([#1565](https://github.com/damien-robotsix/robotsix-chat/issues/1565)) ([f131f7a](https://github.com/damien-robotsix/robotsix-chat/commit/f131f7aacf5fbcbe726c5d1861465d258c525a8f))
+* Operator decision chats repeatedly fail on transient SDK errors, delaying blocker resolution (20260802T101143Z-operator-decision-chats-repeatedly-fail-0403) ([#1523](https://github.com/damien-robotsix/robotsix-chat/issues/1523)) ([0b1a116](https://github.com/damien-robotsix/robotsix-chat/commit/0b1a116af590f2635b722ef5d9c2638fa9e3ae0e))
+* Persist autonomous-session last-run timestamps so restarts don't re-trigger every preset (20260816T160155Z-persist-autonomous-session-last-run-time-0e97) ([#1515](https://github.com/damien-robotsix/robotsix-chat/issues/1515)) ([cf58725](https://github.com/damien-robotsix/robotsix-chat/commit/cf587257d56ffaea315db3d67013bf91bccc9deb))
+* **ticket-poll:** send one ingest object from file_ticket, not a list ([#1559](https://github.com/damien-robotsix/robotsix-chat/issues/1559)) ([56e0f60](https://github.com/damien-robotsix/robotsix-chat/commit/56e0f605803069451fdaa0d490fc5a15585e86e0))
+
+
+### Documentation
+
+* completeness_check scan: 2 findings (2026-08-16) (20260816T151211Z-completeness-check-scan-2-findings-2026-b2c2) ([#1527](https://github.com/damien-robotsix/robotsix-chat/issues/1527)) ([a712b55](https://github.com/damien-robotsix/robotsix-chat/commit/a712b55745c83151119b3245e29830b440b3409d))
+
 ## [0.18.1](https://github.com/damien-robotsix/robotsix-chat/compare/v0.18.0...v0.18.1) (2026-08-17)
 
 
