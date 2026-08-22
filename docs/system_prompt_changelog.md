@@ -2635,6 +2635,26 @@ autonomous settings at their pydantic field defaults
 ``stale_monitor_runs_before_completion=3``,
 ``queue_tolerance_runs_before_escalation=3``).
 
+## AUTONOMOUS v30 — 2026-08-21 — 20260821T095543Z-make-periodic-subsession-surfacing-durab-c136
+
+**Summary:** Harden the "already reported it" anti-duplication rule in the
+HUMAN-REVIEW PAUSE COMPLIANCE section: scope "once you have already reported
+it" to "in this conversation" so the agent checks the visible transcript
+rather than relying on a memory that may not exist across session boundaries
+or compactions.  This closes a confabulation vector where a stateless agent
+(periodic subsession) was told "do not re-report a ticket you already
+surfaced," had no prior run memory, and invented a prior surfacing to
+satisfy the rule, resulting in false claims like "already surfaced and
+awaiting your decision."
+
+**Rationale:** Session efd5ee4aabc84c9aaac4ad0f5ad00716 — an MR-approval
+periodic monitor reported "already surfaced and awaiting your decision" with
+no prior surfacing on record.  The monitor was stateless but its prompt
+instructions required it to track whether it had already reported a finding —
+the agent filled the gap with confabulation.
+
+**SHA256:** `346d396d224db452cb8d87103f52f2edaeb730250a7072cbccceb0d3b6b5f584`
+
 ## AUTONOMOUS v29 — 2026-08-17 — fix-autonomous-sessions-config-restart-guidance-b6e0
 
 **Summary:** Correct the OPERATOR CONFIGURATION GUIDANCE block inside
