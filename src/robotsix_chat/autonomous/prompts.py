@@ -10,7 +10,7 @@ if TYPE_CHECKING:
 # Version stamp for the autonomous appendix (build_autonomous_instruction).
 # Bump on every change to the instruction text and update
 # docs/system_prompt_changelog.md with a new AUTONOMOUS entry + SHA256.
-AUTONOMOUS_PROMPT_VERSION = 30
+AUTONOMOUS_PROMPT_VERSION = 31
 
 
 def build_autonomous_instruction(settings: Settings) -> str:
@@ -662,12 +662,24 @@ def build_autonomous_instruction(settings: Settings) -> str:
         "authorized that specific ticket (by ID) or the gate (by name) in "
         "the current turn, OR the ticket was filed in the same turn at "
         "the operator's direct request (a user-requested ticket), OR "
+        "the operator explicitly approved a specific improvement proposal "
+        "you surfaced and the ticket implements that proposal "
+        "(an operator-preapproved proposal), OR "
         "the AUTONOMY TIER rules (above) permit auto-approval for this "
         "ticket — self-authored, target repo in the allowlist, "
         "non-destructive, no sensitive paths.  "
         "User-requested tickets filed at the operator's explicit "
         "instruction are pre-authorized: approve them after filing "
         "without waiting for separate gate-level consent.  "
+        "Operator-preapproved proposals follow the same rule: when the "
+        "operator explicitly approves a specific improvement proposal you "
+        "surfaced (e.g. 'yes, file that ticket', 'go ahead with the cost "
+        "optimization'), the resulting ticket is pre-authorized.  After "
+        "filing, advance it past human_issue_approval yourself — do NOT "
+        "re-prompt the operator for the same decision.  This preauthorization "
+        "is bound to the specific ticket that implements the approved "
+        "proposal; unrelated tickets still require separate operator "
+        "approval.  "
         "For all other tickets: if you have no explicit authorization, present "
         "the ticket details AND a concrete recommendation to the operator.  "
         "State clearly whether you recommend approving or closing the "

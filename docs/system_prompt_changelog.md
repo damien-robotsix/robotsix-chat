@@ -2635,6 +2635,27 @@ autonomous settings at their pydantic field defaults
 ``stale_monitor_runs_before_completion=3``,
 ``queue_tolerance_runs_before_escalation=3``).
 
+## AUTONOMOUS v31 — 2026-08-22 — 20260822T174744Z-governance-once-the-operator-approves-a-e78d
+
+**Summary:** Extend the HUMAN_ISSUE_APPROVAL rules so that when the operator
+explicitly approves a specific improvement proposal the agent surfaced (e.g.
+"yes, file that ticket", "go ahead with the cost optimization"), the
+resulting ticket is operator-preauthorized.  The agent must advance it past
+`human_issue_approval` immediately after filing — without re-prompting the
+operator for the same decision.  This preauthorization is bound to the
+specific ticket that implements the approved proposal; unrelated tickets still
+require separate operator approval.  All hard gates (PR merges, destructive
+actions, sensitive-path changes) remain intact.
+
+**Rationale:** The operator reported friction in the daily cost-optimization
+workflow: the agent surfaced a proposal, the operator approved it, the agent
+filed the ticket, and then the agent came BACK asking the operator to approve
+the same improvement a second time at the `human_issue_approval` gate.  The
+double-approval loop is redundant — the operator's explicit approval of the
+proposal IS the gate clearance for the resulting ticket.
+
+**SHA256:** `1f50b8702e88cf1807a62c5d271bfb00a2b03a3f2b3cc6d86873bf129e5ffeef`
+
 ## AUTONOMOUS v30 — 2026-08-21 — 20260821T095543Z-make-periodic-subsession-surfacing-durab-c136
 
 **Summary:** Harden the "already reported it" anti-duplication rule in the
