@@ -73,10 +73,10 @@ def test_build_direct_repo_tools_disabled() -> None:
     assert build_direct_repo_tools(DirectRepoSettings(enabled=False)) == []
 
 
-def test_build_direct_repo_tools_returns_nineteen_tools() -> None:
-    """Verify that enabled direct_repo returns the nineteen expected tools."""
+def test_build_direct_repo_tools_returns_twenty_tools() -> None:
+    """Verify that enabled direct_repo returns the twenty expected tools."""
     tools = build_direct_repo_tools(_settings())
-    assert len(tools) == 19
+    assert len(tools) == 20
     names = [t.__name__ for t in tools]
     assert "push_direct_repo_branch" in names
     assert "open_direct_repo_pr" in names
@@ -96,6 +96,7 @@ def test_build_direct_repo_tools_returns_nineteen_tools() -> None:
     assert "reset_implement_spawn_counter" in names
     assert "apply_patch_to_file" in names
     assert "push_patch_to_pr_branch" in names
+    assert "resolve_pr_conflict" in names
     assert "inspect_github_installation_token" in names
 
 
@@ -306,12 +307,14 @@ async def test_open_pr_allows_blocked_ticket(
 
 
 def test_merge_methods_exist_on_client() -> None:
-    """Verify that DirectRepoClient exposes merge_pr and arm_auto_merge."""
+    """DirectRepoClient exposes merge_pr, arm_auto_merge, resolve_pr_conflict."""
     client = DirectRepoClient(_settings())
     assert hasattr(client, "merge_pr")
     assert hasattr(client, "arm_auto_merge")
+    assert hasattr(client, "resolve_pr_conflict")
     assert callable(client.merge_pr)
     assert callable(client.arm_auto_merge)
+    assert callable(client.resolve_pr_conflict)
 
 
 def test_merge_tools_returned() -> None:
@@ -340,6 +343,7 @@ def test_merge_tools_returned() -> None:
         "recover_auto_merge",
         "rerun_ci_workflow",
         "reset_implement_spawn_counter",
+        "resolve_pr_conflict",
         "update_pr_branch",
         "verify_pr_ci_status",
     ]
@@ -2714,7 +2718,7 @@ def test_direct_fix_available_when_enabled() -> None:
     tools = build_direct_repo_tools(_settings(direct_fix_enabled=True))
     names = [t.__name__ for t in tools]
     assert "direct_fix" in names
-    assert len(tools) == 21  # 19 base + direct_fix + patch_direct_repo_file
+    assert len(tools) == 22  # 20 base + direct_fix + patch_direct_repo_file
 
 
 @pytest.mark.asyncio

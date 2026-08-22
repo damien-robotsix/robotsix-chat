@@ -192,6 +192,198 @@ async def test_check_pr_merge_conflict_rejects_non_blocked(
 
 
 # ---------------------------------------------------------------------------
+# resolve_pr_conflict
+# ---------------------------------------------------------------------------
+
+
+@pytest.mark.asyncio
+async def test_resolve_pr_conflict_success(
+    respx_mock: respx.MockRouter,
+) -> None:
+    """resolve_pr_conflict creates a merge commit with parents [head, base]."""
+    settings = _settings()
+    _prepopulate_installation_token(settings)
+
+    respx_mock.get("http://127.0.0.1:8077/tickets/t-resolve").mock(
+        return_value=httpx.Response(
+            200, text=json.dumps({"id": "t-resolve", "state": "blocked"})
+        )
+    )
+    respx_mock.get(
+        url__startswith="https://api.github.com/installation/repositories"
+    ).mock(
+        return_value=httpx.Response(
+            200,
+            text=json.dumps({"repositories": [{"full_name": "org/repo"}]}),
+        )
+    )
+    respx_mock.get("https://api.github.com/repos/org/repo/pulls/17").mock(
+        return_value=httpx.Response(
+            200,
+            text=json.dumps(
+                {
+                    "title": "Fix the thing",
+                    "state": "open",
+                    "mergeable": False,
+                    "mergeable_state": "dirty",
+                    "head": {
+                        "ref": "feature/t-resolve",
+                        "repo": {"full_name": "org/repo"},
+                    },
+                    "base": {"ref": "main"},
+                }
+            ),
+        )
+    )
+    respx_mock.get(
+        "https://api.github.com/repos/org/repo/git/ref/heads/feature/t-resolve"
+    ).mock(
+        return_value=httpx.Response(
+            200, text=json.dumps({"object": {"sha": "head_sha"}})
+        )
+    )
+    respx_mock.get("https://api.github.com/repos/org/repo/git/ref/heads/main").mock(
+        return_value=httpx.Response(
+            200, text=json.dumps({"object": {"sha": "base_sha"}})
+        )
+    )
+    respx_mock.get("https://api.github.com/repos/org/repo/git/commits/head_sha").mock(
+        return_value=httpx.Response(
+            200, text=json.dumps({"tree": {"sha": "head_tree_sha"}})
+        )
+    )
+    respx_mock.post("https://api.github.com/repos/org/repo/git/blobs").mock(
+        return_value=httpx.Response(201, text=json.dumps({"sha": "blob_sha"}))
+    )
+    respx_mock.post("https://api.github.com/repos/org/repo/git/trees").mock(
+        return_value=httpx.Response(201, text=json.dumps({"sha": "merged_tree_sha"}))
+    )
+    commits_route = respx_mock.post(
+        "https://api.github.com/repos/org/repo/git/commits"
+    ).mock(
+        return_value=httpx.Response(201, text=json.dumps({"sha": "merge_commit_sha"}))
+    )
+    respx_mock.patch(
+        "https://api.github.com/repos/org/repo/git/refs/heads/feature/t-resolve"
+    ).mock(return_value=httpx.Response(200, text=json.dumps({"ok": True})))
+
+    tools = build_direct_repo_tools(settings)
+    fn = [t for t in tools if t.__name__ == "resolve_pr_conflict"][0]
+
+    out = await fn(
+        ticket_id="t-resolve",
+        repo_full_name="org/repo",
+        pr_number=17,
+        resolved_files_json=json.dumps(
+            [{"path": "src/x.py", "content": "merged content"}]
+        ),
+    )
+    assert "resolved" in out.lower()
+    assert "merge_commit_sha" in out
+
+    commit_body = json.loads(commits_route.calls[0].request.content)
+    assert commit_body["parents"] == ["head_sha", "base_sha"]
+    assert commit_body["tree"] == "merged_tree_sha"
+    assert "t-resolve" in commit_body["message"]
+    assert "#17" in commit_body["message"]
+
+
+@pytest.mark.asyncio
+async def test_resolve_pr_conflict_rejects_non_blocked(
+    respx_mock: respx.MockRouter,
+) -> None:
+    """BLOCKED guard applies to resolve_pr_conflict."""
+    respx_mock.get(
+        url__startswith="https://api.github.com/installation/repositories"
+    ).mock(
+        return_value=httpx.Response(
+            200,
+            text=json.dumps({"repositories": [{"full_name": "org/repo"}]}),
+        )
+    )
+    respx_mock.get("http://127.0.0.1:8077/tickets/t-nb3").mock(
+        return_value=httpx.Response(
+            200, text=json.dumps({"id": "t-nb3", "state": "ready"})
+        )
+    )
+
+    tools = build_direct_repo_tools(_settings())
+    fn = [t for t in tools if t.__name__ == "resolve_pr_conflict"][0]
+
+    out = await fn(
+        ticket_id="t-nb3",
+        repo_full_name="org/repo",
+        pr_number=1,
+        resolved_files_json="[]",
+    )
+    assert "Refused" in out
+    assert "BLOCKED" in out
+
+
+@pytest.mark.asyncio
+async def test_resolve_pr_conflict_rejects_invalid_json(
+    respx_mock: respx.MockRouter,
+) -> None:
+    """Malformed resolved_files_json → descriptive error."""
+    respx_mock.get(
+        url__startswith="https://api.github.com/installation/repositories"
+    ).mock(
+        return_value=httpx.Response(
+            200,
+            text=json.dumps({"repositories": [{"full_name": "org/repo"}]}),
+        )
+    )
+    respx_mock.get("http://127.0.0.1:8077/tickets/t-badjson").mock(
+        return_value=httpx.Response(
+            200, text=json.dumps({"id": "t-badjson", "state": "blocked"})
+        )
+    )
+
+    tools = build_direct_repo_tools(_settings())
+    fn = [t for t in tools if t.__name__ == "resolve_pr_conflict"][0]
+
+    out = await fn(
+        ticket_id="t-badjson",
+        repo_full_name="org/repo",
+        pr_number=1,
+        resolved_files_json="{not json",
+    )
+    assert "resolved_files_json" in out
+    assert "JSON" in out
+
+
+@pytest.mark.asyncio
+async def test_resolve_pr_conflict_rejects_entry_without_path(
+    respx_mock: respx.MockRouter,
+) -> None:
+    """A resolved-files entry lacking 'path' → descriptive error."""
+    respx_mock.get(
+        url__startswith="https://api.github.com/installation/repositories"
+    ).mock(
+        return_value=httpx.Response(
+            200,
+            text=json.dumps({"repositories": [{"full_name": "org/repo"}]}),
+        )
+    )
+    respx_mock.get("http://127.0.0.1:8077/tickets/t-nopath").mock(
+        return_value=httpx.Response(
+            200, text=json.dumps({"id": "t-nopath", "state": "blocked"})
+        )
+    )
+
+    tools = build_direct_repo_tools(_settings())
+    fn = [t for t in tools if t.__name__ == "resolve_pr_conflict"][0]
+
+    out = await fn(
+        ticket_id="t-nopath",
+        repo_full_name="org/repo",
+        pr_number=1,
+        resolved_files_json=json.dumps([{"content": "no path"}]),
+    )
+    assert "path" in out
+
+
+# ---------------------------------------------------------------------------
 # merge_direct_repo_pr
 # ---------------------------------------------------------------------------
 

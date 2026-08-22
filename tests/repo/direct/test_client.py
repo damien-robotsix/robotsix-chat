@@ -1806,3 +1806,341 @@ async def test_get_installation_token_diagnostics_mint_error(
     client = DirectRepoClient(_settings())
     with pytest.raises(RuntimeError, match="Failed to mint a fresh"):
         await client.get_installation_token_diagnostics("org/repo")
+
+
+# ============================================================================
+# DirectRepoClient — resolve_pr_conflict
+# ============================================================================
+
+
+def _conflict_pr_json(**overrides: object) -> dict:
+    """Build the PR JSON used by resolve_pr_conflict tests."""
+    data: dict = {
+        "title": "Fix the thing",
+        "state": "open",
+        "mergeable": False,
+        "mergeable_state": "dirty",
+        "merged": False,
+        "head": {
+            "ref": "feature/x",
+            "repo": {"full_name": "org/repo"},
+        },
+        "base": {"ref": "main"},
+    }
+    data.update(overrides)
+    return data
+
+
+@pytest.mark.asyncio
+async def test_resolve_pr_conflict_creates_merge_commit(
+    respx_mock: respx.MockRouter,
+) -> None:
+    """resolve_pr_conflict builds a two-parent merge commit and updates head."""
+    from tests.repo.direct.conftest import _prepopulate_installation_token, _settings
+
+    s = _settings()
+    _prepopulate_installation_token(s)
+    client = DirectRepoClient(s)
+
+    respx_mock.get("https://api.github.com/repos/org/repo/pulls/42").mock(
+        side_effect=[
+            httpx.Response(200, text=json.dumps(_conflict_pr_json())),
+            httpx.Response(
+                200,
+                text=json.dumps(
+                    _conflict_pr_json(mergeable=True, mergeable_state="clean")
+                ),
+            ),
+        ]
+    )
+    respx_mock.get(
+        "https://api.github.com/repos/org/repo/git/ref/heads/feature/x"
+    ).mock(
+        return_value=httpx.Response(
+            200, text=json.dumps({"object": {"sha": "head_sha"}})
+        )
+    )
+    respx_mock.get("https://api.github.com/repos/org/repo/git/ref/heads/main").mock(
+        return_value=httpx.Response(
+            200, text=json.dumps({"object": {"sha": "base_sha"}})
+        )
+    )
+    respx_mock.get("https://api.github.com/repos/org/repo/git/commits/head_sha").mock(
+        return_value=httpx.Response(
+            200, text=json.dumps({"tree": {"sha": "head_tree_sha"}})
+        )
+    )
+    respx_mock.post("https://api.github.com/repos/org/repo/git/blobs").mock(
+        return_value=httpx.Response(201, text=json.dumps({"sha": "blob_sha"}))
+    )
+    trees_route = respx_mock.post(
+        "https://api.github.com/repos/org/repo/git/trees"
+    ).mock(
+        return_value=httpx.Response(201, text=json.dumps({"sha": "merged_tree_sha"}))
+    )
+    commits_route = respx_mock.post(
+        "https://api.github.com/repos/org/repo/git/commits"
+    ).mock(
+        return_value=httpx.Response(201, text=json.dumps({"sha": "merge_commit_sha"}))
+    )
+    refs_route = respx_mock.patch(
+        "https://api.github.com/repos/org/repo/git/refs/heads/feature/x"
+    ).mock(return_value=httpx.Response(200, text=json.dumps({"ok": True})))
+
+    result = await client.resolve_pr_conflict(
+        repo_full_name="org/repo",
+        pr_number=42,
+        resolved_files=[{"path": "src/x.py", "content": "resolved content"}],
+        commit_message="merge: resolve conflicts",
+    )
+    assert "resolved" in result
+    assert "42" in result
+    assert "merge_commit_sha" in result
+    assert "Re-checked mergeable: clean" in result
+
+    # The tree overlays the resolved blob onto the head tree.
+    tree_body = json.loads(trees_route.calls[0].request.content)
+    assert tree_body["base_tree"] == "head_tree_sha"
+    assert tree_body["tree"] == [
+        {
+            "path": "src/x.py",
+            "mode": "100644",
+            "type": "blob",
+            "sha": "blob_sha",
+        }
+    ]
+
+    # The commit has parents [head SHA, base SHA] — base becomes an ancestor.
+    commit_body = json.loads(commits_route.calls[0].request.content)
+    assert commit_body["parents"] == ["head_sha", "base_sha"]
+    assert commit_body["tree"] == "merged_tree_sha"
+    assert commit_body["message"] == "merge: resolve conflicts"
+
+    # The head ref is fast-forwarded (force=False) to the merge commit.
+    ref_body = json.loads(refs_route.calls[0].request.content)
+    assert ref_body == {"sha": "merge_commit_sha", "force": False}
+
+
+@pytest.mark.asyncio
+async def test_resolve_pr_conflict_ref_update_rejected(
+    respx_mock: respx.MockRouter,
+) -> None:
+    """Ref update returns 422 → error message, no force push."""
+    from tests.repo.direct.conftest import _prepopulate_installation_token, _settings
+
+    s = _settings()
+    _prepopulate_installation_token(s)
+    client = DirectRepoClient(s)
+
+    respx_mock.get("https://api.github.com/repos/org/repo/pulls/42").mock(
+        return_value=httpx.Response(200, text=json.dumps(_conflict_pr_json()))
+    )
+    respx_mock.get(
+        "https://api.github.com/repos/org/repo/git/ref/heads/feature/x"
+    ).mock(
+        return_value=httpx.Response(
+            200, text=json.dumps({"object": {"sha": "head_sha"}})
+        )
+    )
+    respx_mock.get("https://api.github.com/repos/org/repo/git/ref/heads/main").mock(
+        return_value=httpx.Response(
+            200, text=json.dumps({"object": {"sha": "base_sha"}})
+        )
+    )
+    respx_mock.get("https://api.github.com/repos/org/repo/git/commits/head_sha").mock(
+        return_value=httpx.Response(
+            200, text=json.dumps({"tree": {"sha": "head_tree_sha"}})
+        )
+    )
+    respx_mock.post("https://api.github.com/repos/org/repo/git/blobs").mock(
+        return_value=httpx.Response(201, text=json.dumps({"sha": "blob_sha"}))
+    )
+    respx_mock.post("https://api.github.com/repos/org/repo/git/trees").mock(
+        return_value=httpx.Response(201, text=json.dumps({"sha": "merged_tree_sha"}))
+    )
+    respx_mock.post("https://api.github.com/repos/org/repo/git/commits").mock(
+        return_value=httpx.Response(201, text=json.dumps({"sha": "merge_commit_sha"}))
+    )
+    # The ref update is rejected (e.g. another commit landed on head in between).
+    refs_route = respx_mock.patch(
+        "https://api.github.com/repos/org/repo/git/refs/heads/feature/x"
+    ).mock(
+        return_value=httpx.Response(
+            422,
+            text=json.dumps(
+                {
+                    "message": "Update is not a fast-forward",
+                }
+            ),
+        )
+    )
+
+    result = await client.resolve_pr_conflict(
+        repo_full_name="org/repo",
+        pr_number=42,
+        resolved_files=[{"path": "src/x.py", "content": "resolved content"}],
+        commit_message="merge: resolve conflicts",
+    )
+    assert "Error resolving conflict" in result
+    assert "42" in result
+    assert "org/repo" in result
+
+    # Verify force was not used.
+    ref_body = json.loads(refs_route.calls[0].request.content)
+    assert ref_body["force"] is False
+
+
+@pytest.mark.asyncio
+async def test_resolve_pr_conflict_already_mergeable_noop(
+    respx_mock: respx.MockRouter,
+) -> None:
+    """mergeable=True → no-op message, no commit created."""
+    from tests.repo.direct.conftest import _prepopulate_installation_token, _settings
+
+    s = _settings()
+    _prepopulate_installation_token(s)
+    client = DirectRepoClient(s)
+
+    respx_mock.get("https://api.github.com/repos/org/repo/pulls/42").mock(
+        return_value=httpx.Response(
+            200,
+            text=json.dumps(_conflict_pr_json(mergeable=True, mergeable_state="clean")),
+        )
+    )
+
+    result = await client.resolve_pr_conflict(
+        repo_full_name="org/repo",
+        pr_number=42,
+        resolved_files=[],
+        commit_message="x",
+    )
+    assert "no merge conflict" in result
+    assert "nothing to resolve" in result
+
+
+@pytest.mark.asyncio
+async def test_resolve_pr_conflict_mergeability_pending(
+    respx_mock: respx.MockRouter,
+) -> None:
+    """mergeable=None → refuse until GitHub has computed mergeability."""
+    from tests.repo.direct.conftest import _prepopulate_installation_token, _settings
+
+    s = _settings()
+    _prepopulate_installation_token(s)
+    client = DirectRepoClient(s)
+
+    respx_mock.get("https://api.github.com/repos/org/repo/pulls/42").mock(
+        return_value=httpx.Response(
+            200,
+            text=json.dumps(
+                _conflict_pr_json(mergeable=None, mergeable_state="unknown")
+            ),
+        )
+    )
+
+    result = await client.resolve_pr_conflict(
+        repo_full_name="org/repo",
+        pr_number=42,
+        resolved_files=[],
+        commit_message="x",
+    )
+    assert "still being computed" in result
+
+
+@pytest.mark.asyncio
+async def test_resolve_pr_conflict_non_open_pr_refused(
+    respx_mock: respx.MockRouter,
+) -> None:
+    """Closed PR → refused with a descriptive message."""
+    from tests.repo.direct.conftest import _prepopulate_installation_token, _settings
+
+    s = _settings()
+    _prepopulate_installation_token(s)
+    client = DirectRepoClient(s)
+
+    respx_mock.get("https://api.github.com/repos/org/repo/pulls/42").mock(
+        return_value=httpx.Response(
+            200, text=json.dumps(_conflict_pr_json(state="closed"))
+        )
+    )
+
+    result = await client.resolve_pr_conflict(
+        repo_full_name="org/repo",
+        pr_number=42,
+        resolved_files=[],
+        commit_message="x",
+    )
+    assert "not open" in result
+
+
+@pytest.mark.asyncio
+async def test_resolve_pr_conflict_cross_repo_head_refused(
+    respx_mock: respx.MockRouter,
+) -> None:
+    """Head branch on a fork → cross-repo resolution refused."""
+    from tests.repo.direct.conftest import _prepopulate_installation_token, _settings
+
+    s = _settings()
+    _prepopulate_installation_token(s)
+    client = DirectRepoClient(s)
+
+    respx_mock.get("https://api.github.com/repos/org/repo/pulls/42").mock(
+        return_value=httpx.Response(
+            200,
+            text=json.dumps(
+                _conflict_pr_json(
+                    head={"ref": "feature/x", "repo": {"full_name": "fork/repo"}}
+                )
+            ),
+        )
+    )
+
+    result = await client.resolve_pr_conflict(
+        repo_full_name="org/repo",
+        pr_number=42,
+        resolved_files=[],
+        commit_message="x",
+    )
+    assert "Cross-repo" in result
+
+
+@pytest.mark.asyncio
+async def test_resolve_pr_conflict_missing_path_in_files(
+    respx_mock: respx.MockRouter,
+) -> None:
+    """A resolved file entry without a path → error message."""
+    from tests.repo.direct.conftest import _prepopulate_installation_token, _settings
+
+    s = _settings()
+    _prepopulate_installation_token(s)
+    client = DirectRepoClient(s)
+
+    respx_mock.get("https://api.github.com/repos/org/repo/pulls/42").mock(
+        return_value=httpx.Response(200, text=json.dumps(_conflict_pr_json()))
+    )
+    respx_mock.get(
+        "https://api.github.com/repos/org/repo/git/ref/heads/feature/x"
+    ).mock(
+        return_value=httpx.Response(
+            200, text=json.dumps({"object": {"sha": "head_sha"}})
+        )
+    )
+    respx_mock.get("https://api.github.com/repos/org/repo/git/ref/heads/main").mock(
+        return_value=httpx.Response(
+            200, text=json.dumps({"object": {"sha": "base_sha"}})
+        )
+    )
+    respx_mock.get("https://api.github.com/repos/org/repo/git/commits/head_sha").mock(
+        return_value=httpx.Response(
+            200, text=json.dumps({"tree": {"sha": "head_tree_sha"}})
+        )
+    )
+
+    result = await client.resolve_pr_conflict(
+        repo_full_name="org/repo",
+        pr_number=42,
+        resolved_files=[{"content": "no path here"}],
+        commit_message="x",
+    )
+    assert "Error resolving conflict" in result
+    assert "'path'" in result

@@ -301,14 +301,15 @@ class DirectRepoClient:
 
     # -- shared git helpers ------------------------------------------------
 
-    async def _git_push_files(
+    async def _git_create_tree_items(
         self,
         repo_full_name: str,
-        base_sha: str,
         files: list[dict[str, str]],
-        commit_message: str,
-    ) -> str:
-        """Create blobs, tree, and commit on *repo_full_name*; return the commit SHA.
+    ) -> list[dict[str, Any]]:
+        """Create a blob for each entry in *files*; return create-tree items.
+
+        Normalizes changelog-fragment trailing newlines and validates that
+        every entry carries a ``path`` field (before any blob is uploaded).
 
         Raises ValueError if any file entry is missing a ``path`` field.
         Raises RuntimeError on GitHub API failures.
@@ -322,7 +323,6 @@ class DirectRepoClient:
             ):
                 f["content"] = f["content"] + "\n"
 
-        # 1. Create a blob for each file
         tree_items: list[dict[str, Any]] = []
         for f in files:
             path = f.get("path", "")
@@ -344,16 +344,56 @@ class DirectRepoClient:
                     "sha": blob_data["sha"],
                 }
             )
+        return tree_items
 
-        # 2. Create a tree from the blobs, based on the base tree
-        base_commit = await self._get_json(
-            f"/repos/{repo_full_name}/git/commits/{base_sha}"
-        )
-        base_tree_sha = base_commit["tree"]["sha"]
+    async def _git_create_tree(
+        self,
+        repo_full_name: str,
+        base_tree_sha: str,
+        files: list[dict[str, str]],
+    ) -> str:
+        """Create blobs for *files* and a tree based on *base_tree_sha*; return its SHA.
+
+        Each entry in *files* is ``{"path": ..., "content": ...}``; the blob
+        contents are overlaid onto *base_tree_sha* — paths not present in
+        *files* keep their content from the base tree.
+
+        Raises ValueError if any file entry is missing a ``path`` field.
+        Raises RuntimeError on GitHub API failures.
+        """
+        tree_items = await self._git_create_tree_items(repo_full_name, files)
         tree_data = await self._post_json(
             f"/repos/{repo_full_name}/git/trees",
             {
                 "base_tree": base_tree_sha,
+                "tree": tree_items,
+            },
+        )
+        return str(tree_data["sha"])
+
+    async def _git_push_files(
+        self,
+        repo_full_name: str,
+        base_sha: str,
+        files: list[dict[str, str]],
+        commit_message: str,
+    ) -> str:
+        """Create blobs, tree, and commit on *repo_full_name*; return the commit SHA.
+
+        Raises ValueError if any file entry is missing a ``path`` field.
+        Raises RuntimeError on GitHub API failures.
+        """
+        # 1. Create a blob for each file (validates paths first)
+        tree_items = await self._git_create_tree_items(repo_full_name, files)
+
+        # 2. Create a tree from the blobs, based on the base commit's tree
+        base_commit = await self._get_json(
+            f"/repos/{repo_full_name}/git/commits/{base_sha}"
+        )
+        tree_data = await self._post_json(
+            f"/repos/{repo_full_name}/git/trees",
+            {
+                "base_tree": base_commit["tree"]["sha"],
                 "tree": tree_items,
             },
         )
@@ -687,6 +727,170 @@ class DirectRepoClient:
             return f"Error updating PR branch: {result.error or 'unknown error'}"
         except Exception as exc:
             return f"Error updating PR branch: {exc}"
+
+    async def resolve_pr_conflict(
+        self,
+        *,
+        repo_full_name: str,
+        pr_number: int,
+        resolved_files: list[dict[str, str]],
+        commit_message: str,
+    ) -> str:
+        """Resolve a PR's merge conflict by creating a merge commit on the head branch.
+
+        Pushing an ordinary commit to the head branch does NOT clear a
+        base↔head conflict — the base branch is still not an ancestor of the
+        head.  This method clears the conflict by creating a **merge commit**
+        on the PR's head branch whose parents are ``[head SHA, base SHA]``.
+        Once base is an ancestor of head, GitHub recomputes the PR as
+        mergeable.
+
+        The merge commit's tree is the head commit's tree with the contents
+        of *resolved_files* overlaid on top (``{"path": ..., "content": ...}``
+        entries).  Conflicted paths SHOULD appear in *resolved_files* with
+        their merged content; paths that are not listed keep their head-branch
+        content, so an empty *resolved_files* list resolves every conflict in
+        favour of the head branch.
+
+        Steps: fetch PR → read head/base refs → overlay resolved blobs on the
+        head tree → create the two-parent commit → fast-forward the head ref.
+
+        Never raises — returns a success/error message string.
+        """
+        try:
+            # 1. Fetch the PR and validate its state.
+            pr = await self.get_pr(repo_full_name=repo_full_name, pr_number=pr_number)
+        except RuntimeError as exc:
+            return (
+                f"Error resolving conflict on PR #{pr_number} in "
+                f"{repo_full_name}: {exc}"
+            )
+
+        state = pr.get("state", "unknown")
+        if state != "open":
+            return (
+                f"PR #{pr_number} in {repo_full_name} is {state}, not open — "
+                f"conflict resolution only applies to open PRs."
+            )
+
+        # Refuse to act while GitHub is still computing mergeability; only
+        # proceed when the PR is known to be in conflict.
+        mergeable = pr.get("mergeable")
+        if mergeable is True:
+            return (
+                f"PR #{pr_number} in {repo_full_name} has no merge conflict "
+                f"(mergeable_state={pr.get('mergeable_state', 'unknown')}) — "
+                f"nothing to resolve."
+            )
+        if mergeable is None:
+            return (
+                f"Cannot resolve conflicts on PR #{pr_number} in "
+                f"{repo_full_name} yet: mergeability is still being computed "
+                f"by GitHub.  Wait a few seconds and try again."
+            )
+
+        head_info = pr.get("head", {})
+        head_branch = head_info.get("ref")
+        head_repo = head_info.get("repo", {})
+        head_repo_full_name = head_repo.get("full_name")
+        base_info = pr.get("base", {})
+        base_branch = base_info.get("ref")
+
+        if not head_branch:
+            return (
+                f"Error: PR #{pr_number} in {repo_full_name} has no head "
+                f"branch — cannot determine where to create the merge commit."
+            )
+        if head_repo_full_name and head_repo_full_name != repo_full_name:
+            return (
+                f"Refused: PR #{pr_number} head branch '{head_branch}' belongs "
+                f"to '{head_repo_full_name}', not '{repo_full_name}'. "
+                f"Cross-repo PR conflict resolution is not permitted."
+            )
+        if not base_branch:
+            return (
+                f"Error: PR #{pr_number} in {repo_full_name} has no base "
+                f"branch — cannot determine the second merge parent."
+            )
+
+        try:
+            # 2. Resolve head and base branch tip SHAs.
+            head_ref = await self._get_json(
+                f"/repos/{repo_full_name}/git/ref/heads/{head_branch}"
+            )
+            base_ref = await self._get_json(
+                f"/repos/{repo_full_name}/git/ref/heads/{base_branch}"
+            )
+            head_sha: str = head_ref["object"]["sha"]
+            base_sha: str = base_ref["object"]["sha"]
+        except (KeyError, TypeError, RuntimeError) as exc:
+            return (
+                f"Error resolving conflict on PR #{pr_number} in "
+                f"{repo_full_name}: could not read head/base branch SHAs: {exc}"
+            )
+
+        try:
+            # 3. Overlay the resolved files on the head commit's tree.
+            head_commit = await self._get_json(
+                f"/repos/{repo_full_name}/git/commits/{head_sha}"
+            )
+            merged_tree_sha = await self._git_create_tree(
+                repo_full_name, head_commit["tree"]["sha"], resolved_files
+            )
+
+            # 4. Create the merge commit: parents = [head SHA, base SHA].
+            #    This makes base an ancestor of head, clearing the conflict.
+            msg = commit_message or (
+                f"merge: resolve conflicts between '{base_branch}' and "
+                f"'{head_branch}' (PR #{pr_number})"
+            )
+            commit_data = await self._post_json(
+                f"/repos/{repo_full_name}/git/commits",
+                {
+                    "message": msg,
+                    "tree": merged_tree_sha,
+                    "parents": [head_sha, base_sha],
+                },
+            )
+            merge_commit_sha = str(commit_data["sha"])
+
+            # 5. Fast-forward the head branch ref to the merge commit.  The
+            #    merge commit descends from the current head, so the update
+            #    is a fast-forward unless somebody else pushed in between.
+            await self._patch_json(
+                f"/repos/{repo_full_name}/git/refs/heads/{head_branch}",
+                {
+                    "sha": merge_commit_sha,
+                    "force": False,
+                },
+            )
+        except (KeyError, TypeError, ValueError, RuntimeError) as exc:
+            return (
+                f"Error resolving conflict on PR #{pr_number} in "
+                f"{repo_full_name}: {exc}"
+            )
+
+        # 6. Re-check mergeability after the ref update so the returned
+        #    string carries factual state, not a prediction.
+        recheck = await self.get_pr(repo_full_name=repo_full_name, pr_number=pr_number)
+        recheck_mergeable = recheck.get("mergeable")
+        recheck_state = recheck.get("mergeable_state", "unknown")
+        mergeable_label = (
+            "clean"
+            if recheck_mergeable is True
+            else "still computing"
+            if recheck_mergeable is None
+            else "still conflicting"
+        )
+
+        return (
+            f"Merge conflict on PR #{pr_number} in {repo_full_name} resolved.\n"
+            f"Created merge commit {merge_commit_sha} on '{head_branch}' with "
+            f"parents [head {head_sha[:7]}, base {base_sha[:7]}] — the base "
+            f"branch '{base_branch}' is now an ancestor of the head branch.\n"
+            f"Re-checked mergeable: {mergeable_label} "
+            f"(mergeable_state={recheck_state})."
+        )
 
     async def get_pr(
         self,
