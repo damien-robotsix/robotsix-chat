@@ -3010,6 +3010,153 @@ async def test_periodic_transient_error_transcript_recorded() -> None:
 
 
 # ---------------------------------------------------------------------------
+# model-tier fallback (HTTP 404)
+# ---------------------------------------------------------------------------
+
+
+class _FakeModelTier404Error(Exception):
+    """An exception that looks like a model-tier 404 to `_is_model_tier_not_found`."""
+
+    def __init__(self, message: str = "model not found") -> None:
+        super().__init__(message)
+        self.status_code = 404
+
+
+@pytest.mark.asyncio
+async def test_periodic_model_tier_404_falls_back_to_lower_level() -> None:
+    """A periodic subsession at level 2 that hits a 404 falls back to level 1."""
+    error_agent = FakeAgent(error=_FakeModelTier404Error())
+    fallback_agent = FakeAgent(["monitor result ok"])
+    factory = CapturingAgentFactory(error_agent, fallback_agent)
+    env = build_env(
+        agent_factory=factory,
+        settings=make_settings(llmio_api_key="test-key"),
+    )
+
+    sub_id = _spawn(
+        env,
+        kind=SubsessionKind.PERIODIC,
+        model_level=2,
+        interval_seconds=0.02,
+    )
+    # The fallback worker skips the already-executed run 1 and goes to
+    # sleep, so _await_worker will time out — that's expected.
+    with pytest.raises(asyncio.TimeoutError):
+        await _await_worker(env, sub_id, timeout=0.5)
+
+    # Verify the factory was called twice: first at level 2, then at level 1.
+    assert len(factory.captured) >= 2
+    assert factory.captured[0]["model_level"] == 2
+    assert factory.captured[1]["model_level"] == 1
+
+    # The subsession should still be alive (not failed).
+    info = env.registry.get(sub_id)
+    assert info is not None
+    assert info.status not in (SubsessionStatus.FAILED, SubsessionStatus.CLOSED)
+    assert info.model_level == 1
+
+    # The checkpoint should record the fallback.
+    cp = info.checkpoint or {}
+    assert cp.get("_tier_fallback_count") == 1
+    assert cp.get("_fallback_model_level") == 1
+
+
+@pytest.mark.asyncio
+async def test_periodic_model_tier_404_fallback_exhausted_fails() -> None:
+    """When all tier fallbacks are exhausted, the subsession fails."""
+    error_agent = FakeAgent(error=_FakeModelTier404Error())
+    factory = CapturingAgentFactory(error_agent)  # only one agent — all calls fail
+    env = build_env(
+        agent_factory=factory,
+        settings=make_settings(llmio_api_key="test-key"),
+    )
+
+    sub_id = _spawn(
+        env,
+        kind=SubsessionKind.PERIODIC,
+        model_level=2,
+        interval_seconds=0.02,
+    )
+    # The worker eventually fails after exhausting fallbacks.
+    await _await_worker(env, sub_id, timeout=3.0)
+
+    info = env.registry.get(sub_id)
+    assert info is not None
+    # After exhausting fallbacks (2→1→fail), the subsession should fail.
+    assert info.status == SubsessionStatus.FAILED
+    assert "model tier" in (info.error or "").lower()
+
+
+@pytest.mark.asyncio
+async def test_task_subsession_no_model_tier_fallback() -> None:
+    """Task subsessions do NOT fall back on model-tier 404.
+
+    They use the existing user_chat/task retry path instead.
+    """
+    env = build_env(
+        agent=FakeAgent(error=_FakeModelTier404Error()),
+        settings=make_settings(llmio_api_key="test-key"),
+    )
+
+    sub_id = _spawn(env, kind=SubsessionKind.TASK, model_level=2)
+    await _await_worker(env, sub_id)
+
+    info = env.registry.get(sub_id)
+    assert info is not None
+    # Task subsessions should fail (they don't have model-tier fallback).
+    assert info.status == SubsessionStatus.FAILED
+
+
+@pytest.mark.asyncio
+async def test_wait_for_event_model_tier_404_falls_back() -> None:
+    """A wait_for_event subsession also gets model-tier fallback."""
+    error_agent = FakeAgent(error=_FakeModelTier404Error())
+    fallback_agent = FakeAgent(["NO_CHANGE"])
+    factory = CapturingAgentFactory(error_agent, fallback_agent)
+    env = build_env(
+        agent_factory=factory,
+        settings=make_settings(llmio_api_key="test-key"),
+    )
+
+    sub_id = _spawn(
+        env,
+        kind=SubsessionKind.WAIT_FOR_EVENT,
+        model_level=3,
+        dedup_key="ticket-123",
+    )
+    # The fallback worker skips the already-executed run 1 and enters
+    # event-wait, so _await_worker will time out — that's expected.
+    with pytest.raises(asyncio.TimeoutError):
+        await _await_worker(env, sub_id, timeout=0.5)
+
+    info = env.registry.get(sub_id)
+    assert info is not None
+    # Should have fallen back to level 2.
+    assert info.model_level == 2
+    assert info.status not in (SubsessionStatus.FAILED, SubsessionStatus.CLOSED)
+
+
+@pytest.mark.asyncio
+async def test_periodic_model_tier_404_at_floor_no_fallback() -> None:
+    """When already at the fallback floor (level 1), a 404 fails immediately."""
+    env = build_env(
+        agent=FakeAgent(error=_FakeModelTier404Error()),
+        settings=make_settings(llmio_api_key="test-key"),
+    )
+
+    sub_id = _spawn(
+        env,
+        kind=SubsessionKind.PERIODIC,
+        model_level=1,
+        interval_seconds=0.02,
+    )
+    await _await_worker(env, sub_id)
+
+    info = env.registry.get(sub_id)
+    assert info is not None
+    assert info.status == SubsessionStatus.FAILED
+
+
 # wait_for_event checkpoint repair
 # ---------------------------------------------------------------------------
 

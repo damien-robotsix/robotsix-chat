@@ -72,6 +72,33 @@ _DEGENERATE_SUCCESS_SIGNATURE = "returned an error result: success"
 # The Claude CLI's wording when a tier's usage credits are exhausted.
 _USAGE_EXHAUSTED_SIGNATURE = "out of usage credits"
 
+# HTTP status used by model providers (OpenRouter, etc.) when the
+# requested model is not available at the configured price ceiling.
+# The model exists but cannot be reached through the current routing
+# — falling back to a different tier usually resolves it.
+_MODEL_TIER_NOT_FOUND_STATUS = 404
+
+#: Minimum model level a periodic monitor can fall back to before the
+#: subsession is failed permanently.  Decrementing by 1 each time, a
+#: monitor starting at level 4 will try 4→3→2→1 before giving up.
+_MODEL_LEVEL_FALLBACK_FLOOR = 1
+
+#: Maximum number of tier-fallback steps before the subsession is failed.
+#: Caps the chain 4→3→2→1 (max 3 steps).
+_MODEL_LEVEL_FALLBACK_MAX = 3
+
+
+def _is_model_tier_not_found(exc: BaseException) -> bool:
+    """Return ``True`` when *exc* indicates the requested model tier is not available.
+
+    Currently matches HTTP 404 on the exception or anywhere in its cause
+    chain — the common signature when an OpenRouter model cannot be routed
+    at the configured price ceiling.
+    """
+    from robotsix_http.retry import _status
+
+    return _status(exc) == _MODEL_TIER_NOT_FOUND_STATUS
+
 
 def _format_worker_error(exc: BaseException) -> str:
     """Translate known Claude SDK error patterns into clear human-readable messages.
@@ -105,6 +132,17 @@ def _format_worker_error(exc: BaseException) -> str:
             "The Claude agent's usage credits for this tier are exhausted. "
             "Switch to a different model level, or wait for credits to "
             "reset. " + msg
+        )
+
+    # Model-tier not found — the model is unavailable at the configured
+    # tier (e.g. OpenRouter 404 when no provider serves it at the max
+    # price).  Periodic monitors automatically fall back to a lower level.
+    if _is_model_tier_not_found(exc):
+        return (
+            "The requested model tier is not available "
+            "(HTTP 404 — the model could not be routed at the configured "
+            "price ceiling). Periodic monitors will automatically fall "
+            "back to a lower model level. " + msg
         )
 
     # ProcessError from claude_agent_sdk carries exit_code and stderr —
@@ -2450,6 +2488,62 @@ async def _subsession_worker(
                     retry_input=in_flight_inbox or None,
                 )
                 return
+
+        # -- model-tier fallback for periodic monitors ------------------
+        # When the model is unavailable at the current tier (HTTP 404),
+        # try the next lower level instead of failing the monitor.
+        # Recovery from a spent Claude subscription tier is handled
+        # separately by the usage-exhausted path.
+        if (
+            info is not None
+            and info.kind
+            in (
+                SubsessionKind.PERIODIC,
+                SubsessionKind.WAIT_FOR_EVENT,
+            )
+            and _is_model_tier_not_found(exc)
+            and info.model_level > _MODEL_LEVEL_FALLBACK_FLOOR
+        ):
+            fallback_count_raw = (
+                (info.checkpoint or {}).get("_tier_fallback_count")
+                if info.checkpoint
+                else 0
+            )
+            fallback_count = (
+                fallback_count_raw if isinstance(fallback_count_raw, int) else 0
+            )
+            if fallback_count < _MODEL_LEVEL_FALLBACK_MAX:
+                new_level = info.model_level - 1
+                logger.warning(
+                    "Subsession %s: model tier %d not found (HTTP 404); "
+                    "falling back to level %d (tier-fallback %d/%d).",
+                    sub_id,
+                    info.model_level,
+                    new_level,
+                    fallback_count + 1,
+                    _MODEL_LEVEL_FALLBACK_MAX,
+                )
+                cp = dict(info.checkpoint or {})
+                cp["_tier_fallback_count"] = fallback_count + 1
+                cp["_fallback_model_level"] = new_level
+                info.model_level = new_level
+                info.checkpoint = cp
+                # Persist so the fallback survives a restart.
+                registry.update_checkpoint(sub_id, cp)
+                registry.persist()
+                await _subsession_worker(
+                    env,
+                    sub_id,
+                    retry_input=in_flight_inbox or None,
+                )
+                return
+
+            logger.error(
+                "Subsession %s: model-tier fallback exhausted "
+                "(tried %d level(s) from original tier).",
+                sub_id,
+                fallback_count,
+            )
 
         # -- exhausted retries or non-retryable kind ------------------
         failed = registry.fail(sub_id, error=error_msg)

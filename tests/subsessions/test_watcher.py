@@ -794,6 +794,300 @@ async def test_watcher_ci_health_check_graceful_on_actions_error() -> None:
     assert len(ci_notifications) == 0
 
 
+# -- CI run-ID freshness tracking ------------------------------------------
+
+
+@pytest.mark.asyncio
+async def test_ci_run_id_tracking_happy_path() -> None:
+    """Checkpoint is updated when the latest CI run matches PR HEAD."""
+    settings = _settings_with_direct_repo()
+    sink = RecordingSink()
+    env = build_env(settings=settings, event_sink=sink)
+
+    info = _make_paused_monitor_with_pr(env)
+
+    mock_mill = _mock_ticket_client(state="open")
+
+    mock_pr_data = {
+        "merged": False,
+        "head": {"ref": "feature-branch", "sha": "abc123"},
+    }
+    mock_gh_client = MagicMock()
+    mock_gh_client.get_pr = AsyncMock(return_value=mock_pr_data)
+    mock_gh_client._token = AsyncMock(return_value="fake-token")
+
+    mock_actions = MagicMock()
+    mock_actions.list_workflow_runs = AsyncMock(
+        return_value=[{"id": 42, "head_sha": "abc123"}]
+    )
+    mock_actions.check_latest_run_for_zero_jobs = AsyncMock(return_value=None)
+
+    watcher_task = asyncio.create_task(watch_paused_monitors(env))
+
+    with (
+        patch(
+            "robotsix_chat.repo.direct.client.DirectRepoClient",
+            return_value=mock_gh_client,
+        ),
+        patch(
+            "robotsix_chat.repo.direct.actions_client.ActionsClient",
+            return_value=mock_actions,
+        ),
+        patch("httpx.AsyncClient", mock_mill),
+        patch("robotsix_chat.subsessions.watcher.logger") as mock_logger,
+    ):
+        await asyncio.sleep(0.15)
+
+    watcher_task.cancel()
+    with pytest.raises(asyncio.CancelledError):
+        _ = await watcher_task
+
+    # Checkpoint should be updated with run ID and PR HEAD.
+    reopened = env.registry.get(info.id)
+    assert reopened is not None
+    assert reopened.checkpoint is not None
+    assert reopened.checkpoint.get("last_ci_run_id") == 42
+    assert reopened.checkpoint.get("last_ci_head_sha") == "abc123"
+
+    # No staleness warnings should have been logged.
+    warning_calls = [
+        c
+        for c in mock_logger.warning.call_args_list
+        if "stale" in str(c).lower() or "CI run" in str(c)
+    ]
+    assert len(warning_calls) == 0
+
+
+@pytest.mark.asyncio
+async def test_ci_run_id_tracking_stale_run_mismatched_head() -> None:
+    """A warning is logged when the latest CI run HEAD differs from PR HEAD."""
+    settings = _settings_with_direct_repo()
+    sink = RecordingSink()
+    env = build_env(settings=settings, event_sink=sink)
+
+    _make_paused_monitor_with_pr(env)
+
+    mock_mill = _mock_ticket_client(state="open")
+
+    mock_pr_data = {
+        "merged": False,
+        "head": {"ref": "feature-branch", "sha": "abc123"},
+    }
+    mock_gh_client = MagicMock()
+    mock_gh_client.get_pr = AsyncMock(return_value=mock_pr_data)
+    mock_gh_client._token = AsyncMock(return_value="fake-token")
+
+    mock_actions = MagicMock()
+    mock_actions.list_workflow_runs = AsyncMock(
+        return_value=[{"id": 42, "head_sha": "def456"}]
+    )
+    mock_actions.check_latest_run_for_zero_jobs = AsyncMock(return_value=None)
+
+    watcher_task = asyncio.create_task(watch_paused_monitors(env))
+
+    with (
+        patch(
+            "robotsix_chat.repo.direct.client.DirectRepoClient",
+            return_value=mock_gh_client,
+        ),
+        patch(
+            "robotsix_chat.repo.direct.actions_client.ActionsClient",
+            return_value=mock_actions,
+        ),
+        patch("httpx.AsyncClient", mock_mill),
+        patch("robotsix_chat.subsessions.watcher.logger") as mock_logger,
+    ):
+        await asyncio.sleep(0.15)
+
+    watcher_task.cancel()
+    with pytest.raises(asyncio.CancelledError):
+        _ = await watcher_task
+
+    # A warning about mismatched HEAD should have been logged
+    # (watcher loops, so the warning fires on every poll cycle).
+    mismatch_warnings = [
+        c
+        for c in mock_logger.warning.call_args_list
+        if "does not match PR HEAD" in str(c)
+    ]
+    assert len(mismatch_warnings) >= 1
+
+
+@pytest.mark.asyncio
+async def test_ci_run_id_tracking_same_run_changed_head() -> None:
+    """A warning is logged when the run ID is unchanged but PR HEAD changed."""
+    settings = _settings_with_direct_repo()
+    sink = RecordingSink()
+    env = build_env(settings=settings, event_sink=sink)
+
+    info = _make_paused_monitor_with_pr(env)
+
+    # Pre-seed checkpoint with prior poll values.
+    env.registry.update_checkpoint(
+        info.id,
+        {
+            **info.checkpoint,  # type: ignore[arg-type]
+            "last_ci_run_id": 42,
+            "last_ci_head_sha": "abc123",
+        },
+    )
+
+    mock_mill = _mock_ticket_client(state="open")
+
+    # PR HEAD changed since last poll.
+    mock_pr_data = {
+        "merged": False,
+        "head": {"ref": "feature-branch", "sha": "def456"},
+    }
+    mock_gh_client = MagicMock()
+    mock_gh_client.get_pr = AsyncMock(return_value=mock_pr_data)
+    mock_gh_client._token = AsyncMock(return_value="fake-token")
+
+    # CI still reports the same run ID (no new run triggered yet).
+    mock_actions = MagicMock()
+    mock_actions.list_workflow_runs = AsyncMock(
+        return_value=[{"id": 42, "head_sha": "abc123"}]
+    )
+    mock_actions.check_latest_run_for_zero_jobs = AsyncMock(return_value=None)
+
+    watcher_task = asyncio.create_task(watch_paused_monitors(env))
+
+    with (
+        patch(
+            "robotsix_chat.repo.direct.client.DirectRepoClient",
+            return_value=mock_gh_client,
+        ),
+        patch(
+            "robotsix_chat.repo.direct.actions_client.ActionsClient",
+            return_value=mock_actions,
+        ),
+        patch("httpx.AsyncClient", mock_mill),
+        patch("robotsix_chat.subsessions.watcher.logger") as mock_logger,
+    ):
+        await asyncio.sleep(0.15)
+
+    watcher_task.cancel()
+    with pytest.raises(asyncio.CancelledError):
+        _ = await watcher_task
+
+    # The second warning (unchanged run ID, changed PR HEAD) should fire.
+    second_warnings = [
+        c
+        for c in mock_logger.warning.call_args_list
+        if "CI run" in str(c) and "unchanged since last poll" in str(c)
+    ]
+    assert len(second_warnings) == 1
+
+
+@pytest.mark.asyncio
+async def test_ci_run_id_tracking_empty_runs_noop() -> None:
+    """Empty workflow runs list is handled gracefully without error."""
+    settings = _settings_with_direct_repo()
+    sink = RecordingSink()
+    env = build_env(settings=settings, event_sink=sink)
+
+    info = _make_paused_monitor_with_pr(env)
+
+    mock_mill = _mock_ticket_client(state="open")
+
+    mock_pr_data = {
+        "merged": False,
+        "head": {"ref": "feature-branch", "sha": "abc123"},
+    }
+    mock_gh_client = MagicMock()
+    mock_gh_client.get_pr = AsyncMock(return_value=mock_pr_data)
+    mock_gh_client._token = AsyncMock(return_value="fake-token")
+
+    mock_actions = MagicMock()
+    mock_actions.list_workflow_runs = AsyncMock(return_value=[])
+    mock_actions.check_latest_run_for_zero_jobs = AsyncMock(return_value=None)
+
+    watcher_task = asyncio.create_task(watch_paused_monitors(env))
+
+    with (
+        patch(
+            "robotsix_chat.repo.direct.client.DirectRepoClient",
+            return_value=mock_gh_client,
+        ),
+        patch(
+            "robotsix_chat.repo.direct.actions_client.ActionsClient",
+            return_value=mock_actions,
+        ),
+        patch("httpx.AsyncClient", mock_mill),
+        patch("robotsix_chat.subsessions.watcher.logger") as mock_logger,
+    ):
+        await asyncio.sleep(0.15)
+
+    watcher_task.cancel()
+    with pytest.raises(asyncio.CancelledError):
+        _ = await watcher_task
+
+    # Checkpoint should NOT have CI keys (no runs to track).
+    reopened = env.registry.get(info.id)
+    assert reopened is not None
+    assert reopened.checkpoint is not None
+    assert "last_ci_run_id" not in reopened.checkpoint
+    assert "last_ci_head_sha" not in reopened.checkpoint
+
+    # No warnings should have been logged about CI runs.
+    ci_warnings = [c for c in mock_logger.warning.call_args_list if "CI run" in str(c)]
+    assert len(ci_warnings) == 0
+
+
+@pytest.mark.asyncio
+async def test_ci_run_id_tracking_skips_when_no_pr_head_sha() -> None:
+    """Tracking block is skipped when PR data lacks a head SHA."""
+    settings = _settings_with_direct_repo()
+    sink = RecordingSink()
+    env = build_env(settings=settings, event_sink=sink)
+
+    _make_paused_monitor_with_pr(env)
+
+    mock_mill = _mock_ticket_client(state="open")
+
+    # PR data with a branch ref but NO sha.
+    mock_pr_data = {
+        "merged": False,
+        "head": {"ref": "feature-branch"},
+    }
+    mock_gh_client = MagicMock()
+    mock_gh_client.get_pr = AsyncMock(return_value=mock_pr_data)
+    mock_gh_client._token = AsyncMock(return_value="fake-token")
+
+    mock_actions = MagicMock()
+    mock_actions.list_workflow_runs = AsyncMock(
+        return_value=[{"id": 42, "head_sha": "abc123"}]
+    )
+    mock_actions.check_latest_run_for_zero_jobs = AsyncMock(return_value=None)
+
+    watcher_task = asyncio.create_task(watch_paused_monitors(env))
+
+    with (
+        patch(
+            "robotsix_chat.repo.direct.client.DirectRepoClient",
+            return_value=mock_gh_client,
+        ),
+        patch(
+            "robotsix_chat.repo.direct.actions_client.ActionsClient",
+            return_value=mock_actions,
+        ),
+        patch("httpx.AsyncClient", mock_mill),
+        patch("robotsix_chat.subsessions.watcher.logger") as mock_logger,
+    ):
+        await asyncio.sleep(0.15)
+
+    watcher_task.cancel()
+    with pytest.raises(asyncio.CancelledError):
+        _ = await watcher_task
+
+    # list_workflow_runs should NOT have been called (head sha is None).
+    mock_actions.list_workflow_runs.assert_not_called()
+
+    # No warnings should have been logged about CI runs.
+    ci_warnings = [c for c in mock_logger.warning.call_args_list if "CI run" in str(c)]
+    assert len(ci_warnings) == 0
+
+
 # -- PR-merge pass: resume on merged PR ------------------------------------
 
 
