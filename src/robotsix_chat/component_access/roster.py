@@ -101,7 +101,7 @@ async def fetch_roster(
     gaps (e.g. after a redeploy).
 
     Args:
-        settings: Central-deploy configuration (url, api_token, ttl,
+        settings: Central-deploy configuration (url, ttl,
             component_fallbacks).
 
     Returns:
@@ -130,19 +130,11 @@ async def fetch_roster(
         _, entries = _cache  # type: ignore[misc]
         return _augment_with_fallbacks(entries, settings.component_fallbacks)
 
-    token = settings.api_token.get_secret_value()
-    headers: dict[str, str] = {}
-    if token:
-        # central-deploy's verify_auth accepts X-API-Key (or Basic) — NOT
-        # Bearer. A Bearer header only ever "worked" while the deploy server
-        # ran with auth disabled (exposed 2026-07-05 when an api_key was set).
-        headers["X-API-Key"] = token
-
     roster_url = f"{settings.url.rstrip('/')}/chat/components"
     try:
         async with httpx.AsyncClient(timeout=30.0, follow_redirects=True) as client:
             retry_client = RetryClient(client, config=_ROSTER_RETRY_CONFIG)
-            resp = await retry_client.get(roster_url, headers=headers)
+            resp = await retry_client.get(roster_url)
             resp.raise_for_status()
             entries = resp.json()
     except Exception as exc:

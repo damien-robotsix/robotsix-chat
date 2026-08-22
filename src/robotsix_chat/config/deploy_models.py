@@ -2,7 +2,9 @@
 
 from __future__ import annotations
 
-from pydantic import BaseModel, ConfigDict, Field, SecretStr
+from typing import Any
+
+from pydantic import BaseModel, ConfigDict, Field, SecretStr, model_validator
 
 
 class ComponentCredentials(BaseModel):
@@ -30,16 +32,14 @@ class ComponentCredentials(BaseModel):
 class CentralDeploySettings(BaseModel):
     """Central-deploy roster and component-access settings.
 
-    Provides the base URL and bearer token for the central-deploy
-    management-plane API.  At session start the agent fetches the
+    Provides the base URL for the central-deploy management-plane API.
+    At session start the agent fetches the
     ``GET /chat/components`` roster (a list of component agents the chat
     is allowed to call), caches it with a short TTL, and loads each
     component's declared skill into the agent.
 
     Attributes:
         url: Base URL of the central-deploy API (no trailing slash).
-        api_token: Bearer token for authenticating to the central-deploy
-            API.  Required when any component access is expected.
         roster_cache_ttl: Seconds to cache the roster before re-fetching.
             Default 300 (5 min).
         component_credentials: Per-component credentials keyed by
@@ -52,7 +52,6 @@ class CentralDeploySettings(BaseModel):
     model_config = ConfigDict(extra="forbid")
 
     url: str = ""
-    api_token: SecretStr = SecretStr("")
     roster_cache_ttl: float = 300.0
     component_response_max_chars: int = 200_000
     component_credentials: dict[str, ComponentCredentials] = Field(default_factory=dict)
@@ -67,3 +66,17 @@ class CentralDeploySettings(BaseModel):
             "transient roster gaps."
         ),
     )
+
+    @model_validator(mode="before")
+    @classmethod
+    def _drop_api_token(cls, data: Any) -> Any:
+        """Strip ``api_token`` from incoming config dicts.
+
+        The field was retired fleet-wide (2026-08-21) when central-deploy
+        removed the auto-provisioning engine.  Existing config files may
+        still carry the key; strip it so validation passes rather than
+        crashing on the unknown field.
+        """
+        if isinstance(data, dict):
+            data.pop("api_token", None)
+        return data

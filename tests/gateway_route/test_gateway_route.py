@@ -35,7 +35,6 @@ def _settings(**kw: Any) -> GatewayRouteSettings:
 def _central_deploy(**kw: Any) -> CentralDeploySettings:
     base: dict[str, Any] = {
         "url": "http://cd:8100",
-        "api_token": "test-token",
     }
     base.update(kw)
     return CentralDeploySettings(**base)
@@ -104,7 +103,6 @@ async def test_check_gateway_route_route_present(
     result = json.loads(await tools[0]("robotsix-chat"))
 
     assert route.called
-    assert route.calls[0].request.headers["X-API-Key"] == "test-token"
     assert result["error"] == ""
     assert result["expected_route"] == "robotsix-chat.deploy.robotsix.net"
     assert result["route_present"] is True

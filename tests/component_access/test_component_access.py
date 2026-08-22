@@ -292,10 +292,10 @@ async def test_fetch_roster_empty_list_no_fallback_returns_empty(
 
 
 @pytest.mark.asyncio
-async def test_fetch_roster_with_token(
+async def test_fetch_roster_no_auth_header(
     respx_mock: respx.MockRouter,
 ) -> None:
-    """The API token is sent as X-API-Key (central-deploy's accepted scheme)."""
+    """No auth header is sent — the deploy-api token field was retired."""
     _wipe_cache()
     entries = [{"id": "mill", "base_url": "http://m:8080", "skill": "..."}]
     route = respx_mock.get("http://deploy:8080/chat/components").mock(
@@ -304,13 +304,12 @@ async def test_fetch_roster_with_token(
 
     settings = _settings(
         url="http://deploy:8080",
-        api_token=SecretStr("tk-secret"),
         roster_cache_ttl=300.0,
     )
     result = await fetch_roster(settings)
     assert result == entries
     assert route.called
-    assert route.calls[0].request.headers["X-API-Key"] == "tk-secret"
+    assert "X-API-Key" not in route.calls[0].request.headers
     assert "Authorization" not in route.calls[0].request.headers
 
 
@@ -1194,16 +1193,8 @@ async def test_component_request_header_auth_missing_credentials() -> None:
 
 
 @pytest.mark.asyncio
-async def test_header_auth_falls_back_to_the_deploy_api_token(
-    respx_mock: respx.MockRouter,
-) -> None:
-    """No per-component entry → use central_deploy.api_token.
-
-    Components behind the deploy plane all authenticate with that one
-    token. Requiring a per-component copy meant every config rewrite that
-    dropped one silently removed access — it happened to `github` on
-    2026-08-08 and to both entries on 2026-07-30.
-    """
+async def test_header_auth_errors_without_per_component_token() -> None:
+    """No per-component entry and no global fallback — errors clearly."""
     roster = [
         {
             "id": "github",
@@ -1212,21 +1203,16 @@ async def test_header_auth_falls_back_to_the_deploy_api_token(
             "auth": {"type": "header", "header_name": "X-API-Key"},
         }
     ]
-    route = respx_mock.get("http://cd:8100/x").mock(
-        return_value=httpx.Response(200, json={})
-    )
-    result = await _component_request_impl(
-        roster, "github", "GET", "/x", fallback_header_token="deploy-tok"
-    )
-    assert "HTTP 200" in result
-    assert route.calls.last.request.headers["X-API-Key"] == "deploy-tok"
+    result = await _component_request_impl(roster, "github", "GET", "/x")
+    assert "Error" in result
+    assert "header_token" in result
 
 
 @pytest.mark.asyncio
 async def test_explicit_header_token_overrides_the_fallback(
     respx_mock: respx.MockRouter,
 ) -> None:
-    """A per-component entry stays an override, not dead weight."""
+    """A per-component entry is the only credential source."""
     roster = [
         {
             "id": "github",
@@ -1244,7 +1230,6 @@ async def test_explicit_header_token_overrides_the_fallback(
         "GET",
         "/x",
         component_credentials={"github": _creds(header_token="per-component")},
-        fallback_header_token="deploy-tok",
     )
     assert "HTTP 200" in result
     assert route.calls.last.request.headers["X-API-Key"] == "per-component"
@@ -1252,7 +1237,7 @@ async def test_explicit_header_token_overrides_the_fallback(
 
 @pytest.mark.asyncio
 async def test_header_auth_errors_when_no_token_anywhere() -> None:
-    """Neither an entry nor an api_token — still a clear provisioning error."""
+    """Neither a per-component entry — still a clear provisioning error."""
     roster = [
         {
             "id": "deploy",
@@ -1263,12 +1248,12 @@ async def test_header_auth_errors_when_no_token_anywhere() -> None:
     ]
     result = await _component_request_impl(roster, "deploy", "GET", "/x")
     assert "Error" in result
-    assert "api_token" in result
+    assert "header_token" in result
 
 
 @pytest.mark.asyncio
 async def test_basic_auth_does_not_use_the_fallback() -> None:
-    """The fallback is a single token; Basic needs a user/password pair."""
+    """Basic auth needs a user/password pair — no token fallback exists."""
     roster = [
         {
             "id": "langfuse",
@@ -1278,7 +1263,7 @@ async def test_basic_auth_does_not_use_the_fallback() -> None:
         }
     ]
     result = await _component_request_impl(
-        roster, "langfuse", "GET", "/x", fallback_header_token="deploy-tok"
+        roster, "langfuse", "GET", "/x",
     )
     assert "Error" in result
     assert "component_credentials" in result

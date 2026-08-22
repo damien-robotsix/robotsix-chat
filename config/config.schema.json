@@ -147,15 +147,8 @@
     },
     "CentralDeploySettings": {
       "additionalProperties": false,
-      "description": "Central-deploy roster and component-access settings.\n\nProvides the base URL and bearer token for the central-deploy\nmanagement-plane API.  At session start the agent fetches the\n``GET /chat/components`` roster (a list of component agents the chat\nis allowed to call), caches it with a short TTL, and loads each\ncomponent's declared skill into the agent.\n\nAttributes:\n    url: Base URL of the central-deploy API (no trailing slash).\n    api_token: Bearer token for authenticating to the central-deploy\n        API.  Required when any component access is expected.\n    roster_cache_ttl: Seconds to cache the roster before re-fetching.\n        Default 300 (5 min).\n    component_credentials: Per-component credentials keyed by\n        component id.  Each entry carries credentials for all\n        supported auth schemes; the roster entry's ``auth.type``\n        selects which fields are used.",
+      "description": "Central-deploy roster and component-access settings.\n\nProvides the base URL for the central-deploy management-plane API.\nAt session start the agent fetches the\n``GET /chat/components`` roster (a list of component agents the chat\nis allowed to call), caches it with a short TTL, and loads each\ncomponent's declared skill into the agent.\n\nAttributes:\n    url: Base URL of the central-deploy API (no trailing slash).\n    roster_cache_ttl: Seconds to cache the roster before re-fetching.\n        Default 300 (5 min).\n    component_credentials: Per-component credentials keyed by\n        component id.  Each entry carries credentials for all\n        supported auth schemes; the roster entry's ``auth.type``\n        selects which fields are used.",
       "properties": {
-        "api_token": {
-          "default": "",
-          "format": "password",
-          "title": "Api Token",
-          "type": "string",
-          "writeOnly": true
-        },
         "component_credentials": {
           "additionalProperties": {
             "$ref": "#/$defs/ComponentCredentials"
