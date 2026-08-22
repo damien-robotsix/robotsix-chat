@@ -59,7 +59,6 @@ async def _component_request_impl(
     params: dict[str, str] | None = None,
     read_response_max_chars: int = _TRUNCATE_LENGTH,
     component_credentials: dict[str, Any] | None = None,
-    fallback_header_token: str = "",
     component_fallbacks: dict[str, str] | None = None,
 ) -> str:
     """Call *component_id*'s API at *method* *path*.
@@ -170,20 +169,13 @@ async def _component_request_impl(
         auth = (username, password)
     elif auth_type == "header":
         header_name = auth_meta.get("header_name", "")
-        # Components behind the deploy plane share one token: the deploy
-        # API token. A per-component entry is an override, so fall back to
-        # central_deploy.api_token when there isn't one. Duplicating that
-        # value per component is what made it fragile — each copy is a
-        # thing a config rewrite can silently drop, and repeatedly did.
         token = creds.header_token.get_secret_value() if creds is not None else ""
-        if not token:
-            token = fallback_header_token
         if not (header_name and token):
             return (
                 f"Error: component '{component_id}' requires a "
                 f"{header_name or '?'} header but no token is available — "
                 f"central_deploy.component_credentials.{component_id}."
-                "header_token is unset and central_deploy.api_token is empty."
+                "header_token is not set."
             )
         headers[header_name] = token
 
@@ -386,7 +378,6 @@ def build_component_access_tools(
     # between calls.
     _state: dict[str, Any] = {"entries": []}
     _creds = settings.component_credentials
-    _fallback_token = settings.api_token.get_secret_value()
 
     async def _refresh() -> None:
         _state["entries"] = await fetch_roster(settings)
@@ -441,7 +432,6 @@ def build_component_access_tools(
             params=params,
             read_response_max_chars=limit,
             component_credentials=_creds,
-            fallback_header_token=_fallback_token,
             component_fallbacks=settings.component_fallbacks,
         )
 

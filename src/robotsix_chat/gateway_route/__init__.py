@@ -98,8 +98,8 @@ def build_gateway_route_tools(
         settings: Gateway-route configuration (``enabled`` master switch,
             request timeout, and the fleet ``gateway_base_domain`` used to
             derive ``<slug>.<base_domain>`` vhosts).
-        central_deploy: Central-deploy connection settings (base URL and
-            API token).  The tool reads the component registry at
+        central_deploy: Central-deploy connection settings (base URL).
+            The tool reads the component registry at
             ``GET {url}/components/suggest`` and never mutates anything.
 
     Returns:
@@ -170,15 +170,9 @@ def build_gateway_route_tools(
             return json.dumps(result, ensure_ascii=False)
 
         # --- Fetch the registry ----------------------------------------------
-        headers: dict[str, str] = {}
-        token = central_deploy.api_token.get_secret_value()
-        if token:
-            headers["X-API-Key"] = token
-
         response = await safe_http_request(
             "GET",
             _registry_url(central_deploy),
-            headers=headers,
             timeout=settings.timeout,
             label="Gateway route",
         )

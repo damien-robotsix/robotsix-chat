@@ -50,7 +50,6 @@
   },
   "central_deploy": {
     "url": "",
-    "api_token": "",
     "roster_cache_ttl": 300.0,
     "component_response_max_chars": 200000,
     "component_credentials": {},
