@@ -118,12 +118,12 @@ packages = ["src/robotsix_chat"]
 # First-party git sources are pinned to commit SHAs (repo baseline); the
 # fleet pin-bump workflow advances them through reviewed PRs.
 [tool.uv.sources]
-robotsix-config = { git = "https://github.com/damien-robotsix/robotsix-config.git", rev = "424f8ec5140e14e9699b92d5c3755d929625b570" }  # pragma: allowlist secret
-robotsix-llmio = { git = "https://github.com/damien-robotsix/robotsix-llmio.git", rev = "e5509fd1e675516f4fd00a603d7921cdfa2b779b" }  # pragma: allowlist secret
+robotsix-config = { git = "https://github.com/damien-robotsix/robotsix-config.git", rev = "48e736bad05ff514360f93092a5f486a6aee1fe1" }  # pragma: allowlist secret
+robotsix-llmio = { git = "https://github.com/damien-robotsix/robotsix-llmio.git", rev = "9c973450c8cee550d391df888b16e9efe4493300" }  # pragma: allowlist secret
 # robotsix-modules: same SHA as robotsix-mill (coherent-set rule).
-robotsix-modules = { git = "https://github.com/damien-robotsix/robotsix-modules.git", rev = "d7c5e59980516de6e050db02ff54aef4e15ff5c3" }  # pragma: allowlist secret
-robotsix-http = { git = "https://github.com/damien-robotsix/robotsix-http.git", rev = "13e6e9ab330f9be3b8b1e7bc2694210f7d9e5848" }  # pragma: allowlist secret
-robotsix-github-auth = { git = "https://github.com/damien-robotsix/robotsix-github-auth.git", rev = "e6214c41fd743120aa987bacb4e9b2bc88e73943" }  # pragma: allowlist secret
+robotsix-modules = { git = "https://github.com/damien-robotsix/robotsix-modules.git", rev = "6677fe500162628e9bd15aa8a942a0ed77c4bf0f" }  # pragma: allowlist secret
+robotsix-http = { git = "https://github.com/damien-robotsix/robotsix-http.git", rev = "ae9bef8628f305af3351456d332ecaddfec75a27" }  # pragma: allowlist secret
+robotsix-github-auth = { git = "https://github.com/damien-robotsix/robotsix-github-auth.git", rev = "d1afb12e775ec8a6267d02712652dbe89a21cb65" }  # pragma: allowlist secret
 
 # Force pypdf>=6.15.0 (transitive dep of cognee) to resolve GHSA-fwg2-594c-jp42.
 # Constraint-dependencies avoids making pypdf a direct (deptry-visible) dependency.
