@@ -161,6 +161,32 @@ given. The endpoint modifies live repository state.
 - PR must not be in draft state.
 - Repository must be within the GitHub App installation scope.
 
+### Pre-merge diligence (agent responsibility)
+
+Before proposing a merge or listing a PR as merge-ready, the agent MUST:
+
+- **Inspect the PR title and description** for any of: ``revert``, ``Revert``,
+  ``REVERT``, ``rollback``, ``Rollback``, ``roll back``.  If the PR title or
+  description contains one of these keywords, flag it for operator review
+  rather than listing it as a routine merge candidate.
+
+- **Check recent commit messages** on the PR branch — at minimum the most
+  recent commit.  A PR whose head commit message contains ``revert`` (or
+  whose title is a GitHub-generated revert title like ``Revert "..."``)
+  likely undoes a prior change rather than introducing the goal stated in
+  its ticket.  Flag it instead of auto-listing it.
+
+- **When the PR diff is available** (e.g. from ``verify_pr_ci_status``
+  or a prior tool call), check whether the net diff reverses or removes
+  the work the ticket was supposed to deliver.  A PR that mostly deletes
+  or reverts prior changes may be a rollback, not a completion — the
+  operator should decide whether to merge it.
+
+A revert PR may still be intentional and correct (e.g. rolling back a
+problematic deploy), but its purpose is the OPPOSITE of the ticket's
+stated goal — the operator must make the call, not the agent.  Never
+bundle a revert PR with a batch of routine merge candidates.
+
 ### Merge methods
 
 | Method   | Behaviour                                                         |
