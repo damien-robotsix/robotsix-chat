@@ -1263,7 +1263,10 @@ async def test_basic_auth_does_not_use_the_fallback() -> None:
         }
     ]
     result = await _component_request_impl(
-        roster, "langfuse", "GET", "/x",
+        roster,
+        "langfuse",
+        "GET",
+        "/x",
     )
     assert "Error" in result
     assert "component_credentials" in result
