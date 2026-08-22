@@ -173,9 +173,9 @@ def _build_spawn_and_control_tools(
         subsession that itself runs a focused sub-task. model_level picks
         capability 1 (cheapest) to 4 (frontier, most expensive) — match
         it to difficulty: 1 for trivial polling/extraction, 2 for
-        general work (the default choice unless the task needs stronger
-        reasoning), 3 for reasoning 2 struggles with, 4 only for
-        genuinely hard reasoning. Levels 1-2 need an OpenRouter API key.
+        general work, 3 for reasoning (the default choice — keyless and
+        always available), 4 only for genuinely hard reasoning. Levels 1-2
+        need an OpenRouter API key.
         If a spawn errors with an API key message, retry at level 3
         (keyless) and tell the user the key could not be found by the
         server's config file — do NOT claim the key is missing outright:
