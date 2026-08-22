@@ -441,12 +441,18 @@ jobs:
           MYPY_RESULT: ${{ needs.mypy.result }}
         run: |
           set -euo pipefail
-          check() {  # usage: check <result> <label> [allow-skipped]
+          check() {  # usage: check <result> <label> [allow-skipped|non-blocking]
             case "$1" in
               success) return 0 ;;
               skipped)
-                if [ "${3:-}" = "allow-skipped" ]; then
-                  echo "  (skipped — allowed for reusable-workflow call)"
+                if [ "${3:-}" = "allow-skipped" ] || [ "${3:-}" = "non-blocking" ]; then
+                  echo "  ($1 — allowed for ${3} check)"
+                  return 0
+                fi
+                ;;
+              failure)
+                if [ "${3:-}" = "non-blocking" ]; then
+                  echo "  ($1 — allowed for non-blocking check)"
                   return 0
                 fi
                 ;;
@@ -457,7 +463,7 @@ jobs:
           echo "--- CI gate results ---"
           check "$LOCKFILE_RESULT"                    lockfile
           check "$CI_RESULT"                          ci                    allow-skipped
-          check "$SECURITY_RESULT"                    security              allow-skipped
+          check "$SECURITY_RESULT"                    security              non-blocking
           check "$PRE_COMMIT_RESULT"                  pre-commit
           check "$CHECK_SSE_TYPES_RESULT"             check-sse-types
           check "$CHECK_SUBSESSION_KINDS_RESULT"      check-subsession-kinds
