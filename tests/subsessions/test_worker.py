@@ -1944,6 +1944,61 @@ def test_spawn_level_errors() -> None:
 
 
 @pytest.mark.asyncio
+async def test_spawn_monitor_model_level_clamped() -> None:
+    """Periodic/wait_for_event monitors are clamped to monitor_max_model_level."""
+    env = build_env(
+        settings=make_settings(
+            monitor_max_model_level=2,
+            default_model_level=3,
+            llmio_api_key="test-key",
+        )
+    )
+
+    # Periodic at model_level=4 gets clamped to 2.
+    sub_id = _spawn(
+        env,
+        kind=SubsessionKind.PERIODIC,
+        model_level=4,
+        interval_seconds=10.0,
+    )
+    info = env.registry.get(sub_id)
+    assert info is not None
+    assert info.model_level == 2
+
+    # wait_for_event at model_level=3 gets clamped to 2.
+    sub_id2 = _spawn(
+        env,
+        kind=SubsessionKind.WAIT_FOR_EVENT,
+        model_level=3,
+        event_timeout_seconds=60.0,
+    )
+    info2 = env.registry.get(sub_id2)
+    assert info2 is not None
+    assert info2.model_level == 2
+
+    # Task at model_level=4 is NOT clamped (task is uncapped).
+    sub_id3 = _spawn(
+        env,
+        kind=SubsessionKind.TASK,
+        model_level=4,
+    )
+    info3 = env.registry.get(sub_id3)
+    assert info3 is not None
+    assert info3.model_level == 4
+
+    # Periodic at model_level=2 (within cap) is not clamped.
+    sub_id4 = _spawn(
+        env,
+        kind=SubsessionKind.PERIODIC,
+        model_level=2,
+        interval_seconds=10.0,
+    )
+    info4 = env.registry.get(sub_id4)
+    assert info4 is not None
+    assert info4.model_level == 2
+
+
+@pytest.mark.asyncio
 async def test_periodic_parent_cannot_spawn_periodic_or_on_close_child() -> None:
     """A periodic subsession cannot spawn periodic or on_close children."""
     env = build_env()
@@ -3110,7 +3165,11 @@ async def test_task_subsession_no_model_tier_fallback() -> None:
 
 @pytest.mark.asyncio
 async def test_wait_for_event_model_tier_404_falls_back() -> None:
-    """A wait_for_event subsession also gets model-tier fallback."""
+    """A wait_for_event subsession also gets model-tier fallback.
+
+    The monitor is clamped from 3→2 by monitor_max_model_level,
+    then the 404 fallback reduces it further from 2→1.
+    """
     error_agent = FakeAgent(error=_FakeModelTier404Error())
     fallback_agent = FakeAgent(["NO_CHANGE"])
     factory = CapturingAgentFactory(error_agent, fallback_agent)
@@ -3132,8 +3191,8 @@ async def test_wait_for_event_model_tier_404_falls_back() -> None:
 
     info = env.registry.get(sub_id)
     assert info is not None
-    # Should have fallen back to level 2.
-    assert info.model_level == 2
+    # Clamped 3→2 by monitor cap, then 404-fell-back 2→1.
+    assert info.model_level == 1
     assert info.status not in (SubsessionStatus.FAILED, SubsessionStatus.CLOSED)
 
 

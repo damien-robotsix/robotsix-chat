@@ -26,7 +26,10 @@ Start a background subsession and return its id immediately. Required: `kind`, `
 `include_previous_result`, `inherit_context`, `dedup_key`.
 
 - `model_level` picks capability 1 (cheapest) to 4 (frontier). Levels 1-2 need an OpenRouter API
-  key; if a spawn errors with an API key message, retry at level 3 (keyless).
+  key; if a spawn errors with an API key message, retry at level 3 (keyless). For `periodic` and
+  `wait_for_event` monitors, levels above the server's `monitor_max_model_level` (default 2) are
+  silently clamped down — use levels 1-2 for all routine monitoring. Hard tasks should use
+  `kind="task"` (uncapped) instead.
 - `interval_seconds` (minimum enforced), `max_runs`, and `auto_stop_no_change_runs` are for
   `periodic` only.
 - `auto_stop_no_change_runs` (must be an integer ≥ 1) overrides the global auto-stop threshold for
