@@ -1,0 +1,1 @@
+Remove the `central_deploy.api_token` configuration field. The field was retired from the Pydantic settings model, JSON schema, config template, documentation, and all code paths — it is no longer recognised at startup and a `model_validator` strips any legacy key from deployed config files so existing deployments continue to start without error.
