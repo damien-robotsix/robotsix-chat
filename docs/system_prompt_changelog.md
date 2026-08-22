@@ -2635,6 +2635,24 @@ autonomous settings at their pydantic field defaults
 ``stale_monitor_runs_before_completion=3``,
 ``queue_tolerance_runs_before_escalation=3``).
 
+## AUTONOMOUS v32 — 2026-08-22 — 20260822T174744Z-governance-once-the-operator-approves-a-e78d
+
+**Summary:** Extend the MUTATION AUTHORIZATION exceptions to match the
+v31 HUMAN_ISSUE_APPROVAL rules: operator-preapproved proposals (where
+the operator explicitly approved a surfaced improvement) are now also
+listed as pre-authorized for both ticket filing and approval, alongside
+user-requested tickets.
+
+**Rationale:** The v31 changelog added operator-preapproved proposals to
+the HUMAN_ISSUE_APPROVAL section but the MUTATION AUTHORIZATION section's
+exception lists still only mentioned user-requested tickets.  This could
+cause the agent to treat operator-preapproved proposals as gated in the
+mutation-authorization check even though the later HUMAN_ISSUE_APPROVAL
+section permits them.  Making the exceptions consistent eliminates the
+ambiguity.
+
+**SHA256:** `b8f0677ee670aa81e962460a008289fcae3feb0ba0262ef3c56e1d0df7d3a5e8`
+
 ## AUTONOMOUS v31 — 2026-08-22 — 20260822T174744Z-governance-once-the-operator-approves-a-e78d
 
 **Summary:** Extend the HUMAN_ISSUE_APPROVAL rules so that when the operator
