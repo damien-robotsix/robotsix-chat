@@ -16,6 +16,7 @@ from __future__ import annotations
 
 from typing import Any
 
+from robotsix_llmio import default_tier_config
 from robotsix_llmio.config import (
     LEVEL1_DEFAULT,
     LEVEL2_DEFAULT,
@@ -32,11 +33,7 @@ __all__ = [
 # robotsix-llmio now owns the level → provider-model mapping. The chat
 # just picks a capability *level*; the combined provider-model identifier for
 # that level comes from llmio's baked default TierLevelConfig (single source
-# of truth):
-#   level 1 → openrouter-deepseek/deepseek-v4-flash  (cheapest)
-#   level 2 → openrouter-deepseek/deepseek-v4-pro
-#   level 3 → claudeSDK-opus  (keyless)
-#   level 4 → claudeSDK-claude-fable-5  (frontier; keyless)
+# of truth) — see ``robotsix_llmio.config.tier``.
 _LEVEL_DEFAULTS: dict[int, Any] = {
     1: LEVEL1_DEFAULT,
     2: LEVEL2_DEFAULT,
@@ -60,20 +57,22 @@ def level_needs_api_key(level: int) -> bool:
     return tlc is None or tlc.provider != _KEYLESS_PROVIDER
 
 
-#: The strongest tier a session can escalate to (``claudeSDK-claude-fable-5``).
-#: Named rather than hard-coded at call sites so adding a level 5 is a
+#: The strongest capability level a session can escalate to (currently 4).
+#: Named rather than hard-coded at call sites so the frontier is a
 #: one-line change here.
 FRONTIER_MODEL_LEVEL = 4
 
 
 def level_display_name(level: int) -> str:
-    """Return the human-facing model name for *level* (e.g. ``"opus"``).
+    """Return the human-facing model name for *level*.
 
-    Used by the session list and chat header so the operator sees which model
-    a session is running on. Unknown levels render as ``"level N"`` rather
-    than raising — this is display text, never a control-flow input.
+    Resolved from llmio's baked default tier config so the display always
+    matches what actually served the turn. Unknown levels render as
+    ``"level N"`` rather than raising — this is display text, never a
+    control-flow input.
     """
-    tlc = _LEVEL_DEFAULTS.get(level)
-    if tlc is None:
+    try:
+        tlc = default_tier_config().for_level(level)
+    except ValueError:
         return f"level {level}"
     return str(tlc.model_name)

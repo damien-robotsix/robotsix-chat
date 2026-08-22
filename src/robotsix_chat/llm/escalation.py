@@ -1,9 +1,9 @@
 """Per-session model escalation for the chat agent.
 
-The chat agent runs every session at the server's configured level (``opus``
-by default).  When it judges a task beyond that tier it calls
-``escalate_model``, which pins *this session only* to the frontier tier
-(``claude-fable-5``).  The pin is persisted on the session and sticky for its
+The chat agent runs every session at the server's configured level.
+When it judges a task beyond that tier it calls
+``escalate_model``, which pins *this session only* to the frontier tier.
+The pin is persisted on the session and sticky for its
 lifetime: a conversation that needed the stronger model usually keeps needing
 it, and switching back and forth would rebuild the provider's prompt cache
 each time.

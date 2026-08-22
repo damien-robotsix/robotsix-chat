@@ -6,10 +6,10 @@ purely from a capability **level** via
 :func:`robotsix_llmio.config.create_model`: the level encodes the combined
 ``provider-model`` identifier (resolved from llmio's baked default
 ``TierLevelConfig``), so this package never names a concrete provider class or
-the Claude Agent SDK.
+model.
 
-By default: level 1-2 → ``openrouter-deepseek/...`` (needs an API
-key), level 3 → ``claudeSDK-opus`` (keyless, via the logged-in ``claude`` CLI).
+Levels 1-2 use a keyed provider (needs an API key), levels 3-4 use the keyless
+Claude SDK (via the logged-in ``claude`` CLI).
 
 Responses are returned as a single block (not token-streamed): llmio's Claude
 SDK model does not support incremental streaming through pydantic-ai, so each
@@ -696,7 +696,7 @@ class LlmioChatAgent:
             )
             # Reuse the CLI's session cache rather than re-sending the system
             # prompt on every turn.  Without this the 24.6:1 input:output ratio
-            # on fable-5 is almost entirely static-prefix re-billing — pure
+            # on the frontier tier is almost entirely static-prefix re-billing — pure
             # cap-headroom waste on the Claude subscription.
             try:
                 with (
@@ -789,7 +789,7 @@ class LlmioChatAgent:
         different reach:
 
         * **Usage exhaustion** is per-tier, so one promotion is enough —
-          claudeSDK level 4 (fable) -> level 3 (opus) leaves the exhausted
+          claudeSDK level 4 -> level 3 leaves the exhausted
           tier behind.
         * **An expired credential is shared by every claudeSDK tier**, since
           they all drive the same ``claude`` CLI against the same

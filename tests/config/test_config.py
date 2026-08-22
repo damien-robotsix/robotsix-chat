@@ -1008,3 +1008,66 @@ class TestRetiredTriggerTypeMigration:
         )
 
         assert AutonomousSessionDefinition(name="x").trigger_interval_seconds == 3600.0
+
+
+# ---------------------------------------------------------------------------
+# Guard: no concrete model names in source
+# ---------------------------------------------------------------------------
+
+# Patterns that should never appear in chat source — llmio owns the mapping
+# from provider+model to level.  Provider-prefix constants (``claudeSDK``,
+# ``openrouter``) ARE allowed.
+_CONCRETE_MODEL_PATTERNS: list[str] = [
+    r"deepseek/",
+    r"mimo-",
+    r"-opus",
+    r"claude-fable",
+    r"gpt-",
+]
+
+# Files with pre-existing concrete model references that are not in scope
+# for this ticket.  Each entry is ``(file, line_number, pattern)``.
+# Remove entries as the leaks are cleaned up in follow-up tickets.
+_PREEXISTING_ALLOWLIST: set[tuple[str, int, str]] = {
+    # memory/cognee.py — gpt-5-mini / gpt-5-nano in comments
+    ("src/robotsix_chat/memory/cognee.py", 390, "gpt-"),
+    ("src/robotsix_chat/memory/cognee.py", 393, "gpt-"),
+    ("src/robotsix_chat/memory/cognee.py", 537, "gpt-"),
+    # config/settings.py — opus / claude-fable-5 in Settings docstring
+    ("src/robotsix_chat/config/settings.py", 93, "-opus"),
+    ("src/robotsix_chat/config/settings.py", 93, "claude-fable"),
+    # config/memory_models.py — gpt-5-nano / gpt-5-mini / deepseek-v4-flash
+    ("src/robotsix_chat/config/memory_models.py", 18, "gpt-"),
+    ("src/robotsix_chat/config/memory_models.py", 31, "gpt-"),
+    ("src/robotsix_chat/config/memory_models.py", 34, "gpt-"),
+    ("src/robotsix_chat/config/memory_models.py", 34, "deepseek/"),
+    ("src/robotsix_chat/config/memory_models.py", 37, "gpt-"),
+}
+
+
+def test_no_concrete_model_names_in_source() -> None:
+    """Assert no concrete model id appears under ``src/``.
+
+    robotsix-llmio owns the provider → model mapping per capability level.
+    chat must only reference levels, never concrete model names.
+    """
+    import re
+    from pathlib import Path
+
+    src_root = Path("src")
+    if not src_root.is_dir():
+        pytest.skip("src/ directory not found")
+    violations: list[str] = []
+    for py_file in sorted(src_root.rglob("*.py")):
+        lines = py_file.read_text().splitlines()
+        rel = str(py_file)
+        for lineno, line in enumerate(lines, start=1):
+            for pattern in _CONCRETE_MODEL_PATTERNS:
+                if re.search(pattern, line):
+                    if (rel, lineno, pattern) in _PREEXISTING_ALLOWLIST:
+                        continue
+                    violations.append(f"{rel}:{lineno}: {pattern!r} in: {line.strip()}")
+    assert not violations, (
+        "Concrete model names found in source — llmio owns the mapping:\n"
+        + "\n".join(violations)
+    )
