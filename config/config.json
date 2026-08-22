@@ -115,6 +115,7 @@
     "max_no_change_pauses": 3,
     "human_approval_timeout_runs": 5,
     "pre_authorized_ticket_patterns": [],
+    "auto_drive_promote_ready_drafts": false,
     "run_timeout_seconds": 600.0,
     "store_path": "/data/subsessions.json",
     "transcript_max_entries": 200,
