@@ -3155,6 +3155,8 @@ async def test_periodic_model_tier_404_at_floor_no_fallback() -> None:
     info = env.registry.get(sub_id)
     assert info is not None
     assert info.status == SubsessionStatus.FAILED
+
+
 # wait_for_event checkpoint repair
 # ---------------------------------------------------------------------------
 
