@@ -1973,6 +1973,8 @@ async def test_subsessions_close_cancels_worker_and_delivers_summary() -> None:
     assert info.close_reason == "closed by user"
 
     # The summary was delivered to the owning session (delivery wired).
+    # Wait for the debounce timer (_DEBOUNCE_SECONDS=2.0) to flush.
+    await asyncio.sleep(2.5)
     history = env.conversation_store.history("sess-live")
     assert len(history) == 1
     assert history[0][0].startswith(f"[Subsession {sub_id[:8]} (task)")
