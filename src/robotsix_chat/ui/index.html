@@ -7,6 +7,7 @@
 <title>{{ PROJECT_TITLE }} — Chat</title>
 <meta name="idle-timeout-minutes" content="{{ IDLE_TIMEOUT_MINUTES }}">
 <link rel="stylesheet" href="/static/chat.css">
+<link rel="stylesheet" href="/static/vendor/style.css">
 <script src="https://cdn.jsdelivr.net/npm/marked/marked.min.js"></script>
 <script src="https://cdn.jsdelivr.net/npm/dompurify/dist/purify.min.js"></script>
 </head>
@@ -64,12 +65,7 @@
     <button class="dismiss" title="Close panel" aria-label="Close settings panel">&times;</button>
   </div>
   <div id="settings-body">
-    <div id="settings-error" class="settings-error" style="display:none"></div>
-    <div id="settings-form"></div>
-    <div id="settings-actions">
-      <button id="settings-save-btn" class="settings-save-btn">Save</button>
-      <span id="settings-save-status"></span>
-    </div>
+    <div id="config-panel-mount"></div>
   </div>
 </div>
 
