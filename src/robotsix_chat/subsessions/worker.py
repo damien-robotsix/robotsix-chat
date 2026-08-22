@@ -598,6 +598,22 @@ def spawn_subsession(
             f"maximum subsession nesting depth is {cfg.max_depth}"
         )
     _validate_model_level(env.settings, model_level)
+    # -- cap monitor model levels to prevent routine monitors from
+    #    burning expensive keyless Claude subscription tiers ---------
+    if kind in (SubsessionKind.PERIODIC, SubsessionKind.WAIT_FOR_EVENT):
+        cap = cfg.monitor_max_model_level
+        if model_level > cap:
+            logger.warning(
+                "spawn_subsession: %s monitor requested model_level=%d, "
+                "clamping to monitor_max_model_level=%d",
+                kind.value,
+                model_level,
+                cap,
+            )
+            model_level = cap
+            # Re-validate: the clamped level may require an API key that
+            # the original level did not.
+            _validate_model_level(env.settings, model_level)
     if parent_id is not None:
         parent = env.registry.get(parent_id)
         if parent is not None and parent.kind in (

@@ -1721,6 +1721,12 @@ class Settings(BaseModel):
                 f"{sorted(VALID_MODEL_LEVELS)}, "
                 f"got {self.subsessions.default_model_level!r}"
             )
+        if self.subsessions.monitor_max_model_level not in VALID_MODEL_LEVELS:
+            failures.append(
+                f"subsessions.monitor_max_model_level must be one of "
+                f"{sorted(VALID_MODEL_LEVELS)}, "
+                f"got {self.subsessions.monitor_max_model_level!r}"
+            )
         err = self._require_min(
             self.subsessions.min_interval_seconds,
             1.0,

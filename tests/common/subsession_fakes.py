@@ -141,6 +141,7 @@ def make_settings(
     stale_reclaim_seconds: float = 0.0,
     max_depth: int = 3,
     default_model_level: int = 3,
+    monitor_max_model_level: int = 2,
     min_interval_seconds: float = 0.01,
     auto_stop_no_change_runs: int = 3,
     max_idle_runs: int = 0,
@@ -165,7 +166,7 @@ def make_settings(
     max_runs_progress_window: int = 5,
     monitor_slot_budget: int = 0,
     monitor_slot_queue_max: int = 32,
-    llmio_api_key: str = "",
+    llmio_api_key: str = "test-key",
 ) -> SimpleNamespace:
     """Build a settings stand-in with test-friendly (tiny) intervals.
 
@@ -182,6 +183,7 @@ def make_settings(
             stale_reclaim_seconds=stale_reclaim_seconds,
             max_depth=max_depth,
             default_model_level=default_model_level,
+            monitor_max_model_level=monitor_max_model_level,
             min_interval_seconds=min_interval_seconds,
             auto_stop_no_change_runs=auto_stop_no_change_runs,
             max_idle_runs=max_idle_runs,

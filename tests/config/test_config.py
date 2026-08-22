@@ -387,6 +387,12 @@ def test_subsessions_default_model_level_invalid_raises() -> None:
         Settings(subsessions={"default_model_level": 5})
 
 
+def test_subsessions_monitor_max_model_level_invalid_raises() -> None:
+    """``subsessions.monitor_max_model_level = 5`` is rejected."""
+    with pytest.raises(ValueError, match="monitor_max_model_level"):
+        Settings(subsessions={"monitor_max_model_level": 5})
+
+
 def test_subsessions_min_interval_zero_raises() -> None:
     """``subsessions.min_interval_seconds = 0.0`` is rejected."""
     with pytest.raises(ValueError, match="min_interval_seconds"):
