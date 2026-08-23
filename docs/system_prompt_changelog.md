@@ -2701,7 +2701,7 @@ a contradiction that caused the agent to conservatively gate.  The
 HUMAN_ISSUE_APPROVAL exception list also lacked the proposal case.  This
 change resolves both gaps.
 
-**SHA256:** `e235c04611bac1724661359aa5d7a2fdece8bd6a52168874091e94cb59070eb9`
+**SHA256:** `11d5fe5eb53f012a764ad93908c0ccd61ea6c751e7345584f44fad5ec15fdb58`
 
 ## AUTONOMOUS v35 — 2026-08-23 — 20260823T150717Z-re-fetch-live-state-before-reporting-on-bcd4
 
