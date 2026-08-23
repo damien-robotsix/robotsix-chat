@@ -16,7 +16,7 @@ not the lifecycle API. All secret values in environment responses are masked as 
 | `get_lifecycle_service_env`    | `GET /services/{name}/env`           | Runtime environment (secrets masked).                                      |
 | `restart_lifecycle_service`    | `POST /services/{name}/restart`      | Restart a service (requires per-repo access toggle).                       |
 | `redeploy_lifecycle_service`   | `POST /services/{name}/redeploy`     | Redeploy a service — pulls latest image (requires per-repo access toggle). |
-| `verify_lifecycle_deployment` | `GET /services/{name}/status` (poll) | Poll service until healthy and (optionally) image matches expected ref. |
+| `verify_lifecycle_deployment`  | `GET /services/{name}/status` (poll) | Poll service until healthy and (optionally) image matches expected ref.    |
 | `self_restart`                 | `POST /chat/services/{name}/restart` | Restart this service (named via `lifecycle.service_name`).                 |
 | `update_lifecycle_service_env` | `PUT /services/{name}/env`           | Update service environment (requires per-repo access toggle).              |
 
@@ -85,23 +85,22 @@ reach them through any other path:
 
 ## Post-merge deployment verification
 
-After merging a PR that changes a tracked component (cost-fix, infrastructure change, or any
-code change that produces a new container image), **do not close the ticket** until the new
-image is confirmed running in production:
+After merging a PR that changes a tracked component (cost-fix, infrastructure change, or any code
+change that produces a new container image), **do not close the ticket** until the new image is
+confirmed running in production:
 
 1. **Trigger redeploy** — call `redeploy_lifecycle_service` for the affected service.
 1. **Verify deployment** — call `verify_lifecycle_deployment` with the expected image reference
-   (e.g. the tag or digest the PR was built from).  This polls the service status until the
-   running image matches and the service is healthy.
-1. **Re-measure metrics** — after the deployment is confirmed, check the key metrics the ticket
-   was meant to improve (cost, latency, error rate, etc.) to confirm the change had the intended
-   effect.
+   (e.g. the tag or digest the PR was built from). This polls the service status until the running
+   image matches and the service is healthy.
+1. **Re-measure metrics** — after the deployment is confirmed, check the key metrics the ticket was
+   meant to improve (cost, latency, error rate, etc.) to confirm the change had the intended effect.
 1. **Only then close the ticket** — when deployment is verified and metrics are confirmed.
 
-The `verify_lifecycle_deployment` tool accepts an `expected_image_ref` that is matched
-by substring against the running image identifier.  You can pass a tag (`:main`), a
-digest prefix (`sha256:abc123`), or a full reference.  When `expected_image_ref` is
-empty, the tool verifies only that the service is running and healthy.
+The `verify_lifecycle_deployment` tool accepts an `expected_image_ref` that is matched by substring
+against the running image identifier. You can pass a tag (`:main`), a digest prefix
+(`sha256:abc123`), or a full reference. When `expected_image_ref` is empty, the tool verifies only
+that the service is running and healthy.
 
 ## Safety
 
