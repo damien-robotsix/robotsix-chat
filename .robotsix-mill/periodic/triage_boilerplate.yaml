@@ -1,1 +1,54 @@
 name: triage_boilerplate
+prompt_overlay: |
+  ## Cycle-ceiling pattern detection — systemic review-stage replay
+
+  When two or more separate tickets hit the 10/10 implement/review cycle
+  ceiling with the **same reviewer-blocking rationale** in a short
+  timeframe (days, not weeks), escalate immediately as a potential
+  systemic review-stage replay bug rather than attempting per-ticket
+  fixes.
+
+  ### Why this matters
+
+  A stale cached review verdict can replay `REQUEST_CHANGES` verbatim
+  across every cycle even after the implementation has changed. The
+  symptom is a phantom rejection — the reviewer demands something that
+  was already fixed, or that the implement agent deletes by design
+  (e.g. towncrier fragments on a release-please repo). The underlying
+  cache hit makes the new reviewer code invisible; every cycle replays
+  the same pre-fix outcome until the ticket burns its ceiling.
+
+  The per-ticket fix in these cases is to invalidate the stage cache
+  (the root cause has already been patched in the reviewer). Filing
+  yet another "implement the requested change" ticket is counter-
+  productive — it cycles through the same cached verdict again.
+
+  ### Detection rules
+
+  1. Scan tickets that reached the 10/10 implement/review ceiling
+     (state `done` with `termination_reason: ceiling` or equivalent).
+  2. Group by the reviewer's blocking rationale (the note text from
+     the final `REQUEST_CHANGES` outcome).
+  3. If ≥2 tickets in the same timeframe share the same rationale,
+     file ONE escalation draft — not one per ticket.
+
+  ### Escalation draft
+
+  Title: "Potential review-stage replay: N tickets hit cycle ceiling
+  with identical reviewer rationale"
+
+  Body:
+  - List the ticket IDs
+  - Quote the shared blocking rationale
+  - Note the timeframe
+  - Recommend invalidating the stage cache for those tickets rather
+    than filing per-ticket implement drafts
+
+  ### When NOT to apply
+
+  - A single isolated ticket hitting the ceiling (no shared rationale
+    with any sibling).
+  - Tickets with different blocking rationales (true per-ticket issues,
+    not a systemic replay).
+  - The reviewer rationale is demonstrably valid and the implement
+    agent genuinely failed to address it each cycle.
