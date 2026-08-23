@@ -2681,7 +2681,7 @@ feedback, the assistant correctly auto-approved sibling tickets.  This rule
 closes the gap: well-scoped tickets authored by the agent with verifiable,
 low-risk specs should not require the repo to be in the allowlist.
 
-**SHA256:** `8a286c0785738466c01815a524003820a3501e3d23e4bc2373dd24e8aa3431e2`
+**SHA256:** `bdcb19cefa913f150b5a5e447c162f14f72ac0141a1bf6944ccfb8c760f05d42`
 
 ## AUTONOMOUS v32 — 2026-08-22 — 20260822T174744Z-governance-once-the-operator-approves-a-e78d
 
