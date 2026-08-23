@@ -352,6 +352,14 @@ class MessageCoalescer:
             # closed session that nobody messages stays closed.
             if had_session:
                 store.reopen_session(session_id)
+                # The same turn reopens an autonomous session.  Its run
+                # completes within minutes but the card stays on screen for
+                # the rest of the trigger interval, so the session the
+                # operator opens and talks to is usually one the runner has
+                # already marked completed — i.e. one its next restart fire
+                # would retire and replace mid-conversation.
+                if autonomous_runner is not None:
+                    autonomous_runner.note_operator_turn(session_id)
 
             # Idempotency check on the first pending message's message_id.
             first_msg = pending[0]

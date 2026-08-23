@@ -928,7 +928,15 @@ class ConversationStore:
             }
 
         owner.session_ids.discard(session_id)
-        self._sessions.pop(session_id, None)
+        # Only destroy the conversation itself once no owner references it.
+        # A session can be dual-owned: ``record`` registers it under whoever
+        # sends a turn, so an autonomous session the operator chats with ends
+        # up in both owners' registries.  Popping it unconditionally left the
+        # other owner holding a dangling id, which ``begin`` then silently
+        # re-created as a blank session — the operator kept typing into what
+        # looked like the same chat while its history was gone.
+        if not self._owner_ids_for(session_id):
+            self._sessions.pop(session_id, None)
 
         if owner.active_session_id == session_id:
             remaining = [
@@ -1009,6 +1017,17 @@ class ConversationStore:
         session.closed = False
         self._persist()
         return True
+
+    def last_active(self, session_id: str) -> float | None:
+        """Return *session_id*'s wall-clock last-activity timestamp.
+
+        ``None`` when the session is unknown (never created, or evicted).
+        Public accessor so external code — the autonomous runner's retire
+        sweep — can tell a session the operator is actively chatting with
+        from an abandoned one without reaching into ``_sessions``.
+        """
+        session = self._sessions.get(session_id)
+        return session.wall_last_active if session is not None else None
 
     def compact_session(
         self,
@@ -1100,6 +1119,19 @@ class ConversationStore:
             # Remove from all owner registries.
             for owner_state in self._owners.values():
                 owner_state.session_ids.discard(evicted_sid)
+
+    def _owner_ids_for(self, session_id: str) -> list[str]:
+        """Return every owner id whose registry still holds *session_id*.
+
+        A session is normally owned once, but ``record`` adds it to whichever
+        owner sends a turn, so an autonomous session the operator chats with
+        is genuinely dual-owned.
+        """
+        return [
+            oid
+            for oid, ostate in self._owners.items()
+            if session_id in ostate.session_ids
+        ]
 
     def owner_for_session(self, session_id: str) -> str | None:
         """Return the ``owner_id`` that owns *session_id*, or ``None``.
