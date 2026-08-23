@@ -14,11 +14,12 @@ import httpx
 import pytest
 import respx
 
-from robotsix_chat.config import DirectRepoSettings, Settings
+from robotsix_chat.config import AutonomousSettings, DirectRepoSettings, Settings
 from robotsix_chat.ticket_poll import (
     _check_unexpected_terminal,
     build_file_ticket_tool,
     build_find_ticket_by_pr_tool,
+    build_list_stale_ready_tickets_tool,
     build_mark_ticket_ready_tool,
     build_merge_pull_request_tool,
     build_ticket_poll_tools,
@@ -67,6 +68,58 @@ def _component_request_error(
         return error_msg
 
     return _req
+
+
+def _component_request_ticket_list(
+    tickets: Any,
+) -> Callable[..., Any]:
+    """Return an async mock that returns a roster-style ticket list response."""
+
+    async def _req(
+        component: str,
+        method: str,
+        path: str,
+        **kwargs: Any,
+    ) -> str:
+        return "HTTP 200 OK\n" + json.dumps(tickets)
+
+    return _req
+
+
+def _component_request_http_error(
+    status_code: int = 502,
+    body: str = '{"error": "internal"}',
+) -> Callable[..., Any]:
+    """Return an async mock that returns a roster-style HTTP error response."""
+
+    async def _req(
+        component: str,
+        method: str,
+        path: str,
+        **kwargs: Any,
+    ) -> str:
+        return f"HTTP {status_code} Bad Gateway\n{body}"
+
+    return _req
+
+
+def _stale_settings(
+    ready_staleness_minutes: int = 10,
+    **kw: Any,
+) -> Settings:
+    """Return Settings with autonomous.ready_staleness_minutes configured."""
+    base: dict[str, Any] = {
+        "board_api_base_url": "http://board:8077",
+        "board_api_token": "",
+        "timeout": 10.0,
+    }
+    base.update(kw)
+    return Settings(
+        direct_repo=DirectRepoSettings(**base),
+        autonomous=AutonomousSettings(
+            ready_staleness_minutes=ready_staleness_minutes,
+        ),
+    )
 
 
 # ---------------------------------------------------------------------------
@@ -1680,3 +1733,841 @@ async def test_file_ticket_reports_dedup_hit(respx_mock: respx.MockRouter) -> No
 
     assert result["ticket_id"] == "t-existing"
     assert result["error"] == ""
+
+
+# ---------------------------------------------------------------------------
+# build_list_stale_ready_tickets_tool — disabled / empty
+# ---------------------------------------------------------------------------
+
+
+def test_list_stale_ready_empty_config_returns_empty_list() -> None:
+    """Neither component_request nor board_api_base_url → empty list."""
+    settings = Settings(
+        direct_repo=DirectRepoSettings(board_api_base_url=""),
+        autonomous=AutonomousSettings(ready_staleness_minutes=10),
+    )
+    tools = build_list_stale_ready_tickets_tool(
+        settings,
+        component_request=None,
+    )
+    assert tools == []
+
+
+def test_list_stale_ready_configured_returns_one_tool() -> None:
+    """When board_api_base_url is set, returns one list_stale_ready_tickets tool."""
+    tools = build_list_stale_ready_tickets_tool(_stale_settings())
+    assert len(tools) == 1
+    assert tools[0].__name__ == "list_stale_ready_tickets"
+
+
+# ---------------------------------------------------------------------------
+# build_list_stale_ready_tickets_tool — roster path success
+# ---------------------------------------------------------------------------
+
+
+@pytest.mark.asyncio
+async def test_list_stale_ready_roster_success_no_stale() -> None:
+    """Roster path returns tickets; none are stale when all are recent."""
+    now = 1_750_000_000.0
+    recent = now - 60  # 1 minute ago
+    tickets = [
+        {
+            "id": "t-fresh",
+            "state": "ready",
+            "title": "Fresh ticket",
+            "updated_at": recent,
+            "created_at": recent,
+        },
+    ]
+
+    tools = build_list_stale_ready_tickets_tool(
+        _stale_settings(ready_staleness_minutes=10),
+        component_request=_component_request_ticket_list(tickets),
+    )
+
+    import time as _time_mod
+
+    original_time = _time_mod.time
+    try:
+        _time_mod.time = lambda: now
+        result = json.loads(await tools[0]())
+    finally:
+        _time_mod.time = original_time
+
+    assert result["stale_ready_count"] == 0
+    assert result["total_ready"] == 1
+    assert result["threshold_minutes"] == 10
+    assert result["stale_tickets"] == []
+    assert result.get("error") is None
+
+
+@pytest.mark.asyncio
+async def test_list_stale_ready_roster_success_with_stale() -> None:
+    """Roster path returns tickets; tickets older than threshold are stale."""
+    now = 1_750_000_000.0
+    stale_age = 900  # 15 minutes ago
+    recent_age = 120  # 2 minutes ago
+    tickets = [
+        {
+            "id": "t-stale",
+            "state": "ready",
+            "title": "Stale ticket",
+            "updated_at": now - stale_age,
+            "created_at": now - stale_age,
+        },
+        {
+            "id": "t-recent",
+            "state": "ready",
+            "title": "Recent ticket",
+            "updated_at": now - recent_age,
+            "created_at": now - recent_age,
+        },
+        {
+            "id": "t-done",
+            "state": "done",
+            "title": "Done ticket",
+            "updated_at": now - stale_age,
+            "created_at": now - stale_age,
+        },
+    ]
+
+    tools = build_list_stale_ready_tickets_tool(
+        _stale_settings(ready_staleness_minutes=10),
+        component_request=_component_request_ticket_list(tickets),
+    )
+
+    import time as _time_mod
+
+    original_time = _time_mod.time
+    try:
+        _time_mod.time = lambda: now
+        result = json.loads(await tools[0]())
+    finally:
+        _time_mod.time = original_time
+
+    assert result["stale_ready_count"] == 1
+    assert result["total_ready"] == 2
+    assert len(result["stale_tickets"]) == 1
+    assert result["stale_tickets"][0]["ticket_id"] == "t-stale"
+    assert result["stale_tickets"][0]["state"] == "READY"
+
+
+@pytest.mark.asyncio
+async def test_list_stale_ready_roster_ticket_list_key() -> None:
+    """Roster path returns dict with 'tickets' key wrapping the list."""
+    tickets = [
+        {
+            "id": "t-wrapped",
+            "state": "ready",
+            "title": "Test",
+            "updated_at": 1_750_000_000.0,
+            "created_at": 1_750_000_000.0,
+        },
+    ]
+
+    tools = build_list_stale_ready_tickets_tool(
+        _stale_settings(ready_staleness_minutes=10),
+        component_request=_component_request_ticket_list({"tickets": tickets}),
+    )
+
+    result = json.loads(await tools[0]())
+    assert result["total_ready"] == 1
+
+
+# ---------------------------------------------------------------------------
+# build_list_stale_ready_tickets_tool — roster fallback to direct
+# ---------------------------------------------------------------------------
+
+
+@pytest.mark.asyncio
+async def test_list_stale_ready_roster_falls_back_to_direct(
+    respx_mock: respx.MockRouter,
+) -> None:
+    """When roster returns error, fall back to the direct board API URL."""
+    tickets = [
+        {
+            "id": "t-fallback",
+            "state": "ready",
+            "title": "Fallback ticket",
+            "updated_at": 1_750_000_000.0,
+            "created_at": 1_750_000_000.0,
+        },
+    ]
+    route = respx_mock.get("http://board:8077/tickets").mock(
+        return_value=httpx.Response(200, json=tickets),
+    )
+
+    tools = build_list_stale_ready_tickets_tool(
+        _stale_settings(ready_staleness_minutes=10),
+        component_request=_component_request_error("Error: connection refused"),
+    )
+    result = json.loads(await tools[0]())
+
+    assert route.called
+    assert result["total_ready"] == 1
+    assert result["stale_tickets"][0]["ticket_id"] == "t-fallback"
+
+
+@pytest.mark.asyncio
+async def test_list_stale_ready_roster_http_error_returns_error() -> None:
+    """When roster returns HTTP 502, the error is surfaced directly (no fallback)."""
+    tools = build_list_stale_ready_tickets_tool(
+        _stale_settings(ready_staleness_minutes=10),
+        component_request=_component_request_error("HTTP 502 Bad Gateway"),
+    )
+    result = json.loads(await tools[0]())
+
+    assert "error" in result
+    assert "Unexpected response format" in result["error"]
+    assert result["stale_ready_count"] == 0
+
+
+@pytest.mark.asyncio
+async def test_list_stale_ready_roster_http_500_proper_format() -> None:
+    """When roster returns a properly-formatted HTTP 500, error is surfaced."""
+    tools = build_list_stale_ready_tickets_tool(
+        _stale_settings(ready_staleness_minutes=10),
+        component_request=_component_request_http_error(500),
+    )
+    result = json.loads(await tools[0]())
+
+    assert "error" in result
+    assert "500" in result["error"]
+    assert result["stale_ready_count"] == 0
+
+
+@pytest.mark.asyncio
+async def test_list_stale_ready_direct_only(
+    respx_mock: respx.MockRouter,
+) -> None:
+    """Without component_request, the direct path is used directly."""
+    tickets = [
+        {
+            "id": "t-direct",
+            "state": "ready",
+            "title": "Direct ticket",
+            "updated_at": 1_750_000_000.0,
+            "created_at": 1_750_000_000.0,
+        },
+    ]
+    route = respx_mock.get("http://board:8077/tickets").mock(
+        return_value=httpx.Response(200, json=tickets),
+    )
+
+    tools = build_list_stale_ready_tickets_tool(
+        _stale_settings(ready_staleness_minutes=10),
+    )
+    result = json.loads(await tools[0]())
+
+    assert route.called
+    assert result["total_ready"] == 1
+
+
+# ---------------------------------------------------------------------------
+# build_list_stale_ready_tickets_tool — HTTP error handling
+# ---------------------------------------------------------------------------
+
+
+@pytest.mark.asyncio
+async def test_list_stale_ready_direct_http_404(
+    respx_mock: respx.MockRouter,
+) -> None:
+    """Direct path HTTP 404 → error JSON with zero counts."""
+    respx_mock.get("http://board:8077/tickets").mock(
+        return_value=httpx.Response(404),
+    )
+
+    tools = build_list_stale_ready_tickets_tool(_stale_settings())
+    result = json.loads(await tools[0]())
+
+    assert "error" in result
+    assert "404" in result["error"]
+    assert result["stale_ready_count"] == 0
+    assert result["stale_tickets"] == []
+
+
+@pytest.mark.asyncio
+async def test_list_stale_ready_direct_timeout(
+    respx_mock: respx.MockRouter,
+) -> None:
+    """Direct path timeout → error JSON with zero counts."""
+    respx_mock.get("http://board:8077/tickets").mock(
+        side_effect=httpx.ConnectTimeout("timed out"),
+    )
+
+    tools = build_list_stale_ready_tickets_tool(_stale_settings())
+    result = json.loads(await tools[0]())
+
+    assert "error" in result
+    assert "timed out" in result["error"]
+    assert result["stale_ready_count"] == 0
+
+
+@pytest.mark.asyncio
+async def test_list_stale_ready_direct_connect_error(
+    respx_mock: respx.MockRouter,
+) -> None:
+    """Direct path connect error → error JSON with zero counts."""
+    respx_mock.get("http://board:8077/tickets").mock(
+        side_effect=httpx.ConnectError("connection refused"),
+    )
+
+    tools = build_list_stale_ready_tickets_tool(_stale_settings())
+    result = json.loads(await tools[0]())
+
+    assert "error" in result
+    assert "timed out" in result["error"] or "Board API" in result["error"]
+    assert result["stale_ready_count"] == 0
+
+
+# ---------------------------------------------------------------------------
+# build_list_stale_ready_tickets_tool — timestamp parsing
+# ---------------------------------------------------------------------------
+
+
+@pytest.mark.asyncio
+async def test_list_stale_ready_timestamp_iso_with_timezone() -> None:
+    """ISO-8601 timestamp with timezone offset is parsed correctly."""
+    now = 1_750_000_000.0
+    stale_age = 900  # 15 minutes ago
+    ts = now - stale_age
+    import datetime
+
+    dt = datetime.datetime.fromtimestamp(ts, tz=datetime.UTC)
+    iso_str = dt.isoformat()
+
+    tickets = [
+        {
+            "id": "t-iso-tz",
+            "state": "ready",
+            "title": "ISO TZ ticket",
+            "updated_at": iso_str,
+            "created_at": iso_str,
+        },
+    ]
+
+    tools = build_list_stale_ready_tickets_tool(
+        _stale_settings(ready_staleness_minutes=10),
+        component_request=_component_request_ticket_list(tickets),
+    )
+
+    import time as _time_mod
+
+    original_time = _time_mod.time
+    try:
+        _time_mod.time = lambda: now
+        result = json.loads(await tools[0]())
+    finally:
+        _time_mod.time = original_time
+
+    assert result["stale_ready_count"] == 1
+    assert result["stale_tickets"][0]["staleness"] == "15m"
+
+
+@pytest.mark.asyncio
+async def test_list_stale_ready_timestamp_iso_without_timezone() -> None:
+    """ISO-8601 timestamp without timezone is treated as UTC."""
+    now = 1_750_000_000.0
+    stale_age = 900  # 15 minutes ago
+    ts = now - stale_age
+    import datetime
+
+    dt = datetime.datetime.fromtimestamp(ts, tz=datetime.UTC)
+    # Remove timezone info for naive iso
+    iso_str = dt.replace(tzinfo=None).isoformat()
+
+    tickets = [
+        {
+            "id": "t-iso-naive",
+            "state": "ready",
+            "title": "ISO naive ticket",
+            "updated_at": iso_str,
+            "created_at": iso_str,
+        },
+    ]
+
+    tools = build_list_stale_ready_tickets_tool(
+        _stale_settings(ready_staleness_minutes=10),
+        component_request=_component_request_ticket_list(tickets),
+    )
+
+    import time as _time_mod
+
+    original_time = _time_mod.time
+    try:
+        _time_mod.time = lambda: now
+        result = json.loads(await tools[0]())
+    finally:
+        _time_mod.time = original_time
+
+    assert result["stale_ready_count"] == 1
+    assert result["stale_tickets"][0]["staleness"] == "15m"
+
+
+@pytest.mark.asyncio
+async def test_list_stale_ready_timestamp_unix_float() -> None:
+    """Unix-seconds float timestamp is parsed correctly."""
+    now = 1_750_000_000.0
+    stale_age = 900  # 15 minutes ago
+
+    tickets = [
+        {
+            "id": "t-unix",
+            "state": "ready",
+            "title": "Unix timestamp",
+            "updated_at": now - stale_age,
+            "created_at": now - stale_age,
+        },
+    ]
+
+    tools = build_list_stale_ready_tickets_tool(
+        _stale_settings(ready_staleness_minutes=10),
+        component_request=_component_request_ticket_list(tickets),
+    )
+
+    import time as _time_mod
+
+    original_time = _time_mod.time
+    try:
+        _time_mod.time = lambda: now
+        result = json.loads(await tools[0]())
+    finally:
+        _time_mod.time = original_time
+
+    assert result["stale_ready_count"] == 1
+    assert result["stale_tickets"][0]["staleness"] == "15m"
+
+
+@pytest.mark.asyncio
+async def test_list_stale_ready_timestamp_unix_float_as_string() -> None:
+    """Unix-seconds float stored as string is parsed correctly."""
+    now = 1_750_000_000.0
+    stale_age = 900  # 15 minutes ago
+
+    tickets = [
+        {
+            "id": "t-unix-str",
+            "state": "ready",
+            "title": "Unix string ticket",
+            "updated_at": str(now - stale_age),
+            "created_at": str(now - stale_age),
+        },
+    ]
+
+    tools = build_list_stale_ready_tickets_tool(
+        _stale_settings(ready_staleness_minutes=10),
+        component_request=_component_request_ticket_list(tickets),
+    )
+
+    import time as _time_mod
+
+    original_time = _time_mod.time
+    try:
+        _time_mod.time = lambda: now
+        result = json.loads(await tools[0]())
+    finally:
+        _time_mod.time = original_time
+
+    assert result["stale_ready_count"] == 1
+
+
+@pytest.mark.asyncio
+async def test_list_stale_ready_timestamp_unparsable() -> None:
+    """Unparsable timestamp string → ticket is included with 'unknown' staleness."""
+    now = 1_750_000_000.0
+
+    tickets = [
+        {
+            "id": "t-bad-ts",
+            "state": "ready",
+            "title": "Bad timestamp",
+            "updated_at": "not-a-timestamp",
+            "created_at": "not-a-timestamp",
+        },
+    ]
+
+    tools = build_list_stale_ready_tickets_tool(
+        _stale_settings(ready_staleness_minutes=10),
+        component_request=_component_request_ticket_list(tickets),
+    )
+
+    import time as _time_mod
+
+    original_time = _time_mod.time
+    try:
+        _time_mod.time = lambda: now
+        result = json.loads(await tools[0]())
+    finally:
+        _time_mod.time = original_time
+
+    assert result["stale_ready_count"] == 1
+    assert result["stale_tickets"][0]["staleness"] == "unknown (no timestamp)"
+
+
+@pytest.mark.asyncio
+async def test_list_stale_ready_timestamp_missing() -> None:
+    """Missing both updated_at and created_at → included with 'unknown' staleness."""
+    now = 1_750_000_000.0
+
+    tickets = [
+        {
+            "id": "t-no-ts",
+            "state": "ready",
+            "title": "No timestamp",
+        },
+    ]
+
+    tools = build_list_stale_ready_tickets_tool(
+        _stale_settings(ready_staleness_minutes=10),
+        component_request=_component_request_ticket_list(tickets),
+    )
+
+    import time as _time_mod
+
+    original_time = _time_mod.time
+    try:
+        _time_mod.time = lambda: now
+        result = json.loads(await tools[0]())
+    finally:
+        _time_mod.time = original_time
+
+    assert result["stale_ready_count"] == 1
+    assert result["stale_tickets"][0]["staleness"] == "unknown (no timestamp)"
+
+
+# ---------------------------------------------------------------------------
+# build_list_stale_ready_tickets_tool — _format_staleness helper
+# ---------------------------------------------------------------------------
+
+
+@pytest.mark.asyncio
+async def test_list_stale_ready_format_staleness_hours() -> None:
+    """Staleness >= 120 minutes is formatted in hours."""
+    now = 1_750_000_000.0
+    stale_age = 3 * 3600  # 3 hours = 180 minutes
+
+    tickets = [
+        {
+            "id": "t-hours",
+            "state": "ready",
+            "title": "Hours ticket",
+            "updated_at": now - stale_age,
+            "created_at": now - stale_age,
+        },
+    ]
+
+    tools = build_list_stale_ready_tickets_tool(
+        _stale_settings(ready_staleness_minutes=10),
+        component_request=_component_request_ticket_list(tickets),
+    )
+
+    import time as _time_mod
+
+    original_time = _time_mod.time
+    try:
+        _time_mod.time = lambda: now
+        result = json.loads(await tools[0]())
+    finally:
+        _time_mod.time = original_time
+
+    assert result["stale_tickets"][0]["staleness"] == "3.0h"
+
+
+@pytest.mark.asyncio
+async def test_list_stale_ready_format_staleness_minutes() -> None:
+    """Staleness between 1 and 120 minutes is formatted in minutes."""
+    now = 1_750_000_000.0
+    stale_age = 300  # 5 minutes
+
+    tickets = [
+        {
+            "id": "t-minutes",
+            "state": "ready",
+            "title": "Minutes ticket",
+            "updated_at": now - stale_age,
+            "created_at": now - stale_age,
+        },
+    ]
+
+    tools = build_list_stale_ready_tickets_tool(
+        _stale_settings(ready_staleness_minutes=2),
+        component_request=_component_request_ticket_list(tickets),
+    )
+
+    import time as _time_mod
+
+    original_time = _time_mod.time
+    try:
+        _time_mod.time = lambda: now
+        result = json.loads(await tools[0]())
+    finally:
+        _time_mod.time = original_time
+
+    assert result["stale_tickets"][0]["staleness"] == "5m"
+
+
+@pytest.mark.asyncio
+async def test_list_stale_ready_format_staleness_seconds() -> None:
+    """Staleness just at the threshold (60 s) is formatted as '1m'."""
+    now = 1_750_000_000.0
+    stale_age = 60  # exactly 1 minute
+
+    tickets = [
+        {
+            "id": "t-one-minute",
+            "state": "ready",
+            "title": "One minute ticket",
+            "updated_at": now - stale_age,
+            "created_at": now - stale_age,
+        },
+    ]
+
+    tools = build_list_stale_ready_tickets_tool(
+        _stale_settings(ready_staleness_minutes=1),
+        component_request=_component_request_ticket_list(tickets),
+    )
+
+    import time as _time_mod
+
+    original_time = _time_mod.time
+    try:
+        _time_mod.time = lambda: now
+        result = json.loads(await tools[0]())
+    finally:
+        _time_mod.time = original_time
+
+    assert result["stale_tickets"][0]["staleness"] == "1m"
+
+
+# ---------------------------------------------------------------------------
+# build_list_stale_ready_tickets_tool — JSON output and sorting
+# ---------------------------------------------------------------------------
+
+
+@pytest.mark.asyncio
+async def test_list_stale_ready_json_output_structure() -> None:
+    """Output JSON contains expected top-level keys."""
+    now = 1_750_000_000.0
+
+    tools = build_list_stale_ready_tickets_tool(
+        _stale_settings(ready_staleness_minutes=10),
+        component_request=_component_request_ticket_list([]),
+    )
+
+    import time as _time_mod
+
+    original_time = _time_mod.time
+    try:
+        _time_mod.time = lambda: now
+        result = json.loads(await tools[0]())
+    finally:
+        _time_mod.time = original_time
+
+    assert "stale_ready_count" in result
+    assert "total_ready" in result
+    assert "threshold_minutes" in result
+    assert "stale_tickets" in result
+    assert result["threshold_minutes"] == 10
+
+
+@pytest.mark.asyncio
+async def test_list_stale_ready_sorting_most_stale_first() -> None:
+    """Stale tickets are sorted by staleness_seconds descending (most stale first)."""
+    now = 1_750_000_000.0
+
+    tickets = [
+        {
+            "id": "t-mid",
+            "state": "ready",
+            "title": "Mid ticket",
+            "updated_at": now - 600,  # 10 min
+            "created_at": now - 600,
+        },
+        {
+            "id": "t-most",
+            "state": "ready",
+            "title": "Most stale",
+            "updated_at": now - 3600,  # 60 min
+            "created_at": now - 3600,
+        },
+        {
+            "id": "t-least",
+            "state": "ready",
+            "title": "Least stale",
+            "updated_at": now - 120,  # 2 min
+            "created_at": now - 120,
+        },
+    ]
+
+    tools = build_list_stale_ready_tickets_tool(
+        _stale_settings(ready_staleness_minutes=1),
+        component_request=_component_request_ticket_list(tickets),
+    )
+
+    import time as _time_mod
+
+    original_time = _time_mod.time
+    try:
+        _time_mod.time = lambda: now
+        result = json.loads(await tools[0]())
+    finally:
+        _time_mod.time = original_time
+
+    stale_ids = [t["ticket_id"] for t in result["stale_tickets"]]
+    assert stale_ids == ["t-most", "t-mid", "t-least"]
+
+
+@pytest.mark.asyncio
+async def test_list_stale_ready_unknown_staleness_sorted_last() -> None:
+    """Tickets with unknown staleness sort after timed tickets."""
+    now = 1_750_000_000.0
+
+    tickets = [
+        {
+            "id": "t-no-ts",
+            "state": "ready",
+            "title": "No timestamp",
+        },
+        {
+            "id": "t-known",
+            "state": "ready",
+            "title": "Known staleness",
+            "updated_at": now - 600,
+            "created_at": now - 600,
+        },
+    ]
+
+    tools = build_list_stale_ready_tickets_tool(
+        _stale_settings(ready_staleness_minutes=1),
+        component_request=_component_request_ticket_list(tickets),
+    )
+
+    import time as _time_mod
+
+    original_time = _time_mod.time
+    try:
+        _time_mod.time = lambda: now
+        result = json.loads(await tools[0]())
+    finally:
+        _time_mod.time = original_time
+
+    stale_ids = [t["ticket_id"] for t in result["stale_tickets"]]
+    # Unknown staleness uses -(float('inf')) = -inf in sort key, so it sorts first
+    assert stale_ids[0] == "t-no-ts"
+
+
+@pytest.mark.asyncio
+async def test_list_stale_ready_ticket_fields_in_output() -> None:
+    """Each stale ticket entry contains all expected fields."""
+    now = 1_750_000_000.0
+
+    tickets = [
+        {
+            "id": "t-fields",
+            "state": "ready",
+            "title": "Fields ticket",
+            "updated_at": now - 900,
+            "created_at": now - 1200,
+        },
+    ]
+
+    tools = build_list_stale_ready_tickets_tool(
+        _stale_settings(ready_staleness_minutes=10),
+        component_request=_component_request_ticket_list(tickets),
+    )
+
+    import time as _time_mod
+
+    original_time = _time_mod.time
+    try:
+        _time_mod.time = lambda: now
+        result = json.loads(await tools[0]())
+    finally:
+        _time_mod.time = original_time
+
+    entry = result["stale_tickets"][0]
+    assert entry["ticket_id"] == "t-fields"
+    assert entry["state"] == "READY"
+    assert entry["title"] == "Fields ticket"
+    assert "staleness" in entry
+    assert entry["staleness_seconds"] is not None
+    assert entry["updated_at"] is not None
+    assert entry["created_at"] is not None
+
+
+# ---------------------------------------------------------------------------
+# build_list_stale_ready_tickets_tool — configurable threshold
+# ---------------------------------------------------------------------------
+
+
+@pytest.mark.asyncio
+async def test_list_stale_ready_respects_threshold() -> None:
+    """Tickets older than threshold are stale; newer are not."""
+    now = 1_750_000_000.0
+
+    tickets = [
+        {
+            "id": "t-old",
+            "state": "ready",
+            "title": "Old",
+            "updated_at": now - 600,  # 10 min
+            "created_at": now - 600,
+        },
+        {
+            "id": "t-new",
+            "state": "ready",
+            "title": "New",
+            "updated_at": now - 300,  # 5 min
+            "created_at": now - 300,
+        },
+    ]
+
+    tools = build_list_stale_ready_tickets_tool(
+        _stale_settings(ready_staleness_minutes=7),
+        component_request=_component_request_ticket_list(tickets),
+    )
+
+    import time as _time_mod
+
+    original_time = _time_mod.time
+    try:
+        _time_mod.time = lambda: now
+        result = json.loads(await tools[0]())
+    finally:
+        _time_mod.time = original_time
+
+    assert result["stale_ready_count"] == 1
+    assert result["total_ready"] == 2
+    assert result["stale_tickets"][0]["ticket_id"] == "t-old"
+
+
+@pytest.mark.asyncio
+async def test_list_stale_ready_uses_ticket_id_field() -> None:
+    """Tickets using 'ticket_id' key instead of 'id' are handled correctly."""
+    now = 1_750_000_000.0
+
+    tickets = [
+        {
+            "ticket_id": "t-ticket-id",
+            "state": "ready",
+            "title": "Uses ticket_id key",
+            "updated_at": now - 900,
+            "created_at": now - 900,
+        },
+    ]
+
+    tools = build_list_stale_ready_tickets_tool(
+        _stale_settings(ready_staleness_minutes=10),
+        component_request=_component_request_ticket_list(tickets),
+    )
+
+    import time as _time_mod
+
+    original_time = _time_mod.time
+    try:
+        _time_mod.time = lambda: now
+        result = json.loads(await tools[0]())
+    finally:
+        _time_mod.time = original_time
+
+    assert result["stale_tickets"][0]["ticket_id"] == "t-ticket-id"
