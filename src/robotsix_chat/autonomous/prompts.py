@@ -10,7 +10,7 @@ if TYPE_CHECKING:
 # Version stamp for the autonomous appendix (build_autonomous_instruction).
 # Bump on every change to the instruction text and update
 # docs/system_prompt_changelog.md with a new AUTONOMOUS entry + SHA256.
-AUTONOMOUS_PROMPT_VERSION = 33
+AUTONOMOUS_PROMPT_VERSION = 34
 
 
 def build_autonomous_instruction(settings: Settings) -> str:
@@ -204,6 +204,32 @@ def build_autonomous_instruction(settings: Settings) -> str:
         "Before completing, call list_subsessions to confirm only periodic "
         "monitors remain (or that any remaining non-periodic subsessions are "
         "idle).\n"
+        "\n"
+        "POST-MERGE DEPLOYMENT VERIFICATION — when your task involves "
+        "merging a PR that changes a tracked component (cost-fix, "
+        "infrastructure change, or any code change that produces a new "
+        "container image), the task is NOT complete when the PR merges.  "
+        "You must verify that the new image is running in production before "
+        "closing the ticket:\n"
+        "\n"
+        "  1. After merging the PR, call redeploy_lifecycle_service for the "
+        "affected service to trigger a pull of the latest image.\n"
+        "  1. Call verify_lifecycle_deployment with the expected image "
+        "reference (the tag or digest the PR was built from) and the "
+        "affected service name.  This polls the deploy server until the "
+        "running image matches and the service is healthy.\n"
+        "  1. After the deployment is confirmed, re-measure the key metrics "
+        "the ticket was meant to improve (cost, latency, error rate, etc.) "
+        "to confirm the change had the intended effect.\n"
+        "  1. Only then — when deployment is verified and metrics are "
+        "confirmed — may you close the ticket.  A merged PR with the old "
+        "image still running is NOT completion.\n"
+        "\n"
+        "If the deploy server's per-repo access toggle is not enabled for "
+        "this component (redeploy/verify return 403), report to the operator "
+        "that the PR is merged but a manual redeploy is needed, and file a "
+        "tracking ticket for the deployment step — do NOT close the original "
+        "ticket as complete.\n"
         "\n"
         "4. COMPLETION — When the task is complete (goal reached, or all "
         "actions taken and no further progress is possible), emit this "

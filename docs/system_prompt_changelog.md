@@ -2682,6 +2682,16 @@ autonomous settings at their pydantic field defaults
 ``stale_monitor_runs_before_completion=3``,
 ``queue_tolerance_runs_before_escalation=3``).
 
+## AUTONOMOUS v34 — 2026-08-23 — 20260823T113350Z-add-post-merge-deployment-verification-t-1f75
+
+**Summary:** Add post-merge deployment verification instructions.  When
+the agent merges a PR that changes a tracked component, the task is NOT
+complete at merge — the agent must call `redeploy_lifecycle_service`,
+then `verify_lifecycle_deployment` to confirm the new image is running,
+re-measure key metrics, and only then close the ticket.
+
+**SHA256:** `3280b5f155b648483eac781a29ff30e8bcaa65de1f626f6e184f73c3de1d5dd1`
+
 ## AUTONOMOUS v33 — 2026-08-22 — 20260822T235436Z-auto-approve-low-risk-well-scoped-ticket-180c
 
 **Summary:** Add a new auto-approval rule for well-scoped, low-risk tickets.

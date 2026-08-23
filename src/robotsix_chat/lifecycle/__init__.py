@@ -196,6 +196,45 @@ def build_lifecycle_tools(
         """
         return await client.update_service_env(service_name, env)
 
+    async def verify_lifecycle_deployment(
+        service_name: str,
+        expected_image_ref: str = "",
+        poll_timeout_seconds: float = 300.0,
+        poll_interval_seconds: float = 15.0,
+    ) -> str:
+        """Verify that a lifecycle-managed service is deployed and healthy.
+
+        Polls the deploy server for *service_name*'s status until the
+        service reports healthy and, when *expected_image_ref* is
+        provided, the running image matches.  Use this after merging a
+        PR or triggering a redeploy to confirm the new version is live
+        before closing the associated ticket.
+
+        *expected_image_ref* can be any substring of the running image
+        identifier — a tag (``:main``), a digest prefix
+        (``sha256:abc123``), or a full registry reference
+        (``ghcr.io/owner/repo:main``).
+
+        Args:
+            service_name: The service identifier (e.g. ``"chat"``).
+            expected_image_ref: Optional image reference to match
+                against the running image.  Leave empty to verify
+                health only.
+            poll_timeout_seconds: Maximum time to wait (default 300 s).
+            poll_interval_seconds: Time between polls (default 15 s).
+
+        Returns:
+            A JSON verdict with ``verified``, ``detail``, and the
+            last known service status.
+
+        """
+        return await client.verify_deployment(
+            service_name=service_name,
+            expected_image_ref=expected_image_ref,
+            poll_timeout_seconds=poll_timeout_seconds,
+            poll_interval_seconds=poll_interval_seconds,
+        )
+
     return [
         list_lifecycle_services,
         get_lifecycle_service_status,
@@ -204,4 +243,5 @@ def build_lifecycle_tools(
         redeploy_lifecycle_service,
         update_lifecycle_service_env,
         self_restart,
+        verify_lifecycle_deployment,
     ]

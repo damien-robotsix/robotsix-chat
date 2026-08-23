@@ -19,6 +19,8 @@ from robotsix_chat.lifecycle.client import (
     _diagnose_self_restart_failure,
     _ensure_url_scheme,
     _is_transient_error,
+    _running_image_matches,
+    _service_is_healthy,
     _validate_http_url,
 )
 
@@ -44,8 +46,8 @@ def test_build_lifecycle_tools_disabled() -> None:
     assert build_lifecycle_tools(LifecycleSettings(enabled=False)) == []
 
 
-def test_build_lifecycle_tools_returns_seven_tools_including_mutations() -> None:
-    """Enabled lifecycle returns seven tools including mutation tools."""
+def test_build_lifecycle_tools_returns_eight_tools_including_verify() -> None:
+    """Enabled lifecycle returns eight tools including verify_deployment."""
     tools = build_lifecycle_tools(_settings())
     names = {t.__name__ for t in tools}
     assert names == {
@@ -56,6 +58,7 @@ def test_build_lifecycle_tools_returns_seven_tools_including_mutations() -> None
         "redeploy_lifecycle_service",
         "update_lifecycle_service_env",
         "self_restart",
+        "verify_lifecycle_deployment",
     }
 
 
@@ -918,3 +921,264 @@ async def test_malformed_base_url_is_treated_as_empty_for_all_methods(
     # Also verify no HTTP call was attempted (respx_mock would fail
     # on an unmatched route, so reaching here without error proves
     # the guard short-circuited before any request).
+
+
+# ---------------------------------------------------------------------------
+# _service_is_healthy
+# ---------------------------------------------------------------------------
+
+
+def test_service_is_healthy_running_with_health_checks() -> None:
+    """Running status with passing health checks is healthy."""
+    assert (
+        _service_is_healthy(
+            {
+                "status": "running",
+                "health_checks": [{"ok": True}, {"ok": True}],
+            }
+        )
+        is True
+    )
+
+
+def test_service_is_healthy_running_no_health_checks() -> None:
+    """Running status without health_checks array is healthy."""
+    assert _service_is_healthy({"status": "running"}) is True
+
+
+def test_service_is_healthy_stopped() -> None:
+    """Stopped status is not healthy."""
+    assert _service_is_healthy({"status": "stopped"}) is False
+
+
+def test_service_is_healthy_failing_health_check() -> None:
+    """Running with a failing health check is not healthy."""
+    assert (
+        _service_is_healthy(
+            {
+                "status": "running",
+                "health_checks": [{"ok": True}, {"ok": False}],
+            }
+        )
+        is False
+    )
+
+
+def test_service_is_healthy_state_field() -> None:
+    """The 'state' field is recognised as an alias for 'status'."""
+    assert _service_is_healthy({"state": "running"}) is True
+
+
+def test_service_is_healthy_healthy_status() -> None:
+    """A 'healthy' status string is healthy."""
+    assert _service_is_healthy({"status": "healthy"}) is True
+
+
+# ---------------------------------------------------------------------------
+# _running_image_matches
+# ---------------------------------------------------------------------------
+
+
+def test_running_image_matches_exact() -> None:
+    """Exact image match returns True."""
+    assert (
+        _running_image_matches(
+            {"image": "ghcr.io/owner/repo:main"},
+            "ghcr.io/owner/repo:main",
+        )
+        is True
+    )
+
+
+def test_running_image_matches_substring() -> None:
+    """Substring match (expected_ref contained in image) returns True."""
+    assert (
+        _running_image_matches(
+            {"image": "ghcr.io/owner/repo@sha256:abc123def456"},
+            "sha256:abc123",
+        )
+        is True
+    )
+
+
+def test_running_image_matches_reverse_substring() -> None:
+    """Reverse substring match (image contained in expected_ref) returns True."""
+    assert (
+        _running_image_matches(
+            {"image": "repo:main"},
+            "ghcr.io/owner/repo:main",
+        )
+        is True
+    )
+
+
+def test_running_image_mismatch() -> None:
+    """Non-matching image returns False."""
+    assert (
+        _running_image_matches(
+            {"image": "ghcr.io/owner/repo:old"},
+            "ghcr.io/owner/repo:new",
+        )
+        is False
+    )
+
+
+def test_running_image_no_image_info() -> None:
+    """No image field returns None (unknown)."""
+    assert (
+        _running_image_matches(
+            {"status": "running"},
+            "ghcr.io/owner/repo:main",
+        )
+        is None
+    )
+
+
+def test_running_image_nested_container() -> None:
+    """Image field nested under 'container' key is found."""
+    assert (
+        _running_image_matches(
+            {"container": {"image": "ghcr.io/owner/repo:main"}},
+            "ghcr.io/owner/repo:main",
+        )
+        is True
+    )
+
+
+def test_running_image_digest_field() -> None:
+    """The 'image_digest' field is checked."""
+    assert (
+        _running_image_matches(
+            {"image_digest": "sha256:abc123"},
+            "sha256:abc123",
+        )
+        is True
+    )
+
+
+# ---------------------------------------------------------------------------
+# verify_deployment
+# ---------------------------------------------------------------------------
+
+
+@pytest.mark.asyncio
+async def test_verify_deployment_healthy_no_image_ref(
+    respx_mock: respx.MockRouter,
+) -> None:
+    """verify_deployment returns verified=True when healthy, no image ref."""
+    respx_mock.get("http://lifecycle:9000/services/chat/status").mock(
+        return_value=httpx.Response(
+            200,
+            json={
+                "status": "running",
+                "health_checks": [{"ok": True}],
+            },
+        )
+    )
+
+    client = LifecycleClient(_settings())
+    result = await client.verify_deployment("chat")
+    assert '"verified": true' in result.lower()
+
+
+@pytest.mark.asyncio
+async def test_verify_deployment_image_match(
+    respx_mock: respx.MockRouter,
+) -> None:
+    """verify_deployment returns verified=True when image matches expected."""
+    respx_mock.get("http://lifecycle:9000/services/chat/status").mock(
+        return_value=httpx.Response(
+            200,
+            json={
+                "status": "running",
+                "health_checks": [{"ok": True}],
+                "image": "ghcr.io/owner/robotsix-chat:main",
+            },
+        )
+    )
+
+    client = LifecycleClient(_settings())
+    result = await client.verify_deployment(
+        "chat",
+        expected_image_ref="robotsix-chat:main",
+        poll_interval_seconds=0.01,
+    )
+    assert '"verified": true' in result.lower()
+
+
+@pytest.mark.asyncio
+async def test_verify_deployment_image_mismatch_polls(
+    respx_mock: respx.MockRouter,
+) -> None:
+    """verify_deployment keeps polling on mismatch, returns True on update."""
+    call_count = 0
+
+    def side_effect(request: httpx.Request) -> httpx.Response:
+        nonlocal call_count
+        call_count += 1
+        if call_count < 3:
+            return httpx.Response(
+                200,
+                json={
+                    "status": "running",
+                    "health_checks": [{"ok": True}],
+                    "image": "ghcr.io/owner/repo:old",
+                },
+            )
+        return httpx.Response(
+            200,
+            json={
+                "status": "running",
+                "health_checks": [{"ok": True}],
+                "image": "ghcr.io/owner/repo:new",
+            },
+        )
+
+    respx_mock.get("http://lifecycle:9000/services/chat/status").mock(
+        side_effect=side_effect
+    )
+
+    client = LifecycleClient(_settings())
+    result = await client.verify_deployment(
+        "chat",
+        expected_image_ref="repo:new",
+        poll_interval_seconds=0.01,
+    )
+    assert '"verified": true' in result.lower()
+    assert call_count == 3
+
+
+@pytest.mark.asyncio
+async def test_verify_deployment_timeout(
+    respx_mock: respx.MockRouter,
+) -> None:
+    """verify_deployment returns verified=False when poll_timeout is reached."""
+    respx_mock.get("http://lifecycle:9000/services/chat/status").mock(
+        return_value=httpx.Response(
+            200,
+            json={"status": "stopped"},
+        )
+    )
+
+    client = LifecycleClient(_settings())
+    result = await client.verify_deployment(
+        "chat",
+        poll_timeout_seconds=0.05,
+        poll_interval_seconds=0.02,
+    )
+    assert '"verified": false' in result.lower()
+
+
+@pytest.mark.asyncio
+async def test_verify_deployment_api_error(
+    respx_mock: respx.MockRouter,
+) -> None:
+    """verify_deployment returns immediately when the API returns an error."""
+    respx_mock.get("http://lifecycle:9000/services/chat/status").mock(
+        return_value=httpx.Response(500, json={"error": "internal"})
+    )
+
+    client = LifecycleClient(_settings())
+    result = await client.verify_deployment("chat", poll_timeout_seconds=5.0)
+    assert '"verified": false' in result.lower()
+    assert "lifecycle api error" in result.lower()
