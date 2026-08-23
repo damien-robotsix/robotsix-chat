@@ -177,6 +177,19 @@ class AutonomousSettings(BaseModel):
             "stalls and escalate or nudge the operator."
         ),
     )
+    priority_ready_staleness_minutes: int = Field(
+        default=60,
+        ge=1,
+        description=(
+            "Number of minutes a priority-flagged ticket can remain in the "
+            "``ready`` state before it is considered stale.  Priority tickets "
+            "get a longer grace period than non-priority tickets because they "
+            "are often waiting in a serial implementation queue rather than "
+            "being truly stalled.  The ``list_stale_ready_tickets`` tool uses "
+            "this threshold for tickets where ``priority`` or ``flagged`` is "
+            "``True``."
+        ),
+    )
     sessions: list[AutonomousSessionDefinition] = Field(
         default_factory=lambda: [AutonomousSessionDefinition(name="default")],
         description=(

@@ -68,6 +68,13 @@
           "title": "Max Idle Auto Turns",
           "type": "integer"
         },
+        "priority_ready_staleness_minutes": {
+          "default": 60,
+          "description": "Number of minutes a priority-flagged ticket can remain in the ``ready`` state before it is considered stale.  Priority tickets get a longer grace period than non-priority tickets because they are often waiting in a serial implementation queue rather than being truly stalled.  The ``list_stale_ready_tickets`` tool uses this threshold for tickets where ``priority`` or ``flagged`` is ``True``.",
+          "minimum": 1,
+          "title": "Priority Ready Staleness Minutes",
+          "type": "integer"
+        },
         "queue_tolerance_runs_before_escalation": {
           "default": 3,
           "description": "Number of consecutive NO_CHANGE monitor cycles to accept as queue wait before escalating a possible stall when the board processes tickets serially.  During this window the agent checks whether earlier-queued tickets are actively being worked before auto-stopping a monitor or reporting a stall.",

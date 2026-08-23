@@ -249,6 +249,7 @@
     "stale_monitor_runs_before_completion": 3,
     "queue_tolerance_runs_before_escalation": 3,
     "ready_staleness_minutes": 10,
+    "priority_ready_staleness_minutes": 60,
     "sessions": [
       {
         "name": "default"
