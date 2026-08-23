@@ -48,20 +48,14 @@ body {
 }
 
 /* ------------------------------------------------------------------ */
-/* Header bar                                                          */
+/* Header bar — styling is provided by the shared AppShell             */
+/* (rsu-appshell classes from @robotsix/ui/style.css).                 */
 /* ------------------------------------------------------------------ */
-#header {
-  display: flex; align-items: center; gap: 0.75rem;
-  padding: 0.5rem 1rem;
-  background: var(--header-bg); color: var(--header-fg);
-  flex-shrink: 0;
-  position: sticky; top: 0; z-index: 30;
+#appshell-header {
   transition: margin-left 0.3s ease, margin-right 0.3s ease;
 }
-#header .title {
-  font-weight: 700; font-size: 1.05rem; flex: 1;
-}
 #connection-dot {
+  display: inline-block;
   width: 10px; height: 10px; border-radius: 50%;
   background: var(--dot-green);
   flex-shrink: 0;
@@ -380,13 +374,13 @@ body {
   color: #f59e0b; font-weight: 600;
 }
 /* Header badge for the active session's model. */
-#header .model-badge {
+#appshell-header .model-badge {
   font-size: 0.72rem; color: #94a3b8;
   padding: 0.1rem 0.4rem; margin-left: 0.35rem;
   border: 1px solid #334155; border-radius: 0.75rem;
   white-space: nowrap;
 }
-#header .model-badge-escalated {
+#appshell-header .model-badge-escalated {
   color: #f59e0b; border-color: #f59e0b;
 }
 .session-plan-preview {
@@ -825,10 +819,10 @@ body {
   #subsessions-panel.visible ~ #content-wrap {
     margin-right: var(--subsessions-width);
   }
-  body:has(#sessions-panel.visible) #header {
+  body:has(#sessions-panel.visible) #appshell-header {
     margin-left: var(--sessions-width);
   }
-  body:has(#subsessions-panel.visible) #header {
+  body:has(#subsessions-panel.visible) #appshell-header {
     margin-right: var(--subsessions-width);
   }
 }
@@ -850,7 +844,7 @@ body {
 /* ------------------------------------------------------------------ */
 @media (max-width: 480px) {
   .bubble { max-width: 92%; }
-  #header { padding: 0.4rem 0.6rem; }
+  #appshell-header { padding: 0.4rem 0.6rem; }
   #composer { padding: 0.5rem 0.6rem; }
 }
 
@@ -1097,7 +1091,7 @@ body {
 /* ------------------------------------------------------------------ */
 /* Subsession focus mode: one panel fills the screen                   */
 /* ------------------------------------------------------------------ */
-body.subs-focus-mode #header,
+body.subs-focus-mode #appshell-header,
 body.subs-focus-mode #content-wrap,
 body.subs-focus-mode #sessions-panel,
 body.subs-focus-mode #settings-panel,

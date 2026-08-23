@@ -1,6 +1,6 @@
 #!/usr/bin/env sh
 set -e
-VERSION="${ROBOTSIX_UI_VERSION:-v0.1.6}"
+VERSION="${ROBOTSIX_UI_VERSION:-v0.1.40}"
 REPO_ROOT="$(cd "$(dirname "$0")/.." && pwd)"
 DEST="${REPO_ROOT}/src/robotsix_chat/ui/static/vendor"
 TMP="$(mktemp -d)"

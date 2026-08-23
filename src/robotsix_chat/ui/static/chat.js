@@ -1,5 +1,73 @@
 import { processSSEStream } from "./sse-parser.js";
 
+// ---- AppShell initialization ------------------------------------------
+// Mounts the shared fleet chrome (mountAppShell from @robotsix/ui).
+// Runs asynchronously — the IIFE below captures DOM refs while the
+// controls are still in the hidden #header-controls template; once the
+// AppShell is mounted the controls are moved into its right slot.
+(async function initAppShell() {
+  const mount = document.getElementById("appshell-mount");
+  if (!mount) return;
+  try {
+    const { mountAppShell } = await import("/static/vendor/vanilla.js");
+    const projectTitle =
+      document
+        .querySelector('meta[name="project-title"]')
+        ?.getAttribute("content") || "robotsix-chat";
+
+    const handle = mountAppShell(mount, {
+      brand: projectTitle,
+      navItems: [
+        { label: "Board", href: "/board/", icon: "📋" },
+        { label: "File Hub", href: "/file-hub/", icon: "📁" },
+        { label: "Central Deploy", href: "/central-deploy/", icon: "🚀" },
+      ],
+      settingsHref: "#",
+    });
+
+    // Move per-component controls from the hidden template into the
+    // AppShell's right slot so their existing event handlers stay attached.
+    const controls = document.getElementById("header-controls");
+    if (controls) {
+      while (controls.firstChild) {
+        handle.rightSlot.appendChild(controls.firstChild);
+      }
+      controls.remove();
+    }
+
+    // The AppShell provides its own Settings entry — hide the
+    // standalone settings toggle button to avoid duplicate controls.
+    var settingsToggle = document.getElementById("settings-toggle");
+    if (settingsToggle) settingsToggle.style.display = "none";
+
+    // Intercept the AppShell Settings link to open the side panel instead
+    // of navigating to '#'.
+    const settingsLink = handle.element.querySelector(
+      ".rsu-appshell-settings"
+    );
+    if (settingsLink) {
+      settingsLink.addEventListener("click", function (e) {
+        e.preventDefault();
+        // openSettingsPanel is defined inside the IIFE — reach it via the
+        // global internal registry so this top-level module code can call
+        // into the IIFE's closure.
+        var fn = window.__chatOpenSettingsPanel;
+        if (typeof fn === "function") fn();
+      });
+    }
+
+    // Publish the AppShell root for CSS selectors that need to target it
+    // (e.g. side-panel margin push).
+    handle.element.id = "appshell-header";
+  } catch (_err) {
+    // AppShell unavailable (vendor assets missing — vendor-ui.sh not
+    // run, or Docker image built without the UI stage).  Show the
+    // fallback controls in-place so the chat remains usable.
+    var ctl = document.getElementById("header-controls");
+    if (ctl) ctl.style.display = "";
+  }
+})();
+
 (function () {
   "use strict";
 
@@ -3576,6 +3644,9 @@ import { processSSEStream } from "./sse-parser.js";
     setSettingsPanelVisible(true);
     _initConfigPanel();
   }
+
+  // Expose for the AppShell's Settings link (top-level module scope).
+  window.__chatOpenSettingsPanel = openSettingsPanel;
 
   function closeSettingsPanel() {
     settingsPanel.classList.remove("visible");

@@ -77,8 +77,8 @@ class TestHtmlDomStructure:
         assert "settings-save-status" not in body
 
     def test_header_bar(self, ui_html: str) -> None:
-        """The header with session/subsession toggles exists."""
-        assert 'id="header"' in ui_html
+        """The AppShell mount point and header controls exist."""
+        assert 'id="appshell-mount"' in ui_html
         assert 'id="sessions-toggle"' in ui_html
         assert 'id="subsessions-toggle"' in ui_html
         assert 'id="connection-dot"' in ui_html

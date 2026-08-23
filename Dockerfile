@@ -53,7 +53,7 @@ RUN uv export --frozen --no-emit-project --no-hashes \
 # install from a real project directory (/build) instead.
 # ---------------------------------------------------------------------------
 FROM node:22-alpine AS ui
-ARG ROBOTSIX_UI_VERSION=v0.1.6
+ARG ROBOTSIX_UI_VERSION=v0.1.40
 WORKDIR /build
 # hadolint ignore=DL3016,DL3018
 RUN apk add --no-cache git && \
