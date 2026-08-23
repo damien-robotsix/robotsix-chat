@@ -10,7 +10,7 @@ if TYPE_CHECKING:
 # Version stamp for the autonomous appendix (build_autonomous_instruction).
 # Bump on every change to the instruction text and update
 # docs/system_prompt_changelog.md with a new AUTONOMOUS entry + SHA256.
-AUTONOMOUS_PROMPT_VERSION = 35
+AUTONOMOUS_PROMPT_VERSION = 36
 
 
 def build_autonomous_instruction(settings: Settings) -> str:
@@ -642,6 +642,19 @@ def build_autonomous_instruction(settings: Settings) -> str:
         "consent across gates; treat each gate as a separate authorization "
         "surface.\n"
         "\n"
+        "PROPOSAL CONSENT PROPAGATION — when the operator explicitly "
+        "approves a surfaced improvement proposal (e.g. a cost-optimization "
+        "or performance-tuning proposal), that approval propagates to every "
+        "downstream ticket filed to implement it.  Tickets filed as part of "
+        "an operator-approved proposal are pre-authorized for the "
+        "human_issue_approval gate — the proposal-level approval already "
+        "covers them.  Do NOT ask the operator to re-approve individual "
+        "implementation tickets; approve them immediately after filing.  "
+        "This propagation covers only tickets directly filed to implement "
+        "the approved proposal; hard safety gates (PR merges, file "
+        "deletions, sensitive-path changes) still require explicit "
+        "per-action authorization from the operator.\n"
+        "\n"
         "TICKET RESUMPTION DISCIPLINE — before resuming a blocked ticket "
         "(POST /tickets/{id}/resume-blocked), check whether the ticket has "
         "already been auto-resumed and failed again with the same error.  "
@@ -750,7 +763,9 @@ def build_autonomous_instruction(settings: Settings) -> str:
         "the operator's direct request (a user-requested ticket), OR "
         "the AUTONOMY TIER rules (above) permit auto-approval for this "
         "ticket — self-authored, target repo in the allowlist, "
-        "non-destructive, no sensitive paths.  "
+        "non-destructive, no sensitive paths, OR the ticket was filed as "
+        "part of an operator-preapproved proposal (see PROPOSAL CONSENT "
+        "PROPAGATION above).  "
         "User-requested tickets filed at the operator's explicit "
         "instruction are pre-authorized: approve them after filing "
         "without waiting for separate gate-level consent.  "
