@@ -12,19 +12,25 @@ new tickets.
 - **Primary ticket-state check** — `ticket_poll` is your go-to tool for checking a ticket's current
   state. It uses the same roster-based connectivity as `component_request` and is always preferred
   for single-ticket lookups.
+
 - **Independent verification** — use `ticket_poll` as a second source (alongside
   `component_request`) to satisfy the terminal-state double-check requirement.
+
 - **Periodic monitoring** — every monitor tick, call `ticket_poll` (or `component_request`) to
   live-GET the ticket state before reporting any change.
+
 - **Bulk triage** — use `ticket_poll_batch` to fetch full details (state, history, events, comments)
   for many tickets in one call, then classify them by failure signature.
+
 - **Merge approved PRs** — use `merge_pull_request` when a ticket is in `waiting_auto_merge` or
   `human_mr_approval` state and its associated PR has been approved. This directly calls the mill
   board's merge-now endpoint, bypassing the need for auto-merge to be enabled on the target
   repository.
+
 - **Find ticket by PR** — use `find_ticket_by_pr` when you know a PR URL (e.g.
   `https://github.com/owner/repo/pull/656`) but not the associated ticket ID. This is a direct
   lookup — one API round-trip instead of enumerating all tickets and filtering client-side.
+
 - **File a new ticket** — use `file_ticket` to create a new ticket on the mill board. Use this when
   you identify a deferred improvement, follow-up task, or actionable item during a session —
   especially when the user has granted autonomy and the improvement would prevent recurring manual
@@ -150,14 +156,14 @@ A JSON string with these fields:
   - `title` — the ticket's title
   - `state` — always `"READY"` (only ready-state tickets are returned)
   - `staleness` — human-readable duration since the ticket's last update (e.g. `"15m"`, `"2.1h"`)
-  - `staleness_seconds` — the staleness duration as a float (seconds), or `null` when the ticket
-    has no timestamp
+  - `staleness_seconds` — the staleness duration as a float (seconds), or `null` when the ticket has
+    no timestamp
   - `updated_at` — the ticket's `updated_at` timestamp (raw, as returned by the API)
   - `created_at` — the ticket's `created_at` timestamp (raw, as returned by the API)
 - `error` — *(present only on a listing failure)* a diagnostic message when the board ticket list
   could not be fetched
 
-Tickets are sorted by staleness descending (most stale first).  Tickets with no timestamp are
+Tickets are sorted by staleness descending (most stale first). Tickets with no timestamp are
 included at the top with `staleness: "unknown (no timestamp)"` so they are not silently ignored.
 
 Use this tool to detect queue stalls — tickets sitting in `ready` without being picked up by a
