@@ -2682,6 +2682,24 @@ autonomous settings at their pydantic field defaults
 ``stale_monitor_runs_before_completion=3``,
 ``queue_tolerance_runs_before_escalation=3``).
 
+## AUTONOMOUS v35 — 2026-08-23 — 20260823T150717Z-re-fetch-live-state-before-reporting-on-bcd4
+
+**Summary:** Add DELAYED DECISION RE-VERIFICATION paragraph to the STATE
+VERIFICATION step.  When the agent receives an operator decision from a
+separate subsession or side-chat and the parent session executes it hours
+later, the agent must re-query the live source of truth (board/PR/ticket
+state via component_request) before acting — never assume the PR or ticket
+is still in the state it was in when the decision was made.  Acting on
+cached stale state wastes tool calls and produces spurious remediation
+tickets.
+
+**Rationale:** The agent cached PR state from a decision side-chat rather
+than re-fetching from the board; the suppression PR had already been merged
+16+ hours earlier, causing a wasted action and requiring a remediation
+ticket.
+
+**SHA256:** `6dc90fd4ce04ebbae9bb7936942c5f0b8dd7c37a7b804e779752af83f73fabcf`
+
 ## AUTONOMOUS v34 — 2026-08-23 — 20260823T113350Z-add-post-merge-deployment-verification-t-1f75
 
 **Summary:** Add post-merge deployment verification instructions.  When
