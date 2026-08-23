@@ -23,6 +23,14 @@ the mill board API to file a new ticket.  Use this when the user grants
 autonomy and you identify a deferred improvement that should be tracked
 as a ticket — it avoids recurring manual decisions.
 
+Also provides ``prioritize_all_open_tickets()`` — a batch-prioritization tool
+that lists all open tickets and sets priority on every one of them in a
+single call.
+
+Also provides ``list_stale_ready_tickets()`` — a queue-health monitoring tool
+that surfaces tickets stuck in ``ready`` state beyond the configured
+staleness threshold, enabling the agent to detect and escalate queue stalls.
+
 Exposes :func:`build_ticket_poll_tools` and
 :func:`build_merge_pull_request_tool` — factories returning the LLM tools.
 Returns no tools when neither ``component_request`` nor
@@ -52,6 +60,7 @@ if TYPE_CHECKING:
 __all__ = [
     "build_file_ticket_tool",
     "build_find_ticket_by_pr_tool",
+    "build_list_stale_ready_tickets_tool",
     "build_mark_ticket_ready_tool",
     "build_merge_pull_request_tool",
     "build_prioritize_all_open_tickets_tool",
@@ -974,6 +983,250 @@ def build_prioritize_all_open_tickets_tool(
         )
 
     return [prioritize_all_open_tickets]
+
+
+def build_list_stale_ready_tickets_tool(
+    settings: Settings,
+    *,
+    component_request: Callable[..., Any] | None = None,
+) -> list[Callable[..., Any]]:
+    """Return the ``list_stale_ready_tickets`` tool.
+
+    The tool fetches all tickets from the mill board and returns those
+    in ``ready`` state whose last-update timestamp exceeds the configured
+    staleness threshold (``autonomous.ready_staleness_minutes``).  It routes
+    through *component_request* (roster-based connectivity) when available,
+    falling back to the direct ``board_api_base_url`` otherwise.
+
+    Use this tool to detect tickets stuck in the implementation queue —
+    tickets that have been sitting in ``ready`` without being picked up by
+    a worker for longer than expected.  The agent can then escalate or
+    surface a notification to the operator.
+
+    Args:
+        settings: Full application settings.
+        component_request: The roster-based request callable, or ``None``
+            when the component roster is unavailable.
+
+    Returns:
+        A one-element list containing the ``list_stale_ready_tickets``
+        async callable, or ``[]`` when neither *component_request* nor
+        ``board_api_base_url`` are available.
+
+    """
+    import time as _time
+
+    conn = _board_connection(settings, component_request)
+    if conn is None:
+        return []
+    board_url, board_token, timeout = conn
+    threshold_seconds = settings.autonomous.ready_staleness_minutes * 60.0
+
+    async def _fetch_ticket_list() -> tuple[list[dict[str, Any]] | None, str]:
+        """Fetch the full ticket list from the board API.
+
+        Returns ``(tickets, error)`` — *tickets* is a list of dicts on
+        success, or ``None`` on failure (with *error* set).
+        """
+        if component_request is not None:
+            resp = await component_request("mill", "GET", "/tickets")
+            if not resp.startswith("Error:"):
+                try:
+                    newline = resp.index("\n")
+                    status_line = resp[:newline]
+                    body_str = resp[newline + 1 :]
+                except ValueError:
+                    return None, "Unexpected response format from /tickets"
+                if not status_line.startswith("HTTP "):
+                    return None, f"Unexpected status line: {status_line}"
+                try:
+                    status_code = int(status_line.split()[1])
+                except IndexError, ValueError:
+                    return None, f"Unparsable status: {status_line!r}"
+                if status_code >= 400:
+                    return None, f"Board API returned HTTP {status_code}"
+                data, parse_error = _parse_json_body(body_str)
+                if parse_error:
+                    return None, parse_error
+                if data is None:
+                    return None, "Empty parsed response from board API"
+                if isinstance(data, list):
+                    return data, ""
+                if isinstance(data, dict):
+                    tickets = data.get("tickets", [])
+                    if isinstance(tickets, list):
+                        return tickets, ""
+                    return None, "Unexpected /tickets response format"
+                return None, "Unexpected /tickets response format"
+            logger.info(
+                "list_stale_ready_tickets: roster path failed; "
+                "falling back to direct board API"
+            )
+
+        # Direct fallback.
+        url = f"{board_url}/tickets"
+        headers: dict[str, str] = {"Accept": "application/json"}
+        if board_token:
+            headers["Authorization"] = f"Bearer {board_token}"
+        try:
+            async with httpx.AsyncClient(timeout=timeout) as client:
+                retry_client = RetryClient(client, config=_TICKET_POLL_RETRY_CONFIG)
+                response = await retry_client.get(url, headers=headers)
+                response.raise_for_status()
+                data = response.json()
+        except httpx.HTTPStatusError as exc:
+            return None, f"Board API returned HTTP {exc.response.status_code}"
+        except httpx.ConnectError, httpx.ConnectTimeout, httpx.TimeoutException:
+            return None, f"Board API request timed out after {timeout}s"
+        except Exception as exc:
+            logger.warning("list_stale_ready_tickets direct list failed: %s", exc)
+            return None, f"Board API unreachable: {exc}"
+        if isinstance(data, list):
+            return data, ""
+        if isinstance(data, dict):
+            tickets = data.get("tickets", [])
+            if isinstance(tickets, list):
+                return tickets, ""
+        return None, "Unexpected /tickets response format"
+
+    def _seconds_since_ready(ticket: dict[str, Any], now: float) -> float | None:
+        """Return seconds since *ticket* entered (or was last seen in) ``ready``.
+
+        Uses ``updated_at`` as the primary timestamp (it reflects the last
+        state transition); falls back to ``created_at`` when unavailable.
+        Returns ``None`` when neither timestamp is present.
+        """
+        raw = ticket.get("updated_at") or ticket.get("created_at")
+        if raw is None:
+            return None
+        # Accept ISO-8601 strings (the canonical board format) and
+        # Unix-seconds floats (some board API versions).
+        if isinstance(raw, (int, float)):
+            return now - float(raw)
+        if isinstance(raw, str):
+            try:
+                # ISO-8601: "2025-01-15T10:30:00Z" or with timezone offset.
+                # Strip trailing "Z" and parse.
+                ts_str = raw.replace("Z", "+00:00")
+                from datetime import UTC, datetime
+
+                parsed = datetime.fromisoformat(ts_str)
+                if parsed.tzinfo is None:
+                    parsed = parsed.replace(tzinfo=UTC)
+                return now - parsed.timestamp()
+            except ValueError, TypeError, OSError:
+                # Try as a Unix-seconds float-as-string.
+                try:
+                    return now - float(ts_str)
+                except ValueError, TypeError:
+                    pass
+        return None
+
+    def _format_staleness(seconds: float) -> str:
+        """Format a staleness duration as a human-readable string."""
+        minutes = seconds / 60.0
+        if minutes >= 120:
+            hours = minutes / 60.0
+            return f"{hours:.1f}h"
+        if minutes >= 1:
+            return f"{minutes:.0f}m"
+        return f"{seconds:.0f}s"
+
+    async def list_stale_ready_tickets() -> str:
+        """List tickets stuck in the ``ready`` state beyond the staleness threshold.
+
+        Fetches the full ticket list from the mill board API, filters to
+        tickets in ``ready`` state, and returns those whose last-update
+        timestamp exceeds the configured ``ready_staleness_minutes``
+        threshold.  Tickets that have been picked up by a worker (no longer
+        ``ready``) are excluded.
+
+        Use this to detect queue stalls — tickets sitting in ``ready``
+        without being picked up — and to decide whether to escalate or
+        notify the operator.
+
+        Returns:
+            A JSON string with ``stale_ready_count`` (int), ``total_ready``
+            (int), ``threshold_minutes`` (int), and a ``stale_tickets``
+            array.  Each element has ``ticket_id``, ``state``, ``title``,
+            ``staleness`` (human-readable duration), ``staleness_seconds``
+            (float), ``updated_at``, and ``created_at``.
+
+        """
+        now = _time.time()
+        tickets, list_error = await _fetch_ticket_list()
+        if list_error or tickets is None:
+            return json.dumps(
+                {
+                    "error": list_error,
+                    "stale_ready_count": 0,
+                    "total_ready": 0,
+                    "threshold_minutes": settings.autonomous.ready_staleness_minutes,
+                    "stale_tickets": [],
+                },
+                ensure_ascii=False,
+            )
+
+        # Filter to ready-state tickets and compute staleness.
+        stale: list[dict[str, Any]] = []
+        total_ready = 0
+        for t in tickets:
+            if not isinstance(t, dict):
+                continue
+            state = str(t.get("state", "")).upper()
+            if state != "READY":
+                continue
+            total_ready += 1
+
+            age = _seconds_since_ready(t, now)
+            if age is None:
+                # No timestamp available — include with a caveat.
+                stale.append(
+                    {
+                        "ticket_id": t.get("ticket_id") or t.get("id", ""),
+                        "title": t.get("title", ""),
+                        "state": state,
+                        "staleness": "unknown (no timestamp)",
+                        "staleness_seconds": None,
+                        "updated_at": t.get("updated_at"),
+                        "created_at": t.get("created_at"),
+                    }
+                )
+            elif age >= threshold_seconds:
+                stale.append(
+                    {
+                        "ticket_id": t.get("ticket_id") or t.get("id", ""),
+                        "title": t.get("title", ""),
+                        "state": state,
+                        "staleness": _format_staleness(age),
+                        "staleness_seconds": age,
+                        "updated_at": t.get("updated_at"),
+                        "created_at": t.get("created_at"),
+                    }
+                )
+
+        # Sort by staleness descending (most stale first).
+        stale.sort(
+            key=lambda x: (
+                -(
+                    x["staleness_seconds"]
+                    if x["staleness_seconds"] is not None
+                    else float("inf")
+                )
+            )
+        )
+
+        return json.dumps(
+            {
+                "stale_ready_count": len(stale),
+                "total_ready": total_ready,
+                "threshold_minutes": settings.autonomous.ready_staleness_minutes,
+                "stale_tickets": stale,
+            },
+            ensure_ascii=False,
+        )
+
+    return [list_stale_ready_tickets]
 
 
 def build_file_ticket_tool(

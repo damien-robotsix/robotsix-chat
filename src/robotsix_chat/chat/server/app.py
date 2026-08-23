@@ -75,6 +75,7 @@ from robotsix_chat.skill_index import build_skill_index
 from robotsix_chat.ticket_poll import (
     build_file_ticket_tool,
     build_find_ticket_by_pr_tool,
+    build_list_stale_ready_tickets_tool,
     build_mark_ticket_ready_tool,
     build_merge_pull_request_tool,
     build_prioritize_all_open_tickets_tool,
@@ -1043,6 +1044,9 @@ def _build_static_tools(
                 settings, component_request=component_request
             ),
             *build_prioritize_all_open_tickets_tool(
+                settings, component_request=component_request
+            ),
+            *build_list_stale_ready_tickets_tool(
                 settings, component_request=component_request
             ),
             *build_decompose_epic_tool(settings, component_request=component_request),
