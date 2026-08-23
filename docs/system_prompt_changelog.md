@@ -3,6 +3,27 @@
 Governed artifact: `Settings.agent_instruction` default literal in
 `src/robotsix_chat/config/settings.py`. Version stamp: `SYSTEM_PROMPT_VERSION` in the same module.
 
+## v136 — 2026-08-23 — 20260823T001242Z-consolidation-gate-fails-to-enforce-fres-89c2
+
+**Summary:** Add a Recheck-override exception to the mandatory consolidation
+gate in `agent_instruction`.  When the user explicitly asks the assistant to
+recheck, refresh, or update the status of a previously-reported outcome
+(e.g. "can you recheck now?", "refresh the column"), the assistant must
+perform a fresh fetch from the relevant external tool BEFORE applying
+consolidation — not reuse the cached last-reported state.  The override also
+applies to the subsession-reaction and batch-reaction prompt templates in
+`delivery.py`.
+
+**Rationale:** Session efd5ee4aabc84c9aaac4ad0f5ad00716 — the assistant
+reported a drain outcome (five merged, one held) and when the user asked
+"can you recheck now?", the assistant responded with the same cached status
+and re-posed the held/deferral decision as if no recheck occurred.  The
+consolidation gate's "do NOT re-pose an earlier question" rule was too
+aggressive — it prevented the agent from honoring an explicit user request
+for fresh data.
+
+**SHA256:** `59e2f08f44197059a21ca774c56224efac07fe12b01773aca8481518f6f1c29f`
+
 ## v135 — 2026-08-22 — 20260822T174744Z-governance-once-the-operator-approves-a-e78d
 
 **Summary:** Extend the ticket-lifecycle rule with explicit coverage for

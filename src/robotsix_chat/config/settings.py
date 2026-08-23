@@ -70,7 +70,7 @@ class ConfigValidationError(ValueError):
 # Version stamp for the agent_instruction default literal.
 # Bump on every change to Settings.agent_instruction and update
 # docs/system_prompt_changelog.md with a new entry + SHA256.
-SYSTEM_PROMPT_VERSION = 135
+SYSTEM_PROMPT_VERSION = 136
 
 # Valid model levels, derived from llmio's tier enum (import-time constant so
 # the set is built once and can never drift from the tiers llmio ships).
@@ -370,7 +370,14 @@ class Settings(BaseModel):
             "threads, open questions, or approval prompts in the conversation "
             "history: do NOT re-pose an earlier question or re-request a "
             "decision that has already been presented (for example, do not "
-            "ask again whether to merge approved PRs).  Once consolidated, "
+            "ask again whether to merge approved PRs).  EXCEPTION — Recheck "
+            "override: When the user explicitly asks you to recheck, refresh, "
+            "or update the status of a previously-reported outcome (e.g. "
+            "'can you recheck now?', 'refresh the column', 'what is the "
+            "current status?'), perform a fresh fetch from the relevant "
+            "external tool BEFORE applying consolidation.  Do not reuse "
+            "the cached last-reported state — the user is asking you to "
+            "re-query the live source.  Once consolidated, "
             "either give the overall recommendation directly, or ask the "
             "user for the next logical decision across all themes.\n"
             "– Inside a subsession, call complete_subsession(summary) as soon "
