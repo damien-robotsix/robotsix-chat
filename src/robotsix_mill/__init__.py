@@ -237,6 +237,33 @@ if not merge_auto_approve(_refine_helpers):
         getattr(_refine_helpers, "_AUTO_APPROVE_SOURCES", None),
     )
 # ---------------------------------------------------------------------------
+# 7.5.  Patch the refine stage's inflight-advisory step to also run an
+#       auto-merge pre-flight check.  When the target repo is on the
+#       infra denylist, auto-merge is globally disabled, or the draft
+#       references files matching auto-merge-sensitive globs, an advisory
+#       comment is posted during refinement so the operator is alerted
+#       early — rather than discovering the block only after
+#       implementation and CI pass.
+# ---------------------------------------------------------------------------
+from robotsix_mill.stages.refine.gates import RefineGatesMixin  # noqa: E402
+from robotsix_mill.stages.refine_auto_merge_preflight import (  # noqa: E402
+    run_auto_merge_preflight,
+)
+
+_original_run_inflight_advisory = RefineGatesMixin._run_inflight_advisory
+
+
+@staticmethod
+def _run_inflight_advisory_with_auto_merge_preflight(ctx, ticket, draft, ws, s):
+    draft = _original_run_inflight_advisory(ctx, ticket, draft, ws, s)
+    run_auto_merge_preflight(ctx, ticket, draft, s)
+    return draft
+
+
+RefineGatesMixin._run_inflight_advisory = staticmethod(
+    _run_inflight_advisory_with_auto_merge_preflight
+)
+# ---------------------------------------------------------------------------
 # 8.  Patch the review stage's verdict handling to re-verify any changelog
 #     fragment claimed in the implement rebuttal (``implement.md``) against
 #     the committed branch diff.  The pre-ready gate above checks the
