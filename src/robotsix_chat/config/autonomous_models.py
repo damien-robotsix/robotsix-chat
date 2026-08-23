@@ -166,6 +166,17 @@ class AutonomousSettings(BaseModel):
             "worked before auto-stopping a monitor or reporting a stall."
         ),
     )
+    ready_staleness_minutes: int = Field(
+        default=10,
+        ge=1,
+        description=(
+            "Number of minutes a ticket can remain in the ``ready`` state "
+            "before it is considered stale.  The ``list_stale_ready_tickets`` "
+            "tool surfaces tickets that have been sitting in ``ready`` "
+            "longer than this threshold, enabling the agent to detect queue "
+            "stalls and escalate or nudge the operator."
+        ),
+    )
     sessions: list[AutonomousSessionDefinition] = Field(
         default_factory=lambda: [AutonomousSessionDefinition(name="default")],
         description=(

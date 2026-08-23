@@ -74,6 +74,13 @@
           "title": "Queue Tolerance Runs Before Escalation",
           "type": "integer"
         },
+        "ready_staleness_minutes": {
+          "default": 10,
+          "description": "Number of minutes a ticket can remain in the ``ready`` state before it is considered stale.  The ``list_stale_ready_tickets`` tool surfaces tickets that have been sitting in ``ready`` longer than this threshold, enabling the agent to detect queue stalls and escalate or nudge the operator.",
+          "minimum": 1,
+          "title": "Ready Staleness Minutes",
+          "type": "integer"
+        },
         "sessions": {
           "description": "Named autonomous session definitions.  The built-in default preset ``{\"name\": \"default\"}`` ships in the schema defaults and in the committed config template so it is always visible.  An explicit empty list is migrated to the built-in default preset on load so the default session is always surfaced.  Each entry defines a prompt, trigger, max turns, and enabled flag for one autonomous session.",
           "items": {

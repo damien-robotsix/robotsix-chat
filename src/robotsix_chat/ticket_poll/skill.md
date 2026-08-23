@@ -1,10 +1,11 @@
 # Ticket Poll — ticket-state lookup, PR merging, and ticket filing via the component roster
 
-You have `ticket_poll`, `ticket_poll_batch`, `merge_pull_request`, `file_ticket`, and
-`find_ticket_by_pr` tools that interact with the mill board API. These tools route through
-`component_request` (roster-based connectivity) when available, falling back to the direct board API
-when the roster is unavailable — they are reliable as the primary path for checking ticket state,
-merging approved PRs, and filing new tickets.
+You have `ticket_poll`, `ticket_poll_batch`, `merge_pull_request`, `file_ticket`,
+`find_ticket_by_pr`, `prioritize_all_open_tickets`, and `list_stale_ready_tickets` tools that
+interact with the mill board API. These tools route through `component_request` (roster-based
+connectivity) when available, falling back to the direct board API when the roster is unavailable —
+they are reliable as the primary path for checking ticket state, merging approved PRs, and filing
+new tickets.
 
 ## When to use it
 
@@ -29,6 +30,10 @@ merging approved PRs, and filing new tickets.
   especially when the user has granted autonomy and the improvement would prevent recurring manual
   decisions. Always mention the filed ticket in your final summary so the user is aware.
 
+- **Queue health monitoring** — use `list_stale_ready_tickets` to detect tickets that have been
+  sitting in the `ready` state without being picked up by a worker. This surfaces queue stalls so
+  the agent can escalate or notify the operator rather than silently waiting.
+
 ## Allowed operations
 
 | Tool                          | Description                                                                  |
@@ -39,6 +44,7 @@ merging approved PRs, and filing new tickets.
 | `mark_ticket_ready`           | HTTP POST to force a stalled draft/human_issue_approval ticket to `ready`.   |
 | `find_ticket_by_pr`           | HTTP GET to find the ticket linked to a given PR URL.                        |
 | `prioritize_all_open_tickets` | Lists all open, unflagged tickets and sets priority on every one in a batch. |
+| `list_stale_ready_tickets`    | Lists tickets stuck in `ready` beyond the staleness threshold.               |
 | `file_ticket`                 | HTTP POST to /tickets/ingest to file a new ticket on the board.              |
 
 The tool signatures are:
@@ -50,6 +56,7 @@ merge_pull_request(ticket_id: str) -> str
 mark_ticket_ready(ticket_id: str, justification: str = "") -> str
 find_ticket_by_pr(pr_url: str) -> str
 prioritize_all_open_tickets() -> str
+list_stale_ready_tickets() -> str
 file_ticket(title: str, description: str = "", kind: str = "task", repo_id: str = "") -> str
 ```
 
@@ -129,6 +136,33 @@ A JSON string with these fields:
 - `error` — empty string on success, or a diagnostic message when no matching ticket was found or
   the board API was unreachable
 
+### `list_stale_ready_tickets`
+
+A JSON string with these fields:
+
+- `stale_ready_count` — number of tickets in `ready` state whose last-update timestamp exceeds the
+  staleness threshold
+- `total_ready` — total number of tickets currently in `ready` state (for context)
+- `threshold_minutes` — the configured staleness threshold (from
+  `autonomous.ready_staleness_minutes`)
+- `stale_tickets` — an array of stale ticket objects, each with:
+  - `ticket_id` — the ticket's full identifier
+  - `title` — the ticket's title
+  - `state` — always `"READY"` (only ready-state tickets are returned)
+  - `staleness` — human-readable duration since the ticket's last update (e.g. `"15m"`, `"2.1h"`)
+  - `staleness_seconds` — the staleness duration as a float (seconds), or `null` when the ticket
+    has no timestamp
+  - `updated_at` — the ticket's `updated_at` timestamp (raw, as returned by the API)
+  - `created_at` — the ticket's `created_at` timestamp (raw, as returned by the API)
+- `error` — *(present only on a listing failure)* a diagnostic message when the board ticket list
+  could not be fetched
+
+Tickets are sorted by staleness descending (most stale first).  Tickets with no timestamp are
+included at the top with `staleness: "unknown (no timestamp)"` so they are not silently ignored.
+
+Use this tool to detect queue stalls — tickets sitting in `ready` without being picked up by a
+worker — and to decide whether the queue needs operator attention.
+
 ### `prioritize_all_open_tickets`
 
 A JSON string with these fields:
@@ -173,8 +207,8 @@ attempted (which may surface a 404).
 
 ## Safety
 
-- **`ticket_poll` / `ticket_poll_batch` are read-only** — GET only; no state mutation is possible
-  through these two tools.
+- **`ticket_poll` / `ticket_poll_batch` / `list_stale_ready_tickets` are read-only** — GET only; no
+  state mutation is possible through these tools.
 - **`merge_pull_request` and `prioritize_all_open_tickets` are mutating** — they issue POST requests
   that alter ticket state. Only call them when the preconditions are met: `merge_pull_request`
   requires an approved PR in `waiting_auto_merge` or `human_mr_approval` state;
@@ -227,4 +261,9 @@ merge_pull_request("20250101T120000Z-my-ticket-a1b2")
 # Prioritize all open, unflagged tickets in a single call
 prioritize_all_open_tickets()
 # → {"prioritized": 5, "skipped": 2, "errors": 0, "total_open": 7, "results": [...]}
+
+# Detect tickets stuck in the ready queue
+list_stale_ready_tickets()
+# → {"stale_ready_count": 2, "total_ready": 5, "threshold_minutes": 10,
+#    "stale_tickets": [{"ticket_id": "...", "staleness": "15m", ...}, ...]}
 ```
