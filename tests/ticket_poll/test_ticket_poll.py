@@ -105,6 +105,7 @@ def _component_request_http_error(
 
 def _stale_settings(
     ready_staleness_minutes: int = 10,
+    priority_ready_staleness_minutes: int = 60,
     **kw: Any,
 ) -> Settings:
     """Return Settings with autonomous.ready_staleness_minutes configured."""
@@ -118,6 +119,7 @@ def _stale_settings(
         direct_repo=DirectRepoSettings(**base),
         autonomous=AutonomousSettings(
             ready_staleness_minutes=ready_staleness_minutes,
+            priority_ready_staleness_minutes=priority_ready_staleness_minutes,
         ),
     )
 
@@ -1872,6 +1874,140 @@ async def test_list_stale_ready_roster_ticket_list_key() -> None:
 
     result = json.loads(await tools[0]())
     assert result["total_ready"] == 1
+
+
+# ---------------------------------------------------------------------------
+# build_list_stale_ready_tickets_tool — priority ticket grace period
+# ---------------------------------------------------------------------------
+
+
+@pytest.mark.asyncio
+async def test_list_stale_ready_priority_ticket_longer_threshold() -> None:
+    """Priority-flagged ready tickets use the longer priority threshold."""
+    now = 1_750_000_000.0
+    # 50 minutes ago — exceeds regular threshold (10 min) but not priority (60 min)
+    priority_age = 50 * 60
+    tickets = [
+        {
+            "id": "t-priority",
+            "state": "ready",
+            "title": "Priority ticket",
+            "priority": True,
+            "updated_at": now - priority_age,
+            "created_at": now - priority_age,
+        },
+    ]
+
+    tools = build_list_stale_ready_tickets_tool(
+        _stale_settings(
+            ready_staleness_minutes=10,
+            priority_ready_staleness_minutes=60,
+        ),
+        component_request=_component_request_ticket_list(tickets),
+    )
+
+    import time as _time_mod
+
+    original_time = _time_mod.time
+    try:
+        _time_mod.time = lambda: now
+        result = json.loads(await tools[0]())
+    finally:
+        _time_mod.time = original_time
+
+    # 50 min > 10 min (regular threshold) but < 60 min (priority threshold),
+    # so the priority ticket should NOT be flagged as stale.
+    assert result["stale_ready_count"] == 0
+    assert result["total_ready"] == 1
+    assert result["threshold_minutes"] == 10
+    assert result["priority_threshold_minutes"] == 60
+
+
+@pytest.mark.asyncio
+async def test_list_stale_ready_priority_ticket_exceeds_priority_threshold() -> None:
+    """Priority ticket IS stale when it exceeds the priority threshold."""
+    now = 1_750_000_000.0
+    # 90 minutes ago — exceeds both thresholds
+    priority_age = 90 * 60
+    tickets = [
+        {
+            "id": "t-priority-stale",
+            "state": "ready",
+            "title": "Very stale priority ticket",
+            "flagged": True,
+            "updated_at": now - priority_age,
+            "created_at": now - priority_age,
+        },
+    ]
+
+    tools = build_list_stale_ready_tickets_tool(
+        _stale_settings(
+            ready_staleness_minutes=10,
+            priority_ready_staleness_minutes=60,
+        ),
+        component_request=_component_request_ticket_list(tickets),
+    )
+
+    import time as _time_mod
+
+    original_time = _time_mod.time
+    try:
+        _time_mod.time = lambda: now
+        result = json.loads(await tools[0]())
+    finally:
+        _time_mod.time = original_time
+
+    assert result["stale_ready_count"] == 1
+    assert result["total_ready"] == 1
+    assert result["stale_tickets"][0]["ticket_id"] == "t-priority-stale"
+    assert result["stale_tickets"][0]["priority"] is True
+
+
+@pytest.mark.asyncio
+async def test_list_stale_ready_mixed_priority_and_regular() -> None:
+    """Mixed tickets: priority uses longer threshold, regular uses short threshold."""
+    now = 1_750_000_000.0
+    # 30 minutes ago — exceeds regular (10 min) but not priority (60 min)
+    age_30m = 30 * 60
+    tickets = [
+        {
+            "id": "t-regular-stale",
+            "state": "ready",
+            "title": "Regular stale ticket",
+            "updated_at": now - age_30m,
+            "created_at": now - age_30m,
+        },
+        {
+            "id": "t-priority-ok",
+            "state": "ready",
+            "title": "Priority not stale",
+            "priority": True,
+            "updated_at": now - age_30m,
+            "created_at": now - age_30m,
+        },
+    ]
+
+    tools = build_list_stale_ready_tickets_tool(
+        _stale_settings(
+            ready_staleness_minutes=10,
+            priority_ready_staleness_minutes=60,
+        ),
+        component_request=_component_request_ticket_list(tickets),
+    )
+
+    import time as _time_mod
+
+    original_time = _time_mod.time
+    try:
+        _time_mod.time = lambda: now
+        result = json.loads(await tools[0]())
+    finally:
+        _time_mod.time = original_time
+
+    # Only the regular ticket should be stale.
+    assert result["stale_ready_count"] == 1
+    assert result["total_ready"] == 2
+    assert result["stale_tickets"][0]["ticket_id"] == "t-regular-stale"
 
 
 # ---------------------------------------------------------------------------

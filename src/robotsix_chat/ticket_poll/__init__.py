@@ -1021,6 +1021,9 @@ def build_list_stale_ready_tickets_tool(
         return []
     board_url, board_token, timeout = conn
     threshold_seconds = settings.autonomous.ready_staleness_minutes * 60.0
+    priority_threshold_seconds = (
+        settings.autonomous.priority_ready_staleness_minutes * 60.0
+    )
 
     async def _fetch_ticket_list() -> tuple[list[dict[str, Any]] | None, str]:
         """Fetch the full ticket list from the board API.
@@ -1137,9 +1140,14 @@ def build_list_stale_ready_tickets_tool(
 
         Fetches the full ticket list from the mill board API, filters to
         tickets in ``ready`` state, and returns those whose last-update
-        timestamp exceeds the configured ``ready_staleness_minutes``
-        threshold.  Tickets that have been picked up by a worker (no longer
-        ``ready``) are excluded.
+        timestamp exceeds the configured staleness threshold.  Tickets that
+        have been picked up by a worker (no longer ``ready``) are excluded.
+
+        Priority-flagged tickets (``priority: true`` or ``flagged: true``)
+        use the longer ``priority_ready_staleness_minutes`` threshold
+        instead of ``ready_staleness_minutes``, to avoid false-stall alarms
+        for tickets that are legitimately waiting in a serial implementation
+        queue.
 
         Use this to detect queue stalls — tickets sitting in ``ready``
         without being picked up — and to decide whether to escalate or
@@ -1147,10 +1155,12 @@ def build_list_stale_ready_tickets_tool(
 
         Returns:
             A JSON string with ``stale_ready_count`` (int), ``total_ready``
-            (int), ``threshold_minutes`` (int), and a ``stale_tickets``
+            (int), ``threshold_minutes`` (int),
+            ``priority_threshold_minutes`` (int), and a ``stale_tickets``
             array.  Each element has ``ticket_id``, ``state``, ``title``,
             ``staleness`` (human-readable duration), ``staleness_seconds``
-            (float), ``updated_at``, and ``created_at``.
+            (float), ``priority`` (bool), ``updated_at``, and
+            ``created_at``.
 
         """
         now = _time.time()
@@ -1162,6 +1172,9 @@ def build_list_stale_ready_tickets_tool(
                     "stale_ready_count": 0,
                     "total_ready": 0,
                     "threshold_minutes": settings.autonomous.ready_staleness_minutes,
+                    "priority_threshold_minutes": (
+                        settings.autonomous.priority_ready_staleness_minutes
+                    ),
                     "stale_tickets": [],
                 },
                 ensure_ascii=False,
@@ -1178,6 +1191,12 @@ def build_list_stale_ready_tickets_tool(
                 continue
             total_ready += 1
 
+            # Priority-flagged tickets get a longer staleness threshold.
+            is_priority = t.get("priority") is True or t.get("flagged") is True
+            effective_threshold = (
+                priority_threshold_seconds if is_priority else threshold_seconds
+            )
+
             age = _seconds_since_ready(t, now)
             if age is None:
                 # No timestamp available — include with a caveat.
@@ -1190,9 +1209,10 @@ def build_list_stale_ready_tickets_tool(
                         "staleness_seconds": None,
                         "updated_at": t.get("updated_at"),
                         "created_at": t.get("created_at"),
+                        "priority": is_priority,
                     }
                 )
-            elif age >= threshold_seconds:
+            elif age >= effective_threshold:
                 stale.append(
                     {
                         "ticket_id": t.get("ticket_id") or t.get("id", ""),
@@ -1202,6 +1222,7 @@ def build_list_stale_ready_tickets_tool(
                         "staleness_seconds": age,
                         "updated_at": t.get("updated_at"),
                         "created_at": t.get("created_at"),
+                        "priority": is_priority,
                     }
                 )
 
@@ -1221,6 +1242,9 @@ def build_list_stale_ready_tickets_tool(
                 "stale_ready_count": len(stale),
                 "total_ready": total_ready,
                 "threshold_minutes": settings.autonomous.ready_staleness_minutes,
+                "priority_threshold_minutes": (
+                    settings.autonomous.priority_ready_staleness_minutes
+                ),
                 "stale_tickets": stale,
             },
             ensure_ascii=False,
