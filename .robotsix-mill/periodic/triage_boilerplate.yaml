@@ -52,3 +52,73 @@ prompt_overlay: |
     not a systemic replay).
   - The reviewer rationale is demonstrably valid and the implement
     agent genuinely failed to address it each cycle.
+
+  ## AppShell adoption — missing `appshell-loader.js` integration guidance
+
+  When two or more AppShell adoption tickets across different repos
+  hit the same post-implementation verification failure mentioning
+  "appshell-loader.js", escalate as a systemic guidance gap: the
+  ticket spec did not include the canonical integration point, so
+  the implement agent had no way to place the file correctly.
+
+  ### Why this matters
+
+  An AppShell adoption ticket that omits the canonical integration
+  point (file path, loader name, and expected symbol) forces the
+  implement agent to guess.  The post-implementation verification
+  step catches the resulting error (`summary verification failed
+  after retry: appshell-loader.js`), but the ticket has already
+  burned a full implement cycle (budget, wall-clock time, and
+  operator attention).  The fix is always the same: a manual resume
+  that pastes the integration guidance into the ticket spec.
+
+  ### Detection rules
+
+  1. Scan tickets whose title, description, or verification failure
+     note mentions ``appshell-loader.js`` or ``appshell``.
+  2. Group by the same failure rationale (e.g. "summary verification
+     failed after retry: appshell-loader.js").
+  3. If ≥2 tickets in different repos share the same failure within
+     a short timeframe, file ONE escalation draft.
+
+  ### Canonical integration point for `appshell-loader.js`
+
+  Every AppShell adoption ticket spec MUST include these three fields
+  drawn from the target version's package structure:
+
+  | Field            | Value (v0.1.40 example)                            |
+  | ---------------- | --------------------------------------------------- |
+  | **File path**    | `node_modules/appshell/dist/appshell-loader.js`     |
+  | **Loader name**  | `AppShellLoader`                                    |
+  | **Expected symbol** | Default export (the `AppShellLoader` class)       |
+
+  The canonical file path, loader name, and expected symbol MUST
+  be verified against the actual package structure of the version
+  being adopted — the values above are for v0.1.40 and may change
+  in later versions.  Before drafting an AppShell adoption ticket,
+  inspect the target version's ``package.json`` ``"main"`` / ``"exports"``
+  fields and the ``dist/`` or ``lib/`` directory layout to confirm
+  the exact path and export shape.
+
+  ### Escalation draft
+
+  Title: "AppShell adoption tickets missing canonical integration
+  guidance — N tickets hit verification failure"
+
+  Body:
+  - List the ticket IDs and repos
+  - Quote the shared verification failure message
+  - Note the timeframe
+  - Recommend that the ticket spec for each blocked ticket be
+    amended to include the canonical integration point (file path,
+    loader name, expected symbol) drawn from the AppShell version
+    being adopted, so the implement agent can place
+    ``appshell-loader.js`` correctly without guessing.
+
+  ### When NOT to apply
+
+  - A single isolated AppShell verification failure (may be a
+    one-off implement error rather than a systemic gap).
+  - The ticket spec already includes the canonical integration
+    point and the implement agent still failed — that is a
+    per-ticket implement error, not a guidance gap.
