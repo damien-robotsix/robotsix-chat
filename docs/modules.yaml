@@ -66,6 +66,7 @@ modules:
       - tests/agents/runners/test_diagnostic_check_recurring_ci.py
       - src/robotsix_mill/stages/document.py
       - src/robotsix_mill/stages/fix_close_verify.py
+      - src/robotsix_mill/stages/refine_auto_merge_preflight.py
       - src/robotsix_mill/stages/refine_autoapprove.py
       - src/robotsix_mill/stages/retrospect.py
       - src/robotsix_mill/stages/towncrier.py
