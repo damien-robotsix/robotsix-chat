@@ -43,6 +43,34 @@ _IDLE_POLL_INTERVAL_SECONDS: float = 30.0
 # monitor was spawned with a stale/paraphrased ID).
 _MAX_WATCHER_404_FAILURES = 3
 
+# Seconds before the health-check probe is considered failed (must be
+# shorter than the poll interval so one slow probe doesn't stall the
+# whole loop).
+_HEALTH_CHECK_TIMEOUT: float = 5.0
+
+
+async def _check_api_healthy(board_url: str) -> bool:
+    """Return ``True`` when the board API is reachable and returning 2xx.
+
+    Queries ``GET /tickets?limit=1`` (a lightweight list endpoint) so a
+    transient outage that returns 404 or 5xx for every endpoint is
+    distinguished from a genuine 404 on a single ticket.
+    """
+    try:
+        base = httpx.URL(board_url.rstrip("/"))
+        health_url = base.copy_with(path="/tickets", params={"limit": "1"})
+    except Exception:
+        return False
+    try:
+        async with httpx.AsyncClient(
+            timeout=httpx.Timeout(_HEALTH_CHECK_TIMEOUT)
+        ) as client:
+            response = await client.get(str(health_url))
+            return response.is_success
+    except Exception:
+        logger.debug("Watcher: API health check failed for %s", board_url)
+        return False
+
 
 async def _query_ticket_state(
     board_url: str, ticket_id: str, sub_id: str
@@ -163,6 +191,59 @@ async def _check_pr_merged(
 
     merged = pr_data.get("merged")
     return merged is True
+
+
+async def _search_prs_referencing_ticket(
+    env: SubsessionEnv,
+    repo_full_name: str,
+    ticket_id: str,
+    sub_id: str,
+) -> list[dict[str, object]]:
+    """Search GitHub for PRs in *repo_full_name* that reference *ticket_id*.
+
+    Uses the GitHub Search API with a query like
+    ``type:pr repo:owner/repo <ticket_id>``.  Returns a (possibly empty)
+    list of matching PR dicts, or an empty list when the GitHub API is
+    unreachable or direct_repo is not enabled.
+
+    This is a cross-reference guard: when the board API's ``pr_url``
+    field is null but a PR was merged, this search can find it so the
+    watcher doesn't falsely keep a monitor paused for "no PR evidence."
+    """
+    direct_repo_settings = getattr(env.settings, "direct_repo", None)
+    if direct_repo_settings is None or not getattr(
+        direct_repo_settings, "enabled", False
+    ):
+        return []
+
+    try:
+        from robotsix_chat.repo.direct.client import DirectRepoClient
+
+        gh_client = DirectRepoClient(direct_repo_settings)
+        token = await gh_client._token()
+    except Exception:
+        return []
+
+    if token is None:
+        return []
+
+    try:
+        from urllib.parse import quote
+
+        query = f"type:pr repo:{repo_full_name} {ticket_id}"
+        data = await gh_client._get_json(
+            f"/search/issues?q={quote(query, safe=':/')}&per_page=5"
+        )
+        items: list[dict[str, object]] = data.get("items", [])
+        return items
+    except Exception:
+        logger.debug(
+            "Watcher: GitHub PR search failed for ticket %s in %s (subsession %s).",
+            ticket_id,
+            repo_full_name,
+            sub_id,
+        )
+        return []
 
 
 async def _resume_paused_monitor(
@@ -332,6 +413,11 @@ async def watch_paused_monitors(env: SubsessionEnv) -> None:
     # notification, so we don't spam the operator on every poll cycle.
     _ci_health_notified: set[str] = set()
 
+    # Track subsessions for which we have already emitted a
+    # "ticket_deleted" close notification so we don't re-notify on
+    # every subsequent poll cycle.
+    _ticket_deleted_notified: set[str] = set()
+
     while True:
         try:
             paused = env.registry.find_paused_periodic()
@@ -360,6 +446,22 @@ async def watch_paused_monitors(env: SubsessionEnv) -> None:
                 )
                 if current_state is None:
                     if http_status == 404:
+                        # -- transient-outage guard: before counting a 404
+                        #    toward the close threshold, verify the board API
+                        #    is actually reachable.  If the API itself is
+                        #    down (returning 404 for every endpoint), this is
+                        #    a transient outage, not a deleted ticket.
+                        api_healthy = await _check_api_healthy(board_url)
+                        if not api_healthy:
+                            logger.debug(
+                                "Watcher: ticket %s returned 404 but API "
+                                "health check failed — treating as "
+                                "transient outage (subsession %s).",
+                                ticket_id,
+                                info.id,
+                            )
+                            continue
+
                         # Ticket not found — track consecutive 404s and
                         # close the monitor after the threshold to stop
                         # futile polling (the ticket was deleted or the
@@ -435,7 +537,11 @@ async def watch_paused_monitors(env: SubsessionEnv) -> None:
                                 continue
 
                             # -- escalation: notify the operator before closing --
-                            if env.event_sink is not None:
+                            if (
+                                env.event_sink is not None
+                                and info.id not in _ticket_deleted_notified
+                            ):
+                                _ticket_deleted_notified.add(info.id)
                                 env.event_sink.publish(
                                     info.owner_session_id,
                                     {
@@ -600,19 +706,87 @@ async def watch_paused_monitors(env: SubsessionEnv) -> None:
                         else:
                             # No PR evidence at all — the ticket was
                             # closed with pr_url=null and no checkpoint PR
-                            # info.  This is the exact systemic gap the
-                            # operator flagged: the board transitioned the
-                            # ticket to closed but no PR was ever merged.
-                            logger.warning(
-                                "Watcher: subsession %s ticket %s terminal "
-                                "(%s) but pr_url is null and checkpoint has "
-                                "no pr_number — keeping paused (ticket was "
-                                "closed with no PR evidence).",
-                                info.id,
-                                ticket_id,
-                                current_state,
-                            )
-                            continue
+                            # info.
+                            #
+                            # Before keeping paused, try to cross-reference
+                            # via the GitHub search API: if the checkpoint
+                            # carries a repo_full_name (even without a
+                            # pr_number), search for PRs in that repo that
+                            # reference the ticket ID.  A PR may have been
+                            # merged by a different agent, leaving
+                            # pr_url null on the board.
+                            repo_raw = checkpoint.get("repo_full_name")
+                            if isinstance(repo_raw, str) and repo_raw:
+                                prs = await _search_prs_referencing_ticket(
+                                    env,
+                                    repo_full_name=repo_raw,
+                                    ticket_id=ticket_id,
+                                    sub_id=info.id,
+                                )
+                                if prs:
+                                    # Found at least one PR referencing
+                                    # this ticket — pick the first one
+                                    # and record it in the checkpoint
+                                    # so the merge guard can verify it.
+                                    first_pr = prs[0]
+                                    pr_num = first_pr.get("number")
+                                    if isinstance(pr_num, int) and pr_num > 0:
+                                        logger.info(
+                                            "Watcher: subsession %s ticket %s "
+                                            "terminal (%s) — found PR #%d in %s "
+                                            "via GitHub search; updating "
+                                            "checkpoint and resuming.",
+                                            info.id,
+                                            ticket_id,
+                                            current_state,
+                                            pr_num,
+                                            repo_raw,
+                                        )
+                                        checkpoint["pr_number"] = pr_num
+                                        checkpoint["repo_full_name"] = repo_raw
+                                        env.registry.update_checkpoint(
+                                            info.id, checkpoint
+                                        )
+                                        # Fall through to the resume path
+                                        # below — don't continue.
+                                    else:
+                                        logger.warning(
+                                            "Watcher: subsession %s ticket %s "
+                                            "terminal (%s) — GitHub search "
+                                            "returned PR without a number; "
+                                            "keeping paused.",
+                                            info.id,
+                                            ticket_id,
+                                            current_state,
+                                        )
+                                        continue
+                                else:
+                                    logger.warning(
+                                        "Watcher: subsession %s ticket %s "
+                                        "terminal (%s) but pr_url is null, "
+                                        "checkpoint has no pr_number, and "
+                                        "GitHub search found no PRs "
+                                        "referencing the ticket in %s — "
+                                        "keeping paused (ticket was closed "
+                                        "with no PR evidence).",
+                                        info.id,
+                                        ticket_id,
+                                        current_state,
+                                        repo_raw,
+                                    )
+                                    continue
+                            else:
+                                logger.warning(
+                                    "Watcher: subsession %s ticket %s terminal "
+                                    "(%s) but pr_url is null and checkpoint has "
+                                    "no pr_number or repo_full_name — keeping "
+                                    "paused (ticket was closed with no PR "
+                                    "evidence).",
+                                    info.id,
+                                    ticket_id,
+                                    current_state,
+                                )
+                                continue
 
                     logger.info(
                         "Watcher: subsession %s ticket %s state changed "
