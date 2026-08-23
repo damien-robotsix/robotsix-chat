@@ -2682,6 +2682,27 @@ autonomous settings at their pydantic field defaults
 ``stale_monitor_runs_before_completion=3``,
 ``queue_tolerance_runs_before_escalation=3``).
 
+## AUTONOMOUS v36 — 2026-08-23 — 20260823T001252Z-auto-advance-approved-proposals-through-54a3
+
+**Summary:** Close the double-approval gap for operator-approved proposals:
+extend CONSENT SCOPING with a PROPOSAL CONSENT PROPAGATION carve-out, and add
+operator-preapproved proposals as a pre-authorized case in the
+HUMAN_ISSUE_APPROVAL section.  When the operator explicitly approves a
+surfaced improvement proposal, every downstream ticket filed to implement it
+is pre-authorized for the human_issue_approval gate — approve them
+immediately without re-prompting the operator.  Hard safety gates (PR merges,
+file deletions, sensitive-path changes) still require explicit per-action
+authorization.
+
+**Rationale:** v31 added operator-preapproved proposals to HUMAN_ISSUE_APPROVAL
+and v32 to MUTATION AUTHORIZATION, but the CONSENT SCOPING section still stated
+"consent is gate-specific" with no exception for proposal children, creating
+a contradiction that caused the agent to conservatively gate.  The
+HUMAN_ISSUE_APPROVAL exception list also lacked the proposal case.  This
+change resolves both gaps.
+
+**SHA256:** `e235c04611bac1724661359aa5d7a2fdece8bd6a52168874091e94cb59070eb9`
+
 ## AUTONOMOUS v35 — 2026-08-23 — 20260823T150717Z-re-fetch-live-state-before-reporting-on-bcd4
 
 **Summary:** Add DELAYED DECISION RE-VERIFICATION paragraph to the STATE
