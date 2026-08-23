@@ -62,12 +62,16 @@ class TestBuildAutonomousInstruction:
         assert "human_issue_approval" in result
         assert "gate-specific" in result
 
-    def test_no_proposal_handshake(self) -> None:
-        """The proposal handshake is gone from the autonomous protocol."""
+    def test_proposal_consent_propagation_is_present(self) -> None:
+        """The PROPOSAL CONSENT PROPAGATION section is present.
+
+        The old proposal handshake markers are gone.
+        """
         settings = self._make_settings()
         result = build_autonomous_instruction(settings)
-        assert "PROPOSAL" not in result
+        assert "PROPOSAL CONSENT PROPAGATION" in result
         assert "---PROPOSAL READY---" not in result
+        assert "---PROPOSAL SENT---" not in result
 
     def test_no_planning_prose(self) -> None:
         """The protocol forbids plan prose: first tool call, not a plan."""
