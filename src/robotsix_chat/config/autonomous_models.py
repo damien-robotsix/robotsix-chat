@@ -331,6 +331,20 @@ class AutonomySettings(BaseModel):
             "the operator with a summary and recommended next steps."
         ),
     )
+    auto_approve_well_scoped_low_risk: bool = Field(
+        default=False,
+        description=(
+            "When True, the agent may auto-approve self-authored "
+            "human_issue_approval tickets that are well-scoped, low-risk, "
+            "and carry explicit acceptance criteria — even when the target "
+            "repo is not in auto_approve_repo_allowlist.  The agent must "
+            "verify: the spec has concrete, verifiable acceptance criteria; "
+            "the change has no external dependencies; the scope is bounded "
+            "and non-controversial; and the change is non-destructive and "
+            "reversible.  The agent MUST log the auto-approval decision "
+            "with a summary of why the ticket qualified."
+        ),
+    )
     operator_review_escalation_hours: int = Field(
         default=48,
         ge=1,

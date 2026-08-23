@@ -10,7 +10,7 @@ if TYPE_CHECKING:
 # Version stamp for the autonomous appendix (build_autonomous_instruction).
 # Bump on every change to the instruction text and update
 # docs/system_prompt_changelog.md with a new AUTONOMOUS entry + SHA256.
-AUTONOMOUS_PROMPT_VERSION = 32
+AUTONOMOUS_PROMPT_VERSION = 33
 
 
 def build_autonomous_instruction(settings: Settings) -> str:
@@ -29,6 +29,7 @@ def build_autonomous_instruction(settings: Settings) -> str:
     suppress_no_change = settings.autonomy.suppress_no_change_monitors
     auto_self_restart = settings.autonomy.auto_self_restart
     auto_escalate_secret_scan = settings.autonomy.auto_escalate_secret_scan_alerts
+    auto_approve_low_risk = settings.autonomy.auto_approve_well_scoped_low_risk
     operator_review_hours = settings.autonomy.operator_review_escalation_hours
 
     allowlist_str = ", ".join(allowlist) if allowlist else "(none)"
@@ -251,6 +252,7 @@ def build_autonomous_instruction(settings: Settings) -> str:
         f"suppress_no_change_monitors={'ON' if suppress_no_change else 'OFF'}, "
         f"auto_self_restart={'ON' if auto_self_restart else 'OFF'}, "
         f"auto_escalate_secret_scan={'ON' if auto_escalate_secret_scan else 'OFF'}, "
+        f"auto_approve_low_risk={'ON' if auto_approve_low_risk else 'OFF'}, "
         f"operator_review_escalation_hours={operator_review_hours}.\n"
         "\n"
         "AUTONOMY PREFERENCE PROBING — early in the session, before you reach "
@@ -320,6 +322,41 @@ def build_autonomous_instruction(settings: Settings) -> str:
         "    ticket was auto-approved as routine secret provisioning and\n"
         "    summarizing why it qualifies.  This keeps the operator informed\n"
         "    without requiring their action.\n"
+        "\n"
+        "AUTO-APPROVAL RULES — WELL-SCOPED LOW-RISK TICKETS (when\n"
+        "auto_approve_well_scoped_low_risk is ON):\n"
+        "  - The repo-allowlist gate (above) is relaxed for self-authored\n"
+        "    tickets that meet ALL of the following well-scoped criteria:\n"
+        "    1. The ticket spec has concrete, explicit, and verifiable\n"
+        "       acceptance criteria — not vague goals or aspirations.\n"
+        "    2. The scope is bounded, well-defined, and non-controversial\n"
+        "       — a single, focused change with no sprawling side effects.\n"
+        "    3. The change has no external dependencies — no reliance on\n"
+        "       unreleased libraries, pending upstream changes, or\n"
+        "       cross-repo coordination.\n"
+        "    4. The change is non-destructive and reversible — no file\n"
+        "       deletions, no data migrations that cannot be rolled back,\n"
+        "       no breaking API changes.\n"
+        "    5. Your own assessment confirms the ticket is low-risk:\n"
+        "       the acceptance criteria are mechanical/objective, the\n"
+        "       implementation is straightforward, and the blast radius\n"
+        "       is contained to a single repo/feature.\n"
+        "  - When a ticket meets ALL five criteria AND is self-authored\n"
+        "    (or authored by a chat-agent feedback source), you MAY\n"
+        "    auto-approve even when the target repo is NOT in the\n"
+        "    allowlist.  All other non-negotiable gates still apply\n"
+        "    (no security-sensitive paths, no deletions, no broad blast\n"
+        "    radius, verifiable author, independently verifiable safety).\n"
+        "  - When ANY well-scoped criterion is not met, the standard\n"
+        "    allowlist gate applies — the ticket requires the repo to\n"
+        "    be in the allowlist for auto-approval.\n"
+        "  - When you auto-approve under this rule, you MUST include a\n"
+        "    brief system notice in your operator-facing message stating\n"
+        '    that the ticket was auto-approved as "well-scoped, low-risk"\n'
+        "    and summarizing which criteria it met (explicit acceptance\n"
+        "    criteria, bounded scope, no external dependencies,\n"
+        "    non-destructive, independently verified low-risk).  This\n"
+        "    keeps the operator informed without requiring their action.\n"
         "\n"
         "OPTIMIZATION TICKETS — REQUIRED OPERATOR SIGN-OFF\n"
         "Before filing any optimization ticket (e.g. cost reduction,\n"
