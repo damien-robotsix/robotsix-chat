@@ -159,21 +159,31 @@ def build_langfuse_inspect_tools(
         trace_id: str = "",
         ticket_id: str = "",
         limit: int = 5,
+        from_timestamp: str = "",
+        to_timestamp: str = "",
     ) -> str:
-        """Fetch and summarise Langfuse traces for a given trace or ticket id.
+        """Fetch and summarise Langfuse traces.
 
-        Fetches one or more Langfuse traces from the configured Langfuse
-        host: either a single trace by its *trace_id*, or the most recent
-        traces whose tags include ``ticket_id:<value>`` up to *limit*.
+        Fetches traces from the configured Langfuse host with one of these
+        search modes:
 
-        Exactly one of *trace_id* or *ticket_id* must be provided.
+        - *trace_id* — fetch a single trace by its id.
+        - *ticket_id* — search for traces tagged ``ticket_id:<value>``.
+        - *from_timestamp* / *to_timestamp* — time-range search (ISO 8601,
+          e.g. ``2026-08-01T00:00:00Z``).  Either or both may be provided.
+        - Combine *ticket_id* with time-range filters to narrow results.
+
+        At least one search criterion (*trace_id*, *ticket_id*,
+        *from_timestamp*, or *to_timestamp*) must be provided.  *trace_id*
+        is mutually exclusive with the other criteria.
 
         Args:
             trace_id: A specific Langfuse trace id to fetch.
             ticket_id: A ticket id to search for in trace tags.
-            limit: Maximum number of traces to return when searching by
-                ticket id (capped by the configured max).  Ignored when
-                *trace_id* is set.
+            limit: Maximum number of traces to return (capped by the
+                configured max).  Ignored when *trace_id* is set.
+            from_timestamp: ISO 8601 start of time range (inclusive).
+            to_timestamp: ISO 8601 end of time range (inclusive).
 
         Returns:
             A JSON string with a ``traces`` list of summarised trace
@@ -190,9 +200,26 @@ def build_langfuse_inspect_tools(
                 },
                 ensure_ascii=False,
             )
-        if not trace_id and not ticket_id:
+        if trace_id and (from_timestamp or to_timestamp):
             return json.dumps(
-                {"traces": [], "error": "Provide either trace_id or ticket_id."},
+                {
+                    "traces": [],
+                    "error": (
+                        "trace_id is mutually exclusive with from_timestamp "
+                        "and to_timestamp."
+                    ),
+                },
+                ensure_ascii=False,
+            )
+        if not trace_id and not ticket_id and not from_timestamp and not to_timestamp:
+            return json.dumps(
+                {
+                    "traces": [],
+                    "error": (
+                        "Provide at least one of trace_id, ticket_id, "
+                        "from_timestamp, or to_timestamp."
+                    ),
+                },
                 ensure_ascii=False,
             )
 
@@ -235,13 +262,18 @@ def build_langfuse_inspect_tools(
                 ensure_ascii=False,
             )
 
-        # Search by ticket_id tag.
-        tag_value = f"ticket_id:{ticket_id}"
-        params = {
-            "tags": tag_value,
+        # Build query params for list endpoint.
+        params: dict[str, str] = {
             "limit": str(effective_limit),
             "orderBy": "timestamp.desc",
         }
+        if ticket_id:
+            params["tags"] = f"ticket_id:{ticket_id}"
+        if from_timestamp:
+            params["fromTimestamp"] = from_timestamp
+        if to_timestamp:
+            params["toTimestamp"] = to_timestamp
+
         url = f"{host}/api/public/traces"
         result = await _retry_safe_http_request(
             "GET",
@@ -260,13 +292,16 @@ def build_langfuse_inspect_tools(
         page: dict[str, Any] = json.loads(result.text or "{}")
         raw_traces: list[dict[str, Any]] = page.get("data", [])
         traces = [_summarise_trace(t) for t in raw_traces]
-        return json.dumps(
-            {
-                "traces": traces,
-                "ticket_id": ticket_id,
-                "limit": effective_limit,
-            },
-            ensure_ascii=False,
-        )
+        response: dict[str, Any] = {
+            "traces": traces,
+            "limit": effective_limit,
+        }
+        if ticket_id:
+            response["ticket_id"] = ticket_id
+        if from_timestamp:
+            response["from_timestamp"] = from_timestamp
+        if to_timestamp:
+            response["to_timestamp"] = to_timestamp
+        return json.dumps(response, ensure_ascii=False)
 
     return [inspect_langfuse_trace]

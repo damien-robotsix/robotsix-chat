@@ -79,6 +79,108 @@ def test_load_langfuse_inspect_skill_returns_non_empty_markdown() -> None:
 
 
 # ---------------------------------------------------------------------------
+# inspect_langfuse_trace — time-range search
+# ---------------------------------------------------------------------------
+
+
+@pytest.mark.asyncio
+async def test_inspect_trace_id_mutually_exclusive_with_timestamps() -> None:
+    """trace_id combined with from_timestamp returns an error."""
+    tools = build_langfuse_inspect_tools(_inspect_settings(), _langfuse_settings())
+    result = json.loads(
+        await tools[0](
+            trace_id="abc",
+            from_timestamp="2026-08-01T00:00:00Z",
+        )
+    )
+    assert result["error"]
+    assert "mutually exclusive" in result["error"].lower()
+    assert result["traces"] == []
+
+
+@pytest.mark.asyncio
+async def test_inspect_by_time_range_success(respx_mock: respx.MockRouter) -> None:
+    """Time-range search returns traces filtered by from/to timestamps."""
+    respx_mock.get("https://cloud.langfuse.com/api/public/traces").mock(
+        return_value=httpx.Response(
+            200,
+            json={
+                "data": [
+                    {
+                        "id": "trace-t1",
+                        "name": "autonomous",
+                        "timestamp": "2026-08-01T06:00:00.000Z",
+                        "userId": "agent-1",
+                        "latency": 3.2,
+                        "totalCost": 0.01,
+                        "metrics": {
+                            "usage": {
+                                "promptTokens": 200,
+                                "completionTokens": 100,
+                                "totalTokens": 300,
+                            }
+                        },
+                        "observations": [],
+                        "scores": [],
+                    },
+                ],
+                "meta": {"page": 1, "limit": 20, "totalItems": 1},
+            },
+        )
+    )
+
+    tools = build_langfuse_inspect_tools(
+        _inspect_settings(max_traces=20), _langfuse_settings()
+    )
+    result = json.loads(
+        await tools[0](
+            from_timestamp="2026-08-01T00:00:00Z",
+            to_timestamp="2026-08-02T00:00:00Z",
+            limit=20,
+        )
+    )
+
+    assert len(result["traces"]) == 1
+    assert result["traces"][0]["id"] == "trace-t1"
+    assert result["traces"][0]["name"] == "autonomous"
+    assert result["from_timestamp"] == "2026-08-01T00:00:00Z"
+    assert result["to_timestamp"] == "2026-08-02T00:00:00Z"
+    assert result["limit"] == 20
+
+    # Verify query params were sent to the API.
+    req = respx_mock.calls.last.request
+    qs = req.url.query.decode()
+    assert "fromTimestamp=2026-08-01T00%3A00%3A00Z" in qs
+    assert "toTimestamp=2026-08-02T00%3A00%3A00Z" in qs
+    assert "limit=20" in qs
+
+
+@pytest.mark.asyncio
+async def test_inspect_by_ticket_id_and_time_range(
+    respx_mock: respx.MockRouter,
+) -> None:
+    """Combining ticket_id with time range sends all filters."""
+    respx_mock.get("https://cloud.langfuse.com/api/public/traces").mock(
+        return_value=httpx.Response(200, json={"data": [], "meta": {}})
+    )
+
+    tools = build_langfuse_inspect_tools(
+        _inspect_settings(max_traces=10), _langfuse_settings()
+    )
+    await tools[0](
+        ticket_id="test-123",
+        from_timestamp="2026-08-01T00:00:00Z",
+        limit=10,
+    )
+
+    req = respx_mock.calls.last.request
+    qs = req.url.query.decode()
+    assert "tags=ticket_id%3Atest-123" in qs
+    assert "fromTimestamp=2026-08-01T00%3A00%3A00Z" in qs
+    assert "limit=10" in qs
+
+
+# ---------------------------------------------------------------------------
 # inspect_langfuse_trace — error paths (no network needed)
 # ---------------------------------------------------------------------------
 
@@ -99,7 +201,7 @@ async def test_inspect_neither_id_provided() -> None:
     tools = build_langfuse_inspect_tools(_inspect_settings(), _langfuse_settings())
     result = json.loads(await tools[0]())
     assert result["error"]
-    assert "either" in result["error"].lower()
+    assert "at least one" in result["error"].lower()
     assert result["traces"] == []
 
 
