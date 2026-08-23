@@ -26,14 +26,20 @@ inspect_langfuse_trace(
     trace_id: str = "",
     ticket_id: str = "",
     limit: int = 5,
+    from_timestamp: str = "",
+    to_timestamp: str = "",
 ) -> str
 ```
 
-- Exactly one of `trace_id` or `ticket_id` must be provided.
+- At least one search criterion must be provided: `trace_id`, `ticket_id`, `from_timestamp`, or
+  `to_timestamp`.
+- `trace_id` is mutually exclusive with the other criteria.
 - When `trace_id` is given: fetch that single trace and return a detailed summary (name, timestamps,
   input/output tokens, total cost, top-level observations, scores).
 - When `ticket_id` is given: search for traces whose tags include `ticket_id:<value>` (most recent
   first) up to `limit`, and return a summary list (trace id, name, timestamp, duration, cost).
+- `from_timestamp` / `to_timestamp`: filter traces by time range (ISO 8601, e.g.
+  ``2026-08-01T00:00:00Z``). Either or both may be provided, alone or combined with `ticket_id`.
 - `limit` caps the number of traces returned (default 5, max configured in settings).
 
 ## Return value
@@ -92,4 +98,8 @@ inspect_langfuse_trace(trace_id="01J...abc")
 
 # Search for traces linked to a ticket
 inspect_langfuse_trace(ticket_id="20260727T001240Z-add-capability-5bd6", limit=5)
+
+# Query the last 24 hours of traces (time-range search)
+inspect_langfuse_trace(from_timestamp="2026-08-22T00:00:00Z",
+                       to_timestamp="2026-08-23T00:00:00Z", limit=20)
 ```

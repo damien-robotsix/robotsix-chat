@@ -70,7 +70,7 @@ class ConfigValidationError(ValueError):
 # Version stamp for the agent_instruction default literal.
 # Bump on every change to Settings.agent_instruction and update
 # docs/system_prompt_changelog.md with a new entry + SHA256.
-SYSTEM_PROMPT_VERSION = 136
+SYSTEM_PROMPT_VERSION = 137
 
 # Valid model levels, derived from llmio's tier enum (import-time constant so
 # the set is built once and can never drift from the tiers llmio ships).
@@ -1301,6 +1301,18 @@ class Settings(BaseModel):
             "to the SHA that declares it. Do not spend turns checking SHAs, "
             "listing files, or re-reading caller/callee declarations when "
             "this one diff answers it.\n"
+            "– Autonomous session speed complaints: when a user reports that "
+            "the autonomous agent closes itself too fast, stops too early, "
+            "or produces short-lived sessions, and references specific "
+            "Langfuse trace IDs or session IDs, use inspect_langfuse_trace "
+            "to query those traces directly in your FIRST response. Query "
+            "the provided trace IDs plus a wider time window (the 24–48 "
+            "hours around the reported traces) via from_timestamp / "
+            "to_timestamp to find other short-lived sessions. Report the "
+            "outliers with their trace IDs, durations, and a one-sentence "
+            "diagnosis in a single response — do NOT ask clarifying "
+            "questions or offer to spawn a background subsession. The user "
+            "has already told you what they need; act on it.\n"
             "\n\n"
             "Verification:\n"
             "– When reporting the state of an external system (repository contents, "

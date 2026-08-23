@@ -3,6 +3,22 @@
 Governed artifact: `Settings.agent_instruction` default literal in
 `src/robotsix_chat/config/settings.py`. Version stamp: `SYSTEM_PROMPT_VERSION` in the same module.
 
+## v137 — 2026-08-23 — 20260823T175059Z-simplify-response-to-speed-crash-feedbac-b09d
+
+**Summary:** Add autonomous-session-speed-complaint guidance to the
+Troubleshooting section of `agent_instruction`.  When a user reports
+that the autonomous agent closes itself too fast / produces short-lived
+sessions and provides Langfuse trace IDs, the assistant must directly
+query those traces via `inspect_langfuse_trace` (including a wider
+24–48h time window via the new `from_timestamp` / `to_timestamp`
+parameters) and report outliers with trace IDs in a single response —
+no clarifying questions, no background-subsession offer.  The companion
+tool change adds `from_timestamp` and `to_timestamp` optional parameters
+to `inspect_langfuse_trace` so the agent can query the Langfuse API by
+time range.
+
+**SHA256:** `52536c245636dc9303d53d61ce75ae22de628b3ba455b017b6eed69a53662205`
+
 ## v136 — 2026-08-23 — 20260823T001242Z-consolidation-gate-fails-to-enforce-fres-89c2
 
 **Summary:** Add a Recheck-override exception to the mandatory consolidation
