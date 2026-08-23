@@ -71,7 +71,7 @@ def _component_request_error(
 
 
 def _component_request_ticket_list(
-    tickets: list[dict[str, Any]],
+    tickets: Any,
 ) -> Callable[..., Any]:
     """Return an async mock that returns a roster-style ticket list response."""
 
@@ -2172,8 +2172,8 @@ async def test_list_stale_ready_timestamp_unix_float_as_string() -> None:
 
 
 @pytest.mark.asyncio
-async def test_list_stale_ready_timestamp_unparseable() -> None:
-    """Unparseable timestamp string → ticket is included with 'unknown' staleness."""
+async def test_list_stale_ready_timestamp_unparsable() -> None:
+    """Unparsable timestamp string → ticket is included with 'unknown' staleness."""
     now = 1_750_000_000.0
 
     tickets = [
