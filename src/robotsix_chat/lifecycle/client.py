@@ -228,6 +228,74 @@ def _diagnose_self_restart_failure(
     return "\n".join(parts)
 
 
+def _service_is_healthy(data: dict[str, Any]) -> bool:
+    """Return ``True`` when *data* indicates the service is healthy.
+
+    Checks for common status-field shapes produced by the deploy
+    lifecycle server:
+    - ``{"status": "running", "health_checks": [{"ok": true}, ...]}``
+    - ``{"status": "healthy"}``
+    - ``{"state": "running"}``
+    """
+    status = str(data.get("status") or data.get("state", "")).lower()
+    if status not in ("running", "healthy", "up"):
+        return False
+    health_checks = data.get("health_checks") or data.get("healthChecks")
+    if isinstance(health_checks, list) and health_checks:
+        return all(
+            h.get("ok") or h.get("healthy") or h.get("passing")
+            for h in health_checks
+            if isinstance(h, dict)
+        )
+    # No health-checks array — trust the status field alone.
+    return True
+
+
+def _running_image_matches(data: dict[str, Any], expected_ref: str) -> bool | None:
+    """Check whether the running image in *data* matches *expected_ref*.
+
+    Returns:
+        ``True`` when the running image matches *expected_ref*.
+        ``False`` when image info is present but does not match.
+        ``None`` when no image information is available in *data*.
+
+    The comparison is substring-based: a match occurs when either the
+    running image string contains *expected_ref* or *expected_ref*
+    contains the running image string.  This handles partial forms
+    (bare ``:tag``, full ``registry/repo:tag``, ``@sha256:...``).
+
+    """
+    image_candidates: list[str] = []
+    for key in (
+        "image",
+        "image_digest",
+        "image_id",
+        "container_image",
+        "Image",
+        "Config.Image",
+    ):
+        val = data.get(key)
+        if isinstance(val, str) and val:
+            image_candidates.append(val)
+
+    # Also check nested paths.
+    for container_key in ("container", "Container", "spec", "Spec"):
+        container = data.get(container_key)
+        if isinstance(container, dict):
+            for img_key in ("image", "Image", "image_digest"):
+                val = container.get(img_key)
+                if isinstance(val, str) and val:
+                    image_candidates.append(val)
+
+    if not image_candidates:
+        return None  # No image info available.
+
+    for running_image in image_candidates:
+        if expected_ref in running_image or running_image in expected_ref:
+            return True
+    return False
+
+
 class LifecycleClient:
     """HTTP client for the deploy-lifecycle API.
 
@@ -355,6 +423,115 @@ class LifecycleClient:
     async def update_service_env(self, service_name: str, env: dict[str, Any]) -> str:
         """``PUT /services/{name}/env`` — update service environment."""
         return await self._put(f"/services/{service_name}/env", env)
+
+    async def verify_deployment(
+        self,
+        service_name: str,
+        expected_image_ref: str = "",
+        poll_timeout_seconds: float = 300.0,
+        poll_interval_seconds: float = 15.0,
+    ) -> str:
+        """Poll *service_name* status until healthy and image matches.
+
+        Calls ``GET /services/{name}/status`` in a loop, waiting up to
+        *poll_timeout_seconds*.  Returns a JSON verdict with
+        ``verified`` (bool), ``service_status``, and ``detail``.
+        """
+        import asyncio
+        import time
+
+        start = time.monotonic()
+        last_status: str = ""
+        attempts = 0
+
+        while True:
+            attempts += 1
+            elapsed = time.monotonic() - start
+            if elapsed >= poll_timeout_seconds:
+                return json.dumps(
+                    {
+                        "verified": False,
+                        "service_name": service_name,
+                        "expected_image_ref": expected_image_ref,
+                        "detail": (
+                            f"Timed out after {elapsed:.0f}s "
+                            f"({attempts} poll(s)).  Last known status "
+                            "is included below."
+                        ),
+                        "last_service_status": last_status,
+                    },
+                    indent=2,
+                )
+
+            status = await self.service_status(service_name)
+            last_status = status
+
+            if status.startswith("Lifecycle"):
+                # Error from the API — not a transient network issue,
+                # so return immediately.
+                return json.dumps(
+                    {
+                        "verified": False,
+                        "service_name": service_name,
+                        "expected_image_ref": expected_image_ref,
+                        "detail": f"Lifecycle API error: {status}",
+                        "last_service_status": status,
+                    },
+                    indent=2,
+                )
+
+            # Try to parse status for image info.
+            try:
+                data: dict[str, Any] = json.loads(status)
+            except json.JSONDecodeError:
+                data = {}
+
+            service_healthy = _service_is_healthy(data)
+
+            if not service_healthy:
+                await asyncio.sleep(poll_interval_seconds)
+                continue
+
+            # --- healthy ---
+            if not expected_image_ref:
+                # No image ref to verify — healthy is enough.
+                return json.dumps(
+                    {
+                        "verified": True,
+                        "service_name": service_name,
+                        "detail": (
+                            f"Service is running and healthy "
+                            f"after {elapsed:.0f}s ({attempts} poll(s))."
+                        ),
+                        "last_service_status": status,
+                    },
+                    indent=2,
+                )
+
+            # Check image match.
+            image_match = _running_image_matches(data, expected_image_ref)
+            if image_match is True:
+                return json.dumps(
+                    {
+                        "verified": True,
+                        "service_name": service_name,
+                        "expected_image_ref": expected_image_ref,
+                        "detail": (
+                            f"Service is healthy and image matches "
+                            f"{expected_image_ref} after {elapsed:.0f}s "
+                            f"({attempts} poll(s))."
+                        ),
+                        "last_service_status": status,
+                    },
+                    indent=2,
+                )
+            if image_match is False:
+                # Image present but does not match — keep polling
+                # (a redeploy may still be in progress).
+                pass
+            # image_match is None → no image info in status; keep polling.
+
+            await asyncio.sleep(poll_interval_seconds)
 
     def _headers(self) -> dict[str, str]:
         headers: dict[str, str] = {"Accept": "application/json"}
