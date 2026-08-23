@@ -116,6 +116,12 @@
           "title": "Auto Approve Self Authored",
           "type": "boolean"
         },
+        "auto_approve_well_scoped_low_risk": {
+          "default": false,
+          "description": "When True, the agent may auto-approve self-authored human_issue_approval tickets that are well-scoped, low-risk, and carry explicit acceptance criteria \u2014 even when the target repo is not in auto_approve_repo_allowlist.  The agent must verify: the spec has concrete, verifiable acceptance criteria; the change has no external dependencies; the scope is bounded and non-controversial; and the change is non-destructive and reversible.  The agent MUST log the auto-approval decision with a summary of why the ticket qualified.",
+          "title": "Auto Approve Well Scoped Low Risk",
+          "type": "boolean"
+        },
         "auto_escalate_secret_scan_alerts": {
           "default": true,
           "description": "When True, the agent auto-escalates tickets blocked on a secret-scan alert (e.g., TruffleHog verified secrets) by filing a credential-rotation follow-up ticket and notifying the operator with a summary and recommended next steps.",

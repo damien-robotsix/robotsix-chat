@@ -258,6 +258,7 @@
     "auto_approve_self_authored": false,
     "auto_approve_repo_allowlist": [],
     "auto_approve_routine_secret_provisioning": false,
+    "auto_approve_well_scoped_low_risk": false,
     "suppress_no_change_monitors": false,
     "auto_escalate_secret_scan_alerts": true,
     "operator_review_escalation_hours": 48
