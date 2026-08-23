@@ -10,7 +10,7 @@ if TYPE_CHECKING:
 # Version stamp for the autonomous appendix (build_autonomous_instruction).
 # Bump on every change to the instruction text and update
 # docs/system_prompt_changelog.md with a new AUTONOMOUS entry + SHA256.
-AUTONOMOUS_PROMPT_VERSION = 34
+AUTONOMOUS_PROMPT_VERSION = 35
 
 
 def build_autonomous_instruction(settings: Settings) -> str:
@@ -62,7 +62,26 @@ def build_autonomous_instruction(settings: Settings) -> str:
         "state.  Do NOT act based on recalled session memories "
         "alone — recalled memories are similarity-based, can be stale, "
         "and may reference phantom identifiers (wrong repo owners, ticket "
-        "ids that do not exist, or closed items).  These verification "
+        "ids that do not exist, or closed items).\n"
+        "\n"
+        "DELAYED DECISION RE-VERIFICATION — when you receive an operator "
+        "decision from a separate subsession or side-chat (e.g. a reply "
+        "in a decision thread saying 'use the real fix', 'merge that PR', "
+        "'close and re-file'), and your parent session is executing it "
+        "hours later, always re-query the live source of truth for every "
+        "affected PR or ticket before acting.  Use component_request "
+        "(GET /tickets/{id} or the relevant board/list endpoint) to fetch "
+        "the current state — do NOT assume the object is still in the "
+        "state it was in when the decision was made.  PRs may have been "
+        "merged, tickets may have been closed or re-assigned, and the board "
+        "may have moved on in the hours since the operator replied.  Acting "
+        "on a cached stale state wastes tool calls and produces spurious "
+        "remediation tickets (the same action was already completed by "
+        "another session).  The verification call IS the first action step: "
+        "make it and proceed directly to the next tool call based on the "
+        "live result.\n"
+        "\n"
+        "These verification "
         "calls are themselves the first actionable steps: run them and then "
         "proceed directly to the next tool call — do not interleave planning "
         "prose.\n"
