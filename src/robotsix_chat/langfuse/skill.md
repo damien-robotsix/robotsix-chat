@@ -39,7 +39,7 @@ inspect_langfuse_trace(
 - When `ticket_id` is given: search for traces whose tags include `ticket_id:<value>` (most recent
   first) up to `limit`, and return a summary list (trace id, name, timestamp, duration, cost).
 - `from_timestamp` / `to_timestamp`: filter traces by time range (ISO 8601, e.g.
-  ``2026-08-01T00:00:00Z``). Either or both may be provided, alone or combined with `ticket_id`.
+  `2026-08-01T00:00:00Z`). Either or both may be provided, alone or combined with `ticket_id`.
 - `limit` caps the number of traces returned (default 5, max configured in settings).
 
 ## Return value
