@@ -471,6 +471,45 @@ def test_list_sessions_no_default_for_unknown_owner() -> None:
     assert active == ""
 
 
+def test_delete_session_keeps_a_conversation_another_owner_still_holds() -> None:
+    """Deleting for one owner must not destroy a dual-owned conversation.
+
+    ``record`` registers a session under whoever sends a turn, so an
+    autonomous session the operator chats with genuinely belongs to both
+    owners.  The autonomous runner's retire sweep used to pop it outright,
+    leaving the operator holding a dangling id that ``begin`` then silently
+    re-created as a blank session — they kept typing into what looked like
+    the same chat while its history was gone.
+    """
+    store = _store()
+    store.create_session("operator")
+    shared = str(store.create_session("autonomous")["session_id"])
+    # The operator speaks to it, which adopts it into their own registry.
+    store.record(shared, "operator", "hello", "hi there")
+
+    result = store.delete_session("autonomous", shared, create_replacement=False)
+
+    assert result["deleted"] is True
+    # Gone from the autonomous list...
+    auto_sessions, _ = store.list_sessions("autonomous", create_default=False)
+    assert [s["session_id"] for s in auto_sessions] == []
+    # ...but the operator still has the conversation, history intact.
+    op_sessions, _ = store.list_sessions("operator")
+    assert shared in [s["session_id"] for s in op_sessions]
+    assert store.history(shared) == [("hello", "hi there")]
+
+
+def test_delete_session_destroys_a_conversation_no_owner_holds() -> None:
+    """The last owner's delete still frees the conversation."""
+    store = _store()
+    only = str(store.create_session("o1")["session_id"])
+    store.record(only, "o1", "hello", "hi there")
+
+    store.delete_session("o1", only, create_replacement=False)
+
+    assert store.history(only) == []
+
+
 def test_delete_session_unknown_is_noop() -> None:
     """Deleting an unknown owner/session returns deleted=False."""
     store = _store()

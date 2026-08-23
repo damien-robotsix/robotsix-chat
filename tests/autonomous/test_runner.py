@@ -1144,3 +1144,181 @@ class TestLegacyNextFireDoesNotStarvePresets:
         # The implied completion time was recovered into the new store, so the
         # next boot does not read this preset as never-run.
         assert runner._scheduler_state["cost-review"]["last_completed_at"] > 0
+
+
+class TestOperatorTurnHoldsSessionOpen:
+    """A session the operator is chatting with must not be replaced.
+
+    An autonomous run finishes in a couple of minutes but its card stays on
+    screen for the rest of ``trigger_interval_seconds``, so the session the
+    operator opens and talks to is almost always one already marked
+    ``completed``.  Nothing used to move it back out of that state — the
+    marker scan only ever closes — so the next restart fire retired the live
+    conversation (deleting its history) and dropped a fresh session in its
+    place.  Observed 2026-08-23: the operator was mid-conversation when the
+    card was swapped underneath them.
+    """
+
+    @pytest.fixture(autouse=True)
+    def _mock_persistence(self, monkeypatch) -> None:
+        monkeypatch.setattr(AutonomousRunner, "_save_sessions", MagicMock())
+        monkeypatch.setattr(
+            AutonomousRunner, "_load_sessions", MagicMock(return_value={})
+        )
+        monkeypatch.setattr(AutonomousRunner, "_save_scheduler_state", MagicMock())
+        monkeypatch.setattr(
+            AutonomousRunner, "_load_scheduler_state", MagicMock(return_value={})
+        )
+        monkeypatch.setattr(AutonomousRunner, "_schedule_background", MagicMock())
+
+    def _runner(self, store: ConversationStore | None = None) -> AutonomousRunner:
+        return AutonomousRunner(
+            settings=_make_settings(sessions=[_make_definition("default")]),
+            conversation_store=store or ConversationStore(),
+            agent_factory=MagicMock(),
+            run_serializer=_make_run_serializer(),
+        )
+
+    def test_operator_turn_reopens_a_completed_session(self) -> None:
+        """Talking to a finished session makes it live again."""
+        runner = self._runner()
+        aq = runner.ensure_active_session("autonomous")
+        assert aq is not None
+        runner._mark_completed(aq.session_id, aq)
+        assert aq.state is AutonomousState.completed
+
+        assert runner.note_operator_turn(aq.session_id) is True
+        assert aq.state is AutonomousState.executing
+        assert aq.reopened_by_operator is True
+
+    def test_reopened_session_survives_the_restart_fire(self) -> None:
+        """The timer returns the operator's session instead of replacing it."""
+        runner = self._runner()
+        aq = runner.ensure_active_session("autonomous")
+        assert aq is not None
+        runner._mark_completed(aq.session_id, aq)
+        runner.note_operator_turn(aq.session_id)
+
+        # This is exactly what ``_auto_restart`` does when its timer fires.
+        again = runner.ensure_active_session("autonomous", force=True)
+        assert again is aq
+        assert runner.is_autonomous(aq.session_id)
+
+    def test_untracked_session_is_ignored(self) -> None:
+        """Ordinary operator chats are not autonomous sessions."""
+        runner = self._runner()
+        assert runner.note_operator_turn("not-an-autonomous-session") is False
+
+    def test_recent_operator_turn_spares_a_completed_session(self) -> None:
+        """The retire sweep leaves a freshly-chatted session alone.
+
+        Covers the race where the agent re-emits the completion marker while
+        the operator is still mid-conversation.
+        """
+        store = ConversationStore()
+        runner = self._runner(store)
+        aq = runner.ensure_active_session("autonomous")
+        assert aq is not None
+        session_id = aq.session_id
+        runner._mark_completed(session_id, aq)
+        # Operator spoke, then the agent closed the session again.
+        aq.last_operator_turn_at = time.time()
+        aq.state = AutonomousState.completed
+
+        spawned = runner.ensure_active_session("autonomous", force=True)
+        assert spawned is not None
+        assert spawned.session_id != session_id
+        # Spared, not retired: the conversation is still there.
+        assert runner.is_autonomous(session_id)
+        assert store.last_active(session_id) is not None
+
+    def test_abandoned_reopened_session_releases_the_preset(self) -> None:
+        """A conversation nobody returns to must not stall the preset forever.
+
+        Holding the session open is right while someone is talking to it, but
+        an operator who walks away would otherwise block every future run.
+        """
+        runner = self._runner()
+        aq = runner.ensure_active_session("autonomous")
+        assert aq is not None
+        held = aq.session_id
+        runner._mark_completed(held, aq)
+        runner.note_operator_turn(held)
+        # Operator has been silent well past the grace window.
+        aq.last_operator_turn_at = time.time() - 10_000.0
+
+        spawned = runner.ensure_active_session("autonomous", force=True)
+        assert spawned is not None
+        assert spawned.session_id != held
+        assert not runner.is_autonomous(held)
+
+
+class TestRestartTimerIsNotDuplicated:
+    """Each owner gets exactly one pending restart timer.
+
+    Restarts are armed from two independent places — the completion path and
+    the sessions close/delete routes — and each arming moves the owner's
+    single ``_next_fire`` entry forward.  The superseded task still slept out
+    its own delay and fired anyway, so the owner accumulated one extra live
+    timer per stacked arming.  Observed 2026-08-23: the hourly ``default``
+    preset was spawning a replacement session every ~30 minutes.
+    """
+
+    @pytest.fixture(autouse=True)
+    def _mock_persistence(self, monkeypatch) -> None:
+        monkeypatch.setattr(AutonomousRunner, "_save_sessions", MagicMock())
+        monkeypatch.setattr(
+            AutonomousRunner, "_load_sessions", MagicMock(return_value={})
+        )
+        monkeypatch.setattr(AutonomousRunner, "_save_scheduler_state", MagicMock())
+        monkeypatch.setattr(
+            AutonomousRunner, "_load_scheduler_state", MagicMock(return_value={})
+        )
+
+    def _runner(self) -> AutonomousRunner:
+        return AutonomousRunner(
+            settings=_make_settings(
+                sessions=[_make_definition("default", trigger_interval_seconds=600.0)]
+            ),
+            conversation_store=ConversationStore(),
+            agent_factory=MagicMock(),
+            run_serializer=_make_run_serializer(),
+        )
+
+    @pytest.mark.asyncio
+    async def test_second_arming_cancels_the_first(self) -> None:
+        """Arming twice leaves one live timer, not two."""
+        runner = self._runner()
+
+        runner._arm_restart_timer("autonomous")
+        first = runner._restart_timers["autonomous"]
+
+        runner._arm_restart_timer("autonomous")
+        second = runner._restart_timers["autonomous"]
+
+        assert second is not first
+        await asyncio.sleep(0)
+        assert first.cancelled() or first.done()
+        assert not second.done()
+
+        second.cancel()
+
+    @pytest.mark.asyncio
+    async def test_completion_then_close_leaves_one_timer(self) -> None:
+        """The close/delete route's restart replaces the completion's timer."""
+        runner = self._runner()
+        aq = runner.ensure_active_session("autonomous", schedule_kickoff=False)
+        assert aq is not None
+
+        runner._mark_completed(aq.session_id, aq)
+        completion_timer = runner._restart_timers["autonomous"]
+
+        # The operator discards the card; the route arms its own restart.
+        runner.forget_session(aq.session_id)
+        runner.schedule_restart("autonomous")
+
+        await asyncio.sleep(0)
+        assert completion_timer.cancelled() or completion_timer.done()
+        assert len(runner._restart_timers) == 1
+
+        runner._restart_timers["autonomous"].cancel()

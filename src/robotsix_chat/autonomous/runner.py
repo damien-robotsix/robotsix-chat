@@ -63,6 +63,15 @@ _DEFAULT_TRIGGER_INTERVAL = DEFAULT_TRIGGER_INTERVAL_SECONDS
 # container recreates — not just process restarts.
 AUTONOMOUS_SCHEDULER_PERSIST_PATH = "/data/autonomous_scheduler_state.json"
 
+# Grace period protecting a session the operator recently spoke to from the
+# retire sweep.  :meth:`note_operator_turn` normally reopens a completed
+# session outright, which already lifts it out of the sweep's reach; this
+# window covers the residual race where the agent re-emits the completion
+# marker while the operator is still mid-conversation.  Retiring a session
+# out from under a live chat destroys its history, so the sweep errs towards
+# leaving it for the next pass.
+_OPERATOR_ACTIVITY_GRACE_SECONDS = 900.0
+
 
 class AutonomousRunner:
     """Owns autonomous-session lifecycle and drives single-prompt runs."""
@@ -93,6 +102,14 @@ class AutonomousRunner:
         # Strong references to in-flight autonomous run tasks (see asyncio
         # docs warning on create_task and weak references).
         self._auto_tasks: set[asyncio.Task[None]] = set()
+        # owner_id -> the single pending ``_auto_restart`` timer for that
+        # owner.  Restarts are armed from two places (``_mark_completed`` and
+        # the sessions close/delete routes' ``schedule_restart``), and a
+        # second arming used to simply overwrite ``_next_fire`` while the
+        # first task kept sleeping and fired anyway — leaving two live timers
+        # that spawned a replacement session at roughly twice the configured
+        # interval.  Holding the task lets a new arming cancel the old one.
+        self._restart_timers: dict[str, asyncio.Task[None]] = {}
         # Resolve session definitions from the configured presets list.
         # The settings model ships a default preset in its field default
         # (``{"name": "default"}``), so a fresh config always has at least
@@ -204,6 +221,8 @@ class AutonomousRunner:
                     "state": aq.state.value,
                     "auto_turn_count": aq.auto_turn_count,
                     "definition_name": aq.definition_name,
+                    "reopened_by_operator": aq.reopened_by_operator,
+                    "last_operator_turn_at": aq.last_operator_turn_at,
                 }
             # ``next_fire`` is what stops a restart from re-running every
             # preset: without it the runner had no memory of when a preset
@@ -254,6 +273,10 @@ class AutonomousRunner:
                     state=self._parse_persisted_state(entry.get("state", "")),
                     auto_turn_count=entry.get("auto_turn_count", 0),
                     definition_name=entry.get("definition_name", ""),
+                    reopened_by_operator=bool(entry.get("reopened_by_operator")),
+                    last_operator_turn_at=float(
+                        entry.get("last_operator_turn_at", 0.0) or 0.0
+                    ),
                 )
             except Exception:
                 logger.exception("Skipping unparsable autonomous session %s", sid)
@@ -454,32 +477,73 @@ class AutonomousRunner:
 
     def _schedule_background(
         self, coro_factory: Callable[[], Coroutine[Any, Any, None]]
-    ) -> None:
+    ) -> asyncio.Task[None] | None:
         """Schedule a background task; no-op when no loop is running.
 
         Accepts a zero-argument factory that returns a coroutine so the
         coroutine is only created when a running event loop exists.
         Keeps a strong reference in ``_auto_tasks`` and cleans up on
-        completion.
+        completion.  Returns the task, or ``None`` when there is no loop.
         """
         try:
             loop = asyncio.get_running_loop()
         except RuntimeError:
-            return
+            return None
         task = loop.create_task(coro_factory())
         self._auto_tasks.add(task)
         task.add_done_callback(self._auto_tasks.discard)
+        return task
+
+    def _arm_restart_timer(self, owner_id: str) -> None:
+        """Arm the one and only pending restart timer for *owner_id*.
+
+        Cancels any timer still sleeping for this owner first.  Restarts are
+        armed from two independent places — :meth:`_mark_completed` on the
+        completion path and :meth:`schedule_restart` from the sessions
+        close/delete routes — and each arming moves the owner's single
+        ``_next_fire`` entry forward.  Without cancelling, the superseded
+        task slept out its own delay and fired anyway, so the owner
+        accumulated one extra live timer per stacked arming and spawned
+        replacement sessions well ahead of the configured interval.
+        """
+        try:
+            current: asyncio.Task[Any] | None = asyncio.current_task()
+        except RuntimeError:
+            current = None
+        pending = self._restart_timers.pop(owner_id, None)
+        # Never cancel the timer task that is arming its own successor —
+        # ``_auto_restart`` re-arms from inside itself once the operator is
+        # holding the session open.
+        if pending is not None and pending is not current and not pending.done():
+            logger.info(
+                "Autonomous session restart superseded: owner_id=%s "
+                "(cancelling the previously armed timer)",
+                owner_id,
+            )
+            pending.cancel()
+        task = self._schedule_background(lambda: self._auto_restart(owner_id))
+        if task is not None:
+            self._restart_timers[owner_id] = task
+            task.add_done_callback(
+                partial(self._discard_restart_timer, owner_id),
+            )
+
+    def _discard_restart_timer(self, owner_id: str, task: asyncio.Task[None]) -> None:
+        """Drop *task* from the per-owner timer map once it settles."""
+        if self._restart_timers.get(owner_id) is task:
+            del self._restart_timers[owner_id]
 
     def schedule_restart(self, owner_id: str) -> None:
         """Schedule a throttled restart for *owner_id*.
 
-        Public wrapper that delegates to ``_auto_restart`` via
-        ``_schedule_background``.  Use this (rather than calling
-        ``ensure_active_session`` directly) from external call-sites
-        such as the sessions close/delete endpoints so the restart
-        respects the preset's ``trigger_interval_seconds`` throttle.
+        Public wrapper that delegates to ``_auto_restart``.  Use this (rather
+        than calling ``ensure_active_session`` directly) from external
+        call-sites such as the sessions close/delete endpoints so the restart
+        respects the preset's ``trigger_interval_seconds`` throttle.  Replaces
+        any restart already pending for the owner — see
+        :meth:`_arm_restart_timer`.
         """
-        self._schedule_background(lambda: self._auto_restart(owner_id))
+        self._arm_restart_timer(owner_id)
 
     def _publish_state(self, session_id: str) -> None:
         """Push an ``autonomous_state`` frame to connected browsers, if any."""
@@ -603,6 +667,48 @@ class AutonomousRunner:
         """Return ``True`` when *session_id* is a tracked autonomous session."""
         return session_id in self._sessions
 
+    def note_operator_turn(self, session_id: str) -> bool:
+        """Record operator activity on *session_id*, reopening it if completed.
+
+        An autonomous run finishes in minutes but its ``trigger_interval``
+        keeps the card on screen for the rest of the interval, so the session
+        the operator actually opens and talks to is almost always one in
+        ``completed`` state.  Nothing used to move it back out of that state —
+        :meth:`check_reply_for_markers` only ever closes — so the next
+        restart fire retired the live conversation and replaced it with a
+        fresh session mid-chat.
+
+        An operator turn means the session is live again: reopen it so the
+        single-session invariant holds it open, and stamp the activity time so
+        :meth:`ensure_active_session` leaves it alone even if the agent closes
+        it again a moment later.  The preset's next run is not lost — it fires
+        once the operator's session closes for real.
+
+        Returns ``True`` when the session was reopened.  Untracked sessions
+        (ordinary operator chats) are ignored.
+        """
+        aq = self._sessions.get(session_id)
+        if aq is None:
+            return False
+
+        aq.last_operator_turn_at = time.time()
+        if aq.state is not AutonomousState.completed:
+            self._save_sessions()
+            return False
+
+        aq.state = AutonomousState.executing
+        aq.reopened_by_operator = True
+        self._save_sessions()
+        logger.info(
+            "Autonomous session reopened by operator turn: preset=%s "
+            "session_id=%s owner_id=%s",
+            aq.definition_name or "unknown",
+            session_id,
+            aq.owner_id,
+        )
+        self._publish_state(session_id)
+        return True
+
     def get_state(self, session_id: str) -> AutonomousState | None:
         """Return the current state of *session_id*, or ``None`` if not tracked."""
         aq = self._sessions.get(session_id)
@@ -664,6 +770,8 @@ class AutonomousRunner:
         *definition_name* is passed through to :meth:`create_session` when a
         new session is spawned.
         """
+        self._reap_abandoned_operator_sessions(owner_id)
+
         for aq in self._sessions.values():
             if aq.owner_id == owner_id and aq.state is not AutonomousState.completed:
                 return aq
@@ -678,11 +786,26 @@ class AutonomousRunner:
 
         # No open session — retire completed ones so they neither accumulate
         # nor leave an orphaned store entry that the UI cannot resolve.
-        stale = [
-            sid
-            for sid, aq in self._sessions.items()
-            if aq.owner_id == owner_id and aq.state is AutonomousState.completed
-        ]
+        # Sessions the operator spoke to within the grace window are spared:
+        # retiring deletes the conversation outright, and doing that under a
+        # live chat is what made a session the operator was using vanish and
+        # be replaced.  A spared session is simply retired on a later pass.
+        stale = []
+        for sid, aq in self._sessions.items():
+            if aq.owner_id != owner_id or aq.state is not AutonomousState.completed:
+                continue
+            idle = time.time() - aq.last_operator_turn_at
+            if aq.last_operator_turn_at and idle < _OPERATOR_ACTIVITY_GRACE_SECONDS:
+                logger.info(
+                    "Autonomous session retire skipped: session_id=%s owner_id=%s "
+                    "— operator active %.0fs ago (grace %.0fs)",
+                    sid,
+                    owner_id,
+                    idle,
+                    _OPERATOR_ACTIVITY_GRACE_SECONDS,
+                )
+                continue
+            stale.append(sid)
         for sid in stale:
             self._sessions.pop(sid, None)
             try:
@@ -699,6 +822,42 @@ class AutonomousRunner:
             schedule_kickoff=schedule_kickoff,
             definition_name=definition_name,
         )
+
+    def _reap_abandoned_operator_sessions(self, owner_id: str) -> None:
+        """Re-close operator-reopened sessions the operator has abandoned.
+
+        :meth:`note_operator_turn` holds a finished session open for as long
+        as someone is talking to it, which correctly blocks the preset from
+        replacing it.  If the operator simply walks away, that block would be
+        permanent — the preset would never run again.  Once the conversation
+        has been silent for the grace window, drop it back to ``completed``
+        so the normal retire-and-respawn path can proceed.
+
+        Deliberately *not* :meth:`_mark_completed`: the autonomous run itself
+        already completed and was accounted for at the time.  This is
+        bookkeeping only — no scheduler write, no refinement, no new timer.
+        """
+        now = time.time()
+        for session_id, aq in self._sessions.items():
+            if aq.owner_id != owner_id or not aq.reopened_by_operator:
+                continue
+            if aq.state is not AutonomousState.executing:
+                continue
+            idle = now - aq.last_operator_turn_at
+            if idle < _OPERATOR_ACTIVITY_GRACE_SECONDS:
+                continue
+            aq.state = AutonomousState.completed
+            aq.reopened_by_operator = False
+            logger.info(
+                "Autonomous session released by operator inactivity: preset=%s "
+                "session_id=%s owner_id=%s idle=%.0fs",
+                aq.definition_name or "unknown",
+                session_id,
+                owner_id,
+                idle,
+            )
+            self._save_sessions()
+            self._publish_state(session_id)
 
     async def _auto_restart(self, owner_id: str) -> None:
         """Throttle, then ensure *owner_id* has a fresh open autonomous session.
@@ -730,11 +889,27 @@ class AutonomousRunner:
             )
             # The timer is the authority here: fire even though the schedule
             # this task just slept out is now due.
-            self.ensure_active_session(
+            aq = self.ensure_active_session(
                 owner_id,
                 definition_name=defn["name"] if defn else "",
                 force=True,
             )
+            # The operator is mid-conversation with a session whose own run
+            # already finished, so no replacement was spawned.  This timer is
+            # the owner's only one; without re-arming, the preset would never
+            # run again once the operator walks away.  Check back next
+            # interval — by then ``ensure_active_session`` will have reaped
+            # the abandoned conversation and can spawn normally.
+            if aq is not None and aq.reopened_by_operator:
+                logger.info(
+                    "Autonomous session restart deferred: preset=%s owner_id=%s "
+                    "— operator is still in session %s; re-checking in %.0fs",
+                    preset_name,
+                    owner_id,
+                    aq.session_id,
+                    delay,
+                )
+                self._arm_restart_timer(owner_id)
         except asyncio.CancelledError:
             logger.debug("Auto-restart task cancelled for owner %s", owner_id)
         except Exception:
@@ -859,8 +1034,7 @@ class AutonomousRunner:
         self._publish_state(session_id)
         # Auto-restart always: schedule a fresh autonomous run (throttled)
         # so the operator always has one live session.
-        owner_id = aq.owner_id
-        self._schedule_background(lambda: self._auto_restart(owner_id))
+        self._arm_restart_timer(aq.owner_id)
         # Self-refinement: if this definition has self_refine enabled,
         # schedule a refinement step after the run completes.
         self._schedule_refinement(session_id, aq)
