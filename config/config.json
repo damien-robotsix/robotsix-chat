@@ -139,7 +139,13 @@
     "max_runs_progress_extension": 20,
     "max_runs_progress_window": 5,
     "monitor_slot_budget": 8,
-    "monitor_slot_queue_max": 32
+    "monitor_slot_queue_max": 32,
+    "turn_budget": {
+      "task": { "soft_warn_turns": 25, "hard_stop_turns": 40 },
+      "periodic": { "soft_warn_turns": 0, "hard_stop_turns": 0 },
+      "user_chat": { "soft_warn_turns": 25, "hard_stop_turns": 40 },
+      "on_close": { "soft_warn_turns": 25, "hard_stop_turns": 40 }
+    }
   },
   "direct_repo": {
     "enabled": false,

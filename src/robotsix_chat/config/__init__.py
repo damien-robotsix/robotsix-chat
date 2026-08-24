@@ -22,6 +22,7 @@ from robotsix_chat.config.models import (
     GitHubActionsSettings,
     GitHubSecuritySettings,
     HttpProbeSettings,
+    KindTurnBudget,
     KnowledgeSettings,
     LangfuseInspectSettings,
     LangfuseProjectCreds,
@@ -40,6 +41,7 @@ from robotsix_chat.config.models import (
     SelfReviewSettings,
     SftpSettings,
     SubsessionsSettings,
+    TurnBudgetSettings,
     VersionCheckSettings,
 )
 from robotsix_chat.config.settings import (
@@ -67,6 +69,7 @@ __all__ = [
     "GitHubActionsSettings",
     "GitHubSecuritySettings",
     "HttpProbeSettings",
+    "KindTurnBudget",
     "KnowledgeSettings",
     "LangfuseInspectSettings",
     "LangfuseProjectCreds",
@@ -86,6 +89,7 @@ __all__ = [
     "Settings",
     "SftpSettings",
     "SubsessionsSettings",
+    "TurnBudgetSettings",
     "VersionCheckSettings",
     "level_needs_api_key",
 ]
