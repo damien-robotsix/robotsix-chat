@@ -147,6 +147,78 @@ def _component_response_is_error(resp: str) -> bool:
     return False
 
 
+async def _fetch_board_repo_ids(
+    board_url: str,
+    board_token: str,
+    timeout: float,
+    component_request: Callable[..., Any] | None,
+) -> set[str] | None:
+    """Fetch the set of registered ``repo_id`` values from the board.
+
+    Tries *component_request* (roster-based) first, falling back to the
+    direct board API's ``GET /repos`` endpoint.  Returns ``None`` when
+    both paths fail — callers should treat this as "validation
+    unavailable" and proceed without it rather than blocking the
+    operation.
+    """
+    # Try component_request (roster-based) first.
+    if component_request is not None:
+        try:
+            resp = await component_request("mill", "GET", "/repos")
+            if not _component_response_is_error(resp):
+                body: Any = resp
+                # Strip the "HTTP <status>\n<body>" envelope when present.
+                if isinstance(body, str) and body.startswith("HTTP "):
+                    try:
+                        newline = body.index("\n")
+                        body = body[newline + 1 :]
+                    except ValueError:
+                        pass
+                parsed, _err = (
+                    _parse_json_body(body) if isinstance(body, str) else (body, "")
+                )
+                if isinstance(parsed, list):
+                    return {
+                        entry["repo_id"]
+                        for entry in parsed
+                        if isinstance(entry, dict) and "repo_id" in entry
+                    }
+        except Exception as exc:
+            logger.warning(
+                "file_ticket: failed to fetch repos via roster: %s",
+                exc,
+            )
+
+    # Direct fallback via board API.
+    if not board_url:
+        return None
+
+    url = f"{board_url}/repos"
+    headers: dict[str, str] = {"Accept": "application/json"}
+    if board_token:
+        headers["Authorization"] = f"Bearer {board_token}"
+
+    try:
+        async with httpx.AsyncClient(timeout=timeout) as client:
+            retry_client = RetryClient(client, config=_TICKET_POLL_RETRY_CONFIG)
+            response = await retry_client.get(url, headers=headers)
+            response.raise_for_status()
+            data = response.json()
+            if isinstance(data, list):
+                return {
+                    entry["repo_id"]
+                    for entry in data
+                    if isinstance(entry, dict) and "repo_id" in entry
+                }
+    except Exception as exc:
+        logger.warning(
+            "file_ticket: failed to fetch repos from board API: %s",
+            exc,
+        )
+
+    return None
+
+
 async def _resolve_ticket_ids(
     board_url: str,
     board_token: str,
@@ -1460,6 +1532,33 @@ def build_file_ticket_tool(
                     "error": (
                         "repo_id is required — pass a registered repo id "
                         "(see GET /repos). The board has no default repo."
+                    ),
+                },
+                ensure_ascii=False,
+            )
+
+        # Pre-validate repo_id against the board's registered repos.
+        # This catches misfiled tickets early — e.g. passing a repo_id
+        # that belongs to a different board — with a clear, actionable
+        # error instead of letting the board API reject with a generic
+        # 404 or, worse, silently accepting and later closing as
+        # misfiled.  Best-effort: when the repo list cannot be fetched
+        # (network error, timeout), the check is skipped and the filing
+        # proceeds — the board API's own 404 is the fallback guard.
+        board_repo_ids = await _fetch_board_repo_ids(
+            board_url, board_token, timeout, component_request
+        )
+        if board_repo_ids is not None and repo_id not in board_repo_ids:
+            available = ", ".join(sorted(board_repo_ids)) or "(none)"
+            return json.dumps(
+                {
+                    "ticket_id": "",
+                    "error": (
+                        f"repo_id {repo_id!r} is not registered on this "
+                        f"board.  Available repos: {available}.  Verify "
+                        "the repo_id matches one listed by GET /repos on "
+                        "the target board, or check that the agent is "
+                        "connected to the correct board."
                     ),
                 },
                 ensure_ascii=False,
