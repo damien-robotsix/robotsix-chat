@@ -63,7 +63,8 @@ _spec = importlib.util.spec_from_file_location(
     "robotsix_mill.agents.runners.diagnostic_events",
     _SOURCE_ROOT / "agents" / "runners" / "diagnostic_events.py",
 )
-assert _spec is not None, f"Could not load spec for {_SOURCE_ROOT / 'agents' / 'runners' / 'diagnostic_events.py'}"
+_spec_path = _SOURCE_ROOT / "agents" / "runners" / "diagnostic_events.py"
+assert _spec is not None, f"Could not load spec for {_spec_path}"
 assert _spec.loader is not None
 _diag = importlib.util.module_from_spec(_spec)
 _diag.__package__ = "robotsix_mill.agents.runners"
@@ -98,12 +99,14 @@ def board_id() -> str:
 
 
 class TestEmitDiagnosticEvent:
-    """Tests for ``emit_diagnostic_event(settings, board_id, category, ticket_id, reason, normalized_key)``."""
+    """Tests for ``emit_diagnostic_event``.
 
-    def test_happy_path(
-        self, settings: _FakeSettings, board_id: str
-    ) -> None:
-        """Returns ``True``; file created; appended line parses as JSON with all keys."""
+    Covers settings, board_id, category, ticket_id, reason,
+    normalized_key parameters.
+    """
+
+    def test_happy_path(self, settings: _FakeSettings, board_id: str) -> None:
+        """Returns ``True``; file created; appended line parses as JSON."""
         result = emit_diagnostic_event(
             settings, board_id, "CI_FAILURE", "TKT-001", "some reason", "key-abc"
         )
@@ -121,9 +124,7 @@ class TestEmitDiagnosticEvent:
         assert obj["normalized_key"] == "key-abc"
         assert "timestamp" in obj
 
-    def test_parent_directory_auto_created(
-        self, settings: _FakeSettings
-    ) -> None:
+    def test_parent_directory_auto_created(self, settings: _FakeSettings) -> None:
         """Board directory that does not exist is created automatically."""
         board_id = "deep/nested/board"
         result = emit_diagnostic_event(
@@ -133,16 +134,20 @@ class TestEmitDiagnosticEvent:
         path = settings.diagnostic_events_file_for(board_id)
         assert path.is_file()
 
-    def test_dedup_same_key(
-        self, settings: _FakeSettings, board_id: str
-    ) -> None:
+    def test_dedup_same_key(self, settings: _FakeSettings, board_id: str) -> None:
         """Second call with same ``(ticket_id, normalized_key)`` returns ``False``."""
-        assert emit_diagnostic_event(
-            settings, board_id, "CI_FAILURE", "TKT-001", "r", "key-1"
-        ) is True
-        assert emit_diagnostic_event(
-            settings, board_id, "CI_FAILURE", "TKT-001", "r", "key-1"
-        ) is False
+        assert (
+            emit_diagnostic_event(
+                settings, board_id, "CI_FAILURE", "TKT-001", "r", "key-1"
+            )
+            is True
+        )
+        assert (
+            emit_diagnostic_event(
+                settings, board_id, "CI_FAILURE", "TKT-001", "r", "key-1"
+            )
+            is False
+        )
         # File contains exactly one line.
         lines = (
             settings.diagnostic_events_file_for(board_id)
@@ -152,16 +157,20 @@ class TestEmitDiagnosticEvent:
         )
         assert len(lines) == 1
 
-    def test_dedup_different_key(
-        self, settings: _FakeSettings, board_id: str
-    ) -> None:
-        """Two calls with same ``ticket_id`` but different ``normalized_key`` both succeed."""
-        assert emit_diagnostic_event(
-            settings, board_id, "CI_FAILURE", "TKT-001", "r", "key-1"
-        ) is True
-        assert emit_diagnostic_event(
-            settings, board_id, "CI_FAILURE", "TKT-001", "r", "key-2"
-        ) is True
+    def test_dedup_different_key(self, settings: _FakeSettings, board_id: str) -> None:
+        """Same ``ticket_id`` with different ``normalized_key`` both succeed."""
+        assert (
+            emit_diagnostic_event(
+                settings, board_id, "CI_FAILURE", "TKT-001", "r", "key-1"
+            )
+            is True
+        )
+        assert (
+            emit_diagnostic_event(
+                settings, board_id, "CI_FAILURE", "TKT-001", "r", "key-2"
+            )
+            is True
+        )
         lines = (
             settings.diagnostic_events_file_for(board_id)
             .read_text("utf-8")
@@ -185,9 +194,7 @@ class TestEmitDiagnosticEvent:
         )
         # At least one WARNING should contain the dedup message.
         warnings = [r for r in caplog.records if r.levelno >= logging.WARNING]
-        dedup_records = [
-            r for r in warnings if "skipping duplicate event" in r.message
-        ]
+        dedup_records = [r for r in warnings if "skipping duplicate event" in r.message]
         assert len(dedup_records) >= 1
         msg = dedup_records[0].message
         assert "TKT-001" in msg
@@ -199,8 +206,10 @@ class TestEmitDiagnosticEvent:
         board_id: str,
         caplog: pytest.LogCaptureFixture,
     ) -> None:
-        """Making the target path a directory (not a file) causes ``open`` to fail;
-        returns ``False`` without raising and logs a WARNING."""
+        """Making the target path a directory causes ``open`` to fail.
+
+        Returns ``False`` without raising and logs a WARNING.
+        """
         path = settings.diagnostic_events_file_for(board_id)
         path.parent.mkdir(parents=True, exist_ok=True)
         path.mkdir()  # directory, not a file → open(..., "a") raises
@@ -211,9 +220,7 @@ class TestEmitDiagnosticEvent:
         assert result is False
 
         warnings = [r for r in caplog.records if r.levelno >= logging.WARNING]
-        fail_records = [
-            r for r in warnings if "failed to emit event" in r.message
-        ]
+        fail_records = [r for r in warnings if "failed to emit event" in r.message]
         assert len(fail_records) >= 1
 
 
@@ -225,16 +232,12 @@ class TestEmitDiagnosticEvent:
 class TestListDiagnosticEvents:
     """Tests for ``list_diagnostic_events(settings, board_id, *, category=None)``."""
 
-    def test_non_existent_file(
-        self, settings: _FakeSettings, board_id: str
-    ) -> None:
+    def test_non_existent_file(self, settings: _FakeSettings, board_id: str) -> None:
         """Returns ``[]`` when the JSONL file does not exist."""
         assert list_diagnostic_events(settings, board_id) == []
 
-    def test_round_trip(
-        self, settings: _FakeSettings, board_id: str
-    ) -> None:
-        """Emit one event, then list returns one ``DiagnosticEvent`` with matching fields."""
+    def test_round_trip(self, settings: _FakeSettings, board_id: str) -> None:
+        """Emit one event, then list returns one matching ``DiagnosticEvent``."""
         emit_diagnostic_event(
             settings, board_id, "CI_FAILURE", "TKT-001", "reason text", "key-1"
         )
@@ -247,16 +250,10 @@ class TestListDiagnosticEvents:
         assert ev.reason == "reason text"
         assert ev.normalized_key == "key-1"
 
-    def test_category_filter(
-        self, settings: _FakeSettings, board_id: str
-    ) -> None:
+    def test_category_filter(self, settings: _FakeSettings, board_id: str) -> None:
         """Only events matching the requested category are returned."""
-        emit_diagnostic_event(
-            settings, board_id, "CI_FAILURE", "TKT-001", "r", "key-1"
-        )
-        emit_diagnostic_event(
-            settings, board_id, "OTHER", "TKT-002", "r", "key-2"
-        )
+        emit_diagnostic_event(settings, board_id, "CI_FAILURE", "TKT-001", "r", "key-1")
+        emit_diagnostic_event(settings, board_id, "OTHER", "TKT-002", "r", "key-2")
         ci_events = list_diagnostic_events(settings, board_id, category="CI_FAILURE")
         assert len(ci_events) == 1
         assert ci_events[0].category == "CI_FAILURE"
@@ -267,12 +264,12 @@ class TestListDiagnosticEvents:
         board_id: str,
         caplog: pytest.LogCaptureFixture,
     ) -> None:
-        """One valid line + one ``"not-json"`` line → returns one event; logs WARNING."""
+        """One valid + one bad line → returns one event; logs WARNING."""
         path = settings.diagnostic_events_file_for(board_id)
         path.parent.mkdir(parents=True, exist_ok=True)
         path.write_text(
             '{"category":"CI_FAILURE","ticket_id":"TKT-001","repo_id":"b","reason":"r","normalized_key":"k","timestamp":"t"}\n'
-            'not-json\n'
+            "not-json\n"
         )
         events = list_diagnostic_events(settings, board_id)
         assert len(events) == 1
@@ -299,9 +296,7 @@ class TestListDiagnosticEvents:
         warnings = [r for r in caplog.records if r.levelno >= logging.WARNING]
         assert any("invalid entry" in r.message for r in warnings)
 
-    def test_empty_line_tolerance(
-        self, settings: _FakeSettings, board_id: str
-    ) -> None:
+    def test_empty_line_tolerance(self, settings: _FakeSettings, board_id: str) -> None:
         """Trailing blank lines are tolerated — only genuine events are returned."""
         path = settings.diagnostic_events_file_for(board_id)
         path.parent.mkdir(parents=True, exist_ok=True)
@@ -330,25 +325,18 @@ class TestEventExists:
     def test_matching_pair_found(self, tmp_path: Path) -> None:
         """File contains a matching ``(ticket_id, normalized_key)`` pair → ``True``."""
         path = tmp_path / "events.jsonl"
-        path.write_text(
-            '{"ticket_id":"TKT-001","normalized_key":"key-1"}\n'
-        )
+        path.write_text('{"ticket_id":"TKT-001","normalized_key":"key-1"}\n')
         assert _event_exists(path, "TKT-001", "key-1") is True
 
     def test_no_match(self, tmp_path: Path) -> None:
         """File has entries but none match the query → ``False``."""
         path = tmp_path / "events.jsonl"
-        path.write_text(
-            '{"ticket_id":"TKT-001","normalized_key":"key-1"}\n'
-        )
+        path.write_text('{"ticket_id":"TKT-001","normalized_key":"key-1"}\n')
         assert _event_exists(path, "TKT-001", "key-999") is False
 
     def test_malformed_line_does_not_raise(self, tmp_path: Path) -> None:
         """A malformed JSONL line does not raise; returns ``False`` for non-match."""
         path = tmp_path / "events.jsonl"
-        path.write_text(
-            '{"ticket_id":"TKT-001","normalized_key":"key-1"}\n'
-            "not-json\n"
-        )
+        path.write_text('{"ticket_id":"TKT-001","normalized_key":"key-1"}\nnot-json\n')
         # Querying a key not present → False, no crash.
         assert _event_exists(path, "TKT-001", "key-999") is False

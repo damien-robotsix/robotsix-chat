@@ -207,11 +207,11 @@ class TestParseNumericCount:
         assert _parse_numeric_count("No issues") is None
 
     def test_large_digit(self) -> None:
-        """``"100 tickets"`` → ``100`` (digit pattern catches any ``\\d+``)."""
+        r"""``"100 tickets"`` → ``100`` (digit pattern catches any ``\d+``)."""
         assert _parse_numeric_count("100 tickets") == 100
 
     def test_zero_not_in_word_to_num(self) -> None:
-        """``"zero tickets"`` → ``None`` (\"zero\" absent from ``_WORD_TO_NUM``)."""
+        r"""``"zero tickets"`` → ``None`` ("zero" absent from ``_WORD_TO_NUM``)."""
         assert _parse_numeric_count("zero tickets") is None
 
 
@@ -268,7 +268,7 @@ class TestCheckMemoryCountConsistency:
         assert _check_memory_count_consistency("   \n  \n") == []
 
     def test_consistent_section(self) -> None:
-        """Section body claims ``"Three tickets"`` with exactly 3 ID bullets → ``[]``."""
+        """Section claims ``"Three tickets"`` with 3 ID bullets → ``[]``."""
         text = (
             "## Issue A\n\n"
             "Three tickets were found:\n"
@@ -280,12 +280,7 @@ class TestCheckMemoryCountConsistency:
 
     def test_drifted_section(self) -> None:
         """Section claims ``"Three tickets"`` with only 2 ID bullets → one warning."""
-        text = (
-            "## Issue A\n\n"
-            "Three tickets:\n"
-            "- `TKT-001`\n"
-            "- `TKT-002`\n"
-        )
+        text = "## Issue A\n\nThree tickets:\n- `TKT-001`\n- `TKT-002`\n"
         warnings = _check_memory_count_consistency(text)
         assert len(warnings) == 1
         assert "Issue A" in warnings[0]
@@ -294,12 +289,7 @@ class TestCheckMemoryCountConsistency:
 
     def test_section_without_numeric_claim_no_warning(self) -> None:
         """Section with no numeric count claim → no warning generated."""
-        text = (
-            "## Issue B\n\n"
-            "Some tickets:\n"
-            "- `TKT-001`\n"
-            "- `TKT-002`\n"
-        )
+        text = "## Issue B\n\nSome tickets:\n- `TKT-001`\n- `TKT-002`\n"
         assert _check_memory_count_consistency(text) == []
 
     def test_two_sections_one_drifted(self) -> None:
@@ -337,7 +327,7 @@ class TestApplyMemoryEdits:
     """Tests for ``_apply_memory_edits(existing, edits)``."""
 
     def test_append_on_non_empty(self) -> None:
-        """``append`` on non-empty existing: result is ``existing + "\\n\\n" + text``."""
+        r"""``append`` on non-empty: result is ``existing + "\n\n" + text``."""
         existing = "section one"
         edit = _FakeMemoryEdit(op="append", text="section two")
         result, failures = _apply_memory_edits(existing, [edit])
