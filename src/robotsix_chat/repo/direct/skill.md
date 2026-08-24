@@ -33,11 +33,11 @@ ______________________________________________________________________
 
 ## Agent tool: `inspect_pr_diff`
 
-Fetch the raw unified diff of an open pull request — every file changed, every line added or
-removed — as plain text. Use this BEFORE merging a PR to verify that the diff actually delivers
-what the ticket requires (e.g. whether a CI migration PR actually adopts shared workflows vs.
-reverting to inline jobs). The diff is returned as a unified diff; inspect it for the patterns the
-ticket's acceptance criteria require.
+Fetch the raw unified diff of an open pull request — every file changed, every line added or removed
+— as plain text. Use this BEFORE merging a PR to verify that the diff actually delivers what the
+ticket requires (e.g. whether a CI migration PR actually adopts shared workflows vs. reverting to
+inline jobs). The diff is returned as a unified diff; inspect it for the patterns the ticket's
+acceptance criteria require.
 
 **Read-only.** Does not modify any repository state and does not require a ticket to be in BLOCKED
 state.
@@ -205,10 +205,10 @@ Before proposing a merge or listing a PR as merge-ready, the agent MUST:
   `Revert "..."`) likely undoes a prior change rather than introducing the goal stated in its
   ticket. Flag it instead of auto-listing it.
 
-- **When the PR diff is available** (e.g. from `inspect_pr_diff`, `verify_pr_ci_status`, or a prior tool call), check
-  whether the net diff reverses or removes the work the ticket was supposed to deliver. A PR that
-  mostly deletes or reverts prior changes may be a rollback, not a completion — the operator should
-  decide whether to merge it.
+- **When the PR diff is available** (e.g. from `inspect_pr_diff`, `verify_pr_ci_status`, or a prior
+  tool call), check whether the net diff reverses or removes the work the ticket was supposed to
+  deliver. A PR that mostly deletes or reverts prior changes may be a rollback, not a completion —
+  the operator should decide whether to merge it.
 
 A revert PR may still be intentional and correct (e.g. rolling back a problematic deploy), but its
 purpose is the OPPOSITE of the ticket's stated goal — the operator must make the call, not the
