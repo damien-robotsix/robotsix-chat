@@ -132,6 +132,7 @@
     "periodic_max_interval_seconds": 3600.0,
     "periodic_max_total_runs": 100,
     "user_chat_max_retries": 3,
+    "monitor_error_max_retries": 2,
     "transient_error_max_retries": 3,
     "transient_error_backoff_base": 1.0,
     "transient_error_backoff_cap": 30.0,

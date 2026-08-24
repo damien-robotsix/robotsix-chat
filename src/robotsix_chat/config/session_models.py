@@ -417,6 +417,22 @@ class SubsessionsSettings(BaseModel):
         ),
     )
     user_chat_max_retries: int = 3
+    monitor_error_max_retries: int = Field(
+        default=2,
+        description=(
+            "Maximum number of automatic retries for periodic and "
+            "wait_for_event monitor subsessions that fail with a "
+            "non-transient error (e.g. tool retry limit, unexpected "
+            "exception).  Each retry re-launches the subsession worker "
+            "with a system note about the prior failure so the agent "
+            "can self-correct.  Once exhausted the monitor is "
+            "permanently failed and the parent is notified.  Set to "
+            "``0`` to disable monitor error retries (monitors fail "
+            "on the first error, matching legacy behaviour).  "
+            "Default ``2``.  "
+            "Env override: ``SUBSESSIONS_MONITOR_ERROR_MAX_RETRIES``."
+        ),
+    )
     transient_error_max_retries: int = 3
     transient_error_backoff_base: float = 1.0
     transient_error_backoff_cap: float = 30.0

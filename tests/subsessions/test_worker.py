@@ -3110,10 +3110,13 @@ async def test_task_transient_error_not_retried() -> None:
 
 
 @pytest.mark.asyncio
-async def test_periodic_non_transient_error_not_retried() -> None:
-    """Periodic subsessions do NOT retry non-transient errors — they fail."""
+async def test_periodic_non_transient_error_not_retried_when_disabled() -> None:
+    """Periodic subsessions skip retries when monitor_error_max_retries=0."""
     agent = FakeAgent(error=ValueError("not transient"))
-    env = build_env(agent=agent)
+    env = build_env(
+        agent=agent,
+        settings=make_settings(monitor_error_max_retries=0),
+    )
 
     with patch(
         "robotsix_chat.subsessions.worker.is_openrouter_transient",
@@ -3128,8 +3131,96 @@ async def test_periodic_non_transient_error_not_retried() -> None:
 
     info = env.registry.get(sub_id)
     assert info is not None
-    # Non-transient errors should still fail the subsession.
     assert info.status is SubsessionStatus.FAILED
+    assert info.retry_count == 0
+
+
+@pytest.mark.asyncio
+async def test_periodic_non_transient_error_retries_then_fails() -> None:
+    """Periodic monitors retry non-transient errors up to the configured limit."""
+    agent = FakeAgent(error=ValueError("tool retry limit"))
+    env = build_env(
+        agent=agent,
+        settings=make_settings(monitor_error_max_retries=2),
+    )
+
+    with patch(
+        "robotsix_chat.subsessions.worker.is_openrouter_transient",
+        return_value=False,
+    ):
+        sub_id = _spawn(
+            env,
+            kind=SubsessionKind.PERIODIC,
+            interval_seconds=0.02,
+        )
+        await _await_worker(env, sub_id)
+
+    info = env.registry.get(sub_id)
+    assert info is not None
+    # After exhausting retries the monitor is failed.
+    assert info.status is SubsessionStatus.FAILED
+    assert info.retry_count == 2
+    assert "tool retry limit" in (info.error or "")
+
+
+@pytest.mark.asyncio
+async def test_periodic_non_transient_error_retry_succeeds() -> None:
+    """A periodic monitor that fails then succeeds on retry continues running."""
+    # First call fails, second call succeeds, third call is a normal turn.
+    fail_agent = FakeAgent(error=ValueError("transient glitch"))
+    ok_agent = FakeAgent(["queue drained successfully"])
+    factory = CapturingAgentFactory(fail_agent, ok_agent)
+    env = build_env(
+        agent_factory=factory,
+        settings=make_settings(monitor_error_max_retries=2),
+    )
+
+    with patch(
+        "robotsix_chat.subsessions.worker.is_openrouter_transient",
+        return_value=False,
+    ):
+        sub_id = _spawn(
+            env,
+            kind=SubsessionKind.PERIODIC,
+            interval_seconds=0.02,
+        )
+        # The worker will retry after the first failure, then succeed
+        # on the second attempt.  Wait for it to complete one successful
+        # cycle and enter SLEEPING.
+        await asyncio.sleep(0.5)
+
+    info = env.registry.get(sub_id)
+    assert info is not None
+    # The monitor should still be active (not FAILED).
+    assert info.status is not SubsessionStatus.FAILED
+    assert info.retry_count == 1  # One retry was used.
+    assert info.runs >= 1
+
+
+@pytest.mark.asyncio
+async def test_wait_for_event_non_transient_error_retries() -> None:
+    """WAIT_FOR_EVENT monitors also retry non-transient errors."""
+    agent = FakeAgent(error=ValueError("tool error"))
+    env = build_env(
+        agent=agent,
+        settings=make_settings(monitor_error_max_retries=1),
+    )
+
+    with patch(
+        "robotsix_chat.subsessions.worker.is_openrouter_transient",
+        return_value=False,
+    ):
+        sub_id = _spawn(
+            env,
+            kind=SubsessionKind.WAIT_FOR_EVENT,
+            dedup_key="ticket-123",
+        )
+        await _await_worker(env, sub_id)
+
+    info = env.registry.get(sub_id)
+    assert info is not None
+    assert info.status is SubsessionStatus.FAILED
+    assert info.retry_count == 1
 
 
 @pytest.mark.asyncio
