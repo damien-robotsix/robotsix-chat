@@ -441,6 +441,46 @@ async def watch_paused_monitors(env: SubsessionEnv) -> None:
                     else None
                 )
 
+                # -- prerequisite-wait branch: when a monitor was paused
+                #    because its prerequisite ticket's monitor closed,
+                #    poll the prerequisite (not this monitor's own
+                #    ticket) and resume when the prerequisite is terminal.
+                if (
+                    info.close_reason == "waiting_for_prerequisite"
+                    and info.depends_on_ticket_id
+                ):
+                    prereq_state, _pr_url, prereq_http = await _query_ticket_state(
+                        board_url, info.depends_on_ticket_id, info.id
+                    )
+                    if prereq_state is not None and prereq_state.lower() in (
+                        _TICKET_STATE_TERMINAL
+                    ):
+                        logger.info(
+                            "Watcher: subsession %s prerequisite ticket "
+                            "%s is terminal (%s) — resuming.",
+                            info.id,
+                            info.depends_on_ticket_id,
+                            prereq_state,
+                        )
+                        await _resume_paused_monitor(env, info.id)
+                    elif prereq_http == 404:
+                        logger.warning(
+                            "Watcher: prerequisite ticket %s returned "
+                            "404 for subsession %s — prerequisite may "
+                            "have been deleted; keeping paused.",
+                            info.depends_on_ticket_id,
+                            info.id,
+                        )
+                    else:
+                        logger.debug(
+                            "Watcher: subsession %s prerequisite ticket "
+                            "%s still in state %s — keeping paused.",
+                            info.id,
+                            info.depends_on_ticket_id,
+                            prereq_state,
+                        )
+                    continue
+
                 current_state, pr_url, http_status = await _query_ticket_state(
                     board_url, ticket_id, info.id
                 )

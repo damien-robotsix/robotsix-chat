@@ -1724,8 +1724,8 @@ def test_reopen_transitions_human_approval_timeout_to_running() -> None:
     assert reopened.checkpoint["ticket_id"] == "abc123"
 
 
-def test_reopen_returns_none_for_non_periodic() -> None:
-    """``reopen`` returns None for a non-periodic paused subsession."""
+def test_reopen_returns_none_for_non_monitor_kind() -> None:
+    """``reopen`` returns None for a paused subsession of a non-monitor kind."""
     registry = SubsessionRegistry(store_path=None)
     info = _create(registry, kind=SubsessionKind.TASK)
     # Manually set it to CLOSED with reason paused (simulating a corner case)
@@ -2031,6 +2031,259 @@ def test_reopen_returns_none_for_max_runs_escalated() -> None:
         closed_by="system",
     )
     assert registry.reopen(info.id) is None
+
+
+def test_reopen_waiting_for_prerequisite() -> None:
+    """``reopen`` transitions a ``waiting_for_prerequisite`` subsession to RUNNING."""
+    registry = SubsessionRegistry(store_path=None)
+    info = _create(registry, kind=SubsessionKind.PERIODIC, interval_seconds=60.0)
+    info.depends_on_ticket_id = "TICKET-42"
+    registry.mark_closed(
+        info.id,
+        summary="Paused waiting for prerequisite TICKET-42",
+        reason="waiting_for_prerequisite",
+        closed_by="system",
+    )
+
+    reopened = registry.reopen(info.id)
+
+    assert reopened is not None
+    assert reopened.status is SubsessionStatus.RUNNING
+    assert reopened.close_reason is None
+    assert reopened.summary is None
+    # depends_on_ticket_id must survive reopen so the watcher can still
+    # track the dependency after a restart that interrupts the worker.
+    assert reopened.depends_on_ticket_id == "TICKET-42"
+
+
+def test_reopen_wait_for_event_kind() -> None:
+    """``reopen`` accepts a WAIT_FOR_EVENT monitor with a valid close reason."""
+    registry = SubsessionRegistry(store_path=None)
+    info = _create(
+        registry,
+        kind=SubsessionKind.WAIT_FOR_EVENT,
+        checkpoint={"ticket_id": "T-1"},
+    )
+    registry.mark_closed(
+        info.id,
+        summary="waiting for prerequisite ticket",
+        reason="waiting_for_prerequisite",
+        closed_by="system",
+    )
+
+    reopened = registry.reopen(info.id)
+
+    assert reopened is not None
+    assert reopened.status is SubsessionStatus.RUNNING
+    assert reopened.close_reason is None
+
+
+def test_reopen_wait_for_event_paused_reason() -> None:
+    """``reopen`` accepts a WAIT_FOR_EVENT monitor closed with reason 'paused'."""
+    registry = SubsessionRegistry(store_path=None)
+    info = _create(
+        registry,
+        kind=SubsessionKind.WAIT_FOR_EVENT,
+        checkpoint={"ticket_id": "T-1"},
+    )
+    registry.mark_closed(
+        info.id, summary="paused after idle", reason="paused", closed_by="system"
+    )
+
+    reopened = registry.reopen(info.id)
+
+    assert reopened is not None
+    assert reopened.status is SubsessionStatus.RUNNING
+
+
+def test_find_paused_periodic_includes_wait_for_event() -> None:
+    """``find_paused_periodic`` returns WAIT_FOR_EVENT monitors with paused reasons."""
+    registry = SubsessionRegistry(store_path=None)
+    p = _create(
+        registry,
+        kind=SubsessionKind.WAIT_FOR_EVENT,
+        checkpoint={"ticket_id": "T-1"},
+        title="event-monitor",
+    )
+    registry.mark_closed(p.id, summary="paused", reason="paused", closed_by="system")
+    paused = registry.find_paused_periodic()
+    assert len(paused) == 1
+    assert paused[0].id == p.id
+
+
+def test_find_paused_periodic_includes_waiting_for_prerequisite() -> None:
+    """``find_paused_periodic`` returns monitors closed with the reason.
+
+    Verifies that 'waiting_for_prerequisite' is recognized.
+    """
+    registry = SubsessionRegistry(store_path=None)
+    p = _create(
+        registry,
+        kind=SubsessionKind.PERIODIC,
+        interval_seconds=60.0,
+        checkpoint={"ticket_id": "T-1"},
+    )
+    registry.mark_closed(
+        p.id,
+        summary="dependency paused",
+        reason="waiting_for_prerequisite",
+        closed_by="system",
+    )
+    paused = registry.find_paused_periodic()
+    ids = [info.id for info in paused]
+    assert p.id in ids
+
+
+def test_find_paused_periodic_excludes_non_monitor_kinds() -> None:
+    """``find_paused_periodic`` does not return TASK or USER_CHAT subsessions."""
+    registry = SubsessionRegistry(store_path=None)
+    t = _create(registry, kind=SubsessionKind.TASK, title="task-1")
+    u = _create(registry, kind=SubsessionKind.USER_CHAT, title="chat-1")
+    # Manually set both to CLOSED with reason paused.
+    t.status = SubsessionStatus.CLOSED
+    t.close_reason = "paused"
+    u.status = SubsessionStatus.CLOSED
+    u.close_reason = "paused"
+
+    paused = registry.find_paused_periodic()
+    ids = {info.id for info in paused}
+    assert t.id not in ids
+    assert u.id not in ids
+
+
+def test_find_paused_periodic_by_ticket_id_includes_wait_for_event() -> None:
+    """``find_paused_periodic_by_ticket_id`` matches WAIT_FOR_EVENT monitors."""
+    registry = SubsessionRegistry(store_path=None)
+    info = _create(
+        registry,
+        kind=SubsessionKind.WAIT_FOR_EVENT,
+        checkpoint={"ticket_id": "T-1"},
+    )
+    registry.mark_paused(info.id, summary="auto-paused", reason="paused")
+
+    matches = registry.find_paused_periodic_by_ticket_id("T-1")
+    assert len(matches) == 1
+    assert matches[0].id == info.id
+
+
+def test_pause_dependents_pauses_dependent() -> None:
+    """``_pause_dependents`` pauses monitors whose ``depends_on_ticket_id`` matches."""
+    registry = SubsessionRegistry(store_path=None)
+    # Prerequisite monitor that is closing.
+    prereq = _create(
+        registry,
+        kind=SubsessionKind.PERIODIC,
+        interval_seconds=60.0,
+        checkpoint={"ticket_id": "TICKET-1"},
+    )
+    # Dependent monitor that depends on the prerequisite's ticket.
+    dep = _create(
+        registry,
+        kind=SubsessionKind.PERIODIC,
+        interval_seconds=60.0,
+        depends_on_ticket_id="TICKET-1",
+    )
+    # Close the prerequisite with a non-terminal reason.
+    registry.mark_closed(
+        prereq.id,
+        summary="paused after idle",
+        reason="paused",
+        closed_by="system",
+    )
+
+    # The dependent should now be CLOSED with reason waiting_for_prerequisite.
+    dep_info = registry.get(dep.id)
+    assert dep_info is not None
+    assert dep_info.status is SubsessionStatus.CLOSED
+    assert dep_info.close_reason == "waiting_for_prerequisite"
+    assert "TICKET-1" in (dep_info.summary or "")
+
+
+def test_pause_dependents_skips_when_prerequisite_terminal() -> None:
+    """``_pause_dependents`` does NOT pause dependents for a terminal prereq.
+
+    When the prerequisite ticket's monitor closes with a terminal reason
+    (e.g. ``ticket_terminal``), dependent monitors should keep running.
+    """
+    registry = SubsessionRegistry(store_path=None)
+    prereq = _create(
+        registry,
+        kind=SubsessionKind.PERIODIC,
+        interval_seconds=60.0,
+        checkpoint={"ticket_id": "TICKET-1"},
+    )
+    dep = _create(
+        registry,
+        kind=SubsessionKind.PERIODIC,
+        interval_seconds=60.0,
+        depends_on_ticket_id="TICKET-1",
+    )
+    # Close the prerequisite as terminal (ticket resolved).
+    registry.mark_closed(
+        prereq.id,
+        summary="ticket resolved",
+        reason="ticket_terminal",
+        closed_by="system",
+    )
+
+    # The dependent should still be RUNNING.
+    dep_info = registry.get(dep.id)
+    assert dep_info is not None
+    assert dep_info.status is SubsessionStatus.RUNNING
+
+
+def test_pause_dependents_pauses_wait_for_event_dependent() -> None:
+    """``_pause_dependents`` pauses a WAIT_FOR_EVENT dependent monitor."""
+    registry = SubsessionRegistry(store_path=None)
+    prereq = _create(
+        registry,
+        kind=SubsessionKind.PERIODIC,
+        interval_seconds=60.0,
+        checkpoint={"ticket_id": "TICKET-1"},
+    )
+    dep = _create(
+        registry,
+        kind=SubsessionKind.WAIT_FOR_EVENT,
+        checkpoint={"ticket_id": "TICKET-2"},
+        depends_on_ticket_id="TICKET-1",
+    )
+    registry.mark_closed(
+        prereq.id, summary="paused", reason="paused", closed_by="system"
+    )
+
+    dep_info = registry.get(dep.id)
+    assert dep_info is not None
+    assert dep_info.status is SubsessionStatus.CLOSED
+    assert dep_info.close_reason == "waiting_for_prerequisite"
+
+
+def test_pause_dependents_skips_already_paused_dependent() -> None:
+    """``_pause_dependents`` does not double-close an already-PAUSED dependent."""
+    registry = SubsessionRegistry(store_path=None)
+    prereq = _create(
+        registry,
+        kind=SubsessionKind.PERIODIC,
+        interval_seconds=60.0,
+        checkpoint={"ticket_id": "TICKET-1"},
+    )
+    dep = _create(
+        registry,
+        kind=SubsessionKind.PERIODIC,
+        interval_seconds=60.0,
+        depends_on_ticket_id="TICKET-1",
+    )
+    # Pause the dependent first (live PAUSED status).
+    registry.mark_paused(dep.id, summary="auto-paused", reason="paused")
+
+    # Then close the prerequisite.
+    registry.mark_closed(
+        prereq.id, summary="paused", reason="paused", closed_by="system"
+    )
+
+    # Dependent should still be PAUSED, not doubly closed.
+    dep_info = registry.get(dep.id)
+    assert dep_info is not None
+    assert dep_info.status is SubsessionStatus.PAUSED
 
 
 # ---------------------------------------------------------------------------
