@@ -6,6 +6,7 @@ import asyncio
 import json
 import tempfile
 import time
+import unittest.mock
 from pathlib import Path
 from types import SimpleNamespace
 from unittest.mock import AsyncMock, MagicMock
@@ -1506,3 +1507,56 @@ class TestMaxRuns:
         runner._mark_completed(aq.session_id, aq)
 
         assert runner._total_runs_for("default") == 1
+
+    def test_max_runs_enforcement_survives_restart(self) -> None:
+        """After max_runs is exhausted, a new runner (restart) skips the preset.
+
+        Regression: ``_resolve_definitions`` previously only filtered on
+        ``d.enabled``.  A preset that exhausted its budget was popped from
+        ``_definitions`` in-memory, but the next server restart re-loaded it
+        from config (still ``enabled=True``) and created one extra session
+        before ``_mark_completed`` re-disabled it.
+        """
+        store = ConversationStore()
+        settings = _make_settings()
+        settings.autonomous.sessions = [
+            _make_definition("default", max_runs=1),
+        ]
+        run_serializer = _make_run_serializer()
+        agent = MagicMock()
+
+        # Simulate persisted scheduler state with total_runs already at the
+        # limit — as if a previous runner completed the run and persisted
+        # the state before shutting down.
+        persisted_scheduler_state = {
+            "default": {"total_runs": 1, "last_outcome": "completed"},
+        }
+
+        # First runner: create and exhaust the budget.
+        runner1 = AutonomousRunner(
+            settings=settings,
+            conversation_store=store,
+            agent_factory=lambda _ml=None: agent,
+            run_serializer=run_serializer,
+        )
+        # Inject the persisted state as if loaded from disk.
+        runner1._scheduler_state = dict(persisted_scheduler_state)
+        assert runner1._total_runs_for("default") == 1
+
+        # "Restart": create a fresh runner with the same settings and the
+        # persisted scheduler state.  The mock _load_scheduler_state returns
+        # the persisted state.
+        with unittest.mock.patch.object(
+            AutonomousRunner,
+            "_load_scheduler_state",
+            return_value=dict(persisted_scheduler_state),
+        ):
+            runner2 = AutonomousRunner(
+                settings=settings,
+                conversation_store=store,
+                agent_factory=lambda _ml=None: agent,
+                run_serializer=run_serializer,
+            )
+
+        # The preset must NOT be in the active definitions after restart.
+        assert "default" not in runner2._definitions

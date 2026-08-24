@@ -414,6 +414,7 @@ class AutonomousRunner:
                 }
                 for d in configured
                 if d.enabled
+                and (d.max_runs == 0 or self._total_runs_for(d.name) < d.max_runs)
             }
             if definitions:
                 preset_summary = ", ".join(
