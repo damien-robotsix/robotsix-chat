@@ -7,12 +7,16 @@ fetchable — that agreement is what these tests pin.
 
 from __future__ import annotations
 
+from unittest.mock import patch
+
 # Pre-existing import cycle: ``subsessions/__init__`` -> ``delivery`` ->
 # ``autonomous`` -> ``runner`` -> ``subsessions.worker`` -> ``delivery`` (still
 # initialising). It only bites when ``_skill_registry`` is the first thing in
 # the process to enter that ring, which happens here but not in the running app
 # — and it reproduces identically on main, so it is not part of this change.
 # Entering from ``autonomous`` completes the ring cleanly.
+import pytest
+
 import robotsix_chat.autonomous  # noqa: F401
 from robotsix_chat.chat.server.app import (
     _inject_skills,
@@ -102,6 +106,11 @@ class TestReadSkillRetryAndCache:
     def test_retries_on_transient_failure(self) -> None:
         """A loader that fails twice then succeeds returns the body."""
         settings = _settings()
+        enabled_names = [n for on, n, _ in _skill_registry(settings) if on]
+        if not enabled_names:
+            pytest.skip("No enabled skills to test retry logic.")
+        target_name = enabled_names[0]
+
         call_count = 0
 
         def flaky_loader() -> str:
@@ -111,67 +120,17 @@ class TestReadSkillRetryAndCache:
                 raise RuntimeError("transient failure")
             return "# Flaky Skill\n\nBody after retry.\n"
 
-        # Build a minimal registry with our flaky loader.
-        original_registry = _skill_registry(settings)
-        # Find an enabled skill name to replace.
-        enabled_names = [n for on, n, _ in original_registry if on]
-        if not enabled_names:
-            return  # No enabled skills to test with.
-        target_name = enabled_names[0]
+        with (
+            patch(
+                "robotsix_chat.chat.server.app._skill_registry",
+                return_value=[(True, target_name, flaky_loader)],
+            ),
+            patch("robotsix_chat.chat.server.app.time.sleep") as mock_sleep,
+        ):
+            (read_skill,) = build_skill_tools(settings)
+            result = read_skill(target_name)
 
-        # Patch build_skill_tools to use our flaky loader.
-        import robotsix_chat.chat.server.app as app_module
-
-        original_fn = app_module.build_skill_tools
-
-        def patched_build_skill_tools(s: Settings):
-            # Call original to get the tool list, but we'll test via a custom registry.
-            return original_fn(s)
-
-        # Instead, let's directly test the retry logic by calling read_skill
-        # with a registry that has our flaky loader.
-        # We need to construct the tool ourselves.
-        registry = {target_name: flaky_loader}
-        _skill_body_cache: dict[str, str] = {}
-
-        # Replicate the read_skill logic from build_skill_tools.
-        import time
-
-        def read_skill(name: str) -> str:
-            loader = registry.get(name)
-            if loader is None:
-                available = ", ".join(sorted(registry)) or "(none)"
-                return (
-                    f"No skill named {name!r}. Available skills: {available}. "
-                    "Use the name exactly as listed in 'Available skills'."
-                )
-            last_exc = None
-            for attempt in range(3):
-                try:
-                    body = loader()
-                except Exception as exc:
-                    last_exc = exc
-                    if attempt < 2:
-                        time.sleep(0.01)  # Short sleep for test.
-                    continue
-                else:
-                    if body:
-                        _skill_body_cache[name] = body
-                    return (
-                        body or f"Skill {name!r} is registered but its body is empty."
-                    )
-            cached = _skill_body_cache.get(name)
-            if cached:
-                return cached
-            return (
-                f"Skill {name!r} could not be loaded after multiple attempts: "
-                f"{last_exc}. "
-                "Inform the user that this skill's instructions are temporarily "
-                "unavailable. Offer to proceed based on general knowledge or ask "
-                "the user to retry later."
-            )
-
-        result = read_skill(target_name)
+        mock_sleep.assert_called()
         assert "Body after retry" in result
         assert call_count == 3
 
@@ -180,108 +139,55 @@ class TestReadSkillRetryAndCache:
         settings = _settings()
         enabled_names = [n for on, n, _ in _skill_registry(settings) if on]
         if not enabled_names:
-            return
+            pytest.skip("No enabled skills to test cache fallback.")
         target_name = enabled_names[0]
 
-        # Simulate a cached body.
         cached_body = "# Cached Skill\n\nCached body content.\n"
-        _skill_body_cache: dict[str, str] = {target_name: cached_body}
+        call_count = 0
 
-        def failing_loader() -> str:
+        def loader() -> str:
+            nonlocal call_count
+            call_count += 1
+            if call_count == 1:
+                return cached_body
             raise RuntimeError("permanent failure")
 
-        registry = {target_name: failing_loader}
+        with (
+            patch(
+                "robotsix_chat.chat.server.app._skill_registry",
+                return_value=[(True, target_name, loader)],
+            ),
+            patch("robotsix_chat.chat.server.app.time.sleep"),
+        ):
+            (read_skill,) = build_skill_tools(settings)
+            # First call succeeds and populates the cache.
+            assert read_skill(target_name) == cached_body
+            # Second call fails but should serve the stale cached body.
+            assert read_skill(target_name) == cached_body
 
-        import time
-
-        def read_skill(name: str) -> str:
-            loader = registry.get(name)
-            if loader is None:
-                available = ", ".join(sorted(registry)) or "(none)"
-                return (
-                    f"No skill named {name!r}. Available skills: {available}. "
-                    "Use the name exactly as listed in 'Available skills'."
-                )
-            last_exc = None
-            for attempt in range(3):
-                try:
-                    body = loader()
-                except Exception as exc:
-                    last_exc = exc
-                    if attempt < 2:
-                        time.sleep(0.01)
-                    continue
-                else:
-                    if body:
-                        _skill_body_cache[name] = body
-                    return (
-                        body or f"Skill {name!r} is registered but its body is empty."
-                    )
-            cached = _skill_body_cache.get(name)
-            if cached:
-                return cached
-            return (
-                f"Skill {name!r} could not be loaded after multiple attempts: "
-                f"{last_exc}. "
-                "Inform the user that this skill's instructions are temporarily "
-                "unavailable. Offer to proceed based on general knowledge or ask "
-                "the user to retry later."
-            )
-
-        result = read_skill(target_name)
-        assert result == cached_body
+        assert call_count == 4  # 1 success + 3 retries on the second call.
 
     def test_error_message_guides_agent_on_total_failure(self) -> None:
         """When all retries fail and no cache exists, the error guides the agent."""
         settings = _settings()
         enabled_names = [n for on, n, _ in _skill_registry(settings) if on]
         if not enabled_names:
-            return
+            pytest.skip("No enabled skills to test total failure guidance.")
         target_name = enabled_names[0]
 
         def failing_loader() -> str:
             raise RuntimeError("permanent failure")
 
-        registry = {target_name: failing_loader}
-        _skill_body_cache: dict[str, str] = {}
+        with (
+            patch(
+                "robotsix_chat.chat.server.app._skill_registry",
+                return_value=[(True, target_name, failing_loader)],
+            ),
+            patch("robotsix_chat.chat.server.app.time.sleep"),
+        ):
+            (read_skill,) = build_skill_tools(settings)
+            result = read_skill(target_name)
 
-        import time
-
-        def read_skill(name: str) -> str:
-            loader = registry.get(name)
-            if loader is None:
-                available = ", ".join(sorted(registry)) or "(none)"
-                return (
-                    f"No skill named {name!r}. Available skills: {available}. "
-                    "Use the name exactly as listed in 'Available skills'."
-                )
-            last_exc = None
-            for attempt in range(3):
-                try:
-                    body = loader()
-                except Exception as exc:
-                    last_exc = exc
-                    if attempt < 2:
-                        time.sleep(0.01)
-                    continue
-                else:
-                    if body:
-                        _skill_body_cache[name] = body
-                    return (
-                        body or f"Skill {name!r} is registered but its body is empty."
-                    )
-            cached = _skill_body_cache.get(name)
-            if cached:
-                return cached
-            return (
-                f"Skill {name!r} could not be loaded after multiple attempts: "
-                f"{last_exc}. "
-                "Inform the user that this skill's instructions are temporarily "
-                "unavailable. Offer to proceed based on general knowledge or ask "
-                "the user to retry later."
-            )
-
-        result = read_skill(target_name)
         assert "could not be loaded after multiple attempts" in result
         assert "Inform the user" in result
         assert "temporarily unavailable" in result
