@@ -7,12 +7,16 @@ fetchable — that agreement is what these tests pin.
 
 from __future__ import annotations
 
+from unittest.mock import patch
+
 # Pre-existing import cycle: ``subsessions/__init__`` -> ``delivery`` ->
 # ``autonomous`` -> ``runner`` -> ``subsessions.worker`` -> ``delivery`` (still
 # initialising). It only bites when ``_skill_registry`` is the first thing in
 # the process to enter that ring, which happens here but not in the running app
 # — and it reproduces identically on main, so it is not part of this change.
 # Entering from ``autonomous`` completes the ring cleanly.
+import pytest
+
 import robotsix_chat.autonomous  # noqa: F401
 from robotsix_chat.chat.server.app import (
     _inject_skills,
@@ -94,3 +98,96 @@ class TestReadSkillTool:
         out = _read_skill(settings)("nope")
         assert "No skill named 'nope'" in out
         assert "Available skills:" in out
+
+
+class TestReadSkillRetryAndCache:
+    """Retry logic and stale-cache fallback for transient loader failures."""
+
+    def test_retries_on_transient_failure(self) -> None:
+        """A loader that fails twice then succeeds returns the body."""
+        settings = _settings()
+        enabled_names = [n for on, n, _ in _skill_registry(settings) if on]
+        if not enabled_names:
+            pytest.skip("No enabled skills to test retry logic.")
+        target_name = enabled_names[0]
+
+        call_count = 0
+
+        def flaky_loader() -> str:
+            nonlocal call_count
+            call_count += 1
+            if call_count < 3:
+                raise RuntimeError("transient failure")
+            return "# Flaky Skill\n\nBody after retry.\n"
+
+        with (
+            patch(
+                "robotsix_chat.chat.server.app._skill_registry",
+                return_value=[(True, target_name, flaky_loader)],
+            ),
+            patch("robotsix_chat.chat.server.app.time.sleep") as mock_sleep,
+        ):
+            (read_skill,) = build_skill_tools(settings)
+            result = read_skill(target_name)
+
+        mock_sleep.assert_called()
+        assert "Body after retry" in result
+        assert call_count == 3
+
+    def test_serves_cached_body_on_failure(self) -> None:
+        """If a loader fails but we have a cached copy, serve the cache."""
+        settings = _settings()
+        enabled_names = [n for on, n, _ in _skill_registry(settings) if on]
+        if not enabled_names:
+            pytest.skip("No enabled skills to test cache fallback.")
+        target_name = enabled_names[0]
+
+        cached_body = "# Cached Skill\n\nCached body content.\n"
+        call_count = 0
+
+        def loader() -> str:
+            nonlocal call_count
+            call_count += 1
+            if call_count == 1:
+                return cached_body
+            raise RuntimeError("permanent failure")
+
+        with (
+            patch(
+                "robotsix_chat.chat.server.app._skill_registry",
+                return_value=[(True, target_name, loader)],
+            ),
+            patch("robotsix_chat.chat.server.app.time.sleep"),
+        ):
+            (read_skill,) = build_skill_tools(settings)
+            # First call succeeds and populates the cache.
+            assert read_skill(target_name) == cached_body
+            # Second call fails but should serve the stale cached body.
+            assert read_skill(target_name) == cached_body
+
+        assert call_count == 4  # 1 success + 3 retries on the second call.
+
+    def test_error_message_guides_agent_on_total_failure(self) -> None:
+        """When all retries fail and no cache exists, the error guides the agent."""
+        settings = _settings()
+        enabled_names = [n for on, n, _ in _skill_registry(settings) if on]
+        if not enabled_names:
+            pytest.skip("No enabled skills to test total failure guidance.")
+        target_name = enabled_names[0]
+
+        def failing_loader() -> str:
+            raise RuntimeError("permanent failure")
+
+        with (
+            patch(
+                "robotsix_chat.chat.server.app._skill_registry",
+                return_value=[(True, target_name, failing_loader)],
+            ),
+            patch("robotsix_chat.chat.server.app.time.sleep"),
+        ):
+            (read_skill,) = build_skill_tools(settings)
+            result = read_skill(target_name)
+
+        assert "could not be loaded after multiple attempts" in result
+        assert "Inform the user" in result
+        assert "temporarily unavailable" in result

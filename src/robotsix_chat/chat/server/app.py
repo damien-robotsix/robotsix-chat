@@ -9,6 +9,7 @@ from __future__ import annotations
 
 import contextlib
 import logging
+import time
 from collections.abc import AsyncIterator, Callable
 from importlib import resources
 from pathlib import Path
@@ -942,6 +943,9 @@ def build_skill_tools(settings: Settings) -> list[Callable[..., Any]]:
     registry = {
         name: loader for enabled, name, loader in _skill_registry(settings) if enabled
     }
+    # Cache successfully loaded skill bodies so we can serve a stale copy if a
+    # later load fails (transient I/O error, file locked, etc.).
+    _skill_body_cache: dict[str, str] = {}
 
     def read_skill(name: str) -> str:
         """Read the full instructions for one of your available skills.
@@ -966,12 +970,43 @@ def build_skill_tools(settings: Settings) -> list[Callable[..., Any]]:
                 f"No skill named {name!r}. Available skills: {available}. "
                 "Use the name exactly as listed in 'Available skills'."
             )
-        try:
-            body = loader()
-        except Exception as exc:
-            logger.warning("read_skill(%s) failed to load", name, exc_info=True)
-            return f"Skill {name!r} could not be loaded: {exc}"
-        return body or f"Skill {name!r} is registered but its body is empty."
+
+        # Retry up to 2 times with exponential backoff for transient failures.
+        last_exc: Exception | None = None
+        for attempt in range(3):
+            try:
+                body = loader()
+            except Exception as exc:
+                last_exc = exc
+                if attempt < 2:
+                    logger.warning(
+                        "read_skill(%s) attempt %d failed, retrying",
+                        name,
+                        attempt + 1,
+                        exc_info=True,
+                    )
+                    time.sleep(0.1 * (2**attempt))
+                continue
+            else:
+                # Success — cache and return.
+                if body:
+                    _skill_body_cache[name] = body
+                return body or f"Skill {name!r} is registered but its body is empty."
+
+        # All retries exhausted — try the cache.
+        logger.warning("read_skill(%s) failed after 3 attempts", name, exc_info=True)
+        cached = _skill_body_cache.get(name)
+        if cached:
+            logger.info("read_skill(%s) serving stale cached body", name)
+            return cached
+
+        return (
+            f"Skill {name!r} could not be loaded after multiple attempts: "
+            f"{last_exc}. "
+            "Inform the user that this skill's instructions are temporarily "
+            "unavailable. Offer to proceed based on general knowledge or ask "
+            "the user to retry later."
+        )
 
     return [read_skill]
 
