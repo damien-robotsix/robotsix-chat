@@ -5,6 +5,48 @@ from __future__ import annotations
 from pydantic import BaseModel, ConfigDict, Field, SecretStr, model_validator
 
 
+class KindTurnBudget(BaseModel):
+    """Per-subsession-kind agent-turn budget.
+
+    Each subsession kind (task, periodic, user_chat, on_close) carries its
+    own soft-warn and hard-stop turn thresholds.  A subsession that exceeds
+    these limits is either nudged to wrap up (soft warn) or force-closed
+    with a partial-work summary (hard stop).
+
+    Attributes:
+        soft_warn_turns: Number of agent turns before the worker injects a
+            system reminder telling the agent to wrap up and call
+            ``complete_subsession``.  Default ``25``.
+        hard_stop_turns: Number of agent turns before the worker force-closes
+            the subsession with a summary of work-so-far.  Default ``40``.
+
+    """
+
+    soft_warn_turns: int = 25
+    hard_stop_turns: int = 40
+
+    model_config = ConfigDict(extra="forbid")
+
+
+class TurnBudgetSettings(BaseModel):
+    """Per-kind turn budgets for subsession agents.
+
+    Attributes:
+        task: Budget for one-shot ``task`` subsessions.
+        periodic: Budget for ``periodic`` monitor subsessions.
+        user_chat: Budget for ``user_chat`` side-chat subsessions.
+        on_close: Budget for ``on_close`` subsessions.
+
+    """
+
+    task: KindTurnBudget = Field(default_factory=KindTurnBudget)
+    periodic: KindTurnBudget = Field(default_factory=KindTurnBudget)
+    user_chat: KindTurnBudget = Field(default_factory=KindTurnBudget)
+    on_close: KindTurnBudget = Field(default_factory=KindTurnBudget)
+
+    model_config = ConfigDict(extra="forbid")
+
+
 class SubsessionsSettings(BaseModel):
     """Unified subsession system — background agents spawned from a chat.
 
@@ -187,6 +229,13 @@ class SubsessionsSettings(BaseModel):
             that would exceed this limit is rejected with a clear error.
             Default ``32``.
             Env override: ``SUBSESSIONS_MONITOR_SLOT_QUEUE_MAX``.
+        turn_budget: Per-kind agent-turn budget (soft-warn + hard-stop
+            thresholds) that bounds a single subsession's turn count
+            before force-closing it with a partial-work summary.  The
+            hard stop prevents a looping subagent from consuming
+            unbounded Claude subscription cap.
+            Defaults: soft-warn at 25 turns, hard-stop at 40 turns for
+            all kinds.  See :class:`TurnBudgetSettings`.
 
     """
 
@@ -403,6 +452,7 @@ class SubsessionsSettings(BaseModel):
             "the queue unbounded."
         ),
     )
+    turn_budget: TurnBudgetSettings = Field(default_factory=TurnBudgetSettings)
     model_config = ConfigDict(extra="forbid")
 
 

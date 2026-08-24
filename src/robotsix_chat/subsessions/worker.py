@@ -55,7 +55,7 @@ if TYPE_CHECKING:
     from robotsix_chat.chat.conversation import ConversationStore
     from robotsix_chat.chat.events import EventSink
     from robotsix_chat.chat.server.routes import ChatAgent
-    from robotsix_chat.config import Settings
+    from robotsix_chat.config import KindTurnBudget, Settings, TurnBudgetSettings
 
 logger = logging.getLogger(__name__)
 
@@ -329,6 +329,39 @@ def _is_ticket_pre_authorized(
     if not ticket_id:
         return False
     return any(fnmatch.fnmatch(ticket_id, p) for p in patterns)
+
+
+def _get_kind_turn_budget(
+    budgets: TurnBudgetSettings,
+    kind: SubsessionKind,
+) -> KindTurnBudget | None:
+    """Return the :class:`KindTurnBudget` for *kind*, or ``None``.
+
+    ``WAIT_FOR_EVENT`` reuses the ``periodic`` budget since it is a
+    variant of periodic monitoring.
+    """
+    if kind is SubsessionKind.TASK:
+        return budgets.task
+    if kind is SubsessionKind.PERIODIC or kind is SubsessionKind.WAIT_FOR_EVENT:
+        return budgets.periodic
+    if kind is SubsessionKind.USER_CHAT:
+        return budgets.user_chat
+    if kind is SubsessionKind.ON_CLOSE:
+        return budgets.on_close
+    return None
+
+
+# Turn-budget soft-warn reminder, appended to the agent's next turn input
+# after ``soft_warn_turns`` turns.  The ``{used}`` and ``{remaining}``
+# slots are filled by the worker at injection time.
+_TURN_BUDGET_SOFT_WARN = (
+    "[SYSTEM REMINDER — turn budget: you have used {used} turns "
+    "(soft-warn threshold: {warn}). "
+    "You have {remaining} turns remaining before the subsession is "
+    "force-closed.  Please wrap up your work and call "
+    "complete_subsession with a summary of what you have "
+    "accomplished so far.]"
+)
 
 
 @dataclass(frozen=True)
@@ -2043,6 +2076,7 @@ async def _subsession_worker(
         previous_result: str | None = None
         consecutive_no_change = info.consecutive_no_change
         first_turn = True
+        turn_count_local = 0
         pending: list[InboxMessage] = []
         in_flight_inbox: list[InboxMessage] | None = None
 
@@ -2287,6 +2321,22 @@ async def _subsession_worker(
                 in_flight_inbox = pending
             first_turn = False
 
+            # -- turn budget soft-warn --------------------------------------
+            _budget = _get_kind_turn_budget(
+                env.settings.subsessions.turn_budget, info.kind
+            )
+            if (
+                _budget is not None
+                and _budget.soft_warn_turns > 0
+                and turn_count_local >= _budget.soft_warn_turns
+            ):
+                remaining = _budget.hard_stop_turns - turn_count_local
+                turn_input += _TURN_BUDGET_SOFT_WARN.format(
+                    used=turn_count_local,
+                    warn=_budget.soft_warn_turns,
+                    remaining=remaining,
+                )
+
             try:
                 reply = await _run_turn_with_transient_retry(
                     env,
@@ -2486,6 +2536,41 @@ async def _subsession_worker(
             # Inbox messages were transcripted at enqueue time; only the
             # assistant side is appended here.
             registry.append_transcript(sub_id, "assistant", reply)
+
+            turn_count_local += 1
+
+            # -- turn budget hard stop ---------------------------------------
+            if (
+                _budget is not None
+                and _budget.hard_stop_turns > 0
+                and turn_count_local > _budget.hard_stop_turns
+                and not close_state.requested
+            ):
+                summary = (
+                    f"The subsession was force-closed after exceeding the "
+                    f"per-kind turn budget: {turn_count_local} turns used "
+                    f"(hard-stop at {_budget.hard_stop_turns}). "
+                    f"The agent's last reply was:\n\n{reply}"
+                )
+                closed = registry.mark_closed(
+                    sub_id,
+                    summary=summary,
+                    reason="turn_budget_exceeded",
+                    closed_by="system",
+                )
+                if closed is not None:
+                    await env.delivery.deliver_summary(
+                        closed, summary, "turn_budget_exceeded"
+                    )
+                else:
+                    # External close already won the race — deliver the
+                    # partial-work report anyway so the parent agent sees it.
+                    closed_info = registry.get(sub_id)
+                    if closed_info is not None:
+                        await env.delivery.deliver_summary(
+                            closed_info, summary, "turn_budget_exceeded"
+                        )
+                return
 
             # -- agent-requested close (any kind) --------------------------
             if close_state.requested:

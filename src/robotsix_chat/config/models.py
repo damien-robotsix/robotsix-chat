@@ -64,8 +64,10 @@ from .server_models import (
 )
 from .session_models import (
     ConversationSettings,
+    KindTurnBudget,
     LifecycleSettings,
     SubsessionsSettings,
+    TurnBudgetSettings,
 )
 from .storage_models import (
     DirectRepoSettings,
@@ -94,6 +96,7 @@ __all__ = [
     "GitHubSecuritySettings",
     "HealthSettings",
     "HttpProbeSettings",
+    "KindTurnBudget",
     "KnowledgeSettings",
     "LangfuseInspectSettings",
     "LangfuseProjectCreds",
@@ -112,6 +115,7 @@ __all__ = [
     "SelfReviewSettings",
     "SftpSettings",
     "SubsessionsSettings",
+    "TurnBudgetSettings",
     "VersionCheckSettings",
     "VolumeToolsSettings",
 ]
