@@ -11,8 +11,9 @@ dragging its left edge.
 
 The settings panel is backed by HTTP endpoints on the chat server:
 
-- **`GET /config`** — returns the current on-disk config with secret field values masked as
-  `"**********"`, plus the current version number and the JSON Schema for the `Settings` model.
+- **`GET /config`** — returns `{"config": ..., "schema": ..., "version": ...}`: the current on-disk
+  config with secret field values masked as `"**********"`, the JSON Schema for the `Settings`
+  model, and the current version number.
 - **`PUT /config`** — accepts a JSON object with the fields to change, **deep-merges** it over the
   existing on-disk config, validates the result through the `Settings` pydantic model, increments
   the version, and only persists if validation passes.
@@ -158,14 +159,23 @@ See [Autonomous sessions](autonomous-sessions.md) for the full preset-key refere
 
 ### `GET /config`
 
-Returns the current on-disk config with secrets masked as `"**********"`, plus the current version
-number and the JSON Schema for the `Settings` model.
+Returns the current on-disk config with secrets masked as `"**********"` under `config`, plus the
+JSON Schema for the `Settings` model and the current version number.
 
 **Response** `200 OK`:
 
 ```json
 {
-  "version": 3,
+  "config": {
+    "server_port": 8000,
+    "llmio_api_key": "**********",
+    "memory": {
+      "enabled": true,
+      "embedding": {
+        "endpoint": "http://box:11434/v1"
+      }
+    }
+  },
   "schema": {
     "$schema": "https://json-schema.org/draft/2020-12/schema",
     "type": "object",
@@ -176,16 +186,13 @@ number and the JSON Schema for the `Settings` model.
       ...
     }
   },
-  "server_port": 8000,
-  "llmio_api_key": "**********",
-  "memory": {
-    "enabled": true,
-    "embedding": {
-      "endpoint": "http://box:11434/v1"
-    }
-  }
+  "version": 3
 }
 ```
+
+The config document lives **under the `config` key**, never spread across the top level. The shared
+settings panel reads `payload.config` and falls back to `{}` when it is absent — which renders every
+field at its schema default, so the next Save writes those defaults over the live config.
 
 When no config file exists yet, returns version 1 with an empty config object and the schema.
 
@@ -205,12 +212,19 @@ persists.
 }
 ```
 
-**Response** `200 OK`:
+**Response** `200 OK` — the new effective config (secrets masked) and the new version number, so a
+client can re-render straight from the response:
 
 ```json
 {
-  "version": 4,
-  "status": "ok"
+  "config": {
+    "server_port": 9000,
+    "llmio_api_key": "**********",
+    "memory": {
+      "enabled": false
+    }
+  },
+  "version": 4
 }
 ```
 
@@ -241,23 +255,25 @@ response to keep it compact.
 **Response** `200 OK`:
 
 ```json
-[
-  {
-    "version": 3,
-    "timestamp": "2026-07-23T23:52:15.123456+00:00",
-    "changed_keys": ["server_port"]
-  },
-  {
-    "version": 2,
-    "timestamp": "2026-07-23T23:50:00.000000+00:00",
-    "changed_keys": ["memory"]
-  },
-  {
-    "version": 1,
-    "timestamp": "2026-07-23T23:48:00.000000+00:00",
-    "changed_keys": ["initial"]
-  }
-]
+{
+  "versions": [
+    {
+      "version": 3,
+      "timestamp": "2026-07-23T23:52:15.123456+00:00",
+      "changed_keys": ["server_port"]
+    },
+    {
+      "version": 2,
+      "timestamp": "2026-07-23T23:50:00.000000+00:00",
+      "changed_keys": ["memory"]
+    },
+    {
+      "version": 1,
+      "timestamp": "2026-07-23T23:48:00.000000+00:00",
+      "changed_keys": ["initial"]
+    }
+  ]
+}
 ```
 
 If no version history exists yet, it is automatically bootstrapped from the current on-disk config
@@ -276,12 +292,16 @@ the rollback. The version history is never destroyed — rollback is a forward o
 }
 ```
 
-**Response** `200 OK`:
+**Response** `200 OK` — the same envelope as `PUT /config`, carrying the config the rollback
+restored:
 
 ```json
 {
-  "version": 4,
-  "status": "ok"
+  "config": {
+    "server_port": 8000,
+    "llmio_api_key": "**********"
+  },
+  "version": 4
 }
 ```
 

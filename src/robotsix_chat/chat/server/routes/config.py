@@ -1,23 +1,33 @@
 """Config endpoints — read and update the server's config file.
 
-``GET /config`` returns the current config (secrets masked) with version
-and JSON Schema metadata.
+The response envelopes follow robotsix-standards' config-ownership
+contract: the config document always sits under a ``config`` key, never at
+the top level.  The shared settings panel reads ``payload.config`` and
+falls back to ``{}`` when it is missing, which renders every field at its
+schema default — and a Save then writes those defaults over the live
+config.  Keep the envelope.
+
+``GET /config`` returns ``{"config": ..., "schema": ..., "version": ...}``
+with secrets masked.
 
 ``PUT /config`` deep-merges the submitted form over the existing persisted
 config, validates, increments the version, and persists.  A field absent
-from the submitted payload is preserved, not blanked.
+from the submitted payload is preserved, not blanked.  It answers with the
+new effective ``{"config": ..., "version": ...}``.
 
-``GET /config/versions`` returns the version history (without full data).
+``GET /config/versions`` returns ``{"versions": [...]}`` — the version
+history without the full data payloads.
 
 ``GET /config/versions/{version}`` returns one version's stored document
-with secrets masked exactly like ``GET /config``.
+under ``config``, with secrets masked exactly like ``GET /config``.
 
 ``GET /config/versions/{version}/diff`` returns a value-level diff of that
 version against the previous one — dot-notation key paths with ``old`` /
 ``new`` values; secret leaves report only ``changed: true``, never values.
 
 ``POST /config/rollback`` reverts to a previous version and creates a new
-version entry (append-only history, never destructive).
+version entry (append-only history, never destructive), answering with the
+same ``{"config": ..., "version": ...}`` envelope as ``PUT /config``.
 """
 
 from __future__ import annotations
@@ -425,16 +435,39 @@ def _problem_response(status: int, title: str, detail: str) -> JSONResponse:
 # ---------------------------------------------------------------------------
 
 
-async def config_get_endpoint(request: Request) -> JSONResponse:
-    """Return the current on-disk config with secrets masked, plus version and schema.
+def _effective_config(data: dict[str, Any]) -> dict[str, Any]:
+    """Return *data* overlaid on the model defaults, validated and masked.
 
     The on-disk data is overlaid onto the full :class:`Settings` model
     defaults — every schema key (including newly-added fields like
-    ``autonomous.sessions``) appears in the response even when absent from
-    the persisted config file.  Legacy keys are stripped during
-    validation (e.g. ``approval_marker`` / ``proposal_marker``).
+    ``autonomous.sessions``) appears even when absent from the persisted
+    config file.  Validating through :class:`Settings` also strips legacy
+    keys (e.g. ``approval_marker`` / ``proposal_marker``); on failure the
+    unvalidated merge is returned so the UI can still render what we have
+    while the operator addresses the validation errors.
+    """
+    defaults = Settings().model_dump(mode="json")
+    merged = _deep_merge(defaults, data)
 
-    ``GET /config`` — no auth (gateway handles it).
+    try:
+        response_data = Settings.model_validate(merged).model_dump(mode="json")
+    except ValidationError:
+        logger.warning(
+            "Config validation failed while building the effective config; "
+            "returning unvalidated merge (legacy keys may be present)"
+        )
+        response_data = merged
+
+    return _mask_secrets(response_data)
+
+
+async def config_get_endpoint(request: Request) -> JSONResponse:
+    """Return the current on-disk config with secrets masked, plus version and schema.
+
+    ``GET /config`` — no auth (gateway handles it).  The response is the
+    standard ``{"config": ..., "schema": ..., "version": ...}`` envelope;
+    the config document is never spread across the top level (see the
+    module docstring for what breaks when it is).
     """
     config_path = _resolve_config_path_from_app(request)
     data = _read_config_json(config_path)
@@ -442,34 +475,13 @@ async def config_get_endpoint(request: Request) -> JSONResponse:
     # Ensure version history is bootstrapped.
     version = _bootstrap_version_history(config_path, data)
 
-    # Overlay the on-disk config over Settings defaults so every schema
-    # key renders in the UI — new fields like autonomous.sessions appear
-    # even when absent from the persisted file.
-    defaults = Settings().model_dump(mode="json")
-    merged = _deep_merge(defaults, data)
-
-    # Validate through Settings to trigger stripping of legacy keys
-    # (approval_marker / proposal_marker) and unknown fields.
-    # On failure, fall back to the unvalidated merge — the UI can still
-    # render what we have while the operator addresses validation errors.
-    try:
-        validated = Settings.model_validate(merged)
-        response_data = validated.model_dump(mode="json")
-    except ValidationError:
-        logger.warning(
-            "Config validation failed during GET /config; "
-            "returning unvalidated merge (legacy keys may be present)"
-        )
-        response_data = merged
-
-    # Build the response: version + schema + (masked) config keys at top level.
-    masked = _mask_secrets(response_data)
-    response: dict[str, Any] = {
-        "version": version,
-        "schema": _get_schema(),
-    }
-    response.update(masked)
-    return JSONResponse(response)
+    return JSONResponse(
+        {
+            "config": _effective_config(data),
+            "schema": _get_schema(),
+            "version": version,
+        }
+    )
 
 
 async def config_save_endpoint(request: Request) -> JSONResponse:
@@ -478,8 +490,10 @@ async def config_save_endpoint(request: Request) -> JSONResponse:
     ``PUT /config`` — accepts a JSON object with the fields to update.
     Fields absent from the payload are preserved from the on-disk config.
 
-    Returns 200 with the new version on success, 422 (RFC 9457) when the
-    merged config fails :class:`~robotsix_chat.config.Settings` validation.
+    Returns 200 with ``{"config": ..., "version": ...}`` — the new
+    effective config with secrets masked, so a client can re-render from
+    the response — or 422 (RFC 9457) when the merged config fails
+    :class:`~robotsix_chat.config.Settings` validation.
     """
     config_path = _resolve_config_path_from_app(request)
     body = await _parse_json_body(request)
@@ -547,14 +561,14 @@ async def config_save_endpoint(request: Request) -> JSONResponse:
         new_ver,
         len(merged),
     )
-    return JSONResponse({"version": new_ver, "status": "ok"})
+    return JSONResponse({"config": _effective_config(merged), "version": new_ver})
 
 
 async def config_versions_endpoint(request: Request) -> JSONResponse:
     """Return the version history (without full config data).
 
-    ``GET /config/versions`` — returns a list of ``{version, timestamp,
-    changed_keys}`` entries, newest first.
+    ``GET /config/versions`` — returns ``{"versions": [...]}``, each entry
+    a ``{version, timestamp, changed_keys}`` record, newest first.
     """
     config_path = _resolve_config_path_from_app(request)
     vp = _versions_path(config_path)
@@ -574,7 +588,7 @@ async def config_versions_endpoint(request: Request) -> JSONResponse:
                 "changed_keys": entry["changed_keys"],
             }
         )
-    return JSONResponse(result)
+    return JSONResponse({"versions": result})
 
 
 async def config_version_get_endpoint(request: Request) -> JSONResponse:
@@ -582,8 +596,8 @@ async def config_version_get_endpoint(request: Request) -> JSONResponse:
 
     ``GET /config/versions/{version}`` — returns the exact document a
     rollback to that version would restore (the ``data`` payload recorded
-    in the append-only history), with secret values masked exactly like
-    ``GET /config``.
+    in the append-only history) under ``config``, with secret values
+    masked exactly like ``GET /config``.
     """
     config_path = _resolve_config_path_from_app(request)
     version = request.path_params["version"]
@@ -602,14 +616,14 @@ async def config_version_get_endpoint(request: Request) -> JSONResponse:
     data = entry.get("data")
     if not isinstance(data, dict):
         data = {}
-    masked = _mask_secrets(data)
 
-    response: dict[str, Any] = {
-        "version": entry["version"],
-        "timestamp": entry.get("timestamp"),
-    }
-    response.update(masked)
-    return JSONResponse(response)
+    return JSONResponse(
+        {
+            "config": _mask_secrets(data),
+            "version": entry["version"],
+            "timestamp": entry.get("timestamp"),
+        }
+    )
 
 
 async def config_version_diff_endpoint(request: Request) -> JSONResponse:
@@ -739,7 +753,7 @@ async def config_rollback_endpoint(request: Request) -> JSONResponse:
         target_version,
         new_ver,
     )
-    return JSONResponse({"version": new_ver, "status": "ok"})
+    return JSONResponse({"config": _effective_config(target_data), "version": new_ver})
 
 
 def _resolve_config_path_from_app(request: Request) -> Path:
