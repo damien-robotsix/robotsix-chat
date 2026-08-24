@@ -84,14 +84,14 @@ ______________________________________________________________________
 
 Add entries under `autonomous.sessions` in the config to define named sessions. Each entry has:
 
-| Key                        | Default      | Description                                                                                                                |
-| -------------------------- | ------------ | -------------------------------------------------------------------------------------------------------------------------- |
-| `name`                     | *(required)* | Unique identifier for the session definition.                                                                              |
-| `prompt`                   | `""`         | Custom kickoff prompt. When empty, the standard "begin a new autonomous session and work it to completion" prompt is used. |
-| `trigger_interval_seconds` | `3600.0`     | Delay between one run completing and the next starting.                                                                    |
+| Key                        | Default      | Description                                                                                                                                 |
+| -------------------------- | ------------ | ------------------------------------------------------------------------------------------------------------------------------------------- |
+| `name`                     | *(required)* | Unique identifier for the session definition.                                                                                               |
+| `prompt`                   | `""`         | Custom kickoff prompt. When empty, the standard "begin a new autonomous session and work it to completion" prompt is used.                  |
+| `trigger_interval_seconds` | `3600.0`     | Delay between one run completing and the next starting.                                                                                     |
 | `model_level`              | `null`       | llmio capability level for this autonomous session (1 cheapest … 4 frontier). When `null`, the session uses the global `llmio_model_level`. |
-| `max_runs`                 | `0`          | Maximum number of times this preset may fire. `0` means unlimited. After the limit is reached the preset is automatically disabled. |
-| `enabled`                  | `true`       | When `false`, the definition is skipped — no session is created for it.                                                    |
+| `max_runs`                 | `0`          | Maximum number of times this preset may fire. `0` means unlimited. After the limit is reached the preset is automatically disabled.         |
+| `enabled`                  | `true`       | When `false`, the definition is skipped — no session is created for it.                                                                     |
 
 Once `autonomous.sessions` is non-empty, each enabled definition becomes its own session with its
 own prompt and trigger. Each maps to a distinct pseudo-owner (`autonomous:<name>`), so sessions run

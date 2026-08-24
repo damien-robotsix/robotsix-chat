@@ -139,8 +139,8 @@ between runs), its **model level** (when set), its **max runs** (when set), and 
 
 - **Edit** — click **Edit** on a row to open an inline form. You can change the preset **name**, its
   custom **prompt**, the **interval (s)**, the **model level** (1–4, or blank to use the global
-  default), and the **max runs** limit (0 = unlimited). Every preset is periodic, so the interval
-  is the whole scheduling contract. The **Enabled** checkbox toggles whether the preset creates a
+  default), and the **max runs** limit (0 = unlimited). Every preset is periodic, so the interval is
+  the whole scheduling contract. The **Enabled** checkbox toggles whether the preset creates a
   session (unchecking disables it without deleting it). Click **Save** to commit the change.
 - **Add** — click **+ Add Preset** to insert a new preset (defaults: 3600 s interval, enabled). Fill
   in the fields and click **Add**.
