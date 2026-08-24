@@ -484,6 +484,36 @@ def test_build_periodic_input_includes_loop_guard_instructions() -> None:
     assert "continuation.enabled" in result
 
 
+def test_build_periodic_input_includes_redundant_fix_ticket_detection() -> None:
+    """The periodic turn input includes redundant fix ticket detection."""
+    from robotsix_chat.subsessions.models import SubsessionInfo, SubsessionKind
+
+    info = SubsessionInfo(
+        id="sub-y",
+        kind=SubsessionKind.PERIODIC,
+        owner_session_id="sess-1",
+        parent_id=None,
+        depth=1,
+        title="monitor",
+        prompt="watch fix ticket 3120",
+        model_level=3,
+        status="active",  # type: ignore[arg-type]
+        created_at=0.0,
+        last_activity_at=0.0,
+        interval_seconds=60.0,
+        checkpoint={"ticket_id": "3120"},
+    )
+
+    result = _build_periodic_input(info, previous_result=None, steering=[])
+
+    # The output must include the redundant fix ticket detection instructions.
+    assert "REDUNDANT FIX TICKET DETECTION" in result
+    assert "alternative path" in result
+    assert "baseline ticket" in result
+    assert "complete_subsession" in result
+    assert "redundant" in result
+
+
 def test_build_periodic_input_pre_authorized_via_dedup_key() -> None:
     """PRE-AUTHORIZED instruction is injected when dedup_key matches a pattern.
 
