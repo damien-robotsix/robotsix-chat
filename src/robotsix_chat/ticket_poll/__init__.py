@@ -61,6 +61,7 @@ __all__ = [
     "build_file_ticket_tool",
     "build_find_ticket_by_pr_tool",
     "build_list_stale_ready_tickets_tool",
+    "build_mark_ticket_done_tool",
     "build_mark_ticket_ready_tool",
     "build_merge_pull_request_tool",
     "build_prioritize_all_open_tickets_tool",
@@ -641,6 +642,134 @@ def build_mark_ticket_ready_tool(
             return f"Error marking ticket {effective_id} ready: {exc}"
 
     return [mark_ticket_ready]
+
+
+def build_mark_ticket_done_tool(
+    settings: Settings,
+    *,
+    component_request: Callable[..., Any] | None = None,
+) -> list[Callable[..., Any]]:
+    """Return the ``mark_ticket_done`` tool.
+
+    The tool calls the mill board's ``POST /tickets/{id}/mark-done`` endpoint
+    to transition a ticket to the terminal ``done`` state.  It routes through
+    *component_request* (roster-based connectivity) when available, falling
+    back to the direct ``board_api_base_url`` otherwise.
+
+    Use this to close a superseded ticket, a duplicate, or any ticket whose
+    work is confirmed complete via a terminal state on another ticket.  When
+    a superseding ticket is already ``DONE`` / ``CLOSED``, use this tool
+    rather than asking the operator to close it manually.
+
+    Args:
+        settings: Full application settings.
+        component_request: The roster-based request callable, or ``None``
+            when the component roster is unavailable.
+
+    Returns:
+        A one-element list containing the ``mark_ticket_done`` async
+        callable, or ``[]`` when neither *component_request* nor
+        ``board_api_base_url`` are available.
+
+    """
+    conn = _board_connection(settings, component_request)
+    if conn is None:
+        return []
+    board_url, board_token, timeout = conn
+
+    async def mark_ticket_done(
+        ticket_id: str,
+        justification: str = "",
+    ) -> str:
+        """Close a ticket by transitioning it to the terminal ``done`` state.
+
+        Calls the mill board's mark-done endpoint to close the given ticket.
+        Use this when a ticket is superseded by another ticket that is
+        already ``DONE`` / ``CLOSED``, or when work on the ticket is
+        confirmed complete.  Do NOT ask the operator to close tickets
+        manually on the UI when this tool can do it.
+
+        Args:
+            ticket_id: The ticket ID to close (e.g.
+                ``"20250101T120000Z-my-ticket-a1b2"``).  Paraphrased /
+                abbreviated IDs are resolved via hash-suffix or
+                slug-substring match against the live board.
+            justification: Optional human-readable reason for the closure,
+                sent as the request body's ``justification`` field for
+                auditability.
+
+        Returns:
+            A status message from the mill API — success confirmation or
+            an error describing why the transition failed.
+
+        """
+        # Resolve paraphrased / abbreviated IDs against the live board
+        # before making the request.  This prevents 404 failures when an
+        # ID was derived from narrative text rather than from a board API
+        # response.
+        resolved_map = await _resolve_ticket_ids(
+            board_url, board_token, timeout, [ticket_id]
+        )
+        effective_id = resolved_map.get(ticket_id) or ticket_id
+
+        path = f"/tickets/{effective_id}/mark-done"
+        json_body: dict[str, str] | None = (
+            {"justification": justification} if justification else None
+        )
+
+        # Try component_request (roster-based) first.
+        if component_request is not None:
+            resp = await component_request(
+                "mill",
+                "POST",
+                path,
+                json_body=json_body,
+            )
+            if not _component_response_is_error(resp):
+                return str(resp)
+            logger.info(
+                "mark_ticket_done: roster path failed for %s; "
+                "falling back to direct board API",
+                effective_id,
+            )
+
+        # Direct fallback via board API.
+        url = f"{board_url}{path}"
+        headers: dict[str, str] = {"Accept": "application/json"}
+        if board_token:
+            headers["Authorization"] = f"Bearer {board_token}"
+
+        try:
+            async with httpx.AsyncClient(timeout=timeout) as client:
+                retry_client = RetryClient(client, config=_TICKET_POLL_RETRY_CONFIG)
+                response = await retry_client.post(url, headers=headers, json=json_body)
+                try:
+                    body = response.json()
+                    body_str = json.dumps(body)
+                except Exception:
+                    body_str = response.text
+                return f"HTTP {response.status_code}\n{body_str}"
+        except httpx.HTTPStatusError as exc:
+            try:
+                body = exc.response.json()
+                body_str = json.dumps(body)
+            except Exception:
+                body_str = exc.response.text
+            return f"HTTP {exc.response.status_code}\n{body_str}"
+        except httpx.ConnectError, httpx.ConnectTimeout, httpx.TimeoutException:
+            return (
+                f"Error marking ticket {effective_id} done: "
+                f"board API request timed out after {timeout}s"
+            )
+        except Exception as exc:
+            logger.warning(
+                "mark_ticket_done direct path failed for %s: %s",
+                effective_id,
+                exc,
+            )
+            return f"Error marking ticket {effective_id} done: {exc}"
+
+    return [mark_ticket_done]
 
 
 def build_find_ticket_by_pr_tool(

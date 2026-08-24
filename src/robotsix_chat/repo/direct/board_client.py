@@ -336,6 +336,47 @@ class BoardClient:
             return False, result.error
         return True, None
 
+    async def mark_ticket_done(
+        self, ticket_id: str, justification: str = ""
+    ) -> tuple[bool, str | None]:
+        """Close a ticket by transitioning it to the terminal ``done`` state.
+
+        Sends ``POST /tickets/{ticket_id}/mark-done`` with an optional
+        *justification* body.
+
+        Returns ``(True, None)`` on success (HTTP 2xx).  On failure returns
+        ``(False, reason)`` where *reason* is the board API's diagnostic
+        (status code + response-body excerpt, or the transport error).
+
+        Use this for closing superseded or duplicate tickets — the caller
+        is responsible for formatting the outcome into a user-facing message.
+        """
+        url = f"{self._board_url}/tickets/{ticket_id}/mark-done"
+        headers: dict[str, str] = {"Accept": "application/json"}
+        if self._s.board_api_token.get_secret_value():
+            headers["Authorization"] = (
+                f"Bearer {self._s.board_api_token.get_secret_value()}"
+            )
+        body: dict[str, str] | None = (
+            {"justification": justification} if justification else None
+        )
+        result = await safe_http_request(
+            "POST",
+            url,
+            headers=headers,
+            json_body=body,
+            timeout=self._s.timeout,
+            label=f"Board API (mark-done {ticket_id})",
+        )
+        if result.error:
+            logger.warning(
+                "Failed to mark ticket %s done: %s",
+                ticket_id,
+                result.error,
+            )
+            return False, result.error
+        return True, None
+
     async def get_ticket_data(self, ticket_id: str) -> dict[str, Any] | None:
         """Return the full ticket JSON from the board API, or None on failure.
 
