@@ -243,6 +243,33 @@ with `close_reason == "paused"`, `"human_approval_timeout"`, or `"pre_authorized
 `kind == PERIODIC`. All other terminal records (completed, max_runs, explicit close, etc.) are left
 untouched — the watcher will never accidentally revive a deliberately closed subsession.
 
+### Redundant fix ticket detection
+
+A periodic monitor watching a **fix ticket** (a ticket created to resolve a specific bug, failure, or
+issue) checks whether the underlying issue has already been resolved through an alternative path
+before continuing to poll. Signs that a fix ticket is redundant include:
+
+- The **baseline ticket** (the original issue report) was directly fixed, closed, or merged — making
+  the dedicated fix ticket unnecessary.
+- Another ticket or PR addressing the **same root cause** was merged or deployed.
+- The monitored ticket's **block reason or dependency** was resolved externally (e.g. an upstream
+  fix landed, an infrastructure issue was remediated by another team).
+
+When the monitor detects that a fix ticket is redundant, it **does not continue polling** — it
+completes the subsession with a summary that:
+
+1. States the ticket is redundant and explains **why** (naming the alternative resolution path —
+   e.g. "baseline ticket X was directly fixed").
+2. Recommends the operator close the redundant ticket with a brief rationale.
+3. Includes any CI workflow verification phrases required if a deploy/publish workflow was involved
+   in the alternative fix.
+
+This prevents the monitor from burning its run budget on a ticket whose purpose is already
+fulfilled, and surfaces a clear recommendation to the operator. See the autonomous-session prompt
+changelog for the companion behaviour: when an **autonomous session** receives a redundant-ticket
+report from a periodic monitor, it may close the ticket directly (if authorized), file a cleanup
+task, or notify the operator — rather than letting the ticket linger.
+
 ## Self-adjusting periodic monitors
 
 A periodic monitor can revise its own purpose as the monitored situation evolves, staying within
