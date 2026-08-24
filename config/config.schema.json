@@ -1352,6 +1352,12 @@
           "title": "Min Interval Seconds",
           "type": "number"
         },
+        "monitor_error_max_retries": {
+          "default": 2,
+          "description": "Maximum number of automatic retries for periodic and wait_for_event monitor subsessions that fail with a non-transient error (e.g. tool retry limit, unexpected exception).  Each retry re-launches the subsession worker with a system note about the prior failure so the agent can self-correct.  Once exhausted the monitor is permanently failed and the parent is notified.  Set to ``0`` to disable monitor error retries (monitors fail on the first error, matching legacy behaviour).  Default ``2``.  Env override: ``SUBSESSIONS_MONITOR_ERROR_MAX_RETRIES``.",
+          "title": "Monitor Error Max Retries",
+          "type": "integer"
+        },
         "monitor_max_model_level": {
           "default": 2,
           "title": "Monitor Max Model Level",

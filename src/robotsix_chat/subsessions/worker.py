@@ -2776,6 +2776,53 @@ async def _subsession_worker(
                 fallback_count,
             )
 
+        # -- retry for periodic / wait_for_event monitors -------------
+        # When a monitor fails with a non-transient error (e.g. tool
+        # retry limit, unexpected exception), retry up to
+        # monitor_error_max_retries times before failing permanently.
+        # Each retry re-launches the worker so the agent can
+        # self-correct with the error context.
+        if info is not None and info.kind in (
+            SubsessionKind.PERIODIC,
+            SubsessionKind.WAIT_FOR_EVENT,
+        ):
+            max_monitor_retries = env.settings.subsessions.monitor_error_max_retries
+            if info.retry_count < max_monitor_retries:
+                info.retry_count += 1
+                info._last_error = error_msg
+                retry_notice = _RETRY_PROMPT_TEMPLATE.format(
+                    attempt=info.retry_count,
+                    max_retries=max_monitor_retries,
+                    error=error_msg,
+                )
+                # Prepend the retry notice to the original prompt.
+                # Strip a prior retry notice if present so they don't
+                # accumulate across attempts.
+                if _RETRY_PROMPT_TEMPLATE.split("{", 1)[0] in info.prompt:
+                    info.prompt = info.prompt.split("]\n\n", 1)[-1]
+                info.prompt = retry_notice + info.prompt
+                registry.persist()
+                logger.info(
+                    "Monitor %s: retry %d/%d after error: %s",
+                    sub_id,
+                    info.retry_count,
+                    max_monitor_retries,
+                    error_msg,
+                )
+                if in_flight_inbox:
+                    logger.warning(
+                        "Monitor %s: re-delivering %d drained inbox "
+                        "message(s) on retry.",
+                        sub_id,
+                        len(in_flight_inbox),
+                    )
+                await _subsession_worker(
+                    env,
+                    sub_id,
+                    retry_input=in_flight_inbox or None,
+                )
+                return
+
         # -- exhausted retries or non-retryable kind ------------------
         failed = registry.fail(sub_id, error=error_msg)
         if failed is not None:
