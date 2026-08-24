@@ -20,6 +20,7 @@ from robotsix_chat.ticket_poll import (
     build_file_ticket_tool,
     build_find_ticket_by_pr_tool,
     build_list_stale_ready_tickets_tool,
+    build_mark_ticket_done_tool,
     build_mark_ticket_ready_tool,
     build_merge_pull_request_tool,
     build_ticket_poll_tools,
@@ -1405,6 +1406,26 @@ async def test_mark_ticket_ready_resolves_paraphrased_id(
 
     assert route.called
     assert "READY" in result
+
+
+# ============================================================================
+# mark_ticket_done
+# ============================================================================
+
+
+def test_mark_ticket_done_empty_config_returns_empty_list() -> None:
+    """Neither component_request nor board_api_base_url → empty list."""
+    tools = build_mark_ticket_done_tool(
+        Settings(direct_repo=DirectRepoSettings(board_api_base_url=""))
+    )
+    assert tools == []
+
+
+def test_mark_ticket_done_configured_returns_one_tool() -> None:
+    """When board_api_base_url is set, returns mark_ticket_done."""
+    tools = build_mark_ticket_done_tool(_settings())
+    assert len(tools) == 1
+    assert tools[0].__name__ == "mark_ticket_done"
 
 
 # ============================================================================
