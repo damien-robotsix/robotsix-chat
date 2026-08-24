@@ -326,6 +326,7 @@ def _assert_version_header(data: dict, expected_version: int) -> None:
     assert "schema" in data
     assert isinstance(data["schema"], dict)
     assert "$defs" in data["schema"] or "properties" in data["schema"]
+    assert isinstance(data["config"], dict)
 
 
 # ---------------------------------------------------------------------------
@@ -355,14 +356,15 @@ def test_get_config_returns_masked_data(tmp_path: Path) -> None:
     assert resp.status_code == 200
     data = resp.json()
     _assert_version_header(data, 1)
+    config = data["config"]
 
-    assert data["llmio_model_level"] == 3
-    assert data["llmio_api_key"] == "**********"
-    assert data["server_port"] == 8080
+    assert config["llmio_model_level"] == 3
+    assert config["llmio_api_key"] == "**********"
+    assert config["server_port"] == 8080
     assert (  # pragma: allowlist secret
-        data["openrouter"]["keys"]["robotsix-chat-cognee"] == "**********"
+        config["openrouter"]["keys"]["robotsix-chat-cognee"] == "**********"
     )
-    assert data["memory"]["embedding"]["endpoint"] == "http://box:11434/v1"
+    assert config["memory"]["embedding"]["endpoint"] == "http://box:11434/v1"
 
 
 def test_get_config_missing_file(tmp_path: Path) -> None:
@@ -374,6 +376,7 @@ def test_get_config_missing_file(tmp_path: Path) -> None:
     data = resp.json()
     assert data["version"] == 1  # bootstrapped from empty config
     assert data.get("schema") is not None
+    assert isinstance(data["config"], dict)
 
 
 def test_get_config_includes_schema(tmp_path: Path) -> None:
@@ -409,8 +412,8 @@ def test_get_config_includes_autonomous_sessions_when_absent(tmp_path: Path) -> 
     assert resp.status_code == 200
     data = resp.json()
 
-    assert "autonomous" in data
-    autonomous = data["autonomous"]
+    assert "autonomous" in data["config"]
+    autonomous = data["config"]["autonomous"]
     assert "sessions" in autonomous
     sessions = autonomous["sessions"]
     assert isinstance(sessions, list)
@@ -441,9 +444,9 @@ def test_get_config_overlay_preserves_file_values(tmp_path: Path) -> None:
     data = resp.json()
 
     # File value wins.
-    assert data["autonomous"]["completion_marker"] == "---CUSTOM MARKER---"
+    assert data["config"]["autonomous"]["completion_marker"] == "---CUSTOM MARKER---"
     # Defaults fill in missing keys — sessions receives the built-in default preset.
-    sessions = data["autonomous"]["sessions"]
+    sessions = data["config"]["autonomous"]["sessions"]
     assert isinstance(sessions, list)
     assert len(sessions) == 1
     assert sessions[0]["name"] == "default"
@@ -475,7 +478,7 @@ def test_get_config_drops_legacy_proposal_marker(tmp_path: Path) -> None:
     assert resp.status_code == 200
     data = resp.json()
 
-    autonomous = data["autonomous"]
+    autonomous = data["config"]["autonomous"]
     assert "proposal_marker" not in autonomous
     assert "completion_marker" in autonomous
 
@@ -558,7 +561,7 @@ def test_put_preserves_unmentioned_keys(tmp_path: Path) -> None:
     resp = client.put("/config", json={"server_port": 9000})
     assert resp.status_code == 200
     assert resp.json()["version"] >= 1
-    assert resp.json()["status"] == "ok"
+    assert resp.json()["config"]["server_port"] == 9000
 
     # Re-read the file.
     on_disk = _read_config_json(config_path)
@@ -855,7 +858,7 @@ def test_get_versions_returns_history(tmp_path: Path) -> None:
 
     resp = client.get("/config/versions")
     assert resp.status_code == 200
-    versions = resp.json()
+    versions = resp.json()["versions"]
     assert isinstance(versions, list)
     assert len(versions) >= 2  # initial + save
 
@@ -879,7 +882,7 @@ def test_get_versions_no_history(tmp_path: Path) -> None:
     # Don't call GET /config first — go straight to /config/versions.
     resp = client.get("/config/versions")
     assert resp.status_code == 200
-    versions = resp.json()
+    versions = resp.json()["versions"]
     assert isinstance(versions, list)
     assert len(versions) >= 1  # bootstrapped
 
@@ -911,9 +914,9 @@ def test_get_version_document_returns_masked_document(tmp_path: Path) -> None:
     doc = resp.json()
     assert doc["version"] == 1
     assert "timestamp" in doc
-    assert doc["memory"]["llm"]["model"] == "openrouter/openai/gpt-5-mini"
+    assert doc["config"]["memory"]["llm"]["model"] == "openrouter/openai/gpt-5-mini"
     # Set secrets are masked; no plaintext ever appears.
-    assert doc["openrouter"]["keys"]["robotsix-chat-cognee"] == "**********"
+    assert doc["config"]["openrouter"]["keys"]["robotsix-chat-cognee"] == "**********"
     assert "plain-secret-a" not in resp.text
 
 
@@ -926,7 +929,7 @@ def test_get_version_document_empty_secret_stays_empty(tmp_path: Path) -> None:
 
     resp = client.get("/config/versions/1")
     assert resp.status_code == 200
-    assert resp.json()["openrouter"]["keys"]["robotsix-chat-cognee"] == ""
+    assert resp.json()["config"]["openrouter"]["keys"]["robotsix-chat-cognee"] == ""
 
 
 def test_get_version_document_unknown_version_returns_404(tmp_path: Path) -> None:
@@ -1085,7 +1088,7 @@ def test_rollback_to_previous_version(tmp_path: Path) -> None:
     # Roll back to version 1 (server_port was 8000).
     rollback_resp = client.post("/config/rollback", json={"version": 1})
     assert rollback_resp.status_code == 200
-    assert rollback_resp.json()["status"] == "ok"
+    assert rollback_resp.json()["config"]["server_port"] == 8000
     new_version = rollback_resp.json()["version"]
     assert new_version >= 3  # v1 initial, v2 save, v3 rollback
 
@@ -1133,3 +1136,109 @@ def test_rollback_no_history(tmp_path: Path) -> None:
 
 
 # ---------------------------------------------------------------------------
+# Response envelopes — robotsix-standards config-ownership contract
+#
+# The shared settings panel reads ``payload.config`` and falls back to ``{}``
+# when it is missing.  With the document spread across the top level the panel
+# renders every field at its schema default and the operator's next Save writes
+# those defaults over the live config — the 2026-08-24 chat config wipe.
+# ---------------------------------------------------------------------------
+
+
+def test_get_config_nests_document_under_config_key(tmp_path: Path) -> None:
+    """GET /config returns exactly ``config``/``schema``/``version``."""
+    config_path = tmp_path / "config.json"
+    _write_config(config_path, {"llmio_model_level": 3, "server_port": 8080})
+    client = _make_app(config_path)
+
+    data = client.get("/config").json()
+
+    assert set(data) == {"config", "schema", "version"}
+    assert data["config"]["server_port"] == 8080
+    # No config key ever leaks to the top level.
+    assert "server_port" not in data
+    assert "llmio_model_level" not in data
+
+
+def test_put_returns_effective_config(tmp_path: Path) -> None:
+    """PUT /config answers with the new effective config, secrets masked."""
+    config_path = tmp_path / "config.json"
+    _write_config(
+        config_path,
+        {
+            "llmio_model_level": 3,
+            "server_port": 8080,
+            "llmio_api_key": "sk-real",  # pragma: allowlist secret
+        },
+    )
+    client = _make_app(config_path)
+
+    resp = client.put("/config", json={"server_port": 9000})
+    assert resp.status_code == 200
+    body = resp.json()
+
+    assert set(body) == {"config", "version"}
+    assert body["config"]["server_port"] == 9000
+    assert body["config"]["llmio_model_level"] == 3  # untouched key round-trips
+    assert body["config"]["llmio_api_key"] == "**********"
+    assert "sk-real" not in resp.text  # pragma: allowlist secret
+
+
+def test_put_response_config_matches_get(tmp_path: Path) -> None:
+    """Re-rendering from the PUT response equals a fresh GET — no drift.
+
+    The panel re-renders from the save response; when the two disagree the
+    next Save diffs against a stale document and writes phantom changes.
+    """
+    config_path = tmp_path / "config.json"
+    _write_config(config_path, {"llmio_model_level": 3, "server_port": 8080})
+    client = _make_app(config_path)
+    client.get("/config")  # bootstrap version history
+
+    put_config = client.put("/config", json={"server_port": 9000}).json()["config"]
+    get_config = client.get("/config").json()["config"]
+
+    assert put_config == get_config
+
+
+def test_get_versions_wraps_list_under_versions_key(tmp_path: Path) -> None:
+    """GET /config/versions returns ``{"versions": [...]}``, not a bare list."""
+    config_path = tmp_path / "config.json"
+    _write_config(config_path, {"llmio_model_level": 3})
+    client = _make_app(config_path)
+    client.get("/config")
+
+    body = client.get("/config/versions").json()
+
+    assert isinstance(body, dict)
+    assert isinstance(body["versions"], list)
+    assert body["versions"][0]["version"] >= 1
+
+
+def test_get_version_document_nests_under_config_key(tmp_path: Path) -> None:
+    """GET /config/versions/{version} nests the stored document too."""
+    config_path = tmp_path / "config.json"
+    _write_config(config_path, {"llmio_model_level": 3, "server_port": 8080})
+    client = _make_app(config_path)
+    client.get("/config")  # bootstrap v1
+
+    body = client.get("/config/versions/1").json()
+
+    assert set(body) == {"config", "version", "timestamp"}
+    assert body["config"]["server_port"] == 8080
+
+
+def test_rollback_returns_effective_config(tmp_path: Path) -> None:
+    """POST /config/rollback answers with the same envelope as PUT."""
+    config_path = tmp_path / "config.json"
+    _write_config(config_path, {"llmio_model_level": 3, "server_port": 8000})
+    client = _make_app(config_path)
+    client.get("/config")  # v1
+    client.put("/config", json={"server_port": 9000})  # v2
+
+    resp = client.post("/config/rollback", json={"version": 1})
+    assert resp.status_code == 200
+    body = resp.json()
+
+    assert set(body) == {"config", "version"}
+    assert body["config"]["server_port"] == 8000
