@@ -245,8 +245,8 @@ untouched — the watcher will never accidentally revive a deliberately closed s
 
 ### Redundant fix ticket detection
 
-A periodic monitor watching a **fix ticket** (a ticket created to resolve a specific bug, failure, or
-issue) checks whether the underlying issue has already been resolved through an alternative path
+A periodic monitor watching a **fix ticket** (a ticket created to resolve a specific bug, failure,
+or issue) checks whether the underlying issue has already been resolved through an alternative path
 before continuing to poll. Signs that a fix ticket is redundant include:
 
 - The **baseline ticket** (the original issue report) was directly fixed, closed, or merged — making
@@ -260,8 +260,8 @@ completes the subsession with a summary that:
 
 1. States the ticket is redundant and explains **why** (naming the alternative resolution path —
    e.g. "baseline ticket X was directly fixed").
-2. Recommends the operator close the redundant ticket with a brief rationale.
-3. Includes any CI workflow verification phrases required if a deploy/publish workflow was involved
+1. Recommends the operator close the redundant ticket with a brief rationale.
+1. Includes any CI workflow verification phrases required if a deploy/publish workflow was involved
    in the alternative fix.
 
 This prevents the monitor from burning its run budget on a ticket whose purpose is already
