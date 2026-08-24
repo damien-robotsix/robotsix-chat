@@ -974,12 +974,13 @@ class SubsessionRegistry:
         return info
 
     def reopen(self, sub_id: str) -> SubsessionInfo | None:
-        """Reopen a terminal periodic subsession.
+        """Reopen a terminal monitor subsession.
 
         Accepts records whose status is ``CLOSED`` or ``PAUSED``, kind is
-        ``PERIODIC``, and ``close_reason`` is ``"paused"``,
-        ``"human_approval_timeout"``, ``"pre_authorized_approval"``, or
-        ``"max_runs"``.
+        ``PERIODIC`` or ``WAIT_FOR_EVENT``, and ``close_reason`` is
+        ``"paused"``, ``"human_approval_timeout"``,
+        ``"pre_authorized_approval"``, ``"max_runs"``, or
+        ``"waiting_for_prerequisite"``.
         Other records are left untouched.  Returns the updated record or
         ``None`` when the subsession is unknown, not in a reopenable
         state, or already active (excluding PAUSED).
@@ -993,13 +994,15 @@ class SubsessionRegistry:
             return None
         if (
             info.status not in (SubsessionStatus.CLOSED, SubsessionStatus.PAUSED)
-            or info.kind is not SubsessionKind.PERIODIC
+            or info.kind
+            not in (SubsessionKind.PERIODIC, SubsessionKind.WAIT_FOR_EVENT)
             or info.close_reason
             not in (
                 "paused",
                 "human_approval_timeout",
                 "pre_authorized_approval",
                 "max_runs",
+                "waiting_for_prerequisite",
             )
         ):
             return None
@@ -1036,20 +1039,24 @@ class SubsessionRegistry:
         return info
 
     def find_paused_periodic(self) -> list[SubsessionInfo]:
-        """Return every paused periodic subsession waiting for a state change.
+        """Return every paused monitor subsession waiting for a state change.
 
-        Includes monitors in ``PAUSED`` status (auto-paused by
-        ``max_idle_runs`` — worker is alive, waiting on an inbox signal),
-        and monitors closed with reason ``"paused"``,
-        ``"human_approval_timeout"``, ``"pre_authorized_approval"``, or
-        ``"max_runs"``
-        (legacy records from before the ``PAUSED`` status existed).
+        Includes monitors of kind ``PERIODIC`` or ``WAIT_FOR_EVENT`` in
+        ``PAUSED`` status (auto-paused by ``max_idle_runs`` — worker is
+        alive, waiting on an inbox signal), and monitors closed with
+        reason ``"paused"``, ``"human_approval_timeout"``,
+        ``"pre_authorized_approval"``, ``"max_runs"``, or
+        ``"waiting_for_prerequisite"`` (legacy records from before the
+        ``PAUSED`` status existed, plus dependency-paused monitors).
         All are waiting for a ticket-state change — typically a PR merge
         or an operator action — before they can safely resume.
         """
         result: list[SubsessionInfo] = []
         for info in self._subs.values():
-            if info.kind is not SubsessionKind.PERIODIC:
+            if info.kind not in (
+                SubsessionKind.PERIODIC,
+                SubsessionKind.WAIT_FOR_EVENT,
+            ):
                 continue
             if info.status is SubsessionStatus.PAUSED or (
                 info.status is SubsessionStatus.CLOSED
@@ -1066,16 +1073,20 @@ class SubsessionRegistry:
         return result
 
     def find_paused_periodic_by_ticket_id(self, ticket_id: str) -> list[SubsessionInfo]:
-        """Return live ``PAUSED`` periodic monitors tracking *ticket_id*.
+        """Return live ``PAUSED`` monitor subsessions tracking *ticket_id*.
 
-        Only live workers are returned (``PAUSED`` status — the worker is
-        alive and blocking on an inbox signal).  Legacy closed records
-        with a paused-style close reason are handled by the background
-        watcher's reopen path, not by inbox wake.
+        Matches ``PERIODIC`` and ``WAIT_FOR_EVENT`` monitors.  Only live
+        workers are returned (``PAUSED`` status — the worker is alive and
+        blocking on an inbox signal).  Legacy closed records with a
+        paused-style close reason are handled by the background watcher's
+        reopen path, not by inbox wake.
         """
         result: list[SubsessionInfo] = []
         for info in self._subs.values():
-            if info.kind is not SubsessionKind.PERIODIC:
+            if info.kind not in (
+                SubsessionKind.PERIODIC,
+                SubsessionKind.WAIT_FOR_EVENT,
+            ):
                 continue
             if info.status is not SubsessionStatus.PAUSED:
                 continue
