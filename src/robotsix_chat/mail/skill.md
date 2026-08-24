@@ -31,6 +31,24 @@ about) overloads the user and makes it harder to act. Instead:
 1. **Wait for confirmation.** Do not enumerate further candidates, and do not perform any mutation,
    until the user confirms the subset is correct or asks for more.
 
+## Per-batch confirmation for multi-batch operations
+
+When the user's message covers **multiple distinct batches** of mutations (e.g. "the 4 proposed to
+archive can be deleted as routine notifications" and "handle the to delete batch"), treat each batch
+as a separate confirmation gate:
+
+1. **Identify each distinct batch.** A batch is a group of mails sharing the same triage column,
+   action type, or user-specified criterion (e.g. "routine notifications to archive", "the to-delete
+   batch").
+1. **Confirm each batch individually.** Even when the user's single message covers several batches,
+   restate and ask for confirmation on each batch separately before executing its mutations. A
+   single user statement that covers N batches counts as implicit intent for all N, but you must
+   still obtain explicit confirmation for each batch before acting on it.
+1. **Never batch-execute across confirmation boundaries.** After the user confirms batch A, execute
+   only batch A's mutations. Do not proceed to batch B until the user separately confirms batch B.
+   This prevents ambiguity and ensures the operator retains per-batch control over destructive
+   operations.
+
 ## Selecting an account
 
 The auto-mail board can host multiple registered mail accounts. Call `list_mail_accounts` first to
