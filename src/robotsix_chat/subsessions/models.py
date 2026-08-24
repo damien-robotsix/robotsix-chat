@@ -199,6 +199,14 @@ class SubsessionInfo:
     # asyncio.run crash affecting multiple ticket monitors) produces only
     # one side-chat instead of a flood of duplicate notifications.
     dedup_key: str | None = None
+    # Ticket ID of a pre-requisite ticket whose monitor must complete
+    # before this monitor should proceed.  When set, if the pre-requisite
+    # monitor closes without the pre-requisite reaching a terminal state,
+    # this subsession is paused (closed with reason
+    # ``waiting_for_prerequisite``) and the watcher polls the
+    # pre-requisite until it resolves — at which point the monitor is
+    # reopened.
+    depends_on_ticket_id: str | None = None
     # Retry counter for user_chat / task subsessions that fail with a
     # recoverable error.  Persisted so the retry budget survives restarts.
     retry_count: int = 0
@@ -238,6 +246,7 @@ class SubsessionInfo:
             "turn_history": [list(pair) for pair in self.turn_history],
             "checkpoint": self.checkpoint,
             "dedup_key": self.dedup_key,
+            "depends_on_ticket_id": self.depends_on_ticket_id,
             "consecutive_no_change": self.consecutive_no_change,
             "retry_count": self.retry_count,
         }

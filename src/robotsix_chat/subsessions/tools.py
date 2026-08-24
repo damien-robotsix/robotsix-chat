@@ -133,6 +133,7 @@ def _build_spawn_and_control_tools(
         include_previous_result: bool = False,
         inherit_context: bool = False,
         dedup_key: str | None = None,
+        depends_on_ticket_id: str | None = None,
     ) -> str:
         """Start a background subsession and return its id immediately.
 
@@ -208,6 +209,16 @@ def _build_spawn_and_control_tools(
         periodic monitors for the same ticket. For monitors, pass the
         ticket id returned by the filing endpoint as dedup_key. Always
         check list_subsessions first to see what is already running.
+
+        depends_on_ticket_id is for kind="periodic" and
+        kind="wait_for_event": the ticket id of a pre-requisite ticket
+        that must be resolved before this monitor can make progress (e.g.
+        this monitor is watching a migration ticket that cannot land until
+        a root-cause ticket in another repo is fixed). When the
+        pre-requisite ticket's monitor closes without the pre-requisite
+        reaching a terminal state, this monitor is automatically paused
+        with a clear status message and resumes once the pre-requisite is
+        resolved or you resume it manually with message_subsession.
 
         The subsession runs in the background; you will receive its
         summary in this conversation when it closes. Use
@@ -370,6 +381,7 @@ def _build_spawn_and_control_tools(
                 auto_stop_no_change_runs=auto_stop_no_change_runs,
                 inherit_context=inherit_context,
                 dedup_key=dedup_key,
+                depends_on_ticket_id=depends_on_ticket_id,
                 checkpoint=checkpoint,
                 event_timeout_seconds=(
                     env.settings.subsessions.event_driven_timeout_seconds
