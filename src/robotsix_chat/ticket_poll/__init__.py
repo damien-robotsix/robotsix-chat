@@ -1492,6 +1492,18 @@ def build_file_ticket_tool(
             )
             if not _component_response_is_error(resp):
                 ticket_id = _extract_ingested_ticket_id(resp)
+                if not ticket_id:
+                    return json.dumps(
+                        {
+                            "ticket_id": "",
+                            "error": (
+                                "Board API accepted the ticket but the "
+                                "response did not contain a ticket id. "
+                                f"Raw response: {resp!s:.500}"
+                            ),
+                        },
+                        ensure_ascii=False,
+                    )
                 return json.dumps(
                     {"ticket_id": ticket_id, "error": ""},
                     ensure_ascii=False,
@@ -1520,6 +1532,18 @@ def build_file_ticket_tool(
                 except Exception:
                     resp_body = response.text
                 ticket_id = _extract_ingested_ticket_id(resp_body)
+                if not ticket_id and 200 <= response.status_code < 300:
+                    return json.dumps(
+                        {
+                            "ticket_id": "",
+                            "error": (
+                                f"Board API returned HTTP {response.status_code} "
+                                "but the response did not contain a ticket id. "
+                                f"Raw response: {str(resp_body)[:500]}"
+                            ),
+                        },
+                        ensure_ascii=False,
+                    )
                 return json.dumps(
                     {"ticket_id": ticket_id, "error": ""},
                     ensure_ascii=False,
