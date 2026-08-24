@@ -41,9 +41,9 @@ as a separate confirmation gate:
    action type, or user-specified criterion (e.g. "routine notifications to archive", "the to-delete
    batch").
 1. **Confirm each batch individually.** Even when the user's single message covers several batches,
-   restate and ask for confirmation on each batch separately before executing its mutations. A single
-   user statement that covers N batches counts as implicit intent for all N, but you must still
-   obtain explicit confirmation for each batch before acting on it.
+   restate and ask for confirmation on each batch separately before executing its mutations. A
+   single user statement that covers N batches counts as implicit intent for all N, but you must
+   still obtain explicit confirmation for each batch before acting on it.
 1. **Never batch-execute across confirmation boundaries.** After the user confirms batch A, execute
    only batch A's mutations. Do not proceed to batch B until the user separately confirms batch B.
    This prevents ambiguity and ensures the operator retains per-batch control over destructive
