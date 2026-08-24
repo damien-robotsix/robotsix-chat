@@ -1203,7 +1203,7 @@ def test_react_prompt_templates_prioritize_consolidation_over_pending_threads() 
         text = template.lower()
         assert "pending sub-conversation" in text
         assert "do not re-pose an earlier question" in text
-        assert "next logical decision across all themes" in text
+        assert "end with a clear recommendation and next step" in text
         assert "merge approved prs" in text
 
 
