@@ -3,6 +3,29 @@
 Governed artifact: `Settings.agent_instruction` default literal in
 `src/robotsix_chat/config/settings.py`. Version stamp: `SYSTEM_PROMPT_VERSION` in the same module.
 
+## v138 — 2026-08-24 — 20260824T070756Z-consolidate-user-facing-outcome-reports-2147
+
+**Summary:** Reinforce the mandatory consolidation gate in both
+`agent_instruction` and the subsession-reaction prompt templates in
+`delivery.py`.  When multiple outcomes (e.g. a completed decision and a
+new merge gate) arrive in the same turn, the assistant must produce a
+single, theme-grouped paragraph with a clear recommendation and next
+step — never re-list individual identifiers, ticket IDs, or status
+codes after consolidation, and never re-ask a decision the user has
+already made.  The ending instruction is strengthened from "either give
+the overall recommendation directly, or ask the user for the next
+logical decision" to "end with a clear recommendation and next step —
+state what the user should do next or, if no action is needed, confirm
+that explicitly."
+
+**Rationale:** Session efd5ee4aabc84c9aaac4ad0f5ad00716 — the operator
+issued a MANDATORY CONSOLIDATION GATE instruction, but the assistant's
+response was still verbose and structured as separate items.  The
+existing rule needed stronger language to prevent re-listing
+identifiers and re-asking settled decisions.
+
+**SHA256:** `bf73a4ea032f5953f4e93aef6dfb152803c8abda3e311d0463e462d31f071e13`
+
 ## v137 — 2026-08-23 — 20260823T175059Z-simplify-response-to-speed-crash-feedbac-b09d
 
 **Summary:** Add autonomous-session-speed-complaint guidance to the

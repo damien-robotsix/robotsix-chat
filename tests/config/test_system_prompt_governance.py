@@ -105,19 +105,22 @@ def test_agent_instruction_starts_with_helpful_prefix() -> None:
 
 
 def test_agent_instruction_carries_consolidation_precedence_clause() -> None:
-    """The live default carries the no-re-pose consolidation precedence clause.
+    """The live default carries the reinforced consolidation gate clause.
 
     Mirrors
     ``test_react_prompt_templates_prioritize_consolidation_over_pending_threads``
     in ``tests/subsessions/test_delivery.py``: a direct assertion on the
     ``agent_instruction`` default (not just the indirect SHA256 governance
     check) that the consolidation rule overrides pending sub-conversation
-    threads and forbids re-posing an already-presented decision.
+    threads, forbids re-posing an already-presented decision, and requires
+    a clear recommendation and next step.
     """
     default = Settings.model_fields["agent_instruction"].default
     assert "precedence over ANY pending sub-conversation" in default
     assert "do NOT re-pose an earlier question" in default
-    assert "next logical decision across all themes" in default
+    assert "end with a clear recommendation and next step" in default
+    assert "never re-list individual" in default
+    assert "do not re-ask a decision the user has already made" in default
 
 
 def _extract_docs_agent_instruction(docs_text: str) -> str | None:
