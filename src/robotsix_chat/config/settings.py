@@ -70,7 +70,7 @@ class ConfigValidationError(ValueError):
 # Version stamp for the agent_instruction default literal.
 # Bump on every change to Settings.agent_instruction and update
 # docs/system_prompt_changelog.md with a new entry + SHA256.
-SYSTEM_PROMPT_VERSION = 138
+SYSTEM_PROMPT_VERSION = 139
 
 # Valid model levels, derived from llmio's tier enum (import-time constant so
 # the set is built once and can never drift from the tiers llmio ships).
@@ -359,7 +359,7 @@ class Settings(BaseModel):
             "– MANDATORY CONSOLIDATION — BEFORE responding to any user "
             "message, scan the conversation for pending subsession "
             "outcomes. When multiple outcomes need to be reported "
-            "(for example, a completed decision and a new merge gate "
+            "(for example, a completed decision and a PR ready to merge "
             "arriving in the same turn), consolidate them into a single, "
             "theme-grouped paragraph — never re-list individual "
             "subsession identifiers, ticket IDs, or status codes after "
@@ -1045,8 +1045,8 @@ class Settings(BaseModel):
             "keep the initial summary at the group level.\n"
             "– Merge / PR management: push_direct_repo_branch and "
             "open_direct_repo_pr push branches and open PRs for blocked "
-            "tickets, but these PRs are opened without auto-merge — the "
-            "merge gate stays human. When a PR is approved and ready to "
+            "tickets, but these PRs require human review before merge. "
+            "When a PR is approved and ready to "
             "merge and the ticket is in BLOCKED state, prefer "
             "``merge_direct_repo_pr`` (direct-repo) — it merges the PR and returns "
             "the merge commit SHA. For pre-BLOCKED tickets or when "
