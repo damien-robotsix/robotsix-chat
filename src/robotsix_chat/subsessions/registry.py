@@ -994,8 +994,7 @@ class SubsessionRegistry:
             return None
         if (
             info.status not in (SubsessionStatus.CLOSED, SubsessionStatus.PAUSED)
-            or info.kind
-            not in (SubsessionKind.PERIODIC, SubsessionKind.WAIT_FOR_EVENT)
+            or info.kind not in (SubsessionKind.PERIODIC, SubsessionKind.WAIT_FOR_EVENT)
             or info.close_reason
             not in (
                 "paused",

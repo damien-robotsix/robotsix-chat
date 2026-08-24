@@ -2105,9 +2105,7 @@ def test_find_paused_periodic_includes_wait_for_event() -> None:
         checkpoint={"ticket_id": "T-1"},
         title="event-monitor",
     )
-    registry.mark_closed(
-        p.id, summary="paused", reason="paused", closed_by="system"
-    )
+    registry.mark_closed(p.id, summary="paused", reason="paused", closed_by="system")
     paused = registry.find_paused_periodic()
     assert len(paused) == 1
     assert paused[0].id == p.id
