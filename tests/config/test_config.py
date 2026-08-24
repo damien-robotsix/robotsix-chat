@@ -402,9 +402,9 @@ def test_subsessions_turn_budget_rejects_inverted_thresholds() -> None:
 def test_subsessions_turn_budget_extra_keys_rejected() -> None:
     """Turn budget models reject unknown keys."""
     with pytest.raises(ValidationError):
-        KindTurnBudget(soft_warn_turns=25, hard_stop_turns=40, bogus=1)
+        KindTurnBudget(soft_warn_turns=25, hard_stop_turns=40, bogus=1)  # type: ignore[call-arg]
     with pytest.raises(ValidationError):
-        TurnBudgetSettings(task={"soft_warn_turns": 25}, bogus={})
+        TurnBudgetSettings(task={"soft_warn_turns": 25}, bogus={})  # type: ignore[call-arg]
 
 
 def test_subsessions_max_concurrent_zero_raises() -> None:
