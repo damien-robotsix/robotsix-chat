@@ -12,6 +12,7 @@ from robotsix_chat.config import (
     ComponentClientSettings,
     ComponentTarget,
     DiagnosticsSettings,
+    KindTurnBudget,
     MailSettings,
     MemoryEmbeddingSettings,
     MemorySettings,
@@ -20,6 +21,7 @@ from robotsix_chat.config import (
     SelfReviewSettings,
     Settings,
     SubsessionsSettings,
+    TurnBudgetSettings,
     VersionCheckSettings,
 )
 
@@ -367,6 +369,42 @@ def test_subsessions_defaults() -> None:
     assert settings.subsessions.max_no_change_pauses == 3
     assert settings.subsessions.store_path == "/data/subsessions.json"
     assert settings.subsessions.transcript_max_entries == 200
+
+
+def test_subsessions_turn_budget_defaults() -> None:
+    """Turn budgets default to on for task/chat, off for periodic monitors."""
+    tb = Settings().subsessions.turn_budget
+    # task / user_chat / on_close: warn at 25, hard-stop at 40.
+    assert tb.task.soft_warn_turns == 25
+    assert tb.task.hard_stop_turns == 40
+    assert tb.user_chat.soft_warn_turns == 25
+    assert tb.user_chat.hard_stop_turns == 40
+    assert tb.on_close.soft_warn_turns == 25
+    assert tb.on_close.hard_stop_turns == 40
+    # periodic monitors are disabled by default — they are already bounded
+    # by monitor_max_model_level / run_timeout / periodic_max_total_runs and
+    # are designed to stay alive for the whole life of a ticket.
+    assert tb.periodic.soft_warn_turns == 0
+    assert tb.periodic.hard_stop_turns == 0
+
+
+def test_subsessions_turn_budget_rejects_inverted_thresholds() -> None:
+    """soft_warn_turns must be less than hard_stop_turns when both are set."""
+    with pytest.raises(ValidationError):
+        KindTurnBudget(soft_warn_turns=40, hard_stop_turns=25)
+    with pytest.raises(ValidationError):
+        KindTurnBudget(soft_warn_turns=40, hard_stop_turns=40)
+    # A disabled hard-stop (0) still permits a soft-warn — no ceiling to
+    # invert against.
+    assert KindTurnBudget(soft_warn_turns=25, hard_stop_turns=0).hard_stop_turns == 0
+
+
+def test_subsessions_turn_budget_extra_keys_rejected() -> None:
+    """Turn budget models reject unknown keys."""
+    with pytest.raises(ValidationError):
+        KindTurnBudget(soft_warn_turns=25, hard_stop_turns=40, bogus=1)
+    with pytest.raises(ValidationError):
+        TurnBudgetSettings(task={"soft_warn_turns": 25}, bogus={})
 
 
 def test_subsessions_max_concurrent_zero_raises() -> None:

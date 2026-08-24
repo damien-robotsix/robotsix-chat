@@ -2077,6 +2077,7 @@ async def _subsession_worker(
         consecutive_no_change = info.consecutive_no_change
         first_turn = True
         turn_count_local = 0
+        turn_budget_warned = False
         pending: list[InboxMessage] = []
         in_flight_inbox: list[InboxMessage] | None = None
 
@@ -2268,6 +2269,15 @@ async def _subsession_worker(
                     )
                     continue
 
+                # Reset the turn-budget counter at the start of each run.
+                # Periodic monitors make one agent turn per cycle and are
+                # designed to stay alive across pauses/resumes for the whole
+                # life of a ticket; the turn budget guards a single
+                # run-burst, not the monitor's lifetime ceiling (that is
+                # ``periodic_max_total_runs``'s job).
+                turn_count_local = 0
+                turn_budget_warned = False
+
                 steering = pending
                 turn_input = _build_periodic_input(
                     info,
@@ -2299,6 +2309,12 @@ async def _subsession_worker(
                         runs=next_run,
                     )
                     continue
+                # Reset the turn-budget counter at the start of each run —
+                # wait_for_event monitors are long-lived event-driven
+                # monitors; the turn budget guards a single run-burst, not
+                # their lifetime.
+                turn_count_local = 0
+                turn_budget_warned = False
                 steering = pending
                 turn_input = _build_wait_for_event_input(
                     info,
@@ -2329,13 +2345,20 @@ async def _subsession_worker(
                 _budget is not None
                 and _budget.soft_warn_turns > 0
                 and turn_count_local >= _budget.soft_warn_turns
+                and not turn_budget_warned
             ):
-                remaining = _budget.hard_stop_turns - turn_count_local
+                if _budget.hard_stop_turns > 0:
+                    remaining = _budget.hard_stop_turns - turn_count_local
+                else:
+                    # No hard-stop configured — the reminder still nudges
+                    # the agent to wrap up, but there is no ceiling.
+                    remaining = 0
                 turn_input += _TURN_BUDGET_SOFT_WARN.format(
                     used=turn_count_local,
                     warn=_budget.soft_warn_turns,
                     remaining=remaining,
                 )
+                turn_budget_warned = True
 
             try:
                 reply = await _run_turn_with_transient_retry(
@@ -2543,7 +2566,7 @@ async def _subsession_worker(
             if (
                 _budget is not None
                 and _budget.hard_stop_turns > 0
-                and turn_count_local > _budget.hard_stop_turns
+                and turn_count_local >= _budget.hard_stop_turns
                 and not close_state.requested
             ):
                 summary = (

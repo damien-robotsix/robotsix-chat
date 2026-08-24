@@ -166,6 +166,7 @@ def make_settings(
     max_runs_progress_window: int = 5,
     monitor_slot_budget: int = 0,
     monitor_slot_queue_max: int = 32,
+    turn_budget: Any | None = None,
     llmio_api_key: str = "test-key",
 ) -> SimpleNamespace:
     """Build a settings stand-in with test-friendly (tiny) intervals.
@@ -175,6 +176,14 @@ def make_settings(
     ``SimpleNamespace`` keeps periodic tests fast.
     """
     from pydantic import SecretStr
+
+    if turn_budget is None:
+        turn_budget = SimpleNamespace(
+            task=SimpleNamespace(soft_warn_turns=25, hard_stop_turns=40),
+            periodic=SimpleNamespace(soft_warn_turns=0, hard_stop_turns=0),
+            user_chat=SimpleNamespace(soft_warn_turns=25, hard_stop_turns=40),
+            on_close=SimpleNamespace(soft_warn_turns=25, hard_stop_turns=40),
+        )
 
     return SimpleNamespace(
         subsessions=SimpleNamespace(
@@ -215,6 +224,7 @@ def make_settings(
             max_runs_progress_window=max_runs_progress_window,
             monitor_slot_budget=monitor_slot_budget,
             monitor_slot_queue_max=monitor_slot_queue_max,
+            turn_budget=turn_budget,
         ),
         central_deploy=SimpleNamespace(url="https://central-deploy.example.com"),
         llmio_api_key=SecretStr(llmio_api_key),

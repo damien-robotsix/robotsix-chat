@@ -224,6 +224,62 @@ async def test_task_steering_message_triggers_second_turn() -> None:
     assert history[0][1] == "second reply"
 
 
+@pytest.mark.asyncio
+async def test_task_turn_budget_hard_stop_force_closes() -> None:
+    """A task hitting hard_stop_turns is force-closed with a partial summary."""
+    turn_budget = SimpleNamespace(
+        task=SimpleNamespace(soft_warn_turns=0, hard_stop_turns=1),
+        periodic=SimpleNamespace(soft_warn_turns=0, hard_stop_turns=0),
+        user_chat=SimpleNamespace(soft_warn_turns=0, hard_stop_turns=0),
+        on_close=SimpleNamespace(soft_warn_turns=0, hard_stop_turns=0),
+    )
+    agent = FakeAgent(["partial result"])
+    env = build_env(
+        agent=agent,
+        settings=make_settings(turn_budget=turn_budget),
+    )
+
+    sub_id = _spawn(env, prompt="do the thing")
+    await _await_worker(env, sub_id)
+
+    info = env.registry.get(sub_id)
+    assert info is not None
+    assert info.status is SubsessionStatus.CLOSED
+    assert info.close_reason == "turn_budget_exceeded"
+    assert "partial result" in (info.summary or "")
+
+
+@pytest.mark.asyncio
+async def test_task_turn_budget_hard_stop_respects_threshold() -> None:
+    """hard_stop_turns=2 force-closes after exactly 2 turns (not 3)."""
+    turn_budget = SimpleNamespace(
+        task=SimpleNamespace(soft_warn_turns=0, hard_stop_turns=2),
+        periodic=SimpleNamespace(soft_warn_turns=0, hard_stop_turns=0),
+        user_chat=SimpleNamespace(soft_warn_turns=0, hard_stop_turns=0),
+        on_close=SimpleNamespace(soft_warn_turns=0, hard_stop_turns=0),
+    )
+    gate = asyncio.Event()
+    agent = FakeAgent(["first", "second", "third"], gate=gate)
+    env = build_env(
+        agent=agent,
+        settings=make_settings(turn_budget=turn_budget),
+    )
+
+    sub_id = _spawn(env, prompt="start the job")
+    await wait_until(lambda: len(agent.calls) == 1)
+    assert env.registry.enqueue_message(sub_id, "parent", "keep going") is True
+    gate.set()
+    await _await_worker(env, sub_id)
+
+    # Two agent turns ran; the third was never reached because the
+    # hard-stop fired at the threshold.
+    assert len(agent.calls) == 2
+    info = env.registry.get(sub_id)
+    assert info is not None
+    assert info.status is SubsessionStatus.CLOSED
+    assert info.close_reason == "turn_budget_exceeded"
+
+
 # ---------------------------------------------------------------------------
 # user_chat kind
 # ---------------------------------------------------------------------------
@@ -1050,6 +1106,50 @@ async def test_periodic_max_idle_runs_zero_disables_pause() -> None:
     # Falls through to auto_stop, not paused.
     assert info.close_reason == "no_change_auto_stop"
     assert len(agent.calls) == 2
+
+
+@pytest.mark.asyncio
+async def test_periodic_turn_budget_resets_each_run() -> None:
+    """The turn budget is per-run-burst, not a lifetime ceiling, for monitors.
+
+    With hard_stop_turns=2 a lifetime counter would force-close the monitor
+    after two cumulative turns.  A per-run reset lets a long-lived monitor
+    keep cycling through many single-turn runs without ``turn_budget_exceeded``.
+    """
+    turn_budget = SimpleNamespace(
+        task=SimpleNamespace(soft_warn_turns=25, hard_stop_turns=40),
+        periodic=SimpleNamespace(soft_warn_turns=0, hard_stop_turns=2),
+        user_chat=SimpleNamespace(soft_warn_turns=25, hard_stop_turns=40),
+        on_close=SimpleNamespace(soft_warn_turns=25, hard_stop_turns=40),
+    )
+    agent = FakeAgent(["NO_CHANGE"] * 10)
+    env = build_env(
+        agent=agent,
+        settings=make_settings(
+            auto_stop_no_change_runs=100,
+            max_idle_runs=0,
+            turn_budget=turn_budget,
+        ),
+    )
+
+    sub_id = _spawn(env, kind=SubsessionKind.PERIODIC, interval_seconds=0.02)
+
+    # The monitor should run many single-turn cycles without being
+    # force-closed for exceeding a lifetime turn ceiling.
+    await wait_until(lambda: len(agent.calls) >= 4)
+    await asyncio.sleep(0.1)
+
+    info = env.registry.get(sub_id)
+    assert info is not None
+    assert info.status in (SubsessionStatus.SLEEPING, SubsessionStatus.RUNNING)
+    assert info.close_reason != "turn_budget_exceeded"
+    assert len(agent.calls) >= 4
+
+    # Clean up — cancel the worker so it doesn't loop forever.
+    task = env.registry._running.get(sub_id)
+    if task is not None and not task.done():
+        task.cancel()
+    await asyncio.sleep(0.05)
 
 
 @pytest.mark.asyncio

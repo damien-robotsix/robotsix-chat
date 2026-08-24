@@ -25,6 +25,19 @@ class KindTurnBudget(BaseModel):
     soft_warn_turns: int = 25
     hard_stop_turns: int = 40
 
+    @model_validator(mode="after")
+    def _validate_ordering(self) -> KindTurnBudget:
+        if (
+            self.soft_warn_turns > 0
+            and self.hard_stop_turns > 0
+            and self.soft_warn_turns >= self.hard_stop_turns
+        ):
+            raise ValueError(
+                f"soft_warn_turns ({self.soft_warn_turns}) must be less "
+                f"than hard_stop_turns ({self.hard_stop_turns})"
+            )
+        return self
+
     model_config = ConfigDict(extra="forbid")
 
 
@@ -33,14 +46,21 @@ class TurnBudgetSettings(BaseModel):
 
     Attributes:
         task: Budget for one-shot ``task`` subsessions.
-        periodic: Budget for ``periodic`` monitor subsessions.
+        periodic: Budget for ``periodic`` monitor subsessions.  Defaults to
+            ``0``/``0`` (disabled) — monitors are already bounded by
+            ``monitor_max_model_level``, ``run_timeout_seconds``, and
+            ``periodic_max_total_runs``, and are designed to stay alive for
+            the whole life of a ticket, so a per-subsession turn ceiling
+            would force-close otherwise-healthy long-lived monitors.
         user_chat: Budget for ``user_chat`` side-chat subsessions.
         on_close: Budget for ``on_close`` subsessions.
 
     """
 
     task: KindTurnBudget = Field(default_factory=KindTurnBudget)
-    periodic: KindTurnBudget = Field(default_factory=KindTurnBudget)
+    periodic: KindTurnBudget = Field(
+        default_factory=lambda: KindTurnBudget(soft_warn_turns=0, hard_stop_turns=0)
+    )
     user_chat: KindTurnBudget = Field(default_factory=KindTurnBudget)
     on_close: KindTurnBudget = Field(default_factory=KindTurnBudget)
 
@@ -234,8 +254,12 @@ class SubsessionsSettings(BaseModel):
             before force-closing it with a partial-work summary.  The
             hard stop prevents a looping subagent from consuming
             unbounded Claude subscription cap.
-            Defaults: soft-warn at 25 turns, hard-stop at 40 turns for
-            all kinds.  See :class:`TurnBudgetSettings`.
+            Defaults: ``task``, ``user_chat``, and ``on_close`` warn at
+            25 turns and hard-stop at 40 turns; ``periodic`` (and
+            ``wait_for_event``) defaults to ``0``/``0`` (disabled) —
+            monitors are already bounded by ``monitor_max_model_level``,
+            ``run_timeout_seconds``, and ``periodic_max_total_runs``.
+            See :class:`TurnBudgetSettings`.
 
     """
 
