@@ -252,7 +252,7 @@ class TestFinalizeCapabilityGap:
 
         try:
             existing: list[str] = json.loads(ticket.labels) if ticket.labels else []
-        except (json.JSONDecodeError, TypeError):
+        except json.JSONDecodeError, TypeError:
             existing = []
         if "capability-gap" not in existing:
             existing.append("capability-gap")
