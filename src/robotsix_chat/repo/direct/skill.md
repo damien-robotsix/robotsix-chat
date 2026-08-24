@@ -31,6 +31,37 @@ state.
 
 ______________________________________________________________________
 
+## Agent tool: `inspect_pr_diff`
+
+Fetch the raw unified diff of an open pull request — every file changed, every line added or removed
+— as plain text. Use this BEFORE merging a PR to verify that the diff actually delivers what the
+ticket requires (e.g. whether a CI migration PR actually adopts shared workflows vs. reverting to
+inline jobs). The diff is returned as a unified diff; inspect it for the patterns the ticket's
+acceptance criteria require.
+
+**Read-only.** Does not modify any repository state and does not require a ticket to be in BLOCKED
+state.
+
+### Preconditions
+
+- Repository must be within the GitHub App installation scope.
+- The PR must exist and be accessible via the GitHub API.
+
+### Returned information
+
+- The raw unified diff of the PR as a string, prefixed with a line count.
+- Diffs larger than 8000 characters are truncated with a note indicating how many more chars/lines
+  remain — review the full diff at the PR URL when truncated.
+
+### Error responses
+
+| Condition                      | Message                                                         |
+| ------------------------------ | --------------------------------------------------------------- |
+| Repo not in installation scope | `The robotsix-mill GitHub App is not installed on 'owner/name'` |
+| PR not found / API error       | `Error fetching diff for PR #... in owner/name: <detail>`       |
+
+______________________________________________________________________
+
 ## Agent tool: `check_ci_health`
 
 Check recent CI history for a repository branch and classify failures. Lists the most recent
@@ -174,10 +205,10 @@ Before proposing a merge or listing a PR as merge-ready, the agent MUST:
   `Revert "..."`) likely undoes a prior change rather than introducing the goal stated in its
   ticket. Flag it instead of auto-listing it.
 
-- **When the PR diff is available** (e.g. from `verify_pr_ci_status` or a prior tool call), check
-  whether the net diff reverses or removes the work the ticket was supposed to deliver. A PR that
-  mostly deletes or reverts prior changes may be a rollback, not a completion — the operator should
-  decide whether to merge it.
+- **When the PR diff is available** (e.g. from `inspect_pr_diff`, `verify_pr_ci_status`, or a prior
+  tool call), check whether the net diff reverses or removes the work the ticket was supposed to
+  deliver. A PR that mostly deletes or reverts prior changes may be a rollback, not a completion —
+  the operator should decide whether to merge it.
 
 A revert PR may still be intentional and correct (e.g. rolling back a problematic deploy), but its
 purpose is the OPPOSITE of the ticket's stated goal — the operator must make the call, not the

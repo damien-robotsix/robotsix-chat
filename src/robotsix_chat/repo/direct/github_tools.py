@@ -383,6 +383,72 @@ def build_github_tools(
 
         return "\n".join(lines)
 
+    async def inspect_pr_diff(
+        repo_full_name: str,
+        pr_number: int,
+    ) -> str:
+        """Fetch the raw unified diff of an open pull request.
+
+        Returns the full diff of a PR — every file changed, every line added
+        or removed — as a unified diff.  Use this tool BEFORE merging a PR to
+        verify that the diff actually delivers what the ticket requires (e.g.
+        whether a CI migration PR actually adopts shared workflows vs. reverting
+        to inline jobs).  The diff is returned as plain text; inspect it for the
+        patterns the ticket's acceptance criteria require.
+
+        **Read-only.** Does not modify any repository state.
+        **No BLOCKED-state requirement.** This is a pure diagnostic tool —
+        it does not require a ticket to be in BLOCKED state.
+
+        Args:
+            repo_full_name: GitHub ``owner/name`` (e.g.
+                ``"robotsix/robotsix-chat"``).
+            pr_number: The PR number to inspect.
+
+        Returns:
+            The raw unified diff of the PR as a string.  Large diffs may be
+            truncated — the tool prepends a line count and truncation note
+            when the diff exceeds 8000 characters.
+
+        """
+        # Scope check (no BLOCKED-state requirement — this is read-only)
+        if component_request is None and (
+            scope_error := await client.check_installation_scope(repo_full_name)
+        ):
+            return scope_error
+
+        try:
+            diff_text = await client.get_pr_diff(
+                repo_full_name=repo_full_name,
+                pr_number=pr_number,
+            )
+        except Exception as exc:
+            return f"Error fetching diff for PR #{pr_number} in {repo_full_name}: {exc}"
+
+        if not diff_text:
+            return (
+                f"PR #{pr_number} in {repo_full_name}: diff is empty (no file changes)."
+            )
+
+        max_chars = 8000
+        line_count = diff_text.count("\n") + (1 if diff_text else 0)
+        preamble = (
+            f"PR #{pr_number} diff ({line_count} lines, "
+            f"{len(diff_text)} chars total):\n\n"
+        )
+
+        if len(diff_text) <= max_chars:
+            return preamble + diff_text
+
+        truncated = diff_text[:max_chars]
+        return (
+            f"{preamble}"
+            f"{truncated}\n\n"
+            f"... [truncated: {len(diff_text) - max_chars} more chars, "
+            f"{diff_text.count('\n', max_chars)} more lines — "
+            f"review the full diff at the PR URL]"
+        )
+
     async def check_ci_health(
         repo_full_name: str,
         branch: str = "",
@@ -1475,6 +1541,7 @@ def build_github_tools(
         update_pr_branch,
         check_pr_merge_conflict,
         verify_pr_ci_status,
+        inspect_pr_diff,
         check_ci_health,
         rerun_ci_workflow,
         file_ci_stabilization_ticket,
