@@ -47,6 +47,8 @@ def _make_definition(
     *,
     trigger_type: str = "periodic",
     trigger_interval_seconds: float = 45.0,
+    model_level: int | None = None,
+    max_runs: int = 0,
 ) -> SimpleNamespace:
     """Return a mock autonomous session definition matching config shapes."""
     return SimpleNamespace(
@@ -55,6 +57,8 @@ def _make_definition(
         trigger_type=SimpleNamespace(value=trigger_type),
         trigger_interval_seconds=trigger_interval_seconds,
         max_auto_turns=20,
+        model_level=model_level,
+        max_runs=max_runs,
         enabled=True,
         self_refine=False,
         self_refine_require_approval=False,
@@ -211,7 +215,7 @@ class TestAutoContinue:
         runner = AutonomousRunner(
             settings=settings,
             conversation_store=store,
-            agent_factory=lambda: agent,
+            agent_factory=lambda _ml=None: agent,
             run_serializer=run_serializer,
         )
         runner._auto_restart = AsyncMock()
@@ -252,7 +256,7 @@ class TestAutoContinue:
         runner = AutonomousRunner(
             settings=settings,
             conversation_store=store,
-            agent_factory=lambda: agent,
+            agent_factory=lambda _ml=None: agent,
             run_serializer=run_serializer,
         )
         runner._auto_restart = AsyncMock()
@@ -285,7 +289,7 @@ class TestAutoContinue:
         runner = AutonomousRunner(
             settings=settings,
             conversation_store=store,
-            agent_factory=lambda: agent,
+            agent_factory=lambda _ml=None: agent,
             run_serializer=run_serializer,
         )
         runner._auto_restart = AsyncMock()
@@ -318,7 +322,7 @@ class TestAutoContinue:
         runner = AutonomousRunner(
             settings=settings,
             conversation_store=store,
-            agent_factory=lambda: agent,
+            agent_factory=lambda _ml=None: agent,
             run_serializer=run_serializer,
         )
         runner._auto_restart = AsyncMock()
@@ -338,7 +342,7 @@ class TestAutoContinue:
         runner = AutonomousRunner(
             settings=_make_settings(),
             conversation_store=store,
-            agent_factory=lambda: agent,
+            agent_factory=lambda _ml=None: agent,
             run_serializer=_make_run_serializer(),
         )
         aq = runner.create_session("owner1", schedule_kickoff=False)
@@ -368,7 +372,7 @@ class TestAutoContinue:
         runner = AutonomousRunner(
             settings=settings,
             conversation_store=store,
-            agent_factory=lambda: agent,
+            agent_factory=lambda _ml=None: agent,
             run_serializer=run_serializer,
             event_sink=event_sink,
         )
@@ -409,7 +413,7 @@ class TestAgentFactoryLoopSafety:
         runner = AutonomousRunner(
             settings=settings,
             conversation_store=store,
-            agent_factory=lambda: agent,
+            agent_factory=lambda _ml=None: agent,
             run_serializer=run_serializer,
         )
         runner._auto_restart = AsyncMock()
@@ -530,7 +534,7 @@ class TestAutonomousEventStreaming:
         runner = AutonomousRunner(
             settings=settings,
             conversation_store=store,
-            agent_factory=lambda: agent,
+            agent_factory=lambda _ml=None: agent,
             run_serializer=run_serializer,
             event_sink=event_sink,
         )
@@ -579,7 +583,7 @@ class TestAutonomousEventStreaming:
         runner = AutonomousRunner(
             settings=settings,
             conversation_store=store,
-            agent_factory=lambda: agent,
+            agent_factory=lambda _ml=None: agent,
             run_serializer=run_serializer,
         )
         runner._auto_restart = AsyncMock()
@@ -893,7 +897,7 @@ class TestNoContinuationInjection:
         runner = AutonomousRunner(
             settings=settings,
             conversation_store=store,
-            agent_factory=lambda: agent,
+            agent_factory=lambda _ml=None: agent,
             run_serializer=run_serializer,
         )
         runner._auto_restart = AsyncMock()
@@ -1322,3 +1326,183 @@ class TestRestartTimerIsNotDuplicated:
         assert len(runner._restart_timers) == 1
 
         runner._restart_timers["autonomous"].cancel()
+
+
+class TestModelLevel:
+    """Per-preset model_level is forwarded to the agent factory."""
+
+    @pytest.fixture(autouse=True)
+    def _mock_persistence(self, monkeypatch) -> None:
+        monkeypatch.setattr(AutonomousRunner, "_save_sessions", MagicMock())
+        monkeypatch.setattr(
+            AutonomousRunner, "_load_sessions", MagicMock(return_value={})
+        )
+        monkeypatch.setattr(AutonomousRunner, "_save_scheduler_state", MagicMock())
+        monkeypatch.setattr(
+            AutonomousRunner, "_load_scheduler_state", MagicMock(return_value={})
+        )
+
+    @pytest.mark.asyncio
+    async def test_preset_model_level_forwarded_to_factory(self) -> None:
+        """The preset's model_level is passed to the agent factory."""
+        store = ConversationStore()
+        settings = _make_settings()
+        settings.autonomous.sessions = [
+            _make_definition("default", model_level=2),
+        ]
+        run_serializer = _make_run_serializer()
+
+        captured_levels: list[int | None] = []
+        agent = MagicMock()
+
+        def _factory(model_level=None):
+            captured_levels.append(model_level)
+            return agent
+
+        agent.stream = MagicMock()
+
+        async def _stream(*args, **kwargs):
+            yield "Done.\n---AUTONOMOUS COMPLETE---"
+
+        agent.stream.side_effect = _stream
+
+        runner = AutonomousRunner(
+            settings=settings,
+            conversation_store=store,
+            agent_factory=_factory,
+            run_serializer=run_serializer,
+        )
+        runner._auto_restart = AsyncMock()
+
+        owner_id = runner.owner_id_for_definition("default")
+        aq = runner.create_session(owner_id, schedule_kickoff=False)
+        await runner._auto_continue(aq.session_id)
+
+        assert captured_levels == [2]
+
+    @pytest.mark.asyncio
+    async def test_null_model_level_uses_none(self) -> None:
+        """A preset with model_level=None passes None to the factory."""
+        store = ConversationStore()
+        settings = _make_settings()
+        settings.autonomous.sessions = [
+            _make_definition("default"),  # model_level defaults to None
+        ]
+        run_serializer = _make_run_serializer()
+
+        captured_levels: list[int | None] = []
+        agent = MagicMock()
+
+        def _factory(model_level=None):
+            captured_levels.append(model_level)
+            return agent
+
+        agent.stream = MagicMock()
+
+        async def _stream(*args, **kwargs):
+            yield "Done.\n---AUTONOMOUS COMPLETE---"
+
+        agent.stream.side_effect = _stream
+
+        runner = AutonomousRunner(
+            settings=settings,
+            conversation_store=store,
+            agent_factory=_factory,
+            run_serializer=run_serializer,
+        )
+        runner._auto_restart = AsyncMock()
+
+        owner_id = runner.owner_id_for_definition("default")
+        aq = runner.create_session(owner_id, schedule_kickoff=False)
+        await runner._auto_continue(aq.session_id)
+
+        assert captured_levels == [None]
+
+
+class TestMaxRuns:
+    """Per-preset max_runs enforcement."""
+
+    @pytest.fixture(autouse=True)
+    def _mock_persistence(self, monkeypatch) -> None:
+        monkeypatch.setattr(AutonomousRunner, "_save_sessions", MagicMock())
+        monkeypatch.setattr(
+            AutonomousRunner, "_load_sessions", MagicMock(return_value={})
+        )
+        monkeypatch.setattr(AutonomousRunner, "_save_scheduler_state", MagicMock())
+        monkeypatch.setattr(
+            AutonomousRunner, "_load_scheduler_state", MagicMock(return_value={})
+        )
+
+    def _make_runner_with_max_runs(
+        self, max_runs: int
+    ) -> tuple[AutonomousRunner, MagicMock]:
+        """Return a runner with a preset that has *max_runs*."""
+        store = ConversationStore()
+        settings = _make_settings()
+        settings.autonomous.sessions = [
+            _make_definition("default", max_runs=max_runs),
+        ]
+        run_serializer = _make_run_serializer()
+        agent = MagicMock()
+
+        runner = AutonomousRunner(
+            settings=settings,
+            conversation_store=store,
+            agent_factory=lambda _ml=None: agent,
+            run_serializer=run_serializer,
+        )
+        runner._auto_restart = AsyncMock()
+        return runner, agent
+
+    def test_unlimited_preset_stays_active(self) -> None:
+        """max_runs=0 (unlimited) never disables the preset."""
+        runner, _ = self._make_runner_with_max_runs(0)
+        assert "default" in runner._definitions
+
+        # Simulate many completions.
+        for _ in range(100):
+            owner_id = runner.owner_id_for_definition("default")
+            aq = runner.create_session(owner_id, schedule_kickoff=False)
+            runner._mark_completed(aq.session_id, aq)
+
+        assert "default" in runner._definitions
+
+    def test_max_runs_disables_preset_after_limit(self) -> None:
+        """A preset with max_runs=2 is disabled after 2 completed runs."""
+        runner, _ = self._make_runner_with_max_runs(2)
+        owner_id = runner.owner_id_for_definition("default")
+
+        # First run.
+        aq1 = runner.create_session(owner_id, schedule_kickoff=False)
+        runner._mark_completed(aq1.session_id, aq1)
+        assert "default" in runner._definitions
+
+        # Second run — should disable the preset.
+        aq2 = runner.create_session(owner_id, schedule_kickoff=False)
+        runner._mark_completed(aq2.session_id, aq2)
+        assert "default" not in runner._definitions
+
+    def test_max_runs_disabled_preset_prevents_new_sessions(self) -> None:
+        """After max_runs is reached, ensure_active_session returns None."""
+        runner, _ = self._make_runner_with_max_runs(1)
+        owner_id = runner.owner_id_for_definition("default")
+
+        aq = runner.create_session(owner_id, schedule_kickoff=False)
+        runner._mark_completed(aq.session_id, aq)
+        assert "default" not in runner._definitions
+
+        # ensure_active_session should not create a new session.
+        result = runner.ensure_active_session(
+            owner_id, definition_name="default", schedule_kickoff=False
+        )
+        assert result is None
+
+    def test_total_runs_persisted_in_scheduler_state(self) -> None:
+        """The total_runs counter is recorded in the scheduler state."""
+        runner, _ = self._make_runner_with_max_runs(5)
+        owner_id = runner.owner_id_for_definition("default")
+
+        aq = runner.create_session(owner_id, schedule_kickoff=False)
+        runner._mark_completed(aq.session_id, aq)
+
+        assert runner._total_runs_for("default") == 1

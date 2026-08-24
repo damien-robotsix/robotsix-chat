@@ -564,6 +564,9 @@ async def autonomous_definitions_list_endpoint(request: Request) -> JSONResponse
                 "trigger_interval_seconds": defn.get(
                     "trigger_interval_seconds", DEFAULT_TRIGGER_INTERVAL_SECONDS
                 ),
+                "model_level": defn.get("model_level"),
+                "max_runs": defn.get("max_runs", 0),
+                "total_runs": runner._total_runs_for(name),
                 "enabled": defn.get("enabled", True),
                 "self_refine": defn.get("self_refine", False),
                 "self_refine_require_approval": defn.get(

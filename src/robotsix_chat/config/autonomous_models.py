@@ -90,6 +90,26 @@ class AutonomousSessionDefinition(BaseModel):
             "runs receive a single prompt, so there is no per-run turn cap."
         ),
     )
+    model_level: int | None = Field(
+        default=None,
+        description=(
+            "llmio capability level for this autonomous session (1 cheapest "
+            "… 4 frontier).  When ``None`` (the default), the session uses "
+            "the global ``llmio_model_level``.  Set per-preset to run "
+            "cheap monitors on level 1-2 while keeping frontier work on "
+            "level 3-4."
+        ),
+    )
+    max_runs: int = Field(
+        default=0,
+        ge=0,
+        description=(
+            "Maximum number of times this preset may fire.  After the "
+            "preset has completed *max_runs* runs it is automatically "
+            "disabled — no further sessions are created for it.  ``0`` "
+            "(the default) means unlimited."
+        ),
+    )
     enabled: bool = True
     self_refine: bool = False
     self_refine_require_approval: bool = False
