@@ -17,11 +17,7 @@ import { processSSEStream } from "./sse-parser.js";
 
     const handle = mountAppShell(mount, {
       brand: projectTitle,
-      navItems: [
-        { label: "Board", href: "/board/", icon: "📋" },
-        { label: "File Hub", href: "/file-hub/", icon: "📁" },
-        { label: "Central Deploy", href: "/central-deploy/", icon: "🚀" },
-      ],
+      navItems: [],
       settingsHref: "#",
     });
 

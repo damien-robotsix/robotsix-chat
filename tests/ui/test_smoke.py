@@ -387,3 +387,16 @@ class TestChatCssUnreadStyles:
     def test_screen_reader_only_utility(self, static_css: str) -> None:
         """The visually-hidden utility used by the announce region exists."""
         assert ".sr-only" in static_css
+
+
+class TestNavItemsNoDeadLinks:
+    """The header nav must not advertise paths the chat server does not serve."""
+
+    _DEAD_HREFS = ("/board/", "/file-hub/", "/central-deploy/")
+
+    def test_dead_nav_links_absent(self, static_js: str) -> None:
+        """``chat.js`` does not pass dead-link hrefs to ``mountAppShell``."""
+        for href in self._DEAD_HREFS:
+            assert href not in static_js, (
+                f"Dead nav link {href!r} still present in chat.js"
+            )
