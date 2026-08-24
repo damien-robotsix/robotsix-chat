@@ -694,3 +694,133 @@ def _transition_with_fix_close_guard(
 
 
 _TransitionMixin.transition = _transition_with_fix_close_guard
+
+
+# ---------------------------------------------------------------------------
+# 8.  Capability-gap detection in the implement loop's _finalize.
+#
+#     When the implement agent blocks with a diagnosis matching a known
+#     unfixable-by-code pattern (version-solve failure, toolchain
+#     incompatibility, cascading build-system errors), tag the ticket with
+#     "capability-gap" and record a step event so the operator sees the
+#     escalation immediately rather than after the agent exhausts its
+#     retry budget.
+# ---------------------------------------------------------------------------
+import json  # noqa: E402
+import re  # noqa: E402
+
+from robotsix_mill.stages.implement import phase_coordinator  # noqa: E402
+
+# Patterns that indicate a fundamental toolchain / dependency problem
+# that code edits cannot resolve.  Matched against the ``summary``
+# parameter of ``_finalize`` (the BLOCKED note from the implement loop).
+_CAPABILITY_GAP_PATTERNS: list[re.Pattern[str]] = [
+    # Version solve / dependency resolution failures (pub, pip, npm, cargo)
+    re.compile(
+        r"version.?solve|dependency.?resolution.?fail|could not resolve.*dependenc",
+        re.IGNORECASE,
+    ),
+    # Toolchain / SDK incompatibilities
+    re.compile(
+        r"toolchain.?incompatib|sdk.?version.?incompatib"
+        r"|incompatible.*(?:sdk|toolchain|ndk|jdk)",
+        re.IGNORECASE,
+    ),
+    # Build system version mismatches (Gradle, CMake)
+    re.compile(
+        r"(?:gradle|cmake).*(?:version.?mismatch|incompatible.?version"
+        r"|requires.*version)",
+        re.IGNORECASE,
+    ),
+    # Kotlin/Java JVM version conflicts
+    re.compile(
+        r"(?:kotlin|java).*(?:jvm.?version|version.?conflict|incompatible.?jvm)",
+        re.IGNORECASE,
+    ),
+    # Package manager version conflicts (npm ERESOLVE, pip resolution)
+    re.compile(
+        r"ERESOLVE|resolution.?impossible|no.?matching.?version"
+        r"|Cannot.?install.*incompatible",
+        re.IGNORECASE,
+    ),
+]
+
+
+def _matches_capability_gap(summary: str) -> re.Match[str] | None:
+    """Return the first matching capability-gap pattern, or ``None``."""
+    for pat in _CAPABILITY_GAP_PATTERNS:
+        m = pat.search(summary)
+        if m is not None:
+            return m
+    return None
+
+
+_original_finalize = phase_coordinator.PhaseCoordinatorMixin._finalize
+
+
+@classmethod  # type: ignore[misc]
+def _finalize_with_capability_gap(
+    cls,
+    ctx,
+    ticket,
+    repo_dir,
+    branch,
+    summary,
+    *,
+    ok: bool,
+    reference_files=None,
+    extra_roots=None,
+    transient: bool = False,
+    write_spec_fingerprint: bool = True,
+):
+    """Run the original ``_finalize``, then tag capability-gap blocks."""
+    _original_finalize.__func__(
+        cls,
+        ctx,
+        ticket,
+        repo_dir,
+        branch,
+        summary,
+        ok=ok,
+        reference_files=reference_files,
+        extra_roots=extra_roots,
+        transient=transient,
+        write_spec_fingerprint=write_spec_fingerprint,
+    )
+    # Only tag BLOCKED (non-transient) outcomes that match a known
+    # capability-gap pattern.
+    if ok or transient:
+        return
+    match = _matches_capability_gap(summary or "")
+    if match is None:
+        return
+
+    # --- tag the ticket with "capability-gap" label ---
+    try:
+        existing: list[str] = json.loads(ticket.labels) if ticket.labels else []
+    except json.JSONDecodeError, TypeError:
+        existing = []
+    if "capability-gap" not in existing:
+        existing.append("capability-gap")
+        try:
+            ctx.service.set_labels(ticket.id, existing)
+        except Exception:
+            phase_coordinator.log.warning(
+                "%s: failed to set capability-gap label",
+                ticket.id,
+                exc_info=True,
+            )
+
+    # --- record a step event with the escalation summary ---
+    gap_summary = f"capability-gap detected: {match.group()!r} — {summary[:300]}"
+    try:
+        ctx.service.add_step_event(ticket.id, gap_summary)
+    except Exception:
+        phase_coordinator.log.warning(
+            "%s: failed to add capability-gap step event",
+            ticket.id,
+            exc_info=True,
+        )
+
+
+phase_coordinator.PhaseCoordinatorMixin._finalize = _finalize_with_capability_gap
