@@ -904,6 +904,35 @@ class DirectRepoClient:
         """
         return await self._get_json(f"/repos/{repo_full_name}/pulls/{pr_number}")
 
+    async def get_pr_diff(
+        self,
+        *,
+        repo_full_name: str,
+        pr_number: int,
+    ) -> str:
+        """Return the raw unified diff of a pull request.
+
+        Calls ``GET /repos/{owner}/{repo}/pulls/{pr_number}`` with the
+        ``application/vnd.github.v3.diff`` media type, returning the raw
+        diff text (not JSON).
+
+        Raises RuntimeError on failure (callers catch and format).
+        """
+        path = f"/repos/{repo_full_name}/pulls/{pr_number}"
+        url = f"{self._base_url}{path}"
+        headers = await self._gh_headers()
+        headers["Accept"] = "application/vnd.github.v3.diff"
+        result = await self._http_with_retry(
+            "GET",
+            url,
+            headers=headers,
+            timeout=self._s.timeout,
+            label="GitHub API",
+        )
+        if result.error:
+            raise RuntimeError(f"GitHub API GET {path}: {result.error}")
+        return result.text or ""
+
     async def search_open_prs(
         self,
         *,

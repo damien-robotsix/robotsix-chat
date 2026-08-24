@@ -129,6 +129,7 @@ def test_merge_tools_returned() -> None:
         "enable_repo_pages",
         "file_ci_stabilization_ticket",
         "inspect_github_installation_token",
+        "inspect_pr_diff",
         "list_open_prs",
         "merge_direct_repo_pr",
         "open_direct_repo_pr",
