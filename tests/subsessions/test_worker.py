@@ -3165,6 +3165,112 @@ async def test_periodic_transient_error_transcript_recorded() -> None:
     )
 
 
+@pytest.mark.asyncio
+async def test_periodic_unexpected_model_behavior_retried_then_succeeds() -> None:
+    """Periodic turn retries on UnexpectedModelBehavior, then succeeds."""
+    from pydantic_ai.exceptions import UnexpectedModelBehavior
+
+    agent = FakeAgent()
+    env = build_env(
+        agent=agent,
+        settings=make_settings(
+            transient_error_max_retries=2,
+            transient_error_backoff_base=0.0,
+            max_runs_progress_extension=0,
+        ),
+    )
+
+    call_count = 0
+
+    async def _flaky_stream(*args: Any, **kwargs: Any) -> AsyncIterator[str]:
+        nonlocal call_count
+        call_count += 1
+        if call_count == 1:
+            raise UnexpectedModelBehavior("Streamed response ended without content")
+        yield "recovered"
+
+    with patch.object(agent, "stream", _flaky_stream):
+        sub_id = _spawn(
+            env,
+            kind=SubsessionKind.PERIODIC,
+            interval_seconds=0.02,
+            max_runs=1,
+        )
+        await _await_worker(env, sub_id)
+
+    info = env.registry.get(sub_id)
+    assert info is not None
+    # The subsession should NOT be failed — the retry succeeded.
+    assert info.status is not SubsessionStatus.FAILED
+    assert call_count == 2
+
+
+@pytest.mark.asyncio
+async def test_periodic_unexpected_model_behavior_exhausted_skips_cycle() -> None:
+    """Periodic cycle is skipped when UnexpectedModelBehavior retries exhaust."""
+    from pydantic_ai.exceptions import UnexpectedModelBehavior
+
+    agent = FakeAgent(error=UnexpectedModelBehavior("bad response shape"))
+    env = build_env(
+        agent=agent,
+        settings=make_settings(
+            transient_error_max_retries=1,
+            transient_error_backoff_base=0.0,
+        ),
+    )
+
+    sub_id = _spawn(
+        env,
+        kind=SubsessionKind.PERIODIC,
+        interval_seconds=0.02,
+    )
+    with pytest.raises(asyncio.TimeoutError):
+        await _await_worker(env, sub_id, timeout=0.5)
+
+    info = env.registry.get(sub_id)
+    assert info is not None
+    # Should NOT be FAILED — cycles were skipped gracefully.
+    assert info.status is not SubsessionStatus.FAILED
+    assert info.is_active
+
+
+@pytest.mark.asyncio
+async def test_task_unexpected_model_behavior_not_retried() -> None:
+    """TASK subsessions do NOT retry UnexpectedModelBehavior — they fail immediately."""
+    from pydantic_ai.exceptions import UnexpectedModelBehavior
+
+    agent = FakeAgent(error=UnexpectedModelBehavior("bad response"))
+    env = build_env(agent=agent)
+
+    sub_id = _spawn(env, prompt="compute", kind=SubsessionKind.TASK)
+    await _await_worker(env, sub_id)
+
+    info = env.registry.get(sub_id)
+    assert info is not None
+    assert info.status is SubsessionStatus.FAILED
+
+
+def test_is_unexpected_model_behavior() -> None:
+    """Unit test for the `_is_unexpected_model_behavior` helper."""
+    from pydantic_ai.exceptions import UnexpectedModelBehavior
+
+    from robotsix_chat.subsessions.worker import _is_unexpected_model_behavior
+
+    # Direct match.
+    assert _is_unexpected_model_behavior(UnexpectedModelBehavior("stream ended"))
+
+    # Wrapped in another exception (cause chain).
+    wrapper = RuntimeError("agent failed")
+    wrapper.__cause__ = UnexpectedModelBehavior("empty response")
+    assert _is_unexpected_model_behavior(wrapper)
+
+    # Unrelated exception — should NOT match.
+    assert not _is_unexpected_model_behavior(ValueError("not this"))
+
+    # None in cause chain — should NOT match and should not loop.
+    assert not _is_unexpected_model_behavior(RuntimeError("plain"))
+
+
 # ---------------------------------------------------------------------------
 # model-tier fallback (HTTP 404)
 # ---------------------------------------------------------------------------
