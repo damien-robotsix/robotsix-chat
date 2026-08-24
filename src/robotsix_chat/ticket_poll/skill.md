@@ -1,11 +1,11 @@
 # Ticket Poll — ticket-state lookup, PR merging, and ticket filing via the component roster
 
 You have `ticket_poll`, `ticket_poll_batch`, `merge_pull_request`, `mark_ticket_done`,
-`file_ticket`, `find_ticket_by_pr`, `prioritize_all_open_tickets`, and `list_stale_ready_tickets` tools that
-interact with the mill board API. These tools route through `component_request` (roster-based
-connectivity) when available, falling back to the direct board API when the roster is unavailable —
-they are reliable as the primary path for checking ticket state, merging approved PRs, and filing
-new tickets.
+`file_ticket`, `find_ticket_by_pr`, `prioritize_all_open_tickets`, and `list_stale_ready_tickets`
+tools that interact with the mill board API. These tools route through `component_request`
+(roster-based connectivity) when available, falling back to the direct board API when the roster is
+unavailable — they are reliable as the primary path for checking ticket state, merging approved PRs,
+and filing new tickets.
 
 ## When to use it
 
@@ -40,24 +40,24 @@ new tickets.
   sitting in the `ready` state without being picked up by a worker. This surfaces queue stalls so
   the agent can escalate or notify the operator rather than silently waiting.
 
-- **Close a superseded or duplicate ticket** — use `mark_ticket_done` to transition a ticket
-  to the terminal `done` state. Use this when a ticket is superseded by another ticket that is
-  already `DONE` or `CLOSED`, or when work is confirmed complete.  Do NOT ask the operator to close
-  tickets manually on the UI when this tool is available.
+- **Close a superseded or duplicate ticket** — use `mark_ticket_done` to transition a ticket to the
+  terminal `done` state. Use this when a ticket is superseded by another ticket that is already
+  `DONE` or `CLOSED`, or when work is confirmed complete. Do NOT ask the operator to close tickets
+  manually on the UI when this tool is available.
 
 ## Allowed operations
 
-| Tool                          | Description                                                                  |
-| ----------------------------- | ---------------------------------------------------------------------------- |
-| `ticket_poll`                 | HTTP GET to the board API; returns the ticket's current state.               |
-| `ticket_poll_batch`           | Concurrent HTTP GETs for multiple tickets; returns full details for triage.  |
-| `merge_pull_request`          | HTTP POST to merge the approved PR associated with a ticket.                 |
-| `mark_ticket_ready`           | HTTP POST to force a stalled draft/human_issue_approval ticket to `ready`.   |
-| `mark_ticket_done`            | HTTP POST to close a ticket by transitioning it to the terminal `done` state.|
-| `find_ticket_by_pr`           | HTTP GET to find the ticket linked to a given PR URL.                        |
-| `prioritize_all_open_tickets` | Lists all open, unflagged tickets and sets priority on every one in a batch. |
-| `list_stale_ready_tickets`    | Lists tickets stuck in `ready` beyond the staleness threshold.               |
-| `file_ticket`                 | HTTP POST to /tickets/ingest to file a new ticket on the board.              |
+| Tool                          | Description                                                                   |
+| ----------------------------- | ----------------------------------------------------------------------------- |
+| `ticket_poll`                 | HTTP GET to the board API; returns the ticket's current state.                |
+| `ticket_poll_batch`           | Concurrent HTTP GETs for multiple tickets; returns full details for triage.   |
+| `merge_pull_request`          | HTTP POST to merge the approved PR associated with a ticket.                  |
+| `mark_ticket_ready`           | HTTP POST to force a stalled draft/human_issue_approval ticket to `ready`.    |
+| `mark_ticket_done`            | HTTP POST to close a ticket by transitioning it to the terminal `done` state. |
+| `find_ticket_by_pr`           | HTTP GET to find the ticket linked to a given PR URL.                         |
+| `prioritize_all_open_tickets` | Lists all open, unflagged tickets and sets priority on every one in a batch.  |
+| `list_stale_ready_tickets`    | Lists tickets stuck in `ready` beyond the staleness threshold.                |
+| `file_ticket`                 | HTTP POST to /tickets/ingest to file a new ticket on the board.               |
 
 The tool signatures are:
 
@@ -85,7 +85,7 @@ causes 4xx errors and wastes turns.
 | Toggle priority   | POST   | `/tickets/{id}/priority`       | Set or clear a ticket's priority flag.                                                                                                                                                             |
 | Resume blocked    | POST   | `/tickets/{id}/resume-blocked` | Body: `{"justification": "why this ticket can safely resume now"}`.                                                                                                                                |
 | Force to ready    | POST   | `/tickets/{id}/mark-ready`     | Transition a stalled `draft` / `human_issue_approval` ticket to `ready`. Body (optional): `{"justification": "why this ticket can move to ready"}`. Prefer the dedicated `mark_ticket_ready` tool. |
-| Mark done         | POST   | `/tickets/{id}/mark-done`      | Transition a ticket to the terminal `done` state. Prefer the dedicated `mark_ticket_done` tool. |
+| Mark done         | POST   | `/tickets/{id}/mark-done`      | Transition a ticket to the terminal `done` state. Prefer the dedicated `mark_ticket_done` tool.                                                                                                    |
 | Merge PR          | POST   | `/tickets/{id}/merge-now`      | Prefer the dedicated `merge_pull_request` tool.                                                                                                                                                    |
 | File a new ticket | POST   | `/tickets/ingest`              | Submit a ticket spec for ingestion into the board. Prefer the dedicated `file_ticket` tool.                                                                                                        |
 | Read ticket state | GET    | `/tickets/{id}`                | Prefer the dedicated `ticket_poll` / `ticket_poll_batch` tools.                                                                                                                                    |
