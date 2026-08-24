@@ -202,9 +202,9 @@ A JSON string with these fields:
 - `ticket_id` — the created ticket's ID on success (e.g. `"20260816T161602Z-my-ticket-a3f2"`)
 - `error` — empty on success, or a diagnostic message on failure
 
-**`repo_id` pre-validation.** When a `repo_id` is provided, the tool validates it against the board's
-registered repo list *before* calling the ingest API. If the `repo_id` is not in the list, the tool
-returns early with an empty `ticket_id` and an error of the form:
+**`repo_id` pre-validation.** When a `repo_id` is provided, the tool validates it against the
+board's registered repo list *before* calling the ingest API. If the `repo_id` is not in the list,
+the tool returns early with an empty `ticket_id` and an error of the form:
 
 ```json
 {"ticket_id": "", "error": "repo_id '<value>' is not registered on this board.  Available repos: <list>.  Verify the repo_id matches one listed by GET /repos on the target board, or check that the agent is connected to the correct board."}
