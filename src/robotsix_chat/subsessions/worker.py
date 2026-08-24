@@ -941,6 +941,36 @@ def _is_github_rate_limit_error(exc: BaseException) -> bool:
     return False
 
 
+def _is_unexpected_model_behavior(exc: BaseException) -> bool:
+    """Return ``True`` when *exc* is a pydantic-ai ``UnexpectedModelBehavior``.
+
+    The LLM provider occasionally returns an unexpected response shape
+    (empty stream, malformed JSON delta, missing candidate) that pydantic-ai
+    surfaces as ``UnexpectedModelBehavior``.  These are typically transient —
+    a retry almost always succeeds — so monitor subsessions should ride them
+    out with backoff rather than failing permanently.
+
+    Walks the ``__cause__`` / ``__context__`` chain because agent frameworks
+    routinely wrap the original error.
+    """
+    # Lazy import to avoid a hard dependency at module level — pydantic-ai
+    # is always present in this repo, but the import is cheap and keeps
+    # the function self-contained.
+    from pydantic_ai.exceptions import UnexpectedModelBehavior
+
+    seen: set[int] = set()
+    current: BaseException | None = exc
+    while current is not None:
+        exc_id = id(current)
+        if exc_id in seen:
+            break
+        seen.add(exc_id)
+        if isinstance(current, UnexpectedModelBehavior):
+            return True
+        current = current.__cause__ or current.__context__
+    return False
+
+
 async def _run_turn_with_transient_retry(
     env: SubsessionEnv,
     agent: ChatAgent,
@@ -952,10 +982,12 @@ async def _run_turn_with_transient_retry(
     """Run one agent turn, retrying on transient API errors for periodic subsessions.
 
     For PERIODIC subsessions only: transient errors (e.g. OpenRouter
-    upstream hiccups, GitHub API rate-limit 403/429) are retried with
-    exponential backoff.  When all retries are exhausted the function
-    raises :class:`_TransientExhaustedError` so the worker loop can skip
-    the cycle gracefully instead of permanently failing the subsession.
+    upstream hiccups, GitHub API rate-limit 403/429, pydantic-ai
+    ``UnexpectedModelBehavior`` from malformed provider responses) are
+    retried with exponential backoff.  When all retries are exhausted the
+    function raises :class:`_TransientExhaustedError` so the worker loop
+    can skip the cycle gracefully instead of permanently failing the
+    subsession.
 
     For TASK / USER_CHAT subsessions the error propagates unchanged —
     the outer handler will fail the subsession.
@@ -980,7 +1012,11 @@ async def _run_turn_with_transient_retry(
                 SubsessionKind.WAIT_FOR_EVENT,
             )
             is_transient = is_openrouter_transient(exc) or (
-                is_monitor and _is_github_rate_limit_error(exc)
+                is_monitor
+                and (
+                    _is_github_rate_limit_error(exc)
+                    or _is_unexpected_model_behavior(exc)
+                )
             )
             if not is_monitor or not is_transient:
                 raise
