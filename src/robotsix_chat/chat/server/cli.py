@@ -338,7 +338,9 @@ def run_server_from_config(agent: ChatAgent | None = None) -> None:
     # Creates an agent with the autonomous protocol supplement injected into
     # its system prompt.  The runner calls this factory once per autonomous
     # session to build the agent for its single prompt.
-    def _autonomous_agent_factory() -> LlmioChatAgent:
+    def _autonomous_agent_factory(
+        model_level: int | None = None,
+    ) -> LlmioChatAgent:
         instruction = settings.agent_instruction + build_autonomous_instruction(
             settings
         )
@@ -346,7 +348,9 @@ def run_server_from_config(agent: ChatAgent | None = None) -> None:
             instruction=instruction,
             settings=settings,
             conversation_store=conversation_store,
-            model_level=settings.llmio_model_level,
+            model_level=model_level
+            if model_level is not None
+            else settings.llmio_model_level,
             subsession_env=env,
             event_sink=event_bus,
             # Autonomous runs are unattended; long-term cognee memory is

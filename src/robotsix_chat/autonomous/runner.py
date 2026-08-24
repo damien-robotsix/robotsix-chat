@@ -80,12 +80,18 @@ class AutonomousRunner:
         self,
         settings: Settings,
         conversation_store: ConversationStore,
-        agent_factory: Callable[[], ChatAgent],
+        agent_factory: Callable[[int | None], ChatAgent],
         run_serializer: RunSerializer,
         event_sink: EventSink | None = None,
         refinement_store: RefinementStore | None = None,
     ) -> None:
-        """Create a runner with settings, store, agent factory, and serializer."""
+        """Create a runner with settings, store, agent factory, and serializer.
+
+        *agent_factory* accepts an optional ``model_level`` (``None`` means
+        use the caller's default).  Per-preset ``model_level`` values are
+        forwarded so each autonomous session can run on its own capability
+        tier.
+        """
         self._settings = settings
         self._store = conversation_store
         self._agent_factory = agent_factory
@@ -346,13 +352,25 @@ class AutonomousRunner:
         self._save_scheduler_state()
 
     def _record_scheduler_run_completion(self, name: str) -> None:
-        """Record a completed run for preset *name* in the scheduler state."""
+        """Record a completed run for preset *name* in the scheduler state.
+
+        Also increments the cumulative ``total_runs`` counter used by the
+        ``max_runs`` enforcement gate.
+        """
         if not name:
             return
         entry = self._scheduler_state.setdefault(name, {})
         entry["last_completed_at"] = time.time()
         entry["last_outcome"] = "completed"
+        entry["total_runs"] = entry.get("total_runs", 0) + 1
         self._save_scheduler_state()
+
+    def _total_runs_for(self, name: str) -> int:
+        """Return the cumulative completed-run count for preset *name*."""
+        entry = self._scheduler_state.get(name)
+        if not isinstance(entry, dict):
+            return 0
+        return int(entry.get("total_runs", 0))
 
     def _periodic_next_due(self, name: str, interval: float) -> float | None:
         """Return the next-due timestamp for periodic preset *name*.
@@ -388,12 +406,15 @@ class AutonomousRunner:
                     "prompt": d.prompt,
                     "trigger_interval_seconds": d.trigger_interval_seconds,
                     "max_auto_turns": d.max_auto_turns,
+                    "model_level": d.model_level,
+                    "max_runs": d.max_runs,
                     "enabled": d.enabled,
                     "self_refine": d.self_refine,
                     "self_refine_require_approval": d.self_refine_require_approval,
                 }
                 for d in configured
                 if d.enabled
+                and (d.max_runs == 0 or self._total_runs_for(d.name) < d.max_runs)
             }
             if definitions:
                 preset_summary = ", ".join(
@@ -1012,7 +1033,12 @@ class AutonomousRunner:
     # -- completion ----------------------------------------------------------
 
     def _mark_completed(self, session_id: str, aq: AutonomousSession) -> None:
-        """Close *aq*, persisting and scheduling restart + self-refinement."""
+        """Close *aq*, persisting and scheduling restart + self-refinement.
+
+        When the preset's ``max_runs`` limit is reached, the preset is
+        removed from the active definitions so no further sessions are
+        created for it.
+        """
         aq.state = AutonomousState.completed
         preset_name = aq.definition_name or "unknown"
         defn = self._definition_for_owner(aq.owner_id)
@@ -1032,6 +1058,26 @@ class AutonomousRunner:
             aq.definition_name if aq.definition_name in self._definitions else ""
         )
         self._publish_state(session_id)
+
+        # --- max_runs enforcement ---
+        # Check whether the preset has exhausted its run budget.  Remove
+        # it from the active definitions so ``ensure_active_session`` and
+        # ``ensure_all_active_sessions`` skip it on the next pass.
+        max_runs = defn.get("max_runs", 0) if defn else 0
+        if max_runs > 0:
+            total = self._total_runs_for(aq.definition_name)
+            if total >= max_runs:
+                logger.info(
+                    "Autonomous preset %s reached max_runs=%d (total=%d) — disabling",
+                    preset_name,
+                    max_runs,
+                    total,
+                )
+                self._definitions.pop(aq.definition_name, None)
+                # Do not arm a restart timer — the preset is done.
+                self._schedule_refinement(session_id, aq)
+                return
+
         # Auto-restart always: schedule a fresh autonomous run (throttled)
         # so the operator always has one live session.
         self._arm_restart_timer(aq.owner_id)
@@ -1070,9 +1116,12 @@ class AutonomousRunner:
         else:
             message = "Begin a new autonomous session and work it to completion."
 
+        # Resolve per-preset model level (None = use global default).
+        preset_model_level = defn.get("model_level") if defn else None
+
         try:
             async with self._run_serializer.for_owner(owner_id):
-                agent = await asyncio.to_thread(self._agent_factory)
+                agent = await asyncio.to_thread(self._agent_factory, preset_model_level)
                 history = self._store.agent_history(session_id)
 
                 reply_parts: list[str] = []

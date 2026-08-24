@@ -75,6 +75,8 @@ def autonomous_runner(store, tmp_path, monkeypatch) -> AutonomousRunner:
             prompt="",
             trigger_interval_seconds=45.0,
             max_auto_turns=20,
+            model_level=None,
+            max_runs=0,
             enabled=True,
             self_refine=False,
             self_refine_require_approval=False,

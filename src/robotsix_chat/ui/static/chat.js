@@ -3809,8 +3809,17 @@ import { processSSEStream } from "./sse-parser.js";
     var interval = preset.trigger_interval_seconds != null
       ? preset.trigger_interval_seconds
       : DEFAULT_TRIGGER_INTERVAL_SECONDS;
-    detail.textContent = "every " + interval + "s"
-      + (preset.enabled === false ? " (disabled)" : "");
+    var parts = ["every " + interval + "s"];
+    if (preset.model_level != null) {
+      parts.push("L" + preset.model_level);
+    }
+    if (preset.max_runs > 0) {
+      parts.push("max " + preset.max_runs + " runs");
+    }
+    if (preset.enabled === false) {
+      parts.push("disabled");
+    }
+    detail.textContent = parts.join(" · ");
     summary.appendChild(detail);
 
     row.appendChild(summary);
@@ -3887,6 +3896,27 @@ import { processSSEStream } from "./sse-parser.js";
     intervalRow.appendChild(intervalInput);
     form.appendChild(intervalRow);
 
+    // Model level (optional — blank means use global default)
+    var modelRow = makeFormRow("Model Level");
+    var modelInput = document.createElement("input");
+    modelInput.type = "number";
+    modelInput.min = "1";
+    modelInput.max = "4";
+    modelInput.placeholder = "global default";
+    modelInput.value = preset.model_level != null ? preset.model_level : "";
+    modelRow.appendChild(modelInput);
+    form.appendChild(modelRow);
+
+    // Max runs (0 = unlimited)
+    var maxRunsRow = makeFormRow("Max Runs");
+    var maxRunsInput = document.createElement("input");
+    maxRunsInput.type = "number";
+    maxRunsInput.min = "0";
+    maxRunsInput.placeholder = "0 = unlimited";
+    maxRunsInput.value = preset.max_runs > 0 ? preset.max_runs : "";
+    maxRunsRow.appendChild(maxRunsInput);
+    form.appendChild(maxRunsRow);
+
     // Enabled
     var enabledRow = makeFormRow("");
     var enabledLabel = document.createElement("label");
@@ -3908,11 +3938,15 @@ import { processSSEStream } from "./sse-parser.js";
     saveBtn.className = "preset-save-btn";
     saveBtn.textContent = index < 0 ? "Add" : "Save";
     saveBtn.addEventListener("click", function () {
+      var ml = modelInput.value.trim();
+      var mr = maxRunsInput.value.trim();
       var newPreset = {
         name: nameInput.value.trim(),
         prompt: promptInput.value,
         trigger_interval_seconds:
           Number(intervalInput.value) || DEFAULT_TRIGGER_INTERVAL_SECONDS,
+        model_level: ml !== "" ? Number(ml) : null,
+        max_runs: mr !== "" ? Number(mr) : 0,
         enabled: enabledCheck.checked
       };
       savePresetForm(row, path, index, newPreset);

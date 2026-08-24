@@ -15,6 +15,26 @@
           "title": "Max Auto Turns",
           "type": "integer"
         },
+        "max_runs": {
+          "default": 0,
+          "description": "Maximum number of times this preset may fire.  After the preset has completed *max_runs* runs it is automatically disabled \u2014 no further sessions are created for it.  ``0`` (the default) means unlimited.",
+          "minimum": 0,
+          "title": "Max Runs",
+          "type": "integer"
+        },
+        "model_level": {
+          "anyOf": [
+            {
+              "type": "integer"
+            },
+            {
+              "type": "null"
+            }
+          ],
+          "default": null,
+          "description": "llmio capability level for this autonomous session (1 cheapest \u2026 4 frontier).  When ``None`` (the default), the session uses the global ``llmio_model_level``.  Set per-preset to run cheap monitors on level 1-2 while keeping frontier work on level 3-4.",
+          "title": "Model Level"
+        },
         "name": {
           "title": "Name",
           "type": "string"

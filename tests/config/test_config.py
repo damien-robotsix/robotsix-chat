@@ -1047,6 +1047,40 @@ class TestRetiredTriggerTypeMigration:
 
         assert AutonomousSessionDefinition(name="x").trigger_interval_seconds == 3600.0
 
+    def test_model_level_defaults_to_none(self) -> None:
+        """model_level defaults to None (use global default)."""
+        from robotsix_chat.config.autonomous_models import (
+            AutonomousSessionDefinition,
+        )
+
+        assert AutonomousSessionDefinition(name="x").model_level is None
+
+    def test_model_level_accepts_valid_tier(self) -> None:
+        """model_level accepts values 1-4."""
+        from robotsix_chat.config.autonomous_models import (
+            AutonomousSessionDefinition,
+        )
+
+        d = AutonomousSessionDefinition(name="x", model_level=2)
+        assert d.model_level == 2
+
+    def test_max_runs_defaults_to_zero(self) -> None:
+        """max_runs defaults to 0 (unlimited)."""
+        from robotsix_chat.config.autonomous_models import (
+            AutonomousSessionDefinition,
+        )
+
+        assert AutonomousSessionDefinition(name="x").max_runs == 0
+
+    def test_max_runs_rejects_negative(self) -> None:
+        """max_runs rejects negative values."""
+        from robotsix_chat.config.autonomous_models import (
+            AutonomousSessionDefinition,
+        )
+
+        with pytest.raises(ValueError, match="max_runs"):
+            AutonomousSessionDefinition(name="x", max_runs=-1)
+
 
 # ---------------------------------------------------------------------------
 # Guard: no concrete model names in source
