@@ -1758,6 +1758,55 @@ async def test_file_ticket_reports_dedup_hit(respx_mock: respx.MockRouter) -> No
     assert result["error"] == ""
 
 
+@pytest.mark.asyncio
+async def test_file_ticket_empty_id_on_success_returns_error(
+    respx_mock: respx.MockRouter,
+) -> None:
+    """When the board accepts the ticket but the response lacks an id, return an error.
+
+    Regression guard: the tool used to return ``{"ticket_id": "", "error": ""}``
+    which looked like success with no ticket id — wasting the agent's time
+    verifying whether the ticket was actually created.
+    """
+    respx_mock.post("http://board:8077/tickets/ingest").mock(
+        return_value=httpx.Response(201, json={"status": "ok"})
+    )
+
+    tools = build_file_ticket_tool(_settings())
+    result = json.loads(
+        await tools[0](
+            title="No id in response",
+            description="details",
+            repo_id="robotsix-invest",
+        )
+    )
+
+    assert result["ticket_id"] == ""
+    assert "did not contain a ticket id" in result["error"]
+
+
+@pytest.mark.asyncio
+async def test_file_ticket_roster_empty_id_on_success_returns_error() -> None:
+    """Roster path: accepted but no id → error, not silent empty success."""
+
+    async def _component_request(
+        component_id: str,
+        method: str,
+        path: str,
+        json_body: Any = None,
+        **_kw: Any,
+    ) -> str:
+        return 'HTTP 201\n{"status": "ok"}'
+
+    tools = build_file_ticket_tool(_settings(), component_request=_component_request)
+    result = json.loads(
+        await tools[0](title="No id roster", description="d", repo_id="robotsix-chat")
+    )
+
+    assert result["ticket_id"] == ""
+    assert "did not contain a ticket id" in result["error"]
+
+
 # ---------------------------------------------------------------------------
 # build_list_stale_ready_tickets_tool — disabled / empty
 # ---------------------------------------------------------------------------
