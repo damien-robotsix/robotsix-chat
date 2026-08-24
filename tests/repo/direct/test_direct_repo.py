@@ -2704,6 +2704,139 @@ async def test_reset_implement_spawn_counter_no_component_request_uses_direct(
 
 
 # ============================================================================
+# inspect_pr_diff
+# ============================================================================
+
+
+@pytest.mark.asyncio
+async def test_inspect_pr_diff_success(
+    respx_mock: respx.MockRouter,
+) -> None:
+    """inspect_pr_diff returns the diff prefixed with a line count."""
+    respx_mock.get(
+        url__startswith="https://api.github.com/installation/repositories"
+    ).mock(
+        return_value=httpx.Response(
+            200,
+            text=json.dumps({"repositories": [{"full_name": "org/repo"}]}),
+        )
+    )
+    diff = "diff --git a/x.py b/x.py\n+print('hi')\n"
+    respx_mock.get("https://api.github.com/repos/org/repo/pulls/7").mock(
+        return_value=httpx.Response(200, text=diff)
+    )
+
+    tools = build_direct_repo_tools(_settings())
+    fn = [t for t in tools if t.__name__ == "inspect_pr_diff"][0]
+
+    out = await fn(repo_full_name="org/repo", pr_number=7)
+    assert "PR #7 diff" in out
+    assert "diff --git a/x.py b/x.py" in out
+    assert "Error" not in out
+
+
+@pytest.mark.asyncio
+async def test_inspect_pr_diff_empty(
+    respx_mock: respx.MockRouter,
+) -> None:
+    """inspect_pr_diff reports an empty diff clearly."""
+    respx_mock.get(
+        url__startswith="https://api.github.com/installation/repositories"
+    ).mock(
+        return_value=httpx.Response(
+            200,
+            text=json.dumps({"repositories": [{"full_name": "org/repo"}]}),
+        )
+    )
+    respx_mock.get("https://api.github.com/repos/org/repo/pulls/8").mock(
+        return_value=httpx.Response(200, text="")
+    )
+
+    tools = build_direct_repo_tools(_settings())
+    fn = [t for t in tools if t.__name__ == "inspect_pr_diff"][0]
+
+    out = await fn(repo_full_name="org/repo", pr_number=8)
+    assert "diff is empty" in out
+    assert "PR #8" in out
+
+
+@pytest.mark.asyncio
+async def test_inspect_pr_diff_truncated(
+    respx_mock: respx.MockRouter,
+) -> None:
+    """inspect_pr_diff truncates large diffs and notes the remainder."""
+    respx_mock.get(
+        url__startswith="https://api.github.com/installation/repositories"
+    ).mock(
+        return_value=httpx.Response(
+            200,
+            text=json.dumps({"repositories": [{"full_name": "org/repo"}]}),
+        )
+    )
+    long_diff = "diff --git a/x.py b/x.py\n" + ("+added line of content\n" * 400)
+    assert len(long_diff) > 8000
+    respx_mock.get("https://api.github.com/repos/org/repo/pulls/9").mock(
+        return_value=httpx.Response(200, text=long_diff)
+    )
+
+    tools = build_direct_repo_tools(_settings())
+    fn = [t for t in tools if t.__name__ == "inspect_pr_diff"][0]
+
+    out = await fn(repo_full_name="org/repo", pr_number=9)
+    assert "PR #9 diff" in out
+    assert "[truncated:" in out
+    assert "more chars" in out
+    assert "more lines" in out
+
+
+@pytest.mark.asyncio
+async def test_inspect_pr_diff_error(
+    respx_mock: respx.MockRouter,
+) -> None:
+    """inspect_pr_diff surfaces a GitHub API error gracefully."""
+    respx_mock.get(
+        url__startswith="https://api.github.com/installation/repositories"
+    ).mock(
+        return_value=httpx.Response(
+            200,
+            text=json.dumps({"repositories": [{"full_name": "org/repo"}]}),
+        )
+    )
+    respx_mock.get("https://api.github.com/repos/org/repo/pulls/10").mock(
+        return_value=httpx.Response(404, text=json.dumps({"message": "Not Found"}))
+    )
+
+    tools = build_direct_repo_tools(_settings())
+    fn = [t for t in tools if t.__name__ == "inspect_pr_diff"][0]
+
+    out = await fn(repo_full_name="org/repo", pr_number=10)
+    assert "Error fetching diff for PR #10" in out
+
+
+@pytest.mark.asyncio
+async def test_get_pr_diff_preserves_accept_header_on_401_retry(
+    respx_mock: respx.MockRouter,
+) -> None:
+    """401 retry keeps the caller-supplied diff Accept header (regression)."""
+    settings = _settings()
+    _prepopulate_installation_token(settings)
+
+    route = respx_mock.get("https://api.github.com/repos/org/repo/pulls/42").mock(
+        side_effect=[
+            httpx.Response(401, text="token expired"),
+            httpx.Response(200, text="diff --git a/x.py b/x.py\n"),
+        ]
+    )
+
+    client = DirectRepoClient(settings)
+    result = await client.get_pr_diff(repo_full_name="org/repo", pr_number=42)
+    assert "diff --git" in result
+
+    assert len(route.calls) == 2
+    assert route.calls[1].request.headers["Accept"] == "application/vnd.github.v3.diff"
+
+
+# ============================================================================
 # direct_fix
 # ============================================================================
 

@@ -189,7 +189,14 @@ class DirectRepoClient:
             )
             self._invalidate_token()
             if "headers" in kwargs:
+                # Preserve any caller-supplied Accept header (e.g. the
+                # diff media type set by get_pr_diff) when refreshing
+                # the installation token, so the retry carries the same
+                # media type as the original request.
+                caller_accept = kwargs["headers"].get("Accept")
                 kwargs["headers"] = await self._gh_headers()
+                if caller_accept:
+                    kwargs["headers"]["Accept"] = caller_accept
             return await safe_http_request(method, url, **kwargs)
 
         # -- 429 / rate-limit 403: back off and retry once -------------------
