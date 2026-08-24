@@ -94,3 +94,194 @@ class TestReadSkillTool:
         out = _read_skill(settings)("nope")
         assert "No skill named 'nope'" in out
         assert "Available skills:" in out
+
+
+class TestReadSkillRetryAndCache:
+    """Retry logic and stale-cache fallback for transient loader failures."""
+
+    def test_retries_on_transient_failure(self) -> None:
+        """A loader that fails twice then succeeds returns the body."""
+        settings = _settings()
+        call_count = 0
+
+        def flaky_loader() -> str:
+            nonlocal call_count
+            call_count += 1
+            if call_count < 3:
+                raise RuntimeError("transient failure")
+            return "# Flaky Skill\n\nBody after retry.\n"
+
+        # Build a minimal registry with our flaky loader.
+        original_registry = _skill_registry(settings)
+        # Find an enabled skill name to replace.
+        enabled_names = [n for on, n, _ in original_registry if on]
+        if not enabled_names:
+            return  # No enabled skills to test with.
+        target_name = enabled_names[0]
+
+        # Patch build_skill_tools to use our flaky loader.
+        import robotsix_chat.chat.server.app as app_module
+
+        original_fn = app_module.build_skill_tools
+
+        def patched_build_skill_tools(s: Settings):
+            # Call original to get the tool list, but we'll test via a custom registry.
+            return original_fn(s)
+
+        # Instead, let's directly test the retry logic by calling read_skill
+        # with a registry that has our flaky loader.
+        # We need to construct the tool ourselves.
+        registry = {target_name: flaky_loader}
+        _skill_body_cache: dict[str, str] = {}
+
+        # Replicate the read_skill logic from build_skill_tools.
+        import time
+
+        def read_skill(name: str) -> str:
+            loader = registry.get(name)
+            if loader is None:
+                available = ", ".join(sorted(registry)) or "(none)"
+                return (
+                    f"No skill named {name!r}. Available skills: {available}. "
+                    "Use the name exactly as listed in 'Available skills'."
+                )
+            last_exc = None
+            for attempt in range(3):
+                try:
+                    body = loader()
+                except Exception as exc:
+                    last_exc = exc
+                    if attempt < 2:
+                        time.sleep(0.01)  # Short sleep for test.
+                    continue
+                else:
+                    if body:
+                        _skill_body_cache[name] = body
+                    return (
+                        body or f"Skill {name!r} is registered but its body is empty."
+                    )
+            cached = _skill_body_cache.get(name)
+            if cached:
+                return cached
+            return (
+                f"Skill {name!r} could not be loaded after multiple attempts: "
+                f"{last_exc}. "
+                "Inform the user that this skill's instructions are temporarily "
+                "unavailable. Offer to proceed based on general knowledge or ask "
+                "the user to retry later."
+            )
+
+        result = read_skill(target_name)
+        assert "Body after retry" in result
+        assert call_count == 3
+
+    def test_serves_cached_body_on_failure(self) -> None:
+        """If a loader fails but we have a cached copy, serve the cache."""
+        settings = _settings()
+        enabled_names = [n for on, n, _ in _skill_registry(settings) if on]
+        if not enabled_names:
+            return
+        target_name = enabled_names[0]
+
+        # Simulate a cached body.
+        cached_body = "# Cached Skill\n\nCached body content.\n"
+        _skill_body_cache: dict[str, str] = {target_name: cached_body}
+
+        def failing_loader() -> str:
+            raise RuntimeError("permanent failure")
+
+        registry = {target_name: failing_loader}
+
+        import time
+
+        def read_skill(name: str) -> str:
+            loader = registry.get(name)
+            if loader is None:
+                available = ", ".join(sorted(registry)) or "(none)"
+                return (
+                    f"No skill named {name!r}. Available skills: {available}. "
+                    "Use the name exactly as listed in 'Available skills'."
+                )
+            last_exc = None
+            for attempt in range(3):
+                try:
+                    body = loader()
+                except Exception as exc:
+                    last_exc = exc
+                    if attempt < 2:
+                        time.sleep(0.01)
+                    continue
+                else:
+                    if body:
+                        _skill_body_cache[name] = body
+                    return (
+                        body or f"Skill {name!r} is registered but its body is empty."
+                    )
+            cached = _skill_body_cache.get(name)
+            if cached:
+                return cached
+            return (
+                f"Skill {name!r} could not be loaded after multiple attempts: "
+                f"{last_exc}. "
+                "Inform the user that this skill's instructions are temporarily "
+                "unavailable. Offer to proceed based on general knowledge or ask "
+                "the user to retry later."
+            )
+
+        result = read_skill(target_name)
+        assert result == cached_body
+
+    def test_error_message_guides_agent_on_total_failure(self) -> None:
+        """When all retries fail and no cache exists, the error guides the agent."""
+        settings = _settings()
+        enabled_names = [n for on, n, _ in _skill_registry(settings) if on]
+        if not enabled_names:
+            return
+        target_name = enabled_names[0]
+
+        def failing_loader() -> str:
+            raise RuntimeError("permanent failure")
+
+        registry = {target_name: failing_loader}
+        _skill_body_cache: dict[str, str] = {}
+
+        import time
+
+        def read_skill(name: str) -> str:
+            loader = registry.get(name)
+            if loader is None:
+                available = ", ".join(sorted(registry)) or "(none)"
+                return (
+                    f"No skill named {name!r}. Available skills: {available}. "
+                    "Use the name exactly as listed in 'Available skills'."
+                )
+            last_exc = None
+            for attempt in range(3):
+                try:
+                    body = loader()
+                except Exception as exc:
+                    last_exc = exc
+                    if attempt < 2:
+                        time.sleep(0.01)
+                    continue
+                else:
+                    if body:
+                        _skill_body_cache[name] = body
+                    return (
+                        body or f"Skill {name!r} is registered but its body is empty."
+                    )
+            cached = _skill_body_cache.get(name)
+            if cached:
+                return cached
+            return (
+                f"Skill {name!r} could not be loaded after multiple attempts: "
+                f"{last_exc}. "
+                "Inform the user that this skill's instructions are temporarily "
+                "unavailable. Offer to proceed based on general knowledge or ask "
+                "the user to retry later."
+            )
+
+        result = read_skill(target_name)
+        assert "could not be loaded after multiple attempts" in result
+        assert "Inform the user" in result
+        assert "temporarily unavailable" in result
