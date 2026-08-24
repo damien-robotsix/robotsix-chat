@@ -2777,3 +2777,184 @@ async def test_list_stale_ready_uses_ticket_id_field() -> None:
         _time_mod.time = original_time
 
     assert result["stale_tickets"][0]["ticket_id"] == "t-ticket-id"
+
+
+# ---------------------------------------------------------------------------
+# file_ticket — repo_id pre-validation against GET /repos
+# ---------------------------------------------------------------------------
+
+
+@pytest.mark.asyncio
+async def test_file_ticket_rejects_unregistered_repo_id(
+    respx_mock: respx.MockRouter,
+) -> None:
+    """A repo_id not in the board's GET /repos list is rejected early.
+
+    The agent gets a clear, actionable error listing available repos
+    instead of a generic 404 from the board API.
+    """
+    respx_mock.get("http://board:8077/repos").mock(
+        return_value=httpx.Response(
+            200,
+            json=[
+                {"repo_id": "robotsix-chat", "board_id": "robotsix-chat"},
+                {"repo_id": "robotsix-mill", "board_id": "robotsix-mill"},
+            ],
+        )
+    )
+    ingest_route = respx_mock.post("http://board:8077/tickets/ingest").mock(
+        return_value=httpx.Response(201, json={"ticket_id": "t-new", "deduped": False})
+    )
+
+    tools = build_file_ticket_tool(_settings())
+    result = json.loads(
+        await tools[0](
+            title="Some ticket",
+            description="details",
+            repo_id="mobile-app",
+        )
+    )
+
+    assert not ingest_route.called, "must not call ingest for an unregistered repo"
+    assert result["ticket_id"] == ""
+    assert "mobile-app" in result["error"]
+    assert "not registered" in result["error"]
+    assert "robotsix-chat" in result["error"]
+    assert "robotsix-mill" in result["error"]
+
+
+@pytest.mark.asyncio
+async def test_file_ticket_allows_registered_repo_id(
+    respx_mock: respx.MockRouter,
+) -> None:
+    """A repo_id that IS in the board's repo list proceeds to ingest."""
+    respx_mock.get("http://board:8077/repos").mock(
+        return_value=httpx.Response(
+            200,
+            json=[
+                {"repo_id": "robotsix-chat", "board_id": "robotsix-chat"},
+                {"repo_id": "robotsix-invest", "board_id": "robotsix-invest"},
+            ],
+        )
+    )
+    respx_mock.post("http://board:8077/tickets/ingest").mock(
+        return_value=httpx.Response(201, json={"ticket_id": "t-ok", "deduped": False})
+    )
+
+    tools = build_file_ticket_tool(_settings())
+    result = json.loads(
+        await tools[0](
+            title="Valid ticket",
+            description="details",
+            repo_id="robotsix-invest",
+        )
+    )
+
+    assert result["ticket_id"] == "t-ok"
+    assert result["error"] == ""
+
+
+@pytest.mark.asyncio
+async def test_file_ticket_skips_validation_when_repos_unreachable(
+    respx_mock: respx.MockRouter,
+) -> None:
+    """When GET /repos fails, filing proceeds without validation.
+
+    Best-effort: the board API's own 404 is the fallback guard.
+    """
+    respx_mock.get("http://board:8077/repos").mock(
+        side_effect=httpx.ConnectError("connection refused")
+    )
+    respx_mock.post("http://board:8077/tickets/ingest").mock(
+        return_value=httpx.Response(
+            201, json={"ticket_id": "t-fallback", "deduped": False}
+        )
+    )
+
+    tools = build_file_ticket_tool(_settings())
+    result = json.loads(
+        await tools[0](
+            title="Fallback ticket",
+            description="details",
+            repo_id="robotsix-invest",
+        )
+    )
+
+    assert result["ticket_id"] == "t-fallback"
+    assert result["error"] == ""
+
+
+@pytest.mark.asyncio
+async def test_file_ticket_repo_validation_via_roster() -> None:
+    """The roster (component_request) path also validates repo_id."""
+    repos_response = json.dumps(
+        [
+            {"repo_id": "robotsix-chat", "board_id": "robotsix-chat"},
+            {"repo_id": "robotsix-mill", "board_id": "robotsix-mill"},
+        ]
+    )
+
+    async def _component_request(
+        component_id: str,
+        method: str,
+        path: str,
+        **kwargs: Any,
+    ) -> str:
+        if method == "GET" and path == "/repos":
+            return f"HTTP 200\n{repos_response}"
+        return "HTTP 201\n" + json.dumps({"ticket_id": "t-roster", "deduped": False})
+
+    tools = build_file_ticket_tool(_settings(), component_request=_component_request)
+    result = json.loads(
+        await tools[0](
+            title="Wrong board",
+            description="details",
+            repo_id="mobile-app",
+        )
+    )
+
+    assert result["ticket_id"] == ""
+    assert "mobile-app" in result["error"]
+    assert "not registered" in result["error"]
+
+
+@pytest.mark.asyncio
+async def test_file_ticket_repo_validation_roster_falls_back_to_direct(
+    respx_mock: respx.MockRouter,
+) -> None:
+    """When roster GET /repos fails, validation falls back to direct API."""
+    respx_mock.get("http://board:8077/repos").mock(
+        return_value=httpx.Response(
+            200,
+            json=[{"repo_id": "robotsix-chat", "board_id": "robotsix-chat"}],
+        )
+    )
+    ingest_route = respx_mock.post("http://board:8077/tickets/ingest").mock(
+        return_value=httpx.Response(201, json={"ticket_id": "t-new", "deduped": False})
+    )
+
+    async def _component_request_error(
+        component_id: str,
+        method: str,
+        path: str,
+        **kwargs: Any,
+    ) -> str:
+        if method == "GET" and path == "/repos":
+            return "Error: component unreachable"
+        return "HTTP 201\n" + json.dumps({"ticket_id": "t-new", "deduped": False})
+
+    tools = build_file_ticket_tool(
+        _settings(), component_request=_component_request_error
+    )
+    result = json.loads(
+        await tools[0](
+            title="Wrong board",
+            description="details",
+            repo_id="mobile-app",
+        )
+    )
+
+    assert not ingest_route.called
+    assert result["ticket_id"] == ""
+    assert "mobile-app" in result["error"]
+    assert "not registered" in result["error"]
