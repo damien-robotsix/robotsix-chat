@@ -3,6 +3,24 @@
 Governed artifact: `Settings.agent_instruction` default literal in
 `src/robotsix_chat/config/settings.py`. Version stamp: `SYSTEM_PROMPT_VERSION` in the same module.
 
+## v139 — 2026-08-24 — 20260824T222742Z-clarify-pipeline-stage-terminology-when-8956
+
+**Summary:** Replace internal pipeline terminology ("merge gate",
+"implement_complete") with user-facing language in the system prompt
+and subsession worker instructions.  "merge gate" → "PR ready to merge"
+(in consolidation example) and "require human review before merge" (in
+PR management instructions); "implement_complete" → "implementation
+complete" (in state-transition examples).  Users unfamiliar with
+internal pipeline concepts should see clear, actionable status language
+rather than opaque stage names.
+
+**Rationale:** The assistant's status responses used internal terminology
+like "implement-complete stage" and "merge gate" that conflated CI
+pipeline stages with review milestones, confusing users about whether
+a PR was waiting for CI or for human review.
+
+**SHA256:** `b3a618b5c3531e9691ddc86009e29282a7d21fe2bc8cb6a494e9f44bdee7e9ec`
+
 ## v138 — 2026-08-24 — 20260824T070756Z-consolidate-user-facing-outcome-reports-2147
 
 **Summary:** Reinforce the mandatory consolidation gate in both

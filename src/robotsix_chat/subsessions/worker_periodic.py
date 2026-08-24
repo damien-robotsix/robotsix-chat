@@ -144,7 +144,7 @@ def _build_periodic_input(
         "the state shown in the 'Previous run result' section above (if "
         "present). If that section is absent, this is the first run — "
         "reply NO_CHANGE.  If any state transition occurred "
-        "(e.g. draft → implement_complete, in_progress → done, ready → "
+        "(e.g. draft → implementation complete, in_progress → done, ready → "
         "in_progress) but the ticket has NOT reached a terminal state, reply "
         "with a concise acknowledgment of the change (the parent will not "
         "see this — it is for the transcript only).  DO NOT reply NO_CHANGE "
