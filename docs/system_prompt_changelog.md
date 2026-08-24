@@ -2721,6 +2721,26 @@ autonomous settings at their pydantic field defaults
 ``stale_monitor_runs_before_completion=3``,
 ``queue_tolerance_runs_before_escalation=3``).
 
+## AUTONOMOUS v37 — 2026-08-24 — 20260824T192937Z-file-a-ticket-to-close-redundant-audit-f-3a8d
+
+**Summary:** Add REDUNDANT TICKET HANDLING instructions to the autonomous
+prompt.  When a periodic monitor reports that a fix ticket is redundant (its
+underlying issue was resolved through an alternative path — e.g. the baseline
+ticket was directly fixed, another PR addressing the same root cause was
+merged, or the block reason was resolved externally), the autonomous session
+must take action: close the ticket if authorized, file a cleanup task if not,
+or notify the operator as a fallback.  Stop the monitor for redundant tickets
+to avoid burning pool slots.
+
+**Rationale:** During a compaction session, the mill audit deadlock was
+resolved via a direct fix on the baseline ticket, making the dedicated
+audit-fix ticket (3120) redundant.  The assistant suggested closing it but
+only offered an informal prompt to the user.  Without explicit instructions,
+the agent has no guidance on detecting or handling redundant fix tickets,
+leading to wasted monitor cycles and operator confusion.
+
+**SHA256:** `b7bbf8402915349439899348f0babd49374d686dda665f60cd36bda36b719c13`
+
 ## AUTONOMOUS v36 — 2026-08-23 — 20260823T001252Z-auto-advance-approved-proposals-through-54a3
 
 **Summary:** Close the double-approval gap for operator-approved proposals:

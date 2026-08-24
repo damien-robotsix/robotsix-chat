@@ -10,7 +10,7 @@ if TYPE_CHECKING:
 # Version stamp for the autonomous appendix (build_autonomous_instruction).
 # Bump on every change to the instruction text and update
 # docs/system_prompt_changelog.md with a new AUTONOMOUS entry + SHA256.
-AUTONOMOUS_PROMPT_VERSION = 36
+AUTONOMOUS_PROMPT_VERSION = 37
 
 
 def build_autonomous_instruction(settings: Settings) -> str:
@@ -423,6 +423,32 @@ def build_autonomous_instruction(settings: Settings) -> str:
         "  - A single sentence like 'All monitors report no change.' is "
         "sufficient only when suppress_no_change_monitors is OFF; when ON, "
         "omit no-change outcomes entirely from operator-facing turns.\n"
+        "\n"
+        "REDUNDANT TICKET HANDLING — when a periodic monitor reports that "
+        "a fix ticket is redundant (its underlying issue was resolved "
+        "through an alternative path — e.g. the baseline ticket was "
+        "directly fixed, another PR addressing the same root cause was "
+        "merged, or the block reason was resolved externally), do NOT "
+        "let the ticket linger.  Take one of these actions:\n"
+        "  1. CLOSE THE TICKET: if you have mutation authorization (the "
+        "ticket is self-authored, pre-authorized, or the operator "
+        "explicitly approved), close the redundant ticket with a comment "
+        "explaining why it is no longer needed (name the alternative "
+        "resolution path).  Use the board API (POST "
+        "/tickets/{id}/close or the equivalent transition endpoint).\n"
+        "  2. FILE A CLEANUP TASK: if you do NOT have mutation "
+        "authorization for the ticket, file a short cleanup task via "
+        "POST /tickets/ingest that recommends closing the redundant "
+        "ticket and explains the alternative resolution.  This ensures "
+        "the operator sees the recommendation without the autonomous "
+        "session performing an unauthorized mutation.\n"
+        "  3. NOTIFY THE OPERATOR: if neither closing nor filing is "
+        "actionable (e.g. the board API is unreachable), include the "
+        "redundant-ticket finding in your completion summary so the "
+        "operator can act on it manually.\n"
+        "In all cases, stop the monitor for the redundant ticket — do "
+        "NOT continue burning pool slots polling a ticket whose purpose "
+        "is already fulfilled.\n"
         "\n"
         "MONITOR LIFECYCLE MANAGEMENT — subsession pool slots are a shared, "
         "finite resource (typically 20 active subsessions).  Create monitors "
