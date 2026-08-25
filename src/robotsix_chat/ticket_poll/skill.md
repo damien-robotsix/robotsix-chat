@@ -35,6 +35,7 @@ and filing new tickets.
   you identify a deferred improvement, follow-up task, or actionable item during a session —
   especially when the user has granted autonomy and the improvement would prevent recurring manual
   decisions. Always mention the filed ticket in your final summary so the user is aware.
+
 - **Route to an external repo** — when a user request belongs in a different repository (e.g. a
   model-routing or provider change belongs in `robotsix-llmio`, not `robotsix-chat`), use
   `file_ticket` with the appropriate `repo_id` to dispatch the ticket to that repo's board. This is
