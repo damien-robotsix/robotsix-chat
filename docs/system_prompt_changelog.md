@@ -2739,6 +2739,27 @@ autonomous settings at their pydantic field defaults
 ``stale_monitor_runs_before_completion=3``,
 ``queue_tolerance_runs_before_escalation=3``).
 
+## AUTONOMOUS v38 — 2026-08-25 — 20260825T070547Z-image-update-may-pull-pre-merge-image-ad-b7d6
+
+**Summary:** Add SHA-tag pinning guidance to the POST-MERGE DEPLOYMENT
+VERIFICATION section and clarify the AUTO SELF-RESTART section to
+distinguish config-only changes (use ``self_restart``) from code/image
+changes (use ``redeploy_lifecycle_service`` + ``verify_lifecycle_deployment``).
+After merging a PR that produces a new container image, the agent must use
+the commit-SHA-based image tag (``sha-<commit>``) as the expected image ref
+in ``verify_lifecycle_deployment`` — the mutable ``:main`` tag may still
+point to a stale image if the build pipeline has not finished publishing.
+If verification returns ``verified: false``, schedule a continuation to
+retry rather than closing the ticket on a stale image.
+
+**Rationale:** The assistant merged a PR, restarted, and discovered it was
+running a pre-merge image because the build pipeline hadn't finished pushing
+the ``:main`` tag.  This caused a second unnecessary restart cycle.  Using
+the immutable SHA tag and verifying after redeploy prevents restarting on a
+stale image.
+
+**SHA256:** `32f484377f11dee747aa70302173eee46e9ac994bc4f658801f57f0e4cf538d1`
+
 ## AUTONOMOUS v37 — 2026-08-24 — 20260824T192937Z-file-a-ticket-to-close-redundant-audit-f-3a8d
 
 **Summary:** Add REDUNDANT TICKET HANDLING instructions to the autonomous
