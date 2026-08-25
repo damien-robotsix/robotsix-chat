@@ -1952,7 +1952,7 @@ async def _handle_monitor_run_error(
     )
 
     # Check if the threshold is reached.
-    if threshold > 0 and consecutive_errored >= threshold:
+    if consecutive_errored >= threshold:
         summary = (
             f"Failed after {consecutive_errored} consecutive errored runs. "
             f"Last error: {error_msg}"

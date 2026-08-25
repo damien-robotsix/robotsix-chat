@@ -3817,6 +3817,41 @@ async def test_no_behavior_change_for_task_kind() -> None:
     assert info.consecutive_errored_runs == 0  # not tracked for task kind
 
 
+@pytest.mark.asyncio
+async def test_threshold_zero_fails_on_first_errored_run() -> None:
+    """consecutive_error_fail_threshold=0 fails the subsession on the first errored run.
+
+    The docstring says "Set to 0 to fail on the first errored run (legacy
+    behaviour)".  This test guards that edge case.
+    """
+    agent = FakeAgent(error=ValueError("tool failure"))
+    env = build_env(
+        agent=agent,
+        settings=make_settings(
+            consecutive_error_fail_threshold=0,
+            transient_error_max_retries=0,
+        ),
+    )
+
+    with patch(
+        "robotsix_chat.subsessions.worker.is_openrouter_transient",
+        return_value=False,
+    ):
+        sub_id = _spawn(
+            env,
+            kind=SubsessionKind.PERIODIC,
+            interval_seconds=0.02,
+        )
+        await _await_worker(env, sub_id)
+
+    info = env.registry.get(sub_id)
+    assert info is not None
+    # With threshold=0, the very first errored run should fail the subsession.
+    assert info.status is SubsessionStatus.FAILED
+    assert info.consecutive_errored_runs >= 1
+    assert "consecutive errored runs" in (info.error or "")
+
+
 # wait_for_event checkpoint repair
 # ---------------------------------------------------------------------------
 
