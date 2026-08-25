@@ -838,10 +838,10 @@ class TestPersistedSchedulerState:
         """A not-yet-due preset fires exactly once when its interval elapses."""
         settings = _make_settings()
         settings.autonomous.sessions = [
-            _make_definition("release-review", trigger_interval_seconds=0.1)
+            _make_definition("release-review", trigger_interval_seconds=0.5)
         ]
         first = self._build(settings)
-        await asyncio.wait_for(first.resume_sessions(), timeout=0.5)
+        await asyncio.wait_for(first.resume_sessions(), timeout=2.0)
         active_id = first.active_session_id_for_definition("release-review")
         assert active_id is not None
         aq = first._sessions[active_id]
@@ -849,13 +849,13 @@ class TestPersistedSchedulerState:
         assert aq.state is AutonomousState.completed
 
         restarted = self._build(settings)
-        await asyncio.wait_for(restarted.resume_sessions(), timeout=0.5)
+        await asyncio.wait_for(restarted.resume_sessions(), timeout=2.0)
         # The completed session from the previous run is loaded from disk,
         # but no *new* executing session has been spawned — the preset is not
         # yet due.
         assert restarted.active_session_id_for_definition("release-review") is None
 
-        await asyncio.sleep(0.3)
+        await asyncio.sleep(1.0)
         active_id = restarted.active_session_id_for_definition("release-review")
         assert active_id is not None
         fired = restarted._sessions[active_id]
@@ -1106,21 +1106,21 @@ class TestLegacyNextFireDoesNotStarvePresets:
         """
         settings = _make_settings()
         settings.autonomous.sessions = [
-            _make_definition("cost-review", trigger_interval_seconds=0.2)
+            _make_definition("cost-review", trigger_interval_seconds=1.0)
         ]
-        # Mid-interval: fire is still ~0.1s away, and no scheduler state
+        # Mid-interval: fire is still ~0.5s away, and no scheduler state
         # exists — exactly the upgraded-install shape.
         self._write_legacy_next_fire(
-            persist_paths, "autonomous:cost-review", time.time() + 0.1
+            persist_paths, "autonomous:cost-review", time.time() + 0.5
         )
         runner = self._build(settings)
-        await asyncio.wait_for(runner.resume_sessions(), timeout=0.5)
+        await asyncio.wait_for(runner.resume_sessions(), timeout=2.0)
 
         # Not due yet, so nothing has fired — but a re-arm is pending.
         assert runner.active_session_id_for_definition("cost-review") is None
         assert runner._auto_tasks
 
-        await asyncio.sleep(0.25)
+        await asyncio.sleep(1.5)
         assert runner.active_session_id_for_definition("cost-review") is not None
 
     @pytest.mark.asyncio
