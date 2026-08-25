@@ -102,6 +102,7 @@ from .routes import (
     cancel_queued_endpoint,
     chat_endpoint,
     chat_skill_endpoint,
+    config_deploy_get_endpoint,
     config_get_endpoint,
     config_rollback_endpoint,
     config_save_endpoint,
@@ -570,6 +571,7 @@ def create_app(
         ),
         Route("/chat-skill", chat_skill_endpoint, methods=["GET"]),
         Route("/config", config_get_endpoint, methods=["GET"]),
+        Route("/config/deploy", config_deploy_get_endpoint, methods=["GET"]),
         Route("/config", config_save_endpoint, methods=["PUT"]),
         Route("/config/versions", config_versions_endpoint, methods=["GET"]),
         Route(

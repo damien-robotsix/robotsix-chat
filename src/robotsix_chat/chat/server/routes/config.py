@@ -10,6 +10,10 @@ config.  Keep the envelope.
 ``GET /config`` returns ``{"config": ..., "schema": ..., "version": ...}``
 with secrets masked.
 
+``GET /config/deploy`` returns ``{"config": {central_deploy: ...}, "schema": ...}``
+— the deploy configuration section with its sub-schema, for use by the
+deploy plane to audit deploy-specific settings independently.
+
 ``PUT /config`` deep-merges the submitted form over the existing persisted
 config, validates, increments the version, and persists.  A field absent
 from the submitted payload is preserved, not blanked.  It answers with the
@@ -480,6 +484,50 @@ async def config_get_endpoint(request: Request) -> JSONResponse:
             "config": _effective_config(data),
             "schema": _get_schema(),
             "version": version,
+        }
+    )
+
+
+async def config_deploy_get_endpoint(request: Request) -> JSONResponse:
+    """Return the deploy configuration section with its sub-schema.
+
+    ``GET /config/deploy`` — exposes only the ``central_deploy`` settings
+    block so the deploy plane can audit and manage its own configuration
+    independently of the full component settings.
+
+    Response envelope: ``{"config": {central_deploy: ...}, "schema": ...}``
+    consistent with ``GET /config``.
+    """
+    config_path = _resolve_config_path_from_app(request)
+    data = _read_config_json(config_path)
+    full_config = _effective_config(data)
+
+    deploy_config = full_config.get("central_deploy", {})
+
+    # Extract the CentralDeploySettings sub-schema from the full schema.
+    full_schema = _get_schema()
+    deploy_schema: dict[str, Any] = {}
+    if "properties" in full_schema:
+        central_deploy_prop = full_schema["properties"].get("central_deploy", {})
+        if "$ref" in central_deploy_prop:
+            ref_path = central_deploy_prop["$ref"]
+            ref_name = ref_path.split("/")[-1]
+            if "$defs" in full_schema and ref_name in full_schema["$defs"]:
+                deploy_schema = {
+                    "$schema": full_schema.get(
+                        "$schema", "https://json-schema.org/draft/2020-12/schema"
+                    ),
+                    "title": "CentralDeploySettings",
+                    "description": "Deploy configuration section",
+                    "type": "object",
+                    "properties": {"central_deploy": full_schema["$defs"][ref_name]},
+                    "$defs": full_schema["$defs"],
+                }
+
+    return JSONResponse(
+        {
+            "config": deploy_config,
+            "schema": deploy_schema,
         }
     )
 
