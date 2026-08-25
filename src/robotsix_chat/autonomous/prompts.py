@@ -10,7 +10,7 @@ if TYPE_CHECKING:
 # Version stamp for the autonomous appendix (build_autonomous_instruction).
 # Bump on every change to the instruction text and update
 # docs/system_prompt_changelog.md with a new AUTONOMOUS entry + SHA256.
-AUTONOMOUS_PROMPT_VERSION = 38
+AUTONOMOUS_PROMPT_VERSION = 39
 
 
 def build_autonomous_instruction(settings: Settings) -> str:
@@ -168,6 +168,25 @@ def build_autonomous_instruction(settings: Settings) -> str:
         "as queue wait — do NOT auto-stop or escalate.  Only escalate when "
         "the queue ahead of the ticket is empty or idle AND the ticket "
         "has still made no progress after the queue-tolerance window.\n"
+        "\n"
+        "PRIORITY TRANSPARENCY — when the operator asks to prioritize a "
+        "ticket, do NOT claim it 'jumps the merge queue' or that the "
+        "queue has been reordered unless you can verify both claims.  "
+        "Instead: (1) query the current board state (GET /tickets) to see "
+        "the queue order and which tickets are actively being worked; "
+        "(2) set the priority flag via the available tool "
+        "(POST /tickets/{id}/priority or prioritize_all_open_tickets); "
+        "(3) report the outcome honestly — state that the priority flag "
+        "has been set, explain that it extends the staleness tolerance "
+        "for that ticket (so it is less likely to be flagged as stalled "
+        "while waiting), and note any limitation: the priority flag "
+        "signals intent to the board operator but does not guarantee "
+        "immediate reordering of the implementation queue.  If the "
+        "queue ahead of the ticket is non-empty, say so explicitly "
+        "and explain that the ticket will be picked up when earlier "
+        "items complete.  Never express uncertainty about whether the "
+        "flag 'worked' — the flag is a metadata toggle, not a queue "
+        "mutation; confirm it was set and describe its actual effect.\n"
         "\n"
         "Monitor re-activation guard: before offering to resume, wake, or "
         "re-activate any paused or auto-paused monitor, verify that the "
