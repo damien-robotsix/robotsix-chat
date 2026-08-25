@@ -42,6 +42,7 @@ from robotsix_chat.docker_digest import (
     load_docker_digest_skill,
 )
 from robotsix_chat.epic import build_decompose_epic_tool, load_epic_skill
+from robotsix_chat.file_hub_tools import build_file_hub_tools, load_file_hub_skill
 from robotsix_chat.gateway_route import (
     build_gateway_route_tools,
     load_gateway_route_skill,
@@ -795,6 +796,7 @@ def _skill_registry(
         (settings.github_actions.enabled, "github_actions", load_github_actions_skill),
         (settings.direct_repo.enabled, "direct_repo", load_direct_repo_skill),
         (settings.volume_tools.enabled, "volume_tools", load_volume_tools_skill),
+        (settings.file_hub_tools.enabled, "file_hub_tools", load_file_hub_skill),
         (settings.mail.enabled, "mail", load_mail_skill),
         (
             bool(settings.direct_repo.board_api_base_url.strip())
@@ -1067,6 +1069,7 @@ def _build_static_tools(
             *build_public_fetch_tools(settings.public_fetch, settings.central_deploy),
             *build_langfuse_inspect_tools(settings.langfuse_inspect, settings.langfuse),
             *build_sftp_tools(settings.sftp),
+            *build_file_hub_tools(settings.file_hub_tools),
             *build_volume_tools(settings.volume_tools),
             *build_ticket_poll_tools(settings, component_request=component_request),
             *build_merge_pull_request_tool(

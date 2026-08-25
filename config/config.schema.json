@@ -529,6 +529,41 @@
       "title": "FeedbackSettings",
       "type": "object"
     },
+    "FileHubToolsSettings": {
+      "additionalProperties": false,
+      "description": "File-hub integration \u2014 fetch, fill, and upload documents via file-hub.\n\nWhen enabled, the agent gains three tools:\n\n- ``file_hub_get`` \u2014 download a file from file-hub by id to a local\n  working directory, returning the local path and metadata.\n- ``fill_pdf_document`` \u2014 fill a PDF: set AcroForm field values by name,\n  or overlay text at given page/x/y coordinates for flat PDFs.  Also\n  exposes ``list_pdf_form_fields`` to inspect fillable fields.\n- ``file_hub_put`` \u2014 upload a local file to file-hub, preserving\n  filename and content-type, returning the new file-hub id.\n\nThe driving use case is processing administrative PDF attachments\n(e.g. SEPA mandates received by mail and pushed to file-hub by\nrobotsix-auto-mail): fetch \u2192 fill \u2192 return.\n\nAttributes:\n    enabled: Master switch.  When ``False``, no file-hub tools are\n        registered.\n    base_url: Base URL of the file-hub service (e.g.\n        ``http://file-hub:8080``).  Must be reachable from the chat\n        container.\n    working_dir: Local directory for downloaded and filled files.\n        Default ``/data/file_hub_work``.\n    max_download_bytes: Maximum file size in bytes for downloads.\n        Default 50 MB.\n    timeout: Per-request HTTP timeout in seconds.",
+      "properties": {
+        "base_url": {
+          "default": "http://file-hub:8080",
+          "title": "Base Url",
+          "type": "string"
+        },
+        "enabled": {
+          "default": false,
+          "title": "Enabled",
+          "type": "boolean"
+        },
+        "max_download_bytes": {
+          "default": 52428800,
+          "exclusiveMinimum": 0,
+          "title": "Max Download Bytes",
+          "type": "integer"
+        },
+        "timeout": {
+          "default": 60.0,
+          "exclusiveMinimum": 0,
+          "title": "Timeout",
+          "type": "number"
+        },
+        "working_dir": {
+          "default": "/data/file_hub_work",
+          "title": "Working Dir",
+          "type": "string"
+        }
+      },
+      "title": "FileHubToolsSettings",
+      "type": "object"
+    },
     "GatewayRouteSettings": {
       "additionalProperties": false,
       "description": "Read-only gateway-route diagnostic tool for the agent.\n\nWhen enabled, the agent gains a ``check_gateway_route`` tool that reads\ncentral-deploy's component registry, derives the current\nvhost \u2192 upstream mapping, and compares it with the expected route for a\nsupplied service slug.  central-deploy publishes every registered,\nroutable component at ``<id>.<gateway_base_domain>`` automatically, so a\nroute is \"present\" exactly when the slug is registered.\n\nAttributes:\n    enabled: Master switch.  When ``False``, no check_gateway_route tool\n        is offered.\n    timeout: Per-request HTTP timeout in seconds (default 30 s).\n    gateway_base_domain: Fleet base domain used to derive the expected\n        vhost ``<slug>.<base_domain>``.  Must match central-deploy's\n        ``gateway_base_domain`` setting.",
@@ -1659,6 +1694,10 @@
     },
     "feedback": {
       "$ref": "#/$defs/FeedbackSettings",
+      "advanced": true
+    },
+    "file_hub_tools": {
+      "$ref": "#/$defs/FileHubToolsSettings",
       "advanced": true
     },
     "gateway_route": {

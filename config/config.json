@@ -229,6 +229,13 @@
     "known_hosts": "",
     "remote_root": ""
   },
+  "file_hub_tools": {
+    "enabled": false,
+    "base_url": "http://file-hub:8080",
+    "working_dir": "/data/file_hub_work",
+    "max_download_bytes": 52428800,
+    "timeout": 60.0
+  },
   "volume_tools": {
     "enabled": true,
     "root_path": "/data"
