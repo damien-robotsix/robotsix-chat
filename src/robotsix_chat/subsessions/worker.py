@@ -2513,89 +2513,32 @@ async def _subsession_worker(
                     SubsessionKind.PERIODIC,
                     SubsessionKind.WAIT_FOR_EVENT,
                 ):
+                    timeout_msg = "subsession run exceeded the per-run timeout."
+                    (
+                        run_failed,
+                        previous_result,
+                        consecutive_no_change,
+                    ) = await _handle_monitor_run_error(
+                        env,
+                        info,
+                        sub_id,
+                        timeout_msg,
+                        "TIMEOUT",
+                        previous_result,
+                        consecutive_no_change,
+                    )
+                    if run_failed:
+                        return
                     if info.kind is SubsessionKind.WAIT_FOR_EVENT:
-                        logger.warning(
-                            "Wait-for-event subsession %s run %d timed out; "
-                            "continuing schedule.",
-                            sub_id,
-                            info.runs + 1,
-                        )
-                        registry.append_transcript(
-                            sub_id,
-                            "system",
-                            "Run timed out — the agent turn exceeded the"
-                            " per-run timeout.",
-                        )
-                        runs = info.runs + 1
-                        registry.set_status(
-                            sub_id,
-                            SubsessionStatus.SLEEPING,
-                            runs=runs,
-                            last_result="TIMEOUT",
-                        )
-                        if env.event_sink is not None:
-                            env.event_sink.publish(
-                                info.owner_session_id,
-                                subsession_result_frame(
-                                    sub_id,
-                                    info.kind.value,
-                                    info.title,
-                                    runs,
-                                    "TIMEOUT",
-                                    info.parent_id,
-                                ),
-                            )
-                        if not info.include_previous_result:
-                            previous_result = None
-                        consecutive_no_change += 1
-                        info.consecutive_no_change = consecutive_no_change
                         # No sleep — the main loop re-enters the event wait.
                         env.registry.reap_orphans()
-                        continue
-                    logger.warning(
-                        "Periodic subsession %s run %d timed out; continuing schedule.",
-                        sub_id,
-                        info.runs + 1,
-                    )
-                    registry.append_transcript(
-                        sub_id,
-                        "system",
-                        "Run timed out — the agent turn exceeded the per-run timeout.",
-                    )
-                    # Advance the run counter so the schedule moves on.
-                    runs = info.runs + 1
-                    registry.set_status(
-                        sub_id,
-                        SubsessionStatus.SLEEPING,
-                        runs=runs,
-                        next_run_at=registry.now() + (info.interval_seconds or 60.0),
-                        last_result="TIMEOUT",
-                    )
-                    # Deliver a timeout result so the parent isn't left
-                    # wondering.
-                    if env.event_sink is not None:
-                        env.event_sink.publish(
-                            info.owner_session_id,
-                            subsession_result_frame(
-                                sub_id,
-                                info.kind.value,
-                                info.title,
-                                runs,
-                                "TIMEOUT",
-                                info.parent_id,
-                            ),
+                    else:
+                        woke = await registry.wait_for_inbox(
+                            sub_id,
+                            timeout=info.interval_seconds or 60.0,
                         )
-                    if not info.include_previous_result:
-                        previous_result = None
-                    consecutive_no_change += 1
-                    info.consecutive_no_change = consecutive_no_change
-                    # Sleep until next tick, waking early on steering.
-                    woke = await registry.wait_for_inbox(
-                        sub_id,
-                        timeout=info.interval_seconds or 60.0,
-                    )
-                    pending = registry.drain_inbox(sub_id) if woke else []
-                    env.registry.reap_orphans()
+                        pending = registry.drain_inbox(sub_id) if woke else []
+                        env.registry.reap_orphans()
                     continue
                 # TASK / USER_CHAT: let the outer handler fail the subsession.
                 raise
@@ -2607,89 +2550,93 @@ async def _subsession_worker(
                     SubsessionKind.PERIODIC,
                     SubsessionKind.WAIT_FOR_EVENT,
                 ):
+                    error_label = "TRANSIENT_ERROR"
+                    error_msg = (
+                        "Transient API errors persisted across all retry attempts."
+                    )
+                    (
+                        run_failed,
+                        previous_result,
+                        consecutive_no_change,
+                    ) = await _handle_monitor_run_error(
+                        env,
+                        info,
+                        sub_id,
+                        error_msg,
+                        error_label,
+                        previous_result,
+                        consecutive_no_change,
+                    )
+                    if run_failed:
+                        return
                     if info.kind is SubsessionKind.WAIT_FOR_EVENT:
-                        logger.warning(
-                            "Wait-for-event subsession %s run %d: transient errors "
-                            "exhausted; skipping this cycle.",
-                            sub_id,
-                            info.runs + 1,
-                        )
-                        registry.append_transcript(
-                            sub_id,
-                            "system",
-                            "Run skipped — transient API errors persisted "
-                            "across all retry attempts.",
-                        )
-                        runs = info.runs + 1
-                        registry.set_status(
-                            sub_id,
-                            SubsessionStatus.SLEEPING,
-                            runs=runs,
-                            last_result="TRANSIENT_ERROR",
-                        )
-                        if env.event_sink is not None:
-                            env.event_sink.publish(
-                                info.owner_session_id,
-                                subsession_result_frame(
-                                    sub_id,
-                                    info.kind.value,
-                                    info.title,
-                                    runs,
-                                    "TRANSIENT_ERROR",
-                                    info.parent_id,
-                                ),
-                            )
-                        if not info.include_previous_result:
-                            previous_result = None
-                        consecutive_no_change += 1
-                        info.consecutive_no_change = consecutive_no_change
                         # No sleep — the main loop re-enters the event wait.
                         env.registry.reap_orphans()
-                        continue
-                    logger.warning(
-                        "Periodic subsession %s run %d: transient errors "
-                        "exhausted; skipping this cycle.",
-                        sub_id,
-                        info.runs + 1,
-                    )
-                    registry.append_transcript(
-                        sub_id,
-                        "system",
-                        "Run skipped — transient API errors persisted "
-                        "across all retry attempts.",
-                    )
-                    runs = info.runs + 1
-                    registry.set_status(
-                        sub_id,
-                        SubsessionStatus.SLEEPING,
-                        runs=runs,
-                        next_run_at=registry.now() + (info.interval_seconds or 60.0),
-                        last_result="TRANSIENT_ERROR",
-                    )
-                    if env.event_sink is not None:
-                        env.event_sink.publish(
-                            info.owner_session_id,
-                            subsession_result_frame(
-                                sub_id,
-                                info.kind.value,
-                                info.title,
-                                runs,
-                                "TRANSIENT_ERROR",
-                                info.parent_id,
-                            ),
+                    else:
+                        woke = await registry.wait_for_inbox(
+                            sub_id,
+                            timeout=info.interval_seconds or 60.0,
                         )
-                    if not info.include_previous_result:
-                        previous_result = None
-                    consecutive_no_change += 1
-                    woke = await registry.wait_for_inbox(
-                        sub_id,
-                        timeout=info.interval_seconds or 60.0,
-                    )
-                    pending = registry.drain_inbox(sub_id) if woke else []
-                    env.registry.reap_orphans()
+                        pending = registry.drain_inbox(sub_id) if woke else []
+                        env.registry.reap_orphans()
                     continue
                 # TASK / USER_CHAT: let the outer handler fail the subsession.
                 raise
+            except Exception as exc:
+                # Non-transient run-level error (e.g. tool-retry exhaustion,
+                # unexpected exception).  For periodic / wait_for_event
+                # monitors, route through _handle_monitor_run_error so the
+                # run is recorded as errored and the subsession stays alive
+                # until the consecutive-error threshold is reached.
+                #
+                # Model-tier 404 errors are re-raised so the outer handler
+                # can attempt a model-level fallback.
+                if info.kind in (
+                    SubsessionKind.PERIODIC,
+                    SubsessionKind.WAIT_FOR_EVENT,
+                ) and not _is_model_tier_not_found(exc):
+                    error_msg = _format_worker_error(exc)
+                    error_label = "RUN_ERROR"
+                    (
+                        run_failed,
+                        previous_result,
+                        consecutive_no_change,
+                    ) = await _handle_monitor_run_error(
+                        env,
+                        info,
+                        sub_id,
+                        error_msg,
+                        error_label,
+                        previous_result,
+                        consecutive_no_change,
+                    )
+                    if run_failed:
+                        return
+                    if info.kind is SubsessionKind.WAIT_FOR_EVENT:
+                        # No sleep — the main loop re-enters the event wait.
+                        env.registry.reap_orphans()
+                    else:
+                        woke = await registry.wait_for_inbox(
+                            sub_id,
+                            timeout=info.interval_seconds or 60.0,
+                        )
+                        pending = registry.drain_inbox(sub_id) if woke else []
+                        env.registry.reap_orphans()
+                    continue
+                # TASK / USER_CHAT or model-tier 404: let the outer handler
+                # fail the subsession (or attempt model-level fallback).
+                raise
+
+            # Successful run — reset the consecutive-error counter.
+            if (
+                info.kind
+                in (
+                    SubsessionKind.PERIODIC,
+                    SubsessionKind.WAIT_FOR_EVENT,
+                )
+                and info.consecutive_errored_runs > 0
+            ):
+                info.consecutive_errored_runs = 0
 
             history.append((turn_input, reply))
             registry.append_turn_history(sub_id, turn_input, reply)

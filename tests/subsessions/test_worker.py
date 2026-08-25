@@ -3093,6 +3093,9 @@ async def test_periodic_transient_error_exhausted_skips_cycle() -> None:
         settings=make_settings(
             transient_error_max_retries=1,
             transient_error_backoff_base=0.0,
+            # Use a high threshold so transient-error cycles don't
+            # trigger the consecutive-error failure during the test.
+            consecutive_error_fail_threshold=1000,
         ),
     )
 
@@ -3141,11 +3144,14 @@ async def test_task_transient_error_not_retried() -> None:
 
 @pytest.mark.asyncio
 async def test_periodic_non_transient_error_not_retried_when_disabled() -> None:
-    """Periodic subsessions skip retries when monitor_error_max_retries=0."""
+    """Periodic subsessions use consecutive-error threshold, not worker retries."""
     agent = FakeAgent(error=ValueError("not transient"))
     env = build_env(
         agent=agent,
-        settings=make_settings(monitor_error_max_retries=0),
+        settings=make_settings(
+            monitor_error_max_retries=0,
+            consecutive_error_fail_threshold=1,
+        ),
     )
 
     with patch(
@@ -3162,16 +3168,21 @@ async def test_periodic_non_transient_error_not_retried_when_disabled() -> None:
     info = env.registry.get(sub_id)
     assert info is not None
     assert info.status is SubsessionStatus.FAILED
-    assert info.retry_count == 0
+    # With threshold=1, one errored run fails the subsession.
+    assert info.consecutive_errored_runs >= 1
+    assert "not transient" in (info.error or "")
 
 
 @pytest.mark.asyncio
 async def test_periodic_non_transient_error_retries_then_fails() -> None:
-    """Periodic monitors retry non-transient errors up to the configured limit."""
+    """Periodic monitors track consecutive errored runs and fail at threshold."""
     agent = FakeAgent(error=ValueError("tool retry limit"))
     env = build_env(
         agent=agent,
-        settings=make_settings(monitor_error_max_retries=2),
+        settings=make_settings(
+            monitor_error_max_retries=2,
+            consecutive_error_fail_threshold=3,
+        ),
     )
 
     with patch(
@@ -3187,22 +3198,51 @@ async def test_periodic_non_transient_error_retries_then_fails() -> None:
 
     info = env.registry.get(sub_id)
     assert info is not None
-    # After exhausting retries the monitor is failed.
+    # After 3 consecutive errored runs the monitor is permanently failed.
     assert info.status is SubsessionStatus.FAILED
-    assert info.retry_count == 2
+    assert info.consecutive_errored_runs >= 3
     assert "tool retry limit" in (info.error or "")
+    # The error summary mentions consecutive errored runs.
+    assert "consecutive errored runs" in (info.error or "")
 
 
 @pytest.mark.asyncio
 async def test_periodic_non_transient_error_retry_succeeds() -> None:
-    """A periodic monitor that fails then succeeds on retry continues running."""
-    # First call fails, second call succeeds, third call is a normal turn.
-    fail_agent = FakeAgent(error=ValueError("transient glitch"))
-    ok_agent = FakeAgent(["queue drained successfully"])
-    factory = CapturingAgentFactory(fail_agent, ok_agent)
+    """Periodic monitor that fails then succeeds continues running."""
+    call_count = 0
+
+    class FailOnceAgent:
+        """Fails on the first call, succeeds on subsequent calls."""
+
+        def __init__(self) -> None:
+            self.calls: list[dict[str, Any]] = []
+
+        async def stream(
+            self,
+            message: str,
+            *,
+            history: list[tuple[str, str]] | None = None,
+            session_id: str | None = None,
+            client_id: str | None = None,
+            images: list[tuple[str, bytes]] | None = None,
+            trace_metadata: dict[str, str] | None = None,
+            trace_name: str | None = None,
+            model_level: int | None = None,
+        ) -> AsyncIterator[str]:
+            nonlocal call_count
+            call_count += 1
+            self.calls.append({"message": message, "session_id": session_id})
+            if call_count == 1:
+                raise ValueError("transient glitch")
+            yield "queue drained successfully"
+
+    agent = FailOnceAgent()
     env = build_env(
-        agent_factory=factory,
-        settings=make_settings(monitor_error_max_retries=2),
+        agent=agent,
+        settings=make_settings(
+            monitor_error_max_retries=2,
+            consecutive_error_fail_threshold=3,
+        ),
     )
 
     with patch(
@@ -3213,27 +3253,29 @@ async def test_periodic_non_transient_error_retry_succeeds() -> None:
             env,
             kind=SubsessionKind.PERIODIC,
             interval_seconds=0.02,
+            max_runs=2,
         )
-        # The worker will retry after the first failure, then succeed
-        # on the second attempt.  Wait for it to complete one successful
-        # cycle and enter SLEEPING.
-        await asyncio.sleep(0.5)
+        await _await_worker(env, sub_id)
 
     info = env.registry.get(sub_id)
     assert info is not None
-    # The monitor should still be active (not FAILED).
-    assert info.status is not SubsessionStatus.FAILED
-    assert info.retry_count == 1  # One retry was used.
-    assert info.runs >= 1
+    # The monitor should have completed (not FAILED).
+    assert info.status is SubsessionStatus.CLOSED
+    # The consecutive error counter was reset after the successful run.
+    assert info.consecutive_errored_runs == 0
+    assert info.runs >= 2
 
 
 @pytest.mark.asyncio
 async def test_wait_for_event_non_transient_error_retries() -> None:
-    """WAIT_FOR_EVENT monitors also retry non-transient errors."""
+    """WAIT_FOR_EVENT monitors track consecutive errored runs and fail at threshold."""
     agent = FakeAgent(error=ValueError("tool error"))
     env = build_env(
         agent=agent,
-        settings=make_settings(monitor_error_max_retries=1),
+        settings=make_settings(
+            monitor_error_max_retries=1,
+            consecutive_error_fail_threshold=1,
+        ),
     )
 
     with patch(
@@ -3250,7 +3292,8 @@ async def test_wait_for_event_non_transient_error_retries() -> None:
     info = env.registry.get(sub_id)
     assert info is not None
     assert info.status is SubsessionStatus.FAILED
-    assert info.retry_count == 1
+    assert info.consecutive_errored_runs >= 1
+    assert "consecutive errored runs" in (info.error or "")
 
 
 @pytest.mark.asyncio
@@ -3262,6 +3305,7 @@ async def test_periodic_transient_error_transcript_recorded() -> None:
         settings=make_settings(
             transient_error_max_retries=0,
             transient_error_backoff_base=0.0,
+            consecutive_error_fail_threshold=1000,
         ),
     )
 
@@ -3279,11 +3323,9 @@ async def test_periodic_transient_error_transcript_recorded() -> None:
 
     info = env.registry.get(sub_id)
     assert info is not None
-    # Check transcript has a system message about the skipped run.
+    # Check transcript has a system message about the errored run.
     system_entries = [e for e in info.transcript if e.role == "system"]
-    assert any("TRANSIENT_ERROR" in (e.text or "") for e in system_entries) or any(
-        "transient" in (e.text or "").lower() for e in system_entries
-    )
+    assert any("Run errored" in (e.text or "") for e in system_entries)
 
 
 @pytest.mark.asyncio
@@ -3337,6 +3379,7 @@ async def test_periodic_unexpected_model_behavior_exhausted_skips_cycle() -> Non
         settings=make_settings(
             transient_error_max_retries=1,
             transient_error_backoff_base=0.0,
+            consecutive_error_fail_threshold=1000,
         ),
     )
 
@@ -3542,6 +3585,236 @@ async def test_periodic_model_tier_404_at_floor_no_fallback() -> None:
     info = env.registry.get(sub_id)
     assert info is not None
     assert info.status == SubsessionStatus.FAILED
+
+
+# consecutive error handling — acceptance criteria tests
+# ---------------------------------------------------------------------------
+
+
+@pytest.mark.asyncio
+async def test_tool_failure_leaves_subsession_alive_periodic() -> None:
+    """Tool failure exhausting retries in run k leaves subsession alive.
+
+    Acceptance criteria: A simulated tool failure exhausting retries in
+    run k leaves the subsession alive and run k+1 executes normally.
+    """
+    call_count = 0
+
+    class FailThenSucceedAgent:
+        """Fails on the first call, succeeds on subsequent calls."""
+
+        def __init__(self) -> None:
+            self.calls: list[dict[str, Any]] = []
+
+        async def stream(
+            self,
+            message: str,
+            *,
+            history: list[tuple[str, str]] | None = None,
+            session_id: str | None = None,
+            client_id: str | None = None,
+            images: list[tuple[str, bytes]] | None = None,
+            trace_metadata: dict[str, str] | None = None,
+            trace_name: str | None = None,
+            model_level: int | None = None,
+        ) -> AsyncIterator[str]:
+            nonlocal call_count
+            call_count += 1
+            self.calls.append({"message": message, "session_id": session_id})
+            if call_count == 1:
+                raise ValueError("component_request exceeded max retries count of 2")
+            yield "run completed normally"
+
+    agent = FailThenSucceedAgent()
+    env = build_env(
+        agent=agent,
+        settings=make_settings(
+            consecutive_error_fail_threshold=3,
+            transient_error_max_retries=0,
+        ),
+    )
+
+    with patch(
+        "robotsix_chat.subsessions.worker.is_openrouter_transient",
+        return_value=False,
+    ):
+        sub_id = _spawn(
+            env,
+            kind=SubsessionKind.PERIODIC,
+            interval_seconds=0.02,
+            max_runs=2,
+        )
+        await _await_worker(env, sub_id)
+
+    info = env.registry.get(sub_id)
+    assert info is not None
+    # The subsession completed normally after the error + recovery.
+    assert info.status is SubsessionStatus.CLOSED
+    assert info.runs >= 2
+    assert info.consecutive_errored_runs == 0  # reset after success
+
+
+@pytest.mark.asyncio
+async def test_tool_failure_exhausting_retries_leaves_subsession_alive_wfe() -> None:
+    """Same as periodic but for wait_for_event kind."""
+    call_count = 0
+
+    class FailThenSucceedAgent:
+        def __init__(self) -> None:
+            self.calls: list[dict[str, Any]] = []
+
+        async def stream(
+            self,
+            message: str,
+            *,
+            history: list[tuple[str, str]] | None = None,
+            session_id: str | None = None,
+            client_id: str | None = None,
+            images: list[tuple[str, bytes]] | None = None,
+            trace_metadata: dict[str, str] | None = None,
+            trace_name: str | None = None,
+            model_level: int | None = None,
+        ) -> AsyncIterator[str]:
+            nonlocal call_count
+            call_count += 1
+            self.calls.append({"message": message, "session_id": session_id})
+            if call_count == 1:
+                raise ValueError("component_request exceeded max retries count of 2")
+            yield "event processed"
+
+    agent = FailThenSucceedAgent()
+    env = build_env(
+        agent=agent,
+        settings=make_settings(
+            consecutive_error_fail_threshold=3,
+            transient_error_max_retries=0,
+            # Short event-driven timeout so the test doesn't wait 60s.
+            event_driven_timeout_seconds=0.1,
+        ),
+    )
+
+    with patch(
+        "robotsix_chat.subsessions.worker.is_openrouter_transient",
+        return_value=False,
+    ):
+        sub_id = _spawn(
+            env,
+            kind=SubsessionKind.WAIT_FOR_EVENT,
+            dedup_key="ticket-456",
+        )
+        # First run fails, second succeeds.  Wait for both to complete.
+        # The event wait loop has a safety-net timeout, so we need to wait
+        # long enough for it to fire.
+        await asyncio.sleep(2.0)
+
+    info = env.registry.get(sub_id)
+    assert info is not None
+    # The subsession should still be alive (not FAILED).
+    assert info.status is not SubsessionStatus.FAILED
+    assert info.consecutive_errored_runs == 0  # reset after success
+    assert info.runs >= 2
+
+
+@pytest.mark.asyncio
+async def test_three_consecutive_errored_runs_fails_subsession() -> None:
+    """3 consecutive errored runs fail the subsession with last error."""
+    agent = FakeAgent(error=ValueError("tool retry limit exceeded"))
+    env = build_env(
+        agent=agent,
+        settings=make_settings(
+            consecutive_error_fail_threshold=3,
+            transient_error_max_retries=0,
+        ),
+    )
+
+    with patch(
+        "robotsix_chat.subsessions.worker.is_openrouter_transient",
+        return_value=False,
+    ):
+        sub_id = _spawn(
+            env,
+            kind=SubsessionKind.PERIODIC,
+            interval_seconds=0.02,
+        )
+        await _await_worker(env, sub_id)
+
+    info = env.registry.get(sub_id)
+    assert info is not None
+    assert info.status is SubsessionStatus.FAILED
+    assert info.consecutive_errored_runs >= 3
+    assert "consecutive errored runs" in (info.error or "")
+    assert "tool retry limit exceeded" in (info.error or "")
+
+
+@pytest.mark.asyncio
+async def test_single_errored_run_produces_at_most_one_notification() -> None:
+    """A single errored run produces at most one parent notification.
+
+    Acceptance criteria: A single errored run produces at most one
+    parent notification (avoid spamming a notice per errored run).
+    """
+    event_sink = RecordingSink()
+    agent = FakeAgent(error=ValueError("transient tool failure"))
+    env = build_env(
+        agent=agent,
+        event_sink=event_sink,
+        settings=make_settings(
+            consecutive_error_fail_threshold=5,
+            transient_error_max_retries=0,
+        ),
+    )
+
+    with patch(
+        "robotsix_chat.subsessions.worker.is_openrouter_transient",
+        return_value=False,
+    ):
+        sub_id = _spawn(
+            env,
+            kind=SubsessionKind.PERIODIC,
+            interval_seconds=0.02,
+        )
+        # Wait for several errored runs (more than 1).
+        await asyncio.sleep(0.3)
+
+    info = env.registry.get(sub_id)
+    assert info is not None
+    # At least 2 errored runs happened.
+    assert info.consecutive_errored_runs >= 2
+
+    # Only one parent notification (urgency=low, not the result frame).
+    notification_frames = [
+        (s, f)
+        for s, f in event_sink.frames
+        if f.get("type") == SSE_NOTIFICATION_TYPE and f.get("urgency") == "low"
+    ]
+    assert len(notification_frames) == 1
+    assert "errored run" in str(notification_frames[0][1].get("body", ""))
+
+
+@pytest.mark.asyncio
+async def test_no_behavior_change_for_task_kind() -> None:
+    """Task subsessions still fail immediately on error."""
+    agent = FakeAgent(error=ValueError("task tool failure"))
+    env = build_env(
+        agent=agent,
+        settings=make_settings(
+            consecutive_error_fail_threshold=3,
+            transient_error_max_retries=0,
+        ),
+    )
+
+    with patch(
+        "robotsix_chat.subsessions.worker.is_openrouter_transient",
+        return_value=False,
+    ):
+        sub_id = _spawn(env, prompt="do something", kind=SubsessionKind.TASK)
+        await _await_worker(env, sub_id)
+
+    info = env.registry.get(sub_id)
+    assert info is not None
+    # TASK subsession should be failed immediately (no consecutive error tracking).
+    assert info.status is SubsessionStatus.FAILED
+    assert info.consecutive_errored_runs == 0  # not tracked for task kind
 
 
 # wait_for_event checkpoint repair
