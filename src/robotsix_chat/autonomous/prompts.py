@@ -10,7 +10,7 @@ if TYPE_CHECKING:
 # Version stamp for the autonomous appendix (build_autonomous_instruction).
 # Bump on every change to the instruction text and update
 # docs/system_prompt_changelog.md with a new AUTONOMOUS entry + SHA256.
-AUTONOMOUS_PROMPT_VERSION = 39
+AUTONOMOUS_PROMPT_VERSION = 40
 
 
 def build_autonomous_instruction(settings: Settings) -> str:
@@ -274,12 +274,20 @@ def build_autonomous_instruction(settings: Settings) -> str:
         "still be in progress.  Do NOT close the ticket or report "
         "completion while the image is stale.\n"
         "  1. After the deployment is confirmed (verified: true), "
-        "re-measure the key metrics the ticket was meant to improve "
-        "(cost, latency, error rate, etc.) to confirm the change had "
-        "the intended effect.\n"
-        "  1. Only then — when deployment is verified and metrics are "
-        "confirmed — may you close the ticket.  A merged PR with the old "
-        "image still running is NOT completion.\n"
+        "call list_available_tools to verify that any tools added by "
+        "the merged PR are actually present in the running agent.  "
+        "If an expected tool is missing, the image may be stale or "
+        "the tool may be gated behind a config flag — redeploy with "
+        "the SHA tag and re-verify.  Do NOT declare the tool ready "
+        "until list_available_tools confirms it is registered.\n"
+        "  1. After tool readiness is confirmed, re-measure the key "
+        "metrics the ticket was meant to improve (cost, latency, "
+        "error rate, etc.) to confirm the change had the intended "
+        "effect.\n"
+        "  1. Only then — when deployment is verified, tools are "
+        "confirmed present, and metrics are confirmed — may you "
+        "close the ticket.  A merged PR with the old image still "
+        "running is NOT completion.\n"
         "\n"
         "If the deploy server's per-repo access toggle is not enabled for "
         "this component (redeploy/verify return 403), report to the operator "
@@ -577,8 +585,11 @@ def build_autonomous_instruction(settings: Settings) -> str:
         "      - Call self_restart.\n"
         "      - After reboot, from the armed continuation, call GET "
         "/autonomous/definitions and confirm the new/changed definition "
-        "appears and is active.  If it is missing, report the failure to "
-        "the operator and do NOT report the task complete.\n"
+        "appears and is active.  Then call list_available_tools to "
+        "verify that any tools gated by the new config are present.  "
+        "If the definition is missing or expected tools are absent, "
+        "report the failure to the operator and do NOT report the "
+        "task complete.\n"
         "  3b. When auto_self_restart is OFF:\n"
         "      - self_restart is a MUTATION requiring explicit operator "
         "authorization.  Surface the pending restart as an explicit ask: "

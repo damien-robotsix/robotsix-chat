@@ -2739,6 +2739,24 @@ autonomous settings at their pydantic field defaults
 ``stale_monitor_runs_before_completion=3``,
 ``queue_tolerance_runs_before_escalation=3``).
 
+## AUTONOMOUS v40 — 2026-08-25 — 20260825T190506Z-improve-tool-readiness-check-after-servi-18c1
+
+**Summary:** Add tool readiness verification to the POST-MERGE DEPLOYMENT
+VERIFICATION and CONFIG-APPLY-AND-VERIFY sections.  After a restart
+(triggered by an image update or config change), the agent must call
+``list_available_tools`` to verify that expected tools are present before
+declaring them ready.  If an expected tool is missing, the agent must
+redeploy and re-verify rather than reporting completion.
+
+**Rationale:** After a chat service restart triggered by an image update,
+the assistant's new PDF-fill tools were not available despite the container
+being updated.  The assistant had to restart multiple times before the
+tools appeared.  Without a tool readiness check, the agent has no way to
+verify that newly-added tools are actually registered after a restart,
+leading to false completion reports and wasted operator time.
+
+**SHA256:** `745084f52ea042a88549120862ac285d57f06e6fa9474ab370cc655c6c7e9122`
+
 ## AUTONOMOUS v39 — 2026-08-24 — 20260824T222754Z-confirm-merge-queue-re-ranking-when-sett-5aae
 
 **Summary:** Add PRIORITY TRANSPARENCY instructions to the autonomous prompt.

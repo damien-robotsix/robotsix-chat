@@ -1036,64 +1036,81 @@ def _build_static_tools(
 
     from robotsix_chat.llm.tool_utils import require_args
 
-    return [
-        require_args(t)
-        for t in (
-            *build_skill_tools(settings),
-            *component_access_tools,
-            *build_mail_tools(settings.mail),
-            *build_component_tools(settings.component_client),
-            *build_refdocs_tools(settings.refdocs, settings.direct_repo),
-            *build_repo_study_tools(
-                settings.repo_study,
-                settings.direct_repo,
-                diagnostic_store=diagnostic_store,
-            ),
-            *build_direct_repo_tools(
-                settings.direct_repo, component_request=component_request
-            ),
-            *build_github_security_tools(
-                settings.github_security, settings.direct_repo
-            ),
-            *build_github_actions_tools(settings.github_actions, settings.direct_repo),
-            *build_knowledge_tools(settings.knowledge, store=knowledge_store),
-            *build_continuation_tools(
-                settings.continuation, continuation_store=continuation_store
-            ),
-            *build_diagnostics_tools(settings.diagnostics, store=diagnostic_store),
-            *build_recent_activity_tools(settings.self_review, conversation_store),
-            *build_version_check_tools(settings.version_check, settings.direct_repo),
-            *build_lifecycle_tools(settings.lifecycle),
-            *build_render_url_tools(settings.render_url),
-            *build_http_probe_tools(settings.http_probe, settings.central_deploy),
-            *build_docker_digest_tools(settings.docker_digest),
-            *build_gateway_route_tools(settings.gateway_route, settings.central_deploy),
-            *build_public_fetch_tools(settings.public_fetch, settings.central_deploy),
-            *build_langfuse_inspect_tools(settings.langfuse_inspect, settings.langfuse),
-            *build_sftp_tools(settings.sftp),
-            *build_file_hub_tools(settings.file_hub_tools),
-            *build_volume_tools(settings.volume_tools),
-            *build_ticket_poll_tools(settings, component_request=component_request),
-            *build_merge_pull_request_tool(
-                settings, component_request=component_request
-            ),
-            *build_file_ticket_tool(settings, component_request=component_request),
-            *build_mark_ticket_ready_tool(
-                settings, component_request=component_request
-            ),
-            *build_mark_ticket_done_tool(settings, component_request=component_request),
-            *build_find_ticket_by_pr_tool(
-                settings, component_request=component_request
-            ),
-            *build_prioritize_all_open_tickets_tool(
-                settings, component_request=component_request
-            ),
-            *build_list_stale_ready_tickets_tool(
-                settings, component_request=component_request
-            ),
-            *build_decompose_epic_tool(settings, component_request=component_request),
-        )
+    raw_tools = [
+        *build_skill_tools(settings),
+        *component_access_tools,
+        *build_mail_tools(settings.mail),
+        *build_component_tools(settings.component_client),
+        *build_refdocs_tools(settings.refdocs, settings.direct_repo),
+        *build_repo_study_tools(
+            settings.repo_study,
+            settings.direct_repo,
+            diagnostic_store=diagnostic_store,
+        ),
+        *build_direct_repo_tools(
+            settings.direct_repo, component_request=component_request
+        ),
+        *build_github_security_tools(settings.github_security, settings.direct_repo),
+        *build_github_actions_tools(settings.github_actions, settings.direct_repo),
+        *build_knowledge_tools(settings.knowledge, store=knowledge_store),
+        *build_continuation_tools(
+            settings.continuation, continuation_store=continuation_store
+        ),
+        *build_diagnostics_tools(settings.diagnostics, store=diagnostic_store),
+        *build_recent_activity_tools(settings.self_review, conversation_store),
+        *build_version_check_tools(settings.version_check, settings.direct_repo),
+        *build_lifecycle_tools(settings.lifecycle),
+        *build_render_url_tools(settings.render_url),
+        *build_http_probe_tools(settings.http_probe, settings.central_deploy),
+        *build_docker_digest_tools(settings.docker_digest),
+        *build_gateway_route_tools(settings.gateway_route, settings.central_deploy),
+        *build_public_fetch_tools(settings.public_fetch, settings.central_deploy),
+        *build_langfuse_inspect_tools(settings.langfuse_inspect, settings.langfuse),
+        *build_sftp_tools(settings.sftp),
+        *build_file_hub_tools(settings.file_hub_tools),
+        *build_volume_tools(settings.volume_tools),
+        *build_ticket_poll_tools(settings, component_request=component_request),
+        *build_merge_pull_request_tool(settings, component_request=component_request),
+        *build_file_ticket_tool(settings, component_request=component_request),
+        *build_mark_ticket_ready_tool(settings, component_request=component_request),
+        *build_mark_ticket_done_tool(settings, component_request=component_request),
+        *build_find_ticket_by_pr_tool(settings, component_request=component_request),
+        *build_prioritize_all_open_tickets_tool(
+            settings, component_request=component_request
+        ),
+        *build_list_stale_ready_tickets_tool(
+            settings, component_request=component_request
+        ),
+        *build_decompose_epic_tool(settings, component_request=component_request),
     ]
+
+    # Capture tool names for the readiness-check tool.  The snapshot is
+    # taken before list_available_tools is appended so the count is of the
+    # "real" tools; list_available_tools adds itself to the output.
+    _tool_names = sorted({getattr(t, "__name__", type(t).__name__) for t in raw_tools})
+
+    async def list_available_tools() -> str:
+        """List all tools currently available to the agent.
+
+        Returns a sorted, newline-separated list of tool names.  Use this
+        after a restart to verify that expected tools (e.g. newly-added
+        tools from an image update) are present before declaring them
+        ready.  If an expected tool is missing, the image may not have
+        been updated — redeploy and verify via the lifecycle tools.
+
+        Returns:
+            A formatted list of available tool names.
+
+        """
+        return (
+            f"Available tools ({len(_tool_names) + 1}):\n"
+            + "\n".join(f"  - {name}" for name in _tool_names)
+            + "\n  - list_available_tools"
+        )
+
+    raw_tools.append(list_available_tools)
+
+    return [require_args(t) for t in raw_tools]
 
 
 def _build_request_tools_factory(
