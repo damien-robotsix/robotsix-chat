@@ -89,6 +89,14 @@ if "robotsix_mill.agents.runners.diagnostic_check_recurring_ci" in sys.modules:
     del sys.modules["robotsix_mill.agents.runners.diagnostic_check_recurring_ci"]
 import robotsix_mill.agents.runners.diagnostic_check_recurring_ci  # noqa: E402
 
+# ``diagnostic_check_oversized_ticket`` registers itself (register_check
+# side-effect) against the installed ``diagnostic_checks`` registry.
+# Eject any cached installed copy and re-import from the shadow so the
+# new ``OversizedTicketCheck`` is registered.
+if "robotsix_mill.agents.runners.diagnostic_check_oversized_ticket" in sys.modules:
+    del sys.modules["robotsix_mill.agents.runners.diagnostic_check_oversized_ticket"]
+import robotsix_mill.agents.runners.diagnostic_check_oversized_ticket  # noqa: E402
+
 # ---------------------------------------------------------------------------
 # 5.  Patch ``load_agent_definition`` to prefer local overrides in
 #     ``agent_definitions/``.  When a YAML file exists under our local
