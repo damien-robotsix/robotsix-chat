@@ -505,6 +505,9 @@ async def config_deploy_get_endpoint(request: Request) -> JSONResponse:
     deploy_config = full_config.get("central_deploy", {})
 
     # Extract the CentralDeploySettings sub-schema from the full schema.
+    # The schema describes the deploy config shape directly (matching the
+    # ``config`` value returned by this endpoint), not wrapped under a
+    # ``central_deploy`` property.
     full_schema = _get_schema()
     deploy_schema: dict[str, Any] = {}
     if "properties" in full_schema:
@@ -513,14 +516,12 @@ async def config_deploy_get_endpoint(request: Request) -> JSONResponse:
             ref_path = central_deploy_prop["$ref"]
             ref_name = ref_path.split("/")[-1]
             if "$defs" in full_schema and ref_name in full_schema["$defs"]:
+                defn = full_schema["$defs"][ref_name]
                 deploy_schema = {
                     "$schema": full_schema.get(
                         "$schema", "https://json-schema.org/draft/2020-12/schema"
                     ),
-                    "title": "CentralDeploySettings",
-                    "description": "Deploy configuration section",
-                    "type": "object",
-                    "properties": {"central_deploy": full_schema["$defs"][ref_name]},
+                    **defn,
                     "$defs": full_schema["$defs"],
                 }
 

@@ -1269,7 +1269,7 @@ def test_get_config_deploy_returns_deploy_section(tmp_path: Path) -> None:
 
 
 def test_get_config_deploy_includes_schema(tmp_path: Path) -> None:
-    """GET /config/deploy returns a schema with central_deploy properties."""
+    """GET /config/deploy returns a schema that directly describes deploy config shape."""
     config_path = tmp_path / "config.json"
     _write_config(config_path, {"llmio_model_level": 3})
     client = _make_app(config_path)
@@ -1278,8 +1278,13 @@ def test_get_config_deploy_includes_schema(tmp_path: Path) -> None:
     data = resp.json()
     schema = data.get("schema", {})
     assert isinstance(schema, dict)
+    assert schema.get("type") == "object"
     props = schema.get("properties", {})
-    assert "central_deploy" in props
+    # Schema should describe the deploy settings shape directly (matching
+    # the ``config`` value), not wrapped under ``central_deploy``.
+    assert "url" in props
+    assert "roster_cache_ttl" in props
+    assert "$schema" in schema
 
 
 def test_get_config_deploy_empty_config(tmp_path: Path) -> None:
@@ -1292,11 +1297,14 @@ def test_get_config_deploy_empty_config(tmp_path: Path) -> None:
     assert "config" in data
     assert "schema" in data
     # An empty config has no central_deploy, so config should be empty
-    # (but schema should still have the property definition).
+    # (but schema should still describe the deploy shape).
     assert isinstance(data["config"], dict)
     schema = data["schema"]
+    assert isinstance(schema, dict)
+    assert schema.get("type") == "object"
     props = schema.get("properties", {})
-    assert "central_deploy" in props
+    assert "url" in props
+    assert "roster_cache_ttl" in props
 
 
 def test_get_config_deploy_secret_masked(tmp_path: Path) -> None:
