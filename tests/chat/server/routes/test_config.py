@@ -1269,7 +1269,7 @@ def test_get_config_deploy_returns_deploy_section(tmp_path: Path) -> None:
 
 
 def test_get_config_deploy_includes_schema(tmp_path: Path) -> None:
-    """GET /config/deploy returns a schema that directly describes deploy config shape."""
+    """GET /config/deploy returns a schema describing deploy config shape."""
     config_path = tmp_path / "config.json"
     _write_config(config_path, {"llmio_model_level": 3})
     client = _make_app(config_path)
