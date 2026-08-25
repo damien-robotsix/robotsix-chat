@@ -1242,3 +1242,90 @@ def test_rollback_returns_effective_config(tmp_path: Path) -> None:
 
     assert set(body) == {"config", "version"}
     assert body["config"]["server_port"] == 8000
+
+
+# ---------------------------------------------------------------------------
+# GET /config/deploy — deploy configuration sub-path
+# ---------------------------------------------------------------------------
+
+
+def test_get_config_deploy_returns_deploy_section(tmp_path: Path) -> None:
+    """GET /config/deploy returns only the central_deploy block."""
+    config_path = tmp_path / "config.json"
+    _write_config(
+        config_path,
+        {"central_deploy": {"url": "http://deploy:8100", "roster_cache_ttl": 600.0}},
+    )
+    client = _make_app(config_path)
+    resp = client.get("/config/deploy")
+    assert resp.status_code == 200
+    data = resp.json()
+    # Response has config and schema keys.
+    assert "config" in data
+    assert "schema" in data
+    # Config contains the central_deploy data.
+    assert data["config"]["url"] == "http://deploy:8100"
+    assert data["config"]["roster_cache_ttl"] == 600.0
+
+
+def test_get_config_deploy_includes_schema(tmp_path: Path) -> None:
+    """GET /config/deploy returns a schema describing deploy config shape."""
+    config_path = tmp_path / "config.json"
+    _write_config(config_path, {"llmio_model_level": 3})
+    client = _make_app(config_path)
+    resp = client.get("/config/deploy")
+    assert resp.status_code == 200
+    data = resp.json()
+    schema = data.get("schema", {})
+    assert isinstance(schema, dict)
+    assert schema.get("type") == "object"
+    props = schema.get("properties", {})
+    # Schema should describe the deploy settings shape directly (matching
+    # the ``config`` value), not wrapped under ``central_deploy``.
+    assert "url" in props
+    assert "roster_cache_ttl" in props
+    assert "$schema" in schema
+
+
+def test_get_config_deploy_empty_config(tmp_path: Path) -> None:
+    """GET /config/deploy returns empty deploy config when file is absent."""
+    config_path = tmp_path / "config.json"
+    client = _make_app(config_path)
+    resp = client.get("/config/deploy")
+    assert resp.status_code == 200
+    data = resp.json()
+    assert "config" in data
+    assert "schema" in data
+    # An empty config has no central_deploy, so config should be empty
+    # (but schema should still describe the deploy shape).
+    assert isinstance(data["config"], dict)
+    schema = data["schema"]
+    assert isinstance(schema, dict)
+    assert schema.get("type") == "object"
+    props = schema.get("properties", {})
+    assert "url" in props
+    assert "roster_cache_ttl" in props
+
+
+def test_get_config_deploy_secret_masked(tmp_path: Path) -> None:
+    """Secret fields in the deploy config are masked."""
+    config_path = tmp_path / "config.json"
+    _write_config(
+        config_path,
+        {
+            "central_deploy": {
+                "component_credentials": {
+                    "mill": {
+                        "header_token": "sk-secret-token",  # pragma: allowlist secret
+                    },
+                },
+            },
+        },
+    )
+    client = _make_app(config_path)
+    resp = client.get("/config/deploy")
+    assert resp.status_code == 200
+    data = resp.json()
+    creds = data["config"].get("component_credentials", {})
+    if creds:
+        assert creds["mill"]["header_token"] == "**********"  # pragma: allowlist secret
