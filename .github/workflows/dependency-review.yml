@@ -31,6 +31,7 @@ jobs:
           comment-summary-in-pr: true
           allow-licenses: >-
             MIT,
+            MIT-CMU,
             Apache-2.0,
             BSD-2-Clause,
             BSD-3-Clause,
@@ -42,7 +43,11 @@ jobs:
           # mdformat-frontmatter, mdit-py-plugins, and ruamel-yaml are all MIT-
           # licensed but the dependency-review-action cannot detect their
           # license from PyPI metadata — explicitly allow them.
+          # reportlab is BSD-3-Clause (permissive, OSI-approved) but declares
+          # its license as freeform "BSD license (see license.txt)" metadata
+          # that cannot be mapped to an SPDX id — explicitly allow it.
           allow-dependencies-licenses: >-
             pkg:pypi/mdformat-frontmatter@2.1.2,
             pkg:pypi/mdit-py-plugins@0.6.1,
-            pkg:pypi/ruamel-yaml@0.19.1
+            pkg:pypi/ruamel-yaml@0.19.1,
+            pkg:pypi/reportlab@5.0.1

@@ -10,7 +10,6 @@ skill markdown for injection into the agent system prompt.
 
 from __future__ import annotations
 
-import logging
 from collections.abc import Callable
 from importlib import resources
 from pathlib import Path
@@ -18,8 +17,6 @@ from typing import TYPE_CHECKING, Any
 
 if TYPE_CHECKING:
     from robotsix_chat.config.models import FileHubToolsSettings
-
-logger = logging.getLogger(__name__)
 
 __all__ = ["build_file_hub_tools", "load_file_hub_skill"]
 

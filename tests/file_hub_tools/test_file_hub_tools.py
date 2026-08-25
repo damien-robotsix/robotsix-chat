@@ -36,6 +36,7 @@ def _make_form_pdf(path: Path) -> None:
         from reportlab.pdfgen import canvas as rl_canvas
     except ImportError:
         pytest.skip("reportlab not installed")
+        return  # unreachable; silences CodeQL py/uninitialized-local-variable
 
     c = rl_canvas.Canvas(str(path), pagesize=(612, 792))
     c.acroForm.textfield(name="name", x=100, y=700, width=200, height=20, value="")
@@ -49,6 +50,7 @@ def _make_flat_pdf(path: Path) -> None:
         from reportlab.pdfgen import canvas as rl_canvas
     except ImportError:
         pytest.skip("reportlab not installed")
+        return  # unreachable; silences CodeQL py/uninitialized-local-variable
 
     c = rl_canvas.Canvas(str(path), pagesize=(612, 792))
     c.drawString(100, 700, "Sample flat PDF")

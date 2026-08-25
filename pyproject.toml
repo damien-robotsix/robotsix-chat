@@ -228,6 +228,11 @@ ignore_missing_imports = true
 module = ["asyncssh", "asyncssh.*"]
 ignore_missing_imports = true
 
+# reportlab (the optional `file-hub` PDF tooling) ships no type information.
+[[tool.mypy.overrides]]
+module = ["reportlab", "reportlab.*"]
+ignore_missing_imports = true
+
 [tool.pyright]
 typeCheckingMode = "basic"
 pythonVersion = "3.14"
