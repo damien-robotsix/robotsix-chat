@@ -805,6 +805,21 @@ files when diagnostics detect they are missing. Disabled by default.
 | `sftp.known_hosts`            | `string`          | `""`    | OpenSSH-format known-hosts entries for host key verification. When empty, host key verification is skipped. |
 | `sftp.remote_root`            | `string`          | `""`    | Optional base directory on the remote server to restrict all operations under (e.g. `/var/www`).            |
 
+### File Hub Tools
+
+File-hub integration — fetch, fill, and upload documents via the robotsix-file-hub service. When
+enabled, the agent gains four tools: `file_hub_get` (download by id), `list_pdf_form_fields`
+(inspect AcroForm fields), `fill_pdf_document` (set form fields or overlay text), and `file_hub_put`
+(upload a local file). Disabled by default.
+
+| JSON key                           | Type      | Default                  | Description                                                                                           |
+| ---------------------------------- | --------- | ------------------------ | ----------------------------------------------------------------------------------------------------- |
+| `file_hub_tools.enabled`           | `boolean` | `false`                  | Master switch. When `false`, no file-hub tools are registered.                                        |
+| `file_hub_tools.base_url`          | `string`  | `"http://file-hub:8080"` | Base URL of the file-hub service. Must be reachable from the chat container.                          |
+| `file_hub_tools.working_dir`       | `string`  | `"/data/file_hub_work"`  | Local directory for downloaded and filled files.                                                      |
+| `file_hub_tools.max_download_bytes`| `integer` | `52428800`               | Maximum file size in bytes for downloads (default 50 MB). Must be >0.                                 |
+| `file_hub_tools.timeout`           | `number`  | `60.0`                   | Per-request HTTP timeout in seconds. Must be >0.                                                      |
+
 ### Volume Tools
 
 Local volume-directory listing. When enabled, the agent gains a `list_volume_files` tool that
