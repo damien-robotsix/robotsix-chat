@@ -229,7 +229,7 @@ class TestBuildAutonomousInstruction:
         """AUTO SELF-RESTART lists autonomous.sessions changes as valid reason."""
         settings = self._make_settings()
         result = build_autonomous_instruction(settings)
-        assert "autonomous.sessions changes ARE a capability change" in result
+        assert "autonomous.sessions changes ARE a valid reason" in result
         assert "is a valid reason to auto-self-restart" in result
 
     def test_config_apply_verify_mandates_completion_gate(self) -> None:

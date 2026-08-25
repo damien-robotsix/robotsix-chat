@@ -346,8 +346,30 @@ class LifecycleClient:
         """``POST /services/{name}/restart`` — restart a service."""
         return await self._post(f"/services/{service_name}/restart")
 
-    async def redeploy_service(self, service_name: str) -> str:
-        """``POST /services/{name}/redeploy`` — redeploy a service."""
+    async def redeploy_service(self, service_name: str, image_ref: str = "") -> str:
+        """``POST /services/{name}/redeploy`` — redeploy a service.
+
+        Sends a redeploy request to the deploy server.  When *image_ref*
+        is non-empty, the deploy server is instructed to pull that
+        specific image reference (e.g. ``sha-abc123def``) rather than the
+        service's default tag (which may be stale if the build pipeline
+        has not finished publishing the latest ``:main`` tag).
+
+        Args:
+            service_name: The service identifier to redeploy.
+            image_ref: Optional specific image reference (tag, digest,
+                or ``sha-<commit>``) to pull.  When empty, the deploy
+                server uses the service's default image tag.
+
+        Returns:
+            The redeploy result, or an error message.
+
+        """
+        if image_ref:
+            return await self._post(
+                f"/services/{service_name}/redeploy",
+                json_body={"image_ref": image_ref},
+            )
         return await self._post(f"/services/{service_name}/redeploy")
 
     async def self_restart(self) -> str:
