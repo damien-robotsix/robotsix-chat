@@ -1322,6 +1322,12 @@
           "title": "Auto Stop No Change Runs",
           "type": "integer"
         },
+        "consecutive_error_fail_threshold": {
+          "default": 3,
+          "description": "Number of consecutive errored runs before a periodic or wait_for_event subsession is permanently failed.  A run is errored when it ends with a tool-retry exhaustion, transient-error exhaustion, timeout, or any other run-level failure.  The counter resets on any successful run.  The parent is notified at most once per error streak (when the streak begins).  Set to ``0`` to fail on the first errored run (legacy behaviour).  Default ``3``.  Env override: ``SUBSESSIONS_CONSECUTIVE_ERROR_FAIL_THRESHOLD``.",
+          "title": "Consecutive Error Fail Threshold",
+          "type": "integer"
+        },
         "default_model_level": {
           "default": 3,
           "title": "Default Model Level",

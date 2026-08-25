@@ -433,6 +433,21 @@ class SubsessionsSettings(BaseModel):
             "Env override: ``SUBSESSIONS_MONITOR_ERROR_MAX_RETRIES``."
         ),
     )
+    consecutive_error_fail_threshold: int = Field(
+        default=3,
+        description=(
+            "Number of consecutive errored runs before a periodic or "
+            "wait_for_event subsession is permanently failed.  A run "
+            "is errored when it ends with a tool-retry exhaustion, "
+            "transient-error exhaustion, timeout, or any other "
+            "run-level failure.  The counter resets on any successful "
+            "run.  The parent is notified at most once per error "
+            "streak (when the streak begins).  Set to ``0`` to fail "
+            "on the first errored run (legacy behaviour).  "
+            "Default ``3``.  "
+            "Env override: ``SUBSESSIONS_CONSECUTIVE_ERROR_FAIL_THRESHOLD``."
+        ),
+    )
     transient_error_max_retries: int = 3
     transient_error_backoff_base: float = 1.0
     transient_error_backoff_cap: float = 30.0

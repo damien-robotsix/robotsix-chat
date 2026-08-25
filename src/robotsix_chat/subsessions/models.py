@@ -193,6 +193,12 @@ class SubsessionInfo:
     # monitor's counter survives server restarts and the auto-stop /
     # auto-pause thresholds are not defeated by process restarts.
     consecutive_no_change: int = 0
+    # Number of consecutive runs that ended in an error (tool-retry
+    # exhaustion, transient-error exhaustion, timeout, or any other
+    # run-level failure).  Persisted so the consecutive-error fail
+    # threshold survives server restarts.  Reset to 0 on any successful
+    # run.
+    consecutive_errored_runs: int = 0
     # Global-issue deduplication key — when set on a user_chat subsession,
     # spawn_subsession refuses to create another user_chat with the same key
     # while this one is active, so a single root-cause error (e.g. an
@@ -248,6 +254,7 @@ class SubsessionInfo:
             "dedup_key": self.dedup_key,
             "depends_on_ticket_id": self.depends_on_ticket_id,
             "consecutive_no_change": self.consecutive_no_change,
+            "consecutive_errored_runs": self.consecutive_errored_runs,
             "retry_count": self.retry_count,
         }
         if with_transcript:
