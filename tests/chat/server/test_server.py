@@ -1238,6 +1238,47 @@ def test_create_agent_from_settings_memory_enabled_builds_memory() -> None:
     assert agent._memory is sentinel
 
 
+def test_list_available_tools_present_in_tool_suite() -> None:
+    """The ``list_available_tools`` tool is included in the non-bare agent."""
+    settings = Settings(agent_instruction="Be terse.")
+
+    agent = create_agent_from_settings(settings=settings, bare=False)
+
+    assert agent._tools is not None
+    tool_names = [getattr(t, "__name__", "") for t in agent._tools]
+    assert "list_available_tools" in tool_names
+
+
+@pytest.mark.asyncio
+async def test_list_available_tools_returns_tool_names() -> None:
+    """``list_available_tools`` returns a formatted list of tool names."""
+    settings = Settings(agent_instruction="Be terse.")
+
+    agent = create_agent_from_settings(settings=settings, bare=False)
+
+    assert agent._tools is not None
+    tool = next(
+        t for t in agent._tools if getattr(t, "__name__", "") == "list_available_tools"
+    )
+
+    result = await tool()
+
+    assert "Available tools" in result
+    assert "list_available_tools" in result
+    # Verify the count matches.
+    count_str = result.split("(")[1].split(")")[0]
+    assert count_str.isdigit()
+
+
+def test_list_available_tools_absent_in_bare_agent() -> None:
+    """``bare=True`` agents have no tools, including ``list_available_tools``."""
+    settings = Settings(agent_instruction="Be terse.")
+
+    agent = create_agent_from_settings(settings=settings, bare=True)
+
+    assert agent._tools == []
+
+
 @pytest.mark.asyncio
 async def test_create_agent_from_settings_uses_load_when_none(
     monkeypatch: pytest.MonkeyPatch,
