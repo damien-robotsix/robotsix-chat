@@ -51,6 +51,7 @@ def build_file_hub_tools(
         PdfNotPdfError,
         fill_form_fields,
         list_form_fields,
+        overlay_images,
         overlay_text,
     )
     from .pdf_tools import render_pdf_page as _render_pdf_page
@@ -103,11 +104,12 @@ def build_file_hub_tools(
         pdf_path: str,
         field_values: str = "",
         text_overlays: str = "",
+        image_overlays: str = "",
         output_path: str = "",
     ) -> str:
-        """Fill a PDF document — set form fields or overlay text.
+        """Fill a PDF document — set form fields, overlay text, or stamp images.
 
-        Supports two modes (can be combined):
+        Supports three modes (can be combined):
 
         1. **Form-field fill** — for PDFs with AcroForm fields. Pass
            ``field_values`` as a JSON object mapping field names to values
@@ -118,6 +120,14 @@ def build_file_hub_tools(
            ``page`` (0-based), ``x``, ``y`` (points from bottom-left),
            ``text``, and optional ``font_size`` and ``font_name``.
 
+        3. **Image overlay** — stamp local images onto the PDF. Pass
+           ``image_overlays`` as a JSON array of objects, each with
+           ``page`` (0-based), ``x``, ``y`` (points from bottom-left),
+           ``image_path`` (local file path), and optional ``width``
+           and ``height`` (points).  If only one of width/height is
+           given the other is derived from the image's aspect ratio.
+           PNG images with transparency are supported.
+
         Use ``list_pdf_form_fields`` first to discover available fields.
 
         Args:
@@ -126,6 +136,9 @@ def build_file_hub_tools(
                 for AcroForm filling.  Empty string to skip.
             text_overlays: JSON string of ``[{page, x, y, text, ...}]``
                 for coordinate-based overlay.  Empty string to skip.
+            image_overlays: JSON string of ``[{page, x, y, image_path,
+                width?, height?}]`` for image stamping.  Empty string
+                to skip.
             output_path: Destination path for the filled PDF.  When
                 empty, defaults to ``<stem>_filled.pdf`` next to the
                 source.
@@ -146,7 +159,8 @@ def build_file_hub_tools(
         dst = Path(output_path)
 
         fields: dict[str, str] = {}
-        overlays: list[dict[str, Any]] = []
+        text_ovs: list[dict[str, Any]] = []
+        img_ovs: list[dict[str, Any]] = []
 
         if field_values:
             try:
@@ -156,13 +170,20 @@ def build_file_hub_tools(
 
         if text_overlays:
             try:
-                overlays = json.loads(text_overlays)
+                text_ovs = json.loads(text_overlays)
             except json.JSONDecodeError as exc:
                 return f"Invalid text_overlays JSON: {exc}"
 
-        if not fields and not overlays:
+        if image_overlays:
+            try:
+                img_ovs = json.loads(image_overlays)
+            except json.JSONDecodeError as exc:
+                return f"Invalid image_overlays JSON: {exc}"
+
+        if not fields and not text_ovs and not img_ovs:
             return (
-                "Nothing to fill — provide field_values and/or text_overlays. "
+                "Nothing to fill — provide field_values, text_overlays, "
+                "and/or image_overlays. "
                 "Use list_pdf_form_fields to discover available fields."
             )
 
@@ -174,9 +195,14 @@ def build_file_hub_tools(
                 parts.append(f"Filled {len(fields)} form field(s)")
                 src = dst  # Chain: overlay on top of the filled version.
 
-            if overlays:
-                overlay_text(src, overlays, dst)
-                parts.append(f"Overlaid {len(overlays)} text block(s)")
+            if text_ovs:
+                overlay_text(src, text_ovs, dst)
+                parts.append(f"Overlaid {len(text_ovs)} text block(s)")
+                src = dst  # Chain: next overlay on top.
+
+            if img_ovs:
+                overlay_images(src, img_ovs, dst)
+                parts.append(f"Stamped {len(img_ovs)} image(s)")
 
         except PdfFieldNotFoundError as exc:
             return f"Field error: {exc}"

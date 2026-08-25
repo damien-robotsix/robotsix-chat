@@ -334,7 +334,7 @@ DEP002 = ["transformers"]
 # this transitive import (DEP003) is deliberate.
 # `opentelemetry` is the OTLP exporter (``tracing`` extra); guarded by a
 # try/except ImportError in cognee's Langfuse callback registration.
-DEP003 = ["pydantic_ai", "opentelemetry", "robotsix_mill"]
+DEP003 = ["pydantic_ai", "opentelemetry", "robotsix_mill", "PIL"]
 
 [tool.pytest.ini_options]
 # Default run is offline and credential-free (robotsix-standards python page):

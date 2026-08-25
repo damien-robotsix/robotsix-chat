@@ -49,9 +49,9 @@ Note the Y-axis flip: rendered images have Y=0 at the **top**, but PDF coordinat
 render_pdf_page(pdf_path="/data/file_hub_work/sepa_mandate.pdf", page=0, dpi=120)
 ```
 
-### `fill_pdf_document` — fill a PDF form or overlay text
+### `fill_pdf_document` — fill a PDF form, overlay text, or stamp images
 
-Fills a PDF in one or both of two modes:
+Fills a PDF in one or more of three modes:
 
 1. **Form-field fill** — for PDFs with AcroForm fields. Pass `field_values` as a JSON object mapping
    field names to values: `{"name": "John Doe", "date": "2025-01-15"}`
@@ -59,14 +59,19 @@ Fills a PDF in one or both of two modes:
 1. **Text overlay** — for flat/non-form PDFs. Pass `text_overlays` as a JSON array:
    `[{"page": 0, "x": 100, "y": 700, "text": "John Doe", "font_size": 12}]`
 
-Coordinates are in PDF points (72 per inch) from the bottom-left corner of the page. Both modes can
-be combined in a single call.
+1. **Image overlay** — stamp a local image (PNG with transparency, or SVG) onto the PDF. Pass
+   `image_overlays` as a JSON array:
+   `[{"page": 0, "x": 400, "y": 50, "image_path": "/data/file_hub_work/signature.png", "width": 150}]`
+   If only `width` or `height` is given, the other is derived from the image's aspect ratio.
+
+Coordinates are in PDF points (72 per inch) from the bottom-left corner of the page. All three
+modes can be combined in a single call.
 
 **Constraints:**
 
-- **No signature forging.** This tool writes text and field values only. It must not attempt to
-  reproduce handwritten signatures. The human operator signs documents manually after downloading
-  the filled version.
+- **No signature forging.** This tool writes text, field values, and stamps provided images only.
+  It must not generate or synthesize signatures. The human operator provides their own signature
+  image for the agent to stamp.
 - Use `list_pdf_form_fields` first to discover available field names.
 
 **Example (form fill):**
@@ -86,6 +91,16 @@ fill_pdf_document(
     pdf_path="/data/file_hub_work/flat_form.pdf",
     text_overlays='[{"page": 0, "x": 150, "y": 680, "text": "Jean Dupont"}]',
     output_path="/data/file_hub_work/flat_form_filled.pdf"
+)
+```
+
+**Example (image stamp):**
+
+```text
+fill_pdf_document(
+    pdf_path="/data/file_hub_work/sepa_mandate.pdf",
+    image_overlays='[{"page": 0, "x": 400, "y": 50, "image_path": "/data/file_hub_work/signature.png", "width": 150}]',
+    output_path="/data/file_hub_work/sepa_mandate_signed.pdf"
 )
 ```
 
