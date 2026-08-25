@@ -2739,6 +2739,27 @@ autonomous settings at their pydantic field defaults
 ``stale_monitor_runs_before_completion=3``,
 ``queue_tolerance_runs_before_escalation=3``).
 
+## AUTONOMOUS v39 — 2026-08-24 — 20260824T222754Z-confirm-merge-queue-re-ranking-when-sett-5aae
+
+**Summary:** Add PRIORITY TRANSPARENCY instructions to the autonomous prompt.
+When the operator asks to prioritize a ticket, the assistant must first query
+the current board state, then set the priority flag, and report the outcome
+honestly — explaining that the flag extends staleness tolerance but does not
+guarantee immediate queue reordering.  The assistant must never claim a ticket
+"jumps the merge queue" without verification, and must not express uncertainty
+about whether the flag "worked" (it is a metadata toggle, not a queue mutation).
+
+**Rationale:** Session efd5ee4aabc84c9aaac4ad0f5ad00716 — the assistant told
+the user "I've set the migration to priority, so it jumps the merge queue" and
+then added "if it hasn't moved by the next check I'll dig into why the merge
+step is deferring," revealing uncertainty about what the priority flag actually
+does.  The flag is a metadata toggle that extends staleness tolerance; it does
+not reorder the implementation queue.  Without explicit transparency rules, the
+agent hallucinates queue-reordering behavior and then hedges with follow-up
+promises that waste monitor cycles.
+
+**SHA256:** `fbd51e6218d90a4e78e2cb9ab5437d7a5b71ea31628bc4500f58f0f8bc45a1e5`
+
 ## AUTONOMOUS v38 — 2026-08-25 — 20260825T070547Z-image-update-may-pull-pre-merge-image-ad-b7d6
 
 **Summary:** Add SHA-tag pinning guidance to the POST-MERGE DEPLOYMENT
