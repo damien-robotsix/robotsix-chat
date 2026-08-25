@@ -520,12 +520,17 @@ class TestRenderPdfPage:
         assert data["page_height_points"] == 792
 
         # Verify coordinate conversion: pixel (100, 100) → PDF points.
+        # X is straightforward; Y must be flipped (image Y=0 is top,
+        # PDF Y=0 is bottom).
         px, py = 100, 100
         pdf_x = px * data["page_width_points"] / data["width"]
-        pdf_y = py * data["page_height_points"] / data["height"]
-        # At 72 dpi without capping, pdf_x ≈ 100, pdf_y ≈ 100.
+        pdf_y = data["page_height_points"] - (
+            py * data["page_height_points"] / data["height"]
+        )
+        # At 72 dpi without capping, pdf_x ≈ 100.
+        # pdf_y ≈ 792 - 100 = 692 (Y flipped).
         assert abs(pdf_x - 100) < 1
-        assert abs(pdf_y - 100) < 1
+        assert abs(pdf_y - 692) < 1
 
     @pytest.mark.asyncio
     async def test_render_dpi_parameter(self, tmp_path: Path) -> None:

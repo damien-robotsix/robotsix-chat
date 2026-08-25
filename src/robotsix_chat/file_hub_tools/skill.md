@@ -37,8 +37,11 @@ PDF overlay coordinates:
 
 ```text
 pdf_x = pixel_x * page_width_points / width
-pdf_y = pixel_y * page_height_points / height
+pdf_y = page_height_points - (pixel_y * page_height_points / height)
 ```
+
+Note the Y-axis flip: rendered images have Y=0 at the **top**, but PDF coordinates have Y=0 at the
+**bottom**.
 
 **Example:**
 
