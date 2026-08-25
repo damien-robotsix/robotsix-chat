@@ -2758,7 +2758,7 @@ the ``:main`` tag.  This caused a second unnecessary restart cycle.  Using
 the immutable SHA tag and verifying after redeploy prevents restarting on a
 stale image.
 
-**SHA256:** `32f484377f11dee747aa70302173eee46e9ac994bc4f658801f57f0e4cf538d1`
+**SHA256:** `b957ccccc64f1c0164be5a82cd16bbf7327002ec690d80db98ac8d016112c785`
 
 ## AUTONOMOUS v37 — 2026-08-24 — 20260824T192937Z-file-a-ticket-to-close-redundant-audit-f-3a8d
 
