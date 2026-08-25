@@ -812,13 +812,13 @@ enabled, the agent gains four tools: `file_hub_get` (download by id), `list_pdf_
 (inspect AcroForm fields), `fill_pdf_document` (set form fields or overlay text), and `file_hub_put`
 (upload a local file). Disabled by default.
 
-| JSON key                           | Type      | Default                  | Description                                                                                           |
-| ---------------------------------- | --------- | ------------------------ | ----------------------------------------------------------------------------------------------------- |
-| `file_hub_tools.enabled`           | `boolean` | `false`                  | Master switch. When `false`, no file-hub tools are registered.                                        |
-| `file_hub_tools.base_url`          | `string`  | `"http://file-hub:8080"` | Base URL of the file-hub service. Must be reachable from the chat container.                          |
-| `file_hub_tools.working_dir`       | `string`  | `"/data/file_hub_work"`  | Local directory for downloaded and filled files.                                                      |
-| `file_hub_tools.max_download_bytes`| `integer` | `52428800`               | Maximum file size in bytes for downloads (default 50 MB). Must be >0.                                 |
-| `file_hub_tools.timeout`           | `number`  | `60.0`                   | Per-request HTTP timeout in seconds. Must be >0.                                                      |
+| JSON key                            | Type      | Default                  | Description                                                                  |
+| ----------------------------------- | --------- | ------------------------ | ---------------------------------------------------------------------------- |
+| `file_hub_tools.enabled`            | `boolean` | `false`                  | Master switch. When `false`, no file-hub tools are registered.               |
+| `file_hub_tools.base_url`           | `string`  | `"http://file-hub:8080"` | Base URL of the file-hub service. Must be reachable from the chat container. |
+| `file_hub_tools.working_dir`        | `string`  | `"/data/file_hub_work"`  | Local directory for downloaded and filled files.                             |
+| `file_hub_tools.max_download_bytes` | `integer` | `52428800`               | Maximum file size in bytes for downloads (default 50 MB). Must be >0.        |
+| `file_hub_tools.timeout`            | `number`  | `60.0`                   | Per-request HTTP timeout in seconds. Must be >0.                             |
 
 ### Volume Tools
 
