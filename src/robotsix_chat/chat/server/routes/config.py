@@ -10,7 +10,7 @@ config.  Keep the envelope.
 ``GET /config`` returns ``{"config": ..., "schema": ..., "version": ...}``
 with secrets masked.
 
-``GET /config/deploy`` returns ``{"config": {central_deploy: ...}, "schema": ...}``
+``GET /config/deploy`` returns ``{"config": <deploy settings>, "schema": ...}``
 — the deploy configuration section with its sub-schema, for use by the
 deploy plane to audit deploy-specific settings independently.
 
@@ -495,7 +495,7 @@ async def config_deploy_get_endpoint(request: Request) -> JSONResponse:
     block so the deploy plane can audit and manage its own configuration
     independently of the full component settings.
 
-    Response envelope: ``{"config": {central_deploy: ...}, "schema": ...}``
+    Response envelope: ``{"config": <deploy settings>, "schema": ...}``
     consistent with ``GET /config``.
     """
     config_path = _resolve_config_path_from_app(request)
