@@ -13,7 +13,9 @@ authors = [{ name = "Damien Robotsix", email = "damien.robotsix@gmail.com" }]
 dependencies = [
     "asgi-correlation-id",
     "httpx",
+    "pypdf>=6.15.0",
     "pydantic",
+    "reportlab",
     "structlog>=24.0.0",
     "uvicorn",
     "starlette",

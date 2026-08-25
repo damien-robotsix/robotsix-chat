@@ -430,6 +430,17 @@ modules:
       - tests/sftp/test_client.py
       - tests/sftp/test_init.py
 
+  - id: file-hub-tools
+    description: "File-hub integration tools — fetch, fill, and upload documents via robotsix-file-hub (file_hub_get, fill_pdf_document, list_pdf_form_fields, file_hub_put)."
+    paths:
+      - src/robotsix_chat/file_hub_tools/__init__.py
+      - src/robotsix_chat/file_hub_tools/client.py
+      - src/robotsix_chat/file_hub_tools/pdf_tools.py
+      - src/robotsix_chat/file_hub_tools/skill.md
+      - src/robotsix_chat/config/file_hub_models.py
+      - tests/file_hub_tools/__init__.py
+      - tests/file_hub_tools/test_file_hub_tools.py
+
   - id: volume-tools
     description: "Local volume-directory listing tool — exposes build_volume_tools() returning a read-only list_volume_files tool scoped to a configurable root path."
     paths:

@@ -26,6 +26,7 @@ from robotsix_chat.config.models import (
     DirectRepoSettings,
     DockerDigestSettings,
     FeedbackSettings,
+    FileHubToolsSettings,
     GatewayRouteSettings,
     GitHubActionsSettings,
     GitHubSecuritySettings,
@@ -1636,6 +1637,9 @@ class Settings(BaseModel):
     )
     sftp: SftpSettings = Field(
         default_factory=SftpSettings, json_schema_extra={"advanced": True}
+    )
+    file_hub_tools: FileHubToolsSettings = Field(
+        default_factory=FileHubToolsSettings, json_schema_extra={"advanced": True}
     )
     volume_tools: VolumeToolsSettings = Field(
         default_factory=VolumeToolsSettings, json_schema_extra={"advanced": True}

@@ -21,6 +21,7 @@ from .deploy_models import (
     CentralDeploySettings,
     ComponentCredentials,
 )
+from .file_hub_models import FileHubToolsSettings
 from .github_models import (
     GitHubActionsSettings,
     GitHubSecuritySettings,
@@ -91,6 +92,7 @@ __all__ = [
     "DirectRepoSettings",
     "DockerDigestSettings",
     "FeedbackSettings",
+    "FileHubToolsSettings",
     "GatewayRouteSettings",
     "GitHubActionsSettings",
     "GitHubSecuritySettings",
