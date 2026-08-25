@@ -54,10 +54,10 @@ List this conversation's subsessions: id, kind, status, model level, title, and 
 ### `check_monitor`
 
 Check whether an active monitor (periodic or wait_for_event subsession) exists for a given ticket.
-Returns a JSON object with `active` (bool) and, when a monitor is found, its `subsession_id`, `kind`,
-`status`, and `title`. **Always call this tool before claiming a tracker is running** — do NOT assert
-"tracking is active" without verifying via `check_monitor`. Searches both checkpoint-based matches and
-dedup-key matches.
+Returns a JSON object with `active` (bool) and, when a monitor is found, its `subsession_id`,
+`kind`, `status`, and `title`. **Always call this tool before claiming a tracker is running** — do
+NOT assert "tracking is active" without verifying via `check_monitor`. Searches both
+checkpoint-based matches and dedup-key matches.
 
 ## Tools available only inside a subsession
 
