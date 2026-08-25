@@ -59,11 +59,13 @@ modules:
       - src/robotsix_mill/agent_definitions/implement.yaml
       - src/robotsix_mill/agents/runners/diagnostic_events.py
       - src/robotsix_mill/agents/runners/diagnostic_check_recurring_ci.py
+      - src/robotsix_mill/agents/runners/diagnostic_check_oversized_ticket.py
       - src/robotsix_mill/stages/_stage_cache.py
       - src/robotsix_mill/stages/changelog_gate.py
       - tests/agents/__init__.py
       - tests/agents/runners/__init__.py
       - tests/agents/runners/test_diagnostic_check_recurring_ci.py
+      - tests/agents/runners/test_diagnostic_check_oversized_ticket.py
       - tests/agents/runners/test_diagnostic_events.py
       - src/robotsix_mill/stages/document.py
       - src/robotsix_mill/stages/fix_close_verify.py
