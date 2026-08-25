@@ -516,7 +516,7 @@ def build_autonomous_instruction(settings: Settings) -> str:
         "modifying the agent skill file, or changing settings that are read "
         "only at server startup).  For code changes that produce a new Docker "
         "image (PR merges, tool additions, etc.) use the POST-MERGE "
-        "DEPLOYMENT VERIFICATION flow below instead — call "
+        "DEPLOYMENT VERIFICATION flow above instead — call "
         "redeploy_lifecycle_service then verify_lifecycle_deployment.\n"
         "  - Before calling self_restart, you MUST announce the restart with "
         "a brief delay (at least 30 seconds) so the operator can interrupt if "
