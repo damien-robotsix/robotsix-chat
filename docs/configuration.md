@@ -807,9 +807,10 @@ files when diagnostics detect they are missing. Disabled by default.
 
 ### File Hub Tools
 
-File-hub integration — fetch, fill, and upload documents via the robotsix-file-hub service. When
-enabled, the agent gains four tools: `file_hub_get` (download by id), `list_pdf_form_fields`
-(inspect AcroForm fields), `fill_pdf_document` (set form fields or overlay text), and `file_hub_put`
+File-hub integration — fetch, fill, render, and upload documents via the robotsix-file-hub
+service. When enabled, the agent gains five tools: `file_hub_get` (download by id),
+`list_pdf_form_fields` (inspect AcroForm fields), `render_pdf_page` (render a PDF page to a
+viewable image), `fill_pdf_document` (set form fields or overlay text), and `file_hub_put`
 (upload a local file). Disabled by default.
 
 | JSON key                            | Type      | Default                  | Description                                                                  |

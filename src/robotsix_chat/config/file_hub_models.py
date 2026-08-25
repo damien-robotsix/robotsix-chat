@@ -8,13 +8,14 @@ from pydantic import BaseModel, ConfigDict, Field
 class FileHubToolsSettings(BaseModel):
     """File-hub integration — fetch, fill, and upload documents via file-hub.
 
-    When enabled, the agent gains three tools:
+    When enabled, the agent gains five tools:
 
     - ``file_hub_get`` — download a file from file-hub by id to a local
       working directory, returning the local path and metadata.
+    - ``list_pdf_form_fields`` — inspect AcroForm fields in a PDF.
+    - ``render_pdf_page`` — render a PDF page to a viewable raster image.
     - ``fill_pdf_document`` — fill a PDF: set AcroForm field values by name,
-      or overlay text at given page/x/y coordinates for flat PDFs.  Also
-      exposes ``list_pdf_form_fields`` to inspect fillable fields.
+      or overlay text at given page/x/y coordinates for flat PDFs.
     - ``file_hub_put`` — upload a local file to file-hub, preserving
       filename and content-type, returning the new file-hub id.
 

@@ -6,6 +6,8 @@ and ``reportlab`` (text overlay for flat/non-form PDFs).
 
 from __future__ import annotations
 
+import base64
+import contextlib
 import io
 import logging
 from pathlib import Path
@@ -119,6 +121,119 @@ def fill_form_fields(
 
     logger.info("Filled %d fields -> %s", len(field_values), output_path)
     return output_path
+
+
+def render_pdf_page(
+    pdf_path: Path,
+    page: int = 0,
+    dpi: int = 120,
+) -> dict[str, Any]:
+    """Render a single page of a PDF to a raster image using pypdfium2.
+
+    Returns a dict with:
+    - ``image_base64``: the rendered PNG as a base64 string (no data-URL prefix).
+    - ``width``: pixel width of the image.
+    - ``height``: pixel height of the image.
+    - ``page_width_points``: the page's width in PDF points (1/72 inch).
+    - ``page_height_points``: the page's height in PDF points.
+
+    The point dimensions allow converting pixel positions to PDF overlay
+    coordinates: ``pdf_x = pixel_x * page_width_points / width``.
+
+    Args:
+        pdf_path: Path to the PDF file.
+        page: 0-based page index to render.
+        dpi: Rendering resolution in dots per inch (default 120).
+
+    Returns:
+        A dict with the keys listed above.
+
+    Raises:
+        PdfNotPdfError: The file is not a valid PDF or does not exist.
+        PdfError: The page index is out of range, rendering failed, or
+            pypdfium2 is not installed.
+
+    """
+    _require_pdf(pdf_path)
+
+    try:
+        import pypdfium2 as pdfium
+    except ImportError:
+        raise PdfError(
+            "PDF rendering requires the ``pypdfium2`` package. "
+            "Install it with: pip install pypdfium2"
+        ) from None
+
+    try:
+        pdf = pdfium.PdfDocument(str(pdf_path))
+    except Exception as exc:
+        raise PdfNotPdfError(f"Failed to open PDF: {exc}") from exc
+
+    try:
+        page_count = len(pdf)
+    except Exception as exc:
+        raise PdfError(f"Cannot read PDF page count: {exc}") from exc
+
+    if page < 0 or page >= page_count:
+        raise PdfError(
+            f"Page {page} out of range - the PDF has {page_count} "
+            f"page(s) (valid range: 0-{page_count - 1})."
+        )
+
+    try:
+        pdf_page = pdf[page]
+        # Page dimensions in PDF points (1/72 inch).
+        page_width_points = pdf_page.get_width()
+        page_height_points = pdf_page.get_height()
+
+        # Render at the requested DPI.
+        # pypdfium2 uses 1/72 as the native unit, so scale = dpi / 72.
+        scale = dpi / 72.0
+        bitmap = pdf_page.render(scale=scale)
+        pil_image = bitmap.to_pil()
+
+        width, height = pil_image.size
+
+        # Cap output size: downscale to max 4000px on the long edge.
+        max_long_edge = 4000
+        if max(width, height) > max_long_edge:
+            ratio = max_long_edge / max(width, height)
+            new_w = int(width * ratio)
+            new_h = int(height * ratio)
+            pil_image = pil_image.resize((new_w, new_h), resample=0)  # NEAREST
+            width, height = pil_image.size
+
+        # Encode to PNG in memory.
+        buf = io.BytesIO()
+        pil_image.save(buf, format="PNG")
+        image_base64 = base64.b64encode(buf.getvalue()).decode("ascii")
+
+        logger.info(
+            "Rendered %s page %d -> %dx%d px (%.1f pts x %.1f pts) at %d dpi",
+            pdf_path.name,
+            page,
+            width,
+            height,
+            page_width_points,
+            page_height_points,
+            dpi,
+        )
+
+        return {
+            "image_base64": image_base64,
+            "width": width,
+            "height": height,
+            "page_width_points": page_width_points,
+            "page_height_points": page_height_points,
+        }
+
+    except (PdfError, PdfNotPdfError):
+        raise
+    except Exception as exc:
+        raise PdfError(f"PDF rendering failed: {exc}") from exc
+    finally:
+        with contextlib.suppress(Exception):
+            pdf.close()
 
 
 def overlay_text(

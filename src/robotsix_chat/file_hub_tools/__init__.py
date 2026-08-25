@@ -53,6 +53,7 @@ def build_file_hub_tools(
         list_form_fields,
         overlay_text,
     )
+    from .pdf_tools import render_pdf_page as _render_pdf_page
 
     client = FileHubClient(settings)
     work_dir = Path(settings.working_dir)
@@ -234,6 +235,73 @@ def build_file_hub_tools(
             lines.append(line)
         return "\n".join(lines)
 
+    async def render_pdf_page(
+        pdf_path: str,
+        page: int = 0,
+        dpi: int = 120,
+    ) -> str:
+        """Render a page of a local PDF to an image the agent can visually inspect.
+
+        Rasterises page *page* (0-based) of the PDF at *dpi* resolution
+        and returns a base64-encoded PNG image plus metadata (pixel
+        dimensions and PDF-point page size) so the agent can identify
+        field positions and verify overlays.
+
+        **Use when:** you need to see a PDF page visually — for example,
+        to find form field box positions before overlaying text, or to
+        verify that filled overlays are correctly placed.
+
+        The metadata includes ``page_width_points`` and
+        ``page_height_points`` which let you convert any observed pixel
+        position to PDF overlay coordinates::
+
+            pdf_x = pixel_x * page_width_points / width
+            pdf_y = pixel_y * page_height_points / height
+
+        Args:
+            pdf_path: Local path to the PDF file (e.g.
+                ``/data/file_hub_work/form.pdf``).
+            page: 0-based page index to render (default 0).
+            dpi: Rendering resolution in dots per inch (default 120).
+                Higher values produce sharper images but larger responses.
+
+        Returns:
+            A JSON string with ``image_base64`` (PNG data), ``width``,
+            ``height``, ``page_width_points``, ``page_height_points``,
+            and ``error`` (empty on success).
+
+        """
+        import json as _json
+
+        result: dict[str, Any] = {
+            "image_base64": "",
+            "width": 0,
+            "height": 0,
+            "page_width_points": 0.0,
+            "page_height_points": 0.0,
+            "error": "",
+        }
+
+        try:
+            rendered = _render_pdf_page(
+                Path(pdf_path),
+                page=page,
+                dpi=dpi,
+            )
+            result["image_base64"] = rendered["image_base64"]
+            result["width"] = rendered["width"]
+            result["height"] = rendered["height"]
+            result["page_width_points"] = rendered["page_width_points"]
+            result["page_height_points"] = rendered["page_height_points"]
+        except PdfNotPdfError as exc:
+            result["error"] = f"Not a valid PDF: {exc}"
+        except PdfError as exc:
+            result["error"] = f"PDF error: {exc}"
+        except Exception as exc:
+            result["error"] = f"{type(exc).__name__}: {exc}"
+
+        return _json.dumps(result, ensure_ascii=False)
+
     async def file_hub_put(
         file_path: str,
         content_type: str = "",
@@ -275,7 +343,13 @@ def build_file_hub_tools(
             lines.append(f"Checksum: {result['checksum']}")
         return "\n".join(lines)
 
-    return [file_hub_get, fill_pdf_document, list_pdf_form_fields, file_hub_put]
+    return [
+        file_hub_get,
+        fill_pdf_document,
+        list_pdf_form_fields,
+        render_pdf_page,
+        file_hub_put,
+    ]
 
 
 def load_file_hub_skill() -> str:
