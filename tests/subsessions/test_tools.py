@@ -75,6 +75,7 @@ def test_main_agent_gets_spawn_control_tools_only() -> None:
         "message_subsession",
         "close_subsession",
         "list_subsessions",
+        "check_monitor",
     ]
 
 
@@ -91,6 +92,7 @@ def test_subsession_agent_gets_complete_tool_too() -> None:
         "message_subsession",
         "close_subsession",
         "list_subsessions",
+        "check_monitor",
         "complete_subsession",
         "set_checkpoint",
         "self_update_subsession",
@@ -121,6 +123,91 @@ def test_no_close_state_at_max_depth_yields_no_tools() -> None:
     tools = build_subsession_tools(env, ctx=_ctx(subsession_id="sub-1", depth=1))
 
     assert tools == []
+
+
+# ---------------------------------------------------------------------------
+# check_monitor tool
+# ---------------------------------------------------------------------------
+
+
+@pytest.mark.asyncio
+async def test_check_monitor_no_active_monitor() -> None:
+    """check_monitor returns active=false when no monitor exists."""
+    import json
+
+    env = build_env()
+    check = _by_name(build_subsession_tools(env, ctx=_ctx()), "check_monitor")
+
+    result = json.loads(await check("20250101T000000Z-ticket-aaaa"))
+
+    assert result["active"] is False
+    assert result["ticket_id"] == "20250101T000000Z-ticket-aaaa"
+
+
+@pytest.mark.asyncio
+async def test_check_monitor_finds_periodic_by_checkpoint() -> None:
+    """check_monitor finds a PERIODIC monitor via its checkpoint ticket_id."""
+    import json
+
+    env = build_env()
+    info = _register(
+        env,
+        kind=SubsessionKind.PERIODIC,
+        title="ci-watch",
+    )
+    env.registry.update_checkpoint(
+        info.id, {"ticket_id": "20250101T000000Z-ticket-aaaa"}
+    )
+    check = _by_name(build_subsession_tools(env, ctx=_ctx()), "check_monitor")
+
+    result = json.loads(await check("20250101T000000Z-ticket-aaaa"))
+
+    assert result["active"] is True
+    assert result["subsession_id"] == info.id
+    assert result["kind"] == "periodic"
+    assert result["status"] == "running"
+    assert result["title"] == "ci-watch"
+
+
+@pytest.mark.asyncio
+async def test_check_monitor_finds_by_dedup_key() -> None:
+    """check_monitor finds a monitor via its dedup_key (ticket_id)."""
+    import json
+
+    env = build_env()
+    info = _register(
+        env,
+        kind=SubsessionKind.WAIT_FOR_EVENT,
+        title="event-watch",
+        dedup_key="20250101T000000Z-ticket-aaaa",
+    )
+    check = _by_name(build_subsession_tools(env, ctx=_ctx()), "check_monitor")
+
+    result = json.loads(await check("20250101T000000Z-ticket-aaaa"))
+
+    assert result["active"] is True
+    assert result["subsession_id"] == info.id
+    assert result["kind"] == "wait_for_event"
+
+
+@pytest.mark.asyncio
+async def test_check_monitor_ignores_closed_subsession() -> None:
+    """check_monitor returns active=false for a closed monitor."""
+    import json
+
+    env = build_env()
+    info = _register(
+        env,
+        kind=SubsessionKind.PERIODIC,
+        title="ci-watch",
+        dedup_key="20250101T000000Z-ticket-aaaa",
+    )
+    env.registry.mark_closed(info.id, summary="done", reason="completed")
+    check = _by_name(build_subsession_tools(env, ctx=_ctx()), "check_monitor")
+
+    result = json.loads(await check("20250101T000000Z-ticket-aaaa"))
+
+    assert result["active"] is False
 
 
 # ---------------------------------------------------------------------------

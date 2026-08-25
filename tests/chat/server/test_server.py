@@ -2053,6 +2053,7 @@ def test_main_agent_gets_per_request_subsession_tools_factory() -> None:
         "message_subsession",
         "close_subsession",
         "list_subsessions",
+        "check_monitor",
     ]
 
 

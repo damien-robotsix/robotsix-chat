@@ -489,11 +489,47 @@ def _build_spawn_and_control_tools(
             return "No subsessions in this conversation."
         return "\n".join(_format_info(info) for info in infos)
 
+    async def check_monitor(ticket_id: str) -> str:
+        """Check whether an active monitor exists for a ticket.
+
+        Returns a JSON object with ``active`` (bool) and, when a monitor
+        is found, its ``subsession_id``, ``kind``, ``status``, and
+        ``title``.  Use this before claiming a tracker is running — do
+        NOT assert "tracking is active" without calling this tool first.
+
+        Searches both checkpoint-based matches (a monitor whose
+        checkpoint records the ticket id) and dedup-key matches (a
+        monitor spawned with the ticket id as dedup_key).
+        """
+        import json
+
+        # Check checkpoint-based match (PERIODIC / WAIT_FOR_EVENT).
+        sub_id = env.registry.find_active_periodic_by_ticket_id(ticket_id)
+        # Also check dedup-key match (any kind with ticket_id as dedup_key).
+        if sub_id is None:
+            sub_id = env.registry.is_dedup_key_active(ticket_id)
+        if sub_id is None:
+            return json.dumps({"active": False, "ticket_id": ticket_id})
+        info = env.registry.get(sub_id)
+        if info is None:
+            return json.dumps({"active": False, "ticket_id": ticket_id})
+        return json.dumps(
+            {
+                "active": True,
+                "ticket_id": ticket_id,
+                "subsession_id": info.id,
+                "kind": info.kind.value,
+                "status": info.status.value,
+                "title": info.title,
+            }
+        )
+
     return [
         spawn_subsession_tool,
         message_subsession,
         close_subsession,
         list_subsessions,
+        check_monitor,
     ]
 
 
