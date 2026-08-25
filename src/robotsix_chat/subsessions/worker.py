@@ -1918,6 +1918,104 @@ async def _event_wait_loop(
     return pending, previous_result, consecutive_no_change
 
 
+async def _handle_monitor_run_error(
+    env: SubsessionEnv,
+    info: SubsessionInfo,
+    sub_id: str,
+    error_msg: str,
+    result_label: str,
+    previous_result: str | None,
+    consecutive_no_change: int,
+) -> tuple[bool, str | None, int]:
+    """Handle a run-level error for a periodic or wait_for_event monitor.
+
+    Increments ``consecutive_errored_runs``, records the error in the
+    transcript, advances the run counter, and sets the subsession to
+    SLEEPING.  When the consecutive-error threshold is reached the
+    subsession is permanently failed.
+
+    The parent is notified at most once per error streak (on the first
+    errored run of a new streak).
+
+    Returns ``(failed, previous_result, consecutive_no_change)`` where
+    *failed* is ``True`` when the subsession was permanently failed.
+    """
+    registry = env.registry
+    threshold = env.settings.subsessions.consecutive_error_fail_threshold
+    info.consecutive_errored_runs += 1
+    consecutive_errored = info.consecutive_errored_runs
+
+    registry.append_transcript(
+        sub_id,
+        "system",
+        f"Run errored ({result_label}): {error_msg}",
+    )
+
+    # Check if the threshold is reached.
+    if threshold > 0 and consecutive_errored >= threshold:
+        summary = (
+            f"Failed after {consecutive_errored} consecutive errored runs. "
+            f"Last error: {error_msg}"
+        )
+        failed = registry.fail(sub_id, error=summary)
+        if failed is not None:
+            await env.delivery.deliver_summary(failed, summary, "failed")
+        return True, previous_result, consecutive_no_change
+
+    # Notify the parent at most once per streak (on the first errored run).
+    if consecutive_errored == 1 and env.event_sink is not None:
+        env.event_sink.publish(
+            info.owner_session_id,
+            {
+                "type": SSE_NOTIFICATION_TYPE,
+                "title": f"Monitor run error: {info.title}",
+                "body": (
+                    f"Monitor {sub_id[:8]} had an errored run "
+                    f"({result_label}): {_truncate(error_msg, 200)}. "
+                    f"The monitor is still alive and will retry on the "
+                    f"next cycle."
+                ),
+                "urgency": "low",
+                "link": info.dedup_key or sub_id,
+            },
+        )
+
+    # Advance the run counter and continue the schedule.
+    runs = info.runs + 1
+    if info.kind is SubsessionKind.WAIT_FOR_EVENT:
+        registry.set_status(
+            sub_id,
+            SubsessionStatus.SLEEPING,
+            runs=runs,
+            last_result=result_label,
+        )
+    else:
+        registry.set_status(
+            sub_id,
+            SubsessionStatus.SLEEPING,
+            runs=runs,
+            next_run_at=registry.now() + (info.interval_seconds or 60.0),
+            last_result=result_label,
+        )
+    if env.event_sink is not None:
+        env.event_sink.publish(
+            info.owner_session_id,
+            subsession_result_frame(
+                sub_id,
+                info.kind.value,
+                info.title,
+                runs,
+                result_label,
+                info.parent_id,
+            ),
+        )
+    if not info.include_previous_result:
+        previous_result = None
+    consecutive_no_change += 1
+    info.consecutive_no_change = consecutive_no_change
+    return False, previous_result, consecutive_no_change
+
+
 async def _run_wait_for_event_turn(
     env: SubsessionEnv,
     info: SubsessionInfo,
