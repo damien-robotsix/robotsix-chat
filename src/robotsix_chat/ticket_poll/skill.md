@@ -36,6 +36,14 @@ and filing new tickets.
   especially when the user has granted autonomy and the improvement would prevent recurring manual
   decisions. Always mention the filed ticket in your final summary so the user is aware.
 
+- **Route to an external repo** — when a user request belongs in a different repository (e.g. a
+  model-routing or provider change belongs in `robotsix-llmio`, not `robotsix-chat`), use
+  `file_ticket` with the appropriate `repo_id` to dispatch the ticket to that repo's board. This is
+  the primary mechanism for routing out-of-scope requests to the correct team — do not tell the user
+  "I can't do that because it's in a different repo" when you can file the ticket for them. Known
+  external repo ids include `robotsix-llmio`, `robotsix-mill`, `robotsix-standards`, and
+  `robotsix-central-deploy`.
+
 - **Queue health monitoring** — use `list_stale_ready_tickets` to detect tickets that have been
   sitting in the `ready` state without being picked up by a worker. This surfaces queue stalls so
   the agent can escalate or notify the operator rather than silently waiting.
