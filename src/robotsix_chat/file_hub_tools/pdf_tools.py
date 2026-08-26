@@ -227,7 +227,7 @@ def render_pdf_page(
             "page_height_points": page_height_points,
         }
 
-    except PdfError, PdfNotPdfError:
+    except PdfError:
         raise
     except Exception as exc:
         raise PdfError(f"PDF rendering failed: {exc}") from exc
