@@ -1501,6 +1501,104 @@ def test_is_duplicate_ticket_terminal_true_when_prior_reason_completed() -> None
     assert registry.is_duplicate_ticket_terminal("T-123", second.id) is True
 
 
+# -- has_terminal_report_for_ticket ------------------------------------------
+
+
+def test_has_terminal_report_for_ticket_true_when_ticket_terminal() -> None:
+    """Returns True when a CLOSED subsession has ticket_terminal close_reason."""
+    registry = SubsessionRegistry(store_path=None)
+    first = _create(registry, kind=SubsessionKind.PERIODIC, title="monitor-1")
+    registry.update_checkpoint(first.id, {"ticket_id": "T-123"})
+    registry.mark_closed(first.id, summary="ticket done", reason="ticket_terminal")
+
+    assert registry.has_terminal_report_for_ticket("T-123") is True
+
+
+def test_has_terminal_report_for_ticket_true_when_completed() -> None:
+    """Returns True when a CLOSED subsession has 'completed' close_reason."""
+    registry = SubsessionRegistry(store_path=None)
+    first = _create(registry, kind=SubsessionKind.PERIODIC, title="monitor-1")
+    registry.update_checkpoint(first.id, {"ticket_id": "T-123"})
+    registry.mark_closed(first.id, summary="done", reason="completed")
+
+    assert registry.has_terminal_report_for_ticket("T-123") is True
+
+
+def test_has_terminal_report_for_ticket_false_for_different_ticket() -> None:
+    """Returns False when the only terminal report is for a different ticket."""
+    registry = SubsessionRegistry(store_path=None)
+    first = _create(registry, kind=SubsessionKind.PERIODIC, title="monitor-1")
+    registry.update_checkpoint(first.id, {"ticket_id": "T-AAA"})
+    registry.mark_closed(first.id, summary="done", reason="ticket_terminal")
+
+    assert registry.has_terminal_report_for_ticket("T-BBB") is False
+
+
+def test_has_terminal_report_for_ticket_false_when_not_closed() -> None:
+    """Returns False when the monitor is still active."""
+    registry = SubsessionRegistry(store_path=None)
+    _create(registry, kind=SubsessionKind.PERIODIC, title="monitor-1")
+
+    assert registry.has_terminal_report_for_ticket("T-123") is False
+
+
+def test_has_terminal_report_for_ticket_false_when_no_checkpoint() -> None:
+    """Returns False when the closed monitor has no checkpoint."""
+    registry = SubsessionRegistry(store_path=None)
+    first = _create(registry, kind=SubsessionKind.PERIODIC, title="monitor-1")
+    registry.mark_closed(first.id, summary="done", reason="ticket_terminal")
+
+    assert registry.has_terminal_report_for_ticket("T-123") is False
+
+
+def test_has_terminal_report_for_ticket_false_when_close_reason_not_terminal() -> None:
+    """Returns False when closed with a non-terminal reason (paused, max_runs)."""
+    registry = SubsessionRegistry(store_path=None)
+    first = _create(registry, kind=SubsessionKind.PERIODIC, title="monitor-1")
+    registry.update_checkpoint(first.id, {"ticket_id": "T-123"})
+    registry.mark_closed(first.id, summary="paused", reason="paused")
+
+    assert registry.has_terminal_report_for_ticket("T-123") is False
+
+
+def test_has_terminal_report_for_ticket_true_when_ticket_terminal_without_pr() -> None:
+    """Returns True when close_reason is ticket_terminal_without_pr."""
+    registry = SubsessionRegistry(store_path=None)
+    first = _create(registry, kind=SubsessionKind.PERIODIC, title="monitor-1")
+    registry.update_checkpoint(first.id, {"ticket_id": "T-456"})
+    registry.mark_closed(
+        first.id, summary="ticket done without pr", reason="ticket_terminal_without_pr"
+    )
+
+    assert registry.has_terminal_report_for_ticket("T-456") is True
+
+
+def test_has_terminal_report_for_ticket_true_when_ticket_terminal_on_resume() -> None:
+    """Returns True when close_reason is ticket_terminal_on_resume."""
+    registry = SubsessionRegistry(store_path=None)
+    first = _create(registry, kind=SubsessionKind.PERIODIC, title="monitor-1")
+    registry.update_checkpoint(first.id, {"ticket_id": "T-789"})
+    registry.mark_closed(
+        first.id, summary="ticket done on resume", reason="ticket_terminal_on_resume"
+    )
+
+    assert registry.has_terminal_report_for_ticket("T-789") is True
+
+
+def test_has_terminal_report_for_ticket_true_when_dedup_key_matches() -> None:
+    """Returns True when the dedup_key matches (no checkpoint)."""
+    registry = SubsessionRegistry(store_path=None)
+    first = _create(
+        registry,
+        kind=SubsessionKind.PERIODIC,
+        title="monitor-1",
+        dedup_key="T-ABC",
+    )
+    registry.mark_closed(first.id, summary="done", reason="completed")
+
+    assert registry.has_terminal_report_for_ticket("T-ABC") is True
+
+
 # -- is_duplicate_auto_pause -------------------------------------------------
 
 

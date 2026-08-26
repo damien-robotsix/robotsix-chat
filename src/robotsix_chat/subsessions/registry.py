@@ -1604,6 +1604,33 @@ class SubsessionRegistry:
                 return True
         return False
 
+    def has_terminal_report_for_ticket(self, ticket_id: str) -> bool:
+        """Check whether a terminal monitor already reported *ticket_id*.
+
+        Returns ``True`` when any CLOSED subsession with a matching
+        ``checkpoint.ticket_id`` or ``dedup_key`` closed with a terminal
+        reason (e.g. ``ticket_terminal``, ``ticket_terminal_without_pr``,
+        ``ticket_terminal_on_resume``, or ``completed``).
+
+        Used at spawn time to prevent redundant monitors for tickets
+        that have already been tracked to completion.
+        """
+        terminal_reasons = _TICKET_TERMINAL_CLOSE_REASONS | {"completed"}
+        for info in self._subs.values():
+            if info.status is not SubsessionStatus.CLOSED:
+                continue
+            # Match via checkpoint.ticket_id (preferred) or dedup_key.
+            cp = info.checkpoint
+            cp_ticket_id = cp.get("ticket_id") if cp is not None else None
+            matched = (
+                isinstance(cp_ticket_id, str) and cp_ticket_id == ticket_id
+            ) or info.dedup_key == ticket_id
+            if not matched:
+                continue
+            if info.close_reason in terminal_reasons:
+                return True
+        return False
+
     def is_duplicate_auto_pause(self, ticket_id: str, exclude_sub_id: str) -> bool:
         """Check for a duplicate auto-pause / no-change report for *ticket_id*.
 
