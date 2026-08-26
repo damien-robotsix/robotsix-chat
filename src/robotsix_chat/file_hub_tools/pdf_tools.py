@@ -391,7 +391,8 @@ def overlay_images(
         if suffix not in _SUPPORTED_IMAGE_FORMATS:
             raise PdfError(
                 f"Unsupported image format {suffix!r} for {img}. "
-                f"Supported formats: {', '.join(sorted(_SUPPORTED_IMAGE_FORMATS))}"
+                f"Supported formats: {', '.join(sorted(_SUPPORTED_IMAGE_FORMATS))} "
+                "(SVG is not yet supported — convert to PNG first)"
             )
 
     reader = PdfReader(str(pdf_path))

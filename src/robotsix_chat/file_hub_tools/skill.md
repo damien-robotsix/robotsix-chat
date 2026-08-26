@@ -59,7 +59,7 @@ Fills a PDF in one or more of three modes:
 1. **Text overlay** — for flat/non-form PDFs. Pass `text_overlays` as a JSON array:
    `[{"page": 0, "x": 100, "y": 700, "text": "John Doe", "font_size": 12}]`
 
-1. **Image overlay** — stamp a local image (PNG with transparency, or SVG) onto the PDF. Pass
+1. **Image overlay** — stamp a local image (PNG with transparency) onto the PDF. Pass
    `image_overlays` as a JSON array:
    `[{"page": 0, "x": 400, "y": 50, "image_path": "/data/file_hub_work/signature.png", "width": 150}]`
    If only `width` or `height` is given, the other is derived from the image's aspect ratio.

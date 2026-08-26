@@ -494,6 +494,12 @@ class TestFillPdfDocument:
         assert "Stamped 1 image" in result
         assert out_path.exists()
 
+# ---------------------------------------------------------------------------
+# file_hub_put
+# ---------------------------------------------------------------------------
+
+
+class TestFileHubPut:
     """Tests for the file_hub_put tool."""
 
     @pytest.mark.asyncio
