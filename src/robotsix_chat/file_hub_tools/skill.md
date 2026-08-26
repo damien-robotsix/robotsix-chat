@@ -1,6 +1,6 @@
-## File-hub tools — document fetch, fill, and upload
+## File-hub tools — document fetch, fill, render, and upload
 
-You have four tools for working with files via the robotsix-file-hub service:
+You have five tools for working with files via the robotsix-file-hub service:
 
 ### `file_hub_get` — download a file from file-hub
 
@@ -21,6 +21,33 @@ available.
 **Use when:** you have a PDF and need to know what form fields it contains before filling them.
 
 **Example:** `list_pdf_form_fields(pdf_path="/data/file_hub_work/form.pdf")`
+
+### `render_pdf_page` — render a PDF page to a viewable image
+
+Renders page N of a local PDF to a raster image (PNG) so you can visually inspect the page — see
+field box positions, verify overlay placement, or identify where to draw text. Returns the image as
+base64 data plus pixel dimensions and PDF-point page size for coordinate conversion.
+
+**Use when:** you need to see a PDF page visually — to find form field box positions before
+overlaying text, or to verify that filled overlays are correctly placed.
+
+**Coordinate conversion:** The response includes `page_width_points` and `page_height_points` (the
+page size in PDF points, 1 pt = 1/72 inch). To convert a pixel position from the rendered image to
+PDF overlay coordinates:
+
+```text
+pdf_x = pixel_x * page_width_points / width
+pdf_y = page_height_points - (pixel_y * page_height_points / height)
+```
+
+Note the Y-axis flip: rendered images have Y=0 at the **top**, but PDF coordinates have Y=0 at the
+**bottom**.
+
+**Example:**
+
+```text
+render_pdf_page(pdf_path="/data/file_hub_work/sepa_mandate.pdf", page=0, dpi=120)
+```
 
 ### `fill_pdf_document` — fill a PDF form or overlay text
 
@@ -75,8 +102,10 @@ operator to download, sign, or forward.
 ### Typical workflow
 
 1. `file_hub_get` — fetch the document from file-hub
-1. `list_pdf_form_fields` — inspect what can be filled
+1. `render_pdf_page` — view the page to identify field positions
+1. `list_pdf_form_fields` — inspect what form fields are available
 1. `fill_pdf_document` — fill the form fields or overlay text
+1. `render_pdf_page` — verify the filled document looks correct
 1. `file_hub_put` — upload the filled document back to file-hub
 
 ### Error handling

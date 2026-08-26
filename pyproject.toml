@@ -14,6 +14,7 @@ dependencies = [
     "asgi-correlation-id",
     "httpx",
     "pypdf>=6.15.0",
+    "pypdfium2>=5.13.0",
     "pydantic",
     "reportlab",
     "structlog>=24.0.0",
@@ -231,6 +232,11 @@ ignore_missing_imports = true
 # reportlab (the optional `file-hub` PDF tooling) ships no type information.
 [[tool.mypy.overrides]]
 module = ["reportlab", "reportlab.*"]
+ignore_missing_imports = true
+
+# pypdfium2 (PDF rendering) ships no type stubs.
+[[tool.mypy.overrides]]
+module = ["pypdfium2", "pypdfium2.*"]
 ignore_missing_imports = true
 
 [tool.pyright]

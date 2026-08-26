@@ -63,15 +63,16 @@ class TestBuildFileHubTools:
         tools = build_file_hub_tools(settings)
         assert tools == []
 
-    def test_enabled_returns_four_tools(self, tmp_path: Path) -> None:
-        """Enabled settings returns all four tools."""
+    def test_enabled_returns_five_tools(self, tmp_path: Path) -> None:
+        """Enabled settings returns all five tools."""
         settings = _settings(working_dir=str(tmp_path))
         tools = build_file_hub_tools(settings)
-        assert len(tools) == 4
+        assert len(tools) == 5
         names = [t.__name__ for t in tools]
         assert "file_hub_get" in names
         assert "fill_pdf_document" in names
         assert "list_pdf_form_fields" in names
+        assert "render_pdf_page" in names
         assert "file_hub_put" in names
 
 
@@ -336,7 +337,7 @@ class TestFileHubPut:
 
         settings = _settings(working_dir=str(tmp_path))
         tools = build_file_hub_tools(settings)
-        file_hub_put = tools[3]
+        file_hub_put = tools[4]
 
         upload_result = {
             "id": "new-id-456",
@@ -362,7 +363,7 @@ class TestFileHubPut:
         """Missing local file returns clear error."""
         settings = _settings(working_dir=str(tmp_path))
         tools = build_file_hub_tools(settings)
-        file_hub_put = tools[3]
+        file_hub_put = tools[4]
 
         result = await file_hub_put(str(tmp_path / "nonexistent.pdf"))
         assert "File not found" in result
@@ -377,7 +378,7 @@ class TestFileHubPut:
 
         settings = _settings(working_dir=str(tmp_path))
         tools = build_file_hub_tools(settings)
-        file_hub_put = tools[3]
+        file_hub_put = tools[4]
 
         with patch(
             "robotsix_chat.file_hub_tools.client.FileHubClient.upload_file",
@@ -398,12 +399,160 @@ class TestSkillLoading:
     """Tests for load_file_hub_skill."""
 
     def test_skill_loads(self) -> None:
-        """Skill markdown contains all four tool names."""
+        """Skill markdown contains all five tool names."""
         skill = load_file_hub_skill()
         assert "file_hub_get" in skill
         assert "fill_pdf_document" in skill
         assert "file_hub_put" in skill
         assert "list_pdf_form_fields" in skill
+        assert "render_pdf_page" in skill
+
+
+# ---------------------------------------------------------------------------
+# render_pdf_page
+# ---------------------------------------------------------------------------
+
+
+class TestRenderPdfPage:
+    """Tests for the render_pdf_page tool."""
+
+    @pytest.mark.asyncio
+    async def test_render_flat_pdf(self, tmp_path: Path) -> None:
+        """Rendering a flat PDF returns image data and dimensions."""
+        pdf_path = tmp_path / "flat.pdf"
+        _make_flat_pdf(pdf_path)
+
+        settings = _settings(working_dir=str(tmp_path))
+        tools = build_file_hub_tools(settings)
+        render_page = tools[3]
+
+        result = await render_page(str(pdf_path))
+        data = json.loads(result)
+
+        assert data["error"] == ""
+        assert data["image_base64"] != ""
+        assert data["width"] > 0
+        assert data["height"] > 0
+        assert data["page_width_points"] > 0
+        assert data["page_height_points"] > 0
+
+    @pytest.mark.asyncio
+    async def test_render_form_pdf(self, tmp_path: Path) -> None:
+        """Rendering a form PDF returns image data and dimensions."""
+        pdf_path = tmp_path / "form.pdf"
+        _make_form_pdf(pdf_path)
+
+        settings = _settings(working_dir=str(tmp_path))
+        tools = build_file_hub_tools(settings)
+        render_page = tools[3]
+
+        result = await render_page(str(pdf_path))
+        data = json.loads(result)
+
+        assert data["error"] == ""
+        assert data["image_base64"] != ""
+        assert data["width"] > 0
+        assert data["height"] > 0
+
+    @pytest.mark.asyncio
+    async def test_render_page_out_of_range(self, tmp_path: Path) -> None:
+        """Page index beyond page count returns a clear error."""
+        pdf_path = tmp_path / "flat.pdf"
+        _make_flat_pdf(pdf_path)
+
+        settings = _settings(working_dir=str(tmp_path))
+        tools = build_file_hub_tools(settings)
+        render_page = tools[3]
+
+        result = await render_page(str(pdf_path), page=99)
+        data = json.loads(result)
+
+        assert "out of range" in data["error"].lower()
+        assert "1 page" in data["error"]
+
+    @pytest.mark.asyncio
+    async def test_render_missing_file(self, tmp_path: Path) -> None:
+        """Missing PDF returns a clear error."""
+        settings = _settings(working_dir=str(tmp_path))
+        tools = build_file_hub_tools(settings)
+        render_page = tools[3]
+
+        result = await render_page(str(tmp_path / "nonexistent.pdf"))
+        data = json.loads(result)
+
+        assert (
+            "not a valid pdf" in data["error"].lower()
+            or "not found" in data["error"].lower()
+        )
+
+    @pytest.mark.asyncio
+    async def test_render_non_pdf(self, tmp_path: Path) -> None:
+        """Non-PDF file returns a clear error."""
+        not_pdf = tmp_path / "not.pdf"
+        not_pdf.write_text("this is not a PDF")
+
+        settings = _settings(working_dir=str(tmp_path))
+        tools = build_file_hub_tools(settings)
+        render_page = tools[3]
+
+        result = await render_page(str(not_pdf))
+        data = json.loads(result)
+
+        assert "not a valid pdf" in data["error"].lower()
+
+    @pytest.mark.asyncio
+    async def test_render_metadata_coordinate_conversion(self, tmp_path: Path) -> None:
+        """Pixel-to-point coordinate conversion works with returned metadata."""
+        pdf_path = tmp_path / "flat.pdf"
+        _make_flat_pdf(pdf_path)
+
+        settings = _settings(working_dir=str(tmp_path))
+        tools = build_file_hub_tools(settings)
+        render_page = tools[3]
+
+        result = await render_page(str(pdf_path), dpi=72)
+        data = json.loads(result)
+
+        assert data["error"] == ""
+        # At 72 dpi, 1 PDF point = 1 pixel (before any cap).
+        # The page is 612x792 points (US Letter).
+        assert data["page_width_points"] == 612
+        assert data["page_height_points"] == 792
+
+        # Verify coordinate conversion: pixel (100, 100) → PDF points.
+        # X is straightforward; Y must be flipped (image Y=0 is top,
+        # PDF Y=0 is bottom).
+        px, py = 100, 100
+        pdf_x = px * data["page_width_points"] / data["width"]
+        pdf_y = data["page_height_points"] - (
+            py * data["page_height_points"] / data["height"]
+        )
+        # At 72 dpi without capping, pdf_x ≈ 100.
+        # pdf_y ≈ 792 - 100 = 692 (Y flipped).
+        assert abs(pdf_x - 100) < 1
+        assert abs(pdf_y - 692) < 1
+
+    @pytest.mark.asyncio
+    async def test_render_dpi_parameter(self, tmp_path: Path) -> None:
+        """Higher DPI produces larger images."""
+        pdf_path = tmp_path / "flat.pdf"
+        _make_flat_pdf(pdf_path)
+
+        settings = _settings(working_dir=str(tmp_path))
+        tools = build_file_hub_tools(settings)
+        render_page = tools[3]
+
+        result_low = await render_page(str(pdf_path), dpi=72)
+        result_high = await render_page(str(pdf_path), dpi=200)
+
+        data_low = json.loads(result_low)
+        data_high = json.loads(result_high)
+
+        assert data_low["error"] == ""
+        assert data_high["error"] == ""
+        # Higher DPI should produce more pixels (unless capped).
+        assert data_high["width"] >= data_low["width"]
+        assert data_high["height"] >= data_low["height"]
 
 
 # ---------------------------------------------------------------------------
