@@ -325,6 +325,206 @@ def overlay_text(
     return output_path
 
 
+# Supported image formats for overlay.
+_SUPPORTED_IMAGE_FORMATS = frozenset({".png"})
+
+
+def overlay_images(
+    pdf_path: Path,
+    overlays: list[dict[str, Any]],
+    output_path: Path,
+) -> Path:
+    """Overlay images onto a PDF at specified page/x/y coordinates.
+
+    Uses reportlab to generate a transparent overlay PDF with
+    ``drawImage``, then merges it with the source via pypdf.  PNG
+    images with alpha channels keep their transparency.
+
+    Args:
+        pdf_path: Path to the source PDF.
+        overlays: List of dicts, each with keys:
+            - ``page`` (int): 0-based page index.
+            - ``x`` (float): X coordinate in points (from left).
+            - ``y`` (float): Y coordinate in points (from bottom).
+            - ``image_path`` (str): Local path to the image file.
+            - ``width`` (float, optional): Width in points.  If omitted
+              or ``None``, derived from the image's aspect ratio and
+              the given *height*.
+            - ``height`` (float, optional): Height in points.  If
+              omitted or ``None``, derived from the image's aspect
+              ratio and the given *width*.  When both are omitted the
+              image's native pixel dimensions are used (at 72 DPI).
+        output_path: Destination path for the overlaid PDF.
+
+    Returns:
+        The *output_path*.
+
+    Raises:
+        PdfNotPdfError: The file is not a valid PDF.
+        PdfError: reportlab is not installed, or an image file is
+            missing / has an unsupported format.
+
+    """
+    _require_pdf(pdf_path)
+    try:
+        from reportlab.pdfgen import canvas as rl_canvas
+    except ImportError:
+        raise PdfError(
+            "PDF overlay requires the ``reportlab`` package. "
+            "Install it with: pip install reportlab"
+        ) from None
+
+    try:
+        from pypdf import PdfReader, PdfWriter
+    except ImportError:
+        raise PdfError(
+            "PDF tools require the ``pypdf`` package. "
+            "Install it with: pip install pypdf"
+        ) from None
+
+    # --- validate all images before mutating anything ---
+    for ov in overlays:
+        img = Path(ov["image_path"])
+        if not img.exists():
+            raise PdfError(f"Image file not found: {img}")
+        suffix = img.suffix.lower()
+        if suffix not in _SUPPORTED_IMAGE_FORMATS:
+            raise PdfError(
+                f"Unsupported image format {suffix!r} for {img}. "
+                f"Supported formats: {', '.join(sorted(_SUPPORTED_IMAGE_FORMATS))} "
+                "(SVG is not yet supported — convert to PNG first)"
+            )
+
+    reader = PdfReader(str(pdf_path))
+    writer = PdfWriter()
+
+    # Group overlays by page.
+    by_page: dict[int, list[dict[str, Any]]] = {}
+    for ov in overlays:
+        pg = ov["page"]
+        by_page.setdefault(pg, []).append(ov)
+
+    for page_idx, page in enumerate(reader.pages):
+        writer.add_page(page)
+        page_overlays = by_page.get(page_idx, [])
+        if not page_overlays:
+            continue
+
+        # Get the page dimensions.
+        media_box = page.mediabox
+        pw = float(media_box.width)
+        ph = float(media_box.height)
+
+        # Build an overlay PDF in memory.
+        buf = io.BytesIO()
+        c = rl_canvas.Canvas(buf, pagesize=(pw, ph))
+        for ov in page_overlays:
+            img_path = ov["image_path"]
+            width = ov.get("width")
+            height = ov.get("height")
+
+            # Determine draw dimensions.
+            if width is not None and height is not None:
+                pass  # Both given — use as-is.
+            elif width is not None:
+                # Width given, derive height from aspect ratio.
+                aspect = _image_aspect_ratio(Path(img_path))
+                height = width * aspect
+            elif height is not None:
+                # Height given, derive width from aspect ratio.
+                aspect = _image_aspect_ratio(Path(img_path))
+                width = height / aspect
+            else:
+                # Neither given — use native pixel dimensions (72 DPI).
+                width, height = _image_native_dimensions(Path(img_path))
+
+            c.drawImage(
+                img_path,
+                ov["x"],
+                ov["y"],
+                width=width,
+                height=height,
+                mask="auto" if Path(img_path).suffix.lower() == ".png" else None,
+            )
+        c.save()
+        buf.seek(0)
+
+        overlay_reader = PdfReader(buf)
+        overlay_page = overlay_reader.pages[0]
+        writer.pages[page_idx].merge_page(overlay_page)
+
+    output_path.parent.mkdir(parents=True, exist_ok=True)
+    with output_path.open("wb") as fh:
+        writer.write(fh)
+
+    logger.info("Overlaid %d image(s) -> %s", len(overlays), output_path)
+    return output_path
+
+
+def _image_aspect_ratio(img_path: Path) -> float:
+    """Return height/width ratio for an image file.
+
+    Uses ``Pillow`` when available, falls back to reading PNG
+    dimensions from the IHDR chunk.
+    """
+    try:
+        from PIL import Image
+
+        with Image.open(img_path) as img:
+            w, h = img.size
+            return h / w if w else 1.0
+    except ImportError:
+        pass
+
+    # Minimal PNG IHDR reader (no Pillow).
+    if img_path.suffix.lower() == ".png":
+        with img_path.open("rb") as fh:
+            header = fh.read(24)
+            if len(header) >= 24 and header[:8] == b"\x89PNG\r\n\x1a\n":
+                import struct
+
+                w = struct.unpack(">I", header[16:20])[0]
+                h = struct.unpack(">I", header[20:24])[0]
+                return h / w if w else 1.0
+
+    raise PdfError(
+        f"Cannot determine image dimensions for {img_path}. "
+        "Install Pillow (pip install Pillow) or specify both width and height."
+    )
+
+
+def _image_native_dimensions(img_path: Path) -> tuple[float, float]:
+    """Return (width, height) in points for an image at 72 DPI.
+
+    Uses ``Pillow`` when available, falls back to reading PNG
+    dimensions from the IHDR chunk.
+    """
+    try:
+        from PIL import Image
+
+        with Image.open(img_path) as img:
+            w, h = img.size
+            return float(w), float(h)
+    except ImportError:
+        pass
+
+    # Minimal PNG IHDR reader (no Pillow).
+    if img_path.suffix.lower() == ".png":
+        with img_path.open("rb") as fh:
+            header = fh.read(24)
+            if len(header) >= 24 and header[:8] == b"\x89PNG\r\n\x1a\n":
+                import struct
+
+                w = struct.unpack(">I", header[16:20])[0]
+                h = struct.unpack(">I", header[20:24])[0]
+                return float(w), float(h)
+
+    raise PdfError(
+        f"Cannot determine image dimensions for {img_path}. "
+        "Install Pillow (pip install Pillow) or specify both width and height."
+    )
+
+
 def _require_pdf(path: Path) -> None:
     """Raise PdfNotPdfError if *path* does not look like a PDF."""
     if not path.exists():

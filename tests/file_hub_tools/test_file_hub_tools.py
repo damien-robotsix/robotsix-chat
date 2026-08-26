@@ -49,6 +49,44 @@ def _make_flat_pdf(path: Path) -> None:
     c.save()
 
 
+def _make_test_png(path: Path, *, width: int = 10, height: int = 10) -> Path:
+    """Create a small solid-colour PNG file for testing image overlays.
+
+    Uses the ``Pillow`` library when available, otherwise writes a
+    minimal 1×1 PNG by hand (the overlay code can read any PNG).
+    """
+    try:
+        from PIL import Image
+
+        img = Image.new("RGBA", (width, height), (255, 0, 0, 128))
+        img.save(str(path))
+        return path
+    except ImportError:
+        pass
+
+    # Minimal 1×1 red-transparent PNG (no Pillow).
+    import struct
+    import zlib
+
+    def _chunk(ctype: bytes, data: bytes) -> bytes:
+        c = ctype + data
+        crc = zlib.crc32(c) & 0xFFFFFFFF
+        return struct.pack(">I", len(data)) + c + struct.pack(">I", crc)
+
+    ihdr = struct.pack(">IIBBBBB", width, height, 8, 6, 0, 0, 0)
+    raw = b""
+    for _y in range(height):
+        raw += b"\x00"  # filter byte
+        raw += b"\xff\x00\x00\x80" * width  # RGBA red, semi-transparent
+    idat = zlib.compress(raw)
+    png = b"\x89PNG\r\n\x1a\n"
+    png += _chunk(b"IHDR", ihdr)
+    png += _chunk(b"IDAT", idat)
+    png += _chunk(b"IEND", b"")
+    path.write_bytes(png)
+    return path
+
+
 # ---------------------------------------------------------------------------
 # build_file_hub_tools
 # ---------------------------------------------------------------------------
@@ -319,6 +357,142 @@ class TestFillPdfDocument:
             field_values=json.dumps({"name": "test"}),
         )
         assert "not found" in result.lower()
+
+    # ----- image overlay tests -----
+
+    @pytest.mark.asyncio
+    async def test_image_overlay_basic(self, tmp_path: Path) -> None:
+        """Image overlay stamps a PNG onto a PDF page."""
+        pdf_path = tmp_path / "flat.pdf"
+        _make_flat_pdf(pdf_path)
+        img_path = _make_test_png(tmp_path / "sig.png", width=50, height=20)
+        out_path = tmp_path / "img_overlaid.pdf"
+
+        settings = _settings(working_dir=str(tmp_path))
+        tools = build_file_hub_tools(settings)
+        fill_pdf = tools[1]
+
+        image_ovs = json.dumps(
+            [{"page": 0, "x": 100, "y": 500, "image_path": str(img_path), "width": 150}]
+        )
+        result = await fill_pdf(
+            pdf_path=str(pdf_path),
+            image_overlays=image_ovs,
+            output_path=str(out_path),
+        )
+        assert "Stamped 1 image" in result
+        assert out_path.exists()
+        # Content stream should be larger than the original.
+        assert out_path.stat().st_size > pdf_path.stat().st_size
+
+    @pytest.mark.asyncio
+    async def test_image_overlay_and_text_combined(self, tmp_path: Path) -> None:
+        """One call can place text AND image on the same page."""
+        pdf_path = tmp_path / "flat.pdf"
+        _make_flat_pdf(pdf_path)
+        img_path = _make_test_png(tmp_path / "sig.png", width=50, height=20)
+        out_path = tmp_path / "combined.pdf"
+
+        settings = _settings(working_dir=str(tmp_path))
+        tools = build_file_hub_tools(settings)
+        fill_pdf = tools[1]
+
+        text_ovs = json.dumps([{"page": 0, "x": 100, "y": 700, "text": "Hello"}])
+        image_ovs = json.dumps(
+            [{"page": 0, "x": 100, "y": 500, "image_path": str(img_path), "width": 150}]
+        )
+        result = await fill_pdf(
+            pdf_path=str(pdf_path),
+            text_overlays=text_ovs,
+            image_overlays=image_ovs,
+            output_path=str(out_path),
+        )
+        assert "Overlaid 1 text block" in result
+        assert "Stamped 1 image" in result
+        assert out_path.exists()
+
+    @pytest.mark.asyncio
+    async def test_image_overlay_missing_file(self, tmp_path: Path) -> None:
+        """Missing image file returns clear error."""
+        pdf_path = tmp_path / "flat.pdf"
+        _make_flat_pdf(pdf_path)
+
+        settings = _settings(working_dir=str(tmp_path))
+        tools = build_file_hub_tools(settings)
+        fill_pdf = tools[1]
+
+        image_ovs = json.dumps(
+            [{"page": 0, "x": 100, "y": 500, "image_path": str(tmp_path / "nope.png")}]
+        )
+        result = await fill_pdf(
+            pdf_path=str(pdf_path),
+            image_overlays=image_ovs,
+        )
+        assert "PDF processing error" in result
+        assert "Image file not found" in result
+
+    @pytest.mark.asyncio
+    async def test_image_overlay_unsupported_format(self, tmp_path: Path) -> None:
+        """Unsupported image format returns clear error."""
+        pdf_path = tmp_path / "flat.pdf"
+        _make_flat_pdf(pdf_path)
+        bad_img = tmp_path / "photo.bmp"
+        bad_img.write_bytes(b"BM\x00\x00")  # Fake BMP header.
+
+        settings = _settings(working_dir=str(tmp_path))
+        tools = build_file_hub_tools(settings)
+        fill_pdf = tools[1]
+
+        image_ovs = json.dumps(
+            [{"page": 0, "x": 100, "y": 500, "image_path": str(bad_img)}]
+        )
+        result = await fill_pdf(
+            pdf_path=str(pdf_path),
+            image_overlays=image_ovs,
+        )
+        assert "PDF processing error" in result
+        assert "Unsupported image format" in result
+
+    @pytest.mark.asyncio
+    async def test_image_overlay_invalid_json(self, tmp_path: Path) -> None:
+        """Malformed image_overlays JSON returns clear error."""
+        pdf_path = tmp_path / "flat.pdf"
+        _make_flat_pdf(pdf_path)
+
+        settings = _settings(working_dir=str(tmp_path))
+        tools = build_file_hub_tools(settings)
+        fill_pdf = tools[1]
+
+        result = await fill_pdf(
+            pdf_path=str(pdf_path),
+            image_overlays="not json {{{",
+        )
+        assert "Invalid image_overlays JSON" in result
+
+    @pytest.mark.asyncio
+    async def test_image_overlay_aspect_ratio(self, tmp_path: Path) -> None:
+        """When only width is given, height is derived from aspect ratio."""
+        pdf_path = tmp_path / "flat.pdf"
+        _make_flat_pdf(pdf_path)
+        # 100×40 px image → aspect ratio 0.4
+        img_path = _make_test_png(tmp_path / "sig.png", width=100, height=40)
+        out_path = tmp_path / "aspect.pdf"
+
+        settings = _settings(working_dir=str(tmp_path))
+        tools = build_file_hub_tools(settings)
+        fill_pdf = tools[1]
+
+        # Width only: 100 pts → height should be 40 pts.
+        image_ovs = json.dumps(
+            [{"page": 0, "x": 100, "y": 500, "image_path": str(img_path), "width": 100}]
+        )
+        result = await fill_pdf(
+            pdf_path=str(pdf_path),
+            image_overlays=image_ovs,
+            output_path=str(out_path),
+        )
+        assert "Stamped 1 image" in result
+        assert out_path.exists()
 
 
 # ---------------------------------------------------------------------------
