@@ -1,0 +1,1 @@
+Add POST-MERGE CI FAILURE DETECTION to autonomous protocol: after merging a PR, the assistant must check CI status on the target branch and proactively inform the operator in the main conversation if CI is failing — not just in internal metadata.

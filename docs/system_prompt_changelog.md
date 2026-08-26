@@ -2756,6 +2756,25 @@ autonomous settings at their pydantic field defaults
 ``stale_monitor_runs_before_completion=3``,
 ``queue_tolerance_runs_before_escalation=3``).
 
+## AUTONOMOUS v46 — 2026-08-25 — 20260825T191547Z-assistant-should-automatically-detect-an-ff2d
+
+**Summary:** Add POST-MERGE CI FAILURE DETECTION section to the autonomous
+protocol.  After merging a PR, the assistant must check CI status on the
+target branch and proactively inform the operator in the main conversation
+if CI is failing — not just in internal metadata or session summaries.
+The assistant must state the specific failure, acknowledge its merge likely
+caused it, and offer to file a fix ticket or propose the specific fix.
+Silent CI regressions defeat the operator's goal of keeping main green.
+
+**Rationale:** Session e53b21edb29b4c78a06200a2da92d7af — after PR #258 was
+merged and CI on main broke (mypy type error at engine.py:710), the assistant
+only reported the CI failure in the internal metadata summary.  It did not
+proactively inform the user about the regression in the main conversation.
+The existing POST-MERGE DEPLOYMENT VERIFICATION section covers image
+deployment but not CI pipeline status on the target branch.
+
+**SHA256:** placeholder — will be recomputed after rebase
+
 ## AUTONOMOUS v45 — 2026-08-26 — 20260826T072519Z-add-monitor-status-checking-before-respa-a833
 
 **Summary:** Expand the monitor-spawn guidance to add a "VERIFY TICKET STATE
