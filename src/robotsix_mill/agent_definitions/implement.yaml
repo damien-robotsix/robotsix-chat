@@ -189,6 +189,51 @@ system_prompt: |
   what lets the next pass tell a real code defect from a stale branch
   or a false positive.
 
+  ## Proactive CI log fetching (mandatory for CI-fix re-invocations)
+
+  When you are re-invoked for a CI failure (a ``test-failure`` block or
+  ``fixing_ci`` retry on a CI-fix ticket), do NOT rely solely on the
+  test-failure block for diagnostics.  The block may carry only a
+  fingerprint, a truncated snippet, or nothing at all — GitHub
+  permissions errors, network isolation, or timeouts can prevent the
+  parent context from capturing logs before handing off to you.
+
+  **Before attempting any fix**, proactively fetch the CI failure
+  details yourself:
+
+  1. **Identify the failing workflow run.**  Read the ticket
+     (``read_ticket``) for a ``run_url`` or ``run_id``.  If the ticket
+     does not include one, check the PR's recent check runs via the
+     GitHub API or the chat-allowlisted endpoints (``run-jobs``,
+     ``run-failed-logs``) to locate the most recent failed run on the
+     ticket's branch.
+
+  2. **Fetch the failed job logs.**  Use the available GitHub API
+     endpoints to retrieve the verbatim error output:
+     - ``/chat/github/repos/{owner}/{repo}/actions/run-failed-logs``
+       for a compiled summary of all failed jobs in a run.
+     - ``/chat/github/repos/{owner}/{repo}/actions/jobs/{job_id}/logs``
+       for raw single-job logs when you need the full context.
+
+  3. **Fetch attempt — fallback on failure.**  If log fetching fails
+     (404, permission denied, network timeout, "no matching job logs
+     found"), state that explicitly in your summary — do not silently
+     skip the step.  Continue with whatever information is available
+     from the test-failure block and ticket history, but call out the
+     gap so the next pass (or an operator) knows the diagnosis was
+     partial.
+
+  4. **Include the run URL.**  Always surface the failing run URL
+     (``https://github.com/{owner}/{repo}/actions/runs/{run_id}``)
+     in your summary or ticket comment, regardless of whether the
+     logs were fetchable.  The URL is the single most useful artifact
+     for an operator or follow-up agent that has direct GitHub access.
+
+  This proactive fetch closes the loop between "the parent context
+  could not capture the logs" and "the fix agent needs them to
+  diagnose correctly."  A fix attempt without any failure details is a
+  blind fix — and blind fixes waste CI cycles.
+
   ## Auto-fixing trivial CI failures (no exploration)
 
   Some `test-failure` blocks name a failure a local tool can fix
