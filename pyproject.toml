@@ -122,7 +122,7 @@ packages = ["src/robotsix_chat"]
 # fleet pin-bump workflow advances them through reviewed PRs.
 [tool.uv.sources]
 robotsix-config = { git = "https://github.com/damien-robotsix/robotsix-config.git", rev = "424f8ec5140e14e9699b92d5c3755d929625b570" }  # pragma: allowlist secret
-robotsix-llmio = { git = "https://github.com/damien-robotsix/robotsix-llmio.git", rev = "9c973450c8cee550d391df888b16e9efe4493300" }  # pragma: allowlist secret
+robotsix-llmio = { git = "https://github.com/damien-robotsix/robotsix-llmio.git", rev = "211f2293faf7b2ea6f6cde02f24ae813a0875e07" }  # pragma: allowlist secret
 # robotsix-modules: same SHA as robotsix-mill (coherent-set rule).
 robotsix-modules = { git = "https://github.com/damien-robotsix/robotsix-modules.git", rev = "d7c5e59980516de6e050db02ff54aef4e15ff5c3" }  # pragma: allowlist secret
 robotsix-http = { git = "https://github.com/damien-robotsix/robotsix-http.git", rev = "13e6e9ab330f9be3b8b1e7bc2694210f7d9e5848" }  # pragma: allowlist secret
