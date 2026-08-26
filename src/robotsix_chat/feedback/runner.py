@@ -198,7 +198,17 @@ reading it later should understand the problem and have a clear idea \
 of what to change.
 - Choose ``target_repo`` based on which codebase the improvement \
 concerns — if the issue is about the chat system itself, use the chat \
-repo; if it is about a downstream component, use that component's repo."""
+repo; if it is about a downstream component, use that component's repo.
+- **CI failure visibility:** If the session contains evidence of a CI \
+failure after a merge (e.g. CI status mentioned in subsession summaries, \
+metadata, or internal notes) but the assistant never proactively informed \
+the user about the regression in the main conversation, file a ``prompt`` \
+ticket.  The operator's goal is to keep main green — CI regressions that \
+are silently buried in internal metadata defeat that goal.  The ticket \
+should describe the specific failure, note that the assistant only \
+reported it internally, and recommend that the autonomous prompt \
+instruct the assistant to surface CI failures proactively in the \
+main conversation."""
 
 
 def _build_feedback_prompt(
