@@ -326,7 +326,7 @@ def overlay_text(
 
 
 # Supported image formats for overlay.
-_SUPPORTED_IMAGE_FORMATS = frozenset({".png", ".svg"})
+_SUPPORTED_IMAGE_FORMATS = frozenset({".png"})
 
 
 def overlay_images(
