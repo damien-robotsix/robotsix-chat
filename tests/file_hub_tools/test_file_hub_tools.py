@@ -494,6 +494,7 @@ class TestFillPdfDocument:
         assert "Stamped 1 image" in result
         assert out_path.exists()
 
+
 # ---------------------------------------------------------------------------
 # file_hub_put
 # ---------------------------------------------------------------------------
