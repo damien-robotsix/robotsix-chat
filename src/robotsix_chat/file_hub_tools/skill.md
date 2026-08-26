@@ -64,14 +64,14 @@ Fills a PDF in one or more of three modes:
    `[{"page": 0, "x": 400, "y": 50, "image_path": "/data/file_hub_work/signature.png", "width": 150}]`
    If only `width` or `height` is given, the other is derived from the image's aspect ratio.
 
-Coordinates are in PDF points (72 per inch) from the bottom-left corner of the page. All three
-modes can be combined in a single call.
+Coordinates are in PDF points (72 per inch) from the bottom-left corner of the page. All three modes
+can be combined in a single call.
 
 **Constraints:**
 
-- **No signature forging.** This tool writes text, field values, and stamps provided images only.
-  It must not generate or synthesize signatures. The human operator provides their own signature
-  image for the agent to stamp.
+- **No signature forging.** This tool writes text, field values, and stamps provided images only. It
+  must not generate or synthesize signatures. The human operator provides their own signature image
+  for the agent to stamp.
 - Use `list_pdf_form_fields` first to discover available field names.
 
 **Example (form fill):**
