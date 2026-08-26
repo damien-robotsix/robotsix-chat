@@ -7,6 +7,7 @@ import base64
 import contextlib
 import dataclasses
 import logging
+import re
 import time
 import uuid
 from collections.abc import AsyncIterator
@@ -858,6 +859,18 @@ async def chat_endpoint(
         if carryover:
             message = _CARRYOVER_HEADER + carryover + _CARRYOVER_FOOTER + "\n" + message
 
+    # -- live subsession state injection for status queries ----------------
+    # When the user asks a status-like question, inject the current live
+    # state of all subsessions so the agent grounds its reply in the
+    # canonical registry rather than stale conversation history.
+    subsession_registry = request.app.state.subsession_registry
+    if subsession_registry is not None and session_id and _is_status_query(message):
+        subs_state = _build_subsession_status_context(
+            subsession_registry, owner_id or session_id
+        )
+        if subs_state:
+            message = subs_state + "\n" + message
+
     response_queue = await coalescer.submit(
         session_id,
         message,
@@ -1055,3 +1068,78 @@ async def _persist_carryover_for_compaction(
             "Failed to persist carryover note for compacted session %s",
             session_id,
         )
+
+
+# -- live subsession state injection for status queries ---------------------
+
+_STATUS_QUERY_PATTERNS: list[re.Pattern[str]] = [
+    re.compile(r"\bwhat(?:'s| is) (?:the |my )?status\b", re.IGNORECASE),
+    re.compile(r"\bstatus(?:\?)?\s*$", re.IGNORECASE),
+    re.compile(
+        r"\bhow (?:is|are) (?:things|it|this|that|the )(?:going|doing)\b",
+        re.IGNORECASE,
+    ),
+    re.compile(r"\bany (?:update|progress|news)\b", re.IGNORECASE),
+    re.compile(r"\bwhere (?:are|do) (?:we|things|it) stand\b", re.IGNORECASE),
+    re.compile(r"\bcurrent (?:status|state|progress)\b", re.IGNORECASE),
+]
+
+
+def _is_status_query(message: str) -> bool:
+    """Return True when *message* looks like a status/progress question."""
+    if not message:
+        return False
+    # Strip leading whitespace and quotes the injection prepends.
+    text = message.lstrip()
+    return any(pat.search(text) for pat in _STATUS_QUERY_PATTERNS)
+
+
+_STATUS_CONTEXT_HEADER = (
+    "=== INTERNAL METADATA — NOT part of the conversation ===\n"
+    "The following is the live, canonical state of all background subsessions "
+    "for this conversation, fetched from the registry at request time.  "
+    "Use THIS data — not stale conversation history — when reporting status.  "
+    "The user never saw this block; treat it as system context only.\n"
+)
+
+_STATUS_CONTEXT_FOOTER = "=== END INTERNAL METADATA ===\n"
+
+
+def _build_subsession_status_context(
+    registry: Any,  # SubsessionRegistry
+    owner_session_id: str,
+) -> str:
+    """Return a fenced block of live subsession state, or ``""`` if none."""
+    try:
+        infos = registry.list_for_owner(owner_session_id)
+    except Exception:
+        logger.exception("Failed to list subsessions for status context")
+        return ""
+
+    if not infos:
+        return ""
+
+    lines: list[str] = []
+    for info in infos:
+        parts = [
+            f"- {info.kind.value} '{info.title}' (id={info.id[:8]}) "
+            f"status={info.status.value}",
+        ]
+        if info.summary:
+            # Truncate long summaries to keep context small.
+            summary = info.summary
+            if len(summary) > 300:
+                summary = summary[:297] + "..."
+            parts.append(f"  summary: {summary}")
+        if info.last_result:
+            result = info.last_result
+            if len(result) > 200:
+                result = result[:197] + "..."
+            parts.append(f"  last_result: {result}")
+        if info.error:
+            parts.append(f"  error: {info.error}")
+        if info.close_reason:
+            parts.append(f"  close_reason: {info.close_reason}")
+        lines.append("\n".join(parts))
+
+    return _STATUS_CONTEXT_HEADER + "\n".join(lines) + "\n" + _STATUS_CONTEXT_FOOTER
