@@ -5,7 +5,7 @@
 # system interpreter (/usr/local), exactly what the runtime stage copies.
 # Standard robotsix Dockerfile pattern — see robotsix-standards, docker page.
 # ---------------------------------------------------------------------------
-FROM python:3.14-slim@sha256:ce40764625a4ff50df3548277632e7f96c4e77fe75fa848aae9885476e7df5a4 AS builder
+FROM python:3.14-slim@sha256:83ff1d245a3d57d04152252d3ef9cb361494d0b3395abd65a5ebe91c401c8e83 AS builder
 
 SHELL ["/bin/bash", "-o", "pipefail", "-c"]
 
@@ -66,7 +66,7 @@ RUN apk add --no-cache git && \
 # builder — no uv, no git, no compilers. Node.js + the claude CLI are the one
 # genuine runtime system dependency (claude-sdk transport spawns the CLI).
 # ---------------------------------------------------------------------------
-FROM python:3.14-slim@sha256:ce40764625a4ff50df3548277632e7f96c4e77fe75fa848aae9885476e7df5a4 AS runtime
+FROM python:3.14-slim@sha256:83ff1d245a3d57d04152252d3ef9cb361494d0b3395abd65a5ebe91c401c8e83 AS runtime
 
 SHELL ["/bin/bash", "-o", "pipefail", "-c"]
 
@@ -93,11 +93,11 @@ RUN rm -rf /usr/local/lib/python3.14/site-packages/pip \
 RUN apt-get update \
     && apt-get install --only-upgrade -y --no-install-recommends \
         liblzma5="5.8.*" \
-        util-linux="2.41.5-0+deb13u1" \
-        libblkid1="2.41.5-0+deb13u1" \
-        libmount1="2.41.5-0+deb13u1" \
-        libsmartcols1="2.41.5-0+deb13u1" \
-        libuuid1="2.41.5-0+deb13u1" \
+        util-linux="2.41.*" \
+        libblkid1="2.41.*" \
+        libmount1="2.41.*" \
+        libsmartcols1="2.41.*" \
+        libuuid1="2.41.*" \
     && apt-get install -y --no-install-recommends curl="8.*" gnupg="2.*" \
     && mkdir -p /etc/apt/keyrings \
     && curl -fsSL https://deb.nodesource.com/gpgkey/nodesource-repo.gpg.key \
