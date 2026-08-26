@@ -23,15 +23,35 @@ _TRUNCATE_LENGTH = 8000  # default for write methods (POST/PUT/PATCH/DELETE)
 
 _HEALTH_PROBE_TIMEOUT = 2.0  # seconds
 
+# Default per-request HTTP timeout (seconds).  Overridden at tool-construction
+# time by the configured ``CentralDeploySettings.component_request_timeout``.
+_DEFAULT_REQUEST_TIMEOUT = 60.0
+
 # Retry configuration for transient component-call failures.
 # max_retries=2 + 1 initial = 3 total attempts, matching the prior hand-rolled
 # _MAX_ATTEMPTS=3.
-_COMPONENT_RETRY_CONFIG = RetryConfig(
+_ROSTER_RETRY_CONFIG = RetryConfig(
     max_retries=2,
     backoff_base=1.0,
     backoff_cap=10.0,
     jitter_factor=0.5,
 )
+
+
+def _build_component_retry_config(request_timeout: float) -> RetryConfig:
+    """Build the RetryConfig for component calls.
+
+    ``stop_after_delay`` is set to 3x the per-request timeout so the
+    retry loop terminates in bounded wall-clock time even when every
+    attempt exhausts its full HTTP timeout.
+    """
+    return RetryConfig(
+        max_retries=2,
+        backoff_base=1.0,
+        backoff_cap=10.0,
+        jitter_factor=0.5,
+        stop_after_delay=request_timeout * 3,
+    )
 
 
 async def _health_probe(base_url: str) -> bool:
@@ -60,6 +80,7 @@ async def _component_request_impl(
     read_response_max_chars: int = _TRUNCATE_LENGTH,
     component_credentials: dict[str, Any] | None = None,
     component_fallbacks: dict[str, str] | None = None,
+    request_timeout: float = _DEFAULT_REQUEST_TIMEOUT,
 ) -> str:
     """Call *component_id*'s API at *method* *path*.
 
@@ -211,8 +232,13 @@ async def _component_request_impl(
             )
         return f"HTTP {status}\n{body_str}"
 
-    async with httpx.AsyncClient(timeout=30.0, follow_redirects=True) as client:
-        retry_client = RetryClient(client, config=_COMPONENT_RETRY_CONFIG)
+    async with httpx.AsyncClient(
+        timeout=request_timeout, follow_redirects=True
+    ) as client:
+        retry_client = RetryClient(
+            client,
+            config=_build_component_retry_config(request_timeout),
+        )
         try:
             resp = await retry_client.request(
                 method_upper,
@@ -288,7 +314,7 @@ async def _component_request_impl(
                 )
                 try:
                     async with httpx.AsyncClient(
-                        timeout=30.0, follow_redirects=True
+                        timeout=request_timeout, follow_redirects=True
                     ) as fallback_client:
                         fallback_resp = await fallback_client.request(
                             method_upper,
@@ -382,6 +408,8 @@ def build_component_access_tools(
     async def _refresh() -> None:
         _state["entries"] = await fetch_roster(settings)
 
+    _timeout = settings.component_request_timeout
+
     async def component_request(
         component_id: str,
         method: str,
@@ -416,23 +444,42 @@ def build_component_access_tools(
             if very long), or an error message.
 
         """
-        # Refresh the roster on every call (TTL-gated internally).
-        await _refresh()
-        limit = (
-            max_response_chars
-            if max_response_chars is not None
-            else settings.component_response_max_chars
-        )
-        return await _component_request_impl(
-            _state["entries"],
-            component_id,
-            method,
-            path,
-            json_body,
-            params=params,
-            read_response_max_chars=limit,
-            component_credentials=_creds,
-            component_fallbacks=settings.component_fallbacks,
-        )
+        # The wrapper must never raise an exception — pydantic-ai treats
+        # any raised exception from a tool callable as a retryable failure,
+        # burning agent-level retries until "exceeded max retries count".
+        # A swallowed exception surfaces as a clear error string instead.
+        try:
+            # Refresh the roster on every call (TTL-gated internally).
+            await _refresh()
+            limit = (
+                max_response_chars
+                if max_response_chars is not None
+                else settings.component_response_max_chars
+            )
+            return await _component_request_impl(
+                _state["entries"],
+                component_id,
+                method,
+                path,
+                json_body,
+                params=params,
+                read_response_max_chars=limit,
+                component_credentials=_creds,
+                component_fallbacks=settings.component_fallbacks,
+                request_timeout=_timeout,
+            )
+        except Exception as exc:
+            logger.error(
+                "component_request %s %s %s unexpected error: %s",
+                component_id,
+                method,
+                path,
+                exc,
+                exc_info=True,
+            )
+            return (
+                f"Error calling {component_id} {method.upper()} {path}: "
+                f"{type(exc).__name__}: {exc}"
+            )
 
     return [component_request]

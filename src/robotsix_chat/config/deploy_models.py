@@ -54,6 +54,15 @@ class CentralDeploySettings(BaseModel):
     url: str = ""
     roster_cache_ttl: float = 300.0
     component_response_max_chars: int = 200_000
+    component_request_timeout: float = Field(
+        default=60.0,
+        description=(
+            "Per-request HTTP timeout (seconds) for component API calls "
+            "made via component_request.  Also bounds the total wall-clock "
+            "time for all retry attempts via the retry deadline.  Default "
+            "60s — raise this if upstream components are slow to respond."
+        ),
+    )
     component_credentials: dict[str, ComponentCredentials] = Field(default_factory=dict)
     component_fallbacks: dict[str, str] = Field(
         default_factory=dict,
