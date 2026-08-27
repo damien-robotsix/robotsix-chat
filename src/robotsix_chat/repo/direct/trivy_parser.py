@@ -63,7 +63,8 @@ _SUMMARY_RE = re.compile(
     r"\(\s*CRITICAL:\s*(\d+)\s*,\s*HIGH:\s*(\d+)\s*,\s*MEDIUM:\s*(\d+)\s*,\s*LOW:\s*(\d+)\s*\)"
 )
 
-# Matches the target line (first non-empty line before === separator): "image (os os-version)"
+# Matches the target line (first non-empty line before === separator):
+# "image (os os-version)"
 _TARGET_RE = re.compile(r"^(.+?)\s+\(.*\)\s*$")
 
 # Matches a CVE-like ID (CVE-YYYY-NNNNN) or GHSA-like ID
@@ -94,10 +95,8 @@ def _split_table_cells(line: str) -> list[str]:
     """
     # Strip leading/trailing │ then split by inner │
     stripped = line.strip()
-    if stripped.startswith("│"):
-        stripped = stripped[1:]
-    if stripped.endswith("│"):
-        stripped = stripped[:-1]
+    stripped = stripped.removeprefix("│")
+    stripped = stripped.removesuffix("│")
     return [cell.strip() for cell in stripped.split("│")]
 
 
@@ -198,13 +197,12 @@ def parse_trivy_table(text: str) -> TrivyParseResult:
             # Continuation line — merge into the current row
             merged = list(current_row_cells)
             for i, cell in enumerate(cells):
-                if i < len(merged):
-                    if cell:
-                        # Append with space if there's existing content
-                        if merged[i]:
-                            merged[i] = f"{merged[i]} {cell}"
-                        else:
-                            merged[i] = cell
+                if i < len(merged) and cell:
+                    # Append with space if there's existing content
+                    if merged[i]:
+                        merged[i] = f"{merged[i]} {cell}"
+                    else:
+                        merged[i] = cell
             current_row_cells = merged
         else:
             # Orphan continuation row — try to parse anyway
@@ -288,7 +286,7 @@ def format_findings_summary(result: TrivyParseResult) -> str:
     lines.append("| CVE | Package | Severity | Installed | Fixed |")
     lines.append("|-----|---------|----------|-----------|-------|")
     for f in sorted_findings:
-        fix = f.fixed_version if f.fixed_version else "_not yet_"
+        fix = f.fixed_version or "_not yet_"
         lines.append(
             f"| {f.vulnerability_id} | {f.library} | {f.severity} "
             f"| {f.installed_version} | {fix} |"

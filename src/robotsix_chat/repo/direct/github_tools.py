@@ -665,7 +665,7 @@ def build_github_tools(
         Retrieves detailed output from a specific workflow run, optionally
         filtering by job name. Useful for extracting specific error details
         from CI failures (e.g., Trivy scan output, test results, build errors).
-        
+
         **Read-only.** Does not modify any repository state.
         **No BLOCKED-state requirement.** This is a pure diagnostic tool.
 
@@ -686,6 +686,7 @@ def build_github_tools(
         Returns:
             A formatted log summary including run metadata, job names, and
             (when accessible) the raw log content from each matching job.
+
         """
         if component_request is None and (
             scope_error := await client.check_installation_scope(repo_full_name)
@@ -724,38 +725,32 @@ def build_github_tools(
                 }
 
             failed_run = next(
-                (
-                    r
-                    for r in runs
-                    if _is_failure(
-                        (r.get("conclusion") or "").lower()
-                    )
-                ),
+                (r for r in runs if _is_failure((r.get("conclusion") or "").lower())),
                 None,
             )
             if failed_run is None:
                 # No suffering failure but return the latest run's info.
                 latest = runs[0]
-                run_id = latest.get("id")
-                if not isinstance(run_id, int):
+                resolved_id = latest.get("id")
+                if not isinstance(resolved_id, int):
                     return (
                         f"No failed or actionable workflow run found "
                         f"on '{target_branch}' in {repo_full_name}."
                     )
+                run_id = resolved_id
             else:
-                run_id = failed_run.get("id")
-                if not isinstance(run_id, int):
+                resolved_id = failed_run.get("id")
+                if not isinstance(resolved_id, int):
                     return (
                         f"Error: could not determine run id from the "
                         f"failing workflow run in {repo_full_name}."
                     )
+                run_id = resolved_id
 
         # Fetch the workflow run metadata.
         run_data = await actions_client.get_workflow_run(repo_full_name, run_id)
         if run_data is None:
-            return (
-                f"Error: workflow run {run_id} not found in {repo_full_name}."
-            )
+            return f"Error: workflow run {run_id} not found in {repo_full_name}."
 
         run_name = run_data.get("name", "(unknown)")
         run_status = run_data.get("status", "?")
@@ -779,16 +774,10 @@ def build_github_tools(
         # Filter by job_name if provided.
         if job_name:
             name_lower = job_name.lower()
-            matching_jobs = [
-                j for j in jobs if name_lower in j.get("name", "").lower()
-            ]
+            matching_jobs = [j for j in jobs if name_lower in j.get("name", "").lower()]
             if not matching_jobs:
-                available = ", ".join(
-                    j.get("name", "?") for j in jobs
-                )
-                lines.append(
-                    f"No job named '{job_name}' found in run {run_id}."
-                )
+                available = ", ".join(j.get("name", "?") for j in jobs)
+                lines.append(f"No job named '{job_name}' found in run {run_id}.")
                 lines.append(f"Available jobs: {available}")
                 return "\n".join(lines)
             jobs = matching_jobs
@@ -816,9 +805,7 @@ def build_github_tools(
                 continue
 
             try:
-                log_text = await actions_client.get_job_log(
-                    repo_full_name, job_id
-                )
+                log_text = await actions_client.get_job_log(repo_full_name, job_id)
             except RuntimeError as exc:
                 lines.append(f"_Error fetching job log: {exc}_")
                 lines.append("")
@@ -919,33 +906,32 @@ def build_github_tools(
                 (
                     r
                     for r in runs
-                    if (r.get("conclusion") or "").lower()
-                    in {"failure", "timed_out"}
+                    if (r.get("conclusion") or "").lower() in {"failure", "timed_out"}
                 ),
                 None,
             )
             if failed_run is None:
                 latest = runs[0]
-                run_id = latest.get("id")
-                if not isinstance(run_id, int):
+                resolved_id = latest.get("id")
+                if not isinstance(resolved_id, int):
                     return (
                         f"No failed workflow run found on '{target_branch}' "
                         f"in {repo_full_name}."
                     )
+                run_id = resolved_id
             else:
-                run_id = failed_run.get("id")
-                if not isinstance(run_id, int):
+                resolved_id = failed_run.get("id")
+                if not isinstance(resolved_id, int):
                     return (
                         f"Error: could not determine run id from the "
                         f"failing workflow run in {repo_full_name}."
                     )
+                run_id = resolved_id
 
         # Fetch the workflow run metadata for context.
         run_data = await actions_client.get_workflow_run(repo_full_name, run_id)
         if run_data is None:
-            return (
-                f"Error: workflow run {run_id} not found in {repo_full_name}."
-            )
+            return f"Error: workflow run {run_id} not found in {repo_full_name}."
 
         run_name = run_data.get("name", "(unknown)")
         run_branch = run_data.get("head_branch", "?")
@@ -964,9 +950,7 @@ def build_github_tools(
         trivy_jobs = [
             j
             for j in jobs
-            if any(
-                kw in (j.get("name") or "").lower() for kw in trivy_keywords
-            )
+            if any(kw in (j.get("name") or "").lower() for kw in trivy_keywords)
         ]
 
         # Fall back to failed jobs if no trivy-named job
@@ -990,7 +974,7 @@ def build_github_tools(
         parsed_results: list[str] = []
         total_findings = 0
 
-        from .trivy_parser import TrivyParseResult, format_findings_summary
+        from .trivy_parser import format_findings_summary
         from .trivy_parser import parse_trivy_table as _parse_trivy
 
         for job in candidate_jobs:
@@ -1000,9 +984,7 @@ def build_github_tools(
                 continue
 
             try:
-                log_text = await actions_client.get_job_log(
-                    repo_full_name, job_id
-                )
+                log_text = await actions_client.get_job_log(repo_full_name, job_id)
             except RuntimeError as exc:
                 parsed_results.append(
                     f"### Job: {job_name}\n\n_Log unavailable: {exc}_"
@@ -1064,9 +1046,7 @@ def build_github_tools(
             )
             header += no_findings_msg
         else:
-            header += (
-                f"**{total_findings} vulnerability finding(s) extracted.**\n\n"
-            )
+            header += f"**{total_findings} vulnerability finding(s) extracted.**\n\n"
 
         return header + "\n\n".join(parsed_results)
 

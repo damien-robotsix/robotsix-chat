@@ -4,12 +4,10 @@ from __future__ import annotations
 
 from robotsix_chat.repo.direct.trivy_parser import (
     TrivyFinding,
-    TrivyParseResult,
     TrivySummary,
     format_findings_summary,
     parse_trivy_table,
 )
-
 
 # ---------------------------------------------------------------------------
 # Sample Trivy table outputs for testing
@@ -47,12 +45,12 @@ my-image:latest (alpine 3.19)
 ==============================
 Total: 1 (CRITICAL: 0, HIGH: 0, MEDIUM: 1, LOW: 0)
 
-┌──────────┬──────────────────────────────────────┬──────────┬───────────────┬──────────────┐
-│ Library  │ Vulnerability                          │ Severity │ Installed     │ Fixed        │
-│          │                                        │          │ Version       │ Version      │
-├──────────┼──────────────────────────────────────┼──────────┼───────────────┼──────────────┤
-│ go       │ GHSA-4v49-3g2w-r7h5                   │ MEDIUM   │ 1.21.0        │ 1.21.5       │
-└──────────┴──────────────────────────────────────┴──────────┴───────────────┴──────────────┘
+┌──────────┬──────────────────────┬──────────┬───────────────┬──────────────┐
+│ Library  │ Vulnerability        │ Severity │ Installed     │ Fixed        │
+│          │                      │          │ Version       │ Version      │
+├──────────┼──────────────────────┼──────────┼───────────────┼──────────────┤
+│ go       │ GHSA-4v49-3g2w-r7h5  │ MEDIUM   │ 1.21.0        │ 1.21.5       │
+└──────────┴──────────────────────┴──────────┴───────────────┴──────────────┘
 """
 
 _TRIVY_TABLE_NO_VULNS = """\
@@ -91,6 +89,7 @@ class TestParseTrivyTable:
     """Tests for parse_trivy_table parser."""
 
     def test_parses_single_table(self) -> None:
+        """Parse a standard two-finding Trivy table."""
         result = parse_trivy_table(_TRIVY_TABLE_SINGLE)
 
         assert result.target == "robotsix-chat:ci-scan"
@@ -103,6 +102,7 @@ class TestParseTrivyTable:
         assert len(result.findings) == 2
 
     def test_finding_fields(self) -> None:
+        """Verify individual fields of parsed findings."""
         result = parse_trivy_table(_TRIVY_TABLE_SINGLE)
 
         first = result.findings[0]
@@ -118,6 +118,7 @@ class TestParseTrivyTable:
         assert second.severity == "HIGH"
 
     def test_parses_critical_severity(self) -> None:
+        """Parse a table with a single CRITICAL finding."""
         result = parse_trivy_table(_TRIVY_TABLE_CRITICAL)
 
         assert result.summary is not None
@@ -127,6 +128,7 @@ class TestParseTrivyTable:
         assert result.findings[0].vulnerability_id == "CVE-2024-0727"
 
     def test_parses_ghsa_id(self) -> None:
+        """Parse a GHSA-style vulnerability ID."""
         result = parse_trivy_table(_TRIVY_TABLE_GHSA)
 
         assert len(result.findings) == 1
@@ -136,6 +138,7 @@ class TestParseTrivyTable:
         assert f.library == "go"
 
     def test_no_vulns_zero_total(self) -> None:
+        """Handle a table with zero total vulnerabilities."""
         result = parse_trivy_table(_TRIVY_TABLE_NO_VULNS)
 
         assert result.summary is not None
@@ -143,17 +146,20 @@ class TestParseTrivyTable:
         assert result.findings == []
 
     def test_empty_table_no_findings(self) -> None:
+        """Handle a table with no summary line."""
         result = parse_trivy_table(_TRIVY_TABLE_EMPTY)
 
         assert result.summary is None
         assert result.findings == []
 
     def test_no_vulnerabilities_found_text(self) -> None:
+        """Handle 'No vulnerabilities found' text output."""
         result = parse_trivy_table(_TRIVY_TABLE_NONE_FOUND)
 
         assert result.findings == []
 
     def test_random_log_returns_empty(self) -> None:
+        """Non-Trivy input yields empty results."""
         result = parse_trivy_table(_RANDOM_LOG)
 
         assert result.summary is None
@@ -161,6 +167,7 @@ class TestParseTrivyTable:
         assert result.target == ""
 
     def test_raw_output_preserved(self) -> None:
+        """Raw output is stored verbatim on the result."""
         result = parse_trivy_table(_TRIVY_TABLE_SINGLE)
 
         assert result.raw_output == _TRIVY_TABLE_SINGLE
@@ -175,6 +182,7 @@ class TestFormatFindingsSummary:
     """Tests for format_findings_summary Markdown formatter."""
 
     def test_markdown_table_with_findings(self) -> None:
+        """Formatted output contains expected Markdown elements."""
         result = parse_trivy_table(_TRIVY_TABLE_SINGLE)
         output = format_findings_summary(result)
 
@@ -188,7 +196,11 @@ class TestFormatFindingsSummary:
         assert "2.9.14-1.4" in output
 
     def test_severity_ordering_critical_first(self) -> None:
-        merged = _TRIVY_TABLE_SINGLE.strip() + "\n" + """
+        """CRITICAL findings sort before HIGH in formatted output."""
+        merged = (
+            _TRIVY_TABLE_SINGLE.strip()
+            + "\n"
+            + """
 ┌──────────────┬────────────────────┬──────────┬───────────────┬─────────────┐
 │ Library      │ Vulnerability      │ Severity │ Installed     │ Fixed       │
 │              │                    │          │ Version       │ Version     │
@@ -196,6 +208,7 @@ class TestFormatFindingsSummary:
 │ openssl      │ CVE-2024-0727      │ CRITICAL │ 3.0.11-1~deb2 │ 3.0.13-1~de │
 └──────────────┴────────────────────┴──────────┴───────────────┴─────────────┘
 """
+        )
         result = parse_trivy_table(merged)
         output = format_findings_summary(result)
 
@@ -205,12 +218,14 @@ class TestFormatFindingsSummary:
         assert crit_pos < high_pos
 
     def test_no_findings_message(self) -> None:
+        """Empty results produce a 'No vulnerability findings' message."""
         result = parse_trivy_table(_RANDOM_LOG)
         output = format_findings_summary(result)
 
         assert "No vulnerability findings" in output
 
     def test_zero_total_reports_no_findings(self) -> None:
+        """Zero-total table reports no findings in summary."""
         result = parse_trivy_table(_TRIVY_TABLE_NO_VULNS)
         output = format_findings_summary(result)
 
@@ -227,14 +242,19 @@ class TestDataclasses:
     """Basic dataclass construction checks."""
 
     def test_trivy_finding_frozen(self) -> None:
+        """TrivyFinding dataclass stores all fields correctly."""
         f = TrivyFinding(
-            library="lib", vulnerability_id="CVE-2024-0001",
-            severity="HIGH", installed_version="1.0", fixed_version="1.1",
+            library="lib",
+            vulnerability_id="CVE-2024-0001",
+            severity="HIGH",
+            installed_version="1.0",
+            fixed_version="1.1",
         )
         assert f.library == "lib"
         assert f.fixed_version == "1.1"
 
     def test_trivy_summary_frozen(self) -> None:
+        """TrivySummary dataclass stores all severity counts."""
         s = TrivySummary(total=5, critical=1, high=2, medium=1, low=1)
         assert s.total == 5
         assert s.critical == 1

@@ -336,6 +336,8 @@ def test_merge_tools_returned() -> None:
         "check_pr_merge_conflict",
         "close_direct_repo_pr",
         "enable_repo_pages",
+        "fetch_ci_job_logs",
+        "fetch_trivy_findings",
         "file_ci_stabilization_ticket",
         "inspect_github_installation_token",
         "inspect_pr_diff",
