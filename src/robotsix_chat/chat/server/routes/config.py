@@ -45,7 +45,7 @@ from pathlib import Path
 from typing import Any
 
 from pydantic import ValidationError
-from robotsix_config import resolve_config_path
+from robotsix_config import config_schema, resolve_config_path
 from starlette.requests import Request
 from starlette.responses import JSONResponse
 
@@ -402,16 +402,24 @@ def _diff_dicts(before: dict[str, Any], after: dict[str, Any]) -> list[dict[str,
 
 # Module-level cache for the JSON Schema — generated once at import time
 # and re-used by every GET /config call.  Use a sentinel to detect when
-# Settings.model_json_schema() has not been called yet (lazy import in
-# tests may not trigger it).
+# the schema has not been generated yet (lazy import in tests may not
+# trigger it).
 _settings_json_schema: dict[str, Any] | None = None
 
 
 def _get_schema() -> dict[str, Any]:
-    """Return the JSON Schema for :class:`Settings`, cached at module level."""
+    """Return the JSON Schema for :class:`Settings`, cached at module level.
+
+    Goes through ``robotsix_config.config_schema`` rather than calling
+    ``Settings.model_json_schema()`` directly, so the shape this route serves
+    to the settings UI is the same one the shared CLI writes into
+    ``config/config.schema.json``.  They agree today, but a divergence would
+    be invisible from here — the committed file is what CI checks, and the UI
+    renders whatever this returns.
+    """
     global _settings_json_schema
     if _settings_json_schema is None:
-        _settings_json_schema = Settings.model_json_schema()
+        _settings_json_schema = config_schema(Settings)
     return _settings_json_schema
 
 

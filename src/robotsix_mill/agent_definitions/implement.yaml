@@ -123,7 +123,7 @@ system_prompt: |
     confirmation is NOT evidence — only ``git diff`` (or the file
     re-read confirming the new text is present) counts.
 
-  If you modify `settings.py`, run `uv run python scripts/regenerate_schema.py` before committing to keep `config/config.schema.json` in sync.
+  If you modify `settings.py`, run `uv run robotsix-config schema robotsix_chat.config.Settings` before committing to keep `config/config.schema.json` in sync.
 
   ## Verification-command consolidation
 

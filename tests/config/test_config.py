@@ -1143,3 +1143,48 @@ def test_no_concrete_model_names_in_source() -> None:
         "Concrete model names found in source — llmio owns the mapping:\n"
         + "\n".join(violations)
     )
+
+
+def test_legacy_memory_api_key_survives_the_config_library_strip(
+    tmp_path: Path, monkeypatch: pytest.MonkeyPatch
+) -> None:
+    """The migration must run through robotsix-config's pre-strip hook.
+
+    `load_config` strips keys the model no longer declares *before* calling
+    `model_validate`, so relying only on the `@model_validator(mode="before")`
+    left the legacy value stripped and unrecoverable — and then validation
+    failed for the missing canonical key, i.e. exactly the crash-loop the
+    migration exists to prevent. Guards that `Settings.migrate_legacy_config`
+    stays wired up.
+    """
+    assert callable(getattr(Settings, "migrate_legacy_config", None)), (
+        "robotsix-config calls Settings.migrate_legacy_config before stripping "
+        "unknown keys; without it the legacy key is gone before the "
+        "before-validator runs"
+    )
+
+    config_path = _write_config_json(
+        tmp_path,
+        {
+            "memory": {
+                "enabled": True,
+                "llm": {"api_key": "sk-legacy-via-hook"},  # pragma: allowlist secret
+                "embedding": {"endpoint": "http://box:11434/v1"},
+            },
+        },
+    )
+    monkeypatch.setenv("ROBOTSIX_CONFIG_FILE", str(config_path))
+
+    settings = Settings.load()
+
+    assert (
+        settings.openrouter.key("robotsix-chat-cognee").get_secret_value()
+        == "sk-legacy-via-hook"  # pragma: allowlist secret
+    )
+
+    # Second load sees the already-cleaned file: the hook must be a no-op.
+    again = Settings.load()
+    assert (
+        again.openrouter.key("robotsix-chat-cognee").get_secret_value()
+        == "sk-legacy-via-hook"  # pragma: allowlist secret
+    )

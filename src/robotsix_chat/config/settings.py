@@ -1875,56 +1875,35 @@ class Settings(BaseModel):
     @model_validator(mode="before")
     @classmethod
     def _migrate_legacy_memory_openrouter_key(cls, data: Any) -> Any:
-        """Move the legacy ``memory.llm.api_key`` into ``openrouter.keys``.
+        """Delegate to :func:`_migrate_legacy_memory_api_key`.
 
-        Before the canonical top-level ``openrouter`` block existed, the
-        cognee extraction-LLM key lived at ``memory.llm.api_key``.  Deployed
-        configs still carry that nested key; with the field removed from the
-        schema, ``extra="forbid"`` would otherwise reject the whole file and
-        crash-loop the container on the first start after an image upgrade.
-
-        The legacy value is migrated into ``openrouter.keys`` under the same
-        alias the subsystem's Langfuse traffic uses (``memory.langfuse_project``,
-        default ``robotsix-chat-cognee``) so operators do not re-enter the
-        secret.  An explicitly-configured canonical key always wins.
+        Covers the paths that do not go through
+        ``robotsix_config.load_config`` — ``Settings.model_validate`` on a raw
+        dict, which the config routes and the tests use.
         """
-        if not isinstance(data, dict):
-            return data
+        return _migrate_legacy_memory_api_key(data)
 
-        memory = data.get("memory")
-        if not isinstance(memory, dict):
-            return data
-        llm = memory.get("llm")
-        if not isinstance(llm, dict):
-            return data
+    @classmethod
+    def migrate_legacy_config(cls, data: dict[str, Any]) -> dict[str, Any]:
+        """Pre-strip hook for ``robotsix_config.load_config``.
 
-        legacy_key = llm.pop("api_key", None)
-        if not legacy_key:
-            return data
+        ``load_config`` strips keys the model no longer declares *before*
+        calling ``model_validate``, so a migration written only as a
+        ``@model_validator(mode="before")`` never sees the legacy value — the
+        key is already gone. That is not hypothetical: it silently disabled
+        :meth:`_migrate_legacy_memory_openrouter_key` above, whose whole
+        purpose is to stop a deployed config crash-looping the container after
+        an image upgrade.
 
-        alias = memory.get("langfuse_project") or PROJECT_MEMORY
-        openrouter = data.get("openrouter")
-        if not isinstance(openrouter, dict):
-            openrouter = {}
-            data["openrouter"] = openrouter
-        keys = openrouter.get("keys")
-        if not isinstance(keys, dict):
-            keys = {}
-            openrouter["keys"] = keys
-
-        if not keys.get(alias):
-            keys[alias] = legacy_key
-            logger.info(
-                "Migrated legacy memory.llm.api_key into openrouter.keys[%r]",
-                alias,
-            )
-        else:
-            logger.info(
-                "Ignoring legacy memory.llm.api_key — openrouter.keys[%r] "
-                "is already configured",
-                alias,
-            )
-        return data
+        robotsix-config calls this hook on the raw file contents before
+        stripping, so the migration runs while ``memory.llm.api_key`` still
+        exists. The before-validator is kept as well: it covers the paths that
+        do not go through ``load_config`` (``Settings.model_validate`` on a raw
+        dict, which the config routes and tests use). Both delegate to the same
+        function, which pops the legacy key, so running twice is a no-op.
+        """
+        migrated = _migrate_legacy_memory_api_key(data)
+        return migrated if isinstance(migrated, dict) else data
 
     # ------------------------------------------------------------------
     # Legacy config normalisation
@@ -2021,3 +2000,56 @@ class Settings(BaseModel):
     def load(cls) -> Settings:
         """Load from the JSON file located by ``ROBOTSIX_CONFIG_FILE``."""
         return load_config(cls)
+
+
+def _migrate_legacy_memory_api_key(data: Any) -> Any:
+    """Move the legacy ``memory.llm.api_key`` into ``openrouter.keys``.
+
+    Before the canonical top-level ``openrouter`` block existed, the
+    cognee extraction-LLM key lived at ``memory.llm.api_key``.  Deployed
+    configs still carry that nested key; with the field removed from the
+    schema, ``extra="forbid"`` would otherwise reject the whole file and
+    crash-loop the container on the first start after an image upgrade.
+
+    The legacy value is migrated into ``openrouter.keys`` under the same
+    alias the subsystem's Langfuse traffic uses (``memory.langfuse_project``,
+    default ``robotsix-chat-cognee``) so operators do not re-enter the
+    secret.  An explicitly-configured canonical key always wins.
+    """
+    if not isinstance(data, dict):
+        return data
+
+    memory = data.get("memory")
+    if not isinstance(memory, dict):
+        return data
+    llm = memory.get("llm")
+    if not isinstance(llm, dict):
+        return data
+
+    legacy_key = llm.pop("api_key", None)
+    if not legacy_key:
+        return data
+
+    alias = memory.get("langfuse_project") or PROJECT_MEMORY
+    openrouter = data.get("openrouter")
+    if not isinstance(openrouter, dict):
+        openrouter = {}
+        data["openrouter"] = openrouter
+    keys = openrouter.get("keys")
+    if not isinstance(keys, dict):
+        keys = {}
+        openrouter["keys"] = keys
+
+    if not keys.get(alias):
+        keys[alias] = legacy_key
+        logger.info(
+            "Migrated legacy memory.llm.api_key into openrouter.keys[%r]",
+            alias,
+        )
+    else:
+        logger.info(
+            "Ignoring legacy memory.llm.api_key — openrouter.keys[%r] "
+            "is already configured",
+            alias,
+        )
+    return data
