@@ -126,7 +126,7 @@ repos:
     hooks:
       - id: regenerate-config-schema
         name: regenerate config schema
-        entry: bash -c "uv run scripts/regenerate_schema.py && git add config/config.schema.json"
+        entry: bash -c "uv run robotsix-config schema robotsix_chat.config.Settings && git add config/config.schema.json"
         language: unsupported
         files: ^src/robotsix_chat/config/settings\.py$
         pass_filenames: false

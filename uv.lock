@@ -3110,7 +3110,7 @@ requires-dist = [
     { name = "pypdf", specifier = ">=6.15.0" },
     { name = "pypdfium2", specifier = ">=5.13.0" },
     { name = "reportlab" },
-    { name = "robotsix-config", git = "https://github.com/damien-robotsix/robotsix-config.git?rev=424f8ec5140e14e9699b92d5c3755d929625b570" },
+    { name = "robotsix-config", git = "https://github.com/damien-robotsix/robotsix-config.git?rev=884a452062a04f569fb63a9d103c29eafbf3c056" },
     { name = "robotsix-github-auth", git = "https://github.com/damien-robotsix/robotsix-github-auth.git?rev=e6214c41fd743120aa987bacb4e9b2bc88e73943" },
     { name = "robotsix-http", git = "https://github.com/damien-robotsix/robotsix-http.git?rev=13e6e9ab330f9be3b8b1e7bc2694210f7d9e5848" },
     { name = "robotsix-llmio", git = "https://github.com/damien-robotsix/robotsix-llmio.git?rev=f369b361dc5f5df1ee060f97004979e335abeed9" },
@@ -3150,8 +3150,8 @@ docs = [
 
 [[package]]
 name = "robotsix-config"
-version = "0.1.0"
-source = { git = "https://github.com/damien-robotsix/robotsix-config.git?rev=424f8ec5140e14e9699b92d5c3755d929625b570#424f8ec5140e14e9699b92d5c3755d929625b570" }
+version = "0.5.0"
+source = { git = "https://github.com/damien-robotsix/robotsix-config.git?rev=884a452062a04f569fb63a9d103c29eafbf3c056#884a452062a04f569fb63a9d103c29eafbf3c056" }
 dependencies = [
     { name = "pydantic" },
 ]

@@ -39,9 +39,9 @@ of values; model field defaults fill the gaps.
 silently ignoring them.
 
 **Rule:** When modifying `src/robotsix_chat/config/settings.py`, regenerate
-`config/config.schema.json` by running `uv run scripts/regenerate_schema.py` before committing. The
-CI `check-config-schema` job will catch drift, but regenerating before commit avoids a wasteful CI
-rebuild cycle.
+`config/config.schema.json` by running `uv run robotsix-config schema robotsix_chat.config.Settings`
+before committing. The CI `check-config-schema` job will catch drift, but regenerating before commit
+avoids a wasteful CI rebuild cycle.
 
 **Rule:** When removing a field from a Pydantic `BaseModel` with
 `model_config = ConfigDict(extra="forbid")`, add a `model_validator(mode="before")` that strips the
