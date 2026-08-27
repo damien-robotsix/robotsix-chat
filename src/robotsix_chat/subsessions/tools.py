@@ -309,6 +309,26 @@ def _build_spawn_and_control_tools(
             SubsessionKind.PERIODIC,
             SubsessionKind.WAIT_FOR_EVENT,
         ):
+            # --- Terminal-monitor guard ---------------------------------
+            # If a terminal monitor already tracked this ticket to
+            # completion (ticket_terminal / completed close_reason), do
+            # NOT spawn a duplicate — the ticket's lifecycle was already
+            # tracked to its end.
+            if env.registry.has_terminal_report_for_ticket(dedup_key):
+                logger.info(
+                    "spawn_subsession_tool: ticket %r already has a "
+                    "terminal monitor report — refusing redundant spawn.",
+                    dedup_key,
+                )
+                return (
+                    f"Cannot spawn monitor for ticket '{dedup_key}': "
+                    f"a previous monitor already tracked this ticket to "
+                    f"completion.  Use check_monitor or list_subsessions "
+                    f"to review the existing monitor's summary.  If the "
+                    f"ticket has new activity, reopen or resume the "
+                    f"existing monitor instead of spawning a duplicate."
+                )
+
             # Verify the ticket exists on the board before spawning the
             # monitor — a monitor for a stale/paraphrased ticket ID would
             # waste agent turns before auto-pausing, then the watcher
@@ -338,6 +358,39 @@ def _build_spawn_and_control_tools(
                                     f"ticket ID against the board ticket "
                                     f"list before retrying."
                                 )
+                            # --- Terminal-state guard ---------------------
+                            # If the ticket is already CLOSED or DONE
+                            # on the board, refuse to spawn a monitor —
+                            # the ticket's work is already complete.
+                            if response.status_code == 200:
+                                try:
+                                    data = response.json()
+                                except Exception:
+                                    data = {}
+                                ticket_state = (
+                                    data.get("state", "")
+                                    if isinstance(data, dict)
+                                    else ""
+                                )
+                                if isinstance(ticket_state, str) and (
+                                    ticket_state.upper() == "DONE"
+                                    or ticket_state.upper() == "CLOSED"
+                                ):
+                                    logger.info(
+                                        "spawn_subsession_tool: ticket %r "
+                                        "is already %r — refusing to "
+                                        "spawn monitor.",
+                                        dedup_key,
+                                        ticket_state,
+                                    )
+                                    return (
+                                        f"Cannot spawn monitor for ticket "
+                                        f"'{dedup_key}': the ticket is "
+                                        f"already in '{ticket_state}' "
+                                        f"state on the board.  No "
+                                        f"monitoring needed — the ticket's "
+                                        f"work is already complete."
+                                    )
                             # Non-2xx non-404: log but allow the spawn —
                             # the board may be temporarily unhealthy and
                             # we don't want to block all monitor spawns.
@@ -490,12 +543,16 @@ def _build_spawn_and_control_tools(
         return "\n".join(_format_info(info) for info in infos)
 
     async def check_monitor(ticket_id: str) -> str:
-        """Check whether an active monitor exists for a ticket.
+        """Check whether an active or terminal monitor exists for a ticket.
 
-        Returns a JSON object with ``active`` (bool) and, when a monitor
-        is found, its ``subsession_id``, ``kind``, ``status``, and
-        ``title``.  Use this before claiming a tracker is running — do
-        NOT assert "tracking is active" without calling this tool first.
+        Returns a JSON object with ``active`` (bool), ``terminal_report``
+        (bool — a prior monitor already tracked this ticket to completion),
+        and, when an active monitor is found, its ``subsession_id``,
+        ``kind``, ``status``, and ``title``.  Use this before claiming a
+        tracker is running — do NOT assert "tracking is active" without
+        calling this tool first.  When ``terminal_report`` is true, do NOT
+        spawn a new monitor — the ticket's lifecycle was already tracked
+        to its end.
 
         Searches both checkpoint-based matches (a monitor whose
         checkpoint records the ticket id) and dedup-key matches (a
@@ -509,10 +566,24 @@ def _build_spawn_and_control_tools(
         if sub_id is None:
             sub_id = env.registry.is_dedup_key_active(ticket_id)
         if sub_id is None:
-            return json.dumps({"active": False, "ticket_id": ticket_id})
+            terminal = env.registry.has_terminal_report_for_ticket(ticket_id)
+            return json.dumps(
+                {
+                    "active": False,
+                    "ticket_id": ticket_id,
+                    "terminal_report": terminal,
+                }
+            )
         info = env.registry.get(sub_id)
         if info is None:
-            return json.dumps({"active": False, "ticket_id": ticket_id})
+            terminal = env.registry.has_terminal_report_for_ticket(ticket_id)
+            return json.dumps(
+                {
+                    "active": False,
+                    "ticket_id": ticket_id,
+                    "terminal_report": terminal,
+                }
+            )
         return json.dumps(
             {
                 "active": True,
@@ -521,6 +592,7 @@ def _build_spawn_and_control_tools(
                 "kind": info.kind.value,
                 "status": info.status.value,
                 "title": info.title,
+                "terminal_report": False,
             }
         )
 

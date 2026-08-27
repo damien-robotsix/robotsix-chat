@@ -208,6 +208,46 @@ async def test_check_monitor_ignores_closed_subsession() -> None:
     result = json.loads(await check("20250101T000000Z-ticket-aaaa"))
 
     assert result["active"] is False
+    # Terminal report is present and true because the closed monitor's
+    # close_reason is "completed".
+    assert result["terminal_report"] is True
+
+
+@pytest.mark.asyncio
+async def test_check_monitor_reports_terminal_report_false_for_no_history() -> None:
+    """check_monitor returns terminal_report=false when no closed monitor exists."""
+    import json
+
+    env = build_env()
+    check = _by_name(build_subsession_tools(env, ctx=_ctx()), "check_monitor")
+
+    result = json.loads(await check("20250101T000000Z-ticket-aaaa"))
+
+    assert result["active"] is False
+    assert result["terminal_report"] is False
+
+
+@pytest.mark.asyncio
+async def test_check_monitor_terminal_report_for_ticket_terminal_reason() -> None:
+    """Check terminal report for ticket with ticket_terminal close_reason."""
+    import json
+
+    env = build_env()
+    info = _register(
+        env,
+        kind=SubsessionKind.PERIODIC,
+        title="ci-watch",
+    )
+    env.registry.update_checkpoint(
+        info.id, {"ticket_id": "20250101T000000Z-ticket-aaaa"}
+    )
+    env.registry.mark_closed(info.id, summary="ticket done", reason="ticket_terminal")
+    check = _by_name(build_subsession_tools(env, ctx=_ctx()), "check_monitor")
+
+    result = json.loads(await check("20250101T000000Z-ticket-aaaa"))
+
+    assert result["active"] is False
+    assert result["terminal_report"] is True
 
 
 # ---------------------------------------------------------------------------
@@ -1272,6 +1312,172 @@ async def test_spawn_tool_allows_monitor_on_non_404_http_error() -> None:
 
     # Should succeed — only 404 blocks the spawn.
     assert result.startswith("Started wait_for_event subsession ")
+
+
+@pytest.mark.asyncio
+async def test_spawn_tool_refuses_monitor_for_terminal_ticket() -> None:
+    """Refuse periodic spawn when board reports DONE."""
+    from unittest.mock import AsyncMock, MagicMock, patch
+
+    env = build_env()
+    env.settings.direct_repo = SimpleNamespace(
+        enabled=True, board_api_base_url="https://mill.example.com"
+    )
+    spawn = _by_name(build_subsession_tools(env, ctx=_ctx()), "spawn_subsession")
+
+    # Mock the HTTP client to return 200 with a DONE ticket.
+    mock_response = MagicMock()
+    mock_response.status_code = 200
+    mock_response.json.return_value = {"state": "DONE"}
+
+    mock_client = MagicMock()
+    mock_client.get = AsyncMock(return_value=mock_response)
+
+    mock_instance = MagicMock()
+    mock_instance.__aenter__ = AsyncMock(return_value=mock_client)
+    mock_instance.__aexit__ = AsyncMock(return_value=None)
+
+    with patch("httpx.AsyncClient", MagicMock(return_value=mock_instance)):
+        result = await spawn(
+            "periodic",
+            "done-ticket monitor",
+            "monitor ticket that is done",
+            interval_seconds=60.0,
+            dedup_key="20250101T000000Z-ticket-done",
+            model_level=3,
+        )
+
+    assert "Cannot spawn monitor" in result
+    assert "DONE" in result
+    # No subsession should have been created.
+    assert env.registry.list_for_owner(OWNER) == []
+
+
+@pytest.mark.asyncio
+async def test_spawn_tool_refuses_monitor_for_closed_ticket() -> None:
+    """A periodic spawn is refused when the board reports CLOSED."""
+    from unittest.mock import AsyncMock, MagicMock, patch
+
+    env = build_env()
+    env.settings.direct_repo = SimpleNamespace(
+        enabled=True, board_api_base_url="https://mill.example.com"
+    )
+    spawn = _by_name(build_subsession_tools(env, ctx=_ctx()), "spawn_subsession")
+
+    mock_response = MagicMock()
+    mock_response.status_code = 200
+    mock_response.json.return_value = {"state": "CLOSED"}
+
+    mock_client = MagicMock()
+    mock_client.get = AsyncMock(return_value=mock_response)
+
+    mock_instance = MagicMock()
+    mock_instance.__aenter__ = AsyncMock(return_value=mock_client)
+    mock_instance.__aexit__ = AsyncMock(return_value=None)
+
+    with patch("httpx.AsyncClient", MagicMock(return_value=mock_instance)):
+        result = await spawn(
+            "periodic",
+            "closed-ticket monitor",
+            "monitor ticket already closed",
+            interval_seconds=60.0,
+            dedup_key="20250101T000000Z-ticket-closed",
+            model_level=3,
+        )
+
+    assert "Cannot spawn monitor" in result
+    assert "CLOSED" in result
+    assert env.registry.list_for_owner(OWNER) == []
+
+
+@pytest.mark.asyncio
+async def test_spawn_tool_refuses_monitor_when_terminal_report_exists() -> None:
+    """Refuse spawn when a prior monitor already tracked the ticket."""
+    from unittest.mock import AsyncMock, MagicMock, patch
+
+    env = build_env()
+    env.settings.direct_repo = SimpleNamespace(
+        enabled=True, board_api_base_url="https://mill.example.com"
+    )
+    spawn = _by_name(build_subsession_tools(env, ctx=_ctx()), "spawn_subsession")
+
+    # Register a prior closed monitor for the same ticket with
+    # ticket_terminal close_reason.
+    prior = _register(
+        env,
+        kind=SubsessionKind.PERIODIC,
+        title="prior monitor",
+    )
+    env.registry.update_checkpoint(
+        prior.id, {"ticket_id": "20250101T000000Z-ticket-aaaa"}
+    )
+    env.registry.mark_closed(prior.id, summary="ticket done", reason="ticket_terminal")
+
+    # Mock the HTTP client to return 200 with an active ticket — the
+    # board says the ticket is active, but the terminal-monitor guard
+    # fires first.
+    mock_response = MagicMock()
+    mock_response.status_code = 200
+    mock_response.json.return_value = {"state": "IN_PROGRESS"}
+
+    mock_client = MagicMock()
+    mock_client.get = AsyncMock(return_value=mock_response)
+
+    mock_instance = MagicMock()
+    mock_instance.__aenter__ = AsyncMock(return_value=mock_client)
+    mock_instance.__aexit__ = AsyncMock(return_value=None)
+
+    with patch("httpx.AsyncClient", MagicMock(return_value=mock_instance)):
+        result = await spawn(
+            "periodic",
+            "duplicate monitor",
+            "redundant monitor",
+            interval_seconds=60.0,
+            dedup_key="20250101T000000Z-ticket-aaaa",
+            model_level=3,
+        )
+
+    assert "Cannot spawn monitor" in result
+    assert "previous monitor already tracked" in result
+    # Only the prior (closed) monitor should exist — no new one created.
+    all_infos = env.registry.list_for_owner(OWNER)
+    active = [i for i in all_infos if i.is_active]
+    assert len(active) == 0
+
+
+@pytest.mark.asyncio
+async def test_spawn_tool_allows_monitor_when_ticket_is_in_progress() -> None:
+    """A spawn with dedup_key succeeds when the board reports IN_PROGRESS."""
+    from unittest.mock import AsyncMock, MagicMock, patch
+
+    env = build_env()
+    env.settings.direct_repo = SimpleNamespace(
+        enabled=True, board_api_base_url="https://mill.example.com"
+    )
+    spawn = _by_name(build_subsession_tools(env, ctx=_ctx()), "spawn_subsession")
+
+    mock_response = MagicMock()
+    mock_response.status_code = 200
+    mock_response.json.return_value = {"state": "IN_PROGRESS"}
+
+    mock_client = MagicMock()
+    mock_client.get = AsyncMock(return_value=mock_response)
+
+    mock_instance = MagicMock()
+    mock_instance.__aenter__ = AsyncMock(return_value=mock_client)
+    mock_instance.__aexit__ = AsyncMock(return_value=None)
+
+    with patch("httpx.AsyncClient", MagicMock(return_value=mock_instance)):
+        result = await spawn(
+            "periodic",
+            "ok monitor",
+            "monitor active ticket",
+            interval_seconds=60.0,
+            dedup_key="20250101T000000Z-ticket-ok",
+            model_level=3,
+        )
+
+    assert result.startswith("Started periodic subsession ")
 
 
 # ---------------------------------------------------------------------------

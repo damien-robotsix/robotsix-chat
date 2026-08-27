@@ -3,6 +3,23 @@
 Governed artifact: `Settings.agent_instruction` default literal in
 `src/robotsix_chat/config/settings.py`. Version stamp: `SYSTEM_PROMPT_VERSION` in the same module.
 
+## v140 — 2026-08-26 — 20260826T072519Z-add-monitor-status-checking-before-respa-a833
+
+**Summary:** Update Monitor existence check guidance in agent_instruction to
+reference the new `check_monitor` tool. Before claiming a monitor is active or
+that work is unfinished, the assistant must call `check_monitor` and
+`list_subsessions`. If `check_monitor` returns `terminal_report=true`, a
+previous monitor already tracked the ticket to completion — do NOT spawn a new
+monitor and do NOT claim the work is unfinished.
+
+**Rationale:** The previous instructions only referenced `list_subsessions` for
+monitor existence checks, missing the `check_monitor` tool that provides
+terminal-report status. Without this, the assistant could re-spawn monitors for
+tickets already tracked to completion, wasting pool slots and producing
+conflicting reports.
+
+**SHA256:** `7c6edea83daf9c1911e3f2e620263283267e6b49da48b4f65efdcdf133460251`
+
 ## v139 — 2026-08-24 — 20260824T222742Z-clarify-pipeline-stage-terminology-when-8956
 
 **Summary:** Replace internal pipeline terminology ("merge gate",
@@ -2738,6 +2755,25 @@ autonomous settings at their pydantic field defaults
 (``completion_marker="---AUTONOMOUS COMPLETE---"``,
 ``stale_monitor_runs_before_completion=3``,
 ``queue_tolerance_runs_before_escalation=3``).
+
+## AUTONOMOUS v45 — 2026-08-26 — 20260826T072519Z-add-monitor-status-checking-before-respa-a833
+
+**Summary:** Expand the monitor-spawn guidance to add a "VERIFY TICKET STATE
+FIRST" step and a "CHECK FOR EXISTING MONITORS" step that uses `check_monitor`
+to detect terminal reports before creating new monitors. Before spawning a
+monitor, the assistant must check the ticket's current state via
+`component_request GET /tickets/{id}` and call `check_monitor(ticket_id)` to
+verify whether a terminal report already exists. If `terminal_report=true`, a
+previous monitor already tracked the ticket to completion — do NOT spawn a
+duplicate.
+
+**Rationale:** Monitors were being spawned for tickets already in DONE/CLOSED
+state, and for tickets that already had completed terminal reports from prior
+monitors. The existing "REUSE OVER REPLACE" guidance only checked for running
+subsessions via `list_subsessions`, missing both ticket-state pre-checks and
+the `check_monitor` terminal-report lookup.
+
+**SHA256:** `3d0f071dfa57fb86f626421fdbb70d475c4889c45a8ef23d2a7815c645c23dc2`
 
 ## AUTONOMOUS v44 — 2026-08-26 — 20260826T055357Z-prevent-monitors-from-reporting-ticket-t-c3c7
 
