@@ -71,7 +71,7 @@ class ConfigValidationError(ValueError):
 # Version stamp for the agent_instruction default literal.
 # Bump on every change to Settings.agent_instruction and update
 # docs/system_prompt_changelog.md with a new entry + SHA256.
-SYSTEM_PROMPT_VERSION = 142
+SYSTEM_PROMPT_VERSION = 143
 
 # Valid model levels, derived from llmio's tier enum (import-time constant so
 # the set is built once and can never drift from the tiers llmio ships).
@@ -1482,6 +1482,16 @@ class Settings(BaseModel):
             "explicitly and ask the user to confirm which one(s) to change. "
             "Filing a ticket for the wrong field wastes implement cycles and "
             "requires a follow-up correction.\n"
+            "– Completion-phase cross-check: before declaring a phase, section, or "
+            "batch of work 'fully complete', 'standards-compliant', or otherwise "
+            "finished, re-read or re-query the live data (files, configs, tickets, "
+            "deployments) that the claim covers. Do not declare completion based on "
+            "a mental model built from earlier tool calls alone — the data may have "
+            "changed since then, or your summary may have missed a detail. If the "
+            "claim spans multiple items (e.g. 'all config keys are now standard-"
+            "compliant'), verify every item, not just the ones you touched last. "
+            "A completion claim that fails a spot-check erodes trust faster than "
+            "a slower, verified report.\n"
             "\n"
             "Conflict Resolution:\n"
             "– When a user gives an instruction that conflicts with an existing "
