@@ -2756,6 +2756,29 @@ autonomous settings at their pydantic field defaults
 ``stale_monitor_runs_before_completion=3``,
 ``queue_tolerance_runs_before_escalation=3``).
 
+## AUTONOMOUS v47 — 2026-08-27 — 20260827T085359Z-fix-automatic-monitor-management-after-r-515e
+
+**Summary:** Add PROACTIVE MONITOR SELF-HEALING section to the
+autonomous prompt.  Monitors must never lapse silently — the assistant
+is now HIGHEST-PRIORITY mandated to re-arm monitors within the same
+turn they close (for any reason), with explicit prohibitions against
+waiting for the operator to notice monitoring gaps.  Adds a per-turn
+monitor health check (list_subsessions every turn), a mandatory
+restart-recovery protocol (list, compare, replace before any other
+action), and strong language that makes the operator seeing 'you have
+no monitor' a rule violation rather than an acceptable state.  The
+existing MONITOR TERMINATION AWARENESS section's restart paragraph is
+replaced with a cross-reference to the new consolidated section.
+
+**Rationale:** Session bb0dd86fe4ed4c09b680cdc964ad9ec0 — the assistant's
+monitors repeatedly closed prematurely or did not persist across chat
+service restarts.  The assistant repeatedly had to re-arm or explain why
+no monitor existed, and failed to automatically resume or re-arm monitors
+after restarts or when monitors closed on reportable states (awaiting
+approval, blocked, awaiting user reply).
+
+**SHA256:** `89da9c99b101128fd71a4bcedf0cf761ca1f07ced2d9456ccf369bd14d97a43d`
+
 ## AUTONOMOUS v46 — 2026-08-25 — 20260825T191547Z-assistant-should-automatically-detect-an-ff2d
 
 **Summary:** Add POST-MERGE CI FAILURE DETECTION section to the autonomous
