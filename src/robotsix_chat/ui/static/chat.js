@@ -1,4 +1,5 @@
 import { processSSEStream } from "./sse-parser.js";
+import { renderMemoryBanner } from "./memory-banner.js";
 
 // ---- AppShell initialization ------------------------------------------
 // Mounts the shared fleet chrome (mountAppShell from @robotsix/ui).
@@ -2275,6 +2276,31 @@ import { processSSEStream } from "./sse-parser.js";
   }
 
   errorDismiss.addEventListener("click", function () { hideError(); });
+
+  // ---- Memory (cognee) health banner -----------------------------------
+  // The memory backend fails in ways that are invisible from the chat: recall
+  // returns "" on any fault, so replies keep streaming, just without any
+  // recalled context. GET /health carries the backend's own degraded flag —
+  // poll it and make the degradation visible instead of leaving the operator
+  // to infer it from the container logs.
+  var MEMORY_POLL_MS = 60000;
+  var memoryBanner = document.getElementById("memory-banner");
+
+  function pollMemoryHealth() {
+    return fetch(apiBase() + "/health", { method: "GET" })
+      .then(function (r) { return r.ok ? r.json() : null; })
+      .then(function (data) {
+        if (data) renderMemoryBanner(memoryBanner, data.memory);
+      })
+      .catch(function () {
+        // A failed /health poll says nothing about the memory backend (the
+        // connection dot already covers reachability) — leave the banner as-is
+        // rather than flapping it on every transient network blip.
+      });
+  }
+
+  pollMemoryHealth();
+  setInterval(pollMemoryHealth, MEMORY_POLL_MS);
 
   // ---- Typing indicator ------------------------------------------------
   function showTypingIndicator() {
