@@ -121,7 +121,7 @@ packages = ["src/robotsix_chat"]
 # First-party git sources are pinned to commit SHAs (repo baseline); the
 # fleet pin-bump workflow advances them through reviewed PRs.
 [tool.uv.sources]
-robotsix-config = { git = "https://github.com/damien-robotsix/robotsix-config.git", rev = "424f8ec5140e14e9699b92d5c3755d929625b570" }  # pragma: allowlist secret
+robotsix-config = { git = "https://github.com/damien-robotsix/robotsix-config.git", rev = "b68476fa9aab58f70697d870da956220ecf9cf48" }  # pragma: allowlist secret
 robotsix-llmio = { git = "https://github.com/damien-robotsix/robotsix-llmio.git", rev = "211f2293faf7b2ea6f6cde02f24ae813a0875e07" }  # pragma: allowlist secret
 # robotsix-modules: same SHA as robotsix-mill (coherent-set rule).
 robotsix-modules = { git = "https://github.com/damien-robotsix/robotsix-modules.git", rev = "d7c5e59980516de6e050db02ff54aef4e15ff5c3" }  # pragma: allowlist secret
