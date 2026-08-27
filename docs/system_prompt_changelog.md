@@ -2773,7 +2773,7 @@ proactively inform the user about the regression in the main conversation.
 The existing POST-MERGE DEPLOYMENT VERIFICATION section covers image
 deployment but not CI pipeline status on the target branch.
 
-**SHA256:** placeholder — will be recomputed after rebase
+**SHA256:** `163a3a65c5b1432f4859c9f4faebb37c87f61fe3501bc0ac0226a3569a374fef`
 
 ## AUTONOMOUS v45 — 2026-08-26 — 20260826T072519Z-add-monitor-status-checking-before-respa-a833
 
