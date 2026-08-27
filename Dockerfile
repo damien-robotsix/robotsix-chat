@@ -90,6 +90,12 @@ RUN rm -rf /usr/local/lib/python3.14/site-packages/pip \
 # Install Node.js (LTS) and the claude CLI — required at runtime: the
 # claude-sdk subscription transport spawns the `claude` CLI as a subprocess.
 # Build-only packages and caches are pruned in the same layer.
+#
+# The --only-upgrade list pulls trixie-security builds of packages the base
+# image still carries at the older trixie/main version. The openssl trio
+# (one source package, three binaries — all three must move together or the
+# scan still flags the laggard) covers CVE-2026-14456: the base image ships
+# 3.5.6-1~deb13u2, trixie-security has 3.5.7-1~deb13u2.
 RUN apt-get update \
     && apt-get install --only-upgrade -y --no-install-recommends \
         liblzma5="5.8.*" \
@@ -98,6 +104,9 @@ RUN apt-get update \
         libmount1="2.41.*" \
         libsmartcols1="2.41.*" \
         libuuid1="2.41.*" \
+        libssl3t64="3.5.*" \
+        openssl="3.5.*" \
+        openssl-provider-legacy="3.5.*" \
     && apt-get install -y --no-install-recommends curl="8.*" gnupg="2.*" \
     && mkdir -p /etc/apt/keyrings \
     && curl -fsSL https://deb.nodesource.com/gpgkey/nodesource-repo.gpg.key \
