@@ -11,7 +11,7 @@ constraints = [
     { name = "anyio", specifier = ">=4.14.2" },
     { name = "pypdf", specifier = ">=6.15.0" },
 ]
-overrides = [{ name = "robotsix-http", git = "https://github.com/damien-robotsix/robotsix-http.git?rev=13e6e9ab330f9be3b8b1e7bc2694210f7d9e5848" }]
+overrides = [{ name = "robotsix-http", git = "https://github.com/damien-robotsix/robotsix-http.git?rev=1d30ada27f5bb637d417857b8613583ba49b410e" }]
 
 [[package]]
 name = "aiofiles"
@@ -3112,7 +3112,7 @@ requires-dist = [
     { name = "reportlab" },
     { name = "robotsix-config", git = "https://github.com/damien-robotsix/robotsix-config.git?rev=424f8ec5140e14e9699b92d5c3755d929625b570" },
     { name = "robotsix-github-auth", git = "https://github.com/damien-robotsix/robotsix-github-auth.git?rev=e6214c41fd743120aa987bacb4e9b2bc88e73943" },
-    { name = "robotsix-http", git = "https://github.com/damien-robotsix/robotsix-http.git?rev=13e6e9ab330f9be3b8b1e7bc2694210f7d9e5848" },
+    { name = "robotsix-http", git = "https://github.com/damien-robotsix/robotsix-http.git?rev=1d30ada27f5bb637d417857b8613583ba49b410e" },
     { name = "robotsix-llmio", git = "https://github.com/damien-robotsix/robotsix-llmio.git?rev=211f2293faf7b2ea6f6cde02f24ae813a0875e07" },
     { name = "robotsix-llmio", extras = ["claude-sdk"], marker = "extra == 'claude-sdk'", git = "https://github.com/damien-robotsix/robotsix-llmio.git?rev=211f2293faf7b2ea6f6cde02f24ae813a0875e07" },
     { name = "robotsix-llmio", extras = ["openrouter"], marker = "extra == 'openrouter'", git = "https://github.com/damien-robotsix/robotsix-llmio.git?rev=211f2293faf7b2ea6f6cde02f24ae813a0875e07" },
@@ -3167,15 +3167,15 @@ dependencies = [
 
 [[package]]
 name = "robotsix-http"
-version = "0.3.1"
-source = { git = "https://github.com/damien-robotsix/robotsix-http.git?rev=13e6e9ab330f9be3b8b1e7bc2694210f7d9e5848#13e6e9ab330f9be3b8b1e7bc2694210f7d9e5848" }
+version = "0.3.2"
+source = { git = "https://github.com/damien-robotsix/robotsix-http.git?rev=1d30ada27f5bb637d417857b8613583ba49b410e#1d30ada27f5bb637d417857b8613583ba49b410e" }
 dependencies = [
     { name = "httpx" },
 ]
 
 [[package]]
 name = "robotsix-llmio"
-version = "0.4.2"
+version = "0.5.0"
 source = { git = "https://github.com/damien-robotsix/robotsix-llmio.git?rev=211f2293faf7b2ea6f6cde02f24ae813a0875e07#211f2293faf7b2ea6f6cde02f24ae813a0875e07" }
 dependencies = [
     { name = "httpx" },

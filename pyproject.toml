@@ -125,7 +125,7 @@ robotsix-config = { git = "https://github.com/damien-robotsix/robotsix-config.gi
 robotsix-llmio = { git = "https://github.com/damien-robotsix/robotsix-llmio.git", rev = "211f2293faf7b2ea6f6cde02f24ae813a0875e07" }  # pragma: allowlist secret
 # robotsix-modules: same SHA as robotsix-mill (coherent-set rule).
 robotsix-modules = { git = "https://github.com/damien-robotsix/robotsix-modules.git", rev = "d7c5e59980516de6e050db02ff54aef4e15ff5c3" }  # pragma: allowlist secret
-robotsix-http = { git = "https://github.com/damien-robotsix/robotsix-http.git", rev = "13e6e9ab330f9be3b8b1e7bc2694210f7d9e5848" }  # pragma: allowlist secret
+robotsix-http = { git = "https://github.com/damien-robotsix/robotsix-http.git", rev = "1d30ada27f5bb637d417857b8613583ba49b410e" }  # pragma: allowlist secret
 robotsix-github-auth = { git = "https://github.com/damien-robotsix/robotsix-github-auth.git", rev = "e6214c41fd743120aa987bacb4e9b2bc88e73943" }  # pragma: allowlist secret
 
 # Force pypdf>=6.15.0 (transitive dep of cognee) to resolve GHSA-fwg2-594c-jp42.
