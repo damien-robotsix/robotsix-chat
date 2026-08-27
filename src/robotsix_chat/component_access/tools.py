@@ -27,16 +27,6 @@ _HEALTH_PROBE_TIMEOUT = 2.0  # seconds
 # time by the configured ``CentralDeploySettings.component_request_timeout``.
 _DEFAULT_REQUEST_TIMEOUT = 60.0
 
-# Retry configuration for transient component-call failures.
-# max_retries=2 + 1 initial = 3 total attempts, matching the prior hand-rolled
-# _MAX_ATTEMPTS=3.
-_ROSTER_RETRY_CONFIG = RetryConfig(
-    max_retries=2,
-    backoff_base=1.0,
-    backoff_cap=10.0,
-    jitter_factor=0.5,
-)
-
 
 def _build_component_retry_config(request_timeout: float) -> RetryConfig:
     """Build the RetryConfig for component calls.
