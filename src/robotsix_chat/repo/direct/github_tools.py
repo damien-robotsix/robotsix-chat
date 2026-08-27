@@ -653,6 +653,423 @@ def build_github_tools(
 
         return await actions_client.rerun_workflow_run(repo_full_name, run_id)
 
+    async def fetch_ci_job_logs(
+        repo_full_name: str,
+        run_id: int = 0,
+        branch: str = "",
+        job_name: str = "",
+        max_log_bytes: int = 16_000,
+    ) -> str:
+        """Fetch and parse job logs from a CI workflow run.
+
+        Retrieves detailed output from a specific workflow run, optionally
+        filtering by job name. Useful for extracting specific error details
+        from CI failures (e.g., Trivy scan output, test results, build errors).
+        
+        **Read-only.** Does not modify any repository state.
+        **No BLOCKED-state requirement.** This is a pure diagnostic tool.
+
+        When *run_id* is omitted, the most recent failed run on *branch*
+        (default: the repository's default branch) is used.  When provided,
+        *branch* is unused.
+
+        Args:
+            repo_full_name: GitHub ``owner/name`` (e.g. ``"org/repo"``).
+            run_id: Specific workflow run id (optional; defaults to latest failed).
+            branch: Branch to search for failing runs when *run_id* is 0.
+            job_name: Optional filter to only return logs from jobs whose name
+                contains this substring (case-insensitive). When empty, returns
+                all job logs.
+            max_log_bytes: Maximum total bytes of log content to return.
+                Defaults to 16 KB; truncated logs include an indication.
+
+        Returns:
+            A formatted log summary including run metadata, job names, and
+            (when accessible) the raw log content from each matching job.
+        """
+        if component_request is None and (
+            scope_error := await client.check_installation_scope(repo_full_name)
+        ):
+            return scope_error
+
+        actions_client = ActionsClient(settings)
+
+        # Resolve run_id when not provided.
+        if not run_id:
+            target_branch = branch or await actions_client.get_default_branch(
+                repo_full_name
+            )
+            try:
+                runs = await actions_client.list_workflow_runs(
+                    repo_full_name,
+                    branch=target_branch,
+                    per_page=20,
+                    raise_on_error=True,
+                )
+            except Exception as exc:
+                return (
+                    f"Error: could not list workflow runs for {repo_full_name}: {exc}"
+                )
+            if not runs:
+                return (
+                    f"No recent workflow runs found on '{target_branch}' in "
+                    f"{repo_full_name}."
+                )
+
+            def _is_failure(result: str) -> bool:
+                return result in {
+                    "failure",
+                    "timed_out",
+                    "action_required",
+                }
+
+            failed_run = next(
+                (
+                    r
+                    for r in runs
+                    if _is_failure(
+                        (r.get("conclusion") or "").lower()
+                    )
+                ),
+                None,
+            )
+            if failed_run is None:
+                # No suffering failure but return the latest run's info.
+                latest = runs[0]
+                run_id = latest.get("id")
+                if not isinstance(run_id, int):
+                    return (
+                        f"No failed or actionable workflow run found "
+                        f"on '{target_branch}' in {repo_full_name}."
+                    )
+            else:
+                run_id = failed_run.get("id")
+                if not isinstance(run_id, int):
+                    return (
+                        f"Error: could not determine run id from the "
+                        f"failing workflow run in {repo_full_name}."
+                    )
+
+        # Fetch the workflow run metadata.
+        run_data = await actions_client.get_workflow_run(repo_full_name, run_id)
+        if run_data is None:
+            return (
+                f"Error: workflow run {run_id} not found in {repo_full_name}."
+            )
+
+        run_name = run_data.get("name", "(unknown)")
+        run_status = run_data.get("status", "?")
+        run_conclusion = run_data.get("conclusion", "?")
+        run_branch = run_data.get("head_branch", "?")
+
+        lines: list[str] = [
+            f"## CI Job Logs — {run_name}",
+            f"Workflow run: {run_id} in {repo_full_name}",
+            f"Branch: {run_branch}",
+            f"Status: {run_status} | Conclusion: {run_conclusion}",
+            "",
+        ]
+
+        # Fetch all jobs for the run.
+        jobs = await actions_client.get_workflow_run_jobs(repo_full_name, run_id)
+        if not jobs:
+            lines.append("No jobs found for this workflow run.")
+            return "\n".join(lines)
+
+        # Filter by job_name if provided.
+        if job_name:
+            name_lower = job_name.lower()
+            matching_jobs = [
+                j for j in jobs if name_lower in j.get("name", "").lower()
+            ]
+            if not matching_jobs:
+                available = ", ".join(
+                    j.get("name", "?") for j in jobs
+                )
+                lines.append(
+                    f"No job named '{job_name}' found in run {run_id}."
+                )
+                lines.append(f"Available jobs: {available}")
+                return "\n".join(lines)
+            jobs = matching_jobs
+
+        lines.append(f"{len(jobs)} job(s) found")
+        lines.append("")
+
+        remaining_bytes = max_log_bytes
+
+        for j in jobs:
+            job_id = j.get("id")
+            name = j.get("name", str(job_id))
+            j_conclusion = j.get("conclusion", "?")
+
+            lines.append(f"### Job: {name} (conclusion={j_conclusion})")
+
+            if job_id is None:
+                lines.append("_(no job ID — cannot fetch logs)_")
+                lines.append("")
+                continue
+
+            if remaining_bytes <= 0:
+                lines.append("_(log budget exhausted — increase max_log_bytes)_")
+                lines.append("")
+                continue
+
+            try:
+                log_text = await actions_client.get_job_log(
+                    repo_full_name, job_id
+                )
+            except RuntimeError as exc:
+                lines.append(f"_Error fetching job log: {exc}_")
+                lines.append("")
+                continue
+
+            if not log_text.strip():
+                lines.append("_(empty log)_")
+                lines.append("")
+                continue
+
+            original_len = len(log_text)
+            log_text = log_text[-remaining_bytes:]
+            remaining_bytes -= len(log_text)
+
+            if len(log_text) < original_len:
+                lines.append(
+                    f"_(truncated to last {len(log_text)} bytes "
+                    f"of {original_len} total)_"
+                )
+            lines.append("")
+            lines.append("```")
+            lines.append(log_text)
+            lines.append("```")
+            lines.append("")
+
+        return "\n".join(lines)
+
+    async def fetch_trivy_findings(
+        repo_full_name: str,
+        run_id: int = 0,
+        branch: str = "",
+        instance_url: str = "",
+    ) -> str:
+        """Fetch and parse Trivy vulnerability scan results from a CI run.
+
+        Retrieves the Trivy scan job log from a CI workflow run and parses
+        the table-formatted output into a structured vulnerability summary
+        with CVE identifiers, affected packages, severity, and fixed
+        versions.  Use this when ``fetch_ci_job_logs`` (or the board) shows
+        a Trivy scan failure, so you can provide actionable remediation
+        steps (upgrade package X to version Y) or justify a scanner-ignore
+        rule.
+
+        **Read-only.** Does not modify any repository state.
+        **No BLOCKED-state requirement.** This is a pure diagnostic tool.
+
+        When *run_id* is omitted, the most recent failed run on *branch*
+        (default: the repository's default branch) is used.  When provided,
+        *branch* is unused.
+
+        Args:
+            repo_full_name: GitHub ``owner/name`` (e.g. ``"org/repo"``).
+            run_id: Specific workflow run id (optional; defaults to latest failed).
+            branch: Branch to search for failing runs when *run_id* is 0.
+            instance_url: Optional GitHub instance URL (for GitHub Enterprise).
+                Defaults to ``https://github.com``.
+
+        Returns:
+            A formatted Markdown summary of all Trivy findings including a
+            vulnerability table grouped by severity, plus remediation hints
+            (fixed versions).  When no Trivy job is found or no
+            vulnerabilities can be parsed, returns a diagnostic message
+            with the raw log excerpt for manual review.
+
+        """
+        if component_request is None and (
+            scope_error := await client.check_installation_scope(repo_full_name)
+        ):
+            return scope_error
+
+        from .actions_client import ActionsClient as _ActionsClient
+
+        actions_client = _ActionsClient(settings)
+
+        # Resolve run_id when not provided.
+        if not run_id:
+            target_branch = branch or await actions_client.get_default_branch(
+                repo_full_name
+            )
+            try:
+                runs = await actions_client.list_workflow_runs(
+                    repo_full_name,
+                    branch=target_branch,
+                    per_page=20,
+                    raise_on_error=True,
+                )
+            except Exception as exc:
+                return (
+                    f"Error: could not list workflow runs for {repo_full_name}: {exc}"
+                )
+            if not runs:
+                return (
+                    f"No recent workflow runs found on '{target_branch}' in "
+                    f"{repo_full_name}."
+                )
+
+            failed_run = next(
+                (
+                    r
+                    for r in runs
+                    if (r.get("conclusion") or "").lower()
+                    in {"failure", "timed_out"}
+                ),
+                None,
+            )
+            if failed_run is None:
+                latest = runs[0]
+                run_id = latest.get("id")
+                if not isinstance(run_id, int):
+                    return (
+                        f"No failed workflow run found on '{target_branch}' "
+                        f"in {repo_full_name}."
+                    )
+            else:
+                run_id = failed_run.get("id")
+                if not isinstance(run_id, int):
+                    return (
+                        f"Error: could not determine run id from the "
+                        f"failing workflow run in {repo_full_name}."
+                    )
+
+        # Fetch the workflow run metadata for context.
+        run_data = await actions_client.get_workflow_run(repo_full_name, run_id)
+        if run_data is None:
+            return (
+                f"Error: workflow run {run_id} not found in {repo_full_name}."
+            )
+
+        run_name = run_data.get("name", "(unknown)")
+        run_branch = run_data.get("head_branch", "?")
+        gh_instance = instance_url.rstrip("/") if instance_url else "https://github.com"
+        run_url = f"{gh_instance}/{repo_full_name}/actions/runs/{run_id}"
+
+        # Fetch jobs — look for Trivy-titled jobs first.
+        jobs = await actions_client.get_workflow_run_jobs(repo_full_name, run_id)
+        if not jobs:
+            return (
+                f"No jobs found in workflow run {run_id} ({repo_full_name}). "
+                f"Check manually: {run_url}"
+            )
+
+        trivy_keywords = {"trivy", "vulnerability", "vuln", "scan-container"}
+        trivy_jobs = [
+            j
+            for j in jobs
+            if any(
+                kw in (j.get("name") or "").lower() for kw in trivy_keywords
+            )
+        ]
+
+        # Fall back to failed jobs if no trivy-named job
+        candidate_jobs = trivy_jobs or [
+            j
+            for j in jobs
+            if (j.get("conclusion") or "").lower()
+            in ("failure", "timed_out", "cancelled")
+        ]
+
+        if not candidate_jobs:
+            available = ", ".join(j.get("name", "?") for j in jobs)
+            return (
+                f"No Trivy-related or failed jobs in run {run_id} "
+                f"({repo_full_name}).\n"
+                f"Available jobs: {available}\n"
+                f"Check manually: {run_url}"
+            )
+
+        # Fetch logs for each candidate job and attempt to parse Trivy output.
+        parsed_results: list[str] = []
+        total_findings = 0
+
+        from .trivy_parser import TrivyParseResult, format_findings_summary
+        from .trivy_parser import parse_trivy_table as _parse_trivy
+
+        for job in candidate_jobs:
+            job_id = job.get("id")
+            job_name = job.get("name", str(job_id))
+            if job_id is None:
+                continue
+
+            try:
+                log_text = await actions_client.get_job_log(
+                    repo_full_name, job_id
+                )
+            except RuntimeError as exc:
+                parsed_results.append(
+                    f"### Job: {job_name}\n\n_Log unavailable: {exc}_"
+                )
+                continue
+
+            if not log_text.strip():
+                parsed_results.append(f"### Job: {job_name}\n\n_(empty log)_")
+                continue
+
+            # Parse the log for Trivy table output.
+            result = _parse_trivy(log_text)
+            if result.findings:
+                total_findings += len(result.findings)
+                parsed_results.append(
+                    f"### Job: {job_name}\n\n"
+                    f"Run **{run_name}** on `{run_branch}` "
+                    f"([view run]({run_url}))\n\n"
+                    f"{format_findings_summary(result)}"
+                )
+            elif result.summary and result.summary.total > 0:
+                # Summary line found but no individual findings could be parsed.
+                s = result.summary
+                parsed_results.append(
+                    f"### Job: {job_name}\n\n"
+                    f"Run **{run_name}** on `{run_branch}` "
+                    f"([view run]({run_url}))\n\n"
+                    f"**{s.total} vulnerabilities** "
+                    f"(CRITICAL: {s.critical}, HIGH: {s.high}, "
+                    f"MEDIUM: {s.medium}, LOW: {s.low}), "
+                    f"but individual entries could not be parsed from "
+                    f"the raw output. Review the full log manually.\n\n"
+                    f"<details><summary>Raw log excerpt (last 2000 chars)</summary>\n\n"
+                    f"```\n{log_text[-2000:]}\n```\n\n</details>"
+                )
+            else:
+                # No Trivy output detected — include a snippet for manual review.
+                snippet = log_text[-2000:] if len(log_text) > 2000 else log_text
+                parsed_results.append(
+                    f"### Job: {job_name}\n\n"
+                    f"No Trivy vulnerability table found in this job's log.\n\n"
+                    f"<details><summary>Raw log (last 2000 chars)</summary>\n\n"
+                    f"```\n{snippet}\n```\n\n</details>"
+                )
+
+        header = (
+            f"## Trivy Scan Results — {repo_full_name}\n"
+            f"Workflow run: {run_id} | Branch: {run_branch}\n"
+            f"Job(s) scanned: {len(candidate_jobs)}\n\n"
+        )
+
+        if total_findings == 0:
+            no_findings_msg = (
+                "No structured findings could be parsed. "
+                "The scan may have used a different output format "
+                "(e.g. SARIF instead of table). "
+                "Check the full log:\n"
+                f"- {run_url}\n\n"
+            )
+            header += no_findings_msg
+        else:
+            header += (
+                f"**{total_findings} vulnerability finding(s) extracted.**\n\n"
+            )
+
+        return header + "\n\n".join(parsed_results)
+
     async def file_ci_stabilization_ticket(
         repo_full_name: str,
         branch: str = "",
@@ -1544,6 +1961,8 @@ def build_github_tools(
         inspect_pr_diff,
         check_ci_health,
         rerun_ci_workflow,
+        fetch_ci_job_logs,
+        fetch_trivy_findings,
         file_ci_stabilization_ticket,
         recover_auto_merge,
         check_direct_repo_auto_merge,

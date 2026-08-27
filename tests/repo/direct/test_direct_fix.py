@@ -30,7 +30,7 @@ def test_direct_fix_available_when_enabled() -> None:
     tools = build_direct_repo_tools(_settings(direct_fix_enabled=True))
     names = [t.__name__ for t in tools]
     assert "direct_fix" in names
-    assert len(tools) == 23  # 21 base + direct_fix + patch_direct_repo_file
+    assert len(tools) == 25  # 23 base + direct_fix + patch_direct_repo_file
 
 
 @pytest.mark.asyncio
