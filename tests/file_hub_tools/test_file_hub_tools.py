@@ -590,9 +590,35 @@ class TestSkillLoading:
 class TestRenderPdfPage:
     """Tests for the render_pdf_page tool."""
 
+    @staticmethod
+    def _extract_meta(result: Any) -> dict[str, Any]:
+        """Extract numeric metadata from the text content block."""
+        import re
+
+        from pydantic_ai.messages import TextContent
+
+        assert isinstance(result, list), f"Expected list, got {type(result)}"
+        text_block = result[0]
+        assert isinstance(text_block, TextContent)
+        meta: dict[str, Any] = {}
+        size_m = re.search(r"(\d+)x(\d+)\s*px", text_block.content)
+        assert size_m, f"No pixel dimensions in: {text_block.content}"
+        meta["width"] = int(size_m.group(1))
+        meta["height"] = int(size_m.group(2))
+        pts_m = re.search(
+            r"Page dimensions:\s*([\d.]+)\s*x\s*([\d.]+)\s*points",
+            text_block.content,
+        )
+        assert pts_m, f"No point dimensions in: {text_block.content}"
+        meta["page_width_points"] = float(pts_m.group(1))
+        meta["page_height_points"] = float(pts_m.group(2))
+        return meta
+
     @pytest.mark.asyncio
     async def test_render_flat_pdf(self, tmp_path: Path) -> None:
-        """Rendering a flat PDF returns image data and dimensions."""
+        """Rendering a flat PDF returns a viewable image + metadata."""
+        from pydantic_ai.messages import BinaryContent, TextContent
+
         pdf_path = tmp_path / "flat.pdf"
         _make_flat_pdf(pdf_path)
 
@@ -601,18 +627,25 @@ class TestRenderPdfPage:
         render_page = tools[3]
 
         result = await render_page(str(pdf_path))
-        data = json.loads(result)
 
-        assert data["error"] == ""
-        assert data["image_base64"] != ""
-        assert data["width"] > 0
-        assert data["height"] > 0
-        assert data["page_width_points"] > 0
-        assert data["page_height_points"] > 0
+        assert isinstance(result, list)
+        assert len(result) == 2
+        assert isinstance(result[0], TextContent)
+        assert isinstance(result[1], BinaryContent)
+        assert result[1].media_type == "image/png"
+        assert len(result[1].data) > 0
+
+        meta = self._extract_meta(result)
+        assert meta["width"] > 0
+        assert meta["height"] > 0
+        assert meta["page_width_points"] > 0
+        assert meta["page_height_points"] > 0
 
     @pytest.mark.asyncio
     async def test_render_form_pdf(self, tmp_path: Path) -> None:
-        """Rendering a form PDF returns image data and dimensions."""
+        """Rendering a form PDF returns a viewable image + metadata."""
+        from pydantic_ai.messages import BinaryContent, TextContent
+
         pdf_path = tmp_path / "form.pdf"
         _make_form_pdf(pdf_path)
 
@@ -621,16 +654,19 @@ class TestRenderPdfPage:
         render_page = tools[3]
 
         result = await render_page(str(pdf_path))
-        data = json.loads(result)
 
-        assert data["error"] == ""
-        assert data["image_base64"] != ""
-        assert data["width"] > 0
-        assert data["height"] > 0
+        assert isinstance(result, list)
+        assert isinstance(result[0], TextContent)
+        assert isinstance(result[1], BinaryContent)
+        assert len(result[1].data) > 0
+
+        meta = self._extract_meta(result)
+        assert meta["width"] > 0
+        assert meta["height"] > 0
 
     @pytest.mark.asyncio
     async def test_render_page_out_of_range(self, tmp_path: Path) -> None:
-        """Page index beyond page count returns a clear error."""
+        """Page index beyond page count returns a clear error string."""
         pdf_path = tmp_path / "flat.pdf"
         _make_flat_pdf(pdf_path)
 
@@ -639,29 +675,25 @@ class TestRenderPdfPage:
         render_page = tools[3]
 
         result = await render_page(str(pdf_path), page=99)
-        data = json.loads(result)
 
-        assert "out of range" in data["error"].lower()
-        assert "1 page" in data["error"]
+        assert isinstance(result, str)
+        assert "out of range" in result.lower()
 
     @pytest.mark.asyncio
     async def test_render_missing_file(self, tmp_path: Path) -> None:
-        """Missing PDF returns a clear error."""
+        """Missing PDF returns a clear error string."""
         settings = _settings(working_dir=str(tmp_path))
         tools = build_file_hub_tools(settings)
         render_page = tools[3]
 
         result = await render_page(str(tmp_path / "nonexistent.pdf"))
-        data = json.loads(result)
 
-        assert (
-            "not a valid pdf" in data["error"].lower()
-            or "not found" in data["error"].lower()
-        )
+        assert isinstance(result, str)
+        assert "not a valid pdf" in result.lower() or "not found" in result.lower()
 
     @pytest.mark.asyncio
     async def test_render_non_pdf(self, tmp_path: Path) -> None:
-        """Non-PDF file returns a clear error."""
+        """Non-PDF file returns a clear error string."""
         not_pdf = tmp_path / "not.pdf"
         not_pdf.write_text("this is not a PDF")
 
@@ -670,13 +702,15 @@ class TestRenderPdfPage:
         render_page = tools[3]
 
         result = await render_page(str(not_pdf))
-        data = json.loads(result)
 
-        assert "not a valid pdf" in data["error"].lower()
+        assert isinstance(result, str)
+        assert "not a valid pdf" in result.lower()
 
     @pytest.mark.asyncio
     async def test_render_metadata_coordinate_conversion(self, tmp_path: Path) -> None:
         """Pixel-to-point coordinate conversion works with returned metadata."""
+        from pydantic_ai.messages import BinaryContent
+
         pdf_path = tmp_path / "flat.pdf"
         _make_flat_pdf(pdf_path)
 
@@ -684,22 +718,24 @@ class TestRenderPdfPage:
         tools = build_file_hub_tools(settings)
         render_page = tools[3]
 
+        # Use very low DPI - at 72dpi, 1 PDF point = 1 pixel, well under
+        # the pixel-count cap, so no auto-downscale.
         result = await render_page(str(pdf_path), dpi=72)
-        data = json.loads(result)
 
-        assert data["error"] == ""
+        assert isinstance(result, list)
+        assert isinstance(result[1], BinaryContent)
+
+        meta = self._extract_meta(result)
         # At 72 dpi, 1 PDF point = 1 pixel (before any cap).
         # The page is 612x792 points (US Letter).
-        assert data["page_width_points"] == 612
-        assert data["page_height_points"] == 792
+        assert meta["page_width_points"] == 612
+        assert meta["page_height_points"] == 792
 
-        # Verify coordinate conversion: pixel (100, 100) → PDF points.
-        # X is straightforward; Y must be flipped (image Y=0 is top,
-        # PDF Y=0 is bottom).
+        # Verify coordinate conversion: pixel (100, 100) -> PDF points.
         px, py = 100, 100
-        pdf_x = px * data["page_width_points"] / data["width"]
-        pdf_y = data["page_height_points"] - (
-            py * data["page_height_points"] / data["height"]
+        pdf_x = px * meta["page_width_points"] / meta["width"]
+        pdf_y = meta["page_height_points"] - (
+            py * meta["page_height_points"] / meta["height"]
         )
         # At 72 dpi without capping, pdf_x ≈ 100.
         # pdf_y ≈ 792 - 100 = 692 (Y flipped).
@@ -709,6 +745,8 @@ class TestRenderPdfPage:
     @pytest.mark.asyncio
     async def test_render_dpi_parameter(self, tmp_path: Path) -> None:
         """Higher DPI produces larger images."""
+        from pydantic_ai.messages import BinaryContent
+
         pdf_path = tmp_path / "flat.pdf"
         _make_flat_pdf(pdf_path)
 
@@ -717,16 +755,46 @@ class TestRenderPdfPage:
         render_page = tools[3]
 
         result_low = await render_page(str(pdf_path), dpi=72)
-        result_high = await render_page(str(pdf_path), dpi=200)
+        # Use 120dpi (not too high) to stay well under pixel cap.
+        result_high = await render_page(str(pdf_path), dpi=120)
 
-        data_low = json.loads(result_low)
-        data_high = json.loads(result_high)
+        assert isinstance(result_low, list)
+        assert isinstance(result_low[1], BinaryContent)
+        assert isinstance(result_high, list)
+        assert isinstance(result_high[1], BinaryContent)
 
-        assert data_low["error"] == ""
-        assert data_high["error"] == ""
-        # Higher DPI should produce more pixels (unless capped).
-        assert data_high["width"] >= data_low["width"]
-        assert data_high["height"] >= data_low["height"]
+        # Higher DPI should produce larger payload (unless capped).
+        assert len(result_high[1].data) >= len(result_low[1].data)
+
+    @pytest.mark.asyncio
+    async def test_render_auto_downscale_large_page(self, tmp_path: Path) -> None:
+        """Large pages are auto-scaled to fit within size limits."""
+        from pydantic_ai.messages import BinaryContent, TextContent
+
+        pdf_path = tmp_path / "flat.pdf"
+        _make_flat_pdf(pdf_path)
+
+        settings = _settings(working_dir=str(tmp_path))
+        tools = build_file_hub_tools(settings)
+        render_page = tools[3]
+
+        # Request a very high DPI that would produce an image too large.
+        result = await render_page(str(pdf_path), dpi=600)
+
+        assert isinstance(result, list)
+        assert isinstance(result[0], TextContent)
+        assert isinstance(result[1], BinaryContent)
+        assert result[1].media_type == "image/png"
+
+        meta = self._extract_meta(result)
+        # Image should still be viewable and metadata present.
+        assert meta["width"] > 0
+        assert meta["height"] > 0
+        assert meta["page_width_points"] > 0
+        assert meta["page_height_points"] > 0
+        # At 600dpi on a 612x792pt page, raw would be ~5000x6600px (33M px).
+        # After auto-downscale to 750k pixels, long edge should be ~990.
+        assert max(meta["width"], meta["height"]) < 1100
 
 
 # ---------------------------------------------------------------------------

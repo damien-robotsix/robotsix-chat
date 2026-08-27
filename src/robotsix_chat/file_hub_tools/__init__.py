@@ -10,6 +10,7 @@ skill markdown for injection into the agent system prompt.
 
 from __future__ import annotations
 
+import base64
 from collections.abc import Callable
 from importlib import resources
 from pathlib import Path
@@ -265,7 +266,7 @@ def build_file_hub_tools(
         pdf_path: str,
         page: int = 0,
         dpi: int = 120,
-    ) -> str:
+    ) -> Any:
         """Render a page of a local PDF to an image the agent can visually inspect.
 
         Rasterises page *page* (0-based) of the PDF at *dpi* resolution
@@ -295,41 +296,43 @@ def build_file_hub_tools(
                 Higher values produce sharper images but larger responses.
 
         Returns:
-            A JSON string with ``image_base64`` (PNG data), ``width``,
-            ``height``, ``page_width_points``, ``page_height_points``,
-            and ``error`` (empty on success).
+            A viewable image (as a BinaryContent image block) plus a text
+            block with point-size metadata, so the model's vision can
+            actually see the rendered page.
 
         """
-        import json as _json
-
-        result: dict[str, Any] = {
-            "image_base64": "",
-            "width": 0,
-            "height": 0,
-            "page_width_points": 0.0,
-            "page_height_points": 0.0,
-            "error": "",
-        }
-
         try:
             rendered = _render_pdf_page(
                 Path(pdf_path),
                 page=page,
                 dpi=dpi,
             )
-            result["image_base64"] = rendered["image_base64"]
-            result["width"] = rendered["width"]
-            result["height"] = rendered["height"]
-            result["page_width_points"] = rendered["page_width_points"]
-            result["page_height_points"] = rendered["page_height_points"]
         except PdfNotPdfError as exc:
-            result["error"] = f"Not a valid PDF: {exc}"
+            return f"Not a valid PDF: {exc}"
         except PdfError as exc:
-            result["error"] = f"PDF error: {exc}"
+            return f"PDF error: {exc}"
         except Exception as exc:
-            result["error"] = f"{type(exc).__name__}: {exc}"
+            return f"{type(exc).__name__}: {exc}"
 
-        return _json.dumps(result, ensure_ascii=False)
+        from pydantic_ai.messages import BinaryContent, TextContent
+
+        image_bytes = base64.b64decode(rendered["image_base64"])
+        metadata = (
+            f"Rendered dimensions: {rendered['width']}x{rendered['height']} px. "
+            f"Page dimensions: {rendered['page_width_points']:.1f} x "
+            f"{rendered['page_height_points']:.1f} points. "
+            "Coordinate conversion (pixel→PDF-point):\n"
+            f"  pdf_x = pixel_x * {rendered['page_width_points']:.1f}"
+            f" / {rendered['width']}\n"
+            f"  pdf_y = {rendered['page_height_points']:.1f}"
+            f" - (pixel_y * {rendered['page_height_points']:.1f}"
+            f" / {rendered['height']})"
+        )
+
+        return [
+            TextContent(content=metadata),
+            BinaryContent(data=image_bytes, media_type="image/png"),
+        ]
 
     async def file_hub_put(
         file_path: str,

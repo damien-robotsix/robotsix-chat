@@ -194,13 +194,18 @@ def render_pdf_page(
 
         width, height = pil_image.size
 
-        # Cap output size: downscale to max 4000px on the long edge.
-        max_long_edge = 4000
-        if max(width, height) > max_long_edge:
-            ratio = max_long_edge / max(width, height)
-            new_w = int(width * ratio)
-            new_h = int(height * ratio)
-            pil_image = pil_image.resize((new_w, new_h), resample=0)  # NEAREST
+        # Cap output size: prioritize staying within the pixel budget
+        # (~750k pixels ≈ ~500 KB PNG) so the image fits comfortably
+        # in model tool-result limits.
+        max_pixels = 750_000
+        pixel_count = width * height
+        if pixel_count > max_pixels:
+            # Re-render at lower DPI targeting the pixel budget.
+            target_ratio = (max_pixels / pixel_count) ** 0.5
+            new_dpi = max(36, int(dpi * target_ratio))
+            new_scale = new_dpi / 72.0
+            bitmap = pdf_page.render(scale=new_scale)
+            pil_image = bitmap.to_pil()
             width, height = pil_image.size
 
         # Encode to PNG in memory.
