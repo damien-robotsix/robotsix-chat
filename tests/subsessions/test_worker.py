@@ -30,6 +30,7 @@ from robotsix_chat.subsessions import (
     resume_subsessions,
     spawn_subsession,
 )
+from robotsix_chat.subsessions import worker as worker_mod
 from robotsix_chat.subsessions.worker import (
     CloseState,
     SubsessionContext,
@@ -53,6 +54,21 @@ from tests.common.subsession_fakes import (
     make_settings,
     wait_until,
 )
+
+
+@pytest.fixture(autouse=True)
+def _instant_transient_backoff(monkeypatch: pytest.MonkeyPatch) -> None:
+    """Collapse transient-retry backoff to zero for every test in this module.
+
+    The retry loop is ``robotsix_http.acall_with_retry``, whose delay is
+    ``min(backoff_base ** attempt, backoff_cap)``. Pinning the cap to 0
+    makes every retry immediate, so the transient-error paths stay fast
+    without a per-test knob — the two ``transient_error_backoff_*``
+    settings these tests used to pass were removed along with the
+    hand-rolled loop.
+    """
+    monkeypatch.setattr(worker_mod, "_TRANSIENT_BACKOFF_CAP", 0.0)
+
 
 OWNER = "sess-main"
 
@@ -3046,7 +3062,6 @@ async def test_periodic_transient_error_retried_then_succeeds() -> None:
         agent=agent,
         settings=make_settings(
             transient_error_max_retries=2,
-            transient_error_backoff_base=0.0,
             max_runs_progress_extension=0,
         ),
     )
@@ -3092,7 +3107,6 @@ async def test_periodic_transient_error_exhausted_skips_cycle() -> None:
         agent=agent,
         settings=make_settings(
             transient_error_max_retries=1,
-            transient_error_backoff_base=0.0,
             # Use a high threshold so transient-error cycles don't
             # trigger the consecutive-error failure during the test.
             consecutive_error_fail_threshold=1000,
@@ -3304,7 +3318,6 @@ async def test_periodic_transient_error_transcript_recorded() -> None:
         agent=agent,
         settings=make_settings(
             transient_error_max_retries=0,
-            transient_error_backoff_base=0.0,
             consecutive_error_fail_threshold=1000,
         ),
     )
@@ -3338,7 +3351,6 @@ async def test_periodic_unexpected_model_behavior_retried_then_succeeds() -> Non
         agent=agent,
         settings=make_settings(
             transient_error_max_retries=2,
-            transient_error_backoff_base=0.0,
             max_runs_progress_extension=0,
         ),
     )
@@ -3378,7 +3390,6 @@ async def test_periodic_unexpected_model_behavior_exhausted_skips_cycle() -> Non
         agent=agent,
         settings=make_settings(
             transient_error_max_retries=1,
-            transient_error_backoff_base=0.0,
             consecutive_error_fail_threshold=1000,
         ),
     )

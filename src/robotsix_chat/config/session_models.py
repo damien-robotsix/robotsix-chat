@@ -199,19 +199,13 @@ class SubsessionsSettings(BaseModel):
         transient_error_max_retries: Maximum retry attempts when a
             periodic subsession's agent turn fails with a transient API
             error (e.g. upstream provider hiccup).  Retries use
-            exponential backoff between *transient_error_backoff_base*
-            and *transient_error_backoff_cap*.  When retries are
-            exhausted the run is skipped and the schedule continues
-            rather than permanently failing the subsession.
+            ``robotsix_http``'s exponential backoff with jitter; the
+            delays themselves are not operator-configurable, only the
+            attempt count.  When retries are exhausted the run is
+            skipped and the schedule continues rather than permanently
+            failing the subsession.
             Default ``3``.
             Env override: ``SUBSESSIONS_TRANSIENT_ERROR_MAX_RETRIES``.
-        transient_error_backoff_base: Initial backoff in seconds for
-            transient-error retries (doubles each attempt).
-            Default ``1.0``.
-            Env override: ``SUBSESSIONS_TRANSIENT_ERROR_BACKOFF_BASE``.
-        transient_error_backoff_cap: Maximum backoff in seconds for
-            transient-error retries.  Default ``30.0``.
-            Env override: ``SUBSESSIONS_TRANSIENT_ERROR_BACKOFF_CAP``.
         max_runs_escalation_threshold: Number of consecutive times a
             periodic subsession can hit its ``max_runs`` limit before
             auto-escalating with a follow-up ticket.  When the threshold
@@ -449,8 +443,6 @@ class SubsessionsSettings(BaseModel):
         ),
     )
     transient_error_max_retries: int = 3
-    transient_error_backoff_base: float = 1.0
-    transient_error_backoff_cap: float = 30.0
     max_runs_escalation_threshold: int = Field(
         default=3,
         description=(

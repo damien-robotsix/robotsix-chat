@@ -26,9 +26,10 @@ import logging
 import time
 from collections.abc import Callable
 from dataclasses import dataclass, field
-from typing import TYPE_CHECKING
+from typing import TYPE_CHECKING, cast
 
 import httpx
+from robotsix_http import RetryConfig, acall_with_retry
 from robotsix_llmio.openrouter import is_openrouter_transient
 
 from robotsix_chat.chat.events import SSE_NOTIFICATION_TYPE, subsession_result_frame
@@ -971,6 +972,20 @@ def _is_unexpected_model_behavior(exc: BaseException) -> bool:
     return False
 
 
+# Backoff policy for transient turn retries.  Module-level rather than
+# operator-configurable: robotsix_http owns retry policy fleet-wide, and the
+# only turn-level knob that ever needed tuning is the attempt count
+# (``transient_error_max_retries``).  Tests collapse the cap to 0 so the
+# retry paths run instantly — see tests/subsessions/test_worker.py.
+#
+# These reproduce the delays the hand-rolled loop produced: it used
+# ``min(1.0 * 2**attempt, 30.0)`` -> 1s, 2s, 4s, and RetryConfig computes
+# ``min(2.0**attempt, 30.0)`` -> the same 1s, 2s, 4s, with up to 50% jitter
+# subtracted (RetryConfig.jitter_factor), which the old loop lacked.
+_TRANSIENT_BACKOFF_BASE = 2.0
+_TRANSIENT_BACKOFF_CAP = 30.0
+
+
 async def _run_turn_with_transient_retry(
     env: SubsessionEnv,
     agent: ChatAgent,
@@ -991,64 +1006,91 @@ async def _run_turn_with_transient_retry(
 
     For TASK / USER_CHAT subsessions the error propagates unchanged —
     the outer handler will fail the subsession.
+
+    The loop itself is :func:`robotsix_http.acall_with_retry`; the
+    transient classification stays here, since it is domain knowledge
+    (which provider errors are worth another turn) rather than transport
+    policy.  ``acall_with_retry`` re-raises the original exception when
+    attempts run out, so the exhausted-and-still-transient case is
+    translated to the sentinel below.
     """
     settings = env.settings.subsessions
     max_retries = settings.transient_error_max_retries
-    base = settings.transient_error_backoff_base
-    cap = settings.transient_error_backoff_cap
 
-    last_exc: BaseException | None = None
-    for attempt in range(max_retries + 1):
-        try:
-            return await _run_turn_with_timeout(
-                env, agent, turn_input, history, sub_id, info
-            )
-        except _RunTimeoutError:
-            raise  # timeout is handled separately; never retried
-        except Exception as exc:
-            last_exc = exc
-            is_monitor = info.kind in (
-                SubsessionKind.PERIODIC,
-                SubsessionKind.WAIT_FOR_EVENT,
-            )
-            is_transient = is_openrouter_transient(exc) or (
-                is_monitor
-                and (
-                    _is_github_rate_limit_error(exc)
-                    or _is_unexpected_model_behavior(exc)
-                )
-            )
-            if not is_monitor or not is_transient:
-                raise
+    def _is_transient(exc: BaseException) -> bool:
+        """Whether *exc* earns another turn for THIS subsession kind.
 
-            if attempt < max_retries:
-                delay = min(base * (2**attempt), cap)
-                logger.warning(
-                    "Subsession %s run %d: transient error on attempt %d/%d — "
-                    "retrying in %.1fs. Error: %s",
-                    sub_id,
-                    info.runs + 1,
-                    attempt + 1,
-                    max_retries + 1,
-                    delay,
-                    exc,
-                )
-                await asyncio.sleep(delay)
-                continue
+        Kind is part of the predicate on purpose: the same provider error
+        is retryable for a monitor (skip the cycle, keep the schedule) and
+        fatal for a task / user_chat run.  Returning ``False`` makes
+        ``acall_with_retry`` re-raise immediately, which is exactly the
+        old behaviour for non-monitors.
+        """
+        is_monitor = info.kind in (
+            SubsessionKind.PERIODIC,
+            SubsessionKind.WAIT_FOR_EVENT,
+        )
+        if not is_monitor:
+            return False
+        return is_openrouter_transient(exc) or (
+            _is_github_rate_limit_error(exc) or _is_unexpected_model_behavior(exc)
+        )
 
-    # All retries exhausted for a periodic subsession — raise a sentinel
-    # so the worker loop can skip this cycle instead of failing permanently.
-    logger.error(
-        "Subsession %s run %d: all %d transient-error retries exhausted "
-        "(last error: %s) — skipping this cycle.",
-        sub_id,
-        info.runs + 1,
-        max_retries + 1,
-        last_exc,
-    )
-    raise _TransientExhaustedError(
-        f"transient error persisted across {max_retries + 1} attempts"
-    ) from last_exc
+    def _log_retry(attempt: int, exc: Exception, delay: float) -> None:
+        logger.warning(
+            "Subsession %s run %d: transient error on attempt %d/%d — "
+            "retrying in %.1fs. Error: %s",
+            sub_id,
+            info.runs + 1,
+            attempt,
+            max_retries + 1,
+            delay,
+            exc,
+        )
+
+    async def _one_turn() -> str:
+        return await _run_turn_with_timeout(
+            env, agent, turn_input, history, sub_id, info
+        )
+
+    try:
+        # cast: acall_with_retry's `Callable[..., T]` resolves T to the
+        # coroutine type for an async fn, so the awaited value is str at
+        # runtime but Coroutine to the checker. Same treatment as the
+        # existing call site in repo/direct/__init__.py.
+        return cast(
+            "str",
+            await acall_with_retry(
+                _one_turn,
+                config=RetryConfig(
+                    max_retries=max_retries,
+                    backoff_base=_TRANSIENT_BACKOFF_BASE,
+                    backoff_cap=_TRANSIENT_BACKOFF_CAP,
+                    on_retry=_log_retry,
+                ),
+                what=f"subsession {sub_id} agent turn",
+                is_transient_fn=_is_transient,
+            ),
+        )
+    except _RunTimeoutError:
+        raise  # timeout is handled separately; never retried
+    except Exception as exc:
+        if not _is_transient(exc):
+            raise
+        # Every sanctioned attempt was spent and the error is still
+        # transient — surface the sentinel so the worker loop skips this
+        # cycle instead of permanently failing the subsession.
+        logger.error(
+            "Subsession %s run %d: all %d transient-error retries exhausted "
+            "(last error: %s) — skipping this cycle.",
+            sub_id,
+            info.runs + 1,
+            max_retries + 1,
+            exc,
+        )
+        raise _TransientExhaustedError(
+            f"transient error persisted across {max_retries + 1} attempts"
+        ) from exc
 
 
 class _TransientExhaustedError(Exception):
