@@ -2739,6 +2739,36 @@ autonomous settings at their pydantic field defaults
 ``stale_monitor_runs_before_completion=3``,
 ``queue_tolerance_runs_before_escalation=3``).
 
+## AUTONOMOUS v43 — 2026-08-27 — 20260827T085403Z-clarify-when-to-file-a-mill-configuratio-aea6
+
+**Summary:** Add MILL CONFIGURATION DEFECT AUTO-FILING rule to the
+autonomous prompt and carve it out of the MUTATION AUTHORIZATION and
+HUMAN_ISSUE_APPROVAL gates.  When the assistant detects a reproducible,
+deterministic mill configuration defect (invalid fallback model ID, token
+limit too tight, misconfigured endpoint, etc.) that causes every ticket of
+a specific kind to fail predictably, it must file a configuration-fix ticket
+via `POST /tickets/ingest` immediately and WITHOUT asking the operator for
+permission.  The filing is pre-authorized when all three conditions hold:
+reproducibility across multiple tickets/runs, a specific identifiable
+configuration parameter, and the ability to name the parameter, its current
+wrong value, and the correction needed.  Config-fix tickets are also
+carved out from the HUMAN_ISSUE_APPROVAL gate so they auto-approve without
+operator confirmation.
+
+**Rationale:** During session bb0dd86fe4ed4c09b680cdc964ad9ec0, the assistant
+identified a deterministic mill configuration defect (invalid fallback model
+ID and token limit too tight) that caused repeated failures across two
+different tickets.  Instead of filing a config-fix ticket autonomously, it
+asked the operator for permission and waited — burning cycles on every
+affected ticket while the defect persisted.  The operator eventually fixed
+it themselves, but the assistant had no instruction to escalate infrastructure-
+level configuration defects without permission.  This rule makes autonomous
+config-fix filing pre-authorized under the three conditions above, matching
+the urgency of the defect (every cycle between detection and filing is wasted
+effort).
+
+**SHA256:** `7b575a5a91e3d84a92dc519229d57900bc2b0082f54f8ec9821367ce9c0cdd21`
+
 ## AUTONOMOUS v42 — 2026-08-27 — 20260827T075011Z-assistant-prematurely-dismissed-a-closed-7575
 
 **Summary:** Add NULL-METADATA WARNINGS rule to the STATE REPORTING ACCURACY
