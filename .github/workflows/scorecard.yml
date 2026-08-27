@@ -6,12 +6,30 @@ on:
   schedule:
     - cron: '30 1 * * 0'
 
-permissions: read-all
+# Least-privilege rather than the upstream template's `read-all`: chat's
+# zizmor runs with --persona=pedantic, which flags read-all as
+# excessive-permissions. These four are what scorecard-action documents as
+# required; checks that need more (Branch-Protection) are skipped, exactly
+# as they are under read-all without a PAT.
+permissions: {}
+
+# One analysis at a time per ref. cancel-in-progress stays false: a
+# scheduled run that gets cancelled publishes nothing, which would leave
+# the public score stale rather than merely late.
+concurrency:
+  group: scorecard-${{ github.ref }}
+  cancel-in-progress: false
 
 jobs:
   openssf-scorecard:
+    # Name kept identical to the job id on purpose: a display name that
+    # differs renames the status-check context, which strands any branch
+    # protection rule that referenced the old one.
+    name: openssf-scorecard
     runs-on: ubuntu-latest
     permissions:
+      actions: read  # scorecard reads workflow runs
+      contents: read  # checkout
       id-token: write  # publish results to the OpenSSF API
       security-events: write  # upload SARIF to Code Scanning
     steps:
