@@ -17,10 +17,10 @@ def test_build_direct_repo_tools_disabled() -> None:
     assert build_direct_repo_tools(DirectRepoSettings(enabled=False)) == []
 
 
-def test_build_direct_repo_tools_returns_twentyone_tools() -> None:
-    """Verify that enabled direct_repo returns the twenty-one expected tools."""
+def test_build_direct_repo_tools_returns_twentytwo_tools() -> None:
+    """Verify that enabled direct_repo returns the twenty-three expected tools."""
     tools = build_direct_repo_tools(_settings())
-    assert len(tools) == 21
+    assert len(tools) == 23
     names = [t.__name__ for t in tools]
     assert "push_direct_repo_branch" in names
     assert "open_direct_repo_pr" in names
@@ -30,6 +30,8 @@ def test_build_direct_repo_tools_returns_twentyone_tools() -> None:
     assert "inspect_pr_diff" in names
     assert "check_ci_health" in names
     assert "rerun_ci_workflow" in names
+    assert "fetch_ci_job_logs" in names
+    assert "fetch_trivy_findings" in names
     assert "file_ci_stabilization_ticket" in names
     assert "recover_auto_merge" in names
     assert "check_direct_repo_auto_merge" in names

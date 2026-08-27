@@ -118,6 +118,81 @@ re-asking. Ask only when consent has not yet been clearly given. The endpoint tr
 
 ______________________________________________________________________
 
+## Agent tool: `fetch_ci_job_logs`
+
+Fetch and parse job logs from a CI workflow run — extracts the exact log output from failing CI jobs
+(e.g., Trivy vulnerability scan results, test failures, build errors). Use this when
+`check_ci_health` shows a failure and you need the specific details from the failing step to propose
+a fix (upgrade a vulnerable package, fix a test assertion, etc.). When no `run_id` is provided,
+fetches logs from the most recent failed run on the branch.
+
+**Read-only.** Does not modify any repository state and does not require a ticket to be in BLOCKED
+state.
+
+### Preconditions
+
+- Repository must be within the GitHub App installation scope.
+- The run (or branch) must have at least one job with accessible logs.
+
+### Returned information
+
+- Run metadata: name, branch, status, and conclusion.
+- One `### Job:` section per matching job, each containing the raw log text (truncated to
+  `max_log_bytes` total across all jobs).
+- When `job_name` is supplied, only jobs whose name contains that substring (case-insensitive) are
+  included; otherwise all jobs appear.
+
+### Error responses
+
+| Condition                      | Message                                                         |
+| ------------------------------ | --------------------------------------------------------------- |
+| Repo not in installation scope | `The robotsix-mill GitHub App is not installed on 'owner/name'` |
+| Run not found                  | `Error: workflow run <id> not found in owner/name.`             |
+| No runs on branch              | `No recent workflow runs found on '<branch>' in owner/name.`    |
+| Specific job not found         | `No job named '<job_name>' found in run <id>.`                  |
+
+______________________________________________________________________
+
+## Agent tool: `fetch_trivy_findings`
+
+Fetch and parse Trivy vulnerability scan results from a CI workflow run — extracts CVE identifiers,
+affected packages, severity levels, and fixed versions from the table-formatted output produced by
+`aquasecurity/trivy-action`. Use this when a ticket documents a Trivy scan failure and you need the
+exact vulnerability details to propose remediation (upgrade package X to version Y) or justify a
+scanner-ignore rule, instead of repeatedly providing only the job title and run ID.
+
+**Read-only.** Does not modify any repository state and does not require a ticket to be in BLOCKED
+state.
+
+### Preconditions
+
+- Repository must be within the GitHub App installation scope.
+- The run (or branch) must have at least one job producing Trivy table-format output.
+
+### Returned information
+
+- Run metadata: name, branch, and link to the workflow run.
+- Parsed vulnerability summary: total count with CRITICAL / HIGH / MEDIUM / LOW breakdown.
+- Per-finding detail table: CVE ID, affected package/library, severity, installed version, and fixed
+  version (when available).
+- When no Trivy table is detected, a raw log excerpt for manual review.
+
+### Invocation
+
+When `run_id` is omitted, uses the most recent failed run on `branch` (default: repository default
+branch). Provide a specific `run_id` when the ticket references one.
+
+### Error responses
+
+| Condition                      | Message                                                         |
+| ------------------------------ | --------------------------------------------------------------- |
+| Repo not in installation scope | `The robotsix-mill GitHub App is not installed on 'owner/name'` |
+| No runs on branch              | `No recent workflow runs found on '<branch>' in owner/name.`    |
+| Run not found                  | `Error: workflow run <id> not found in owner/name.`             |
+| No Trivy job found             | Diagnostic with raw log excerpt for manual review.              |
+
+______________________________________________________________________
+
 ## Agent tool: `file_ci_stabilization_ticket`
 
 File a dedicated CI-stabilization ticket on the board, flagging the repository/branch to a human
