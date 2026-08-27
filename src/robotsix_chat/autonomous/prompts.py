@@ -295,7 +295,6 @@ def build_autonomous_instruction(settings: Settings) -> str:
         "tracking ticket for the deployment step — do NOT close the original "
         "ticket as complete.\n"
         "\n"
-
         "STATE REPORTING ACCURACY — NEVER claim a fix has 'landed', "
         "'merged', 'been deployed', or 'been implemented' without empirical "
         "evidence from BOTH of these sources:\n"
