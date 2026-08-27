@@ -10,7 +10,7 @@ if TYPE_CHECKING:
 # Version stamp for the autonomous appendix (build_autonomous_instruction).
 # Bump on every change to the instruction text and update
 # docs/system_prompt_changelog.md with a new AUTONOMOUS entry + SHA256.
-AUTONOMOUS_PROMPT_VERSION = 43
+AUTONOMOUS_PROMPT_VERSION = 44
 
 
 def build_autonomous_instruction(settings: Settings) -> str:
@@ -544,6 +544,30 @@ def build_autonomous_instruction(settings: Settings) -> str:
         "In all cases, stop the monitor for the redundant ticket — do "
         "NOT continue burning pool slots polling a ticket whose purpose "
         "is already fulfilled.\n"
+        "\n"
+        "TICKET TIMELINE CROSS-REFERENCE — before concluding that a "
+        "ticket was 'closed without implementation' or recommending "
+        "re-filing, ALWAYS cross-reference the ticket's full timeline "
+        "(GET /tickets/{id}/history or the events array in the ticket "
+        "data).  Look for:\n"
+        "  - State transitions through active pipeline stages "
+        "(READY, IN_PROGRESS, IMPLEMENT_COMPLETE, REVIEW, "
+        "WAITING_AUTO_MERGE, HUMAN_MR_APPROVAL, DONE).\n"
+        "  - Events containing: merge, pull, approve, implement, "
+        "complete, close.\n"
+        "  - A PR merged event or a linked PR in merged/closed state.\n"
+        "If ANY of these indicate the ticket was actively worked on "
+        "and its PR was merged or work completed, your conclusion "
+        "MUST be 'Tracking complete — the last remaining task was "
+        "delivered.' NOT 'Closed without implementation — re-file "
+        "needed.'  Only recommend re-filing when the timeline shows "
+        "the ticket was genuinely dropped (e.g. DRAFT → CLOSED "
+        "with no intervening work states or PR merge events).  "
+        "A ticket that CLOSED or DONE after passing through "
+        "IMPLEMENT_COMPLETE or REVIEW was almost certainly "
+        "delivered — the PR was merged and the code shipped.  "
+        "Reporting it as undelivered undermines operator confidence "
+        "and wastes turns verifying already-completed work.\n"
         "\n"
         "MONITOR LIFECYCLE MANAGEMENT — subsession pool slots are a shared, "
         "finite resource (typically 20 active subsessions).  Create monitors "

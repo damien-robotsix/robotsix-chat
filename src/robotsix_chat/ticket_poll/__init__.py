@@ -375,7 +375,20 @@ async def _resolve_ticket_ids(
 
 # Board API states that indicate the ticket was in active work (picked up
 # by an agent or reviewer), not sitting unexamined in draft/pre-review.
-_ACTIVE_WORK_STATES = frozenset({"APPROVED", "IN_PROGRESS", "BLOCKED"})
+# States that tell us the ticket was actively worked on (not just sitting
+# in a queue).  READY and DRAFT are deliberately absent: a ticket that
+# is only READY/DRAFT → CLOSED has not yet had work done on it.
+_ACTIVE_WORK_STATES = frozenset(
+    {
+        "APPROVED",
+        "IN_PROGRESS",
+        "BLOCKED",
+        "IMPLEMENT_COMPLETE",
+        "REVIEW",
+        "WAITING_AUTO_MERGE",
+        "HUMAN_MR_APPROVAL",
+    }
+)
 
 # States that tell us the ticket reached a terminal outcome.
 _TERMINAL_STATES = frozenset({"CLOSED", "DONE"})
@@ -390,6 +403,13 @@ def _check_unexpected_terminal(data: dict[str, Any]) -> str | None:
     it was closed prematurely (e.g.  ``DRAFT → CLOSED`` without approval).
     Returns ``None`` when the transition looks normal or when the data
     carries insufficient history to decide (no false positives).
+
+    Active-work evidence includes ANY of:
+      - A prior state in the implementation pipeline (APPROVED, IN_PROGRESS,
+        BLOCKED, IMPLEMENT_COMPLETE, REVIEW, WAITING_AUTO_MERGE,
+        HUMAN_MR_APPROVAL, READY).
+      - An event whose type/action contains one of: implement, unblock,
+        resume, merge, approve, close, complete.
 
     This is a pure function — no I/O.  Callers supply the parsed JSON
     body from a ``GET /tickets/{id}`` response.
@@ -408,7 +428,10 @@ def _check_unexpected_terminal(data: dict[str, Any]) -> str | None:
             if prior in _ACTIVE_WORK_STATES:
                 return None  # Ticket reached an active state — normal.
 
-    # 2. Check events for implement / unblock / resume activity.
+    # 2. Check events for implement / unblock / resume / merge / close
+    #    activity.  Any of these keywords in the event history signals
+    #    that the ticket was actively worked on before reaching its
+    #    terminal state.
     events: list[dict[str, Any]] = data.get("events", [])
     if isinstance(events, list):
         for ev in events:
@@ -416,7 +439,16 @@ def _check_unexpected_terminal(data: dict[str, Any]) -> str | None:
                 continue
             ev_type = str(ev.get("type", ev.get("action", ""))).lower()
             if any(
-                keyword in ev_type for keyword in ("implement", "unblock", "resume")
+                keyword in ev_type
+                for keyword in (
+                    "implement",
+                    "unblock",
+                    "resume",
+                    "merge",
+                    "approve",
+                    "close",
+                    "complete",
+                )
             ):
                 return None  # Implementation activity — normal.
 

@@ -2739,6 +2739,31 @@ autonomous settings at their pydantic field defaults
 ``stale_monitor_runs_before_completion=3``,
 ``queue_tolerance_runs_before_escalation=3``).
 
+## AUTONOMOUS v44 — 2026-08-26 — 20260826T055357Z-prevent-monitors-from-reporting-ticket-t-c3c7
+
+**Summary:** Add ticket-timeline cross-reference instructions to the autonomous
+prompt, periodic monitor turn builder, and parent-delivery reaction template.
+Monitors must check a ticket's full history and events array for active-pipeline
+states (IMPLEMENT_COMPLETE, REVIEW, WAITING_AUTO_MERGE, HUMAN_MR_APPROVAL) and
+work-activity event keywords (merge, approve, complete, close) before declaring
+a ticket "closed without implementation."  Also expand the
+``_check_unexpected_terminal`` active-work state set and event-keyword list in
+the ticket-poll module so that the ``unexpected_terminal`` diagnostic no longer
+fires false positives for tickets that progressed through implementation stages
+before reaching DONE/CLOSED.
+
+**Rationale:** A periodic monitor reported both settings-cleanup tickets as
+"closed without implementation" and recommended re-filing, even though one had
+merged its PR successfully.  The monitor had no instruction to cross-reference
+the ticket's timeline (state transitions, PR-merge events) before concluding
+work was undelivered, and ``_check_unexpected_terminal`` only recognized three
+active-work states (APPROVED, IN_PROGRESS, BLOCKED), missing
+IMPLEMENT_COMPLETE, REVIEW, WAITING_AUTO_MERGE, and HUMAN_MR_APPROVAL.  The
+false "re-file needed" recommendation wasted turns and undermined operator
+confidence.
+
+**SHA256:** `746a7d3ccb2c8945b8911d9e76af33f77387a9508294487c208de483df12852a`
+
 ## AUTONOMOUS v43 — 2026-08-27 — 20260827T085403Z-clarify-when-to-file-a-mill-configuratio-aea6
 
 **Summary:** Add MILL CONFIGURATION DEFECT AUTO-FILING rule to the

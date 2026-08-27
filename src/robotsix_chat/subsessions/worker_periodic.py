@@ -149,6 +149,23 @@ def _build_periodic_input(
         "with a concise acknowledgment of the change (the parent will not "
         "see this — it is for the transcript only).  DO NOT reply NO_CHANGE "
         "when a transition occurred.\n\n"
+        "CROSS-REFERENCE TICKET TIMELINE BEFORE DECLARING WORK UNDELIVERED "
+        "— when the monitored ticket reached a terminal state (CLOSED / DONE), "
+        "you MUST check the ticket's history / events (via the board API: "
+        "GET /tickets/{id}) before concluding that it was 'closed without "
+        "implementation' or that work was 'undelivered'.  Look for:\n"
+        "  - State transitions through active pipeline stages "
+        "(READY, IN_PROGRESS, IMPLEMENT_COMPLETE, REVIEW, WAITING_AUTO_MERGE, "
+        "HUMAN_MR_APPROVAL, etc.).\n"
+        "  - Events whose type/action contains: merge, pull, approve, "
+        "implement, complete, close.\n"
+        "  - A PR merged event or a linked PR in merged/closed state.\n"
+        "If ANY of these indicate the ticket was acted on, your summary "
+        "MUST say 'Tracking complete — the ticket was resolved' (or 'PR "
+        "was merged'), NOT 'closed without implementation — re-file "
+        "needed'.  Only recommend re-filing when the history shows the "
+        "ticket was truly dropped (e.g. DRAFT → CLOSED with no "
+        "intervening work states or merge events).\n\n"
     )
     # Resolve and repair the ticket_id from the checkpoint (or fall
     # back to dedup_key).  This runs unconditionally — not only when

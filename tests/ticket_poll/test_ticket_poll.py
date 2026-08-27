@@ -1186,6 +1186,77 @@ def test_unexpected_terminal_null_for_approved() -> None:
     assert _check_unexpected_terminal(data) is None
 
 
+def test_unexpected_terminal_null_with_implement_complete_history() -> None:
+    """CLOSED ticket that went through IMPLEMENT_COMPLETE — normal."""
+    data: dict[str, Any] = {
+        "state": "DONE",
+        "history": [
+            {"state": "DRAFT"},
+            {"state": "READY"},
+            {"state": "IN_PROGRESS"},
+            {"state": "IMPLEMENT_COMPLETE"},
+            {"state": "DONE"},
+        ],
+    }
+    assert _check_unexpected_terminal(data) is None
+
+
+def test_unexpected_terminal_null_with_waiting_auto_merge_history() -> None:
+    """DONE ticket that went through WAITING_AUTO_MERGE — normal."""
+    data: dict[str, Any] = {
+        "state": "DONE",
+        "history": [
+            {"state": "DRAFT"},
+            {"state": "IN_PROGRESS"},
+            {"state": "WAITING_AUTO_MERGE"},
+            {"state": "DONE"},
+        ],
+    }
+    assert _check_unexpected_terminal(data) is None
+
+
+def test_unexpected_terminal_null_with_review_history() -> None:
+    """DONE ticket that went through REVIEW — normal."""
+    data: dict[str, Any] = {
+        "state": "DONE",
+        "history": [
+            {"state": "IN_PROGRESS"},
+            {"state": "REVIEW"},
+            {"state": "DONE"},
+        ],
+    }
+    assert _check_unexpected_terminal(data) is None
+
+
+def test_unexpected_terminal_null_with_merge_event() -> None:
+    """DONE ticket with a merge event — normal."""
+    data: dict[str, Any] = {
+        "state": "DONE",
+        "history": [{"state": "DRAFT"}],
+        "events": [{"type": "pr_merged"}],
+    }
+    assert _check_unexpected_terminal(data) is None
+
+
+def test_unexpected_terminal_null_with_approve_event() -> None:
+    """CLOSED ticket with an approve event — normal."""
+    data: dict[str, Any] = {
+        "state": "CLOSED",
+        "events": [{"type": "mr_approved"}],
+    }
+    assert _check_unexpected_terminal(data) is None
+
+
+def test_unexpected_terminal_null_with_complete_event() -> None:
+    """DONE ticket with a complete event — normal."""
+    data: dict[str, Any] = {
+        "state": "DONE",
+        "history": [{"state": "DRAFT"}],
+        "events": [{"type": "implementation_complete"}],
+    }
+    assert _check_unexpected_terminal(data) is None
+
+
 def test_unexpected_terminal_case_insensitive_state() -> None:
     """State comparison is case-insensitive."""
     data: dict[str, Any] = {
