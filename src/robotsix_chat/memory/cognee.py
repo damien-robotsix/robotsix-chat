@@ -78,6 +78,28 @@ def _is_lock_freeze_error(exc: BaseException) -> bool:
     return bool(_LOCK_FREEZE_RE.search(str(exc)))
 
 
+# Signatures of an *unopenable* store — the graph engine aborting during WAL
+# replay, or refusing the file outright.  Distinct from _LOCK_FREEZE_RE, which
+# means "busy, worth retrying": these mean the store is structurally unusable
+# and every subsequent call will fail the same way until an operator
+# intervenes.  Both mark the backend degraded; only the former drives retries.
+_STORE_FAULT_RE = re.compile(
+    r"UNREACHABLE_CODE|Assertion failed|wal_record|Could not set lock on file"
+    r"|corrupt|malformed|not a valid database",
+    re.IGNORECASE,
+)
+
+
+def _is_store_fault_error(exc: BaseException) -> bool:
+    """Return True if *exc* is a recognised store fault (lock freeze or worse).
+
+    Used only to decide whether a recall failure marks the backend degraded.
+    Anything it does not recognise is caught by the consecutive-failure
+    threshold instead, so a novel fault cannot fail silently.
+    """
+    return _is_lock_freeze_error(exc) or bool(_STORE_FAULT_RE.search(str(exc)))
+
+
 def _is_memory_write_transient(exc: Exception) -> bool:
     """Return True if *exc* warrants retrying a memory write attempt.
 
@@ -194,6 +216,13 @@ class CogneeMemory:
         # reason string.  A fault, not the benign empty-store case.
         self._degraded: bool = False
         self._degraded_reason: str | None = None
+        # Consecutive recall failures whose exception matched no known fault
+        # signature.  The benign empty-store case also raises, but stops as
+        # soon as anything is written, so only a *sustained* streak is treated
+        # as a fault.  This is the catch-all that makes an unrecognised
+        # failure mode (e.g. a new graph-engine abort) surface instead of
+        # being read as "memory is simply empty".
+        self._consecutive_recall_failures: int = 0
         # Auto-recovery (guarded self-restart) wiring.
         self._recover_cb: RecoverCallback | None = None
         self._last_recovery_attempt: float | None = None
@@ -219,6 +248,7 @@ class CogneeMemory:
             "degraded": self._degraded,
             "reason": self._degraded_reason,
             "consecutive_write_failures": self._consecutive_write_failures,
+            "consecutive_recall_failures": self._consecutive_recall_failures,
         }
 
     def _mark_degraded(self, reason: str) -> None:
@@ -237,6 +267,7 @@ class CogneeMemory:
         self._freeze_start = None
         self._write_failure_start = None
         self._consecutive_write_failures = 0
+        self._consecutive_recall_failures = 0
 
     # -- lifecycle --------------------------------------------------------
 
@@ -600,11 +631,34 @@ class CogneeMemory:
             # case on the first-ever message) must never break the reply, so
             # log it concisely — no ERROR-level traceback — and continue.
             logger.warning("memory recall failed (%s); continuing without memory", exc)
-            # Only a lock/freeze signature marks the store degraded; a benign
-            # empty-store error on the first-ever message must not.
-            if _is_lock_freeze_error(exc):
-                self._mark_degraded(f"recall failed: {exc}")
+            self._record_recall_failure(exc)
             return ""
+
+    def _record_recall_failure(self, exc: Exception) -> None:
+        """Decide whether a failed recall means the backend is degraded.
+
+        A recognised store fault degrades immediately.  Anything else only
+        degrades once it has failed ``recall_failure_degrade_threshold`` times
+        in a row: the benign empty-store error also lands here, but it stops
+        as soon as the first exchange is written, whereas a real fault repeats
+        on every turn.
+
+        The previous version marked degraded *only* on a known signature, so
+        an unrecognised fault (a graph-engine WAL abort, for one) left the
+        backend reporting healthy while every recall failed.  Silence is the
+        failure mode worth designing against here, so the default is now to
+        report an unexplained streak rather than assume it is benign.
+        """
+        self._consecutive_recall_failures += 1
+        if _is_store_fault_error(exc):
+            self._mark_degraded(f"recall failed: {exc}")
+            return
+        threshold = max(1, self._settings.recall_failure_degrade_threshold)
+        if self._consecutive_recall_failures >= threshold:
+            self._mark_degraded(
+                f"{self._consecutive_recall_failures} consecutive recall failures; "
+                f"last error: {exc}"
+            )
 
     async def _recall_core(
         self,

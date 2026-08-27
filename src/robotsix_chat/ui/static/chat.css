@@ -31,6 +31,9 @@
   --error-banner-bg: #450a0a;
   --error-banner-fg: #fca5a5;
   --error-banner-border: #7f1d1d;
+  --warn-banner-bg: #422006;
+  --warn-banner-fg: #fcd34d;
+  --warn-banner-border: #854d0e;
   --dot-green: #22c55e;
   --dot-red: #ef4444;
   /* Panel widths (kept in sync by JS when panels are resized) */
@@ -411,6 +414,24 @@ body {
   background: none; border: none; color: var(--error-banner-fg);
   font-size: 1.2rem; cursor: pointer; line-height: 1; padding: 0 0.2rem;
 }
+
+/* ------------------------------------------------------------------ */
+/* Memory degradation banner — same slot and stacking order as the     */
+/* error banner (see the z-index note above), amber rather than red:   */
+/* replies still work, they just run without recall.                   */
+/* ------------------------------------------------------------------ */
+#memory-banner {
+  display: none; align-items: center; gap: 0.6rem;
+  padding: 0.6rem 1rem;
+  background: var(--warn-banner-bg); color: var(--warn-banner-fg);
+  border-bottom: 1px solid var(--warn-banner-border);
+  font-size: 0.9rem; flex-shrink: 0;
+  position: relative; z-index: 11;
+}
+#memory-banner.visible { display: flex; }
+#memory-banner .msg { flex: 1; }
+#memory-banner .icon { flex-shrink: 0; font-size: 1rem; }
+#memory-banner .detail { opacity: 0.85; }
 
 /* ------------------------------------------------------------------ */
 /* Summary container — absolutely positioned overlay so it never      */

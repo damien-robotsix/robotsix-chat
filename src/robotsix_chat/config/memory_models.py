@@ -150,6 +150,12 @@ class MemorySettings(BaseModel):
             human restarts the container.  Requires ``lifecycle.enabled`` **and**
             ``lifecycle.service_name`` (the self-restart transport); otherwise
             recovery is skipped and the freeze is only surfaced.
+        recall_failure_degrade_threshold: Number of consecutive recall failures
+            with an *unrecognised* error before the backend is marked degraded.
+            Recognised store faults degrade on the first failure; this covers
+            everything else, so a novel failure mode surfaces instead of being
+            mistaken for the benign empty-store case (which stops as soon as
+            the first exchange is written).  Default ``3``.
         frozen_store_recovery_minutes: Freeze duration (minutes) after which
             auto-recovery self-restart is attempted.  Should be greater than
             ``frozen_store_alert_minutes`` so the store is surfaced as degraded
@@ -189,6 +195,7 @@ class MemorySettings(BaseModel):
     write_backlog_path: str = "/data/cognee/backlog.jsonl"
     datafusion_runtime_memory_limit: str = "256M"
     frozen_store_alert_minutes: float = 10.0
+    recall_failure_degrade_threshold: int = 3
     auto_recovery_enabled: bool = True
     frozen_store_recovery_minutes: float = 15.0
     recovery_cooldown_minutes: float = 30.0

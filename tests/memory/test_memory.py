@@ -1736,6 +1736,67 @@ async def test_recall_benign_error_not_degraded(
 
 
 @pytest.mark.asyncio
+async def test_recall_store_fault_degrades_immediately(
+    cognee_memory: tuple[CogneeMemory, Any],
+) -> None:
+    """An unopenable graph store degrades on the first failure.
+
+    Regression test for the 2026-08-26 outage: the graph engine aborted during
+    WAL replay with an assertion, which matched none of the lock-freeze
+    signatures, so /health reported the backend healthy while every recall
+    failed for 16 hours.
+    """
+    mem, fake = cognee_memory
+    fake.search = AsyncMock(
+        side_effect=RuntimeError(
+            'Assertion failed in file "/ladybug/src/storage/wal/wal_record.cpp" '
+            "on line 76: UNREACHABLE_CODE"
+        )
+    )
+    assert await mem.recall("who?") == ""
+    status = mem.status()
+    assert status["degraded"] is True
+    assert "UNREACHABLE_CODE" in str(status["reason"])
+
+
+@pytest.mark.asyncio
+async def test_recall_unknown_error_degrades_after_threshold(
+    cognee_memory: tuple[CogneeMemory, Any],
+) -> None:
+    """A sustained streak of unrecognised recall errors degrades the store."""
+    mem, fake = cognee_memory
+    mem._settings.recall_failure_degrade_threshold = 3
+    fake.search = AsyncMock(side_effect=RuntimeError("something entirely new"))
+
+    for _ in range(2):
+        assert await mem.recall("who?") == ""
+        assert mem.status()["degraded"] is False
+
+    assert await mem.recall("who?") == ""
+    status = mem.status()
+    assert status["degraded"] is True
+    assert status["consecutive_recall_failures"] == 3
+
+
+@pytest.mark.asyncio
+async def test_recall_success_resets_failure_streak(
+    cognee_memory: tuple[CogneeMemory, Any],
+) -> None:
+    """One good recall clears the streak so it cannot accumulate over time."""
+    mem, fake = cognee_memory
+    mem._settings.recall_failure_degrade_threshold = 3
+    fake.search = AsyncMock(side_effect=RuntimeError("empty store, no user"))
+    for _ in range(2):
+        await mem.recall("who?")
+    assert mem.status()["consecutive_recall_failures"] == 2
+
+    fake.search = AsyncMock(return_value="recalled fact")
+    assert await mem.recall("who?") == "recalled fact"
+    assert mem.status()["consecutive_recall_failures"] == 0
+    assert mem.status()["degraded"] is False
+
+
+@pytest.mark.asyncio
 async def test_auto_recovery_triggers_self_restart(
     cognee_memory: tuple[CogneeMemory, Any],
 ) -> None:
