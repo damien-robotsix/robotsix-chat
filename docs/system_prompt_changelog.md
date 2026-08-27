@@ -2739,6 +2739,29 @@ autonomous settings at their pydantic field defaults
 ``stale_monitor_runs_before_completion=3``,
 ``queue_tolerance_runs_before_escalation=3``).
 
+## AUTONOMOUS v42 — 2026-08-27 — 20260827T075011Z-assistant-prematurely-dismissed-a-closed-7575
+
+**Summary:** Add NULL-METADATA WARNINGS rule to the STATE REPORTING ACCURACY
+section.  When a monitor or subsession reports that `pr_url` is null or warns
+that the ticket may have been closed without a merged PR, the assistant must
+never dismiss the warning as a "false alarm" or "null-metadata quirk" without
+first performing a live GitHub API verification of the PR's actual merge
+status.  If no PR can be verified, the assistant must report the ticket as
+closed without a merged PR rather than assuming the work is done.
+
+**Rationale:** During session 54cce59938d54790a205f8fd4febc92c, the assistant
+received a monitor report that contained a warning that a ticket's `pr_url`
+was null and the ticket may have been closed without a merged PR.  Instead of
+verifying the PR's merged status via the GitHub API, the assistant dismissed
+the warning as "a false alarm — same null-metadata quirk as before" and
+proceeded to tell the user the rename work was complete in code.  The
+premature declaration meant the operator believed the work was done before
+it was actually confirmed.  This rule makes the verification requirement
+explicit: warnings about missing PR evidence demand a live check, not a
+hand-wave.
+
+**SHA256:** `c0ebadb43825fc2342bd78876d72c4673d08440ebf39ae6f3705cb2c020072d2`
+
 ## AUTONOMOUS v41 — 2026-08-27 — 20260827T061850Z-fix-state-reporting-to-never-claim-merge-6af3
 
 **Summary:** Add STATE REPORTING ACCURACY section to the autonomous prompt.

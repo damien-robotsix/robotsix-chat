@@ -10,7 +10,7 @@ if TYPE_CHECKING:
 # Version stamp for the autonomous appendix (build_autonomous_instruction).
 # Bump on every change to the instruction text and update
 # docs/system_prompt_changelog.md with a new AUTONOMOUS entry + SHA256.
-AUTONOMOUS_PROMPT_VERSION = 41
+AUTONOMOUS_PROMPT_VERSION = 42
 
 
 def build_autonomous_instruction(settings: Settings) -> str:
@@ -328,6 +328,22 @@ def build_autonomous_instruction(settings: Settings) -> str:
         "without a verified merged PR and a confirmed deployment is NOT a "
         "completed fix — it is an incomplete one that needs operator "
         "attention.\n"
+        "\n"
+        "NULL-METADATA WARNINGS — NEVER DISMISS WITH AN ASSUMPTION: when "
+        "a monitor or subsession reports that ``pr_url`` is null, that the "
+        "ticket may have been closed without a merged PR, or any comparable "
+        "warning about missing PR evidence, do NOT dismiss the warning as a "
+        "'false alarm', a 'null-metadata quirk', a 'known issue', or any "
+        "other hand-waving phrase.  A warning about missing PR evidence IS "
+        "the evidence — it means the system could not confirm the PR "
+        "existed.  The ONLY correct response is to verify the PR's actual "
+        "merge status by querying the GitHub API (component_request GET "
+        "of the PR or the board's pr_url).  If the PR exists and is "
+        "merged, report that with the PR number.  If no PR can be found, "
+        "report that the ticket closed without a PR — do NOT assume the "
+        "PR merged and tell the user the work is done.  Dismissing a "
+        "null-metadata warning without a live verification is the "
+        "exact pattern that leads to prematurely declaring work complete.\n"
         "\n"
         "4. COMPLETION — When the task is complete (goal reached, or all "
         "actions taken and no further progress is possible), emit this "
