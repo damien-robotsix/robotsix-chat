@@ -204,6 +204,12 @@
           "title": "Component Fallbacks",
           "type": "object"
         },
+        "component_request_timeout": {
+          "default": 60.0,
+          "description": "Per-request HTTP timeout (seconds) for component API calls made via component_request.  Also bounds the total wall-clock time for all retry attempts via the retry deadline.  Default 60s \u2014 raise this if upstream components are slow to respond.",
+          "title": "Component Request Timeout",
+          "type": "number"
+        },
         "component_response_max_chars": {
           "default": 200000,
           "title": "Component Response Max Chars",
