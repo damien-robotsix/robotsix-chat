@@ -401,3 +401,147 @@ async def test_chat_endpoint_agent_error_sends_sse_error_frame() -> None:
 
     done_frames = [f for f in frames if f.get("type") == SSE_DONE_TYPE]
     assert len(done_frames) == 0
+
+
+# ---------------------------------------------------------------------------
+# Live subsession state injection for status queries
+# ---------------------------------------------------------------------------
+
+
+@pytest.mark.asyncio
+async def test_status_query_injects_live_subsession_state() -> None:
+    """A 'what is the status?' query includes live registry state in the prompt."""
+    from robotsix_chat.subsessions import SubsessionKind, SubsessionRegistry
+
+    registry = SubsessionRegistry(store_path=None)
+    registry.create(
+        kind=SubsessionKind.TASK,
+        owner_session_id="sess-1",
+        parent_id=None,
+        depth=1,
+        title="implement ticket abc",
+        prompt="do the thing",
+        model_level=3,
+    )
+
+    async with mock_app(tokens=["ok"], subsession_registry=registry) as f:
+        response = await f.client.post(
+            "/chat",
+            json={"message": "what is the status?", "session_id": "sess-1"},
+        )
+
+    assert response.status_code == 200
+    # The agent should have received the live subsession state injected
+    # before the original message.
+    assert f.agent.called_with is not None
+    assert "INTERNAL METADATA" in f.agent.called_with
+    assert "task" in f.agent.called_with
+    assert "implement ticket abc" in f.agent.called_with
+    assert "what is the status?" in f.agent.called_with
+
+
+@pytest.mark.asyncio
+async def test_non_status_query_does_not_inject_state() -> None:
+    """A normal message does not get live subsession state injected."""
+    from robotsix_chat.subsessions import SubsessionKind, SubsessionRegistry
+
+    registry = SubsessionRegistry(store_path=None)
+    registry.create(
+        kind=SubsessionKind.TASK,
+        owner_session_id="sess-1",
+        parent_id=None,
+        depth=1,
+        title="implement ticket abc",
+        prompt="do the thing",
+        model_level=3,
+    )
+
+    async with mock_app(tokens=["ok"], subsession_registry=registry) as f:
+        response = await f.client.post(
+            "/chat",
+            json={"message": "can you write me a function?", "session_id": "sess-1"},
+        )
+
+    assert response.status_code == 200
+    assert f.agent.called_with is not None
+    assert "INTERNAL METADATA" not in f.agent.called_with
+    assert f.agent.called_with == "can you write me a function?"
+
+
+@pytest.mark.asyncio
+async def test_status_query_no_subsessions_does_not_inject_state() -> None:
+    """A status query with no subsessions in the registry gets no state injection."""
+    from robotsix_chat.subsessions import SubsessionRegistry
+
+    registry = SubsessionRegistry(store_path=None)
+
+    async with mock_app(tokens=["ok"], subsession_registry=registry) as f:
+        response = await f.client.post(
+            "/chat",
+            json={"message": "what's the status?", "session_id": "sess-1"},
+        )
+
+    assert response.status_code == 200
+    assert f.agent.called_with is not None
+    assert "INTERNAL METADATA" not in f.agent.called_with
+
+
+@pytest.mark.asyncio
+async def test_status_query_no_registry_does_not_inject_state() -> None:
+    """A status query when no subsession registry is wired gets no state injection."""
+    async with mock_app(tokens=["ok"]) as f:
+        response = await f.client.post(
+            "/chat",
+            json={"message": "status?"},
+        )
+
+    assert response.status_code == 200
+    assert f.agent.called_with is not None
+    assert "INTERNAL METADATA" not in f.agent.called_with
+
+
+@pytest.mark.asyncio
+async def test_status_query_includes_all_subsession_statuses() -> None:
+    """Live state includes running, closed, and failed subsessions."""
+    from robotsix_chat.subsessions import (
+        SubsessionKind,
+        SubsessionRegistry,
+        SubsessionStatus,
+    )
+
+    registry = SubsessionRegistry(store_path=None)
+    registry.create(
+        kind=SubsessionKind.TASK,
+        owner_session_id="sess-1",
+        parent_id=None,
+        depth=1,
+        title="running job",
+        prompt="run",
+        model_level=3,
+    )
+    closed = registry.create(
+        kind=SubsessionKind.PERIODIC,
+        owner_session_id="sess-1",
+        parent_id=None,
+        depth=1,
+        title="monitor ticket",
+        prompt="watch",
+        model_level=3,
+    )
+    closed.status = SubsessionStatus.CLOSED
+    closed.summary = "ticket resolved"
+
+    async with mock_app(tokens=["ok"], subsession_registry=registry) as f:
+        response = await f.client.post(
+            "/chat",
+            json={"message": "what is the status?", "session_id": "sess-1"},
+        )
+
+    assert response.status_code == 200
+    assert f.agent.called_with is not None
+    injected = f.agent.called_with
+    assert "running job" in injected
+    assert "status=running" in injected
+    assert "monitor ticket" in injected
+    assert "status=closed" in injected
+    assert "ticket resolved" in injected
