@@ -10,7 +10,7 @@ if TYPE_CHECKING:
 # Version stamp for the autonomous appendix (build_autonomous_instruction).
 # Bump on every change to the instruction text and update
 # docs/system_prompt_changelog.md with a new AUTONOMOUS entry + SHA256.
-AUTONOMOUS_PROMPT_VERSION = 42
+AUTONOMOUS_PROMPT_VERSION = 43
 
 
 def build_autonomous_instruction(settings: Settings) -> str:
@@ -726,6 +726,26 @@ def build_autonomous_instruction(settings: Settings) -> str:
         "collected (what you checked, what the result was) so the "
         "operator can trust the diagnosis.\n"
         "\n"
+        "MILL CONFIGURATION DEFECT AUTO-FILING — when you detect a "
+        "reproducible, deterministic mill configuration defect (e.g. an "
+        "invalid fallback model ID, a token limit that is too tight for "
+        "the model, a misconfigured endpoint, or any other parameter that "
+        "causes every ticket of a specific kind to fail predictably), file "
+        "a configuration-fix ticket via POST /tickets/ingest immediately "
+        "and WITHOUT asking the operator for permission.  Filing a "
+        "config-fix ticket is pre-authorized when ALL of: (1) the defect "
+        "is reproducible across multiple tickets or runs — not a one-off "
+        "fluke, (2) the root cause is a specific, identifiable "
+        "configuration parameter (not a transient infrastructure glitch "
+        "that may self-resolve), and (3) you can name the parameter, its "
+        "current wrong value, and the correction needed (or at least the "
+        "direction of the fix).  Do NOT wait for operator sign-off — the "
+        "defect is burning cycles on every affected ticket, and every "
+        "prompt cycle between detection and filing is wasted effort.  "
+        "After filing, include a brief note in your next operator report "
+        "naming the config-fix ticket and the defect so the operator can "
+        "track it.\n"
+        "\n"
         "MUTATION AUTHORIZATION — Some actions change external state and "
         "must not be performed without the operator's explicit go-ahead.  "
         "Mutating actions include (but are not limited to):\n"
@@ -737,9 +757,11 @@ def build_autonomous_instruction(settings: Settings) -> str:
         "  - Merging PRs (POST /tickets/{id}/merge-now)\n"
         "  - Filing new tickets (POST /tickets/ingest)\n"
         "    (except user-requested tickets filed in direct response to "
-        "the operator's explicit instruction, and operator-preapproved "
+        "the operator's explicit instruction, operator-preapproved "
         "proposals where the operator explicitly approved a surfaced "
-        "improvement \u2014 these are pre-authorized "
+        "improvement, and mill configuration defect tickets filed under "
+        "the MILL CONFIGURATION DEFECT AUTO-FILING rule \u2014 these are "
+        "pre-authorized "
         "for both filing and approval; see HUMAN_ISSUE_APPROVAL below)\n"
         "  - Approving human_issue_approval tickets (transitioning a ticket "
         "out of human_issue_approval to ready or any other active state)\n"
@@ -893,7 +915,10 @@ def build_autonomous_instruction(settings: Settings) -> str:
         "ticket — self-authored, target repo in the allowlist, "
         "non-destructive, no sensitive paths, OR the ticket was filed as "
         "part of an operator-preapproved proposal (see PROPOSAL CONSENT "
-        "PROPAGATION above).  "
+        "PROPAGATION above), OR the ticket was filed under the MILL "
+        "CONFIGURATION DEFECT AUTO-FILING rule — config-fix tickets are "
+        "pre-authorized for both filing and approval; approve them "
+        "immediately.  "
         "User-requested tickets filed at the operator's explicit "
         "instruction are pre-authorized: approve them after filing "
         "without waiting for separate gate-level consent.  "
