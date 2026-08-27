@@ -1,5 +1,7 @@
 # robotsix-chat
 
+[![OpenSSF Scorecard](https://api.securityscorecards.dev/projects/github.com/damien-robotsix/robotsix-chat/badge)](https://scorecard.dev/viewer/?uri=github.com/damien-robotsix/robotsix-chat)
+
 **Browser + SSE chat server for an LLM agent** — exposes an LLM agent to human users over HTTP, with
 a self-contained browser chat UI.
 
