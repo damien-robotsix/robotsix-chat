@@ -10,7 +10,7 @@ if TYPE_CHECKING:
 # Version stamp for the autonomous appendix (build_autonomous_instruction).
 # Bump on every change to the instruction text and update
 # docs/system_prompt_changelog.md with a new AUTONOMOUS entry + SHA256.
-AUTONOMOUS_PROMPT_VERSION = 44
+AUTONOMOUS_PROMPT_VERSION = 45
 
 
 def build_autonomous_instruction(settings: Settings) -> str:
