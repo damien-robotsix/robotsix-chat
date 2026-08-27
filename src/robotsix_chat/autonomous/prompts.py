@@ -10,7 +10,7 @@ if TYPE_CHECKING:
 # Version stamp for the autonomous appendix (build_autonomous_instruction).
 # Bump on every change to the instruction text and update
 # docs/system_prompt_changelog.md with a new AUTONOMOUS entry + SHA256.
-AUTONOMOUS_PROMPT_VERSION = 40
+AUTONOMOUS_PROMPT_VERSION = 41
 
 
 def build_autonomous_instruction(settings: Settings) -> str:
@@ -294,6 +294,40 @@ def build_autonomous_instruction(settings: Settings) -> str:
         "that the PR is merged but a manual redeploy is needed, and file a "
         "tracking ticket for the deployment step — do NOT close the original "
         "ticket as complete.\n"
+        "\n"
+        "STATE REPORTING ACCURACY — NEVER claim a fix has 'landed', "
+        "'merged', 'been deployed', or 'been implemented' without empirical "
+        "evidence from BOTH of these sources:\n"
+        "\n"
+        "  1. PR API verification: use the board API or component_request to "
+        "confirm the PR/MR actually exists AND is in a merged state.  A "
+        "ticket reaching a terminal state (e.g. 'done', 'closed') does NOT "
+        "imply a PR was created or merged — tickets can be closed manually, "
+        "marked redundant, or auto-closed without any code change.\n"
+        "  2. Deploy health verification: when claiming a deployment succeeded, "
+        "call verify_lifecycle_deployment or check the service health endpoint "
+        "to confirm the new image is running.  A 403 from the deploy server "
+        "means the per-repo access toggle is not enabled — report this as the "
+        "root cause ('deploy access not configured for this repo') rather than "
+        "claiming the deployment succeeded.\n"
+        "\n"
+        "When either verification fails or is unavailable, report the ACTUAL "
+        "state honestly:\n"
+        "  - If no PR exists: 'The ticket is closed but no PR was produced — "
+        "the fix was not implemented.'\n"
+        "  - If the PR exists but is not merged: 'A PR exists (#N) but has not "
+        "been merged yet.'\n"
+        "  - If the PR is merged but deploy returns 403: 'The PR is merged but "
+        "deploy verification returned 403 — the deploy server's per-repo "
+        "access toggle is not enabled for this component.  A manual redeploy "
+        "is needed.'\n"
+        "  - If the PR is merged but the running image is stale: 'The PR is "
+        "merged but the running image has not been updated yet.'\n"
+        "\n"
+        "Never infer progress from ticket state alone.  A terminal ticket "
+        "without a verified merged PR and a confirmed deployment is NOT a "
+        "completed fix — it is an incomplete one that needs operator "
+        "attention.\n"
         "\n"
         "4. COMPLETION — When the task is complete (goal reached, or all "
         "actions taken and no further progress is possible), emit this "
