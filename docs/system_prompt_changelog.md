@@ -2739,6 +2739,29 @@ autonomous settings at their pydantic field defaults
 ``stale_monitor_runs_before_completion=3``,
 ``queue_tolerance_runs_before_escalation=3``).
 
+## AUTONOMOUS v41 — 2026-08-27 — 20260827T061850Z-fix-state-reporting-to-never-claim-merge-6af3
+
+**Summary:** Add STATE REPORTING ACCURACY section to the autonomous prompt.
+Before ever stating that a fix has 'landed', 'merged', 'been deployed', or
+'been implemented', the assistant must verify BOTH that the PR exists and is
+merged (via the board/PR API) AND that the deployment is confirmed (via
+verify_lifecycle_deployment or health endpoint).  A ticket reaching a terminal
+state does NOT imply a PR was created or merged.  When verification fails —
+no PR exists, PR not merged, deploy returns 403, or running image is stale —
+the assistant must report the actual state honestly rather than claiming
+progress.
+
+**Rationale:** Across multiple monitor cycles, the assistant repeatedly told
+the user that a pull-auth fix 'merged' or 'was implemented' when it never
+produced a PR or merged code, and that deployments succeeded when they failed
+with 403.  The root cause was the assistant reading only the ticket's terminal
+state and assuming that implied the PR existed and the deploy happened, rather
+than cross-checking the PR URL, the PR merge status, the CI workflow, and the
+live secret value before reporting.  This caused the user to believe the
+invest service was unblocked when it was not.
+
+**SHA256:** `cfc58d31c11b110950aa156212a26cf0d64f47f6b50abb1ab4cf7441539567b1`
+
 ## AUTONOMOUS v40 — 2026-08-25 — 20260825T190506Z-improve-tool-readiness-check-after-servi-18c1
 
 **Summary:** Add tool readiness verification to the POST-MERGE DEPLOYMENT

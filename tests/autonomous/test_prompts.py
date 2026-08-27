@@ -238,3 +238,15 @@ class TestBuildAutonomousInstruction:
         result = build_autonomous_instruction(settings)
         assert "NOT complete until GET /autonomous/definitions" in result
         assert "half-finished task" in result
+
+    def test_state_reporting_accuracy_section_present(self) -> None:
+        """STATE REPORTING ACCURACY section prevents false completion claims."""
+        settings = self._make_settings()
+        result = build_autonomous_instruction(settings)
+        assert "STATE REPORTING ACCURACY" in result
+        assert "NEVER claim a fix has 'landed'" in result
+        assert "PR API verification" in result
+        assert "Deploy health verification" in result
+        assert "Never infer progress from ticket state alone" in result
+        assert "no PR was produced" in result
+        assert "deploy access not configured" in result
