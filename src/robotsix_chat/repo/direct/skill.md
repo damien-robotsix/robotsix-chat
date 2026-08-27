@@ -123,7 +123,7 @@ ______________________________________________________________________
 Fetch and parse job logs from a CI workflow run — extracts the exact log output from failing CI jobs
 (e.g., Trivy vulnerability scan results, test failures, build errors). Use this when
 `check_ci_health` shows a failure and you need the specific details from the failing step to propose
-a fix (upgrade a vulnerable package, fix a test assertion, etc.). When no ``run_id`` is provided,
+a fix (upgrade a vulnerable package, fix a test assertion, etc.). When no `run_id` is provided,
 fetches logs from the most recent failed run on the branch.
 
 **Read-only.** Does not modify any repository state and does not require a ticket to be in BLOCKED
@@ -139,7 +139,7 @@ state.
 - Run metadata: name, branch, status, and conclusion.
 - One `### Job:` section per matching job, each containing the raw log text (truncated to
   `max_log_bytes` total across all jobs).
-- When ``job_name`` is supplied, only jobs whose name contains that substring (case-insensitive) are
+- When `job_name` is supplied, only jobs whose name contains that substring (case-insensitive) are
   included; otherwise all jobs appear.
 
 ### Error responses
@@ -147,7 +147,7 @@ state.
 | Condition                      | Message                                                         |
 | ------------------------------ | --------------------------------------------------------------- |
 | Repo not in installation scope | `The robotsix-mill GitHub App is not installed on 'owner/name'` |
-| Run not found                  | `Error: workflow run <id> not found in owner/name.`              |
+| Run not found                  | `Error: workflow run <id> not found in owner/name.`             |
 | No runs on branch              | `No recent workflow runs found on '<branch>' in owner/name.`    |
 | Specific job not found         | `No job named '<job_name>' found in run <id>.`                  |
 
@@ -173,14 +173,14 @@ state.
 
 - Run metadata: name, branch, and link to the workflow run.
 - Parsed vulnerability summary: total count with CRITICAL / HIGH / MEDIUM / LOW breakdown.
-- Per-finding detail table: CVE ID, affected package/library, severity, installed version, and
-  fixed version (when available).
+- Per-finding detail table: CVE ID, affected package/library, severity, installed version, and fixed
+  version (when available).
 - When no Trivy table is detected, a raw log excerpt for manual review.
 
 ### Invocation
 
-When ``run_id`` is omitted, uses the most recent failed run on ``branch`` (default: repository
-default branch).  Provide a specific ``run_id`` when the ticket references one.
+When `run_id` is omitted, uses the most recent failed run on `branch` (default: repository default
+branch). Provide a specific `run_id` when the ticket references one.
 
 ### Error responses
 
@@ -188,7 +188,7 @@ default branch).  Provide a specific ``run_id`` when the ticket references one.
 | ------------------------------ | --------------------------------------------------------------- |
 | Repo not in installation scope | `The robotsix-mill GitHub App is not installed on 'owner/name'` |
 | No runs on branch              | `No recent workflow runs found on '<branch>' in owner/name.`    |
-| Run not found                  | `Error: workflow run <id> not found in owner/name.`              |
+| Run not found                  | `Error: workflow run <id> not found in owner/name.`             |
 | No Trivy job found             | Diagnostic with raw log excerpt for manual review.              |
 
 ______________________________________________________________________
