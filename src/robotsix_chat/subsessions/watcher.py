@@ -504,7 +504,7 @@ async def _verify_image_publish_on_main(
     first_seen = checkpoint.get(first_seen_key)
     if first_seen is None:
         # Record when we first noticed the run was in progress.
-        checkpoint[first_seen_key] = time.monotonic()
+        checkpoint[first_seen_key] = time.time()
         env.registry.update_checkpoint(sub_id, checkpoint)
         return (
             False,
@@ -512,7 +512,7 @@ async def _verify_image_publish_on_main(
             f"(run {run_id}) — waiting for completion",
         )
 
-    elapsed = time.monotonic() - float(cast("float", first_seen))
+    elapsed = time.time() - cast(float, first_seen)
     if elapsed >= verify_timeout:
         # Timeout — resume with a warning.
         del checkpoint[first_seen_key]

@@ -3,6 +3,7 @@
 from __future__ import annotations
 
 import asyncio
+import time
 from types import SimpleNamespace
 from typing import Any
 from unittest.mock import AsyncMock, MagicMock, patch
@@ -2014,7 +2015,7 @@ async def test_watcher_image_publish_timeout_elapses_resumes_with_warning() -> N
 
     # Pre-set the verify-since timestamp to an old value so timeout elapses.
     checkpoint = dict(info.checkpoint)
-    checkpoint["_image_publish_verify_since"] = 1.0  # way in the past
+    checkpoint["_image_publish_verify_since"] = time.time() - 1.0  # 1s ago
     env.registry.update_checkpoint(info.id, checkpoint)
 
     mock_ticket_client = _mock_ticket_client(state="open")
