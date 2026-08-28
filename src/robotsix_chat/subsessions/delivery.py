@@ -509,6 +509,15 @@ class ParentDelivery:
         # _MAX_REACTION_DEPTH further closures degrade to passive records
         # so a broken tool loop cannot chain-react unboundedly.
         self._reaction_depth: dict[str, int] = {}
+        # Outcome IDs that have already been surfaced to the user in a
+        # completed reaction/consolidation turn.  Once an outcome has been
+        # presented, subsequent turns must NOT re-route to the consolidation
+        # gate for that same ID — otherwise a routing condition that only
+        # checks "does a pending outcome exist" keeps re-issuing the same
+        # consolidation redirect every turn, tightening into a loop until
+        # the reaction-depth cap trips.  The gate still fires for genuinely
+        # new outcome IDs.
+        self._consumed_outcome_ids: set[str] = set()
         # Keep strong references to in-flight background reaction tasks so
         # they aren't garbage-collected mid-run.
         self._reaction_tasks: set[asyncio.Task[None]] = set()
@@ -693,6 +702,20 @@ class ParentDelivery:
         """
         session_id = info.owner_session_id
 
+        # Already-surfaced guard: if this exact outcome ID has already been
+        # presented to the user in a completed reaction turn, do not schedule
+        # another reaction for it.  Without this, a prior turn's full
+        # consolidation for a given outcome ID would keep re-triggering the
+        # consolidation gate on every subsequent turn for the same ID.
+        if info.id in self._consumed_outcome_ids:
+            logger.debug(
+                "Subsession %s outcome already surfaced — skipping duplicate "
+                "reaction for session %s.",
+                info.id[:8],
+                session_id,
+            )
+            return
+
         # Depth-bounded loop guard: if we're already at max depth for this
         # session, record a passive entry instead of scheduling yet another
         # reaction.  This bounds chains like  close → reaction → spawn →
@@ -787,6 +810,13 @@ class ParentDelivery:
             await self._safe_react(info, outcome, reason, label)
         else:
             await self._safe_react_batched(session_id, outcomes)
+
+        # Stamp every delivered outcome ID as consumed: the assistant has now
+        # presented these outcomes to the user, so later turns must not
+        # re-route them to the consolidation gate again (see
+        # _consumed_outcome_ids and the guard in _schedule_reaction).
+        for delivered_info, _outcome, _reason, _label in outcomes:
+            self._consumed_outcome_ids.add(delivered_info.id)
         return True
 
     async def _flush_pending_reactions(self, session_id: str) -> None:
