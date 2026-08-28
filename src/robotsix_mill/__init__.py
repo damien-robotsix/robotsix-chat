@@ -832,3 +832,109 @@ def _finalize_with_capability_gap(
 
 
 phase_coordinator.PhaseCoordinatorMixin._finalize = _finalize_with_capability_gap
+
+# ---------------------------------------------------------------------------
+# 9.  Expand request-implementation-changes to accept IMPLEMENT_COMPLETE
+#     and FIXING_CI, not just HUMAN_MR_APPROVAL.
+#
+#     When auto-merge is enabled the merge stage can drive a ticket from
+#     IMPLEMENT_COMPLETE straight to DONE without ever touching
+#     HUMAN_MR_APPROVAL, so an operator who wants rework has no window
+#     to call request-implementation-changes.  Adding IMPLEMENT_COMPLETE
+#     and FIXING_CI as accepted source states gives the operator a
+#     rework window at every merge-pipeline stage.
+#
+#     Two patches:
+#     a) Add State.READY to the TRANSITIONS entries for IMPLEMENT_COMPLETE
+#        and FIXING_CI so the state machine allows the transition.
+#     b) Replace request_implementation_changes on _TransitionMixin so it
+#        accepts the expanded set of source states.
+# ---------------------------------------------------------------------------
+from datetime import UTC, datetime  # noqa: E402
+
+import robotsix_mill.core.states as _states  # noqa: E402
+
+# 9a. Expand the TRANSITIONS dict.
+_states.TRANSITIONS[State.IMPLEMENT_COMPLETE].add(State.READY)
+_states.TRANSITIONS[State.FIXING_CI].add(State.READY)
+
+# 9b. Patch request_implementation_changes.
+from robotsix_mill.core.service._transition_mixin import (  # noqa: E402
+    _clear_stale_implement_guard,
+    _reset_implement_spawn_counter,
+)
+
+# Kept for debugging / rollback: allows reverting to the original method
+# by assigning ``_TransitionMixin.request_implementation_changes =
+# _original_request_impl_changes``.
+_original_request_impl_changes = _TransitionMixin.request_implementation_changes
+
+# Source states from which an operator can request implementation changes.
+_REQUEST_IMPL_CHANGES_STATES: frozenset[State] = frozenset(
+    {
+        State.HUMAN_MR_APPROVAL,
+        State.IMPLEMENT_COMPLETE,
+        State.FIXING_CI,
+    }
+)
+
+
+def _request_implementation_changes_expanded(
+    self, ticket_id: str, body: str, author: str = "user"
+):
+    """Send a ticket back to implement for rework.
+
+    Accepts tickets in ``human_mr_approval``, ``implement_complete``, or
+    ``fixing_ci``.  The original method only accepted
+    ``human_mr_approval``, which left no rework window when auto-merge
+    drove the ticket straight from ``implement_complete`` to ``done``.
+    """
+    if not body.strip():
+        from robotsix_mill.core.service._helpers import TransitionError
+
+        raise TransitionError(
+            f"{ticket_id}: cannot request implementation changes — "
+            "a non-empty body is required; it is the only thing that "
+            "tells the implement agent what to change"
+        )
+    from robotsix_mill.core.db import retry_on_db_full
+    from robotsix_mill.core.service._helpers import (
+        TransitionError,
+        _get_ticket,
+        _make_event,
+    )
+
+    with retry_on_db_full(self.settings, self._board_for(ticket_id)) as s:
+        ticket = _get_ticket(s, ticket_id)
+        if ticket.state not in _REQUEST_IMPL_CHANGES_STATES:
+            allowed = ", ".join(sorted(sv.value for sv in _REQUEST_IMPL_CHANGES_STATES))
+            raise TransitionError(
+                f"{ticket_id}: cannot request implementation changes — "
+                f"not in an accepted state (currently {ticket.state}; "
+                f"accepted: {allowed})"
+            )
+        from robotsix_mill.core.models import Comment
+
+        comment = Comment(ticket_id=ticket_id, body=body, author=author)
+        s.add(comment)
+        note = f"implementation changes requested: {body}"
+        old_state = ticket.state.value
+        ticket.state = State.READY
+        ticket.updated_at = datetime.now(UTC)
+        s.add(ticket)
+        s.flush()
+        s.add(_make_event(s, ticket_id=ticket_id, state=State.READY, note=note))
+        s.commit()
+        s.refresh(comment)
+        s.refresh(ticket)
+    ws = self.workspace(ticket)
+    _clear_stale_implement_guard(ws)
+    _reset_implement_spawn_counter(ws)
+    if self._on_transition is not None:
+        self._on_transition(ticket, old_state)
+    return comment, ticket
+
+
+_TransitionMixin.request_implementation_changes = (
+    _request_implementation_changes_expanded
+)
