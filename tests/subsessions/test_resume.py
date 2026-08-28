@@ -600,6 +600,69 @@ async def test_resume_user_chat_waiting_does_not_redrive_agent(
 
 
 @pytest.mark.asyncio
+async def test_resume_user_chat_waiting_survives_consecutive_restarts(
+    tmp_path: Path,
+) -> None:
+    """A second restart with no turn in between must not re-ask either.
+
+    A resume re-creates the registry entry without its transcript; since the
+    waiting path runs no agent turn, nothing repopulates it.  The question is
+    still recoverable from ``turn_history``, which does survive resumes —
+    observed live 2026-08-28: restart #1 skipped the turn, restart #2 re-asked.
+    """
+    store_path = tmp_path / "subsessions.json"
+    registry1 = SubsessionRegistry(store_path=store_path)
+    user_chat = registry1.create(
+        kind=SubsessionKind.USER_CHAT,
+        owner_session_id=OWNER,
+        parent_id=None,
+        depth=1,
+        title="decision chat",
+        prompt="Ask the user about the deployment strategy",
+        model_level=3,
+    )
+    registry1.set_status(user_chat.id, SubsessionStatus.WAITING)
+    registry1.append_turn_history(
+        user_chat.id, "Ask the user about the deployment strategy", "Which env?"
+    )
+    registry1.append_transcript(user_chat.id, "assistant", "Which env?")
+
+    async def _restart(agent: FakeAgent) -> SubsessionRegistry:
+        registry = SubsessionRegistry(store_path=store_path)
+        env = build_env(agent=agent, registry=registry, settings=make_settings())
+        resume_subsessions(env)
+        await wait_until(
+            lambda: (
+                (registry.get(user_chat.id) or user_chat).status
+                is SubsessionStatus.WAITING
+            )
+        )
+        # Persist the resumed state (as a live server does continuously),
+        # then stop the worker as a shutdown would.
+        registry.persist()
+        worker = registry._running.get(user_chat.id)
+        if worker is not None:
+            worker.cancel()
+            with contextlib.suppress(asyncio.CancelledError):
+                await asyncio.wait_for(worker, 2.0)
+        return registry
+
+    agent1 = FakeAgent()
+    registry2 = await _restart(agent1)
+    assert agent1.calls == []
+    resumed = registry2.get(user_chat.id)
+    assert resumed is not None and resumed.transcript == []  # the trigger
+
+    agent2 = FakeAgent()
+    registry3 = await _restart(agent2)
+    assert agent2.calls == []
+    resumed3 = registry3.get(user_chat.id)
+    assert resumed3 is not None
+    assert resumed3.prompt == "Ask the user about the deployment strategy"
+    assert [reply for _, reply in resumed3.turn_history] == ["Which env?"]
+
+
+@pytest.mark.asyncio
 async def test_resume_user_chat_strips_stacked_restart_notes(
     tmp_path: Path,
 ) -> None:

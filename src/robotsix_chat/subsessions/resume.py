@@ -228,8 +228,12 @@ def _entry_last_assistant_text(entry: Mapping[str, object]) -> str:
     """Extract the most recent assistant reply from a persisted entry's transcript.
 
     ``user_chat`` subsessions never write to ``last_result`` (only periodic
-    does), but the transcript is always persisted.  This helper falls back
-    through the transcript when the direct field is empty.
+    does), so this falls back through the transcript, and then through the
+    replay window (``turn_history``).  The last hop matters: a resume
+    re-creates the registry entry WITHOUT its transcript, so after a resume
+    that ran no agent turn (a user_chat still waiting for the operator) the
+    transcript is empty on the *next* restart — only ``turn_history``, which
+    is carried across resumes, still knows the question was asked.
     """
     last_result = _entry_opt_str(entry, "last_result")
     if last_result:
@@ -239,8 +243,11 @@ def _entry_last_assistant_text(entry: Mapping[str, object]) -> str:
         for item in reversed(transcript_raw):
             if isinstance(item, dict) and item.get("role") == "assistant":
                 text = item.get("text")
-                if isinstance(text, str):
+                if isinstance(text, str) and text:
                     return text
+    turn_history = _rebuild_turn_history(entry)
+    if turn_history:
+        return turn_history[-1][1]
     return ""
 
 

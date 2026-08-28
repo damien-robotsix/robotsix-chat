@@ -1,0 +1,1 @@
+A `user_chat` waiting for the operator now stays quiet across consecutive server restarts: the last delivered question is recovered from the replay window (`turn_history`, which survives resumes) when the transcript is empty, so the second restart no longer re-asks it.
