@@ -781,19 +781,19 @@ scrapes the usage/settings page for the remaining weekly-cap / token value, and 
 session. **No credentials are stored** — the magic-link email is the sole auth per run. The scraper
 is deliberately fragile: it breaks on claude.ai layout changes, CAPTCHA, or device-verification
 challenges, and there is no official API backing it (automated console access may brush against
-Claude.ai ToS). Requires the `render-url` extra (`playwright`) and the `mail` integration enabled and
-reachable. Disabled by default.
+Claude.ai ToS). Requires the `render-url` extra (`playwright`) and the `mail` integration enabled
+and reachable. Disabled by default.
 
-| JSON key                           | Type      | Default                             | Description                                                                       |
-| ---------------------------------- | --------- | ----------------------------------- | --------------------------------------------------------------------------------- |
-| `claude_usage.enabled`             | `boolean` | `false`                             | Master switch. When `False`, no `fetch_claude_usage` tool is offered.             |
-| `claude_usage.account_email`       | `string`  | `chat@robotsix.net`                 | Claude.ai account email to log in as; must be a mailbox the auto-mail can read.    |
-| `claude_usage.login_url`           | `string`  | `https://claude.ai/login`           | Claude.ai login page URL where the email magic-link flow is initiated.             |
-| `claude_usage.usage_url`           | `string`  | `https://claude.ai/settings/usage`  | Claude.ai usage/settings page URL scraped for the remaining-cap value after login. |
-| `claude_usage.mail_account_id`     | `string`  | `""`                                | Optional auto-mail `account_id` to scope the inbox search. Empty = default account. |
-| `claude_usage.mail_poll_attempts`  | `integer` | `12`                                | How many times to poll the auto-mail board for the login email before giving up.   |
-| `claude_usage.mail_poll_interval`  | `number`  | `5.0`                               | Seconds to wait between auto-mail board polls.                                     |
-| `claude_usage.timeout`             | `number`  | `30.0`                              | Per-navigation timeout in seconds for browser page loads.                          |
+| JSON key                          | Type      | Default                            | Description                                                                         |
+| --------------------------------- | --------- | ---------------------------------- | ----------------------------------------------------------------------------------- |
+| `claude_usage.enabled`            | `boolean` | `false`                            | Master switch. When `False`, no `fetch_claude_usage` tool is offered.               |
+| `claude_usage.account_email`      | `string`  | `chat@robotsix.net`                | Claude.ai account email to log in as; must be a mailbox the auto-mail can read.     |
+| `claude_usage.login_url`          | `string`  | `https://claude.ai/login`          | Claude.ai login page URL where the email magic-link flow is initiated.              |
+| `claude_usage.usage_url`          | `string`  | `https://claude.ai/settings/usage` | Claude.ai usage/settings page URL scraped for the remaining-cap value after login.  |
+| `claude_usage.mail_account_id`    | `string`  | `""`                               | Optional auto-mail `account_id` to scope the inbox search. Empty = default account. |
+| `claude_usage.mail_poll_attempts` | `integer` | `12`                               | How many times to poll the auto-mail board for the login email before giving up.    |
+| `claude_usage.mail_poll_interval` | `number`  | `5.0`                              | Seconds to wait between auto-mail board polls.                                      |
+| `claude_usage.timeout`            | `number`  | `30.0`                             | Per-navigation timeout in seconds for browser page loads.                           |
 
 ______________________________________________________________________
 

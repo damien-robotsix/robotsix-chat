@@ -1106,8 +1106,8 @@ _PREEXISTING_ALLOWLIST: set[tuple[str, int, str]] = {
     ("src/robotsix_chat/memory/cognee.py", 424, "gpt-"),
     ("src/robotsix_chat/memory/cognee.py", 568, "gpt-"),
     # config/settings.py — opus / claude-fable-5 in Settings docstring
-    ("src/robotsix_chat/config/settings.py", 94, "-opus"),
-    ("src/robotsix_chat/config/settings.py", 94, "claude-fable"),
+    ("src/robotsix_chat/config/settings.py", 95, "-opus"),
+    ("src/robotsix_chat/config/settings.py", 95, "claude-fable"),
     # config/memory_models.py — gpt-5-nano / gpt-5-mini / deepseek-v4-flash
     ("src/robotsix_chat/config/memory_models.py", 18, "gpt-"),
     ("src/robotsix_chat/config/memory_models.py", 31, "gpt-"),

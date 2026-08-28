@@ -27,9 +27,9 @@ Wait for a clear confirmation reply (e.g. "yes", "go ahead") before proceeding.
 
 ## Allowed operation
 
-| Tool                 | Description                                                             |
-| -------------------- | --------------------------------------------------------------------- |
-| `fetch_claude_usage` | Fresh magic-link login → scrape the Claude.ai remaining-cap value.     |
+| Tool                 | Description                                                        |
+| -------------------- | ------------------------------------------------------------------ |
+| `fetch_claude_usage` | Fresh magic-link login → scrape the Claude.ai remaining-cap value. |
 
 The tool signature is:
 
