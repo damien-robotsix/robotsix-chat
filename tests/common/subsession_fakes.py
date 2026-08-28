@@ -167,6 +167,8 @@ def make_settings(
     monitor_slot_budget: int = 0,
     monitor_slot_queue_max: int = 32,
     event_driven_timeout_seconds: float = 60.0,
+    image_publish_workflow_name: str = "release-image.yml",
+    image_publish_verify_timeout_seconds: float = 1800.0,
     turn_budget: Any | None = None,
     llmio_api_key: str = "test-key",
 ) -> SimpleNamespace:
@@ -225,6 +227,8 @@ def make_settings(
             max_runs_progress_window=max_runs_progress_window,
             monitor_slot_budget=monitor_slot_budget,
             monitor_slot_queue_max=monitor_slot_queue_max,
+            image_publish_workflow_name=image_publish_workflow_name,
+            image_publish_verify_timeout_seconds=image_publish_verify_timeout_seconds,
             turn_budget=turn_budget,
         ),
         central_deploy=SimpleNamespace(url="https://central-deploy.example.com"),

@@ -161,15 +161,39 @@ A background **watcher** task (`watch_paused_monitors` in `subsessions/watcher.p
 lifetime of the server process. On every poll tick it:
 
 1. Queries the registry for all paused periodic subsessions (`find_paused_periodic()`).
+
 1. For each paused monitor, fetches the current ticket state from the mill API via the
    `board_api_base_url` configured in `direct_repo`.
+
 1. Compares the fetched state against the checkpoint's `last_known_state`.
+
 1. If the state differs, the watcher sends an immediate inbox **wake message** to the live `PAUSED`
    worker (`_wake_paused_monitor`), which unblocks it and resumes polling right away. If the worker
    is not reachable (e.g. it died after a server restart), the watcher falls back to `reopen()` +
    spawning a fresh worker.
+
 1. A second pass also polls GitHub for a tracked PR's merge status, resuming the monitor via the
    same wake/reopen path when the PR is merged.
+
+   **Image-publish verification gate.** On the GitHub pass, after detecting that a tracked PR is
+   merged, the watcher checks that the **image-publish workflow** actually succeeded on the merge
+   commit before resuming the monitor. If the image-publish workflow run on the merge SHA is still
+   in progress or failed, the watcher **keeps the monitor paused** and publishes a low-urgency
+   notification so the operator can see the publish pipeline is not green. The monitor is only
+   resumed once the image-publish workflow completes successfully — this prevents the monitor from
+   resuming against a service that does not yet contain the merged code.
+
+   - The workflow file to query is set by `subsessions.image_publish_workflow_name` (default
+     `"release-image.yml"`), located in the repo's `.github/workflows/` directory.
+   - The watcher waits up to `subsessions.image_publish_verify_timeout_seconds` (default `1800.0`,
+     30 minutes) for the workflow to complete. If the timeout elapses while the workflow is still in
+     progress, the watcher resumes the monitor with a warning so the agent can investigate.
+   - If the workflow run failed, the monitor stays paused and the notification reports the failure
+     conclusion.
+   - Set `image_publish_workflow_name` to an empty string to disable verification (the watcher
+     resumes immediately on merge — legacy behaviour). The check is also skipped when the PR
+     provides no `merge_commit_sha`, when `direct_repo` is not enabled, or when the GitHub Actions
+     API is unreachable (all fail-open so the monitor is not stuck indefinitely).
 
 In addition to resuming monitors, the watcher's GitHub pass actively watches for two PR states that
 would otherwise go unnoticed until a monitor report:

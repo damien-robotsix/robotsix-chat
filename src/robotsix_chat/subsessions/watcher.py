@@ -21,7 +21,8 @@ from __future__ import annotations
 import asyncio
 import contextvars
 import logging
-from typing import TYPE_CHECKING
+import time
+from typing import TYPE_CHECKING, cast
 
 import httpx
 
@@ -368,6 +369,165 @@ async def _resume_merged_pr_monitor(
                 "link": f"https://github.com/{repo_full_name}/pull/{pr_number}",
             },
         )
+
+
+async def _verify_image_publish_on_main(
+    env: SubsessionEnv,
+    repo_full_name: str,
+    merge_sha: str,
+    pr_number: int,
+    sub_id: str,
+) -> tuple[bool, str]:
+    """Check whether the image-publish workflow succeeded on *merge_sha*.
+
+    Queries the GitHub Actions API for the most recent run of the
+    configured ``image_publish_workflow_name`` on the repo's default
+    branch, filtering by *merge_sha*.  Returns ``(True, detail)`` when
+    the run succeeded, ``(False, detail)`` otherwise.
+
+    When the workflow name is empty (verification disabled), returns
+    ``(True, "image-publish verification disabled")`` immediately.
+    """
+    subsessions_cfg = getattr(env.settings, "subsessions", None)
+    workflow_name = (
+        getattr(subsessions_cfg, "image_publish_workflow_name", "")
+        if subsessions_cfg is not None
+        else ""
+    )
+    if not workflow_name:
+        return (True, "image-publish verification disabled")
+
+    direct_repo_settings = getattr(env.settings, "direct_repo", None)
+    if direct_repo_settings is None or not getattr(
+        direct_repo_settings, "enabled", False
+    ):
+        return (
+            True,
+            "direct_repo not enabled — cannot verify image publish",
+        )
+
+    try:
+        from robotsix_chat.repo.direct import actions_client
+
+        actions = actions_client.ActionsClient(direct_repo_settings)
+    except Exception:
+        logger.debug(
+            "Watcher: could not create ActionsClient for image-publish "
+            "verification (subsession %s, PR #%d in %s) — deferring.",
+            sub_id,
+            pr_number,
+            repo_full_name,
+        )
+        return (
+            True,
+            "ActionsClient unavailable — cannot verify image publish",
+        )
+
+    try:
+        runs = await actions.list_workflow_runs(
+            repo_full_name,
+            head_sha=merge_sha,
+            per_page=5,
+            raise_on_error=False,
+        )
+    except Exception:
+        logger.debug(
+            "Watcher: could not list workflow runs for image-publish "
+            "verification (subsession %s, PR #%d in %s) — deferring.",
+            sub_id,
+            pr_number,
+            repo_full_name,
+        )
+        return (
+            True,
+            "GitHub Actions API unreachable — cannot verify image publish",
+        )
+
+    # Filter runs matching the configured workflow name.
+    matching = [
+        r
+        for r in runs
+        if r.get("name") == workflow_name
+        or r.get("path", "").endswith(workflow_name)
+        or workflow_name in r.get("path", "")
+    ]
+    if not matching:
+        # No run found for this workflow on the merge SHA.
+        # Check if there are any runs at all — if so, the workflow
+        # may not have been triggered; if not, the SHA may be too new.
+        if not runs:
+            # No runs yet — the workflow may not have been triggered.
+            # Return "defer" so the watcher retries on next poll.
+            return (
+                False,
+                f"No CI runs yet for {merge_sha[:12]} — image publish "
+                f"workflow '{workflow_name}' may not have been triggered",
+            )
+        return (
+            False,
+            f"Image publish workflow '{workflow_name}' not found in "
+            f"recent CI runs for {merge_sha[:12]} — expected it to "
+            f"run after merge",
+        )
+
+    latest_run = matching[0]
+    status = latest_run.get("status", "")
+    conclusion = latest_run.get("conclusion", "")
+    run_id = latest_run.get("id", "?")
+    run_url = latest_run.get("html_url", "")
+
+    if status == "completed" and conclusion == "success":
+        return (
+            True,
+            f"Image publish workflow '{workflow_name}' succeeded (run {run_id})",
+        )
+
+    if status == "completed" and conclusion != "success":
+        return (
+            False,
+            f"Image publish workflow '{workflow_name}' {conclusion} "
+            f"(run {run_id}, {run_url})",
+        )
+
+    # Still in progress — check timeout.
+    verify_timeout = (
+        getattr(subsessions_cfg, "image_publish_verify_timeout_seconds", 1800.0)
+        if subsessions_cfg is not None
+        else 1800.0
+    )
+    checkpoint: dict[str, object] = {}
+    info = env.registry.get(sub_id)
+    if info is not None and info.checkpoint:
+        checkpoint = dict(info.checkpoint)
+
+    first_seen_key = "_image_publish_verify_since"
+    first_seen = checkpoint.get(first_seen_key)
+    if first_seen is None:
+        # Record when we first noticed the run was in progress.
+        checkpoint[first_seen_key] = time.time()
+        env.registry.update_checkpoint(sub_id, checkpoint)
+        return (
+            False,
+            f"Image publish workflow '{workflow_name}' still in progress "
+            f"(run {run_id}) — waiting for completion",
+        )
+
+    elapsed = time.time() - cast(float, first_seen)
+    if elapsed >= verify_timeout:
+        # Timeout — resume with a warning.
+        del checkpoint[first_seen_key]
+        env.registry.update_checkpoint(sub_id, checkpoint)
+        return (
+            True,
+            f"Image publish workflow '{workflow_name}' timed out after "
+            f"{elapsed:.0f}s — resuming with warning",
+        )
+
+    return (
+        False,
+        f"Image publish workflow '{workflow_name}' still in progress "
+        f"(run {run_id}, {elapsed:.0f}s elapsed) — waiting for completion",
+    )
 
 
 async def watch_paused_monitors(env: SubsessionEnv) -> None:
@@ -1104,12 +1264,79 @@ async def watch_paused_monitors(env: SubsessionEnv) -> None:
                                         )
 
                             if merged is True:
+                                # -- image-publish verification gate ----
+                                # Before resuming, verify the image-publish
+                                # workflow on the merge commit succeeded so
+                                # the monitor sees the running service
+                                # actually contains the new code.
+                                merge_sha = pr_data.get("merge_commit_sha") or ""
+                                if isinstance(merge_sha, str) and merge_sha:
+                                    (
+                                        pub_ok,
+                                        pub_detail,
+                                    ) = await _verify_image_publish_on_main(
+                                        env,
+                                        repo_raw,
+                                        merge_sha,
+                                        pr_number_raw,
+                                        info.id,
+                                    )
+                                else:
+                                    pub_ok, pub_detail = (
+                                        True,
+                                        "no merge_commit_sha — skipping "
+                                        "image-publish verification",
+                                    )
+                                if not pub_ok:
+                                    logger.info(
+                                        "Watcher: subsession %s PR #%d in %s "
+                                        "merged but image-publish not yet "
+                                        "verified: %s",
+                                        info.id,
+                                        pr_number_raw,
+                                        repo_raw,
+                                        pub_detail,
+                                    )
+                                    if (
+                                        env.event_sink is not None
+                                        and info.id not in _ci_health_notified
+                                    ):
+                                        _ci_health_notified.add(info.id)
+                                        env.event_sink.publish(
+                                            info.owner_session_id,
+                                            {
+                                                "type": (SSE_NOTIFICATION_TYPE),
+                                                "title": ("Image publish pending"),
+                                                "body": (
+                                                    f"PR #{pr_number_raw} in "
+                                                    f"{repo_raw} merged, but "
+                                                    f"the image-publish "
+                                                    f"workflow has not "
+                                                    f"succeeded yet: "
+                                                    f"{pub_detail}.  "
+                                                    f"Waiting for the "
+                                                    f"workflow to complete "
+                                                    f"before resuming "
+                                                    f"monitor "
+                                                    f"{info.id[:8]}."
+                                                ),
+                                                "urgency": "low",
+                                                "link": (
+                                                    f"https://github.com/"
+                                                    f"{repo_raw}/pull/"
+                                                    f"{pr_number_raw}"
+                                                ),
+                                            },
+                                        )
+                                    continue
                                 logger.info(
                                     "Watcher: subsession %s PR #%d in %s "
-                                    "was merged — resuming.",
+                                    "was merged — resuming "
+                                    "(image-publish verified: %s).",
                                     info.id,
                                     pr_number_raw,
                                     repo_raw,
+                                    pub_detail,
                                 )
                                 await _resume_merged_pr_monitor(
                                     env, info.id, pr_number_raw, repo_raw
