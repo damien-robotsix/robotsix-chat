@@ -50,7 +50,7 @@ def extract_magic_link(text: str) -> str | None:
     magic/login/verify/token hint.  Returns ``None`` when no candidate URL is
     present.
     """
-    candidates = _URL_RE.findall(text)
+    candidates: list[str] = _URL_RE.findall(text)
     if not candidates:
         return None
     for url in candidates:

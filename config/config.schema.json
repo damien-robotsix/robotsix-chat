@@ -1,6 +1,5 @@
-{
-  "$defs": {
-    "AutonomousSessionDefinition": {
+Wrote schema to 'config/config.schema.json'
+ion": {
       "additionalProperties": false,
       "description": "Definition of one named autonomous session.\n\nEach definition maps to one autonomous session owner (``autonomous:<name>``\nwhen the preset name is not ``\"default\"``, otherwise the bare\n``autonomous`` pseudo-owner).  The runner respects per-definition prompts,\ntrigger type, and the enabled flag independently.\n\nAttributes:\n    name: Unique identifier for this session definition.\n    prompt: Custom kickoff prompt appended to the autonomous protocol\n        supplement.  When empty, the agent uses the standard \"Begin a new\n        autonomous session and work it to completion\" prompt.\n    trigger_interval_seconds: Delay between one run completing and the\n        next starting.  Every preset is periodic \u2014 there is exactly one\n        scheduling model \u2014 so a \"continuous\" preset is just a short\n        interval.  Default 1 h.\n    enabled: When ``False``, the definition is skipped \u2014 no session is\n        created for it.\n    self_refine: When ``True``, after each run completes an LLM\n        refinement step proposes an updated prompt addendum that folds\n        in the run's feedback.  The next run uses the refined prompt.\n        Default ``False`` (static presets keep running verbatim).\n    self_refine_require_approval: When ``True``, refinements enter\n        ``pending`` state and require operator approval before they\n        take effect.  When ``False``, refinements are auto-accepted.\n        Default ``False``.",
       "properties": {
@@ -227,6 +226,54 @@
         }
       },
       "title": "CentralDeploySettings",
+      "type": "object"
+    },
+    "ClaudeUsageSettings": {
+      "additionalProperties": false,
+      "description": "On-demand Claude.ai remaining-cap scraper via headless browser.\n\nWhen enabled, the agent gains a confirmation-gated ``fetch_claude_usage``\ntool that, **per call**, drives a headless Chromium browser through\nAnthropic's email magic-link login flow for the configured account,\nretrieves the one-time login link from the auto-mail inbox (via the\n``mail`` integration), follows it to establish a **task-scoped**\nauthenticated session, scrapes the usage/settings page for the remaining\nweekly-cap / token value, and then discards the session.\n\n**No credentials are stored.**  The magic-link email is the sole auth per\nrun \u2014 there is no password or API-key vault path.  The scraper is\ndeliberately fragile (see the component README): it breaks on claude.ai\nlayout changes, CAPTCHA, or device-verification challenges, and there is\nno official API backing it.\n\nRequires the ``render-url`` extra (``playwright``) for the headless\nbrowser and the ``mail`` integration to be enabled and reachable so the\nmagic-link email can be read.\n\nAttributes:\n    enabled: Master switch.  When ``False`` (the default), no\n        ``fetch_claude_usage`` tool is offered.\n    account_email: The Claude.ai account email to log in as.  Anthropic\n        sends the one-time magic-link email to this address; it must be a\n        mailbox the auto-mail integration can read.\n    login_url: Claude.ai login page URL where the email magic-link flow is\n        initiated.\n    usage_url: Claude.ai usage/settings page URL scraped for the\n        remaining-cap value after login.\n    mail_account_id: Optional auto-mail ``account_id`` to scope the inbox\n        search to.  Empty means the auto-mail server's default account.\n    mail_poll_attempts: How many times to poll the auto-mail board for the\n        Anthropic login email before giving up.\n    mail_poll_interval: Seconds to wait between auto-mail board polls.\n    timeout: Per-navigation timeout in seconds for browser page loads.",
+      "properties": {
+        "enabled": {
+          "default": false,
+          "title": "Enabled",
+          "type": "boolean"
+        },
+        "account_email": {
+          "default": "chat@robotsix.net",
+          "title": "Account Email",
+          "type": "string"
+        },
+        "login_url": {
+          "default": "https://claude.ai/login",
+          "title": "Login Url",
+          "type": "string"
+        },
+        "usage_url": {
+          "default": "https://claude.ai/settings/usage",
+          "title": "Usage Url",
+          "type": "string"
+        },
+        "mail_account_id": {
+          "default": "",
+          "title": "Mail Account Id",
+          "type": "string"
+        },
+        "mail_poll_attempts": {
+          "default": 12,
+          "title": "Mail Poll Attempts",
+          "type": "integer"
+        },
+        "mail_poll_interval": {
+          "default": 5.0,
+          "title": "Mail Poll Interval",
+          "type": "number"
+        },
+        "timeout": {
+          "default": 30.0,
+          "title": "Timeout",
+          "type": "number"
+        }
+      },
+      "title": "ClaudeUsageSettings",
       "type": "object"
     },
     "ComponentClientSettings": {
@@ -1773,6 +1820,10 @@
     },
     "render_url": {
       "$ref": "#/$defs/RenderUrlSettings",
+      "advanced": true
+    },
+    "claude_usage": {
+      "$ref": "#/$defs/ClaudeUsageSettings",
       "advanced": true
     },
     "knowledge": {

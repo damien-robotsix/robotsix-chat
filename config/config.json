@@ -244,6 +244,16 @@
     "viewport_width": 1280,
     "viewport_height": 720
   },
+  "claude_usage": {
+    "enabled": false,
+    "account_email": "chat@robotsix.net",
+    "login_url": "https://claude.ai/login",
+    "usage_url": "https://claude.ai/settings/usage",
+    "mail_account_id": "",
+    "mail_poll_attempts": 12,
+    "mail_poll_interval": 5.0,
+    "timeout": 30.0
+  },
   "feedback": {
     "enabled": false,
     "model_level": 1,
