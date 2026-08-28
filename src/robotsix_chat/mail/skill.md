@@ -84,6 +84,60 @@ the server returns a 404 when it is omitted. Pass the account identifier you dis
 | `delete_archive_folder`         | Delete a specific archive subfolder (empty-only unless `force=True`). |
 | `delete_archive_message`        | Permanently delete one archive message (by `uid` + folder).           |
 
+## HTTP protocol for mutation endpoints
+
+The auto-mail board uses **form-encoded** `POST` requests for triage operations and **JSON** `POST`
+requests for archive mutations. Do not guess — use the exact format documented below.
+
+### `POST /move` — move email to triage column
+
+- **Content-Type:** `application/x-www-form-urlencoded`
+- **Body:** `message_id=<id>&triage_action=<action>`
+- **`triage_action` values:** `INBOX`, `HUMAN_TRIAGE`, `PENDING_ACTION`, `TO_ARCHIVE`, `TO_DELETE`,
+  `TO_CALENDAR`, `TO_ANSWER`, `DRAFT_READY`
+
+### `POST /delete` — delete email from board
+
+- **Content-Type:** `application/x-www-form-urlencoded`
+- **Body:** `message_id=<id>`
+- **Query param:** `?account=<account_id>`
+- **Note:** the `account` is a **query parameter**, not a form field.
+
+### `POST /archive` — archive email
+
+- **Content-Type:** `application/x-www-form-urlencoded`
+- **Body:** `message_id=<id>`
+
+### `POST /run-triage` — trigger triage engine
+
+- **Content-Type:** `application/x-www-form-urlencoded`
+- **Body:** (empty)
+
+### `POST /archive-move` — move email between archive folders
+
+- **Content-Type:** `application/json`
+- **Body:** `{"message_id": "<id>", "source_folder": "<src>", "target_subfolder": "<dst>"}`
+
+### `POST /archive-rename-folder` — rename archive subfolder
+
+- **Content-Type:** `application/json`
+- **Body:** `{"old_path": "<current>", "new_path": "<new>"}`
+
+### `POST /archive-cleanup-empty` — remove empty archive subfolders
+
+- **Content-Type:** (none — no body)
+- **Body:** (empty)
+
+### `POST /archive-delete` — delete archive subfolder
+
+- **Content-Type:** `application/json`
+- **Body:** `{"folder": "<path>", "force": true|false}`
+
+### `POST /archive-message-delete` — delete single archive message
+
+- **Content-Type:** `application/json`
+- **Body:** `{"uid": "<imap-uid>", "folder": "<path>"}`
+
 ## Agent tool: `list_archive_folders`
 
 List archive folders on the IMAP server. By default this returns only subfolders under the
