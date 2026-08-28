@@ -3746,6 +3746,111 @@ async def test_tool_failure_exhausting_retries_leaves_subsession_alive_wfe() -> 
 
 
 @pytest.mark.asyncio
+async def test_wfe_safety_net_timeout_skips_agent_turn_when_ticket_unchanged() -> None:
+    """A quiet safety-net timeout costs a board read, not an agent turn.
+
+    While the direct board read reports the ticket still in the monitor's
+    ``last_known_state``, the wait is re-armed without an LLM turn.
+    """
+    from types import SimpleNamespace
+    from unittest.mock import AsyncMock
+
+    agent = FakeAgent(default_reply="NO_CHANGE")
+    settings = make_settings(
+        event_driven_timeout_seconds=0.03,
+        event_driven_max_silent_timeouts=100,
+    )
+    settings.direct_repo = SimpleNamespace(board_api_base_url="http://mill:8077")
+    env = build_env(agent=agent, settings=settings)
+    query = AsyncMock(return_value="ready")
+
+    with patch.object(worker_mod, "_query_mill_ticket_state", query):
+        sub_id = _spawn(
+            env,
+            kind=SubsessionKind.WAIT_FOR_EVENT,
+            dedup_key="ticket-789",
+            checkpoint={"ticket_id": "ticket-789", "last_known_state": "READY"},
+        )
+        await wait_until(lambda: query.await_count >= 3)
+        await asyncio.sleep(0.1)
+
+    info = env.registry.get(sub_id)
+    assert info is not None
+    assert info.is_active
+    # Only the first observation turn ran; every timeout since was absorbed.
+    assert len(agent.calls) == 1
+    assert query.await_args is not None
+    assert query.await_args.args[:2] == ("http://mill:8077", "ticket-789")
+
+    env.registry.cancel_and_close(sub_id, reason="teardown", closed_by="system")
+    with contextlib.suppress(asyncio.CancelledError):
+        await _await_worker(env, sub_id)
+
+
+@pytest.mark.asyncio
+async def test_wfe_safety_net_timeout_runs_agent_turn_when_ticket_changed() -> None:
+    """A board read showing a different state still runs the safety-net turn."""
+    from types import SimpleNamespace
+    from unittest.mock import AsyncMock
+
+    agent = FakeAgent(default_reply="NO_CHANGE")
+    settings = make_settings(
+        event_driven_timeout_seconds=0.03,
+        event_driven_max_silent_timeouts=100,
+    )
+    settings.direct_repo = SimpleNamespace(board_api_base_url="http://mill:8077")
+    env = build_env(agent=agent, settings=settings)
+    query = AsyncMock(return_value="done")
+
+    with patch.object(worker_mod, "_query_mill_ticket_state", query):
+        sub_id = _spawn(
+            env,
+            kind=SubsessionKind.WAIT_FOR_EVENT,
+            dedup_key="ticket-790",
+            checkpoint={"ticket_id": "ticket-790", "last_known_state": "ready"},
+        )
+        await wait_until(lambda: len(agent.calls) >= 2)
+
+    assert any("Safety-net timeout fired" in c["message"] for c in agent.calls[1:])
+
+    env.registry.cancel_and_close(sub_id, reason="teardown", closed_by="system")
+    with contextlib.suppress(asyncio.CancelledError):
+        await _await_worker(env, sub_id)
+
+
+@pytest.mark.asyncio
+async def test_wfe_safety_net_cap_forces_agent_turn_after_silent_timeouts() -> None:
+    """After ``event_driven_max_silent_timeouts`` quiet timeouts a turn runs anyway."""
+    from types import SimpleNamespace
+    from unittest.mock import AsyncMock
+
+    agent = FakeAgent(default_reply="NO_CHANGE")
+    settings = make_settings(
+        event_driven_timeout_seconds=0.03,
+        event_driven_max_silent_timeouts=2,
+    )
+    settings.direct_repo = SimpleNamespace(board_api_base_url="http://mill:8077")
+    env = build_env(agent=agent, settings=settings)
+    query = AsyncMock(return_value="ready")
+
+    with patch.object(worker_mod, "_query_mill_ticket_state", query):
+        sub_id = _spawn(
+            env,
+            kind=SubsessionKind.WAIT_FOR_EVENT,
+            dedup_key="ticket-791",
+            checkpoint={"ticket_id": "ticket-791", "last_known_state": "ready"},
+        )
+        await wait_until(lambda: len(agent.calls) >= 2)
+
+    # Exactly two quiet timeouts were absorbed before the forced turn.
+    assert query.await_count == 2
+
+    env.registry.cancel_and_close(sub_id, reason="teardown", closed_by="system")
+    with contextlib.suppress(asyncio.CancelledError):
+        await _await_worker(env, sub_id)
+
+
+@pytest.mark.asyncio
 async def test_three_consecutive_errored_runs_fails_subsession() -> None:
     """3 consecutive errored runs fail the subsession with last error."""
     agent = FakeAgent(error=ValueError("tool retry limit exceeded"))
