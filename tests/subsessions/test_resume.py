@@ -539,14 +539,15 @@ def test_last_assistant_text_non_list_transcript() -> None:
 
 
 @pytest.mark.asyncio
-async def test_resume_user_chat_uses_transcript_for_restart_note(
+async def test_resume_user_chat_waiting_does_not_redrive_agent(
     tmp_path: Path,
 ) -> None:
-    """Use transcript to provide restart note when last_result is unset.
+    """A user_chat waiting for the operator resumes straight into WAITING.
 
-    A user_chat entry's transcript provides the last assistant text for
-    the restart note, even when last_result is None (which is the normal
-    case — user_chat never writes last_result).
+    The question was already delivered before the restart, so no agent
+    turn runs (it would only re-ask the same question at frontier-tier
+    cost) and the prompt is left untouched.  The operator's eventual
+    reply is then handled as a normal turn with the question in history.
     """
     store_path = tmp_path / "subsessions.json"
     registry1 = SubsessionRegistry(store_path=store_path)
@@ -563,13 +564,73 @@ async def test_resume_user_chat_uses_transcript_for_restart_note(
     # last_result, and append assistant replies to the transcript.
     registry1.set_status(user_chat.id, SubsessionStatus.WAITING)
     registry1.append_transcript(user_chat.id, "assistant", "Hello! What environment?")
-    registry1.append_transcript(
-        user_chat.id, "assistant", "Sure, deploying to staging sounds good."
-    )
-    # last_result should be None (as with real user_chat set_status calls).
     raw = registry1.get(user_chat.id)
     assert raw is not None
     assert raw.last_result is None
+
+    agent = FakeAgent(["Staging it is."])
+    registry2 = SubsessionRegistry(store_path=store_path)
+    env = build_env(agent=agent, registry=registry2, settings=make_settings())
+    resume_subsessions(env)
+
+    await wait_until(
+        lambda: (registry2.get(user_chat.id) or raw).status is SubsessionStatus.WAITING
+    )
+    resumed = registry2.get(user_chat.id)
+    assert resumed is not None
+    # No agent turn ran and the prompt carries no restart note.
+    assert agent.calls == []
+    assert resumed.prompt == "Ask the user about the deployment strategy"
+    assert "restarted after a server restart" not in resumed.prompt
+
+    # The operator answers — that is the first (and only) agent turn, and
+    # the agent sees its own question as history.
+    assert registry2.enqueue_message(user_chat.id, "user", "Staging, please.")
+    await wait_until(lambda: len(agent.calls) == 1)
+    assert "Staging, please." in agent.calls[0]["message"]
+    assert any(
+        reply == "Hello! What environment?" for _, reply in agent.calls[0]["history"]
+    )
+
+    worker = registry2._running.get(user_chat.id)
+    if worker is not None:
+        registry2.cancel_and_close(user_chat.id, reason="teardown", closed_by="system")
+        with contextlib.suppress(asyncio.CancelledError):
+            await asyncio.wait_for(worker, 2.0)
+
+
+@pytest.mark.asyncio
+async def test_resume_user_chat_strips_stacked_restart_notes(
+    tmp_path: Path,
+) -> None:
+    """Notes appended by earlier resumes are stripped before augmenting again.
+
+    Previously each restart appended another restart note to the persisted
+    prompt, so a user_chat that lived through N restarts carried N copies.
+    """
+    store_path = tmp_path / "subsessions.json"
+    registry1 = SubsessionRegistry(store_path=store_path)
+    original = "Ask the user about the deployment strategy"
+    stale = (
+        f"{original}\n\n"
+        "[System note: this subsession was restarted after a server restart. "
+        "The assistant's last delivered state was:]\n\nWhich environment?\n\n"
+        "[System note: this subsession was restarted after a server restart. "
+        "The assistant's last delivered state was:]\n\nWhich environment?"
+    )
+    user_chat = registry1.create(
+        kind=SubsessionKind.USER_CHAT,
+        owner_session_id=OWNER,
+        parent_id=None,
+        depth=1,
+        title="decision chat",
+        prompt=stale,
+        model_level=3,
+    )
+    registry1.set_status(user_chat.id, SubsessionStatus.WAITING)
+    registry1.append_transcript(user_chat.id, "assistant", "Which environment?")
+    # An answer that arrived just before the restart forces the augment path.
+    registry1.append_transcript(user_chat.id, "user", "Production.")
 
     gate = asyncio.Event()
     registry2 = SubsessionRegistry(store_path=store_path)
@@ -582,10 +643,10 @@ async def test_resume_user_chat_uses_transcript_for_restart_note(
 
     resumed = registry2.get(user_chat.id)
     assert resumed is not None
-    assert resumed.status in (SubsessionStatus.RUNNING, SubsessionStatus.WAITING)
-    # The prompt should include the last assistant text from the transcript.
-    assert "Sure, deploying to staging sounds good." in resumed.prompt
-    assert "restarted after a server restart" in resumed.prompt
+    assert resumed.prompt.startswith(original)
+    assert resumed.prompt.count("restarted after a server restart") == 1
+    assert resumed.prompt.count("may not have been seen by the assistant") == 1
+    assert "Production." in resumed.prompt
 
     worker = registry2._running.get(user_chat.id)
     if worker is not None:

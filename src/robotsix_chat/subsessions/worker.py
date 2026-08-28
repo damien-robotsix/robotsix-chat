@@ -447,6 +447,7 @@ def spawn_subsession(
     retry_count: int = 0,
     event_timeout_seconds: float | None = None,
     inbox: list[InboxMessage] | None = None,
+    resume_waiting: bool = False,
 ) -> str:
     """Validate, register, and launch a subsession worker; return its id.
 
@@ -477,6 +478,11 @@ def spawn_subsession(
     *inbox* seeds queued inbox messages (re-enqueued on resume) and
     wakes the inbox event so they are drained at the next turn
     boundary.
+
+    *resume_waiting* (user_chat only) marks a subsession resumed after a
+    restart while it was waiting for the operator's reply: the worker
+    skips the first agent turn and goes straight back to waiting, since
+    the question was already delivered before the restart.
     """
     # Idempotency guard: if the subsession already exists (duplicate
     # spawn / resume race), return the existing id without launching
@@ -743,6 +749,10 @@ def spawn_subsession(
             exc.existing_id,
         )
         return exc.existing_id
+    if resume_waiting and kind is SubsessionKind.USER_CHAT:
+        # Runtime-only flag (not persisted): consumed by the worker's first
+        # loop iteration, after which the normal turn cycle applies.
+        info._resume_waiting = True  # type: ignore[attr-defined]
     # spawn_subsession runs inside the parent agent's turn, so a plain
     # create_task would snapshot that turn's context — including the active
     # OTEL span — and every span the subsession opens would nest inside the
@@ -1933,35 +1943,80 @@ async def _event_wait_loop(
     if timeout is None:
         timeout = env.settings.subsessions.event_driven_timeout_seconds
 
-    registry.register_event_waiter(sub_id, ticket_id)
-    try:
-        woke = await registry.wait_for_inbox(sub_id, timeout=timeout)
-    finally:
-        registry.unregister_event_waiter(sub_id, ticket_id)
+    # Cheap-check setup: on a safety-net timeout, read the ticket state
+    # straight from the board before spending an agent turn.  An
+    # unchanged state means no event was lost, so the wait is simply
+    # re-armed.  Without this every quiet 15-minute window cost a full
+    # LLM turn per monitor (~96 turns/day for a ticket parked on a human
+    # decision), all of them replying NO_CHANGE.
+    direct_repo = getattr(env.settings, "direct_repo", None)
+    board_url: str = (
+        getattr(direct_repo, "board_api_base_url", "")
+        if direct_repo is not None
+        else ""
+    )
+    max_silent = int(
+        getattr(env.settings.subsessions, "event_driven_max_silent_timeouts", 0)
+    )
+    silent_timeouts = 0
 
-    # Verify subsession is still active.
-    current = registry.get(sub_id)
-    if current is None or not current.is_active:
-        return None
+    while True:
+        registry.register_event_waiter(sub_id, ticket_id)
+        try:
+            woke = await registry.wait_for_inbox(sub_id, timeout=timeout)
+        finally:
+            registry.unregister_event_waiter(sub_id, ticket_id)
 
-    if woke:
-        pending = registry.drain_inbox(sub_id)
-        if pending:
-            return pending, previous_result, consecutive_no_change
+        # Verify subsession is still active.
+        current = registry.get(sub_id)
+        if current is None or not current.is_active:
+            return None
 
-    # Timeout — create a safety-net message so the agent runs anyway.
-    pending = [
-        InboxMessage(
-            role="system",
-            text=(
-                "Safety-net timeout fired — no ticket state-change event "
-                "was received.  Perform a routine check of the monitored "
-                "ticket as you normally would."
-            ),
-            timestamp=registry.now(),
-        )
-    ]
-    return pending, previous_result, consecutive_no_change
+        if woke:
+            pending = registry.drain_inbox(sub_id)
+            if pending:
+                return pending, previous_result, consecutive_no_change
+
+        # Timeout with no event.  Skip the agent turn while a direct board
+        # read confirms the ticket is still where the monitor last saw it —
+        # up to ``max_silent`` consecutive times, after which the real
+        # safety-net turn runs regardless.
+        if board_url and max_silent > 0 and silent_timeouts < max_silent:
+            cp = current.checkpoint or {}
+            last_known_raw = cp.get("last_known_state")
+            last_known = (
+                last_known_raw
+                if isinstance(last_known_raw, str)
+                else (str(last_known_raw) if last_known_raw is not None else "")
+            )
+            if last_known:
+                state = await _query_mill_ticket_state(board_url, ticket_id, sub_id)
+                if state is not None and state.lower() == last_known.lower():
+                    silent_timeouts += 1
+                    logger.debug(
+                        "Subsession %s: safety-net timeout, ticket %s still "
+                        "%r — re-arming wait without an agent turn (%d/%d).",
+                        sub_id,
+                        ticket_id,
+                        state,
+                        silent_timeouts,
+                        max_silent,
+                    )
+                    continue
+
+        # Timeout — create a safety-net message so the agent runs anyway.
+        pending = [
+            InboxMessage(
+                role="system",
+                text=(
+                    "Safety-net timeout fired — no ticket state-change event "
+                    "was received.  Perform a routine check of the monitored "
+                    "ticket as you normally would."
+                ),
+                timestamp=registry.now(),
+            )
+        ]
+        return pending, previous_result, consecutive_no_change
 
 
 async def _handle_monitor_run_error(
@@ -2317,6 +2372,26 @@ async def _subsession_worker(
                 return
 
             registry.set_status(sub_id, SubsessionStatus.RUNNING)
+
+            # -- user_chat resumed mid-wait: the question was delivered
+            #    before the restart, so go straight back to waiting for
+            #    the operator instead of re-driving an agent turn that
+            #    would only re-ask it.
+            if (
+                info.kind is SubsessionKind.USER_CHAT
+                and first_turn
+                and not pending
+                and getattr(info, "_resume_waiting", False)
+            ):
+                info._resume_waiting = False  # type: ignore[attr-defined]
+                first_turn = False
+                logger.info(
+                    "Subsession %s: user_chat resumed while waiting for the "
+                    "operator — re-entering the wait without an agent turn.",
+                    sub_id,
+                )
+                pending = await _run_user_chat_turn(env, sub_id)
+                continue
 
             # -- WAIT_FOR_EVENT: pre-turn event wait ----------------------
             if (

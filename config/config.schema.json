@@ -1464,6 +1464,12 @@
           "title": "Event Driven Timeout Seconds",
           "type": "number"
         },
+        "event_driven_max_silent_timeouts": {
+          "default": 8,
+          "description": "How many consecutive safety-net timeouts a wait-for-event monitor absorbs without an agent turn while a direct board read shows the ticket still in its last recorded state.  Each such timeout costs one HTTP read instead of a full LLM turn; after this many unchanged timeouts in a row (8 x 900 s = 2 h by default) the normal safety-net turn runs anyway.  Set to ``0`` to run the safety-net turn on every timeout.",
+          "title": "Event Driven Max Silent Timeouts",
+          "type": "integer"
+        },
         "periodic_max_interval_seconds": {
           "default": 3600.0,
           "description": "Upper bound (seconds) for a periodic subsession's self-adjusted interval.  The adjust_periodic_interval tool clamps to this value.  Default 3600 (1 hour).",
