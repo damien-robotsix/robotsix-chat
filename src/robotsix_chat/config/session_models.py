@@ -394,6 +394,18 @@ class SubsessionsSettings(BaseModel):
             "API in case an event was lost, then re-arms the wait."
         ),
     )
+    event_driven_max_silent_timeouts: int = Field(
+        default=8,
+        description=(
+            "How many consecutive safety-net timeouts a wait-for-event "
+            "monitor absorbs without an agent turn while a direct board "
+            "read shows the ticket still in its last recorded state.  Each "
+            "such timeout costs one HTTP read instead of a full LLM turn; "
+            "after this many unchanged timeouts in a row (8 x 900 s = 2 h "
+            "by default) the normal safety-net turn runs anyway.  Set to "
+            "``0`` to run the safety-net turn on every timeout."
+        ),
+    )
     periodic_max_interval_seconds: float = Field(
         default=3600.0,
         description=(

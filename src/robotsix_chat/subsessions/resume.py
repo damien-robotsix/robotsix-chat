@@ -195,6 +195,35 @@ def _entry_to_common_kwargs(entry: Mapping[str, object]) -> _CommonEntryKwargs:
     }
 
 
+# Headers of the notes ``_resume_user_chat_entry`` appends to a user_chat
+# prompt.  A later resume must strip them first, otherwise every restart
+# stacks another copy onto the persisted prompt (observed 2026-08-22: three
+# identical restart notes on one waiting user_chat, each re-driving a
+# frontier-tier turn that only re-asked the operator the same question).
+_RESTART_NOTE_HEADER = (
+    "[System note: this subsession was restarted after a server restart. "
+    "The assistant's last delivered state was:]"
+)
+_UNSEEN_MESSAGES_NOTE_HEADER = (
+    "[System note: the following message(s) arrived after the last completed "
+    "turn and may not have been seen by the assistant yet:]"
+)
+
+
+def _strip_restart_notes(prompt: str) -> str:
+    """Return *prompt* without any resume-appended system notes.
+
+    The notes are always appended after the original instructions, so
+    cutting at the first note header restores the operator-authored prompt.
+    """
+    cut = len(prompt)
+    for header in (_RESTART_NOTE_HEADER, _UNSEEN_MESSAGES_NOTE_HEADER):
+        idx = prompt.find(header)
+        if idx != -1:
+            cut = min(cut, idx)
+    return prompt[:cut].rstrip()
+
+
 def _entry_last_assistant_text(entry: Mapping[str, object]) -> str:
     """Extract the most recent assistant reply from a persisted entry's transcript.
 
@@ -421,8 +450,50 @@ def _resume_user_chat_entry(
 
     checkpoint = _rebuild_checkpoint(entry)
     common = _entry_to_common_kwargs(entry)
+    # Notes appended by an earlier resume are stale now — never stack them.
+    common["prompt"] = _strip_restart_notes(common["prompt"])
     turn_history = _rebuild_turn_history(entry)
     recent_user_texts = _entry_recent_user_texts(entry, turn_history)
+    last_text = _entry_last_assistant_text(entry)
+    dedup_key = _entry_opt_str(entry, "dedup_key")
+    retry_count = _entry_retry_count(entry)
+
+    if last_text and not recent_user_texts:
+        # The assistant already delivered its question and nobody has
+        # answered yet.  Re-enter the wait for the operator's reply WITHOUT
+        # an agent turn: re-driving the agent here made every server
+        # restart re-ask the same question (one frontier-tier turn per
+        # waiting user_chat per restart, each carrying the accumulated
+        # context) while adding nothing the operator had not already seen.
+        if not turn_history:
+            # Give the resumed agent its own question as history so the
+            # eventual reply is understood in context.
+            turn_history = [(common["prompt"], last_text)]
+        spawn_subsession(
+            env=env,
+            kind=SubsessionKind.USER_CHAT,
+            owner_session_id=owner,
+            **common,
+            sub_id=sub_id,
+            checkpoint=checkpoint,
+            dedup_key=dedup_key,
+            retry_count=retry_count,
+            turn_history=turn_history,
+            resume_waiting=True,
+        )
+        _restore_inbox(env.registry, sub_id, entry)
+        return _ResumeFate(
+            owner_session_id=owner,
+            sub_id=sub_id,
+            kind="user_chat",
+            title=title,
+            fate="resumed",
+            detail=(
+                "Restarted — still waiting for the operator's reply "
+                "(question not re-asked)."
+            ),
+        )
+
     if recent_user_texts:
         logger.warning(
             "user_chat resume %s: %d transcript message(s) newer than the "
@@ -430,26 +501,17 @@ def _resume_user_chat_entry(
             sub_id,
             len(recent_user_texts),
         )
-    last_text = _entry_last_assistant_text(entry)
     if last_text:
         common["prompt"] = (
-            f"{common['prompt']}\n\n"
-            f"[System note: this subsession was restarted after a "
-            f"server restart. The assistant's last delivered state "
-            f"was:]\n\n{last_text[:2000]}"
+            f"{common['prompt']}\n\n{_RESTART_NOTE_HEADER}\n\n{last_text[:2000]}"
         )
     if recent_user_texts:
         joined = "\n\n".join(
             f"[{role}] {text[:2000]}" for role, text in recent_user_texts
         )
         common["prompt"] = (
-            f"{common['prompt']}\n\n"
-            f"[System note: the following message(s) arrived after the last "
-            f"completed turn and may not have been seen by the assistant "
-            f"yet:]\n\n{joined}"
+            f"{common['prompt']}\n\n{_UNSEEN_MESSAGES_NOTE_HEADER}\n\n{joined}"
         )
-    dedup_key = _entry_opt_str(entry, "dedup_key")
-    retry_count = _entry_retry_count(entry)
     spawn_subsession(
         env=env,
         kind=SubsessionKind.USER_CHAT,

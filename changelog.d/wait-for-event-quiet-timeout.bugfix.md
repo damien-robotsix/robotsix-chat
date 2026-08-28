@@ -1,0 +1,1 @@
+Wait-for-event monitors no longer spend an LLM turn on every quiet safety-net timeout: a direct board read that shows the ticket unchanged re-arms the wait, and the full safety-net turn runs only after `subsessions.event_driven_max_silent_timeouts` (default 8) consecutive unchanged timeouts.
