@@ -1,0 +1,1 @@
+Revisiting a compacted (summarised) session now opens on its summary: `GET /history` exposes `compacted_summary` / `compacted_turn_index`, and the UI renders the summary card with a toggle to show or hide the earlier exchanges it covers; never-compacted sessions are unchanged.

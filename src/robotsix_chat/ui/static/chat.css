@@ -473,6 +473,20 @@ body {
   border-bottom-left-radius: 4px;
 }
 
+.bubble.compacted-hidden { display: none; }
+.bubble.compacted-turn { opacity: 0.8; }
+.bubble.compacted-summary { border-left: 3px solid var(--accent, #7aa2f7); }
+.compacted-summary-title { font-weight: 600; margin-bottom: 0.35em; }
+.compacted-toggle {
+  margin-top: 0.6em;
+  background: none;
+  border: none;
+  padding: 0;
+  color: var(--accent, #7aa2f7);
+  cursor: pointer;
+  font: inherit;
+  text-decoration: underline;
+}
 .bubble.user.queued { opacity: 0.55; }
 .bubble.user.queued::after { content: " (queued)"; font-style: italic; }
 

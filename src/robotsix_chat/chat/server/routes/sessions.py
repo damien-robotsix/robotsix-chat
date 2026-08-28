@@ -58,12 +58,26 @@ async def history_endpoint(request: Request) -> JSONResponse:
 
     ``GET /history?session_id=...`` returns ``{"turns": [[user, assistant], ...]}``.
     Also tolerates ``client_id`` as a legacy fallback (treated as ``session_id``).
+
+    When the session has been compacted (idle summarisation), the response
+    also carries ``compacted_summary`` (the summary text) and
+    ``compacted_turn_index`` (how many leading ``turns`` it covers), so the
+    UI can open the session on its summary and keep the covered turns
+    behind an explicit expand — exactly what the agent itself sees.
+    Sessions that were never compacted get neither key.
     """
     session_id = _get_session_id(request)
 
     store: ConversationStore = request.app.state.conversation_store
     turns = store.history(session_id)
-    return JSONResponse({"turns": turns})
+    payload: dict[str, object] = {"turns": turns}
+    session = store.get_session(session_id)
+    summary = getattr(session, "compacted_summary", None)
+    index = getattr(session, "compacted_turn_index", 0)
+    if isinstance(summary, str) and summary and isinstance(index, int) and index > 0:
+        payload["compacted_summary"] = summary
+        payload["compacted_turn_index"] = min(index, len(turns))
+    return JSONResponse(payload)
 
 
 async def sessions_list_endpoint(request: Request) -> JSONResponse:

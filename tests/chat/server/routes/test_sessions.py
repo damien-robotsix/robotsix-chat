@@ -192,6 +192,45 @@ async def test_history_endpoint_returns_turns() -> None:
 
 
 @pytest.mark.asyncio
+async def test_history_endpoint_exposes_compaction_summary() -> None:
+    """A compacted session returns its summary and the covered-turn count."""
+    from types import SimpleNamespace
+
+    mock_store = MagicMock()
+    mock_store.history.return_value = [("Q", "A"), ("Q2", "A2"), ("Q3", "A3")]
+    mock_store.get_session.return_value = SimpleNamespace(
+        compacted_summary="Earlier we agreed on X.", compacted_turn_index=2
+    )
+    state = MagicMock(conversation_store=mock_store)
+    request = _make_query_request("session_id=sess-1")
+    request.scope["app"] = type("FakeApp", (), {"state": state})()
+
+    response = await history_endpoint(request)
+    body = json.loads(response.body)  # type: ignore[arg-type]
+    assert body["compacted_summary"] == "Earlier we agreed on X."
+    assert body["compacted_turn_index"] == 2
+    assert len(body["turns"]) == 3
+
+
+@pytest.mark.asyncio
+async def test_history_endpoint_omits_compaction_keys_when_not_compacted() -> None:
+    """Never-compacted sessions keep the plain ``{"turns": ...}`` shape."""
+    from types import SimpleNamespace
+
+    mock_store = MagicMock()
+    mock_store.history.return_value = [("Q", "A")]
+    mock_store.get_session.return_value = SimpleNamespace(
+        compacted_summary=None, compacted_turn_index=0
+    )
+    state = MagicMock(conversation_store=mock_store)
+    request = _make_query_request("session_id=sess-1")
+    request.scope["app"] = type("FakeApp", (), {"state": state})()
+
+    response = await history_endpoint(request)
+    assert json.loads(response.body) == {"turns": [["Q", "A"]]}  # type: ignore[arg-type]
+
+
+@pytest.mark.asyncio
 async def test_history_endpoint_client_id_fallback() -> None:
     """Tolerates client_id as a legacy fallback for session_id."""
     mock_store = MagicMock()
