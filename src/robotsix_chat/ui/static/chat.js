@@ -2460,6 +2460,44 @@ import { renderMemoryBanner } from "./memory-banner.js";
     updateSendBusy();
   }
 
+  // Insert the compaction summary card at the top of the transcript, with a
+  // toggle that reveals/hides the turns it covers.  The hidden bubbles are
+  // already in the DOM (rendered by loadHistory) so the toggle is instant
+  // and no second fetch is needed.
+  function insertCompactedSummary(summaryText, coveredTurns, hiddenEls) {
+    var card = document.createElement("div");
+    card.className = "bubble assistant compacted-summary";
+    var title = document.createElement("div");
+    title.className = "compacted-summary-title";
+    title.textContent = "Summary of the earlier conversation";
+    card.appendChild(title);
+    var body = document.createElement("div");
+    body.className = "compacted-summary-body";
+    body.innerHTML = renderMarkdown(summaryText);
+    card.appendChild(body);
+    var toggle = document.createElement("button");
+    toggle.type = "button";
+    toggle.className = "compacted-toggle";
+    var expanded = false;
+    function label() {
+      return (expanded ? "Hide the " : "Show the ") + coveredTurns +
+        " earlier exchange" + (coveredTurns === 1 ? "" : "s") +
+        (expanded ? "" : " covered by this summary");
+    }
+    toggle.textContent = label();
+    toggle.addEventListener("click", function () {
+      expanded = !expanded;
+      for (var k = 0; k < hiddenEls.length; k++) {
+        hiddenEls[k].classList.toggle("compacted-hidden", !expanded);
+      }
+      toggle.textContent = label();
+    });
+    card.appendChild(toggle);
+    // Place the card where the covered turns begin (the top of the list).
+    chatEl.insertBefore(card, chatEl.firstChild);
+    return card;
+  }
+
   function addUserBubble(text) {
     var div = document.createElement("div");
     div.className = "bubble user";
@@ -2860,12 +2898,29 @@ import { renderMemoryBanner } from "./memory-banner.js";
     }).then(function (data) {
       if (!data || !Array.isArray(data.turns)) return;
       var turns = data.turns;
+      // A compacted (summarised) session opens on its summary: the turns
+      // the summary covers are rendered but hidden behind an explicit
+      // "show earlier messages" toggle, the rest render normally.
+      var compactedIndex = 0;
+      if (typeof data.compacted_summary === "string" && data.compacted_summary &&
+          typeof data.compacted_turn_index === "number" && data.compacted_turn_index > 0) {
+        compactedIndex = Math.min(data.compacted_turn_index, turns.length);
+      }
+      var hiddenEls = [];
       for (var i = 0; i < turns.length; i++) {
         var turn = turns[i];
         if (Array.isArray(turn) && turn.length >= 2) {
-          addUserBubble(turn[0]);
-          addAssistantBubble(turn[1]);
+          var u = addUserBubble(turn[0]);
+          var a = addAssistantBubble(turn[1]);
+          if (i < compactedIndex) {
+            u.classList.add("compacted-turn", "compacted-hidden");
+            a.classList.add("compacted-turn", "compacted-hidden");
+            hiddenEls.push(u, a);
+          }
         }
+      }
+      if (compactedIndex > 0) {
+        insertCompactedSummary(data.compacted_summary, compactedIndex, hiddenEls);
       }
       scheduleForceScrollToBottom();
       // Refresh the conversation summary once history is loaded.
