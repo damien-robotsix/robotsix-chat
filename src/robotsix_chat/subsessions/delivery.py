@@ -308,6 +308,7 @@ _REASON_PHRASES: dict[str, str] = {
     "missing_tool": "closed — required tool unavailable",
     "pre_authorized_approval": "auto-escalated (pre-authorized ticket)",
     "slot_reclaimed": "replaced — slot reclaimed for a new monitor",
+    "needs_operator": "detected a pending operator decision that needs your attention",
 }
 
 # Hard cap on how many consecutive reaction turns (triggered by subsession
