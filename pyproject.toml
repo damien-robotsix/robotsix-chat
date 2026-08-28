@@ -122,10 +122,10 @@ packages = ["src/robotsix_chat"]
 # fleet pin-bump workflow advances them through reviewed PRs.
 [tool.uv.sources]
 robotsix-config = { git = "https://github.com/damien-robotsix/robotsix-config.git", rev = "884a452062a04f569fb63a9d103c29eafbf3c056" }  # pragma: allowlist secret
-robotsix-llmio = { git = "https://github.com/damien-robotsix/robotsix-llmio.git", rev = "f369b361dc5f5df1ee060f97004979e335abeed9" }  # pragma: allowlist secret
+robotsix-llmio = { git = "https://github.com/damien-robotsix/robotsix-llmio.git", rev = "13a53e48f2df7944c7bf565bbf4b1ecd3cefc7e1" }  # pragma: allowlist secret
 # robotsix-modules: same SHA as robotsix-mill (coherent-set rule).
 robotsix-modules = { git = "https://github.com/damien-robotsix/robotsix-modules.git", rev = "d7c5e59980516de6e050db02ff54aef4e15ff5c3" }  # pragma: allowlist secret
-robotsix-http = { git = "https://github.com/damien-robotsix/robotsix-http.git", rev = "13e6e9ab330f9be3b8b1e7bc2694210f7d9e5848" }  # pragma: allowlist secret
+robotsix-http = { git = "https://github.com/damien-robotsix/robotsix-http.git", rev = "cdfd4d1c42679fef73081439562872792e202dc4" }  # pragma: allowlist secret
 robotsix-github-auth = { git = "https://github.com/damien-robotsix/robotsix-github-auth.git", rev = "e6214c41fd743120aa987bacb4e9b2bc88e73943" }  # pragma: allowlist secret
 
 # Force pypdf>=6.15.0 (transitive dep of cognee) to resolve GHSA-fwg2-594c-jp42.
@@ -135,15 +135,17 @@ constraint-dependencies = [
     "pypdf>=6.15.0",
     "anyio>=4.14.2",
 ]
-# robotsix-llmio still pins robotsix-http at ba90d55ea; this repo needs
-# 13e6e9ab for the POST-retry fix (a read-timed-out POST was retried and
-# duplicated the side effect).  The two exact-rev pins are otherwise
-# irreconcilable, and ba90d55ea is an ancestor of 13e6e9ab, so unifying on
-# the newer rev is safe — llmio uses only robotsix_http.retry (the
-# domain-neutral primitives), not the method-gated RetryClient the fix
-# touches.  Same pattern as robotsix-mill's override.
+# Unify every transitive robotsix-http requirement on one rev — the exact-rev
+# pins in llmio and github-auth are otherwise irreconcilable, and each is an
+# ancestor of the rev below.  This rev carries two fixes this repo needs:
+# the POST-retry fix (a read-timed-out POST was retried and duplicated the
+# side effect) and the `_drive_sync` running-loop fix, without which a sync
+# `call_with_retry` reached from async code raises
+# `RuntimeError: asyncio.run() cannot be called from a running event loop`.
+# It must stay >= 0.3.2: that release renamed `_compute_backoff` to the
+# public `compute_backoff`, which llmio now imports.
 override-dependencies = [
-    "robotsix-http @ git+https://github.com/damien-robotsix/robotsix-http.git@13e6e9ab330f9be3b8b1e7bc2694210f7d9e5848",
+    "robotsix-http @ git+https://github.com/damien-robotsix/robotsix-http.git@cdfd4d1c42679fef73081439562872792e202dc4",
 ]
 
 [tool.ruff]
