@@ -6,7 +6,6 @@ browser or the ``playwright`` package installed.
 
 from __future__ import annotations
 
-import base64
 import importlib
 import json
 import sys
@@ -164,6 +163,15 @@ def test_build_render_url_tools_returns_one_tool() -> None:
         _remove_fake_playwright()
 
 
+def _split_result(result):
+    """Split render_url's return into (metadata dict, image bytes | None)."""
+    if isinstance(result, str):
+        return json.loads(result), None
+    text_part, image_part = result
+    assert image_part.media_type == "image/png"
+    return json.loads(text_part.content), image_part.data
+
+
 # ---------------------------------------------------------------------------
 # render_url — success
 # ---------------------------------------------------------------------------
@@ -171,7 +179,12 @@ def test_build_render_url_tools_returns_one_tool() -> None:
 
 @pytest.mark.asyncio
 async def test_render_url_success() -> None:
-    """render_url returns JSON with screenshot and a11y tree on success."""
+    """render_url returns a viewable image part plus JSON metadata.
+
+    Regression: the screenshot used to be base64'd into the JSON string, so
+    the transport stringified it and the model got an unreadable text blob
+    instead of an image.
+    """
     fake = _install_fake_playwright()
     try:
         from robotsix_chat.render_url import build_render_url_tools
@@ -179,18 +192,19 @@ async def test_render_url_success() -> None:
         tools = build_render_url_tools(_settings())
         render_url = tools[0]
 
-        result_str = await render_url("https://example.com/page")
-        result = json.loads(result_str)
+        result = await render_url("https://example.com/page")
+        metadata, image = _split_result(result)
 
-        assert result["page_title"] == "Test Page Title"
-        assert result["page_url"] == "https://example.com/page"
-        assert result["error"] == ""
-        assert result["screenshot_base64"].startswith("data:image/png;base64,")
-        decoded = base64.b64decode(
-            result["screenshot_base64"].removeprefix("data:image/png;base64,")
-        )
-        assert decoded == fake._test_png
-        assert result["accessibility_tree"] == fake._test_a11y
+        assert metadata["page_title"] == "Test Page Title"
+        assert metadata["page_url"] == "https://example.com/page"
+        assert metadata["error"] == ""
+        assert metadata["accessibility_tree"] == fake._test_a11y
+        # The PNG rides as raw bytes, not text.
+        assert image == fake._test_png
+        # No base64 payload anywhere in the text channel.
+        text = json.dumps(metadata)
+        assert "base64" not in text
+        assert "screenshot_base64" not in metadata
 
         fake._test_page.goto.assert_awaited_once_with(
             "https://example.com/page",
@@ -271,12 +285,14 @@ async def test_render_url_navigation_error() -> None:
         tools = build_render_url_tools(_settings())
         render_url = tools[0]
 
-        result_str = await render_url("https://bad.example.com")
-        result = json.loads(result_str)
+        result = await render_url("https://bad.example.com")
+        metadata, image = _split_result(result)
 
-        assert result["error"] == "Exception: net::ERR_CONNECTION_REFUSED"
-        assert result["screenshot_base64"] == ""
-        assert result["page_title"] == ""
+        assert metadata["error"] == "Exception: net::ERR_CONNECTION_REFUSED"
+        assert metadata["page_title"] == ""
+        # A failed render has no image to show — plain metadata, no empty part.
+        assert image is None
+        assert isinstance(result, str)
 
         fake._test_browser.close.assert_awaited_once()
     finally:
@@ -297,11 +313,11 @@ async def test_render_url_missing_accessibility_tree() -> None:
         tools = build_render_url_tools(_settings())
         render_url = tools[0]
 
-        result_str = await render_url("https://example.com")
-        result = json.loads(result_str)
+        result = await render_url("https://example.com")
+        metadata, _image = _split_result(result)
 
-        assert result["error"] == ""
-        assert result["accessibility_tree"] is None
+        assert metadata["error"] == ""
+        assert metadata["accessibility_tree"] is None
     finally:
         _remove_fake_playwright()
 
@@ -321,16 +337,17 @@ async def test_render_url_text_only_skips_screenshot() -> None:
         tools = build_render_url_tools(_settings())
         render_url = tools[0]
 
-        result_str = await render_url("https://example.com/page", text_only=True)
-        result = json.loads(result_str)
+        result = await render_url("https://example.com/page", text_only=True)
+        metadata, image = _split_result(result)
 
-        assert result["page_title"] == "Test Page Title"
-        assert result["page_url"] == "https://example.com/page"
-        assert result["error"] == ""
-        # Screenshot must be empty in text-only mode.
-        assert result["screenshot_base64"] == ""
+        assert metadata["page_title"] == "Test Page Title"
+        assert metadata["page_url"] == "https://example.com/page"
+        assert metadata["error"] == ""
+        # No image part at all in text-only mode — a bare JSON string.
+        assert image is None
+        assert isinstance(result, str)
         # Accessibility tree must still be present.
-        assert result["accessibility_tree"] == fake._test_a11y
+        assert metadata["accessibility_tree"] == fake._test_a11y
 
         # page.screenshot must NOT have been called.
         fake._test_page.screenshot.assert_not_called()
@@ -366,3 +383,85 @@ async def test_render_url_launches_headless_with_no_sandbox() -> None:
 # ---------------------------------------------------------------------------
 # render_url — fleet auth
 # ---------------------------------------------------------------------------
+
+
+# ---------------------------------------------------------------------------
+# render_url — screenshot size bounding
+# ---------------------------------------------------------------------------
+
+
+def _png_bytes(width: int, height: int) -> bytes:
+    """Return a real PNG of the given size."""
+    import io
+
+    from PIL import Image
+
+    buffer = io.BytesIO()
+    Image.new("RGB", (width, height), "white").save(buffer, format="PNG")
+    return buffer.getvalue()
+
+
+def test_downscale_png_leaves_a_small_image_untouched() -> None:
+    from robotsix_chat.render_url import _downscale_png
+
+    data = _png_bytes(400, 300)
+
+    assert _downscale_png(data) is data
+
+
+def test_downscale_png_shrinks_an_oversized_capture() -> None:
+    """A full_page capture of a long document is otherwise unbounded."""
+    import io
+
+    from PIL import Image
+
+    from robotsix_chat.render_url import MAX_SCREENSHOT_PIXELS, _downscale_png
+
+    data = _png_bytes(1280, 12000)  # 15.4M px — a long scrolling page
+    assert MAX_SCREENSHOT_PIXELS < 1280 * 12000
+
+    result = _downscale_png(data)
+
+    with Image.open(io.BytesIO(result)) as image:
+        width, height = image.size
+    assert width * height <= MAX_SCREENSHOT_PIXELS
+    # Aspect ratio preserved, so layout still reads correctly.
+    assert abs((width / height) - (1280 / 12000)) < 0.01
+
+
+def test_downscale_png_returns_input_on_undecodable_data() -> None:
+    """An oversized screenshot beats a hard failure."""
+    from robotsix_chat.render_url import _downscale_png
+
+    garbage = b"not a png"
+
+    assert _downscale_png(garbage) == garbage
+
+
+@pytest.mark.asyncio
+async def test_render_url_bounds_the_returned_screenshot() -> None:
+    """An enormous page screenshot is downscaled before it reaches the model."""
+    import io
+
+    from PIL import Image
+
+    fake = _install_fake_playwright()
+    fake._test_page.screenshot = AsyncMock(return_value=_png_bytes(1280, 12000))
+    try:
+        from robotsix_chat.render_url import (
+            MAX_SCREENSHOT_PIXELS,
+            build_render_url_tools,
+        )
+
+        tools = build_render_url_tools(_settings())
+        render_url = tools[0]
+
+        result = await render_url("https://example.com/long")
+        _metadata, image = _split_result(result)
+
+        assert image is not None
+        with Image.open(io.BytesIO(image)) as rendered:
+            width, height = rendered.size
+        assert width * height <= MAX_SCREENSHOT_PIXELS
+    finally:
+        _remove_fake_playwright()

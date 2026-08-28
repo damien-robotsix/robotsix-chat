@@ -3037,6 +3037,7 @@ source = { editable = "." }
 dependencies = [
     { name = "asgi-correlation-id" },
     { name = "httpx" },
+    { name = "pillow" },
     { name = "pydantic" },
     { name = "pypdf" },
     { name = "pypdfium2" },
@@ -3104,6 +3105,7 @@ requires-dist = [
     { name = "asyncssh", marker = "extra == 'sftp'" },
     { name = "cognee", marker = "extra == 'memory'", specifier = "==1.4.0" },
     { name = "httpx" },
+    { name = "pillow" },
     { name = "playwright", marker = "extra == 'render-url'" },
     { name = "pydantic" },
     { name = "pynacl", marker = "extra == 'github-actions'" },
