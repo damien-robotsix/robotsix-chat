@@ -440,6 +440,7 @@ the feedback run never auto-approves. Disabled by default.
 | `feedback.timeout`              | `number`          | `60.0`  | Per-request HTTP timeout (seconds) for ingest calls.                       |
 | `feedback.max_tickets_per_run`  | `integer`         | `3`     | Ceiling on tickets filed by one feedback run. `0` disables filing.         |
 | `feedback.dedup_window_seconds` | `number`          | `60.0`  | Seconds to suppress duplicate runs (per session) and duplicate titles.     |
+| `feedback.ingest_max_retries`   | `integer`         | `2`     | Idempotent retries when an ingest POST hits a transport error/timeout.     |
 
 **Deduplication.** Two guards prevent near-simultaneous feedback runs from filing duplicate tickets:
 

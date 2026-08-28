@@ -66,6 +66,13 @@ class FeedbackSettings(BaseModel):
             ``60.0`` balances promptness against the risk of near-
             simultaneous duplicate creation during concurrent monitor
             runs.
+        ingest_max_retries: Number of automatic retries when a
+            ``POST /tickets/ingest`` call fails with a transport-level
+            error (e.g. ``ReadTimeout``).  Between retries the runner
+            queries the board idempotently to confirm whether the
+            timed-out request already created the ticket, so a retry
+            never files a duplicate.  ``0`` disables retrying (a single
+            attempt).  Default ``2`` (up to three attempts total).
 
     """
 
@@ -77,4 +84,5 @@ class FeedbackSettings(BaseModel):
     timeout: float = 60.0
     max_tickets_per_run: int = 3
     dedup_window_seconds: float = 60.0
+    ingest_max_retries: int = 2
     model_config = ConfigDict(extra="forbid")
