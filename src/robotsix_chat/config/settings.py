@@ -71,7 +71,7 @@ class ConfigValidationError(ValueError):
 # Version stamp for the agent_instruction default literal.
 # Bump on every change to Settings.agent_instruction and update
 # docs/system_prompt_changelog.md with a new entry + SHA256.
-SYSTEM_PROMPT_VERSION = 144
+SYSTEM_PROMPT_VERSION = 145
 
 # Valid model levels, derived from llmio's tier enum (import-time constant so
 # the set is built once and can never drift from the tiers llmio ships).
@@ -305,7 +305,8 @@ class Settings(BaseModel):
             "component_request GET /tickets/{id}) to verify what is "
             "actually spawned and what state it is in.  If check_monitor "
             "returns terminal_report=true, a previous monitor already "
-            "tracked the ticket to completion — do NOT spawn a new monitor "
+            "tracked the ticket to an end state — spawn a new monitor only "
+            "if GET /tickets/{id} shows it active again (not DONE/CLOSED), "
             "and do NOT claim the work is unfinished.  If no monitor was "
             "spawned and no terminal report exists, say so directly and "
             "offer to start one — do NOT invent a reason for why no "

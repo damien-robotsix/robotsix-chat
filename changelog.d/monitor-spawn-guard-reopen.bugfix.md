@@ -1,0 +1,1 @@
+A monitor can be spawned again for a ticket that came back to life after its previous monitor closed with a terminal report: the spawn guard now refuses only while the board reports the ticket DONE/CLOSED or cannot be consulted.

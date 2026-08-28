@@ -3,6 +3,24 @@
 Governed artifact: `Settings.agent_instruction` default literal in
 `src/robotsix_chat/config/settings.py`. Version stamp: `SYSTEM_PROMPT_VERSION` in the same module.
 
+## v145 — 2026-08-28 — 20260828T210340Z-bug-monitor-spawn-guard-blocks-re-openin-032a
+
+**Summary:** Soften the monitor-existence rule: a `check_monitor`
+`terminal_report=true` no longer forbids a new monitor outright.  A prior
+monitor having tracked a ticket to an end state is history, not a verdict —
+the assistant spawns a new monitor only if `GET /tickets/{id}` shows the
+ticket active again (not DONE/CLOSED), and still must not claim the work is
+unfinished on the strength of the report alone.
+
+**Rationale:** Ticket `20260827T125543Z-…-5293` hit a fingerprint-guard block,
+its monitor surfaced the block and completed, and after the guard was reset
+and the ticket resumed to `ready` no monitor could be spawned again (the
+spawn guard refused on the terminal report; the closed subsession could not
+be messaged or resumed).  The spawn tool now lets the live board state
+decide; the prompt text follows the tool.
+
+**SHA256:** `3638fafed08f5eafff0a35c1641f74a86516c4f91230d8e09599a730bdd14340`
+
 ## v144 — 2026-08-28 — 20260827T061851Z-stop-re-filing-tickets-and-fabricating-r-eac6
 
 **Summary:** Add a "Blocked/closed by a gate — remediate, do NOT re-file"
@@ -2837,6 +2855,19 @@ autonomous settings at their pydantic field defaults
 (``completion_marker="---AUTONOMOUS COMPLETE---"``,
 ``stale_monitor_runs_before_completion=3``,
 ``queue_tolerance_runs_before_escalation=3``).
+
+## AUTONOMOUS v49 — 2026-08-28 — 20260828T210340Z-bug-monitor-spawn-guard-blocks-re-openin-032a
+
+**Summary:** Same change for the autonomous protocol's "CHECK FOR EXISTING
+MONITORS FIRST" bullet: a terminal report means a previous monitor tracked
+the ticket to an end state — spawn a new one only if `GET /tickets/{id}`
+shows the ticket active again (not DONE/CLOSED), instead of "do NOT spawn a
+duplicate" unconditionally.
+
+**Rationale:** See v145 — tickets that come back to life after a block were
+left without any automated tracking.
+
+**SHA256:** `1ec60f5bfcb0784c2f904725a2ca200ae783f10f7ba33dd1bf542572b38c1986`
 
 ## AUTONOMOUS v48 — 2026-08-27 — 20260827T061851Z-never-re-request-decisions-or-approvals-77ea
 
