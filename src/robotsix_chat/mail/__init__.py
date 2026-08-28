@@ -85,6 +85,10 @@ def build_mail_tools(settings: MailSettings) -> list[Callable[..., Any]]:
     async def move_mail_email(message_id: str, triage_action: str) -> str:
         """Move an email to a different triage column.
 
+        Endpoint: ``POST /move``
+        Content-Type: ``application/x-www-form-urlencoded``
+        Form fields: ``message_id=<id>&triage_action=<action>``
+
         Args:
             message_id: The email's unique message identifier.
             triage_action: The target column — one of INBOX, HUMAN_TRIAGE,
@@ -102,6 +106,10 @@ def build_mail_tools(settings: MailSettings) -> list[Callable[..., Any]]:
     async def delete_mail_email(message_id: str, account: str) -> str:
         """Delete an email from the board permanently.
 
+        Endpoint: ``POST /delete``
+        Content-Type: ``application/x-www-form-urlencoded``
+        Form fields: ``message_id=<id>`` (body) + ``?account=<account>`` (query param)
+
         Args:
             message_id: The email's unique message identifier.
             account: The account identifier to delete from.  Call
@@ -118,6 +126,10 @@ def build_mail_tools(settings: MailSettings) -> list[Callable[..., Any]]:
 
     async def archive_mail_email(message_id: str) -> str:
         """Archive an email (mark it as processed without deleting).
+
+        Endpoint: ``POST /archive``
+        Content-Type: ``application/x-www-form-urlencoded``
+        Form fields: ``message_id=<id>``
 
         Args:
             message_id: The email's unique message identifier.
