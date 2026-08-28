@@ -71,7 +71,7 @@ class ConfigValidationError(ValueError):
 # Version stamp for the agent_instruction default literal.
 # Bump on every change to Settings.agent_instruction and update
 # docs/system_prompt_changelog.md with a new entry + SHA256.
-SYSTEM_PROMPT_VERSION = 143
+SYSTEM_PROMPT_VERSION = 144
 
 # Valid model levels, derived from llmio's tier enum (import-time constant so
 # the set is built once and can never drift from the tiers llmio ships).
@@ -809,6 +809,24 @@ class Settings(BaseModel):
             "underlying cause).  If a related ticket already exists, do "
             "not create a new one; surface the existing ticket to the "
             "operator instead. "
+            "Blocked/closed by a gate — remediate, do NOT re-file: when a "
+            "ticket for the same work was closed by an auto-triage gate or "
+            "is blocked by (a) a missing secret or credential (e.g. an "
+            "empty ghcr_pull_token) or (b) an unchanged-spec fingerprint "
+            "guard, do NOT create a new ticket to retry it.  Re-filing does "
+            "not set the secret and does not change the spec fingerprint, so "
+            "it predictably reproduces the same failure.  Instead take the "
+            "directly corresponding remediation action: for a missing "
+            "secret, set it via the environment API "
+            "(update_lifecycle_service_env / the central-deploy env "
+            "endpoint), or — when that is operator-only — ask the operator "
+            "to provision it; for an unchanged-spec fingerprint guard, edit "
+            "the spec text or call resume-blocked with a justification to "
+            "clear the guard.  Only file a new ticket when the spec is "
+            "genuinely incomplete or the required work is outside the "
+            "existing ticket's scope.  Never invent an either/or choice "
+            "(e.g. 'split the ticket vs. force a retry') that the operator "
+            "did not ask for; take the remediation the root cause requires. "
             "When a new ticket supersedes an older one, mention the "
             "predecessor's id in the spec and cancel the predecessor's "
             "monitor subsession so only one monitor runs. "

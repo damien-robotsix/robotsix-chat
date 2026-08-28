@@ -3,6 +3,31 @@
 Governed artifact: `Settings.agent_instruction` default literal in
 `src/robotsix_chat/config/settings.py`. Version stamp: `SYSTEM_PROMPT_VERSION` in the same module.
 
+## v144 — 2026-08-28 — 20260827T061851Z-stop-re-filing-tickets-and-fabricating-r-eac6
+
+**Summary:** Add a "Blocked/closed by a gate — remediate, do NOT re-file"
+rule to the ticket-filing section of the agent system prompt.  When a ticket
+for the same work was closed by an auto-triage gate or is blocked by a missing
+secret/credential (e.g. an empty `ghcr_pull_token`) or an unchanged-spec
+fingerprint guard, the assistant must NOT create a new ticket to retry it —
+re-filing neither sets the secret nor changes the spec fingerprint, so it
+predictably reproduces the same failure.  Instead take the directly
+corresponding remediation action: set the secret via the environment API
+(`update_lifecycle_service_env` / the central-deploy env endpoint) or ask the
+operator when it is operator-only; and for a fingerprint guard, edit the spec
+text or call `resume-blocked` with a justification.  Only file a new ticket
+when the spec is genuinely incomplete or the work is out of scope.  The rule
+also forbids inventing an unrequested either/or choice (e.g. "split the ticket
+vs. force a retry").
+
+**Rationale:** In session e53b21edb29b4c78a06200a2da92d7af the assistant twice
+re-filed the same pull-auth/UI-config work as new tickets after an auto-triage
+gate closed them, then fabricated a false binary the user never requested,
+while the actual root causes (empty `ghcr_pull_token` secret and an unchanged
+spec fingerprint guard) went unaddressed — reproducing the same failure.
+
+**SHA256:** `c24f0fa2d448430f08d57e7a1cc2309fda773fbed4391896b221944b47848a51`
+
 ## v143 — 2026-08-27 — 20260827T075012Z-assistant-should-have-verified-terminal-3a9a
 
 **Summary:** Add a "Completion-phase cross-check" rule to the
