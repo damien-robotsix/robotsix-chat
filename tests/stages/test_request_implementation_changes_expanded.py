@@ -4,6 +4,27 @@ The patch lives in the ``robotsix_mill`` shadow package
 (``src/robotsix_mill/__init__.py``) and expands
 ``request_implementation_changes`` to accept ``IMPLEMENT_COMPLETE`` and
 ``FIXING_CI`` in addition to ``HUMAN_MR_APPROVAL``.
+
+Mocking strategy
+~~~~~~~~~~~~~~~~
+The expanded method performs *local* imports inside its body::
+
+    from robotsix_mill.core.db import retry_on_db_full
+    from robotsix_mill.core.service._helpers import (
+        TransitionError, _get_ticket, _make_event,
+    )
+
+These resolve at call-time through ``sys.modules``, so the correct
+patching targets are the *source* modules:
+
+* ``robotsix_mill.core.db.retry_on_db_full`` — root DB retry gesture
+* ``robotsix_mill.core.service._helpers._get_ticket`` — ticket look-up
+* ``robotsix_mill.core.service._helpers._make_event`` — event factory
+
+The ``_clear_stale_implement_guard`` and ``_reset_implement_spawn_counter``
+functions are captured as globals inside the expanded function's
+``__globals__`` (which is the shadow ``__init__`` module dict), so we
+patch those via ``method.__globals__`` mutation.
 """
 
 from __future__ import annotations
@@ -19,14 +40,18 @@ _mill = pytest.importorskip("robotsix_mill")
 # ``tests/stages/test_document.py`` registers stub ``robotsix_mill.*``
 # modules in ``sys.modules`` at import time.  When it is collected first,
 # ``importorskip`` returns the stub instead of the real package and these
-# tests would exercise fakes.
+# tests would exercise fakes (or crash on
+# ``robotsix_mill.agents.coding``).  The real package — and the shadow
+# ``__init__`` that hands off to it — always carries a real ``__file__``;
+# the stubs do not.
 if not getattr(_mill, "__file__", ""):
     pytest.skip(
         "robotsix_mill resolved to sibling-test stubs, not the real package",
         allow_module_level=True,
     )
 
-from robotsix_mill.core.service._helpers import TransitionError  # noqa: E402
+import robotsix_mill.core.db as _db  # noqa: E402
+import robotsix_mill.core.service._helpers as _helpers  # noqa: E402
 from robotsix_mill.core.service._transition_mixin import (  # noqa: E402
     _TransitionMixin,
 )
@@ -70,10 +95,6 @@ class _FakeService:
         self._on_transition: MagicMock | None = MagicMock()
         self._board_id: str | None = None
 
-    def get(self, ticket_id: str) -> _FakeTicket | None:
-        """Return the fake ticket."""
-        return self._ticket
-
     def workspace(self, ticket: object) -> _FakeWorkspace:
         """Return the fake workspace."""
         return self._workspace
@@ -83,27 +104,86 @@ class _FakeService:
         return self._board_id
 
 
+class _FakeRetryCtx:
+    """Context manager that stands in for ``retry_on_db_full``.
+
+    Yields a ``MagicMock`` session.  ``_get_ticket`` is always mocked
+    separately, so the session's query chain is irrelevant.
+    """
+
+    def __init__(self, settings, board_id):
+        pass
+
+    def __enter__(self):
+        self._session = MagicMock()
+        return self._session
+
+    def __exit__(self, *args):
+        pass
+
+
 def _get_expanded_method():
     """Return the patched request_implementation_changes."""
     return _TransitionMixin.request_implementation_changes
 
 
-def _make_retry_ctx(ticket):
-    """Build a fake retry_on_db_full context manager returning *ticket*."""
+# ---------------------------------------------------------------------------
+# Context manager: patch all mock targets at once
+# ---------------------------------------------------------------------------
 
-    class _FakeRetryCtx:
-        def __init__(self, settings, board_id):
-            pass
 
-        def __enter__(self):
-            session = MagicMock()
-            session.query.return_value.filter.return_value.first.return_value = ticket
-            return session
+class _PatchedCtx:
+    """Simple context manager that patches all correct mock targets.
 
-        def __exit__(self, *args):
-            pass
+    On enter it replaces the *source-module* attributes and the
+    function's global names with mocks, and restores originals on exit.
+    """
 
-    return _FakeRetryCtx
+    def __init__(self, ticket: _FakeTicket, make_event_ret=None):
+        self._ticket = ticket
+        self._make_event_ret = make_event_ret or MagicMock()
+        self._method = _get_expanded_method()
+        # -- originals to restore --
+        self._orig_retry = None
+        self._orig_get_ticket = None
+        self._orig_make_event = None
+        self._orig_clear = None
+        self._orig_reset = None
+        # -- mocks exposed to tests --
+        self.get_ticket = MagicMock(return_value=ticket)
+        self.make_event = MagicMock(return_value=self._make_event_ret)
+        self.clear_guard = MagicMock()
+        self.reset_counter = MagicMock()
+
+    def __enter__(self):
+        # Source-module patches (affects local imports inside the function)
+        self._orig_retry = _db.retry_on_db_full
+        self._orig_get_ticket = _helpers._get_ticket
+        self._orig_make_event = _helpers._make_event
+
+        _db.retry_on_db_full = lambda settings, board_id: _FakeRetryCtx(
+            settings, board_id
+        )
+        _helpers._get_ticket = self.get_ticket
+        _helpers._make_event = self.make_event
+
+        # Global-name patches (affects the function's __globals__)
+        g = self._method.__globals__
+        self._orig_clear = g.get("_clear_stale_implement_guard")
+        self._orig_reset = g.get("_reset_implement_spawn_counter")
+
+        g["_clear_stale_implement_guard"] = self.clear_guard
+        g["_reset_implement_spawn_counter"] = self.reset_counter
+        return self
+
+    def __exit__(self, *exc):
+        _db.retry_on_db_full = self._orig_retry
+        _helpers._get_ticket = self._orig_get_ticket
+        _helpers._make_event = self._orig_make_event
+
+        g = self._method.__globals__
+        g["_clear_stale_implement_guard"] = self._orig_clear
+        g["_reset_implement_spawn_counter"] = self._orig_reset
 
 
 # ---------------------------------------------------------------------------
@@ -162,18 +242,12 @@ class TestAcceptedStates:
         svc = _FakeService(ticket_state=state)
         ticket = svc._ticket
 
-        import robotsix_mill.core.service._transition_mixin as _tm
-
-        original_retry = _tm.retry_on_db_full
-        _tm.retry_on_db_full = _make_retry_ctx(ticket)
-        try:
+        with _PatchedCtx(ticket):
             method = _get_expanded_method()
             comment, result_ticket = method(svc, TICKET_ID, "please fix the tests")
             assert result_ticket.state is State.READY
             assert comment.body == "please fix the tests"
             assert comment.author == "user"
-        finally:
-            _tm.retry_on_db_full = original_retry
 
 
 # ---------------------------------------------------------------------------
@@ -200,16 +274,12 @@ class TestRejectedStates:
         svc = _FakeService(ticket_state=state)
         ticket = svc._ticket
 
-        import robotsix_mill.core.service._transition_mixin as _tm
+        with _PatchedCtx(ticket):
+            from robotsix_mill.core.service._helpers import TransitionError
 
-        original_retry = _tm.retry_on_db_full
-        _tm.retry_on_db_full = _make_retry_ctx(ticket)
-        try:
             method = _get_expanded_method()
             with pytest.raises(TransitionError, match="not in an accepted state"):
                 method(svc, TICKET_ID, "rework needed")
-        finally:
-            _tm.retry_on_db_full = original_retry
 
 
 # ---------------------------------------------------------------------------
@@ -227,6 +297,9 @@ class TestEmptyBody:
     def test_empty_body_rejected(self, body: str) -> None:
         """An empty or whitespace-only body is always rejected."""
         svc = _FakeService(ticket_state=State.IMPLEMENT_COMPLETE)
+
+        from robotsix_mill.core.service._helpers import TransitionError
+
         method = _get_expanded_method()
         with pytest.raises(TransitionError, match="non-empty body is required"):
             method(svc, TICKET_ID, body)
@@ -245,50 +318,32 @@ class TestGuardsCleared:
         svc = _FakeService(ticket_state=State.IMPLEMENT_COMPLETE)
         ticket = svc._ticket
 
-        import robotsix_mill.core.service._transition_mixin as _tm
-
-        original_retry = _tm.retry_on_db_full
-        original_clear = _tm._clear_stale_implement_guard
-        original_reset = _tm._reset_implement_spawn_counter
-
-        clear_called = False
-        reset_called = False
-
-        def mock_clear(ws):
-            nonlocal clear_called
-            clear_called = True
-
-        def mock_reset(ws):
-            nonlocal reset_called
-            reset_called = True
-
-        _tm.retry_on_db_full = _make_retry_ctx(ticket)
-        _tm._clear_stale_implement_guard = mock_clear
-        _tm._reset_implement_spawn_counter = mock_reset
-        try:
+        with _PatchedCtx(ticket) as mocks:
             method = _get_expanded_method()
             method(svc, TICKET_ID, "fix tests")
-            assert clear_called, "_clear_stale_implement_guard was not called"
-            assert reset_called, "_reset_implement_spawn_counter was not called"
-        finally:
-            _tm.retry_on_db_full = original_retry
-            _tm._clear_stale_implement_guard = original_clear
-            _tm._reset_implement_spawn_counter = original_reset
+            mocks.clear_guard.assert_called_once()
+            mocks.reset_counter.assert_called_once()
 
     def test_on_transition_callback(self) -> None:
         """The _on_transition callback fires with the old state."""
         svc = _FakeService(ticket_state=State.FIXING_CI)
         ticket = svc._ticket
 
-        import robotsix_mill.core.service._transition_mixin as _tm
-
-        original_retry = _tm.retry_on_db_full
-        _tm.retry_on_db_full = _make_retry_ctx(ticket)
-        try:
+        with _PatchedCtx(ticket):
             method = _get_expanded_method()
             method(svc, TICKET_ID, "fix CI")
             svc._on_transition.assert_called_once()
             call_args = svc._on_transition.call_args
-            assert call_args[0][1] == "fixing_ci"  # old_state
-        finally:
-            _tm.retry_on_db_full = original_retry
+            assert call_args[0][1] == "fixing_ci"  # old_state as .value
+
+    def test_on_transition_none_is_safe(self) -> None:
+        """When _on_transition is None the method returns without error."""
+        svc = _FakeService(ticket_state=State.IMPLEMENT_COMPLETE)
+        svc._on_transition = None
+        ticket = svc._ticket
+
+        with _PatchedCtx(ticket):
+            method = _get_expanded_method()
+            comment, result_ticket = method(svc, TICKET_ID, "fix it")
+            assert result_ticket.state is State.READY
+            assert comment.body == "fix it"

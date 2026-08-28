@@ -864,6 +864,9 @@ from robotsix_mill.core.service._transition_mixin import (  # noqa: E402
     _reset_implement_spawn_counter,
 )
 
+# Kept for debugging / rollback: allows reverting to the original method
+# by assigning ``_TransitionMixin.request_implementation_changes =
+# _original_request_impl_changes``.
 _original_request_impl_changes = _TransitionMixin.request_implementation_changes
 
 # Source states from which an operator can request implementation changes.
@@ -904,7 +907,7 @@ def _request_implementation_changes_expanded(
     with retry_on_db_full(self.settings, self._board_for(ticket_id)) as s:
         ticket = _get_ticket(s, ticket_id)
         if ticket.state not in _REQUEST_IMPL_CHANGES_STATES:
-            allowed = ", ".join(sorted(s.value for s in _REQUEST_IMPL_CHANGES_STATES))
+            allowed = ", ".join(sorted(sv.value for sv in _REQUEST_IMPL_CHANGES_STATES))
             raise TransitionError(
                 f"{ticket_id}: cannot request implementation changes — "
                 f"not in an accepted state (currently {ticket.state}; "
