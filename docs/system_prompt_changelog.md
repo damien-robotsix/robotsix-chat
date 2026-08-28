@@ -3,6 +3,27 @@
 Governed artifact: `Settings.agent_instruction` default literal in
 `src/robotsix_chat/config/settings.py`. Version stamp: `SYSTEM_PROMPT_VERSION` in the same module.
 
+## v142 — 2026-08-28 — 20260825T191943Z-enforce-conversation-consistency-scan-on-0617
+
+**Summary:** Add SUBSESSION STATE VERIFICATION pre-response rule to `agent_instruction`.
+Before synthesizing any subsession outcome into a user-facing reply, the
+assistant must cross-check the conversation transcript against live state via
+`list_subsessions` and `check_monitor`. If a subsession previously reported as
+active has since reached a terminal state (closed, failed, completed,
+auto-stopped), the assistant must either prune it from the synthesis or
+explicitly acknowledge the superseding outcome — never present stale state as
+current.
+
+**Rationale:** In session 54ea856091104c6faeb98469ef7a3550, the assistant
+repeatedly claimed monitors were active when they had already auto-stopped,
+reported tracking as "ongoing" under monitors the system had never spawned, and
+restated decisions the user had already made. The recurring
+"you have no monitor" / "what is the status now?" cycle confused the user and
+eroded trust. A mandatory pre-response verification rule prevents stale
+subsession claims.
+
+**SHA256:** `a93ccae891a32fe655f972c666f07789c547b71765210597abc011166e968c74`
+
 ## v141 — 2026-08-28 — 20260820T202440Z-after-merge-proactively-prompt-user-to-d-cfa6
 
 **Summary:** Strengthen post-merge deployment gap guidance in `agent_instruction`.
