@@ -52,6 +52,10 @@ logger = logging.getLogger(__name__)
 _repo_cache: dict[str, tuple[float, list[str]]] = {}
 _REPO_CACHE_TTL: float = 60.0  # seconds — short enough to pick up access changes
 
+#: Base delay (seconds) for exponential backoff between idempotent
+#: ``/tickets/ingest`` retries.  Attempt *n* waits ``base * 2**n``.
+_INGEST_RETRY_BACKOFF_BASE: float = 1.0
+
 
 #: Used when no ``lifecycle.base_url`` is configured. The ``central-deploy``
 #: hostname only resolves on the deploy stack's *internal* compose network;
@@ -309,6 +313,7 @@ class FeedbackRunner:
         self._timeout = settings.timeout
         self._max_tickets_per_run = settings.max_tickets_per_run
         self._dedup_window = settings.dedup_window_seconds
+        self._ingest_max_retries = settings.ingest_max_retries
 
         # In-process dedup caches: (key → monotonic timestamp of last event).
         # Shared across ALL sessions — a single FeedbackRunner instance
@@ -695,56 +700,106 @@ class FeedbackRunner:
         }
 
         _span: Any = None
-        try:
-            with span_ctx_builder() as _span:
-                resp = await client.post(ingest_url, headers=headers, json=payload)
-                if _span is not None:
-                    _span.set_attribute("http.status_code", resp.status_code)
-            if 200 <= resp.status_code < 300:
-                self._last_filed_at[title_key] = time.monotonic()
-                logger.debug(
-                    "Feedback ticket filed: %s (HTTP %d)",
-                    ticket["title"],
-                    resp.status_code,
-                )
-                # Verify persistence: the ingest endpoint may accept the
-                # payload but never actually create a retrievable ticket.
-                # Immediately GET the returned ID to confirm it exists.
-                await self._verify_ingested_ticket(
-                    resp=resp,
-                    ticket_title=ticket["title"],
-                    client=client,
-                )
-                return True
-            else:
-                logger.warning(
-                    "Feedback ticket ingest returned %d for %r: %s",
-                    resp.status_code,
-                    ticket["title"],
-                    resp.text[:200],
-                )
-                if _span is not None and StatusCode is not None:
-                    _span.set_status(
-                        Status(StatusCode.ERROR, f"HTTP {resp.status_code}")
-                    )
-                    _span.set_attribute("error.type", f"http_{resp.status_code}")
-                return False
-        except Exception as exc:
-            logger.exception("Failed to file feedback ticket: %s", ticket["title"])
-            if _span is not None:
-                try:
-                    if StatusCode is not None:
-                        _span.set_status(Status(StatusCode.ERROR, str(exc)))
-                    _span.record_exception(exc)
-                except Exception:
-                    # Never let span instrumentation break the filing loop.
+        max_attempts = self._ingest_max_retries + 1
+        for attempt in range(max_attempts):
+            try:
+                with span_ctx_builder() as _span:
+                    resp = await client.post(ingest_url, headers=headers, json=payload)
+                    if _span is not None:
+                        _span.set_attribute("http.status_code", resp.status_code)
+                if 200 <= resp.status_code < 300:
+                    self._last_filed_at[title_key] = time.monotonic()
                     logger.debug(
-                        "Span instrumentation failed for ticket %r: %s",
+                        "Feedback ticket filed: %s (HTTP %d)",
                         ticket["title"],
-                        exc,
-                        exc_info=True,
+                        resp.status_code,
                     )
-            return False
+                    # Verify persistence: the ingest endpoint may accept the
+                    # payload but never actually create a retrievable ticket.
+                    # Immediately GET the returned ID to confirm it exists.
+                    await self._verify_ingested_ticket(
+                        resp=resp,
+                        ticket_title=ticket["title"],
+                        client=client,
+                    )
+                    return True
+                else:
+                    logger.warning(
+                        "Feedback ticket ingest returned %d for %r: %s",
+                        resp.status_code,
+                        ticket["title"],
+                        resp.text[:200],
+                    )
+                    if _span is not None and StatusCode is not None:
+                        _span.set_status(
+                            Status(StatusCode.ERROR, f"HTTP {resp.status_code}")
+                        )
+                        _span.set_attribute("error.type", f"http_{resp.status_code}")
+                    return False
+            except httpx.TransportError as exc:
+                # A read/connect timeout (or other transport-level error)
+                # may have still created the ticket server-side before the
+                # response was lost.  Idempotent self-heal: before retrying,
+                # ask the board whether the ticket now exists so creation is
+                # confirmed without filing a duplicate.
+                logger.warning(
+                    "Feedback ticket ingest timed out for %r (attempt %d/%d): %s",
+                    ticket["title"],
+                    attempt + 1,
+                    max_attempts,
+                    exc,
+                )
+                if _span is not None:
+                    self._record_span_exception(_span, exc, ticket["title"])
+                if await self._check_existing_open_tickets(
+                    ticket_title=ticket["title"],
+                    target_repo=ticket.get("target_repo", ""),
+                    client=client,
+                ):
+                    logger.info(
+                        "Feedback ticket %r confirmed on board despite ingest "
+                        "timeout — treating as filed, no retry",
+                        ticket["title"],
+                    )
+                    self._last_filed_at[title_key] = time.monotonic()
+                    return True
+                if attempt + 1 < max_attempts:
+                    backoff = _INGEST_RETRY_BACKOFF_BASE * (2**attempt)
+                    logger.debug(
+                        "Retrying feedback ticket ingest for %r in %.1fs",
+                        ticket["title"],
+                        backoff,
+                    )
+                    await asyncio.sleep(backoff)
+                    continue
+                logger.error(
+                    "Failed to file feedback ticket after %d attempt(s): %s",
+                    max_attempts,
+                    ticket["title"],
+                )
+                return False
+            except Exception as exc:
+                logger.exception("Failed to file feedback ticket: %s", ticket["title"])
+                if _span is not None:
+                    self._record_span_exception(_span, exc, ticket["title"])
+                return False
+        return False
+
+    @staticmethod
+    def _record_span_exception(span: Any, exc: Exception, ticket_title: str) -> None:
+        """Record *exc* on *span*, never letting instrumentation raise."""
+        try:
+            if StatusCode is not None:
+                span.set_status(Status(StatusCode.ERROR, str(exc)))
+            span.record_exception(exc)
+        except Exception:
+            # Never let span instrumentation break the filing loop.
+            logger.debug(
+                "Span instrumentation failed for ticket %r: %s",
+                ticket_title,
+                exc,
+                exc_info=True,
+            )
 
     async def _verify_ingested_ticket(
         self,

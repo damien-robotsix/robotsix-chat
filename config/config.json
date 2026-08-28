@@ -252,7 +252,8 @@
     "deploy_api_key": "",
     "timeout": 60.0,
     "max_tickets_per_run": 3,
-    "dedup_window_seconds": 60.0
+    "dedup_window_seconds": 60.0,
+    "ingest_max_retries": 2
   },
   "autonomous": {
     "completion_marker": "---AUTONOMOUS COMPLETE---",

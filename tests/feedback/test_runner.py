@@ -14,7 +14,7 @@ import json
 import logging
 from collections.abc import AsyncIterator
 from typing import Any
-from unittest.mock import MagicMock, patch
+from unittest.mock import AsyncMock, MagicMock, patch
 
 import httpx
 import pytest
@@ -1052,7 +1052,8 @@ class TestFileTickets:
         respx_mock.post("http://test-board/tickets/ingest").mock(
             side_effect=httpx.ReadTimeout("timed out")
         )
-        runner = _make_runner()
+        # ingest_max_retries=0 → a single attempt, no backoff sleep.
+        runner = _make_runner(_settings(ingest_max_retries=0))
         with caplog.at_level(logging.ERROR):
             filed, failed = await runner._file_tickets(
                 [
@@ -1069,6 +1070,109 @@ class TestFileTickets:
         assert filed == 0
         assert failed == 1
         assert "Failed to file feedback ticket" in caplog.text
+
+    @pytest.mark.asyncio
+    async def test_ingest_timeout_then_success_retries(
+        self, respx_mock: respx.MockRouter
+    ) -> None:
+        """A transport timeout is retried; the second attempt succeeds."""
+        # Pre-flight + post-timeout dedup checks find nothing.
+        respx_mock.get("http://test-board/tickets").mock(
+            return_value=httpx.Response(200, text=json.dumps([]))
+        )
+        ingest_route = respx_mock.post("http://test-board/tickets/ingest").mock(
+            side_effect=[
+                httpx.ReadTimeout("timed out"),
+                httpx.Response(
+                    201,
+                    text=json.dumps({"id": "t-1", "title": "Fix X", "state": "draft"}),
+                ),
+            ]
+        )
+        verify_route = respx_mock.get("http://test-board/tickets/t-1").mock(
+            return_value=httpx.Response(
+                200, text=json.dumps({"id": "t-1", "title": "Fix X"})
+            )
+        )
+        runner = _make_runner(_settings(ingest_max_retries=2))
+        with patch(
+            "robotsix_chat.feedback.runner.asyncio.sleep",
+            new_callable=AsyncMock,
+        ) as sleep_mock:
+            filed, failed = await runner._file_tickets(
+                [
+                    {
+                        "title": "Fix X",
+                        "description": "X is broken",
+                        "kind": "code",
+                        "target_repo": "robotsix-chat",
+                    }
+                ],
+                trigger_type="compaction",
+                session_id="s1",
+            )
+        assert filed == 1
+        assert failed == 0
+        assert ingest_route.call_count == 2
+        assert verify_route.call_count == 1
+        # Backoff was applied once between the two ingest attempts.
+        assert sleep_mock.await_count == 1
+
+    @pytest.mark.asyncio
+    async def test_ingest_timeout_idempotent_skip(
+        self, respx_mock: respx.MockRouter, caplog: pytest.LogCaptureFixture
+    ) -> None:
+        """A timeout that already created the ticket is confirmed, not retried."""
+        # First dedup GET (pre-flight) finds nothing; the second (after the
+        # timeout) finds the ticket the timed-out POST actually created.
+        dedup_route = respx_mock.get("http://test-board/tickets").mock(
+            side_effect=[
+                httpx.Response(200, text=json.dumps([])),
+                httpx.Response(
+                    200,
+                    text=json.dumps(
+                        [
+                            {
+                                "ticket_id": "t-9",
+                                "title": "Fix X",
+                                "repo_id": "robotsix-chat",
+                                "state": "draft",
+                            }
+                        ]
+                    ),
+                ),
+            ]
+        )
+        ingest_route = respx_mock.post("http://test-board/tickets/ingest").mock(
+            side_effect=httpx.ReadTimeout("timed out")
+        )
+        runner = _make_runner(_settings(ingest_max_retries=2))
+        with (
+            patch(
+                "robotsix_chat.feedback.runner.asyncio.sleep",
+                new_callable=AsyncMock,
+            ) as sleep_mock,
+            caplog.at_level(logging.INFO),
+        ):
+            filed, failed = await runner._file_tickets(
+                [
+                    {
+                        "title": "Fix X",
+                        "description": "X is broken",
+                        "kind": "code",
+                        "target_repo": "robotsix-chat",
+                    }
+                ],
+                trigger_type="compaction",
+                session_id="s1",
+            )
+        assert filed == 1
+        assert failed == 0
+        # Only one ingest attempt: idempotency confirmed creation, so no retry.
+        assert ingest_route.call_count == 1
+        assert dedup_route.call_count == 2
+        assert sleep_mock.await_count == 0
+        assert "confirmed on board despite ingest timeout" in caplog.text
 
     @pytest.mark.asyncio
     async def test_filing_targets_cross_repo(
@@ -1145,7 +1249,8 @@ class TestFileTickets:
         """HTTP exceptions record the error on the span and set ERROR status."""
         exc = httpx.ReadTimeout("timed out")
         respx_mock.post("http://test-board/tickets/ingest").mock(side_effect=exc)
-        runner = _make_runner()
+        # ingest_max_retries=0 → a single attempt records the span once.
+        runner = _make_runner(_settings(ingest_max_retries=0))
 
         fake_span = MagicMock()
         fake_span.__enter__.return_value = fake_span
@@ -1180,7 +1285,7 @@ class TestFileTickets:
         respx_mock.post("http://test-board/tickets/ingest").mock(
             side_effect=httpx.ReadTimeout("timed out")
         )
-        runner = _make_runner()
+        runner = _make_runner(_settings(ingest_max_retries=0))
 
         fake_span = MagicMock()
         fake_span.__enter__.return_value = fake_span
