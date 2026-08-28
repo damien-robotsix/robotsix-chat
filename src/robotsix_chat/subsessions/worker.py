@@ -1765,17 +1765,21 @@ def _build_wait_for_event_input(
         "Decision-blocked tickets: when the monitored ticket is awaiting an "
         "operator decision — stuck in human_issue_approval, waiting on an "
         '"Option A or B?" choice, or otherwise blocked on a human '
-        "direction — do NOT silently reply NO_CHANGE run after run.  "
-        "Instead, call complete_subsession with a summary that includes a "
-        "CONCRETE RECOMMENDATION: state whether you recommend approving or "
-        "closing the ticket and why (e.g. 'I recommend approving — this "
-        "is a standard pre-authorized rollout step' or 'I recommend closing "
-        "— the change is already covered by ticket X').  Explain what "
-        "decision is needed and set expectations: mention that the system "
-        "will auto-escalate after the human_approval_timeout window if no "
-        "decision is made.  This surfaces the blocker with actionable "
-        "guidance so the operator can act on it rather than waiting for "
-        "the auto-stop timeout.\n\n"
+        "direction — do NOT call complete_subsession and do NOT reply "
+        "NO_CHANGE run after run.  The monitor must stay alive and keep "
+        "tracking the ticket until it reaches a terminal state (done, "
+        "closed, rejected) or the user explicitly stops tracking.  "
+        "Instead, reply with a concise acknowledgment of the blocked state "
+        "that includes a CONCRETE RECOMMENDATION: state whether you "
+        "recommend approving or closing the ticket and why (e.g. "
+        "'I recommend approving — this is a standard pre-authorized "
+        "rollout step' or 'I recommend closing — the change is already "
+        "covered by ticket X').  Then reply "
+        f"{_QUEUED_SENTINEL} (and nothing else) to switch the monitor to "
+        "event-driven waiting — it will stop burning your run budget and "
+        "will wake automatically when the ticket leaves the "
+        "human_issue_approval state.  Do NOT call complete_subsession — "
+        "the monitor must continue tracking through to a terminal state.\n\n"
     )
     parts.append(
         "Terminal-state double-check + loop guard: before calling "
@@ -2097,7 +2101,15 @@ async def _run_wait_for_event_turn(
         )
     previous_result = reply
 
-    # Human-approval timeout logic (same as _run_periodic_turn).
+    # Human-approval detection: for event-driven monitors, the monitor
+    # is already in event-driven mode and will wake when the ticket
+    # state changes — no auto-escalation closure needed.  The monitor
+    # stays alive until it reaches a terminal state or the user
+    # explicitly stops tracking.
+    #
+    # Pre-authorized fast-path: when the monitored ticket matches a
+    # pre_authorized_ticket_patterns entry, escalate immediately —
+    # pre-authorized tickets bypass the approval gate entirely.
     checkpoint = info.checkpoint or {}
     # Repair the checkpoint: if the agent called set_checkpoint without
     # including ticket_id (replacing the spawn-time entry), recover it
@@ -2144,70 +2156,13 @@ async def _run_wait_for_event_turn(
                 )
             return None
 
+        # Track human_approval_since for informational purposes —
+        # the monitor stays alive and event-driven; no timeout closure.
         now = registry.now()
         human_approval_since_raw = checkpoint.get("human_approval_since")
-        if isinstance(human_approval_since_raw, (int, float)):
-            human_approval_since = float(human_approval_since_raw)
-        else:
-            human_approval_since = now
+        if not isinstance(human_approval_since_raw, (int, float)):
             checkpoint["human_approval_since"] = now
             registry.update_checkpoint(sub_id, checkpoint)
-
-        human_approval_timeout_s = (
-            env.settings.subsessions.human_approval_timeout_seconds
-        )
-        if now - human_approval_since >= human_approval_timeout_s:
-            logger.warning(
-                "Subsession %s: auto-escalating after %.0f s in "
-                "human_issue_approval state (%.0f s total elapsed).",
-                sub_id,
-                now - human_approval_since,
-                now - info.created_at,
-            )
-            elapsed = _format_duration(now - info.created_at)
-            stuck_for = _format_duration(now - human_approval_since)
-            summary = (
-                f"Ticket has been stuck at human_issue_approval for "
-                f"{stuck_for} ({elapsed} total elapsed) — "
-                f"auto-escalating (wall-clock timeout)."
-            )
-            closed = registry.mark_closed(
-                sub_id,
-                summary=summary,
-                reason="human_approval_timeout",
-                closed_by="system",
-            )
-            if closed is not None:
-                await env.delivery.deliver_summary(
-                    closed, summary, "human_approval_timeout"
-                )
-            return None
-
-        human_approval_cap = env.settings.subsessions.human_approval_timeout_runs
-        if consecutive_no_change >= human_approval_cap:
-            logger.warning(
-                "Subsession %s: auto-escalating after %d consecutive "
-                "no-change runs in human_issue_approval state.",
-                sub_id,
-                consecutive_no_change,
-            )
-            elapsed = _format_duration(registry.now() - info.created_at)
-            summary = (
-                f"Ticket has been stuck at human_issue_approval for "
-                f"{human_approval_cap} consecutive no-change runs "
-                f"({elapsed} elapsed) — auto-escalating."
-            )
-            closed = registry.mark_closed(
-                sub_id,
-                summary=summary,
-                reason="human_approval_timeout",
-                closed_by="system",
-            )
-            if closed is not None:
-                await env.delivery.deliver_summary(
-                    closed, summary, "human_approval_timeout"
-                )
-            return None
 
     # Re-arm the wait — no auto-pause, auto-stop, or max_runs for
     # event-driven monitors.

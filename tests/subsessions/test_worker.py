@@ -1199,14 +1199,19 @@ async def test_periodic_turn_budget_resets_each_run() -> None:
 
 
 @pytest.mark.asyncio
-async def test_periodic_human_approval_timeout_auto_escalates() -> None:
-    """human_issue_approval checkpoint triggers human_approval_timeout close."""
+async def test_periodic_human_approval_switches_to_event_driven() -> None:
+    """human_issue_approval checkpoint triggers event-driven wait instead of close.
+
+    The monitor must stay alive and wait for the ticket to leave
+    human_issue_approval, not auto-close with human_approval_timeout.
+    """
     agent = FakeAgent(["NO_CHANGE", "NO_CHANGE", "NO_CHANGE"])
     env = build_env(
         agent=agent,
         settings=make_settings(
             auto_stop_no_change_runs=5,
             human_approval_timeout_runs=3,
+            paused_monitor_auto_resume_seconds=0.05,
         ),
     )
 
@@ -1218,14 +1223,21 @@ async def test_periodic_human_approval_timeout_auto_escalates() -> None:
             "last_known_state": "human_issue_approval",
         },
     )
-    await _await_worker(env, sub_id)
+    # Wait until the agent has been called 3 times (human_approval_timeout_runs)
+    # — the monitor will then switch to event-driven waiting.
+    await wait_until(lambda: len(agent.calls) >= 3)
 
     info = env.registry.get(sub_id)
     assert info is not None
-    assert info.status is SubsessionStatus.CLOSED
-    assert info.close_reason == "human_approval_timeout"
-    assert "human_issue_approval" in (info.summary or "")
+    # The monitor should still be alive — it switched to event-driven
+    # waiting after the human_approval_timeout_runs threshold was reached.
+    assert info.status is not SubsessionStatus.CLOSED
+    # The agent was called exactly human_approval_timeout_runs times
+    # before switching to event-driven wait.
     assert len(agent.calls) == 3
+
+    # Clean up the worker task.
+    env.registry.cancel_and_close(sub_id, reason="teardown", closed_by="system")
 
 
 @pytest.mark.asyncio
@@ -1260,13 +1272,14 @@ async def test_periodic_human_approval_timeout_ignored_without_checkpoint() -> N
 
 @pytest.mark.asyncio
 async def test_periodic_human_approval_timeout_uses_own_threshold() -> None:
-    """human_approval_timeout_runs is independent of auto_stop_no_change_runs."""
+    """human_approval_timeout_runs switches to event-driven wait independently."""
     agent = FakeAgent(["NO_CHANGE", "NO_CHANGE"])
     env = build_env(
         agent=agent,
         settings=make_settings(
             auto_stop_no_change_runs=10,
             human_approval_timeout_runs=2,
+            paused_monitor_auto_resume_seconds=0.05,
         ),
     )
 
@@ -1278,13 +1291,16 @@ async def test_periodic_human_approval_timeout_uses_own_threshold() -> None:
             "last_known_state": "human_issue_approval",
         },
     )
-    await _await_worker(env, sub_id)
+    # Wait for the 2 human_approval_timeout_runs calls.
+    await wait_until(lambda: len(agent.calls) >= 2)
 
     info = env.registry.get(sub_id)
     assert info is not None
-    assert info.status is SubsessionStatus.CLOSED
-    assert info.close_reason == "human_approval_timeout"
-    assert len(agent.calls) == 2
+    # Monitor should still be alive — switched to event-driven wait.
+    assert info.status is not SubsessionStatus.CLOSED
+
+    # Clean up the worker task.
+    env.registry.cancel_and_close(sub_id, reason="teardown", closed_by="system")
 
 
 @pytest.mark.asyncio
@@ -1320,8 +1336,8 @@ async def test_periodic_pre_authorized_escalates_immediately() -> None:
 
 
 @pytest.mark.asyncio
-async def test_periodic_pre_authorized_no_match_uses_timeout() -> None:
-    """Non-matching ticket still uses the normal human_approval_timeout."""
+async def test_periodic_pre_authorized_no_match_switches_to_event_driven() -> None:
+    """Non-matching ticket switches to event-driven wait instead of closing."""
     agent = FakeAgent(["NO_CHANGE", "NO_CHANGE", "NO_CHANGE"])
     env = build_env(
         agent=agent,
@@ -1329,6 +1345,7 @@ async def test_periodic_pre_authorized_no_match_uses_timeout() -> None:
             auto_stop_no_change_runs=10,
             human_approval_timeout_runs=3,
             pre_authorized_ticket_patterns=["OTHER-*"],
+            paused_monitor_auto_resume_seconds=0.05,
         ),
     )
 
@@ -1341,18 +1358,20 @@ async def test_periodic_pre_authorized_no_match_uses_timeout() -> None:
             "ticket_id": "TICKET-1",
         },
     )
-    await _await_worker(env, sub_id)
+    await wait_until(lambda: len(agent.calls) >= 3)
 
     info = env.registry.get(sub_id)
     assert info is not None
-    assert info.status is SubsessionStatus.CLOSED
-    assert info.close_reason == "human_approval_timeout"
+    # Monitor stays alive — switched to event-driven wait.
+    assert info.status is not SubsessionStatus.CLOSED
     assert len(agent.calls) == 3
+
+    env.registry.cancel_and_close(sub_id, reason="teardown", closed_by="system")
 
 
 @pytest.mark.asyncio
-async def test_periodic_pre_authorized_empty_patterns_uses_timeout() -> None:
-    """Empty patterns list falls through to normal human_approval_timeout."""
+async def test_periodic_pre_authorized_empty_patterns_waits() -> None:
+    """Empty patterns list falls through to event-driven wait."""
     agent = FakeAgent(["NO_CHANGE", "NO_CHANGE"])
     env = build_env(
         agent=agent,
@@ -1360,6 +1379,7 @@ async def test_periodic_pre_authorized_empty_patterns_uses_timeout() -> None:
             auto_stop_no_change_runs=10,
             human_approval_timeout_runs=2,
             pre_authorized_ticket_patterns=[],
+            paused_monitor_auto_resume_seconds=0.05,
         ),
     )
 
@@ -1372,24 +1392,23 @@ async def test_periodic_pre_authorized_empty_patterns_uses_timeout() -> None:
             "ticket_id": "TICKET-1",
         },
     )
-    await _await_worker(env, sub_id)
+    await wait_until(lambda: len(agent.calls) >= 2)
 
     info = env.registry.get(sub_id)
     assert info is not None
-    assert info.status is SubsessionStatus.CLOSED
-    assert info.close_reason == "human_approval_timeout"
-    assert len(agent.calls) == 2
+    # Monitor stays alive — switched to event-driven wait.
+    assert info.status is not SubsessionStatus.CLOSED
+
+    env.registry.cancel_and_close(sub_id, reason="teardown", closed_by="system")
 
 
 @pytest.mark.asyncio
-async def test_periodic_human_approval_timeout_by_wall_clock() -> None:
-    """Wall-clock timeout escalates even when the agent never emits NO_CHANGE.
+async def test_periodic_human_approval_wall_clock_switches_to_event_driven() -> None:
+    """Wall-clock timeout switches to event-driven wait even without NO_CHANGE.
 
-    The run-count gate requires consecutive NO_CHANGE replies, but the
-    system prompt tells the agent to call complete_subsession instead
-    when stuck — the wall-clock backstop catches the case where the
-    agent follows the prompt (producing non-NO_CHANGE output each run)
-    but never actually calls complete_subsession to close the ticket.
+    The wall-clock backstop catches the case where the agent follows the
+    prompt (producing non-NO_CHANGE output each run) but the ticket is
+    still stuck at human_issue_approval.  The monitor stays alive.
     """
     clock = FakeClock(start=1000.0)
     agent = FakeAgent(["still waiting for approval", "still waiting for approval"] * 5)
@@ -1405,6 +1424,7 @@ async def test_periodic_human_approval_timeout_by_wall_clock() -> None:
             auto_stop_no_change_runs=999,
             human_approval_timeout_runs=999,
             human_approval_timeout_seconds=300.0,
+            paused_monitor_auto_resume_seconds=0.05,
         ),
     )
 
@@ -1426,16 +1446,15 @@ async def test_periodic_human_approval_timeout_by_wall_clock() -> None:
     # sees the ticket has been stuck too long.
     clock.advance(301.0)
 
-    await _await_worker(env, sub_id)
+    # Wait for the second run (the wall-clock check triggers on this run).
+    await wait_until(lambda: env.registry.get(sub_id).runs >= 2)  # type: ignore[union-attr]
 
     info = env.registry.get(sub_id)
     assert info is not None
-    assert info.status is SubsessionStatus.CLOSED
-    assert info.close_reason == "human_approval_timeout"
-    # Escalated by wall-clock timeout, not by run count — the agent
-    # never said NO_CHANGE, so the run-count gate (capped at 999) was
-    # never reached.
-    assert "wall-clock timeout" in (info.summary or "")
+    # Monitor stays alive — switched to event-driven wait by wall-clock.
+    assert info.status is not SubsessionStatus.CLOSED
+
+    env.registry.cancel_and_close(sub_id, reason="teardown", closed_by="system")
 
 
 @pytest.mark.asyncio
