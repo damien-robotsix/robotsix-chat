@@ -631,6 +631,7 @@ def _mock_direct_repo_client(
                 "mergeable_state": "clean" if mergeable else "dirty",
                 "title": "Test PR",
                 "html_url": "https://github.com/org/repo/pull/42",
+                "merge_commit_sha": "abc123def456" if merged else None,
             }
         )
     return mock
@@ -1102,8 +1103,24 @@ async def test_watcher_resumes_when_pr_merged() -> None:
 
     # Ticket state unchanged → first pass keeps it paused.
     mock_ticket_client = _mock_ticket_client(state="open")
-    # PR is merged → second pass resumes.
+    # PR is merged → second pass verifies image-publish and resumes.
     mock_gh = _mock_direct_repo_client(merged=True)
+
+    # Mock ActionsClient to return a successful image-publish run.
+    mock_actions_cls = MagicMock()
+    mock_actions = MagicMock()
+    mock_actions.list_workflow_runs = AsyncMock(
+        return_value=[
+            {
+                "name": "release-image.yml",
+                "status": "completed",
+                "conclusion": "success",
+                "id": 999,
+                "html_url": "https://github.com/org/repo/actions/runs/999",
+            }
+        ]
+    )
+    mock_actions_cls.return_value = mock_actions
 
     watcher_task = asyncio.create_task(watch_paused_monitors(env))
 
@@ -1112,6 +1129,10 @@ async def test_watcher_resumes_when_pr_merged() -> None:
         patch(
             "robotsix_chat.repo.direct.client.DirectRepoClient",
             return_value=mock_gh,
+        ),
+        patch(
+            "robotsix_chat.repo.direct.actions_client.ActionsClient",
+            mock_actions_cls,
         ),
     ):
         await asyncio.sleep(0.2)
@@ -1347,6 +1368,22 @@ async def test_watcher_terminal_pr_merged_resumes() -> None:
     mock_ticket_client = _mock_ticket_client(state="done")
     mock_gh = _mock_direct_repo_client(merged=True)
 
+    # Mock ActionsClient to return a successful image-publish run.
+    mock_actions_cls = MagicMock()
+    mock_actions = MagicMock()
+    mock_actions.list_workflow_runs = AsyncMock(
+        return_value=[
+            {
+                "name": "release-image.yml",
+                "status": "completed",
+                "conclusion": "success",
+                "id": 888,
+                "html_url": "https://github.com/org/repo/actions/runs/888",
+            }
+        ]
+    )
+    mock_actions_cls.return_value = mock_actions
+
     watcher_task = asyncio.create_task(watch_paused_monitors(env))
 
     with (
@@ -1355,6 +1392,10 @@ async def test_watcher_terminal_pr_merged_resumes() -> None:
             MagicMock(return_value=mock_gh),
         ),
         patch("httpx.AsyncClient", mock_ticket_client),
+        patch(
+            "robotsix_chat.repo.direct.actions_client.ActionsClient",
+            mock_actions_cls,
+        ),
     ):
         await asyncio.sleep(0.20)
 
@@ -1754,3 +1795,364 @@ async def test_watcher_404_keeps_paused_below_threshold() -> None:
     assert reopened.checkpoint is not None
     count = reopened.checkpoint.get("_watcher_404_count", 0)
     assert 1 <= count < 3
+
+
+# -- Image-publish verification gate --------------------------------------
+
+
+@pytest.mark.asyncio
+async def test_watcher_keeps_paused_when_image_publish_failed() -> None:
+    """The watcher keeps a monitor paused when the image-publish workflow failed."""
+    settings = _settings_with_direct_repo()
+    sink = RecordingSink()
+    env = build_env(settings=settings, event_sink=sink)
+
+    info = _make_paused_monitor_with_pr(env, ticket_id="T-1", last_known="open")
+
+    # Ticket state unchanged → first pass keeps it paused.
+    mock_ticket_client = _mock_ticket_client(state="open")
+    # PR is merged → but image-publish failed.
+    mock_gh = _mock_direct_repo_client(merged=True)
+
+    mock_actions_cls = MagicMock()
+    mock_actions = MagicMock()
+    mock_actions.list_workflow_runs = AsyncMock(
+        return_value=[
+            {
+                "name": "release-image.yml",
+                "status": "completed",
+                "conclusion": "failure",
+                "id": 777,
+                "html_url": "https://github.com/org/repo/actions/runs/777",
+            }
+        ]
+    )
+    mock_actions_cls.return_value = mock_actions
+
+    watcher_task = asyncio.create_task(watch_paused_monitors(env))
+
+    with (
+        patch("httpx.AsyncClient", mock_ticket_client),
+        patch(
+            "robotsix_chat.repo.direct.client.DirectRepoClient",
+            return_value=mock_gh,
+        ),
+        patch(
+            "robotsix_chat.repo.direct.actions_client.ActionsClient",
+            mock_actions_cls,
+        ),
+    ):
+        await asyncio.sleep(0.2)
+
+    watcher_task.cancel()
+    with pytest.raises(asyncio.CancelledError):
+        _ = await watcher_task
+
+    # Monitor should still be paused — image-publish failed.
+    reopened = env.registry.get(info.id)
+    assert reopened is not None
+    assert reopened.status is SubsessionStatus.CLOSED
+    assert reopened.close_reason == "paused"
+
+    # A notification about pending image-publish should be emitted.
+    notifications = sink.of_type(SSE_NOTIFICATION_TYPE)
+    pending_notifications = [
+        frame
+        for _sid, frame in notifications
+        if "Image publish pending" in str(frame.get("title", ""))
+    ]
+    assert len(pending_notifications) == 1
+    assert "failure" in str(pending_notifications[0]["body"]).lower()
+
+
+@pytest.mark.asyncio
+async def test_watcher_keeps_paused_when_image_publish_in_progress() -> None:
+    """The watcher keeps a monitor paused when the image-publish is still running."""
+    settings = _settings_with_direct_repo()
+    sink = RecordingSink()
+    env = build_env(settings=settings, event_sink=sink)
+
+    info = _make_paused_monitor_with_pr(env, ticket_id="T-1", last_known="open")
+
+    mock_ticket_client = _mock_ticket_client(state="open")
+    mock_gh = _mock_direct_repo_client(merged=True)
+
+    mock_actions_cls = MagicMock()
+    mock_actions = MagicMock()
+    mock_actions.list_workflow_runs = AsyncMock(
+        return_value=[
+            {
+                "name": "release-image.yml",
+                "status": "in_progress",
+                "conclusion": None,
+                "id": 666,
+                "html_url": "https://github.com/org/repo/actions/runs/666",
+            }
+        ]
+    )
+    mock_actions_cls.return_value = mock_actions
+
+    watcher_task = asyncio.create_task(watch_paused_monitors(env))
+
+    with (
+        patch("httpx.AsyncClient", mock_ticket_client),
+        patch(
+            "robotsix_chat.repo.direct.client.DirectRepoClient",
+            return_value=mock_gh,
+        ),
+        patch(
+            "robotsix_chat.repo.direct.actions_client.ActionsClient",
+            mock_actions_cls,
+        ),
+    ):
+        await asyncio.sleep(0.2)
+
+    watcher_task.cancel()
+    with pytest.raises(asyncio.CancelledError):
+        _ = await watcher_task
+
+    # Monitor should still be paused — workflow still in progress.
+    reopened = env.registry.get(info.id)
+    assert reopened is not None
+    assert reopened.status is SubsessionStatus.CLOSED
+    assert reopened.close_reason == "paused"
+
+    # The checkpoint should have a verify-since timestamp.
+    assert reopened.checkpoint is not None
+    assert "_image_publish_verify_since" in reopened.checkpoint
+
+
+@pytest.mark.asyncio
+async def test_watcher_skips_image_publish_when_workflow_name_empty() -> None:
+    """The watcher skips image-publish verification when the workflow name is empty."""
+    settings = _settings_with_direct_repo()
+    settings.subsessions.image_publish_workflow_name = ""
+    sink = RecordingSink()
+    env = build_env(settings=settings, event_sink=sink)
+
+    info = _make_paused_monitor_with_pr(env, ticket_id="T-1", last_known="open")
+
+    mock_ticket_client = _mock_ticket_client(state="open")
+    mock_gh = _mock_direct_repo_client(merged=True)
+
+    watcher_task = asyncio.create_task(watch_paused_monitors(env))
+
+    with (
+        patch("httpx.AsyncClient", mock_ticket_client),
+        patch(
+            "robotsix_chat.repo.direct.client.DirectRepoClient",
+            return_value=mock_gh,
+        ),
+    ):
+        await asyncio.sleep(0.2)
+
+    watcher_task.cancel()
+    with pytest.raises(asyncio.CancelledError):
+        _ = await watcher_task
+
+    # Monitor should be resumed immediately — verification disabled.
+    reopened = env.registry.get(info.id)
+    assert reopened is not None
+    assert reopened.is_active
+
+
+@pytest.mark.asyncio
+async def test_watcher_skips_image_publish_when_no_merge_sha() -> None:
+    """The watcher skips image-publish verification when merge_commit_sha is absent."""
+    settings = _settings_with_direct_repo()
+    sink = RecordingSink()
+    env = build_env(settings=settings, event_sink=sink)
+
+    info = _make_paused_monitor_with_pr(env, ticket_id="T-1", last_known="open")
+
+    mock_ticket_client = _mock_ticket_client(state="open")
+    # PR is merged but merge_commit_sha is missing.
+    mock_gh = MagicMock()
+    mock_gh._token = AsyncMock(return_value="fake-token")
+    mock_gh.get_pr = AsyncMock(
+        return_value={
+            "merged": True,
+            "state": "closed",
+            "mergeable": True,
+            "mergeable_state": "clean",
+            "title": "Test PR",
+            "html_url": "https://github.com/org/repo/pull/42",
+            "merge_commit_sha": None,
+        }
+    )
+
+    watcher_task = asyncio.create_task(watch_paused_monitors(env))
+
+    with (
+        patch("httpx.AsyncClient", mock_ticket_client),
+        patch(
+            "robotsix_chat.repo.direct.client.DirectRepoClient",
+            return_value=mock_gh,
+        ),
+    ):
+        await asyncio.sleep(0.2)
+
+    watcher_task.cancel()
+    with pytest.raises(asyncio.CancelledError):
+        _ = await watcher_task
+
+    # Monitor should be resumed — no merge SHA means skip verification.
+    reopened = env.registry.get(info.id)
+    assert reopened is not None
+    assert reopened.is_active
+
+
+@pytest.mark.asyncio
+async def test_watcher_image_publish_timeout_elapses_resumes_with_warning() -> None:
+    """When the image-publish verify timeout elapses, the watcher resumes."""
+    settings = _settings_with_direct_repo()
+    settings.subsessions.image_publish_verify_timeout_seconds = 0.01  # very short
+    sink = RecordingSink()
+    env = build_env(settings=settings, event_sink=sink)
+
+    info = _make_paused_monitor_with_pr(env, ticket_id="T-1", last_known="open")
+
+    # Pre-set the verify-since timestamp to an old value so timeout elapses.
+    checkpoint = dict(info.checkpoint)
+    checkpoint["_image_publish_verify_since"] = 1.0  # way in the past
+    env.registry.update_checkpoint(info.id, checkpoint)
+
+    mock_ticket_client = _mock_ticket_client(state="open")
+    mock_gh = _mock_direct_repo_client(merged=True)
+
+    mock_actions_cls = MagicMock()
+    mock_actions = MagicMock()
+    mock_actions.list_workflow_runs = AsyncMock(
+        return_value=[
+            {
+                "name": "release-image.yml",
+                "status": "in_progress",
+                "conclusion": None,
+                "id": 555,
+                "html_url": "https://github.com/org/repo/actions/runs/555",
+            }
+        ]
+    )
+    mock_actions_cls.return_value = mock_actions
+
+    watcher_task = asyncio.create_task(watch_paused_monitors(env))
+
+    with (
+        patch("httpx.AsyncClient", mock_ticket_client),
+        patch(
+            "robotsix_chat.repo.direct.client.DirectRepoClient",
+            return_value=mock_gh,
+        ),
+        patch(
+            "robotsix_chat.repo.direct.actions_client.ActionsClient",
+            mock_actions_cls,
+        ),
+    ):
+        await asyncio.sleep(0.2)
+
+    watcher_task.cancel()
+    with pytest.raises(asyncio.CancelledError):
+        _ = await watcher_task
+
+    # Monitor should be resumed — timeout elapsed.
+    reopened = env.registry.get(info.id)
+    assert reopened is not None
+    assert reopened.is_active
+
+    # The verify-since timestamp should have been cleaned up.
+    assert reopened.checkpoint is not None
+    assert "_image_publish_verify_since" not in reopened.checkpoint
+
+
+@pytest.mark.asyncio
+async def test_watcher_image_publish_actions_client_fails_resumes() -> None:
+    """When ActionsClient creation fails, the watcher resumes (fail-open)."""
+    settings = _settings_with_direct_repo()
+    sink = RecordingSink()
+    env = build_env(settings=settings, event_sink=sink)
+
+    info = _make_paused_monitor_with_pr(env, ticket_id="T-1", last_known="open")
+
+    mock_ticket_client = _mock_ticket_client(state="open")
+    mock_gh = _mock_direct_repo_client(merged=True)
+
+    # ActionsClient raises on construction.
+    mock_actions_cls = MagicMock(side_effect=RuntimeError("import failed"))
+
+    watcher_task = asyncio.create_task(watch_paused_monitors(env))
+
+    with (
+        patch("httpx.AsyncClient", mock_ticket_client),
+        patch(
+            "robotsix_chat.repo.direct.client.DirectRepoClient",
+            return_value=mock_gh,
+        ),
+        patch(
+            "robotsix_chat.repo.direct.actions_client.ActionsClient",
+            mock_actions_cls,
+        ),
+    ):
+        await asyncio.sleep(0.2)
+
+    watcher_task.cancel()
+    with pytest.raises(asyncio.CancelledError):
+        _ = await watcher_task
+
+    # Monitor should be resumed — fail-open on ActionsClient error.
+    reopened = env.registry.get(info.id)
+    assert reopened is not None
+    assert reopened.is_active
+
+
+@pytest.mark.asyncio
+async def test_watcher_image_publish_no_matching_workflow_keeps_paused() -> None:
+    """The watcher keeps a monitor paused when no matching workflow run is found."""
+    settings = _settings_with_direct_repo()
+    sink = RecordingSink()
+    env = build_env(settings=settings, event_sink=sink)
+
+    info = _make_paused_monitor_with_pr(env, ticket_id="T-1", last_known="open")
+
+    mock_ticket_client = _mock_ticket_client(state="open")
+    mock_gh = _mock_direct_repo_client(merged=True)
+
+    # ActionsClient returns runs but none match the workflow name.
+    mock_actions_cls = MagicMock()
+    mock_actions = MagicMock()
+    mock_actions.list_workflow_runs = AsyncMock(
+        return_value=[
+            {
+                "name": "ci.yml",
+                "status": "completed",
+                "conclusion": "success",
+                "id": 444,
+                "html_url": "https://github.com/org/repo/actions/runs/444",
+            }
+        ]
+    )
+    mock_actions_cls.return_value = mock_actions
+
+    watcher_task = asyncio.create_task(watch_paused_monitors(env))
+
+    with (
+        patch("httpx.AsyncClient", mock_ticket_client),
+        patch(
+            "robotsix_chat.repo.direct.client.DirectRepoClient",
+            return_value=mock_gh,
+        ),
+        patch(
+            "robotsix_chat.repo.direct.actions_client.ActionsClient",
+            mock_actions_cls,
+        ),
+    ):
+        await asyncio.sleep(0.2)
+
+    watcher_task.cancel()
+    with pytest.raises(asyncio.CancelledError):
+        _ = await watcher_task
+
+    # Monitor should still be paused — no matching workflow run.
+    reopened = env.registry.get(info.id)
+    assert reopened is not None
+    assert reopened.status is SubsessionStatus.CLOSED
+    assert reopened.close_reason == "paused"

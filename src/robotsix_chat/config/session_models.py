@@ -499,6 +499,37 @@ class SubsessionsSettings(BaseModel):
             "the queue unbounded."
         ),
     )
+    image_publish_workflow_name: str = Field(
+        default="release-image.yml",
+        description=(
+            "Filename of the image-publish workflow in the monitored "
+            "repo's ``.github/workflows/`` directory.  After a tracked "
+            "PR is merged, the watcher checks the most recent run of "
+            "this workflow on the repo's default branch to verify the "
+            "image was successfully published before resuming the "
+            "monitor.  When the latest run failed or is still in "
+            "progress, the watcher keeps the monitor paused and "
+            "emits a notification so the operator can see the "
+            "publish pipeline is not green.  Set to an empty string "
+            "to disable post-merge image-publish verification "
+            "(the watcher resumes immediately on merge, matching "
+            "legacy behaviour)."
+        ),
+    )
+    image_publish_verify_timeout_seconds: float = Field(
+        default=1800.0,
+        description=(
+            "Maximum wall-clock seconds the watcher waits for the "
+            "image-publish workflow to complete after a tracked PR "
+            "is merged.  When the latest run is still in progress "
+            "and this timeout has not elapsed, the watcher keeps the "
+            "monitor paused and retries on the next poll cycle.  "
+            "When the timeout elapses without a successful run, the "
+            "watcher resumes the monitor with a warning in the "
+            "notification so the agent can investigate.  Default "
+            "1800 s (30 min)."
+        ),
+    )
     turn_budget: TurnBudgetSettings = Field(default_factory=TurnBudgetSettings)
     model_config = ConfigDict(extra="forbid")
 
