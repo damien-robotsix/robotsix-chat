@@ -3,6 +3,25 @@
 Governed artifact: `Settings.agent_instruction` default literal in
 `src/robotsix_chat/config/settings.py`. Version stamp: `SYSTEM_PROMPT_VERSION` in the same module.
 
+## v143 — 2026-08-27 — 20260827T075012Z-assistant-should-have-verified-terminal-3a9a
+
+**Summary:** Add a "Completion-phase cross-check" rule to the
+Verification section of the agent system prompt.  Before declaring a
+phase, section, or batch of work "fully complete" or "standards-
+compliant", the assistant must re-read or re-query the live data that
+the claim covers — never declare completion from a mental model built
+from earlier tool calls alone.  Spot-checking every item in a
+multi-item claim is mandatory.
+
+**Rationale:** The assistant declared fleet settings-cleanup "fully
+complete and standards-compliant" without cross-checking live config
+keys, then doubled down claiming UPPERCASE keys were "KEEP by design"
+until the user corrected it.  The new rule prevents premature
+completion declarations by requiring a live-state re-verification
+before any completion claim.
+
+**SHA256:** `f90f1bc95576787fc2ad4833721eeefcb54c5b93ff229e4b0fac67c07e0ff746`
+
 ## v142 — 2026-08-28 — 20260825T191943Z-enforce-conversation-consistency-scan-on-0617
 
 **Summary:** Add SUBSESSION STATE VERIFICATION pre-response rule to `agent_instruction`.
