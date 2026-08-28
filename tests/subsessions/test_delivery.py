@@ -474,6 +474,59 @@ async def test_deliver_summary_loop_guard_depth_below_cap_schedules_reaction() -
     assert args[2] == "still reacting"
 
 
+@pytest.mark.asyncio
+async def test_deliver_summary_same_outcome_id_not_redelivered() -> None:
+    """A second delivery of an already-surfaced outcome ID is skipped.
+
+    Guards against the infinite consolidation-redirect loop: once an
+    outcome has been presented, later turns must not re-route it to the
+    consolidation gate for the same ID.
+    """
+    store = MagicMock()
+    store.history.return_value = []
+    registry = MagicMock()
+    agent = _fake_agent(["surfaced"])
+    delivery = _build_delivery(store=store, registry=registry, agent=agent)
+    info = _make_info(sub_id="sub-abc12345", parent_id=None)
+
+    # First delivery surfaces the outcome via a reaction turn.
+    await delivery.deliver_summary(info, "the diagnosis", "completed")
+    await _await_reaction_tasks(delivery)
+    assert store.record_for_session.call_count == 1
+    assert "sub-abc12345" in delivery._consumed_outcome_ids
+
+    # A second delivery of the SAME outcome ID must be skipped entirely —
+    # no additional reaction turn and no passive record.
+    await delivery.deliver_summary(info, "the diagnosis", "completed")
+    await _await_reaction_tasks(delivery)
+    assert store.record_for_session.call_count == 1
+
+
+@pytest.mark.asyncio
+async def test_deliver_summary_new_outcome_id_still_fires_after_consumed() -> None:
+    """A genuinely new outcome ID still triggers the reaction turn.
+
+    The consumed-ID guard must not suppress outcomes it has never seen.
+    """
+    store = MagicMock()
+    store.history.return_value = []
+    registry = MagicMock()
+    agent = _fake_agent(["reply"])
+    delivery = _build_delivery(store=store, registry=registry, agent=agent)
+
+    # Pretend an earlier outcome was already surfaced.
+    delivery._consumed_outcome_ids.add("sub-old00000")
+
+    info = _make_info(sub_id="sub-new11111", parent_id=None)
+    await delivery.deliver_summary(info, "fresh outcome", "completed")
+    await _await_reaction_tasks(delivery)
+
+    store.record_for_session.assert_called_once()
+    args, _kwargs = store.record_for_session.call_args
+    assert "fresh outcome" in args[1]  # prompt form (not degraded)
+    assert "sub-new11111" in delivery._consumed_outcome_ids
+
+
 # ---------------------------------------------------------------------------
 # deliver_summary — nested parent (parent_id is not None)
 # ---------------------------------------------------------------------------
