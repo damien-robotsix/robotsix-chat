@@ -65,6 +65,13 @@ logger = logging.getLogger(__name__)
 # without bound.
 _MAX_WORKER_HISTORY_TURNS = 20
 
+# Periodic/wait-for-event monitors run on a fresh, never-compacted CLI
+# transcript per tick, so replaying the full 20-turn window re-carries an
+# ever-growing prefix as cache traffic on every step of every tool loop.
+# Bound monitor replay much tighter — the current tick only needs a couple
+# of prior turns for continuity.
+_MAX_PERIODIC_HISTORY_TURNS = 3
+
 # The Claude Agent SDK's wording when it collapses a self-contradictory
 # ``is_error=True`` / ``errors=[]`` / ``subtype="success"`` frame into a
 # bare message — a known transient bug, not a real tool failure.
@@ -1111,12 +1118,25 @@ class _TransientExhaustedError(Exception):
     """
 
 
+def _history_cap(kind: SubsessionKind) -> int:
+    """Return the prior-turn replay cap for *kind*.
+
+    Periodic and wait-for-event monitors get the tight
+    :data:`_MAX_PERIODIC_HISTORY_TURNS` bound; every other kind keeps the
+    default :data:`_MAX_WORKER_HISTORY_TURNS` window.
+    """
+    if kind in (SubsessionKind.PERIODIC, SubsessionKind.WAIT_FOR_EVENT):
+        return _MAX_PERIODIC_HISTORY_TURNS
+    return _MAX_WORKER_HISTORY_TURNS
+
+
 async def _run_turn(
     agent: ChatAgent,
     turn_input: str,
     history: list[tuple[str, str]],
     sub_id: str,
     *,
+    max_history_turns: int = _MAX_WORKER_HISTORY_TURNS,
     trace_metadata: dict[str, str] | None = None,
     trace_name: str | None = None,
 ) -> str:
@@ -1125,7 +1145,7 @@ async def _run_turn(
         chunk
         async for chunk in agent.stream(
             turn_input,
-            history=history[-_MAX_WORKER_HISTORY_TURNS:] or None,
+            history=history[-max_history_turns:] or None,
             session_id=sub_id,
             client_id=sub_id,
             trace_metadata=trace_metadata,
@@ -1162,6 +1182,7 @@ async def _run_turn_with_timeout(
                 turn_input,
                 history,
                 sub_id,
+                max_history_turns=_history_cap(info.kind),
                 trace_metadata={
                     "owner_session_id": info.owner_session_id,
                     "parent_session_id": info.parent_id or info.owner_session_id,
