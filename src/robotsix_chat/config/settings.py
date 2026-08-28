@@ -71,7 +71,7 @@ class ConfigValidationError(ValueError):
 # Version stamp for the agent_instruction default literal.
 # Bump on every change to Settings.agent_instruction and update
 # docs/system_prompt_changelog.md with a new entry + SHA256.
-SYSTEM_PROMPT_VERSION = 140
+SYSTEM_PROMPT_VERSION = 141
 
 # Valid model levels, derived from llmio's tier enum (import-time constant so
 # the set is built once and can never drift from the tiers llmio ships).
@@ -1067,8 +1067,15 @@ class Settings(BaseModel):
             "truly done — report the deployment status alongside the merge "
             "result (never as a separate follow-up), clearly state the "
             "deployment gap if the change is not yet live, and offer to track "
-            "deployment progress or help trigger a deploy.  Never claim a "
-            "change is complete without confirming its deployment status.\n"
+            "deployment progress or help trigger a deploy.  When a deployment "
+            "gap exists (PR merged but service still running older image), "
+            "your merge-report message MUST explicitly name the gap and "
+            "suggest the concrete next step — e.g. 'The fix is merged. "
+            "To make it live, deploy the update and restart the service.' "
+            "Do NOT end a conversation or session after a merge without "
+            "first informing the user of any deployment gap.  Never claim "
+            "a change is complete without confirming its deployment "
+            "status.\n"
             "\u2013 Infrastructure denylist: some repositories "
             "(notably robotsix-central-deploy and other deployment-system "
             "repos) are on the mill\u2019s infrastructure denylist \u2014 "

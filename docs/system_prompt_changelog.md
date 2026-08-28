@@ -3,6 +3,23 @@
 Governed artifact: `Settings.agent_instruction` default literal in
 `src/robotsix_chat/config/settings.py`. Version stamp: `SYSTEM_PROMPT_VERSION` in the same module.
 
+## v141 — 2026-08-28 — 20260820T202440Z-after-merge-proactively-prompt-user-to-d-cfa6
+
+**Summary:** Strengthen post-merge deployment gap guidance in `agent_instruction`.
+When a PR is merged but the service is not yet running the new image, the
+assistant must explicitly name the deployment gap in its merge-report message
+and suggest the concrete next step (deploy and restart). The conversation must
+not end without informing the user of the gap — the assistant should surface
+a clear recommendation like "deploy the update and restart the service."
+
+**Rationale:** In session a7ba56c48344453f8f0f170a2ced9425, the assistant reported
+a PR merge and the conversation ended without mentioning that the chat service
+still ran an older image (v0.18.0). The user was left unaware of the deployment
+gap. The existing guidance checked deployment status but did not explicitly
+forbid ending the conversation without surfacing the gap.
+
+**SHA256:** `754ee4653ede270d2d0bd0cb969f14b7bb2b4ea7706c5f58473ae66f1e870e94`
+
 ## v140 — 2026-08-26 — 20260826T072519Z-add-monitor-status-checking-before-respa-a833
 
 **Summary:** Update Monitor existence check guidance in agent_instruction to
