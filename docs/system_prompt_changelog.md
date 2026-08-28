@@ -3,7 +3,25 @@
 Governed artifact: `Settings.agent_instruction` default literal in
 `src/robotsix_chat/config/settings.py`. Version stamp: `SYSTEM_PROMPT_VERSION` in the same module.
 
-<<<<<<< HEAD
+## v143 — 2026-08-27 — 20260827T075012Z-assistant-should-have-verified-terminal-3a9a
+
+**Summary:** Add a "Completion-phase cross-check" rule to the
+Verification section of the agent system prompt.  Before declaring a
+phase, section, or batch of work "fully complete" or "standards-
+compliant", the assistant must re-read or re-query the live data that
+the claim covers — never declare completion from a mental model built
+from earlier tool calls alone.  Spot-checking every item in a
+multi-item claim is mandatory.
+
+**Rationale:** The assistant declared fleet settings-cleanup "fully
+complete and standards-compliant" without cross-checking live config
+keys, then doubled down claiming UPPERCASE keys were "KEEP by design"
+until the user corrected it.  The new rule prevents premature
+completion declarations by requiring a live-state re-verification
+before any completion claim.
+
+**SHA256:** `f90f1bc95576787fc2ad4833721eeefcb54c5b93ff229e4b0fac67c07e0ff746`
+
 ## v142 — 2026-08-28 — 20260825T191943Z-enforce-conversation-consistency-scan-on-0617
 
 **Summary:** Add SUBSESSION STATE VERIFICATION pre-response rule to `agent_instruction`.
@@ -25,9 +43,6 @@ subsession claims.
 
 **SHA256:** `a93ccae891a32fe655f972c666f07789c547b71765210597abc011166e968c74`
 
-=======
-<<<<<<< HEAD
->>>>>>> 2cfd72ff (chore: Assistant should have verified terminal state before declaring cleanup complete (20260827T075012Z-assistant-should-have-verified-terminal-3a9a))
 ## v141 — 2026-08-28 — 20260820T202440Z-after-merge-proactively-prompt-user-to-d-cfa6
 
 **Summary:** Strengthen post-merge deployment gap guidance in `agent_instruction`.
@@ -44,26 +59,6 @@ gap. The existing guidance checked deployment status but did not explicitly
 forbid ending the conversation without surfacing the gap.
 
 **SHA256:** `754ee4653ede270d2d0bd0cb969f14b7bb2b4ea7706c5f58473ae66f1e870e94`
-=======
-## v141 — 2026-08-27 — 20260827T075012Z-assistant-should-have-verified-terminal-3a9a
-
-**Summary:** Add a "Completion-phase cross-check" rule to the
-Verification section of the agent system prompt.  Before declaring a
-phase, section, or batch of work "fully complete" or "standards-
-compliant", the assistant must re-read or re-query the live data that
-the claim covers — never declare completion from a mental model built
-from earlier tool calls alone.  Spot-checking every item in a
-multi-item claim is mandatory.
-
-**Rationale:** The assistant declared fleet settings-cleanup "fully
-complete and standards-compliant" without cross-checking live config
-keys, then doubled down claiming UPPERCASE keys were "KEEP by design"
-until the user corrected it.  The new rule prevents premature
-completion declarations by requiring a live-state re-verification
-before any completion claim.
-
-**SHA256:** `f90f1bc95576787fc2ad4833721eeefcb54c5b93ff229e4b0fac67c07e0ff746`
->>>>>>> 613fbd68 (chore: Assistant should have verified terminal state before declaring cleanup complete (20260827T075012Z-assistant-should-have-verified-terminal-3a9a))
 
 ## v140 — 2026-08-26 — 20260826T072519Z-add-monitor-status-checking-before-respa-a833
 
