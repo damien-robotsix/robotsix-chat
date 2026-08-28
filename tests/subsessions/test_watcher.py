@@ -2014,7 +2014,7 @@ async def test_watcher_image_publish_timeout_elapses_resumes_with_warning() -> N
     info = _make_paused_monitor_with_pr(env, ticket_id="T-1", last_known="open")
 
     # Pre-set the verify-since timestamp to an old value so timeout elapses.
-    checkpoint = dict(info.checkpoint)
+    checkpoint = dict(info.checkpoint or {})
     checkpoint["_image_publish_verify_since"] = time.time() - 1.0  # 1s ago
     env.registry.update_checkpoint(info.id, checkpoint)
 
