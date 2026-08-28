@@ -1237,9 +1237,7 @@ async def test_periodic_human_approval_switches_to_event_driven() -> None:
     assert len(agent.calls) == 3
 
     # Clean up the worker task.
-    env.registry.cancel_and_close(
-        sub_id, reason="teardown", closed_by="system"
-    )
+    env.registry.cancel_and_close(sub_id, reason="teardown", closed_by="system")
 
 
 @pytest.mark.asyncio
@@ -1302,9 +1300,7 @@ async def test_periodic_human_approval_timeout_uses_own_threshold() -> None:
     assert info.status is not SubsessionStatus.CLOSED
 
     # Clean up the worker task.
-    env.registry.cancel_and_close(
-        sub_id, reason="teardown", closed_by="system"
-    )
+    env.registry.cancel_and_close(sub_id, reason="teardown", closed_by="system")
 
 
 @pytest.mark.asyncio
@@ -1370,9 +1366,7 @@ async def test_periodic_pre_authorized_no_match_switches_to_event_driven() -> No
     assert info.status is not SubsessionStatus.CLOSED
     assert len(agent.calls) == 3
 
-    env.registry.cancel_and_close(
-        sub_id, reason="teardown", closed_by="system"
-    )
+    env.registry.cancel_and_close(sub_id, reason="teardown", closed_by="system")
 
 
 @pytest.mark.asyncio
@@ -1405,9 +1399,7 @@ async def test_periodic_pre_authorized_empty_patterns_waits() -> None:
     # Monitor stays alive — switched to event-driven wait.
     assert info.status is not SubsessionStatus.CLOSED
 
-    env.registry.cancel_and_close(
-        sub_id, reason="teardown", closed_by="system"
-    )
+    env.registry.cancel_and_close(sub_id, reason="teardown", closed_by="system")
 
 
 @pytest.mark.asyncio
@@ -1462,9 +1454,7 @@ async def test_periodic_human_approval_wall_clock_switches_to_event_driven() -> 
     # Monitor stays alive — switched to event-driven wait by wall-clock.
     assert info.status is not SubsessionStatus.CLOSED
 
-    env.registry.cancel_and_close(
-        sub_id, reason="teardown", closed_by="system"
-    )
+    env.registry.cancel_and_close(sub_id, reason="teardown", closed_by="system")
 
 
 @pytest.mark.asyncio
