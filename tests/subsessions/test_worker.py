@@ -1241,6 +1241,70 @@ async def test_periodic_human_approval_switches_to_event_driven() -> None:
 
 
 @pytest.mark.asyncio
+async def test_periodic_human_approval_wakes_parent_with_durable_artifact() -> None:
+    """A pending operator decision surfaces durably and wakes the parent.
+
+    When a periodic monitor detects the tracked ticket is blocked awaiting a
+    human decision and switches to event-driven waiting, it must not rely on
+    the ephemeral SSE notification alone: it must wake the parent session via
+    ``deliver_summary`` so a durable artifact (a record in the owning
+    conversation's history) reaches the operator even with no browser
+    connected.  The surfacing is guarded so it fires once per approval
+    episode, not on every event-driven resume.
+    """
+    agent = FakeAgent(["NO_CHANGE", "NO_CHANGE", "NO_CHANGE", "NO_CHANGE"])
+    env = build_env(
+        agent=agent,
+        settings=make_settings(
+            auto_stop_no_change_runs=10,
+            human_approval_timeout_runs=2,
+            paused_monitor_auto_resume_seconds=0.05,
+        ),
+    )
+
+    sub_id = _spawn(
+        env,
+        kind=SubsessionKind.PERIODIC,
+        interval_seconds=0.02,
+        checkpoint={
+            "last_known_state": "human_issue_approval",
+            "ticket_id": "TICKET-42",
+        },
+    )
+    # Wait until the durable operator-decision artifact lands in the owning
+    # session's conversation history (delivered via deliver_summary → the
+    # passive-record fallback when no live agent is wired).
+    await wait_until(
+        lambda: any(
+            "awaiting an operator decision" in reply
+            for _label, reply in env.conversation_store.history(OWNER)
+        )
+    )
+
+    matches = [
+        (label, reply)
+        for label, reply in env.conversation_store.history(OWNER)
+        if "awaiting an operator decision" in reply
+    ]
+    # Exactly one durable surfacing — the checkpoint guard prevents the
+    # decision from being re-woken on every event-driven resume.
+    assert len(matches) == 1
+    label, reply = matches[0]
+    assert "TICKET-42" in reply
+    assert label.startswith(f"[Subsession {sub_id[:8]} (periodic)")
+
+    info = env.registry.get(sub_id)
+    assert info is not None
+    # Monitor stays alive (event-driven wait), and the guard flag is set.
+    assert info.status is not SubsessionStatus.CLOSED
+    assert info.checkpoint is not None
+    assert info.checkpoint.get("operator_decision_surfaced") is True
+
+    # Clean up the worker task.
+    env.registry.cancel_and_close(sub_id, reason="teardown", closed_by="system")
+
+
+@pytest.mark.asyncio
 async def test_periodic_human_approval_timeout_ignored_without_checkpoint() -> None:
     """Without human_issue_approval checkpoint, generic auto_stop applies."""
     agent = FakeAgent(["NO_CHANGE", "NO_CHANGE", "NO_CHANGE"])

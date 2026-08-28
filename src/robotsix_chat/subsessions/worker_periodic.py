@@ -785,6 +785,34 @@ async def _run_periodic_turn(
                         "link": ticket_id,
                     },
                 )
+            # -- durable surfacing + parent wake -------------------------
+            # The SSE notification above is EPHEMERAL: it only reaches a
+            # browser that happens to be connected at this instant, so a
+            # pending operator decision detected while nobody is watching
+            # silently vanishes.  A periodic monitor cannot spawn a
+            # user-chat subsession, so the only durable channel back to the
+            # operator is to wake the parent session with the monitor's
+            # recommendation.  deliver_summary records the outcome to the
+            # parent conversation's history (a durable artifact that
+            # survives a disconnected browser) AND runs a reaction turn,
+            # ensuring the decision actually reaches the user.  Guard with
+            # a checkpoint flag so the same decision is surfaced once per
+            # approval episode rather than re-woken on every event-driven
+            # resume/reblock cycle.
+            if not bool(checkpoint.get("operator_decision_surfaced")):
+                recommendation = reply.strip()
+                if _is_no_change(reply) or not recommendation:
+                    recommendation = "The monitor has no new recommendation to add."
+                decision_summary = (
+                    f"Ticket {ticket_id} is blocked awaiting an operator "
+                    f"decision (human approval) and needs your attention. "
+                    f"{recommendation}"
+                )
+                await env.delivery.deliver_summary(
+                    info, decision_summary, "needs_operator"
+                )
+                checkpoint["operator_decision_surfaced"] = True
+                registry.update_checkpoint(sub_id, checkpoint)
             runs = info.runs + 1
             registry.set_status(
                 sub_id,
