@@ -59,6 +59,18 @@ Returns a JSON object with `active` (bool) and, when a monitor is found, its `su
 NOT assert "tracking is active" without verifying via `check_monitor`. Searches both
 checkpoint-based matches and dedup-key matches.
 
+### Surface stop-and-escalate conditions in the user-facing summary
+
+When you spawn or arm a monitor that carries a **stop-and-escalate condition** — a rule that will
+halt the monitor and alert the operator rather than keep looping (e.g. "if the build fails again on
+the same model-config error, stop and escalate as an infrastructure blocker") — you MUST make that
+condition visible in the user-facing summary. State plainly what triggers the stop and that the
+monitor will alert the user, for example: "If the build fails again, the monitor will stop and alert
+you as an infrastructure blocker." Do not leave the stop rule implicit in the monitor's
+instructions: the operator otherwise assumes the monitor will loop indefinitely, and is caught off
+guard when it halts and escalates. Surfacing the condition aligns the operator's expectations with
+the monitor's actual escalation behaviour.
+
 ## Tools available only inside a subsession
 
 ### `complete_subsession`
