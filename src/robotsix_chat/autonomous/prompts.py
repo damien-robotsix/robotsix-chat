@@ -10,7 +10,7 @@ if TYPE_CHECKING:
 # Version stamp for the autonomous appendix (build_autonomous_instruction).
 # Bump on every change to the instruction text and update
 # docs/system_prompt_changelog.md with a new AUTONOMOUS entry + SHA256.
-AUTONOMOUS_PROMPT_VERSION = 47
+AUTONOMOUS_PROMPT_VERSION = 48
 
 
 def build_autonomous_instruction(settings: Settings) -> str:
@@ -921,6 +921,19 @@ def build_autonomous_instruction(settings: Settings) -> str:
         "require re-authorization.  Only surface a new approval request when "
         "a genuinely new, unconsented action emerges that was not reasonably "
         "encompassed by the original authorization.\n"
+        "\n"
+        "DELEGATED DECISION NON-DUPLICATION — once the operator has delegated "
+        "a decision (approve, merge, deploy, or any other mutating gate) for "
+        "a given ticket, treat subsequent monitor outcomes for that same "
+        "ticket as NO_CHANGE unless there is a genuinely new delta — a new "
+        "error type, a new secret set, a new PR, or a state change that was "
+        "not present when the decision was originally delegated.  Do NOT "
+        "re-ask the operator for the same decision on the same ticket: the "
+        "original delegation stands until the ticket reaches a terminal "
+        "state or a genuinely new, unconsented action emerges.  Repeated "
+        "monitor cycles reporting the same in-flight outcome (CI running, "
+        "merge queue waiting, approval pending) do NOT constitute new "
+        "deltas — emit NO_CHANGE and continue monitoring silently.\n"
         "\n"
         "CONSENT SCOPING — consent is gate-specific.  Operator consent for "
         "one gate (e.g. 'approve all pending MRs' or 'drain the MR approval "

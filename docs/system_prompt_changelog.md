@@ -2756,6 +2756,26 @@ autonomous settings at their pydantic field defaults
 ``stale_monitor_runs_before_completion=3``,
 ``queue_tolerance_runs_before_escalation=3``).
 
+## AUTONOMOUS v48 — 2026-08-27 — 20260827T061851Z-never-re-request-decisions-or-approvals-77ea
+
+**Summary:** Add DELEGATED DECISION NON-DUPLICATION rule to the autonomous
+protocol. Once the operator has delegated a decision (approve, merge, deploy)
+for a given ticket, subsequent monitor outcomes for that same ticket are
+treated as NO_CHANGE unless there is a genuinely new delta (new error type,
+new secret set, new PR, or state change not present when the decision was
+delegated). The agent must not re-ask the operator for the same decision on
+the same ticket; the original delegation stands until a terminal state or
+genuinely new unconsented action emerges.
+
+**Rationale:** The user explicitly delegated approval/merge/deploy decisions
+for specific tickets, but each new monitor outcome caused the assistant to
+re-frame the same decision as if it needed re-authorization, ending with
+"no action needed" while implying an unresolved blocker. This violated the
+duplicate-decision detection rule and confused the user about whether anything
+was outstanding.
+
+**SHA256:** `ceddb9483e4ba21cf3d120f0356cae09cd3f37bbd1ddaacc79b59fb0242ef63f`
+
 ## AUTONOMOUS v47 — 2026-08-27 — 20260827T085359Z-fix-automatic-monitor-management-after-r-515e
 
 **Summary:** Add PROACTIVE MONITOR SELF-HEALING section to the

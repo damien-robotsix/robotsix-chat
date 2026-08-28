@@ -232,6 +232,16 @@ class TestBuildAutonomousInstruction:
         assert "autonomous.sessions changes ARE a valid reason" in result
         assert "is a valid reason to auto-self-restart" in result
 
+    def test_delegated_decision_non_duplication_present(self) -> None:
+        """DELEGATED DECISION NON-DUPLICATION section is present."""
+        settings = self._make_settings()
+        result = build_autonomous_instruction(settings)
+        assert "DELEGATED DECISION NON-DUPLICATION" in result
+        assert "once the operator has delegated" in result
+        assert "genuinely new delta" in result
+        assert "Do NOT re-ask the operator for the same decision" in result
+        assert "emit NO_CHANGE" in result
+
     def test_config_apply_verify_mandates_completion_gate(self) -> None:
         """Task is NOT complete until verification confirms the definition."""
         settings = self._make_settings()
