@@ -86,16 +86,15 @@ the server returns a 404 when it is omitted. Pass the account identifier you dis
 
 ## HTTP protocol for mutation endpoints
 
-The auto-mail board uses **form-encoded** `POST` requests for triage operations
-and **JSON** `POST` requests for archive mutations.  Do not guess — use the
-exact format documented below.
+The auto-mail board uses **form-encoded** `POST` requests for triage operations and **JSON** `POST`
+requests for archive mutations. Do not guess — use the exact format documented below.
 
 ### `POST /move` — move email to triage column
 
 - **Content-Type:** `application/x-www-form-urlencoded`
 - **Body:** `message_id=<id>&triage_action=<action>`
-- **`triage_action` values:** `INBOX`, `HUMAN_TRIAGE`, `PENDING_ACTION`, `TO_ARCHIVE`,
-  `TO_DELETE`, `TO_CALENDAR`, `TO_ANSWER`, `DRAFT_READY`
+- **`triage_action` values:** `INBOX`, `HUMAN_TRIAGE`, `PENDING_ACTION`, `TO_ARCHIVE`, `TO_DELETE`,
+  `TO_CALENDAR`, `TO_ANSWER`, `DRAFT_READY`
 
 ### `POST /delete` — delete email from board
 
