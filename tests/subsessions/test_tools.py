@@ -1353,6 +1353,114 @@ async def test_spawn_tool_refuses_monitor_for_terminal_ticket() -> None:
     assert env.registry.list_for_owner(OWNER) == []
 
 
+def _mock_board(state: str | None):
+    """Return a patched httpx.AsyncClient whose GET yields *state* (200)."""
+    from unittest.mock import AsyncMock, MagicMock
+
+    mock_response = MagicMock()
+    mock_response.status_code = 200
+    mock_response.json.return_value = {"state": state}
+    mock_client = MagicMock()
+    mock_client.get = AsyncMock(return_value=mock_response)
+    mock_instance = MagicMock()
+    mock_instance.__aenter__ = AsyncMock(return_value=mock_client)
+    mock_instance.__aexit__ = AsyncMock(return_value=None)
+    return MagicMock(return_value=mock_instance)
+
+
+def _close_terminal_monitor(env, ticket_id: str) -> None:
+    info = _register(env, kind=SubsessionKind.PERIODIC, title="old monitor")
+    env.registry.update_checkpoint(info.id, {"ticket_id": ticket_id})
+    env.registry.mark_closed(info.id, summary="blocked", reason="completed")
+    assert env.registry.has_terminal_report_for_ticket(ticket_id)
+
+
+@pytest.mark.asyncio
+async def test_spawn_tool_allows_remonitor_after_terminal_report() -> None:
+    """A completed monitor must not make a re-activated ticket unmonitorable.
+
+    Regression for the fingerprint-reset + resume-blocked case: the old
+    monitor closed with a terminal report, the ticket is back to ready, and
+    a fresh wait_for_event monitor must be accepted.
+    """
+    from unittest.mock import patch
+
+    env = build_env()
+    env.settings.direct_repo = SimpleNamespace(
+        enabled=True, board_api_base_url="https://mill.example.com"
+    )
+    ticket = "20250101T000000Z-ticket-reopened"
+    _close_terminal_monitor(env, ticket)
+    spawn = _by_name(build_subsession_tools(env, ctx=_ctx()), "spawn_subsession")
+
+    with patch("httpx.AsyncClient", _mock_board("ready")):
+        result = await spawn(
+            "wait_for_event",
+            "re-monitor",
+            "monitor the resumed ticket",
+            dedup_key=ticket,
+            model_level=2,
+        )
+
+    assert "Cannot spawn" not in result
+    active = [
+        i
+        for i in env.registry.list_for_owner(OWNER)
+        if i.is_active and i.dedup_key == ticket
+    ]
+    assert len(active) == 1
+    for i in active:
+        env.registry.cancel_and_close(i.id, reason="teardown", closed_by="system")
+
+
+@pytest.mark.asyncio
+async def test_spawn_tool_terminal_report_still_refuses_when_board_unknown() -> None:
+    """Without a board to confirm the ticket is live, the terminal report guards."""
+    env = build_env()
+    env.settings.direct_repo = SimpleNamespace(enabled=False, board_api_base_url="")
+    ticket = "20250101T000000Z-ticket-noboard"
+    _close_terminal_monitor(env, ticket)
+    spawn = _by_name(build_subsession_tools(env, ctx=_ctx()), "spawn_subsession")
+
+    result = await spawn(
+        "wait_for_event",
+        "re-monitor",
+        "monitor without board",
+        dedup_key=ticket,
+        model_level=2,
+    )
+
+    assert "Cannot spawn monitor" in result
+    assert "could not be consulted" in result
+    assert all(not i.is_active for i in env.registry.list_for_owner(OWNER))
+
+
+@pytest.mark.asyncio
+async def test_spawn_tool_terminal_report_and_done_ticket_refuses() -> None:
+    """Terminal report + board DONE keeps refusing (the DONE guard wins)."""
+    from unittest.mock import patch
+
+    env = build_env()
+    env.settings.direct_repo = SimpleNamespace(
+        enabled=True, board_api_base_url="https://mill.example.com"
+    )
+    ticket = "20250101T000000Z-ticket-finished"
+    _close_terminal_monitor(env, ticket)
+    spawn = _by_name(build_subsession_tools(env, ctx=_ctx()), "spawn_subsession")
+
+    with patch("httpx.AsyncClient", _mock_board("DONE")):
+        result = await spawn(
+            "wait_for_event",
+            "re-monitor",
+            "monitor finished ticket",
+            dedup_key=ticket,
+            model_level=2,
+        )
+
+    assert "Cannot spawn monitor" in result
+    assert "DONE" in result
+
+
 @pytest.mark.asyncio
 async def test_spawn_tool_refuses_monitor_for_closed_ticket() -> None:
     """A periodic spawn is refused when the board reports CLOSED."""
@@ -1391,8 +1499,8 @@ async def test_spawn_tool_refuses_monitor_for_closed_ticket() -> None:
 
 
 @pytest.mark.asyncio
-async def test_spawn_tool_refuses_monitor_when_terminal_report_exists() -> None:
-    """Refuse spawn when a prior monitor already tracked the ticket."""
+async def test_spawn_tool_terminal_report_does_not_block_active_ticket() -> None:
+    """A prior terminal report no longer blocks a monitor for a live ticket."""
     from unittest.mock import AsyncMock, MagicMock, patch
 
     env = build_env()
@@ -1413,9 +1521,8 @@ async def test_spawn_tool_refuses_monitor_when_terminal_report_exists() -> None:
     )
     env.registry.mark_closed(prior.id, summary="ticket done", reason="ticket_terminal")
 
-    # Mock the HTTP client to return 200 with an active ticket — the
-    # board says the ticket is active, but the terminal-monitor guard
-    # fires first.
+    # The board says the ticket is active again — that decides: the
+    # terminal report from the earlier monitor must not block re-tracking.
     mock_response = MagicMock()
     mock_response.status_code = 200
     mock_response.json.return_value = {"state": "IN_PROGRESS"}
@@ -1437,12 +1544,15 @@ async def test_spawn_tool_refuses_monitor_when_terminal_report_exists() -> None:
             model_level=3,
         )
 
-    assert "Cannot spawn monitor" in result
-    assert "previous monitor already tracked" in result
-    # Only the prior (closed) monitor should exist — no new one created.
-    all_infos = env.registry.list_for_owner(OWNER)
-    active = [i for i in all_infos if i.is_active]
-    assert len(active) == 0
+    assert "Cannot spawn" not in result
+    active = [
+        i
+        for i in env.registry.list_for_owner(OWNER)
+        if i.is_active and i.dedup_key == "20250101T000000Z-ticket-aaaa"
+    ]
+    assert len(active) == 1
+    for i in active:
+        env.registry.cancel_and_close(i.id, reason="teardown", closed_by="system")
 
 
 @pytest.mark.asyncio

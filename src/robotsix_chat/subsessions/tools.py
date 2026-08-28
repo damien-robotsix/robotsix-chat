@@ -310,24 +310,20 @@ def _build_spawn_and_control_tools(
             SubsessionKind.WAIT_FOR_EVENT,
         ):
             # --- Terminal-monitor guard ---------------------------------
-            # If a terminal monitor already tracked this ticket to
-            # completion (ticket_terminal / completed close_reason), do
-            # NOT spawn a duplicate — the ticket's lifecycle was already
-            # tracked to its end.
-            if env.registry.has_terminal_report_for_ticket(dedup_key):
-                logger.info(
-                    "spawn_subsession_tool: ticket %r already has a "
-                    "terminal monitor report — refusing redundant spawn.",
-                    dedup_key,
-                )
-                return (
-                    f"Cannot spawn monitor for ticket '{dedup_key}': "
-                    f"a previous monitor already tracked this ticket to "
-                    f"completion.  Use check_monitor or list_subsessions "
-                    f"to review the existing monitor's summary.  If the "
-                    f"ticket has new activity, reopen or resume the "
-                    f"existing monitor instead of spawning a duplicate."
-                )
+            # A prior monitor may already have tracked this ticket to
+            # completion (ticket_terminal / completed close_reason).  That
+            # alone is NOT a reason to refuse: a ticket can come back to
+            # life after its monitor closed (fingerprint reset +
+            # resume-blocked, a re-opened epic, a sendback), and a closed
+            # subsession cannot be messaged or resumed — so refusing here
+            # made such tickets impossible to re-monitor (observed
+            # 2026-08-28 on 20260827T125543Z-…-5293).  The live board
+            # state decides: DONE/CLOSED refuses below regardless of
+            # history; any other state allows a fresh monitor.  Only when
+            # the board cannot be consulted does the terminal report stand
+            # in as the guard.
+            has_terminal_report = env.registry.has_terminal_report_for_ticket(dedup_key)
+            board_state_known = False
 
             # Verify the ticket exists on the board before spawning the
             # monitor — a monitor for a stale/paraphrased ticket ID would
@@ -372,6 +368,7 @@ def _build_spawn_and_control_tools(
                                     if isinstance(data, dict)
                                     else ""
                                 )
+                                board_state_known = bool(ticket_state)
                                 if isinstance(ticket_state, str) and (
                                     ticket_state.upper() == "DONE"
                                     or ticket_state.upper() == "CLOSED"
@@ -416,6 +413,29 @@ def _build_spawn_and_control_tools(
                             "verifying ticket %r — allowing spawn.",
                             dedup_key,
                         )
+            if has_terminal_report:
+                if not board_state_known:
+                    logger.info(
+                        "spawn_subsession_tool: ticket %r has a terminal "
+                        "monitor report and the board state is unknown — "
+                        "refusing redundant spawn.",
+                        dedup_key,
+                    )
+                    return (
+                        f"Cannot spawn monitor for ticket '{dedup_key}': "
+                        f"a previous monitor already tracked this ticket to "
+                        f"completion and the board could not be consulted "
+                        f"to confirm it is active again.  Use check_monitor "
+                        f"or list_subsessions to review the existing "
+                        f"monitor's summary, verify the ticket state with "
+                        f"component_request GET /tickets/{{id}}, then retry."
+                    )
+                logger.info(
+                    "spawn_subsession_tool: ticket %r has a terminal monitor "
+                    "report but is active again on the board — allowing a "
+                    "fresh monitor.",
+                    dedup_key,
+                )
             checkpoint = {"ticket_id": dedup_key}
 
         try:
@@ -550,9 +570,11 @@ def _build_spawn_and_control_tools(
         and, when an active monitor is found, its ``subsession_id``,
         ``kind``, ``status``, and ``title``.  Use this before claiming a
         tracker is running — do NOT assert "tracking is active" without
-        calling this tool first.  When ``terminal_report`` is true, do NOT
-        spawn a new monitor — the ticket's lifecycle was already tracked
-        to its end.
+        calling this tool first.  ``terminal_report`` alone does not
+        forbid a new monitor: if the ticket is active again on the board
+        (e.g. resumed after a block), spawn_subsession accepts a fresh
+        monitor; it refuses only while the board reports DONE/CLOSED or
+        cannot be consulted.
 
         Searches both checkpoint-based matches (a monitor whose
         checkpoint records the ticket id) and dedup-key matches (a

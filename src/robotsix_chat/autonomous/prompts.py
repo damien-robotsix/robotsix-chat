@@ -10,7 +10,7 @@ if TYPE_CHECKING:
 # Version stamp for the autonomous appendix (build_autonomous_instruction).
 # Bump on every change to the instruction text and update
 # docs/system_prompt_changelog.md with a new AUTONOMOUS entry + SHA256.
-AUTONOMOUS_PROMPT_VERSION = 48
+AUTONOMOUS_PROMPT_VERSION = 49
 
 
 def build_autonomous_instruction(settings: Settings) -> str:
@@ -615,8 +615,9 @@ def build_autonomous_instruction(settings: Settings) -> str:
         "  - CHECK FOR EXISTING MONITORS FIRST: before creating a new "
         "monitor, call check_monitor(ticket_id) to verify whether a "
         "terminal report already exists for that ticket (``terminal_report``: "
-        "true).  If a terminal report exists, a previous monitor already "
-        "tracked the ticket to completion — do NOT spawn a duplicate.  "
+        "true).  A terminal report means a previous monitor tracked the "
+        "ticket to an end state — spawn a new one only if GET /tickets/{id} "
+        "shows the ticket is active again (not DONE/CLOSED).  "
         "Also call list_subsessions to verify whether a running or paused "
         "monitor already covers the same ticket.  Reuse or resume an "
         "existing monitor rather than spawning a duplicate.  Two monitors "
