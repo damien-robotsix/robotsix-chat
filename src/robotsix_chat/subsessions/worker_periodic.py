@@ -208,17 +208,21 @@ def _build_periodic_input(
         "Decision-blocked tickets: when the monitored ticket is awaiting an "
         "operator decision — stuck in human_issue_approval, waiting on an "
         '"Option A or B?" choice, or otherwise blocked on a human '
-        "direction — do NOT silently reply NO_CHANGE run after run.  "
-        "Instead, call complete_subsession with a summary that includes a "
-        "CONCRETE RECOMMENDATION: state whether you recommend approving or "
-        "closing the ticket and why (e.g. 'I recommend approving — this "
-        "is a standard pre-authorized rollout step' or 'I recommend closing "
-        "— the change is already covered by ticket X').  Explain what "
-        "decision is needed and set expectations: mention that the system "
-        "will auto-escalate after the human_approval_timeout window if no "
-        "decision is made.  This surfaces the blocker with actionable "
-        "guidance so the operator can act on it rather than waiting for "
-        "the auto-stop timeout.\n\n"
+        "direction — do NOT call complete_subsession and do NOT reply "
+        "NO_CHANGE run after run.  The monitor must stay alive and keep "
+        "tracking the ticket until it reaches a terminal state (done, "
+        "closed, rejected) or the user explicitly stops tracking.  "
+        "Instead, reply with a concise acknowledgment of the blocked state "
+        "that includes a CONCRETE RECOMMENDATION: state whether you "
+        "recommend approving or closing the ticket and why (e.g. "
+        "'I recommend approving — this is a standard pre-authorized "
+        "rollout step' or 'I recommend closing — the change is already "
+        "covered by ticket X').  Then reply "
+        f"{_QUEUED_SENTINEL} (and nothing else) to switch the monitor to "
+        "event-driven waiting — it will stop burning your run budget and "
+        "will wake automatically when the ticket leaves the "
+        "human_issue_approval state.  Do NOT call complete_subsession — "
+        "the monitor must continue tracking through to a terminal state.\n\n"
     )
     # Promotable-draft branch: the auto-drive monitor must not loop
     # silently on a draft ticket that already has a complete,
@@ -690,14 +694,16 @@ async def _run_periodic_turn(
         pending, previous_result, _ = result
         return pending, previous_result, 0
 
-    # Human-approval timeout: when the checkpoint's last_known_state is
+    # Human-approval detection: when the checkpoint's last_known_state is
     # human_issue_approval and the subsession has produced enough
-    # consecutive NO_CHANGE runs, auto-escalate by closing with a
-    # distinct reason so the parent agent can act on it.
+    # consecutive NO_CHANGE runs, switch to event-driven waiting so the
+    # monitor stays alive until the ticket reaches a terminal state or
+    # the user explicitly stops tracking.
     #
     # Pre-authorized fast-path: when the monitored ticket matches a
     # pre_authorized_ticket_patterns entry, escalate immediately on the
-    # first NO_CHANGE run instead of waiting for the full timeout.
+    # first NO_CHANGE run instead of waiting — pre-authorized tickets
+    # bypass the approval gate.
     checkpoint = info.checkpoint or {}
     last_known = checkpoint.get("last_known_state", "")
     if isinstance(last_known, str) and last_known.lower() == "human_issue_approval":
@@ -733,9 +739,8 @@ async def _run_periodic_turn(
             return None
 
         # Track how long the checkpoint has carried human_issue_approval
-        # so we can auto-escalate on wall-clock time even when the agent
-        # never emits NO_CHANGE (e.g. it follows the system prompt and
-        # calls complete_subsession instead, but the call fails).
+        # so we can switch to event-driven wait after enough no-change
+        # runs instead of burning the periodic run budget.
         now = registry.now()
         human_approval_since_raw = checkpoint.get("human_approval_since")
         if isinstance(human_approval_since_raw, (int, float)):
@@ -748,58 +753,58 @@ async def _run_periodic_turn(
         human_approval_timeout_s = (
             env.settings.subsessions.human_approval_timeout_seconds
         )
-        if now - human_approval_since >= human_approval_timeout_s:
-            logger.warning(
-                "Subsession %s: auto-escalating after %.0f s in "
-                "human_issue_approval state (%.0f s total elapsed).",
-                sub_id,
-                now - human_approval_since,
-                now - info.created_at,
-            )
-            elapsed = _format_duration(now - info.created_at)
-            stuck_for = _format_duration(now - human_approval_since)
-            summary = (
-                f"Ticket has been stuck at human_issue_approval for "
-                f"{stuck_for} ({elapsed} total elapsed) — "
-                f"auto-escalating (wall-clock timeout)."
-            )
-            closed = registry.mark_closed(
-                sub_id,
-                summary=summary,
-                reason="human_approval_timeout",
-                closed_by="system",
-            )
-            if closed is not None:
-                await env.delivery.deliver_summary(
-                    closed, summary, "human_approval_timeout"
-                )
-            return None
-
         human_approval_cap = env.settings.subsessions.human_approval_timeout_runs
-        if consecutive_no_change >= human_approval_cap:
-            logger.warning(
-                "Subsession %s: auto-escalating after %d consecutive "
-                "no-change runs in human_issue_approval state.",
+        should_switch_to_event = (
+            now - human_approval_since >= human_approval_timeout_s
+            or consecutive_no_change >= human_approval_cap
+        )
+        if should_switch_to_event:
+            logger.info(
+                "Subsession %s: ticket %s in human_issue_approval (%.0f s "
+                "elapsed, %d consecutive no-change runs) — switching to "
+                "event-driven wait (monitor stays alive).",
                 sub_id,
+                ticket_id,
+                now - human_approval_since,
                 consecutive_no_change,
             )
-            elapsed = _format_duration(registry.now() - info.created_at)
-            summary = (
-                f"Ticket has been stuck at human_issue_approval for "
-                f"{human_approval_cap} consecutive no-change runs "
-                f"({elapsed} elapsed) — auto-escalating."
-            )
-            closed = registry.mark_closed(
-                sub_id,
-                summary=summary,
-                reason="human_approval_timeout",
-                closed_by="system",
-            )
-            if closed is not None:
-                await env.delivery.deliver_summary(
-                    closed, summary, "human_approval_timeout"
+            if env.event_sink is not None:
+                elapsed = _format_duration(now - info.created_at)
+                env.event_sink.publish(
+                    info.owner_session_id,
+                    {
+                        "type": SSE_NOTIFICATION_TYPE,
+                        "title": f"Monitor waiting for approval: {info.title}",
+                        "body": (
+                            f"Ticket {ticket_id} is in human_issue_approval "
+                            f"({elapsed} elapsed).  Monitor {sub_id[:8]} "
+                            f"switching to event-driven waiting — it will "
+                            f"resume when the ticket state changes."
+                        ),
+                        "urgency": "low",
+                        "link": ticket_id,
+                    },
                 )
-            return None
+            runs = info.runs + 1
+            registry.set_status(
+                sub_id,
+                SubsessionStatus.SLEEPING,
+                runs=runs,
+                next_run_at=registry.now() + (info.interval_seconds or 60.0),
+                last_result=reply,
+            )
+            previous_result = reply
+            result = await _queued_wait_loop(
+                env,
+                info,
+                sub_id,
+                previous_result,
+                0,
+            )
+            if result is None:
+                return None
+            pending, previous_result, _ = result
+            return pending, previous_result, 0  # reset consecutive_no_change
 
     idle_cap = env.settings.subsessions.max_idle_runs
     if idle_cap > 0 and consecutive_no_change >= idle_cap:
