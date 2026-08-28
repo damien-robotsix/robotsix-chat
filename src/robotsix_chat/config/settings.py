@@ -71,7 +71,7 @@ class ConfigValidationError(ValueError):
 # Version stamp for the agent_instruction default literal.
 # Bump on every change to Settings.agent_instruction and update
 # docs/system_prompt_changelog.md with a new entry + SHA256.
-SYSTEM_PROMPT_VERSION = 141
+SYSTEM_PROMPT_VERSION = 142
 
 # Valid model levels, derived from llmio's tier enum (import-time constant so
 # the set is built once and can never drift from the tiers llmio ships).
@@ -391,6 +391,23 @@ class Settings(BaseModel):
             "end with a clear recommendation and next step — state what "
             "the user should do next or, if no action is needed, confirm "
             "that explicitly.\n"
+            "– SUBSESSION STATE VERIFICATION — before synthesizing any "
+            "subsession outcome into a user-facing reply, cross-check the "
+            "conversation transcript against live state.  If you previously "
+            "reported a subsession as active, tracking, or pending in an "
+            "earlier turn, call list_subsessions (and check_monitor for "
+            "monitors) to verify it has not since reached a terminal state "
+            "(closed, failed, completed, auto-stopped).  When the live API "
+            "confirms a subsession you described as active has already "
+            "terminated, you MUST either: (a) PRUNE it from the synthesis "
+            "entirely — do not repeat stale claims about it — or (b) "
+            "explicitly acknowledge the superseding outcome ('Monitor X "
+            "has since auto-stopped; the ticket is closed.').  Never "
+            "present a subsession as still active when the live API shows "
+            "it is terminal.  This verification costs one tool call per "
+            "turn and prevents the recurring cycle where the assistant "
+            "restates stale monitor state, the user corrects it, and the "
+            "assistant repeats the stale claim.\n"
             "– Inside a subsession, call complete_subsession(summary) as soon "
             "as your goal is reached — for periodic work, that means as soon "
             "as the monitored condition reaches a verified terminal state. "
