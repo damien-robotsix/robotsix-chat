@@ -1,10 +1,16 @@
 """Read-only URL rendering via headless Chromium (Playwright).
 
-Returns a screenshot and ARIA accessibility tree so the agent can visually
-inspect a rendered page.  No state mutation or form submission — strictly
-read-only: the page is loaded, a full-page screenshot is captured, the
-ARIA snapshot (a11y tree) is extracted, and the browser is
+Returns a *viewable* screenshot plus the ARIA accessibility tree so the
+agent can visually inspect a rendered page.  No state mutation or form
+submission — strictly read-only: the page is loaded, a full-page screenshot
+is captured, the ARIA snapshot (a11y tree) is extracted, and the browser is
 closed immediately.
+
+The screenshot is returned as a pydantic-ai ``BinaryContent`` part, which
+robotsix-llmio maps onto a native MCP ``image`` block.  It must NOT be
+base64-encoded into a JSON string: the transport stringifies whatever it is
+given, so a data URL inside JSON reaches the model as an unreadable text
+blob (a 205 KB PNG became 588,111 characters) rather than an image.
 
 Requires the ``render-url`` extra (``playwright``) and a Playwright
 Chromium browser installation.  When Playwright is not importable the
@@ -15,7 +21,7 @@ from __future__ import annotations
 
 __all__ = ["build_render_url_tools", "load_render_url_skill"]
 
-import base64
+import io
 import json
 import logging
 from collections.abc import Callable
@@ -25,6 +31,13 @@ from typing import Any
 from robotsix_chat.config.models import RenderUrlSettings
 
 logger = logging.getLogger(__name__)
+
+#: Pixel budget for the returned screenshot (~750k px ≈ a few hundred KB of
+#: PNG).  A ``full_page`` capture of a long document is otherwise unbounded —
+#: an infinite-scroll page can produce a multi-megabyte image that blows the
+#: model's per-image limit.  Downscaling preserves layout, which is what the
+#: screenshot is for; fine print stays available via the a11y tree.
+MAX_SCREENSHOT_PIXELS = 750_000
 
 
 def load_render_url_skill() -> str:
@@ -41,6 +54,37 @@ def load_render_url_skill() -> str:
         return skill_path.read_text(encoding="utf-8")
     except FileNotFoundError:
         return ""
+
+
+def _downscale_png(data: bytes, max_pixels: int = MAX_SCREENSHOT_PIXELS) -> bytes:
+    """Return *data* shrunk to fit *max_pixels*, or unchanged when it fits.
+
+    Returns the input untouched when Pillow is unavailable or the image
+    cannot be decoded — an oversized screenshot is still far more useful
+    than a hard failure.
+    """
+    try:
+        from PIL import Image
+    except ImportError:  # pragma: no cover - Pillow ships with the render extra
+        return data
+
+    try:
+        with Image.open(io.BytesIO(data)) as image:
+            width, height = image.size
+            pixels = width * height
+            if pixels <= max_pixels:
+                return data
+            ratio = (max_pixels / pixels) ** 0.5
+            resized = image.resize(
+                (max(1, int(width * ratio)), max(1, int(height * ratio))),
+                resample=Image.Resampling.LANCZOS,
+            )
+            buffer = io.BytesIO()
+            resized.save(buffer, format="PNG")
+    except Exception:
+        logger.warning("render_url: could not downscale screenshot", exc_info=True)
+        return data
+    return buffer.getvalue()
 
 
 def build_render_url_tools(
@@ -72,41 +116,37 @@ def build_render_url_tools(
 
     timeout_ms = settings.timeout * 1000
 
-    async def render_url(url: str, text_only: bool = False) -> str:
+    async def render_url(url: str, text_only: bool = False) -> Any:
         """Render a URL in headless Chromium and return the page content.
 
-        Loads *url* in a headless Chromium browser, extracts the
-        ARIA accessibility tree, and optionally captures a full-page screenshot
-        (PNG, base64-encoded).  Read-only — no clicks, no form fills, no
-        state mutation.  The browser is closed immediately after the
-        capture.
-
-        When *text_only* is ``True`` the screenshot is omitted, producing
-        a compact response suitable for subsessions that lack file-slicing
-        tools and cannot handle large base64 blobs.
+        Loads *url* in a headless Chromium browser, extracts the ARIA
+        accessibility tree, and (unless *text_only*) captures a full-page
+        screenshot.  Read-only — no clicks, no form fills, no state
+        mutation.  The browser is closed immediately after the capture.
 
         Args:
             url: The fully-qualified http(s) URL to render (e.g.
                 ``https://example.com/page``).
-            text_only: When ``True``, skip the full-page screenshot and
-                return only the textual content (page title, URL, a11y
-                tree).  Defaults to ``False``.
+            text_only: When ``True``, skip the screenshot and return only
+                the textual content (page title, URL, a11y tree) as a JSON
+                string.  Defaults to ``False``.
 
         Returns:
-            A JSON string with ``page_title``, ``page_url``,
-            ``screenshot_base64`` (empty when *text_only* is ``True``,
-            otherwise the full-page PNG as a base64 data URL),
-            ``accessibility_tree`` (the ARIA snapshot as a YAML-like string),
-            and ``error`` (non-empty on failure).
+            With a screenshot: a two-part list of a ``TextContent`` holding
+            the JSON metadata (``page_title``, ``page_url``,
+            ``accessibility_tree``, ``error``) and a ``BinaryContent``
+            holding the PNG, which the transport turns into a viewable
+            image block.  In *text_only* mode, or when the render failed
+            and there is no image, the JSON string alone.
 
         """
         result: dict[str, Any] = {
             "page_title": "",
             "page_url": url,
-            "screenshot_base64": "",
             "accessibility_tree": None,
             "error": "",
         }
+        screenshot_bytes: bytes | None = None
 
         try:
             async with async_playwright() as p:
@@ -135,18 +175,12 @@ def build_render_url_tools(
                     result["page_title"] = await page.title()
                     result["page_url"] = page.url
 
-                    # Full-page screenshot as base64 data URL (skipped in
-                    # text-only mode to keep the response compact).
+                    # Full-page screenshot (skipped in text-only mode to
+                    # keep the response compact).  Returned as a binary
+                    # part, never base64-in-JSON — see the module docstring.
                     if not text_only:
-                        screenshot_bytes = await page.screenshot(
-                            full_page=True,
-                        )
-                        result["screenshot_base64"] = (
-                            "data:image/png;base64,"
-                            + base64.b64encode(screenshot_bytes).decode(
-                                "ascii",
-                            )
-                        )
+                        raw = await page.screenshot(full_page=True)
+                        screenshot_bytes = _downscale_png(raw)
 
                     # ARIA accessibility tree snapshot (YAML-like string).
                     a11y_snapshot = await page.locator("body").aria_snapshot()
@@ -161,6 +195,15 @@ def build_render_url_tools(
             logger.exception("render_url failed for %s", url)
             result["error"] = f"{type(exc).__name__}: {exc}"
 
-        return json.dumps(result, ensure_ascii=False)
+        metadata = json.dumps(result, ensure_ascii=False)
+        if screenshot_bytes is None:
+            return metadata
+
+        from pydantic_ai.messages import BinaryContent, TextContent
+
+        return [
+            TextContent(content=metadata),
+            BinaryContent(data=screenshot_bytes, media_type="image/png"),
+        ]
 
     return [render_url]

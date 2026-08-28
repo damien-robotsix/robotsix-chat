@@ -1,8 +1,8 @@
 # Render URL — headless Chromium page capture
 
 You have a `render_url` tool that loads a URL in a headless Chromium browser, captures a full-page
-screenshot (PNG, base64-encoded), and extracts the ARIA accessibility tree. Read-only — no clicks,
-no form fills, no state mutation.
+screenshot you can actually **see**, and extracts the ARIA accessibility tree. Read-only — no
+clicks, no form fills, no state mutation.
 
 ## When to use it
 
@@ -30,19 +30,23 @@ render_url(
 
 ## Return value
 
-A JSON string with these fields:
+Two parts: a **viewable image** of the rendered page, plus a text part holding JSON metadata:
 
 - `page_title` — the document `<title>`
 - `page_url` — the final URL after any redirects
-- `screenshot_base64` — full-page PNG as a `data:image/png;base64,…` data URL (empty when
-  `text_only` is `True`)
 - `accessibility_tree` — the ARIA snapshot as a YAML-like string (`None` when unavailable)
 - `error` — non-empty string when the render failed
 
+The screenshot arrives as a real image block, so you can read the page visually — layout, charts,
+rendered state. It is capped at ~750k pixels; a very long page is downscaled, so use the
+accessibility tree when you need exact fine print.
+
+When the render fails there is no image and you get the JSON metadata alone, with `error` set.
+
 ## Text-only mode
 
-Pass `text_only=True` to omit the screenshot. The response is compact and suitable for subsessions
-or contexts that cannot handle large base64 blobs. The accessibility tree is still included.
+Pass `text_only=True` to omit the screenshot and get the JSON metadata alone. Use it when you only
+need the page's semantic content — it is markedly cheaper than shipping an image.
 
 ## Authenticated fleet UIs
 

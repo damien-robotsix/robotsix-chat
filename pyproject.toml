@@ -15,6 +15,10 @@ dependencies = [
     "httpx",
     "pypdf>=6.15.0",
     "pypdfium2>=5.13.0",
+    # Pillow was already a de-facto direct dependency: pdf_tools calls PIL's
+    # `.save()` on the Image that pypdfium2's `to_pil()` hands back.  render_url
+    # imports it by name to bound screenshot size, so declare it.
+    "pillow",
     "pydantic",
     "reportlab",
     "structlog>=24.0.0",
@@ -336,7 +340,11 @@ DEP002 = ["transformers"]
 # this transitive import (DEP003) is deliberate.
 # `opentelemetry` is the OTLP exporter (``tracing`` extra); guarded by a
 # try/except ImportError in cognee's Langfuse callback registration.
-DEP003 = ["pydantic_ai", "opentelemetry", "robotsix_mill", "PIL"]
+# `PIL` is no longer listed: Pillow is now a declared dependency.  It had been
+# imported by name in pdf_tools since the PDF tools landed and worked only
+# because pypdfium2 pulls Pillow in transitively — a runtime break waiting on
+# pypdfium2 dropping it.
+DEP003 = ["pydantic_ai", "opentelemetry", "robotsix_mill"]
 
 [tool.pytest.ini_options]
 # Default run is offline and credential-free (robotsix-standards python page):
