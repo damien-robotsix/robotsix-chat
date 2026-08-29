@@ -41,14 +41,16 @@ Errors are specific and actionable:
 
 - **No session configured** (path unset / file missing / empty / invalid JSON):
   `"no session state configured; operator must capture one …"`.
-- **Expired or challenged session** (the usage page redirects to login, or a Cloudflare
-  interstitial is served): `"claude.ai session expired or challenged — operator must re-capture the
-  browser session state."` — the signal to refresh the cookie, not to debug the code.
+- **Expired or challenged session** (the usage page redirects to login, or a Cloudflare interstitial
+  is served):
+  `"claude.ai session expired or challenged — operator must re-capture the browser session state."`
+  — the signal to refresh the cookie, not to debug the code.
 
 ### Capturing the storage-state blob (operator procedure)
 
 1. Log into claude.ai in a **normal** desktop browser as the fleet account, and confirm you can view
    `https://claude.ai/settings/usage`.
+
 1. Export the session as a Playwright **storage-state** JSON (cookies + localStorage). The simplest
    route is a one-off Playwright capture, e.g.:
 
@@ -67,6 +69,7 @@ Errors are specific and actionable:
 
    A documented browser-extension / devtools cookie+localStorage export producing the same
    Playwright storage-state JSON shape works too.
+
 1. Place the resulting JSON file on the config/data volume at the path configured in
    `claude_usage.session_state_path` (e.g. `/data/claude-session.json`).
 

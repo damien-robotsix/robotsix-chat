@@ -67,13 +67,14 @@ A JSON string with:
     tool stops. This is a terminal condition — do **not** retry.
   - **No confirmation:** when the login-email submit did not reach the "check your email"
     confirmation state (page state is captured in `raw_text`)
-  - **No session state (session_state mode):** `"no session state configured; operator must capture
-    one …"` when `session_state_path` is unset or the file is missing/empty. The operator must
-    capture a session — see the component README.
-  - **Session expired (session_state mode):** `"claude.ai session expired or challenged — operator
-    must re-capture the browser session state."` when the usage page redirects to login or a
-    Cloudflare interstitial is served. This is the signal to refresh the captured cookie, not to
-    debug the code. Do **not** retry until the operator re-captures.
+  - **No session state (session_state mode):**
+    `"no session state configured; operator must capture one …"` when `session_state_path` is unset
+    or the file is missing/empty. The operator must capture a session — see the component README.
+  - **Session expired (session_state mode):**
+    `"claude.ai session expired or challenged — operator must re-capture the browser session state."`
+    when the usage page redirects to login or a Cloudflare interstitial is served. This is the
+    signal to refresh the captured cookie, not to debug the code. Do **not** retry until the
+    operator re-captures.
 
 ## Fragility and caveats
 

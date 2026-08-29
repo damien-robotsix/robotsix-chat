@@ -813,18 +813,18 @@ operator-captured, already-authenticated browser session (a Playwright storage-s
 anti-bot login wall. See the component README for the capture procedure; captured sessions expire
 (days–weeks) and must be periodically re-captured.
 
-| JSON key                          | Type      | Default                            | Description                                                                         |
-| --------------------------------- | --------- | ---------------------------------- | ----------------------------------------------------------------------------------- |
-| `claude_usage.enabled`            | `boolean` | `false`                            | Master switch. When `False`, no `fetch_claude_usage` tool is offered.               |
-| `claude_usage.auth_mode`          | `string`  | `magic_link`                       | Auth strategy: `magic_link` (email login flow) or `session_state` (reuse a captured session). |
+| JSON key                          | Type      | Default                            | Description                                                                                                 |
+| --------------------------------- | --------- | ---------------------------------- | ----------------------------------------------------------------------------------------------------------- |
+| `claude_usage.enabled`            | `boolean` | `false`                            | Master switch. When `False`, no `fetch_claude_usage` tool is offered.                                       |
+| `claude_usage.auth_mode`          | `string`  | `magic_link`                       | Auth strategy: `magic_link` (email login flow) or `session_state` (reuse a captured session).               |
 | `claude_usage.session_state_path` | `string`  | `""`                               | Path to a Playwright storage-state JSON captured by the operator; read when `auth_mode` is `session_state`. |
-| `claude_usage.account_email`      | `string`  | `chat@robotsix.net`                | Claude.ai account email to log in as; must be a mailbox the auto-mail can read.     |
-| `claude_usage.login_url`          | `string`  | `https://claude.ai/login`          | Claude.ai login page URL where the email magic-link flow is initiated.              |
-| `claude_usage.usage_url`          | `string`  | `https://claude.ai/settings/usage` | Claude.ai usage/settings page URL scraped for the remaining-cap value after login.  |
-| `claude_usage.mail_account_id`    | `string`  | `""`                               | Optional auto-mail `account_id` to scope the inbox search. Empty = default account. |
-| `claude_usage.mail_poll_attempts` | `integer` | `12`                               | How many times to poll the auto-mail board for the login email before giving up.    |
-| `claude_usage.mail_poll_interval` | `number`  | `5.0`                              | Seconds to wait between auto-mail board polls.                                      |
-| `claude_usage.timeout`            | `number`  | `30.0`                             | Per-navigation timeout in seconds for browser page loads.                           |
+| `claude_usage.account_email`      | `string`  | `chat@robotsix.net`                | Claude.ai account email to log in as; must be a mailbox the auto-mail can read.                             |
+| `claude_usage.login_url`          | `string`  | `https://claude.ai/login`          | Claude.ai login page URL where the email magic-link flow is initiated.                                      |
+| `claude_usage.usage_url`          | `string`  | `https://claude.ai/settings/usage` | Claude.ai usage/settings page URL scraped for the remaining-cap value after login.                          |
+| `claude_usage.mail_account_id`    | `string`  | `""`                               | Optional auto-mail `account_id` to scope the inbox search. Empty = default account.                         |
+| `claude_usage.mail_poll_attempts` | `integer` | `12`                               | How many times to poll the auto-mail board for the login email before giving up.                            |
+| `claude_usage.mail_poll_interval` | `number`  | `5.0`                              | Seconds to wait between auto-mail board polls.                                                              |
+| `claude_usage.timeout`            | `number`  | `30.0`                             | Per-navigation timeout in seconds for browser page loads.                                                   |
 
 ______________________________________________________________________
 
