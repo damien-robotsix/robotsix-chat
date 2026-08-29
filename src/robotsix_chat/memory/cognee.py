@@ -23,10 +23,16 @@ import logging
 import os
 import re
 import time
+from datetime import timedelta
 from pathlib import Path
 from typing import TYPE_CHECKING, Any, TypeVar
 
 from robotsix_http import RetryConfig, acall_with_retry
+
+from robotsix_chat.memory.maintenance import (
+    LANCEDB_RELATIVE_PATH,
+    LanceDbMaintenanceScheduler,
+)
 
 if TYPE_CHECKING:
     from robotsix_chat.config import (
@@ -229,6 +235,9 @@ class CogneeMemory:
         self._recovery_in_flight: bool = False
         # Hold a reference to the in-flight recovery task so it isn't GC'd.
         self._recovery_task: asyncio.Task[None] | None = None
+        # Periodic LanceDB compaction/pruning scheduler (lazily created in
+        # :meth:`start_maintenance`); ``None`` when disabled or not started.
+        self._maintenance: LanceDbMaintenanceScheduler | None = None
 
     # -- health & recovery wiring -----------------------------------------
 
@@ -336,6 +345,44 @@ class CogneeMemory:
             )
             return
         logger.info("cognee memory warm-up complete in %.1fs", time.monotonic() - start)
+
+    # -- periodic LanceDB maintenance -------------------------------------
+
+    def _lancedb_store_path(self) -> Path:
+        """Absolute path of the cognee LanceDB store directory."""
+        data_dir = Path(self._settings.data_dir).expanduser().resolve()
+        return data_dir / LANCEDB_RELATIVE_PATH
+
+    def start_maintenance(self) -> None:
+        """Start the periodic LanceDB compaction/pruning scheduler.
+
+        Idempotent and a no-op when maintenance is disabled or the interval is
+        non-positive.  Intended to be called once at server startup; the
+        scheduler runs a pass immediately and then every
+        ``maintenance_interval_seconds``, each under the write lock so it never
+        overlaps a live ``cognify``.
+        """
+        s = self._settings
+        if not s.maintenance_enabled or s.maintenance_interval_seconds <= 0:
+            return
+        if self._maintenance is not None:
+            return
+        self._maintenance = LanceDbMaintenanceScheduler(
+            store_path=self._lancedb_store_path(),
+            write_lock=self._write_lock,
+            interval_seconds=s.maintenance_interval_seconds,
+            cleanup_older_than=timedelta(
+                seconds=s.maintenance_version_retention_seconds
+            ),
+        )
+        self._maintenance.start()
+
+    async def stop_maintenance(self) -> None:
+        """Stop the LanceDB maintenance scheduler if it is running."""
+        if self._maintenance is None:
+            return
+        await self._maintenance.stop()
+        self._maintenance = None
 
     def _configure(self) -> None:
         """Configure cognee's global state from the stored settings.

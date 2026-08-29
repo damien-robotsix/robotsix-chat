@@ -546,6 +546,17 @@ def run_server_from_config(agent: ChatAgent | None = None) -> None:
         task.add_done_callback(env._tasks.discard)
         logger.info("Memory warm-up started in the background.")
 
+        # Kick off periodic LanceDB compaction/pruning (startup + interval).
+        # Skipped cleanly by backends without the hook (NullMemory, ReadOnly).
+        start_maintenance = getattr(
+            getattr(agent, "memory", None), "start_maintenance", None
+        )
+        if start_maintenance is not None:
+            try:
+                start_maintenance()
+            except Exception:
+                logger.exception("Memory maintenance start failed — continuing")
+
     # -- resume autonomous sessions on restart -----------------------------
     async def _resume_autonomous() -> None:
         """Auto-close completed autonomous sessions and resume executing ones."""
@@ -634,6 +645,14 @@ def run_server_from_config(agent: ChatAgent | None = None) -> None:
         agent's observation tree) are captured even when the server stops
         soon after a trace completes.
         """
+        stop_maintenance = getattr(
+            getattr(agent, "memory", None), "stop_maintenance", None
+        )
+        if stop_maintenance is not None:
+            try:
+                await stop_maintenance()
+            except Exception:
+                logger.exception("Memory maintenance stop failed — continuing")
         try:
             from robotsix_llmio.core.tracing import flush_tracing
         except ImportError:

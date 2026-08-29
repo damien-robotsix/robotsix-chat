@@ -209,6 +209,11 @@ exclude = ["vulture_whitelist.py", ".local-deps", "_stubs", "src/robotsix_mill/"
 module = ["cognee.*"]
 ignore_missing_imports = true
 
+# lancedb is a transitive dependency of cognee (the memory extra); no type stubs.
+[[tool.mypy.overrides]]
+module = ["lancedb", "lancedb.*"]
+ignore_missing_imports = true
+
 # playwright (the optional `render-url` extra) ships no type information.
 [[tool.mypy.overrides]]
 module = ["playwright.*"]
@@ -332,7 +337,7 @@ pynacl = ["nacl"]
 # for its Langfuse callback so cognee traffic lands in a separate project.
 # `_check_common` is a workspace-local sibling module imported by the five
 # standalone scripts/check_*.py audit scripts; it is not an installable package.
-DEP001 = ["litellm", "_check_common"]
+DEP001 = ["litellm", "lancedb", "_check_common"]
 DEP002 = ["transformers"]
 # `pydantic_ai` is robotsix-llmio's agent framework: `handle.run` already returns
 # its result objects, and the agent builds a multi-turn `message_history` from
