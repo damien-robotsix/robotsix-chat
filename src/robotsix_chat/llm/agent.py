@@ -8,8 +8,8 @@ purely from a capability **level** via
 ``TierLevelConfig``), so this package never names a concrete provider class or
 model.
 
-Levels 1-2 use a keyed provider (needs an API key), levels 3-4 use the keyless
-Claude SDK (via the logged-in ``claude`` CLI).
+Levels 1 and 3 use a keyed provider (needs an API key); levels 2, 4 and 5 use
+the keyless Claude SDK (via the logged-in ``claude`` CLI).
 
 Responses are returned as a single block (not token-streamed): llmio's Claude
 SDK model does not support incremental streaming through pydantic-ai, so each
@@ -789,7 +789,7 @@ class LlmioChatAgent:
         different reach:
 
         * **Usage exhaustion** is per-tier, so one promotion is enough —
-          claudeSDK level 4 -> level 3 leaves the exhausted
+          claudeSDK level 5 -> level 4 leaves the exhausted
           tier behind.
         * **An expired credential is shared by every claudeSDK tier**, since
           they all drive the same ``claude`` CLI against the same

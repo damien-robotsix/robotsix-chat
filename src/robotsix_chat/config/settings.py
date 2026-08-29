@@ -72,7 +72,7 @@ class ConfigValidationError(ValueError):
 # Version stamp for the agent_instruction default literal.
 # Bump on every change to Settings.agent_instruction and update
 # docs/system_prompt_changelog.md with a new entry + SHA256.
-SYSTEM_PROMPT_VERSION = 145
+SYSTEM_PROMPT_VERSION = 146
 
 # Valid model levels, derived from llmio's tier enum (import-time constant so
 # the set is built once and can never drift from the tiers llmio ships).
@@ -90,9 +90,10 @@ class Settings(BaseModel):
 
     Attributes:
         llmio_model_level: Capability level — ``1`` (cheapest/fastest) to
-            ``4`` (frontier). The level encodes the provider + model: by
-            default levels 1-2 use ``openrouter``, level 3 uses
-            ``claudeSDK``/``opus``, level 4 ``claudeSDK``/``claude-fable-5``.
+            ``5`` (frontier). The level encodes the provider + model: by
+            default level 1 and level 3 use ``openrouter`` (flash / mimo),
+            level 2 ``claudeSDK``/``haiku``, level 4 ``claudeSDK``/``opus``,
+            level 5 ``claudeSDK`` frontier.
         llmio_api_key: Provider API key, forwarded to llmio when the chosen
             level's provider needs one (e.g. ``openrouter``); unused
             by keyless providers like ``claudeSDK``.
@@ -155,7 +156,7 @@ class Settings(BaseModel):
 
     """
 
-    llmio_model_level: int = 3
+    llmio_model_level: int = 4
     llmio_api_key: SecretStr = SecretStr("")
     chat_model_level: int | None = Field(
         default=None, json_schema_extra={"advanced": True}
@@ -227,22 +228,24 @@ class Settings(BaseModel):
             "coherent goal and close when that goal is reached.\n"
             "– Pick model_level by difficulty and cost (see Model Policy "
             "below for named tier labels): 1 (cheap-high-perf) is the cheapest "
-            "OpenRouter tier for trivial polling or extraction, 2 (default) "
-            "is the default choice for general work — prefer it unless the "
-            "task needs stronger reasoning, 3 (strong-reasoning) is a stronger "
-            "keyless tier reserved for reasoning 2 struggles with, "
-            "4 (primary-frontier) is the frontier tier — only for genuinely "
-            "hard reasoning. Levels 1-2 need an OpenRouter API key; the server "
+            "OpenRouter tier for trivial polling or extraction, 2 (flat-rate-"
+            "cheap) is keyless Claude haiku for monitors and routine checks, "
+            "3 (default) is the default choice for general work — prefer it "
+            "unless the task needs stronger reasoning, 4 (strong-reasoning) "
+            "is a stronger keyless tier reserved for reasoning 3 struggles "
+            "with, 5 (primary-frontier) is the frontier tier — only for "
+            "genuinely hard reasoning. Levels 1 and 3 need an OpenRouter API "
+            "key; the server "
             "checks only its own JSON config file (`llmio.api_key`), not "
             "environment variables or external secret stores — so a spawn "
             "may report a missing key even when the operator believes one "
             "is set.  If a spawn errors with an API key message, retry at "
-            "level 3 (keyless) and tell the user the key could not be found "
+            "level 4 (keyless) and tell the user the key could not be found "
             "*by the server's config file* — do NOT claim the key is missing "
             "outright, because you cannot inspect the environment or secrets "
             "to confirm.  Recommend the operator verify the `llmio.api_key` "
             "field in the server's JSON config file.  Never spawn "
-            "at level 4 for routine checks.\n"
+            "at level 5 for routine checks.\n"
             "– Write instructions that are complete and self-contained: the "
             "subsession starts with NO conversation history, so include every "
             "id, URL, constraint, and expected outcome it needs.\n"
@@ -503,14 +506,16 @@ class Settings(BaseModel):
             "– Model tiers (in order of capability):\n"
             "  1 = 'cheap-high-perf' — fast, inexpensive OpenRouter tier "
             "for trivial polling, extraction, or high-volume work.\n"
-            "  2 = 'default' — the general-work tier; prefer it unless a "
+            "  2 = 'flat-rate-cheap' — keyless Claude haiku on the "
+            "subscription; monitors, routine checks, classification.\n"
+            "  3 = 'default' — the general-work tier; prefer it unless a "
             "task needs stronger reasoning.\n"
-            "  3 = 'strong-reasoning' — keyless tier reserved for tasks "
-            "where level 2 struggles; no API key required.\n"
-            "  4 = 'primary-frontier' — the frontier tier; only for "
+            "  4 = 'strong-reasoning' — keyless tier reserved for tasks "
+            "where level 3 struggles; no API key required.\n"
+            "  5 = 'primary-frontier' — the frontier tier; only for "
             "genuinely hard reasoning. Never use for routine checks.\n"
             "– Your own conversation runs at the configured chat tier "
-            "(level 3, 'strong-reasoning') — NOT the frontier tier. If you "
+            "(level 4, 'strong-reasoning') — NOT the frontier tier. If you "
             "have genuinely tried and cannot solve the user's problem at "
             "that capability, call escalate_model(reason) to pin THIS "
             "conversation to the frontier tier for the rest of its life. "
@@ -1756,7 +1761,7 @@ class Settings(BaseModel):
                 f"got {self.llmio_model_level!r}"
             )
         # The keyless Claude SDK provider (level 3) needs no API key;
-        # key-bearing providers (e.g. openrouter, levels 1-2) require one.
+        # key-bearing providers (e.g. openrouter, levels 1 and 3) require one.
         if (
             level_needs_api_key(self.llmio_model_level)
             and not self.llmio_api_key.get_secret_value()
@@ -1765,7 +1770,7 @@ class Settings(BaseModel):
                 f"llmio.api_key must be set for model_level "
                 f"{self.llmio_model_level} (its provider needs a key) — provide "
                 "it via the `llmio.api_key` field of your config file "
-                "(or use model_level 3, which is keyless)"
+                "(or use model_level 4, which is keyless)"
             )
         if (
             self.chat_model_level is not None

@@ -1215,7 +1215,7 @@ def create_agent_from_settings(
     The backend is chosen by robotsix-llmio's capability level: *model_level*
     when given, else ``settings.llmio_model_level``.  The level encodes the
     transport + model; ``settings.llmio_api_key`` is forwarded only when the
-    effective level's transport needs a key (keyless claudeSDK levels 3-4
+    effective level's transport needs a key (keyless claudeSDK levels 2, 4, 5
     never receive one).
 
     When *settings* is ``None``, ``Settings.load()`` resolves configuration

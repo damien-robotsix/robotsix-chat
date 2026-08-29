@@ -3,6 +3,23 @@
 Governed artifact: `Settings.agent_instruction` default literal in
 `src/robotsix_chat/config/settings.py`. Version stamp: `SYSTEM_PROMPT_VERSION` in the same module.
 
+## v146 — 2026-08-29 — five-tier-levels
+
+**Summary:** Re-describe the llmio capability levels for the five-tier map
+introduced by robotsix-llmio 0.5.0: level 1 cheap OpenRouter (flash), level 2
+flat-rate cheap Claude (haiku, new), level 3 default OpenRouter (mimo),
+level 4 strong-reasoning Claude (opus), level 5 primary frontier Claude.
+The keyless retry guidance moves from level 3 to level 4, and levels 1 and 3
+are the ones that need an OpenRouter key; level 5 stays reserved for
+non-routine work.
+
+**Rationale:** Claude is a flat subscription while OpenRouter is metered, so
+routine delegated work (monitors, retrospects, classification) should land
+on the new haiku tier instead of a metered tier.  The prompt's level table
+must match `robotsix_llmio.TierConfig` or the assistant picks wrong tiers.
+
+**SHA256:** `b0e6878dcf48830e01d699a84dd940dfeda9599f3322d6d74ada0d9a080584b2`
+
 ## v145 — 2026-08-28 — 20260828T210340Z-bug-monitor-spawn-guard-blocks-re-openin-032a
 
 **Summary:** Soften the monitor-existence rule: a `check_monitor`

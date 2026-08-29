@@ -22,6 +22,7 @@ from robotsix_llmio.config import (
     LEVEL2_DEFAULT,
     LEVEL3_DEFAULT,
     LEVEL4_DEFAULT,
+    LEVEL5_DEFAULT,
 )
 
 __all__ = [
@@ -39,6 +40,7 @@ _LEVEL_DEFAULTS: dict[int, Any] = {
     2: LEVEL2_DEFAULT,
     3: LEVEL3_DEFAULT,
     4: LEVEL4_DEFAULT,
+    5: LEVEL5_DEFAULT,
 }
 
 # Provider prefix for the keyless Claude SDK tier (auth via logged-in
@@ -57,10 +59,10 @@ def level_needs_api_key(level: int) -> bool:
     return tlc is None or tlc.provider != _KEYLESS_PROVIDER
 
 
-#: The strongest capability level a session can escalate to (currently 4).
+#: The strongest capability level a session can escalate to (currently 5).
 #: Named rather than hard-coded at call sites so the frontier is a
 #: one-line change here.
-FRONTIER_MODEL_LEVEL = 4
+FRONTIER_MODEL_LEVEL = 5
 
 
 def level_display_name(level: int) -> str:
