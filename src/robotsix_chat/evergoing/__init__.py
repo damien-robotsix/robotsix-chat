@@ -8,6 +8,10 @@ background scheduler that trims finished, off-subject leading turns.
 
 from __future__ import annotations
 
+from robotsix_chat.evergoing.cross_session_tools import (
+    build_cross_session_tools,
+    load_cross_session_skill,
+)
 from robotsix_chat.evergoing.decision import (
     TrimDecision,
     decide_trim,
@@ -18,6 +22,8 @@ from robotsix_chat.evergoing.scheduler import EvergoingTrimScheduler
 __all__ = [
     "EvergoingTrimScheduler",
     "TrimDecision",
+    "build_cross_session_tools",
     "decide_trim",
+    "load_cross_session_skill",
     "parse_trim_decision",
 ]
