@@ -26,6 +26,7 @@ from robotsix_chat.config.models import (
     DiagnosticsSettings,
     DirectRepoSettings,
     DockerDigestSettings,
+    EvergoingSettings,
     FeedbackSettings,
     FileHubToolsSettings,
     GatewayRouteSettings,
@@ -1724,6 +1725,9 @@ class Settings(BaseModel):
     )
     continuation: ContinuationSettings = Field(
         default_factory=ContinuationSettings, json_schema_extra={"advanced": True}
+    )
+    evergoing: EvergoingSettings = Field(
+        default_factory=EvergoingSettings, json_schema_extra={"advanced": True}
     )
     max_images_per_message: int = Field(default=8, json_schema_extra={"advanced": True})
     max_image_bytes: int = Field(

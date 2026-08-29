@@ -294,6 +294,11 @@
     "store_path": "/data/continuation.json",
     "max_consecutive": 3
   },
+  "evergoing": {
+    "enabled": false,
+    "trim_interval_seconds": 1800.0,
+    "keep_min_recent": 2
+  },
   "max_images_per_message": 8,
   "max_image_bytes": 5242880,
   "allowed_image_media_types": [

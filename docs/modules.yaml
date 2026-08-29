@@ -488,6 +488,16 @@ modules:
       - tests/health/test_checks.py
       - tests/health/test_scheduler.py
 
+  - id: evergoing
+    description: "Evergoing session — activation (create-on-boot behind a config flag) plus a periodic subject-aware trim scheduler that drops finished, off-subject leading turns via a cheap summary-tier model."
+    paths:
+      - src/robotsix_chat/evergoing/__init__.py
+      - src/robotsix_chat/evergoing/decision.py
+      - src/robotsix_chat/evergoing/scheduler.py
+      - tests/evergoing/__init__.py
+      - tests/evergoing/test_decision.py
+      - tests/evergoing/test_scheduler.py
+
   - id: ui
     description: "Browser chat UI — self-contained HTML frontend served at /."
     paths:

@@ -61,6 +61,7 @@ from .render_url_models import (
 )
 from .server_models import (
     ContinuationSettings,
+    EvergoingSettings,
     HealthSettings,
     VolumeToolsSettings,
 )
@@ -93,6 +94,7 @@ __all__ = [
     "DiagnosticsSettings",
     "DirectRepoSettings",
     "DockerDigestSettings",
+    "EvergoingSettings",
     "FeedbackSettings",
     "FileHubToolsSettings",
     "GatewayRouteSettings",

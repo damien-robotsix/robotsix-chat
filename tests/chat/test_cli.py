@@ -281,6 +281,7 @@ class TestRunServer:
             knowledge_store=None,
             health_settings=None,
             continuation_store=None,
+            evergoing_settings=None,
         )
 
 

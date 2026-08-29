@@ -35,7 +35,7 @@ from robotsix_chat.claude_usage import (
 from robotsix_chat.component_access import build_component_access_tools
 from robotsix_chat.component_client import build_component_tools
 from robotsix_chat.config import Settings
-from robotsix_chat.config.models import HealthSettings
+from robotsix_chat.config.models import EvergoingSettings, HealthSettings
 from robotsix_chat.continuation import (
     build_continuation_tools,
     load_continuation_skill,
@@ -243,6 +243,12 @@ async def _make_lifespan(
                 scheduler.start()
             except Exception:
                 logger.exception("Health scheduler start failed — continuing")
+        evergoing_scheduler = getattr(app.state, "evergoing_scheduler", None)
+        if evergoing_scheduler is not None:
+            try:
+                evergoing_scheduler.start()
+            except Exception:
+                logger.exception("Evergoing scheduler start failed — continuing")
     try:
         yield
     finally:
@@ -253,6 +259,12 @@ async def _make_lifespan(
                     await scheduler.stop()
                 except Exception:
                     logger.exception("Health scheduler stop failed")
+            evergoing_scheduler = getattr(app.state, "evergoing_scheduler", None)
+            if evergoing_scheduler is not None:
+                try:
+                    await evergoing_scheduler.stop()
+                except Exception:
+                    logger.exception("Evergoing scheduler stop failed")
             coalescer = getattr(app.state, "message_coalescer", None)
             if coalescer is not None:
                 try:
@@ -298,6 +310,7 @@ SHARED_PARAMS: frozenset[str] = frozenset(
         "diagnostic_store",
         "knowledge_store",
         "health_settings",
+        "evergoing_settings",
         "continuation_store",
     }
 )
@@ -337,6 +350,7 @@ def create_app(
     diagnostic_store: Any = None,
     knowledge_store: Any = None,
     health_settings: HealthSettings | None = None,
+    evergoing_settings: EvergoingSettings | None = None,
     continuation_store: Any = None,
 ) -> Starlette:
     """Return a Starlette ASGI app wired to ``agent``.
@@ -457,6 +471,11 @@ def create_app(
             :class:`~robotsix_chat.config.models.HealthSettings` controlling
             the periodic health-check scheduler.  When ``None`` (default),
             the default settings are used (enabled, 300 s interval).
+        evergoing_settings: Optional
+            :class:`~robotsix_chat.config.models.EvergoingSettings` controlling
+            the single never-ending session and its periodic subject-aware
+            trim scheduler.  When ``None`` (default), the default settings are
+            used (disabled), so no evergoing session is created on boot.
         continuation_store: Shared
             :class:`~robotsix_chat.continuation.store.ContinuationStore`
             instance for pending post-restart continuations.  When
@@ -695,6 +714,23 @@ def create_app(
     else:
         app.state.health_scheduler = None
     app.state.health_status = None  # populated after first check cycle
+    # Evergoing session — the single never-ending session.  When enabled, it
+    # is created on boot (idempotent) and a periodic subject-aware trim
+    # scheduler runs against it; started during the lifespan async phase.
+    _eg = evergoing_settings or EvergoingSettings()
+    if _eg.enabled:
+        from robotsix_chat.chat.conversation import OPERATOR_OWNER
+        from robotsix_chat.evergoing import EvergoingTrimScheduler
+
+        app.state.conversation_store.ensure_evergoing_session(OPERATOR_OWNER)
+        app.state.evergoing_scheduler = EvergoingTrimScheduler(
+            interval_seconds=_eg.trim_interval_seconds,
+            store=app.state.conversation_store,
+            agent=app.state.summary_agent,
+            keep_min_recent=_eg.keep_min_recent,
+        )
+    else:
+        app.state.evergoing_scheduler = None
     app.state.continuation_store = continuation_store  # may be None
     if config_path is not None:
         app.state.config_path = config_path
