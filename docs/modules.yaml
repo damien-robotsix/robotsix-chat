@@ -277,6 +277,7 @@ modules:
       - tests/repo/direct/test_actions_client.py
       - tests/repo/direct/test_board_client.py
       - tests/repo/direct/test_build_tools.py
+      - tests/repo/direct/test_ci_workflow.py
       - tests/repo/direct/test_client.py
       - tests/repo/direct/test_direct_fix.py
       - tests/repo/direct/test_direct_repo.py
@@ -389,6 +390,7 @@ modules:
       - src/robotsix_chat/subsessions/resume.py
       - src/robotsix_chat/subsessions/skill.md
       - src/robotsix_chat/subsessions/slot_budget.py
+      - src/robotsix_chat/subsessions/subsession_waits.py
       - src/robotsix_chat/subsessions/tools.py
       - src/robotsix_chat/subsessions/watcher.py
       - src/robotsix_chat/subsessions/worker.py
@@ -404,6 +406,7 @@ modules:
       - tests/subsessions/test_watcher.py
       - tests/subsessions/test_worker.py
       - tests/subsessions/test_worker_mill.py
+      - tests/subsessions/test_worker_wait_for_event.py
 
   - id: refdocs
     description: "Read-only reference-docs tool — lets the chat agent read team repos."
