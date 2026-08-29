@@ -33,6 +33,7 @@ from robotsix_chat.common.http_fetch import (
     _check_hostname_allowlist,
     _host_is_private,
     _validate_url_scheme,
+    build_ssrf_guarded_client,
     fleet_component_hosts,
 )
 
@@ -168,9 +169,6 @@ def build_public_fetch_tools(
         # Fleet components come from the central-deploy roster, so enabling
         # chat access on a component is the only place that decision is made.
         fleet_hosts = await fleet_component_hosts(central_deploy)
-        # Fleet components come from the central-deploy roster, so enabling
-        # chat access on a component is the only place that decision is made.
-        fleet_hosts = await fleet_component_hosts(central_deploy)
         allowlist_error = _check_hostname_allowlist(
             hostname, allowed_hosts, fleet_hosts, "public_fetch"
         )
@@ -204,8 +202,9 @@ def build_public_fetch_tools(
         # read level — a malicious server cannot exhaust memory by sending
         # gigabytes before the cap is applied.
         try:
-            async with httpx.AsyncClient(
+            async with build_ssrf_guarded_client(
                 timeout=settings.timeout,
+                fleet_hosts=fleet_hosts,
                 follow_redirects=False,
             ) as client:
                 current_url = url
