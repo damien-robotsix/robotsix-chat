@@ -239,6 +239,42 @@ jobs:
           # layers to the cache API took 45-55 min per run, while a cold
           # build takes ~4 min. Measured 2026-07-03; do not re-add without
           # timing it.
+      # Smoke test (runtime end-to-end) — the lint/type/test gates all scan
+      # SOURCE; none of them boot the built image, so a container that fails
+      # at runtime (import error, broken startup check, mis-wired ASGI app)
+      # can sail through green CI. Boot the freshly-built image with a
+      # throwaway config + writable /data and confirm the server actually
+      # starts and serves GET /health. Reuses the image-scan build (no extra
+      # build cost) and runs on every successful build, ahead of the Trivy
+      # gate. No external credentials needed: the committed config template
+      # pins the keyless claudeSDK tier (level 4), so the agent constructs
+      # without an API key.
+      - name: Smoke-test the built image (boot + /health probe)
+        run: |
+          set -euo pipefail
+          data_dir="$(mktemp -d)"
+          chmod 777 "$data_dir"  # container runs as uid 1000; /data must be writable
+          docker run -d --name chat-smoke \
+            -p 127.0.0.1:8000:8000 \
+            -v "$PWD/config/config.json:/home/app/config/config.json:ro" \
+            -v "$data_dir:/data" \
+            -e ROBOTSIX_CONFIG_FILE=/home/app/config/config.json \
+            robotsix-chat:ci-scan
+          ok=0
+          for i in $(seq 1 30); do
+            if curl -fsS http://127.0.0.1:8000/health | grep -q '"status"'; then
+              echo "Smoke test passed: GET /health responded on attempt ${i}."
+              ok=1
+              break
+            fi
+            sleep 2
+          done
+          if [ "${ok}" -ne 1 ]; then
+            echo "Smoke test FAILED: GET /health never returned; container logs:" >&2
+            docker logs chat-smoke >&2 || true
+          fi
+          docker rm -f chat-smoke >/dev/null 2>&1 || true
+          [ "${ok}" -eq 1 ]
       # Gate policy (docker standard): block only on CRITICAL/HIGH findings
       # with a released fix — a red gate always means "an upgrade exists,
       # take it". Unfixable base-image CVEs stay visible via the SARIF run
