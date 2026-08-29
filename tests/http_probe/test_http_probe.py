@@ -343,6 +343,38 @@ async def test_http_probe_blocks_private_ip_10() -> None:
 
 
 @pytest.mark.asyncio
+async def test_http_probe_ssrf_redirect_check(respx_mock: respx.MockRouter) -> None:
+    """A redirect to a private IP is blocked (regression for the bypass).
+
+    Previously http_probe used ``follow_redirects=True`` with no per-hop SSRF
+    check, so a public URL that 302-redirected to ``http://127.0.0.1/`` (or an
+    internal fleet endpoint) was followed unchecked. The manual per-hop loop
+    now re-validates every redirect target.
+    """
+    respx_mock.get("https://www.robotsix.net/goto").mock(
+        return_value=httpx.Response(302, headers={"Location": "http://127.0.0.1/admin"})
+    )
+
+    def _getaddrinfo(host, port):
+        if host == "127.0.0.1":
+            return [
+                (socket.AF_INET, socket.SOCK_STREAM, 6, "", ("127.0.0.1", 0)),
+            ]
+        return _MOCK_SOCKET_RETURN  # public IP for everything else
+
+    with mock.patch(
+        "robotsix_chat.common.http_fetch.socket.getaddrinfo",
+        side_effect=_getaddrinfo,
+    ):
+        tools = build_http_probe_tools(_settings())
+        result = json.loads(await tools[0]("https://www.robotsix.net/goto"))
+
+    assert result["healthy"] is False
+    assert "SSRF" in result["error"]
+    assert result["final_url"] == "http://127.0.0.1/admin"
+
+
+@pytest.mark.asyncio
 async def test_http_probe_timeout(respx_mock: respx.MockRouter) -> None:
     """Timeout → healthy=False with timeout error message."""
     respx_mock.get("https://www.robotsix.net/").mock(

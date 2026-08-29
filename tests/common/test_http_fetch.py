@@ -7,12 +7,19 @@ without going through http_probe or public_fetch tool wrappers.
 from __future__ import annotations
 
 import socket
+from typing import Any
 from unittest import mock
 
+import httpcore
+import pytest
+
 from robotsix_chat.common.http_fetch import (
+    SSRFGuardPool,
     _check_hostname_allowlist,
     _host_is_private,
+    _SSRFGuardBackend,
     _validate_url_scheme,
+    build_ssrf_guarded_client,
 )
 
 # ---------------------------------------------------------------------------
@@ -298,3 +305,136 @@ class TestValidateUrlScheme:
         assert err is not None
         assert "gopher" in err
         assert "http and https" in err
+
+
+# ---------------------------------------------------------------------------
+# Connection-layer SSRF guard (_SSRFGuardBackend / SSRFGuardPool)
+# ---------------------------------------------------------------------------
+
+
+class _FakeInnerBackend(httpcore.AsyncNetworkBackend):
+    """Records the host the guard asks it to connect to, without networking."""
+
+    def __init__(self) -> None:
+        self.connected_host: str | None = None
+
+    async def connect_tcp(
+        self,
+        host: str,
+        port: int,
+        timeout: float | None = None,
+        local_address: str | None = None,
+        socket_options: Any = None,
+    ) -> Any:
+        self.connected_host = host
+        return mock.MagicMock()
+
+    async def connect_unix_socket(
+        self, path: str, timeout: float | None = None, socket_options: Any = None
+    ) -> Any:
+        return mock.MagicMock()
+
+    async def sleep(self, seconds: float) -> None:
+        return None
+
+
+class TestSSRFGuardBackend:
+    """Connection-time validation closes the TOCTOU / DNS-rebinding gap."""
+
+    @pytest.mark.asyncio
+    async def test_connects_to_validated_public_ip(self) -> None:
+        """The guard connects to the resolved IP literal, not the hostname.
+
+        Pinning to the validated IP is what closes TOCTOU: the IP validated
+        here is exactly the IP the socket connects to.
+        """
+        inner = _FakeInnerBackend()
+        backend = _SSRFGuardBackend(set(), inner=inner)
+        with mock.patch(
+            "robotsix_chat.common.http_fetch.socket.getaddrinfo",
+            return_value=_mock_addrinfo("93.184.216.34"),
+        ):
+            await backend.connect_tcp("example.com", 443)
+        assert inner.connected_host == "93.184.216.34"
+
+    @pytest.mark.asyncio
+    async def test_blocks_when_connect_time_resolution_is_private(self) -> None:
+        """A host whose connect-time resolution is private is refused.
+
+        This is the DNS-rebinding case: even if a pre-flight check saw a
+        public IP, the guard re-resolves at connect time and blocks.
+        """
+        inner = _FakeInnerBackend()
+        backend = _SSRFGuardBackend(set(), inner=inner)
+        with (
+            mock.patch(
+                "robotsix_chat.common.http_fetch.socket.getaddrinfo",
+                return_value=_mock_addrinfo("10.0.0.1"),
+            ),
+            pytest.raises(httpcore.ConnectError),
+        ):
+            await backend.connect_tcp("rebind.evil", 80)
+        assert inner.connected_host is None  # never connected
+
+    @pytest.mark.asyncio
+    async def test_blocks_when_only_some_addresses_are_private(self) -> None:
+        """If every resolved address is blocked, the connection is refused."""
+        inner = _FakeInnerBackend()
+        backend = _SSRFGuardBackend(set(), inner=inner)
+        with (
+            mock.patch(
+                "robotsix_chat.common.http_fetch.socket.getaddrinfo",
+                return_value=_mock_addrinfo("169.254.169.254"),
+            ),
+            pytest.raises(httpcore.ConnectError),
+        ):
+            await backend.connect_tcp("metadata.evil", 80)
+        assert inner.connected_host is None
+
+    @pytest.mark.asyncio
+    async def test_fleet_host_connects_by_name_without_resolving(self) -> None:
+        """A fleet-component host is exempt and connected by name."""
+        inner = _FakeInnerBackend()
+        backend = _SSRFGuardBackend({"mail"}, inner=inner)
+        with mock.patch(
+            "robotsix_chat.common.http_fetch.socket.getaddrinfo",
+            side_effect=AssertionError("fleet host should not be resolved"),
+        ):
+            await backend.connect_tcp("mail", 8080)
+        assert inner.connected_host == "mail"
+
+    @pytest.mark.asyncio
+    async def test_unresolvable_host_refused(self) -> None:
+        """A host that fails DNS resolution is refused (safe default)."""
+        inner = _FakeInnerBackend()
+        backend = _SSRFGuardBackend(set(), inner=inner)
+        with (
+            mock.patch(
+                "robotsix_chat.common.http_fetch.socket.getaddrinfo",
+                side_effect=socket.gaierror("Name or service not known"),
+            ),
+            pytest.raises(httpcore.ConnectError),
+        ):
+            await backend.connect_tcp("no-such-host.invalid", 80)
+        assert inner.connected_host is None
+
+
+class TestBuildSSRFGuardedClient:
+    """The factory wires an SSRF-guarded pool into an httpx client."""
+
+    def test_pool_uses_guard_backend(self) -> None:
+        """The pool routes connections through the guard backend."""
+        pool = SSRFGuardPool(set())
+        assert isinstance(pool._network_backend, _SSRFGuardBackend)
+
+    def test_client_uses_guard_pool_and_redirect_config(self) -> None:
+        """The client's transport is backed by the guard pool."""
+        client = build_ssrf_guarded_client(
+            timeout=5.0,
+            fleet_hosts=set(),
+            follow_redirects=True,
+            max_redirects=3,
+        )
+        assert isinstance(client._transport._pool, SSRFGuardPool)
+        assert client.follow_redirects is True
+        assert client.max_redirects == 3

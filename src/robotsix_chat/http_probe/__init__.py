@@ -33,6 +33,7 @@ from robotsix_chat.common.http_fetch import (
     _check_hostname_allowlist,
     _host_is_private,
     _validate_url_scheme,
+    build_ssrf_guarded_client,
     fleet_component_hosts,
 )
 
@@ -158,9 +159,6 @@ def build_http_probe_tools(
         # Fleet components come from the central-deploy roster, so enabling
         # chat access on a component is the only place that decision is made.
         fleet_hosts = await fleet_component_hosts(central_deploy)
-        # Fleet components come from the central-deploy roster, so enabling
-        # chat access on a component is the only place that decision is made.
-        fleet_hosts = await fleet_component_hosts(central_deploy)
         allowlist_error = _check_hostname_allowlist(
             hostname, allowed_hosts, fleet_hosts, "http_probe"
         )
@@ -178,30 +176,83 @@ def build_http_probe_tools(
             result["healthy"] = False
             return json.dumps(result, ensure_ascii=False)
 
-        # --- HTTP GET ---
+        # --- HTTP GET with manual redirect following (SSRF check on each hop) ---
+        # Redirects are followed by hand so every hop — not just the initial
+        # host — is SSRF-checked. The guarded client additionally validates the
+        # resolved IP at connect time (defence in depth against TOCTOU).
         start = time.monotonic()
         try:
-            headers: dict[str, str] = {}
-            async with httpx.AsyncClient(
+            async with build_ssrf_guarded_client(
                 timeout=settings.timeout,
-                follow_redirects=True,
-                max_redirects=settings.max_redirects,
+                fleet_hosts=fleet_hosts,
+                follow_redirects=False,
             ) as client:
-                response = await client.get(url, headers=headers)
-                elapsed = (time.monotonic() - start) * 1000.0  # ms
+                current_url = url
+                redirects_followed = 0
 
-                result["final_url"] = str(response.url)
-                result["status_code"] = response.status_code
-                result["response_time_ms"] = round(elapsed, 1)
-                result["content_type"] = response.headers.get("content-type", "")
+                while True:
+                    parsed_current = urlparse(current_url)
+                    current_host = parsed_current.hostname or ""
 
-                # Read body up to the cap.
-                raw_body = response.text[: settings.max_body_bytes]
-                body_size = len(response.text)
-                result["body_size_bytes"] = body_size
-                result["body_snippet"] = raw_body
+                    # SSRF check on every hop (redirect targets included).
+                    if (
+                        current_host
+                        and current_host not in fleet_hosts
+                        and _host_is_private(current_host)
+                    ):
+                        elapsed = (time.monotonic() - start) * 1000.0
+                        result["response_time_ms"] = round(elapsed, 1)
+                        result["final_url"] = current_url
+                        result["error"] = (
+                            f"Hostname {current_host!r} resolves to a "
+                            "private/internal IP address — SSRF protection "
+                            "blocked the request."
+                        )
+                        result["healthy"] = False
+                        return json.dumps(result, ensure_ascii=False)
 
-                response.raise_for_status()
+                    response = await client.get(current_url)
+
+                    # Follow redirect?
+                    if response.status_code in (301, 302, 303, 307, 308):
+                        redirects_followed += 1
+                        if redirects_followed > settings.max_redirects:
+                            elapsed = (time.monotonic() - start) * 1000.0
+                            result["response_time_ms"] = round(elapsed, 1)
+                            result["error"] = (
+                                f"Too many redirects "
+                                f"(max {settings.max_redirects}) for {url}"
+                            )
+                            result["healthy"] = False
+                            return json.dumps(result, ensure_ascii=False)
+                        next_url = response.headers.get("Location", "")
+                        if not next_url:
+                            elapsed = (time.monotonic() - start) * 1000.0
+                            result["response_time_ms"] = round(elapsed, 1)
+                            result["error"] = (
+                                f"Redirect ({response.status_code}) "
+                                "with no Location header"
+                            )
+                            result["healthy"] = False
+                            return json.dumps(result, ensure_ascii=False)
+                        current_url = str(
+                            httpx.URL(current_url).join(httpx.URL(next_url))
+                        )
+                        continue
+
+                    # Final response.
+                    elapsed = (time.monotonic() - start) * 1000.0  # ms
+                    result["final_url"] = str(response.url)
+                    result["status_code"] = response.status_code
+                    result["response_time_ms"] = round(elapsed, 1)
+                    result["content_type"] = response.headers.get("content-type", "")
+
+                    # Read body up to the cap.
+                    raw_body = response.text[: settings.max_body_bytes]
+                    body_size = len(response.text)
+                    result["body_size_bytes"] = body_size
+                    result["body_snippet"] = raw_body
+                    break
         except httpx.TooManyRedirects:
             elapsed = (time.monotonic() - start) * 1000.0
             result["response_time_ms"] = round(elapsed, 1)
@@ -216,21 +267,6 @@ def build_http_probe_tools(
             result["error"] = f"Request timed out after {settings.timeout}s: {url}"
             result["healthy"] = False
             return json.dumps(result, ensure_ascii=False)
-        except httpx.HTTPStatusError as exc:
-            # We still have status/body info — don't bail, proceed to checks.
-            result["status_code"] = exc.response.status_code
-            result["final_url"] = str(exc.response.url)
-            elapsed = (time.monotonic() - start) * 1000.0
-            result["response_time_ms"] = round(elapsed, 1)
-            result["content_type"] = exc.response.headers.get("content-type", "")
-            try:
-                raw_body = exc.response.text[: settings.max_body_bytes]
-                body_size = len(exc.response.text)
-            except Exception:
-                raw_body = ""
-                body_size = 0
-            result["body_size_bytes"] = body_size
-            result["body_snippet"] = raw_body
         except Exception as exc:
             elapsed = (time.monotonic() - start) * 1000.0
             result["response_time_ms"] = round(elapsed, 1)

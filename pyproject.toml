@@ -344,7 +344,11 @@ DEP002 = ["transformers"]
 # imported by name in pdf_tools since the PDF tools landed and worked only
 # because pypdfium2 pulls Pillow in transitively — a runtime break waiting on
 # pypdfium2 dropping it.
-DEP003 = ["pydantic_ai", "opentelemetry", "robotsix_mill"]
+# `httpcore` is httpx's own transport engine (a guaranteed transitive
+# dependency of httpx); common/http_fetch imports it directly to install a
+# connection-layer SSRF guard (custom network backend / pool). Consumed
+# through httpx, never declared separately, so this DEP003 import is deliberate.
+DEP003 = ["pydantic_ai", "opentelemetry", "robotsix_mill", "httpcore"]
 
 [tool.pytest.ini_options]
 # Default run is offline and credential-free (robotsix-standards python page):
