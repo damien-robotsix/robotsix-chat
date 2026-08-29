@@ -19,6 +19,8 @@ from robotsix_chat.claude_usage import build_claude_usage_tools, load_claude_usa
 from robotsix_chat.claude_usage.client import (
     extract_magic_link,
     is_cloudflare_challenge,
+    is_login_email_confirmation,
+    is_turnstile_challenge,
     parse_usage_value,
 )
 from robotsix_chat.config import ClaudeUsageSettings, MailSettings
@@ -174,6 +176,40 @@ def test_is_cloudflare_challenge_negative() -> None:
 
 
 # ---------------------------------------------------------------------------
+# is_turnstile_challenge
+# ---------------------------------------------------------------------------
+
+
+def test_is_turnstile_challenge_detects_widget() -> None:
+    """A cf-turnstile widget / challenges.cloudflare.com iframe is detected."""
+    assert is_turnstile_challenge("<div class='cf-turnstile'></div>")
+    assert is_turnstile_challenge(
+        "<iframe src='https://challenges.cloudflare.com/x'></iframe>"
+    )
+
+
+def test_is_turnstile_challenge_negative() -> None:
+    """A plain login form without a Turnstile widget is not flagged."""
+    assert not is_turnstile_challenge("<html><body><input type='email'></body></html>")
+
+
+# ---------------------------------------------------------------------------
+# is_login_email_confirmation
+# ---------------------------------------------------------------------------
+
+
+def test_is_login_email_confirmation_detects_marker() -> None:
+    """The 'Check your email' confirmation view is detected via title or text."""
+    assert is_login_email_confirmation("Check your email", "")
+    assert is_login_email_confirmation("Claude", "We sent you a login link")
+
+
+def test_is_login_email_confirmation_negative() -> None:
+    """The bare login form (no confirmation copy) is not treated as confirmed."""
+    assert not is_login_email_confirmation("Claude", "Enter your email to continue")
+
+
+# ---------------------------------------------------------------------------
 # ClaudeUsageSettings / skill
 # ---------------------------------------------------------------------------
 
@@ -284,5 +320,57 @@ async def test_fetch_claude_usage_cloudflare_interstitial() -> None:
         payload = json.loads(await tools[0]())
         assert payload["remaining_cap"] is None
         assert "Cloudflare" in payload["error"]
+    finally:
+        _remove_fake_playwright()
+
+
+@pytest.mark.asyncio
+async def test_fetch_claude_usage_turnstile_blocks_submit() -> None:
+    """A Turnstile widget on the login form yields the specific Turnstile error.
+
+    The page is not a full-page Cloudflare interstitial (so the early
+    interstitial check passes), but the login markup embeds a ``cf-turnstile``
+    widget — the tool must return the Turnstile terminal error rather than a
+    generic email-timeout.
+    """
+    _install_fake_playwright(
+        "irrelevant",
+        title="Claude",
+        content="<div class='cf-turnstile'></div><input type='email'>",
+    )
+    try:
+        tools = build_claude_usage_tools(_settings(), MailSettings())
+        payload = json.loads(await tools[0]())
+        assert payload["remaining_cap"] is None
+        assert "Turnstile" in payload["error"]
+    finally:
+        _remove_fake_playwright()
+
+
+@pytest.mark.asyncio
+async def test_fetch_claude_usage_clicks_submit_button(
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    """The submit path clicks the 'Continue with email' button, not just Enter.
+
+    When a submit button is present (``count() == 1``) the tool must click it
+    to actually trigger the magic-link send, rather than falling back to the
+    Enter keypress.
+    """
+    fake = _install_fake_playwright("Weekly usage: 40% of cap remaining")
+    locator = fake._test_page.locator.return_value
+    locator.count = AsyncMock(return_value=1)
+    monkeypatch.setattr(
+        "robotsix_chat.mail.client.MailClient.board_content",
+        AsyncMock(return_value="Login here: https://claude.ai/magic-link?token=xyz"),
+    )
+    try:
+        tools = build_claude_usage_tools(_settings(), MailSettings())
+        payload = json.loads(await tools[0]())
+        assert payload["error"] == ""
+        assert payload["remaining_cap"] == "Weekly usage: 40% of cap remaining"
+        # The submit button was clicked; the Enter-keypress fallback was not used.
+        assert locator.click.await_count >= 1
+        assert locator.press.await_count == 0
     finally:
         _remove_fake_playwright()
