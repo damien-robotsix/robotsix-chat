@@ -4,16 +4,12 @@ from __future__ import annotations
 
 import asyncio
 import re
-import uuid
 from collections.abc import Callable
-from types import SimpleNamespace
-from typing import Any
 from unittest.mock import AsyncMock, MagicMock, call, patch
 
 import pytest
 
 from robotsix_chat.llm import LlmioChatAgent
-from robotsix_chat.llm.agent import _sdk_session_uuid
 
 # The exact shape the Claude CLI accepts for ``--session-id``.
 _CANONICAL_UUID_RE = re.compile(
@@ -1259,280 +1255,96 @@ async def test_keyed_primary_level_still_receives_the_api_key() -> None:
     )
 
 
-class TestSdkSessionUuid:
-    """The Claude CLI rejects a ``--session-id`` that is not a canonical UUID.
+# ---------------------------------------------------------------------------
+# Stateless Claude turns: no CLI session resume, one fresh memory block
+# ---------------------------------------------------------------------------
 
-    Chat session ids are ``uuid4().hex`` (no dashes) and autonomous sessions
-    use bare names, so the raw id can never be forwarded as-is.
+
+@pytest.mark.asyncio
+async def test_turn_does_not_bind_a_cli_session_and_carries_history_in_prompt() -> None:
+    """Each turn is stateless: the handle's option builder is left untouched (no
+    ``resume``/``session_id`` binding) and the conversation travels as
+    ``message_history``. Resuming a CLI session made the transcript keep every
+    earlier prompt — N history copies and N stale memory blocks by turn N.
     """
+    create_model, handle = _patched_create_model("ok")
+    sentinel_builder = MagicMock(name="orig_build_options")
+    handle._build_options = sentinel_builder
+    seen: dict[str, object] = {}
 
-    def test_hex_session_id_becomes_canonical_uuid(self) -> None:
-        """A dashless ``uuid4().hex`` id is mapped to a form the CLI accepts."""
-        raw = uuid.uuid4().hex  # what ConversationStore generates
-        assert _CANONICAL_UUID_RE.match(raw) is None  # precondition: CLI rejects
-        assert _CANONICAL_UUID_RE.match(_sdk_session_uuid(raw)) is not None
+    async def fake_run(prompt, *, message_history=None):
+        seen["prompt"] = prompt
+        seen["history"] = message_history
+        result = MagicMock()
+        result.output = "ok"
+        return result
 
-    def test_non_uuid_session_name_becomes_canonical_uuid(self) -> None:
-        """Autonomous sessions are named, not hex, and must map too."""
-        assert _CANONICAL_UUID_RE.match(_sdk_session_uuid("default")) is not None
+    handle.run = fake_run
 
-    def test_is_deterministic(self) -> None:
-        """Stability is what makes the CLI reuse its session cache."""
-        assert _sdk_session_uuid("session-one") == _sdk_session_uuid("session-one")
-        assert _sdk_session_uuid("session-one") != _sdk_session_uuid("session-two")
+    with patch("robotsix_chat.llm.agent.create_model", create_model):
+        agent = LlmioChatAgent(model_level=4, instruction="Be helpful.")
+        _ = [
+            c
+            async for c in agent.stream(
+                "third question",
+                history=[("q1", "a1"), ("q2", "a2")],
+                session_id="chat-session-1",
+            )
+        ]
+
+    assert handle._build_options is sentinel_builder  # never wrapped
+    assert seen["history"] is not None and len(seen["history"]) == 4  # 2 turns
+    assert seen["prompt"] == "third question"
 
 
-class TestBindSdkSession:
-    """``session_id`` creates a session; ``resume`` continues one.
-
-    Setting ``session_id`` on every turn created the transcript on turn 1 and
-    then asked the CLI to create the same id again on every later turn, which
-    it refuses with "Session ID <uuid> is already in use" — losing the turn,
-    and losing all three retries with it because the id is deterministic.
-    Observed 2026-08-13 on two chat sessions.
+@pytest.mark.asyncio
+async def test_recalled_memory_is_prepended_once_to_the_current_turn_only() -> None:
+    """Recall output is attached to the newest user message (not the system
+    prompt, not the history), so each turn carries exactly one, fresh block.
     """
+    from robotsix_chat.llm.agent import _MEMORY_PROMPT_FOOTER, _MEMORY_PROMPT_HEADER
 
-    class _Handle:
-        """Minimal stand-in exposing the ``_build_options`` seam."""
+    create_model, handle = _patched_create_model("ok")
+    seen: dict[str, object] = {}
 
-        def __init__(self) -> None:
-            self._build_options = lambda sp: SimpleNamespace(
-                session_id=None, resume=None
+    async def fake_run(prompt, *, message_history=None):
+        seen["prompt"] = prompt
+        seen["history"] = message_history
+        result = MagicMock()
+        result.output = "ok"
+        return result
+
+    handle.run = fake_run
+    memory = MagicMock()
+
+    async def fake_recall(message, *, session_id=None):
+        return "recalled fact about " + message
+
+    memory.recall = fake_recall
+
+    async def fake_remember(*args, **kwargs):
+        return None
+
+    memory.remember = fake_remember
+
+    with patch("robotsix_chat.llm.agent.create_model", create_model):
+        agent = LlmioChatAgent(model_level=4, instruction="Be helpful.", memory=memory)
+        _ = [
+            c
+            async for c in agent.stream(
+                "second question",
+                history=[("first question", "first answer")],
+                session_id="chat-session-1",
             )
+        ]
 
-    def _opts(self, *, resuming: bool) -> Any:
-        from robotsix_chat.llm.agent import _bind_sdk_session
-
-        handle = self._Handle()
-        _bind_sdk_session(handle, "chat-session-1", resuming=resuming)
-        return handle._build_options("system prompt")
-
-    def test_rebinding_does_not_leave_both_options_set(self) -> None:
-        """The flip must replace the binding, not add to it.
-
-        ``_attempt`` re-binds the same handle when the first binding is
-        refused.  Wrapping the previous wrapper left its assignment in place,
-        so the CLI got ``--session-id`` *and* ``--resume`` and refused
-        outright ("--session-id can only be used with --continue or --resume
-        if --fork-session is also specified") — the self-heal could never
-        succeed.  Observed 2026-08-14 on three autonomous sessions.
-        """
-        from robotsix_chat.llm.agent import _bind_sdk_session
-
-        handle = self._Handle()
-        _bind_sdk_session(handle, "chat-session-1", resuming=True)
-        _bind_sdk_session(handle, "chat-session-1", resuming=False)
-
-        opts = handle._build_options("system prompt")
-        assert opts.session_id == _sdk_session_uuid("chat-session-1")
-        assert opts.resume is None
-
-    def test_rebinding_the_other_way_round_is_also_clean(self) -> None:
-        """The flip runs in both directions; neither may leak the other field."""
-        from robotsix_chat.llm.agent import _bind_sdk_session
-
-        handle = self._Handle()
-        _bind_sdk_session(handle, "chat-session-1", resuming=False)
-        _bind_sdk_session(handle, "chat-session-1", resuming=True)
-
-        opts = handle._build_options("system prompt")
-        assert opts.resume == _sdk_session_uuid("chat-session-1")
-        assert opts.session_id is None
-
-    def test_repeated_rebinding_does_not_stack_wrappers(self) -> None:
-        """Guard against unbounded wrapper depth if the flip ever loops."""
-        from robotsix_chat.llm.agent import _bind_sdk_session
-
-        handle = self._Handle()
-        base = handle._build_options
-        for i in range(5):
-            _bind_sdk_session(handle, "chat-session-1", resuming=bool(i % 2))
-        assert handle._build_options._robotsix_orig_build is base
-
-    def test_first_turn_creates_the_session(self) -> None:
-        """Turn 1 has no history, so the session must be created."""
-        opts = self._opts(resuming=False)
-        assert opts.session_id == _sdk_session_uuid("chat-session-1")
-        assert opts.resume is None
-
-    def test_later_turns_resume_it(self) -> None:
-        """Any turn with history continues the existing session."""
-        opts = self._opts(resuming=True)
-        assert opts.resume == _sdk_session_uuid("chat-session-1")
-        assert opts.session_id is None
-
-    def test_never_sets_both(self) -> None:
-        """Set exactly one of the two options, never both.
-
-        The SDK rejects them together unless ``fork_session`` is set, and a
-        fork would defeat the cache reuse this binding exists for.
-        """
-        for resuming in (True, False):
-            opts = self._opts(resuming=resuming)
-            assert (opts.session_id is None) != (opts.resume is None)
-
-    def test_missing_seam_is_a_no_op(self) -> None:
-        """A handle without ``_build_options`` must not raise."""
-        from robotsix_chat.llm.agent import _bind_sdk_session
-
-        _bind_sdk_session(SimpleNamespace(), "chat-session-1", resuming=True)
-
-
-class TestSessionBindingErrorDetection:
-    """Both directions of chat-history / CLI-transcript disagreement."""
-
-    def test_detects_already_in_use(self) -> None:
-        """Creating an id whose transcript already exists."""
-        from robotsix_chat.llm.agent import _is_session_binding_error
-
-        assert _is_session_binding_error(
-            RuntimeError(
-                "Error: Session ID bcc0a8f8-b677-5248-b707-3c8f03043c65 "
-                "is already in use."
-            )
-        )
-
-    def test_detects_missing_session_on_resume(self) -> None:
-        """Resuming an id the CLI no longer has."""
-        from robotsix_chat.llm.agent import _is_session_binding_error
-
-        assert _is_session_binding_error(
-            RuntimeError("No conversation found with session ID abc")
-        )
-
-    def test_ignores_unrelated_errors(self) -> None:
-        """Only binding errors may flip the mode — everything else propagates."""
-        from robotsix_chat.llm.agent import _is_session_binding_error
-
-        assert not _is_session_binding_error(RuntimeError("rate limit exceeded"))
-        assert not _is_session_binding_error(RuntimeError("connection reset"))
-
-
-class TestSdkSessionStateAcrossAttempts:
-    """A second attempt in the same turn must resume, not re-create.
-
-    The SDK session id is derived deterministically from the chat session, so
-    every attempt in a turn targets the same CLI session.  Binding from
-    ``bool(message_history)`` per attempt cannot see that the previous attempt
-    already created it: on a NEW chat the history stays empty all turn, so the
-    tier fallback asked the CLI to create an id the primary attempt had just
-    created and got "Session ID <uuid> is already in use".  The fallback path
-    had no flip-once self-heal, so the turn died — every new chat broke while
-    the configured tier was out of credits (observed 2026-08-17).
-    """
-
-    class _Handle:
-        """Records the options each run was bound with."""
-
-        def __init__(self, fail_with: Exception | None = None) -> None:
-            self._build_options = lambda sp: SimpleNamespace(
-                session_id=None, resume=None
-            )
-            self.bindings: list[tuple[Any, Any]] = []
-            self._fail_with = fail_with
-
-        async def run(self) -> str:
-            opts = self._build_options("system prompt")
-            self.bindings.append((opts.session_id, opts.resume))
-            if self._fail_with is not None:
-                exc, self._fail_with = self._fail_with, None
-                raise exc
-            return "ok"
-
-    @pytest.mark.asyncio
-    async def test_new_chat_second_attempt_resumes(self) -> None:
-        """The fallback attempt resumes the session the primary created."""
-        from robotsix_chat.llm.agent import (
-            _run_bound_to_sdk_session,
-            _SdkSessionState,
-        )
-
-        # A brand-new chat: no history for the whole turn.
-        state = _SdkSessionState(exists=False)
-
-        primary = self._Handle()
-        await _run_bound_to_sdk_session(primary, "chat-1", state, primary.run)
-        # First attempt creates: --session-id set, --resume unset.
-        assert primary.bindings[0][0] is not None
-        assert primary.bindings[0][1] is None
-
-        fallback = self._Handle()
-        await _run_bound_to_sdk_session(fallback, "chat-1", state, fallback.run)
-        # Second attempt in the SAME turn must resume, despite empty history.
-        assert fallback.bindings[0][0] is None, "fallback must not re-create the id"
-        assert fallback.bindings[0][1] is not None, "fallback must resume"
-
-    @pytest.mark.asyncio
-    async def test_primary_failure_still_marks_the_session_created(self) -> None:
-        """An exhausted tier still leaves the transcript behind.
-
-        This is the real-world shape: the primary attempt creates the session
-        and *then* dies on exhausted credits, so the fallback must resume.
-        """
-        from robotsix_chat.llm.agent import (
-            _run_bound_to_sdk_session,
-            _SdkSessionState,
-        )
-
-        state = _SdkSessionState(exists=False)
-        primary = self._Handle(fail_with=RuntimeError("out of usage credits"))
-        with pytest.raises(RuntimeError):
-            await _run_bound_to_sdk_session(primary, "chat-1", state, primary.run)
-        assert state.exists is True
-
-        fallback = self._Handle()
-        await _run_bound_to_sdk_session(fallback, "chat-1", state, fallback.run)
-        assert fallback.bindings[0][1] is not None, "fallback must resume"
-
-    @pytest.mark.asyncio
-    async def test_fallback_path_self_heals_on_binding_error(self) -> None:
-        """A binding error flips the binding and re-runs — on any path.
-
-        The fallback path previously had no self-heal at all, so a stale
-        state guess was unrecoverable.
-        """
-        from robotsix_chat.llm.agent import (
-            _run_bound_to_sdk_session,
-            _SdkSessionState,
-        )
-
-        # State says "not created", but the CLI disagrees.
-        state = _SdkSessionState(exists=False)
-        handle = self._Handle(
-            fail_with=RuntimeError("Error: Session ID abc is already in use.")
-        )
-        result = await _run_bound_to_sdk_session(handle, "chat-1", state, handle.run)
-
-        assert result == "ok"
-        assert len(handle.bindings) == 2, "should have re-run once"
-        # First tried to create, then flipped to resume.
-        assert handle.bindings[0][0] is not None
-        assert handle.bindings[1][1] is not None
-        assert state.exists is True
-
-    @pytest.mark.asyncio
-    async def test_existing_chat_resumes_from_the_start(self) -> None:
-        """A chat with history resumes on the very first attempt."""
-        from robotsix_chat.llm.agent import (
-            _run_bound_to_sdk_session,
-            _SdkSessionState,
-        )
-
-        state = _SdkSessionState(exists=True)
-        handle = self._Handle()
-        await _run_bound_to_sdk_session(handle, "chat-1", state, handle.run)
-        assert handle.bindings[0][0] is None
-        assert handle.bindings[0][1] is not None
-
-    @pytest.mark.asyncio
-    async def test_no_session_id_runs_unbound(self) -> None:
-        """Without a chat session there is nothing to bind."""
-        from robotsix_chat.llm.agent import (
-            _run_bound_to_sdk_session,
-            _SdkSessionState,
-        )
-
-        state = _SdkSessionState(exists=False)
-        handle = self._Handle()
-        assert await _run_bound_to_sdk_session(handle, None, state, handle.run) == "ok"
-        assert handle.bindings == [(None, None)]
+    prompt = seen["prompt"]
+    assert isinstance(prompt, str)
+    assert prompt.count(_MEMORY_PROMPT_HEADER) == 1
+    assert prompt.endswith(f"{_MEMORY_PROMPT_FOOTER}\nsecond question")
+    assert "recalled fact about second question" in prompt
+    # History is passed structurally and stays memory-free.
+    hist = seen["history"]
+    assert hist is not None and all(
+        "recalled" not in str(getattr(m, "parts", "")) for m in hist
+    )
