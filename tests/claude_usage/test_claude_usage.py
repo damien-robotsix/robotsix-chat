@@ -16,7 +16,11 @@ from unittest.mock import AsyncMock, MagicMock
 import pytest
 
 from robotsix_chat.claude_usage import build_claude_usage_tools, load_claude_usage_skill
-from robotsix_chat.claude_usage.client import extract_magic_link, parse_usage_value
+from robotsix_chat.claude_usage.client import (
+    extract_magic_link,
+    is_cloudflare_challenge,
+    parse_usage_value,
+)
 from robotsix_chat.config import ClaudeUsageSettings, MailSettings
 
 # ---------------------------------------------------------------------------
@@ -30,25 +34,39 @@ def _settings(**kw: Any) -> ClaudeUsageSettings:
     return ClaudeUsageSettings(**base)
 
 
-def _fake_playwright_module(usage_text: str) -> Any:
+def _fake_playwright_module(
+    usage_text: str,
+    *,
+    title: str = "Claude",
+    content: str = "<html><body>login</body></html>",
+) -> Any:
     """Return a mock ``playwright.async_api`` module with a fake browser chain.
 
     A single locator mock serves both call sites: ``.locator("input...").first``
-    (with ``fill`` / ``press``) and ``.locator("body").aria_snapshot()``.
+    (with ``fill`` / ``press`` / ``wait_for``) and
+    ``.locator("body").aria_snapshot()``.  ``title``/``content`` drive the
+    Cloudflare-interstitial detection branch.
     """
     mock_locator = MagicMock()
     mock_locator.aria_snapshot = AsyncMock(return_value=usage_text)
     mock_locator.fill = AsyncMock()
     mock_locator.press = AsyncMock()
+    mock_locator.wait_for = AsyncMock()
+    mock_locator.count = AsyncMock(return_value=0)
+    mock_locator.click = AsyncMock()
     mock_locator.first = mock_locator
 
     mock_page = MagicMock()
     mock_page.goto = AsyncMock()
     mock_page.url = "https://claude.ai/settings/usage"
+    mock_page.title = AsyncMock(return_value=title)
+    mock_page.content = AsyncMock(return_value=content)
     mock_page.locator = MagicMock(return_value=mock_locator)
+    mock_page.get_by_role = MagicMock(return_value=mock_locator)
 
     mock_context = MagicMock()
     mock_context.new_page = AsyncMock(return_value=mock_page)
+    mock_context.add_init_script = AsyncMock()
     mock_context.close = AsyncMock()
 
     mock_browser = MagicMock()
@@ -71,9 +89,9 @@ def _fake_playwright_module(usage_text: str) -> Any:
     return module
 
 
-def _install_fake_playwright(usage_text: str) -> Any:
+def _install_fake_playwright(usage_text: str, **kw: Any) -> Any:
     """Inject a fake ``playwright.async_api`` into ``sys.modules``."""
-    fake = _fake_playwright_module(usage_text)
+    fake = _fake_playwright_module(usage_text, **kw)
     if "playwright" not in sys.modules:
         sys.modules["playwright"] = MagicMock()
     sys.modules["playwright.async_api"] = fake
@@ -128,6 +146,31 @@ def test_parse_usage_value_none_when_no_match() -> None:
 def test_parse_usage_value_empty() -> None:
     """Empty text → None."""
     assert parse_usage_value("") is None
+
+
+# ---------------------------------------------------------------------------
+# is_cloudflare_challenge
+# ---------------------------------------------------------------------------
+
+
+def test_is_cloudflare_challenge_detects_title() -> None:
+    """The 'Just a moment...' title marks a Cloudflare interstitial."""
+    assert is_cloudflare_challenge(
+        "Just a moment...", "<html></html>", "https://claude.ai/login"
+    )
+
+
+def test_is_cloudflare_challenge_detects_body_and_token() -> None:
+    """Challenge-form markup and the __cf_chl URL token are both detected."""
+    assert is_cloudflare_challenge("", "<form id='challenge-form'>", "")
+    assert is_cloudflare_challenge("", "", "https://claude.ai/login?__cf_chl_rt_tk=abc")
+
+
+def test_is_cloudflare_challenge_negative() -> None:
+    """A normal login page is not flagged as a challenge."""
+    assert not is_cloudflare_challenge(
+        "Claude", "<input type='email'>", "https://claude.ai/login"
+    )
 
 
 # ---------------------------------------------------------------------------
@@ -224,5 +267,22 @@ async def test_fetch_claude_usage_no_magic_link(
         payload = json.loads(await tools[0]())
         assert payload["remaining_cap"] is None
         assert "login email" in payload["error"]
+    finally:
+        _remove_fake_playwright()
+
+
+@pytest.mark.asyncio
+async def test_fetch_claude_usage_cloudflare_interstitial() -> None:
+    """A Cloudflare challenge yields a specific error, not a fill timeout."""
+    _install_fake_playwright(
+        "irrelevant",
+        title="Just a moment...",
+        content="<form id='challenge-form'>Performing security verification</form>",
+    )
+    try:
+        tools = build_claude_usage_tools(_settings(), MailSettings())
+        payload = json.loads(await tools[0]())
+        assert payload["remaining_cap"] is None
+        assert "Cloudflare" in payload["error"]
     finally:
         _remove_fake_playwright()

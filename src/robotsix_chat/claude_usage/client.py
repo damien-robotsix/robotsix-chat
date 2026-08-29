@@ -82,6 +82,52 @@ def parse_usage_value(text: str) -> str | None:
     return None
 
 
+#: A realistic desktop-Chrome fingerprint used for the headless session so
+#: claude.ai's anti-bot layer is less likely to serve a Cloudflare challenge.
+_USER_AGENT = (
+    "Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 "
+    "(KHTML, like Gecko) Chrome/126.0.0.0 Safari/537.36"
+)
+_LOCALE = "en-US"
+_TIMEZONE = "America/New_York"
+_VIEWPORT = {"width": 1280, "height": 800}
+_ACCEPT_LANGUAGE = "en-US,en;q=0.9"
+
+#: Minimal ``navigator.webdriver`` masking + fingerprint smoothing injected
+#: before any page script runs.  This is plain evasion, NOT a CAPTCHA solver.
+_STEALTH_INIT_SCRIPT = """
+Object.defineProperty(navigator, 'webdriver', {get: () => undefined});
+Object.defineProperty(navigator, 'languages', {get: () => ['en-US', 'en']});
+Object.defineProperty(navigator, 'plugins', {get: () => [1, 2, 3, 4, 5]});
+window.chrome = window.chrome || {runtime: {}};
+"""
+
+#: Substrings that mark a rendered page as a Cloudflare bot-verification
+#: interstitial (checked against the page title, HTML body, and URL).
+_CLOUDFLARE_MARKERS = (
+    "just a moment",
+    "performing security verification",
+    "attention required",
+    "challenge-form",
+    "cf-chl",
+    "__cf_chl",
+    "cf-mitigated",
+)
+
+
+def is_cloudflare_challenge(title: str, html: str, url: str) -> bool:
+    """Return ``True`` when the page looks like a Cloudflare bot interstitial.
+
+    Detects Anthropic's Cloudflare challenge wall by scanning the page
+    *title*, *html* body, and *url* for well-known challenge markers
+    ("Just a moment...", ``challenge-form``, ``__cf_chl`` token, etc.).  Used
+    so the scraper can return a specific "blocked by Cloudflare" error instead
+    of a bare fill/navigation timeout.
+    """
+    haystacks = ((title or "").lower(), (html or "").lower(), (url or "").lower())
+    return any(marker in hay for marker in _CLOUDFLARE_MARKERS for hay in haystacks)
+
+
 class ClaudeUsageClient:
     """Headless-browser scraper for the Claude.ai remaining-cap value."""
 
@@ -147,13 +193,33 @@ class ClaudeUsageClient:
         timeout_ms = self._settings.timeout * 1000
 
         try:
+            cf_error = (
+                "blocked by Cloudflare bot challenge: claude.ai served a "
+                "security-verification interstitial instead of the login form. "
+                "Headless-browser login is not viable for this account without "
+                "an authenticated-session path; do not add more aggressive "
+                "evasion."
+            )
             async with async_playwright() as p:
                 browser = await p.chromium.launch(
                     headless=True,
-                    args=["--no-sandbox", "--disable-setuid-sandbox"],
+                    args=[
+                        "--no-sandbox",
+                        "--disable-setuid-sandbox",
+                        "--disable-blink-features=AutomationControlled",
+                    ],
                 )
                 try:
-                    context = await browser.new_context()
+                    # Present a realistic desktop-Chrome fingerprint so the
+                    # anti-bot layer is less likely to serve a challenge.
+                    context = await browser.new_context(
+                        user_agent=_USER_AGENT,
+                        locale=_LOCALE,
+                        timezone_id=_TIMEZONE,
+                        viewport=_VIEWPORT,
+                        extra_http_headers={"Accept-Language": _ACCEPT_LANGUAGE},
+                    )
+                    await context.add_init_script(_STEALTH_INIT_SCRIPT)
                     page = await context.new_page()
 
                     # 1. Initiate the email magic-link login.
@@ -162,7 +228,48 @@ class ClaudeUsageClient:
                         wait_until="domcontentloaded",
                         timeout=timeout_ms,
                     )
+
+                    # Detect the Cloudflare interstitial up front so the caller
+                    # gets a specific error instead of a bare fill timeout.
+                    if is_cloudflare_challenge(
+                        await page.title(), await page.content(), page.url
+                    ):
+                        result["error"] = cf_error
+                        result["page_url"] = page.url
+                        return result
+
+                    # The email field may be gated behind a "Continue with
+                    # email" button; click it when present (best-effort).
+                    try:
+                        continue_btn = page.get_by_role(
+                            "button",
+                            name=re.compile("continue with email", re.IGNORECASE),
+                        )
+                        if await continue_btn.count():
+                            await continue_btn.first.click()
+                    except Exception:
+                        logger.debug("claude_usage: no 'Continue with email' button")
+
+                    # Allow challenge/login JS time to render the email field,
+                    # with a bounded timeout.
                     email_input = page.locator("input[type='email']").first
+                    try:
+                        await email_input.wait_for(state="visible", timeout=timeout_ms)
+                    except Exception:
+                        # Re-check for a challenge that appeared after JS ran;
+                        # otherwise report a specific missing-field error.
+                        if is_cloudflare_challenge(
+                            await page.title(), await page.content(), page.url
+                        ):
+                            result["error"] = cf_error
+                        else:
+                            result["error"] = (
+                                "claude.ai login email field did not appear "
+                                f"within {self._settings.timeout:.0f}s"
+                            )
+                        result["page_url"] = page.url
+                        return result
+
                     await email_input.fill(self._settings.account_email)
                     await email_input.press("Enter")
 
