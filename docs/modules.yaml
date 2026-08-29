@@ -282,6 +282,7 @@ modules:
       - tests/repo/direct/test_direct_repo.py
       - tests/repo/direct/test_enable_pages.py
       - tests/repo/direct/test_github_auth_dependency.py
+      - tests/repo/direct/test_github_tools.py
       - tests/repo/direct/test_merge.py
       - tests/repo/direct/test_open_pr.py
       - tests/repo/direct/test_patch_file.py
@@ -454,6 +455,7 @@ modules:
       - src/robotsix_chat/config/file_hub_models.py
       - tests/file_hub_tools/__init__.py
       - tests/file_hub_tools/test_file_hub_tools.py
+      - tests/file_hub_tools/test_pdf_tools.py
 
   - id: volume-tools
     description: "Local volume-directory listing tool — exposes build_volume_tools() returning a read-only list_volume_files tool scoped to a configurable root path."
