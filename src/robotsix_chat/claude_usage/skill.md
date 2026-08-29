@@ -44,12 +44,21 @@ A JSON string with:
 - `remaining_cap` — best-effort parsed remaining-cap line, or `null` when parsing failed
 - `raw_text` — the scraped usage-page text (read this yourself when `remaining_cap` is `null`)
 - `page_url` — the final URL after login
-- `error` — non-empty string when the fetch failed
+- `error` — non-empty string when the fetch failed; includes specific terminal-condition messages
+  - **Turnstile gate:** `"blocked by Cloudflare Turnstile..."` when Anthropic's login form carries
+    an unsatisfied Cloudflare Turnstile challenge. Headless automation cannot satisfy it, so the
+    tool stops. This is a terminal condition — do **not** retry.
+  - **No confirmation:** when the login-email submit did not reach the "check your email"
+    confirmation state (page state is captured in `raw_text`)
 
 ## Fragility and caveats
 
 - **No stored credentials.** The magic-link email is the sole auth per run — there is no password or
   API-key vault. Each call performs a fresh login.
+- **Cloudflare Turnstile gate.** Anthropic sometimes gates the login form with a Cloudflare
+  Turnstile challenge. Headless automation cannot satisfy it — the tool returns a specific
+  `"blocked by Cloudflare Turnstile..."` error. This is a **terminal condition**: the tool cannot
+  proceed without human intervention or an authenticated-session path. Do not retry.
 - **Fragile scraper.** It breaks on claude.ai page/layout changes, CAPTCHA, or device-verification
   challenges. Relay `raw_text` to the operator when `remaining_cap` is `null`.
 - **No official API / ToS caveat.** Automated console access may brush against Claude.ai's Terms of
