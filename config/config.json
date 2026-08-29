@@ -1,5 +1,5 @@
 {
-  "llmio_model_level": 3,
+  "llmio_model_level": 4,
   "llmio_api_key": "",
   "server_host": "0.0.0.0",
   "server_port": 8000,
@@ -108,7 +108,7 @@
     "max_concurrent_per_session": 6,
     "stale_reclaim_seconds": 300.0,
     "max_depth": 3,
-    "default_model_level": 3,
+    "default_model_level": 4,
     "delegated_read_model_level": 2,
     "monitor_max_model_level": 2,
     "min_interval_seconds": 60.0,

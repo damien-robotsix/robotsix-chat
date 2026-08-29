@@ -1161,12 +1161,12 @@ def test_create_agent_from_settings_explicit() -> None:
 
 def test_create_agent_from_settings_keyless_level_drops_key() -> None:
     """A keyless level (3 → claude-sdk, the default) never forwards an api_key."""
-    settings = Settings()  # model_level 3, keyless
+    settings = Settings()  # model_level 4, keyless
 
     agent = create_agent_from_settings("Be helpful.", settings=settings)
 
     assert isinstance(agent, LlmioChatAgent)
-    assert agent._model_level == 3
+    assert agent._model_level == 4
     assert agent._api_key == ""
 
 
@@ -1320,7 +1320,7 @@ async def test_run_server_from_config_creates_agent_from_settings(
         patch(
             "robotsix_chat.config.settings.load_config",
             return_value=Settings(
-                llmio_model_level=3,
+                llmio_model_level=4,
                 server_host="127.0.0.1",
                 server_port=8080,
             ),
@@ -1332,7 +1332,7 @@ async def test_run_server_from_config_creates_agent_from_settings(
         call_args = mock_run_server.call_args
         passed_agent = call_args[0][0]
         assert isinstance(passed_agent, LlmioChatAgent)
-        assert passed_agent._model_level == 3
+        assert passed_agent._model_level == 4
         assert passed_agent._instruction.startswith("You are a helpful assistant.")
         # A conversation store is built from settings and forwarded; assert the
         # rest of the server options explicitly.
@@ -1415,7 +1415,7 @@ async def test_run_server_from_config_passes_explicit_agent(
     ``run_server_from_config(agent)`` passes *agent* through without
     creating a new one.
     """
-    # Patch load_config to use defaults (level 3 = keyless, no key needed).
+    # Patch load_config to use defaults (level 4 = keyless, no key needed).
     with patch(
         "robotsix_chat.config.settings.load_config",
         return_value=Settings(),
@@ -2027,7 +2027,7 @@ async def test_subsessions_close_cancels_worker_and_delivers_summary() -> None:
 
 def test_create_agent_model_level_override() -> None:
     """``model_level`` overrides ``settings.llmio_model_level``."""
-    settings = Settings(llmio_model_level=3, llmio_api_key="sk-key")
+    settings = Settings(llmio_model_level=4, llmio_api_key="sk-key")
 
     agent = create_agent_from_settings("Be terse.", settings=settings, model_level=2)
 
@@ -2141,7 +2141,7 @@ def test_main_agent_costly_level_has_no_orchestration_directive() -> None:
         COSTLY_TIER_ORCHESTRATION_DIRECTIVE,
     )
 
-    settings = Settings()  # level 3, no subsession ctx → main agent
+    settings = Settings()  # level 4, no subsession ctx → main agent
 
     agent = create_agent_from_settings(settings=settings, model_level=4)
 

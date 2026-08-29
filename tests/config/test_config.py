@@ -33,7 +33,7 @@ from robotsix_chat.config import (
 def _write_config_json(tmp_path: Path, overrides: dict | None = None) -> Path:
     """Write a minimal valid config.json to *tmp_path* and return its path."""
     data: dict = {
-        "llmio_model_level": 3,
+        "llmio_model_level": 4,
     }
     if overrides:
         data.update(overrides)
@@ -51,7 +51,7 @@ def test_defaults() -> None:
     """Optional fields fall back to their documented defaults."""
     settings = Settings()
 
-    assert settings.llmio_model_level == 3
+    assert settings.llmio_model_level == 4
     assert settings.llmio_api_key.get_secret_value() == ""
     assert settings.server_host == "0.0.0.0"
     assert settings.server_port == 8000
@@ -71,9 +71,9 @@ def test_log_level_default() -> None:
 
 
 def test_default_level_is_keyless() -> None:
-    """The default level (3) is keyless — constructs with no key."""
+    """The default level (4) is keyless — constructs with no key."""
     settings = Settings()
-    assert settings.llmio_model_level == 3
+    assert settings.llmio_model_level == 4
     assert settings.llmio_api_key.get_secret_value() == ""
 
 
@@ -92,15 +92,15 @@ def test_key_bearing_level_with_key_ok() -> None:
 
 
 def test_invalid_model_level_raises() -> None:
-    """A model_level outside llmio's tiers (1-4) is rejected."""
+    """A model_level outside llmio's tiers (1-5) is rejected."""
     with pytest.raises(ValueError, match="model_level"):
-        Settings(llmio_model_level=5)
+        Settings(llmio_model_level=6)
 
 
-def test_level_3_is_keyless() -> None:
-    """Level 3 constructs with no key."""
-    settings = Settings(llmio_model_level=3)
-    assert settings.llmio_model_level == 3
+def test_level_2_is_keyless() -> None:
+    """Level 2 (Claude haiku) constructs with no key."""
+    settings = Settings(llmio_model_level=2)
+    assert settings.llmio_model_level == 2
 
 
 def test_level_4_is_keyless() -> None:
@@ -362,7 +362,7 @@ def test_subsessions_defaults() -> None:
     assert settings.subsessions == SubsessionsSettings()
     assert settings.subsessions.max_concurrent == 8
     assert settings.subsessions.max_depth == 3
-    assert settings.subsessions.default_model_level == 3
+    assert settings.subsessions.default_model_level == 4
     assert settings.subsessions.min_interval_seconds == 60.0
     assert settings.subsessions.auto_stop_no_change_runs == 3
     assert settings.subsessions.max_idle_runs == 15
@@ -420,15 +420,15 @@ def test_subsessions_max_depth_zero_raises() -> None:
 
 
 def test_subsessions_default_model_level_invalid_raises() -> None:
-    """``subsessions.default_model_level = 5`` is rejected."""
+    """``subsessions.default_model_level = 6`` is rejected."""
     with pytest.raises(ValueError, match="default_model_level"):
-        Settings(subsessions={"default_model_level": 5})
+        Settings(subsessions={"default_model_level": 6})
 
 
 def test_subsessions_monitor_max_model_level_invalid_raises() -> None:
-    """``subsessions.monitor_max_model_level = 5`` is rejected."""
+    """``subsessions.monitor_max_model_level = 6`` is rejected."""
     with pytest.raises(ValueError, match="monitor_max_model_level"):
-        Settings(subsessions={"monitor_max_model_level": 5})
+        Settings(subsessions={"monitor_max_model_level": 6})
 
 
 def test_subsessions_min_interval_zero_raises() -> None:

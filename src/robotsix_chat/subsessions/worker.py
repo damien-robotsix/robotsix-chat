@@ -84,7 +84,7 @@ _MODEL_TIER_NOT_FOUND_STATUS = 404
 
 #: Minimum model level a periodic monitor can fall back to before the
 #: subsession is failed permanently.  Decrementing by 1 each time, a
-#: monitor starting at level 4 will try 4→3→2→1 before giving up.
+#: monitor starting at level 5 will try 5→4→3→2→1 before giving up.
 _MODEL_LEVEL_FALLBACK_FLOOR = 1
 
 #: Maximum number of tier-fallback steps before the subsession is failed.
@@ -866,7 +866,7 @@ def _validate_model_level(settings: Settings, model_level: int) -> None:
             "but stored in a location the server does not read — "
             "the server only reads the `llmio.api_key` field in its "
             "JSON config file, not environment variables or external "
-            "secret stores.  Retry at level 3 (keyless) or have the "
+            "secret stores.  Retry at level 4 (keyless) or have the "
             "operator verify the API key is set in the config file."
         )
 

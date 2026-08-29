@@ -126,13 +126,13 @@ async def test_task_budget_forwarded_to_keyless_level() -> None:
 
     with patch("robotsix_chat.llm.agent.create_model", create_model):
         agent = LlmioChatAgent(
-            model_level=3,
+            model_level=4,
             instruction="Be helpful.",
             task_budget_tokens=30_000,
         )
         _ = [c async for c in agent.stream("hi")]
 
-    create_model.assert_called_once_with(level=3, max_tokens=30_000)
+    create_model.assert_called_once_with(level=4, max_tokens=30_000)
 
 
 @pytest.mark.asyncio
@@ -828,7 +828,7 @@ async def test_usage_exhausted_falls_back_to_another_tier() -> None:
 
     # acall_with_tier_fallback retries its starting level (4) once — it has
     # no way to know this level was already just attempted outside it — and
-    # that retry fails identically before falling back to level 3.
+    # that retry fails identically before falling back to level 5.
     create_model_patch = MagicMock(
         side_effect=[level4_provider, level4_provider, level3_provider]
     )
@@ -841,7 +841,7 @@ async def test_usage_exhausted_falls_back_to_another_tier() -> None:
     assert create_model_patch.call_args_list == [
         call(level=4),
         call(level=4),
-        call(level=3),
+        call(level=5),
     ]
     assert level4_handle.close.call_count == 2
     level3_handle.close.assert_called_once()
@@ -1124,7 +1124,7 @@ async def test_auth_failure_falls_back_past_every_claude_sdk_tier() -> None:
     level2_provider.build_agent.return_value = level2_handle
 
     # level 4 (primary), level 4 again (the loop's own starting-level retry),
-    # level 3 (same dead credential), then level 2 (keyed, works).
+    # level 5 (same dead credential), then level 3 (keyed, works).
     create_model_patch = MagicMock(
         side_effect=[
             _dead_credential_provider(),
@@ -1147,9 +1147,9 @@ async def test_auth_failure_falls_back_past_every_claude_sdk_tier() -> None:
         # Keyless claudeSDK tiers must never receive an api_key.
         call(level=4),
         call(level=4),
-        call(level=3),
+        call(level=5),
         # The keyed tier must, or the fallback cannot actually serve.
-        call(level=2, api_key="or-key"),  # pragma: allowlist secret
+        call(level=3, api_key="or-key"),  # pragma: allowlist secret
     ]
 
 
@@ -1246,7 +1246,7 @@ async def test_keyed_primary_level_still_receives_the_api_key() -> None:
 
     with patch("robotsix_chat.llm.agent.create_model", create_model_patch):
         agent = LlmioChatAgent(
-            model_level=2,
+            model_level=3,
             instruction="Be helpful.",
             api_key="or-key",  # pragma: allowlist secret
         )
@@ -1254,7 +1254,7 @@ async def test_keyed_primary_level_still_receives_the_api_key() -> None:
 
     assert chunks == ["openrouter reply"]
     create_model_patch.assert_called_once_with(
-        level=2,
+        level=3,
         api_key="or-key",  # pragma: allowlist secret
     )
 

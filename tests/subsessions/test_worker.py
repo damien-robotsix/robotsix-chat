@@ -2158,7 +2158,7 @@ def test_spawn_level_errors() -> None:
     env = build_env(settings=make_settings(llmio_api_key=""))
 
     with pytest.raises(SubsessionLevelError):
-        _spawn(env, model_level=5)
+        _spawn(env, model_level=6)
     with pytest.raises(SubsessionLevelError):
         _spawn(env, model_level=1)  # level 1 needs an API key
 
