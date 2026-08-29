@@ -1,1 +1,0 @@
-claude_usage: add a `session_state` auth mode that reuses an operator-captured, already-authenticated claude.ai browser session (Playwright storage-state JSON at `session_state_path`) and navigates directly to the usage page, sidestepping the Cloudflare-gated magic-link login. Defaults to `magic_link` (unchanged behaviour).
