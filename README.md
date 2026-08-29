@@ -169,7 +169,11 @@ place.
 
 ### Per-session model selection
 
-The browser UI provides a dropdown model selector in the header, so operators can switch the active session to a different capability level without restarting. The selected model applies to all subsequent turns in that session only — other sessions retain their own configured level or selection. The selector shows only models that are available: keyless (claudeSDK) tiers are always available, while keyed (OpenRouter) tiers appear only when `llmio_api_key` is configured.
+The browser UI provides a dropdown model selector in the header, so operators can switch the active
+session to a different capability level without restarting. The selected model applies to all
+subsequent turns in that session only — other sessions retain their own configured level or
+selection. The selector shows only models that are available: keyless (claudeSDK) tiers are always
+available, while keyed (OpenRouter) tiers appear only when `llmio_api_key` is configured.
 
 ### Authentication
 
