@@ -130,9 +130,11 @@ from .routes import (
     mail_archive_root_check_endpoint,
     memory_ingestion_structure_endpoint,
     mill_events_endpoint,
+    models_list_endpoint,
     not_found_handler,
     prune_endpoint,
     server_error_handler,
+    session_model_set_endpoint,
     sessions_close_endpoint,
     sessions_create_endpoint,
     sessions_delete_endpoint,
@@ -498,8 +500,14 @@ def create_app(
         Route("/events", events_endpoint, methods=["GET"]),
         Route("/history", history_endpoint, methods=["GET"]),
         Route("/summary", summary_endpoint, methods=["POST"]),
+        Route("/models", models_list_endpoint, methods=["GET"]),
         Route("/sessions", sessions_list_endpoint, methods=["GET"]),
         Route("/sessions", sessions_create_endpoint, methods=["POST"]),
+        Route(
+            "/sessions/{session_id}/model",
+            session_model_set_endpoint,
+            methods=["POST"],
+        ),
         Route(
             "/sessions/{session_id}",
             sessions_delete_endpoint,
@@ -676,6 +684,10 @@ def create_app(
     # Configured chat level — the baseline a session runs at until the agent
     # escalates it. Read from the agent so create_app needs no new parameter.
     app.state.chat_model_level = getattr(agent, "model_level", None)
+    # Whether keyed (OpenRouter) model levels are usable — surfaced to the UI
+    # model selector so it can mark levels that need an absent API key as
+    # unavailable. Read from the agent so create_app needs no new parameter.
+    app.state.chat_api_key_available = bool(getattr(agent, "has_api_key", False))
     app.state.idle_timeout_minutes = idle_timeout_minutes
     app.state.compaction_min_turns = compaction_min_turns
     app.state.compaction_keep_recent_turns = compaction_keep_recent_turns

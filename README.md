@@ -167,6 +167,14 @@ place.
 > Replies are returned as a single block (not token-streamed): llmio's Claude SDK model does not yet
 > support incremental streaming through pydantic-ai.
 
+### Per-session model selection
+
+The browser UI provides a dropdown model selector in the header, so operators can switch the active
+session to a different capability level without restarting. The selected model applies to all
+subsequent turns in that session only — other sessions retain their own configured level or
+selection. The selector shows only models that are available: keyless (claudeSDK) tiers are always
+available, while keyed (OpenRouter) tiers appear only when `llmio_api_key` is configured.
+
 ### Authentication
 
 The server ships no auth of its own (robotsix-standards component standard): production traffic is

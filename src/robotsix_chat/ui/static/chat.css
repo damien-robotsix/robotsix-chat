@@ -390,6 +390,14 @@ body {
 #appshell-header .model-badge-escalated {
   color: #f59e0b; border-color: #f59e0b;
 }
+.model-selector {
+  font-size: 0.72rem; color: #cbd5e1;
+  background: rgba(255,255,255,0.06);
+  padding: 0.1rem 0.4rem; margin-left: 0.35rem;
+  border: 1px solid #334155; border-radius: 0.5rem;
+  cursor: pointer; max-width: 14rem;
+}
+.model-selector:hover { background: rgba(255,255,255,0.12); }
 .session-plan-preview {
   font-size: 0.72rem; color: #94a3b8;
   margin-top: 0.2rem; white-space: nowrap;
