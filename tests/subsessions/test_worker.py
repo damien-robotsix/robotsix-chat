@@ -32,15 +32,19 @@ from robotsix_chat.subsessions import (
 )
 from robotsix_chat.subsessions import worker as worker_mod
 from robotsix_chat.subsessions.worker import (
+    _MAX_PERIODIC_HISTORY_TURNS,
+    _MAX_WORKER_HISTORY_TURNS,
     CloseState,
     SubsessionContext,
     SubsessionEnv,
     _draft_decision_comment_posted,
     _event_wait_loop,
     _format_worker_error,
+    _history_cap,
     _is_duplicate_reply,
     _is_no_change,
     _is_queued,
+    _run_turn,
     _run_wait_for_event_turn,
     _truncate,
 )
@@ -4682,3 +4686,39 @@ async def test_periodic_draft_comment_posted_skips_agent_turns() -> None:
     if task is not None and not task.done():
         task.cancel()
     await asyncio.sleep(0.05)
+
+
+@pytest.mark.parametrize(
+    ("kind", "expected"),
+    [
+        (SubsessionKind.PERIODIC, _MAX_PERIODIC_HISTORY_TURNS),
+        (SubsessionKind.WAIT_FOR_EVENT, _MAX_PERIODIC_HISTORY_TURNS),
+        (SubsessionKind.TASK, _MAX_WORKER_HISTORY_TURNS),
+        (SubsessionKind.USER_CHAT, _MAX_WORKER_HISTORY_TURNS),
+        (SubsessionKind.ON_CLOSE, _MAX_WORKER_HISTORY_TURNS),
+    ],
+)
+def test_history_cap_bounds_monitor_replay(kind: SubsessionKind, expected: int) -> None:
+    """Monitor kinds get the tight replay cap; other kinds keep the default."""
+    assert _history_cap(kind) == expected
+    # The monitor bound is meaningfully tighter than the default window.
+    assert _MAX_PERIODIC_HISTORY_TURNS < _MAX_WORKER_HISTORY_TURNS
+
+
+@pytest.mark.asyncio
+async def test_run_turn_slices_history_to_cap() -> None:
+    """``_run_turn`` replays only the last ``max_history_turns`` prior turns."""
+    agent = FakeAgent(["reply"])
+    history = [(f"in {i}", f"out {i}") for i in range(10)]
+
+    reply = await _run_turn(
+        agent,
+        "now",
+        history,
+        "sub-1",
+        max_history_turns=_MAX_PERIODIC_HISTORY_TURNS,
+    )
+
+    assert reply == "reply"
+    assert agent.calls[0]["history"] == history[-_MAX_PERIODIC_HISTORY_TURNS:]
+    assert len(agent.calls[0]["history"]) == _MAX_PERIODIC_HISTORY_TURNS
