@@ -15,6 +15,15 @@ Settings.model_post_init.__context  # noqa: B018  # unused variable (pydantic pa
 # conversation.py — public API consumed from tests/test_conversation.py
 ConversationStore.record_for_owner  # noqa: B018  # unused method (used from tests)
 
+# conversation.py — evergoing-session + subject-aware trim API; defined ahead
+# of the periodic trim runner / cross-session tools (see the evergoing-session
+# child tickets) and exercised from tests/chat/test_conversation.py.
+ConversationStore.mark_evergoing  # noqa: B018  # unused method (evergoing, not yet wired)
+ConversationStore.ensure_evergoing_session  # noqa: B018  # unused method (evergoing, not yet wired)
+ConversationStore.evergoing_session_id  # noqa: B018  # unused method (evergoing, not yet wired)
+ConversationStore.has_new_input_since_trim  # noqa: B018  # unused method (trim, not yet wired)
+ConversationStore.trim_session  # noqa: B018  # unused method (trim, not yet wired)
+
 # config.py — public API imported and asserted in test_system_prompt_governance.py
 SYSTEM_PROMPT_VERSION  # noqa: B018  # unused variable (used from tests)
 

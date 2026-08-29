@@ -127,6 +127,23 @@ class Session:
     # compaction created.  Kept so persisted chains still reroute; new
     # compactions never set it.
     compacted_into: str | None = None
+    # Marks the single "evergoing" session: a never-ending session whose
+    # context is kept bounded by subject-aware auto-trimming (see
+    # :meth:`ConversationStore.trim_session`) rather than by summarisation.
+    # Exactly one session should carry this flag at a time.
+    evergoing: bool = False
+    # Index into ``turns`` marking how many leading turns have been physically
+    # trimmed out of the active context by the auto-trim pass.  Unlike
+    # compaction (which condenses into a summary), trimmed turns are simply
+    # dropped from the agent view and the UI transcript — they remain
+    # recoverable only via conversation memory (cognee).  Turns before this
+    # index are considered removed.
+    trimmed_turn_index: int = 0
+    # Watermark: the ``turn_count`` value at the last trim pass.  The periodic
+    # trim agent compares this against the live ``turn_count`` to decide
+    # whether any new input has arrived since — if equal, the pass is skipped
+    # and no LLM call is made.
+    last_trim_turn_count: int = 0
 
 
 def _session_metadata(session: Session) -> dict[str, object]:
@@ -138,6 +155,7 @@ def _session_metadata(session: Session) -> dict[str, object]:
         "turn_count": session.turn_count,
         "closed": session.closed,
         "model_level": session.model_level,
+        "evergoing": session.evergoing,
     }
 
 
@@ -369,6 +387,18 @@ class ConversationStoreSerializer:
                     if isinstance(compacted_turn_index_raw, int | float)
                     else 0
                 )
+                trimmed_turn_index_raw = sraw.get("trimmed_turn_index", 0)
+                trimmed_turn_index = (
+                    int(trimmed_turn_index_raw)
+                    if isinstance(trimmed_turn_index_raw, int | float)
+                    else 0
+                )
+                last_trim_turn_count_raw = sraw.get("last_trim_turn_count", 0)
+                last_trim_turn_count = (
+                    int(last_trim_turn_count_raw)
+                    if isinstance(last_trim_turn_count_raw, int | float)
+                    else 0
+                )
 
                 session = Session(
                     session_id=sid,
@@ -385,6 +415,9 @@ class ConversationStoreSerializer:
                     compacted_summary=compacted_summary,
                     compacted_turn_index=min(compacted_turn_index, len(turns)),
                     compacted_into=compacted_into,
+                    evergoing=bool(sraw.get("evergoing", False)),
+                    trimmed_turn_index=min(trimmed_turn_index, len(turns)),
+                    last_trim_turn_count=last_trim_turn_count,
                 )
                 sessions[sid] = session
                 session_ids.add(sid)
@@ -436,6 +469,12 @@ class ConversationStoreSerializer:
                     session_dict["compacted_turn_index"] = session.compacted_turn_index
                 if session.compacted_into is not None:
                     session_dict["compacted_into"] = session.compacted_into
+                if session.evergoing:
+                    session_dict["evergoing"] = True
+                if session.trimmed_turn_index:
+                    session_dict["trimmed_turn_index"] = session.trimmed_turn_index
+                if session.last_trim_turn_count:
+                    session_dict["last_trim_turn_count"] = session.last_trim_turn_count
                 sessions_list.append(session_dict)
             if sessions_list:
                 data[owner_id] = {
@@ -542,8 +581,13 @@ class ConversationStore:
         synthetic ``("", summary)`` leading turn); everything after
         ``compacted_turn_index`` is replayed verbatim.  The raw ``turns`` list
         (the UI transcript) is never mutated.
+
+        Turns before ``trimmed_turn_index`` were physically removed from the
+        active context by the auto-trim pass and are excluded entirely (they
+        are recoverable only via conversation memory, not replayed here).
         """
-        history = list(session.turns[session.compacted_turn_index :])
+        start = max(session.compacted_turn_index, session.trimmed_turn_index)
+        history = list(session.turns[start:])
         if session.compacted_summary:
             history.insert(
                 0,
@@ -594,10 +638,13 @@ class ConversationStore:
         if len(session.turns) > self._max_history_turns:
             trimmed = len(session.turns) - self._max_history_turns
             del session.turns[: -self._max_history_turns]
-            # Keep the compaction marker aligned with the surviving turns.
+            # Keep the compaction / trim markers aligned with the surviving
+            # turns — both index into ``turns`` and must shift down when
+            # leading turns are dropped.
             session.compacted_turn_index = max(
                 0, session.compacted_turn_index - trimmed
             )
+            session.trimmed_turn_index = max(0, session.trimmed_turn_index - trimmed)
         session.turn_count += 1
         session.wall_last_active = self._wall_clock()
         self._sessions.move_to_end(session_id)
@@ -653,11 +700,17 @@ class ConversationStore:
 
         Read-only: does not update any metadata or LRU order.
         Returns an empty list for unknown sessions.
+
+        Turns physically removed by the auto-trim pass (before
+        ``trimmed_turn_index``) are excluded, so the UI transcript reflects
+        the current post-trim history.  For non-trimmed sessions
+        (``trimmed_turn_index == 0``) this returns the full turn list
+        unchanged.
         """
         session = self._sessions.get(session_id)
         if session is None:
             return []
-        return list(session.turns)
+        return list(session.turns[session.trimmed_turn_index :])
 
     def get_session(self, session_id: str) -> Session | None:
         """Return the :class:`Session` object for *session_id*, or ``None``.
@@ -1082,6 +1135,155 @@ class ConversationStore:
             "compacted_summary": summary,
         }
 
+    def mark_evergoing(self, session_id: str) -> bool:
+        """Flag *session_id* as the evergoing session. Persist.
+
+        Returns ``False`` for unknown sessions.  The caller is responsible
+        for the single-evergoing-session invariant (see
+        :meth:`ensure_evergoing_session`).
+        """
+        session = self._sessions.get(session_id)
+        if session is None:
+            return False
+        session.evergoing = True
+        self._persist()
+        return True
+
+    def evergoing_session_id(self) -> str | None:
+        """Return the id of the single evergoing session, or ``None``.
+
+        When more than one session is (erroneously) flagged, the
+        most-recently-active one wins so callers get a stable answer.
+        """
+        candidates = [s for s in self._sessions.values() if s.evergoing]
+        if not candidates:
+            return None
+        return max(candidates, key=lambda s: s.wall_last_active).session_id
+
+    def ensure_evergoing_session(self, owner_id: str) -> dict[str, object]:
+        """Return the evergoing session for *owner_id*, creating it if absent.
+
+        Guarantees exactly one evergoing session exists: if one is already
+        flagged it is returned unchanged; otherwise a fresh session is created,
+        flagged evergoing, registered under *owner_id*, and returned.  The
+        evergoing session is never auto-closed or auto-evicted by lifecycle
+        code — callers must not close it.
+        """
+        existing = self.evergoing_session_id()
+        if existing is not None:
+            session = self._sessions.get(existing)
+            if session is not None:
+                return _session_metadata(session)
+
+        owner_id = canonical_owner_id(owner_id)
+        sid = self._session_factory()
+        now = self._wall_clock()
+        session = Session(
+            session_id=sid,
+            title="Evergoing session",
+            wall_last_active=now,
+            evergoing=True,
+        )
+        self._sessions[sid] = session
+
+        owner = self._owners.get(owner_id)
+        if owner is None:
+            self._owners[owner_id] = _OwnerState(
+                active_session_id=sid,
+                session_ids={sid},
+            )
+        else:
+            owner.session_ids.add(sid)
+
+        self._sessions.move_to_end(sid)
+        self._evict_overflow()
+        self._persist()
+        return _session_metadata(session)
+
+    def has_new_input_since_trim(self, session_id: str) -> bool:
+        """Return ``True`` when new turns arrived since the last trim pass.
+
+        Compares the live ``turn_count`` against the ``last_trim_turn_count``
+        watermark.  The periodic trim agent calls this first and skips the
+        pass (making no LLM call) when it returns ``False``.  Unknown sessions
+        return ``False`` (nothing to trim).
+        """
+        session = self._sessions.get(session_id)
+        if session is None:
+            return False
+        return session.turn_count > session.last_trim_turn_count
+
+    def trim_session(
+        self,
+        session_id: str,
+        new_trimmed_index: int,
+        *,
+        reason: str = "",
+        decided_subject_change: bool | None = None,
+        keep_min_recent: int = 1,
+    ) -> dict[str, object]:
+        """Physically trim leading turns of *session_id* out of the active context.
+
+        Distinct from :meth:`compact_session`: trimming **removes** the leading
+        turns from both the agent view and the UI transcript (they are
+        recoverable only via conversation memory), whereas compaction condenses
+        them into a replayed summary and keeps the full transcript.
+
+        *new_trimmed_index* is the desired number of leading turns to drop.
+        The value is clamped to be:
+
+        - **monotonic** — never below the current ``trimmed_turn_index`` (trim
+          only ever removes more, never restores);
+        - **in-flight safe** — never within ``keep_min_recent`` turns of the
+          end, so the turn currently being processed is never trimmed away.
+
+        Regardless of whether any turns were dropped, the ``last_trim_turn_count``
+        watermark is advanced to the current ``turn_count`` so a subsequent
+        no-input interval is correctly skipped.  Emits an audit log line with
+        the decision (how many turns trimmed, why, subject-change verdict).
+
+        Returns an audit dict describing the outcome.
+        """
+        session = self._sessions.get(session_id)
+        if session is None:
+            return {"trimmed": False, "reason": "session not found"}
+
+        n_turns = len(session.turns)
+        upper_bound = max(0, n_turns - max(0, keep_min_recent))
+        target = max(session.trimmed_turn_index, min(new_trimmed_index, upper_bound))
+        turns_trimmed = target - session.trimmed_turn_index
+
+        session.trimmed_turn_index = target
+        # Keep the compaction marker consistent: once turns are trimmed away a
+        # summary that only covered trimmed turns is redundant, but we never
+        # move the marker *backwards*.
+        session.compacted_turn_index = max(
+            session.compacted_turn_index, session.trimmed_turn_index
+        )
+        session.last_trim_turn_count = session.turn_count
+        session.wall_last_active = self._wall_clock()
+        self._persist()
+
+        logger.info(
+            "trim_session session=%s turns_trimmed=%d new_trimmed_index=%d "
+            "turn_count=%d subject_change=%s reason=%s",
+            session_id,
+            turns_trimmed,
+            target,
+            session.turn_count,
+            decided_subject_change,
+            reason or "(none given)",
+        )
+
+        return {
+            "trimmed": turns_trimmed > 0,
+            "turns_trimmed": turns_trimmed,
+            "trimmed_turn_index": target,
+            "turn_count": session.turn_count,
+            "decided_subject_change": decided_subject_change,
+            "reason": reason,
+        }
+
     def resolve_session(self, session_id: str) -> str:
         """Follow ``compacted_into`` links to the live continuation session.
 
@@ -1112,13 +1314,22 @@ class ConversationStore:
         """Pop the least-recently-used session when the cap is exceeded.
 
         Removes the evicted session id from every owner's ``session_ids``
-        registry.
+        registry.  The evergoing session is never evicted — it must survive
+        indefinitely — so it is skipped over when selecting the LRU victim.
         """
         while len(self._sessions) > self._max_conversations:
-            evicted_sid, _ = self._sessions.popitem(last=False)
+            victim_sid: str | None = None
+            for sid, session in self._sessions.items():
+                if not session.evergoing:
+                    victim_sid = sid
+                    break
+            if victim_sid is None:
+                # Only evergoing sessions remain — nothing to evict.
+                break
+            del self._sessions[victim_sid]
             # Remove from all owner registries.
             for owner_state in self._owners.values():
-                owner_state.session_ids.discard(evicted_sid)
+                owner_state.session_ids.discard(victim_sid)
 
     def _owner_ids_for(self, session_id: str) -> list[str]:
         """Return every owner id whose registry still holds *session_id*.

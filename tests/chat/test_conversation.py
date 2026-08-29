@@ -985,3 +985,140 @@ def test_load_folds_legacy_per_browser_owners_into_one_pool() -> None:
         assert [s["session_id"] for s in auto_sessions] == ["s-auto"]
     finally:
         persist_path.unlink(missing_ok=True)
+
+
+# -- evergoing session + subject-aware trim -----------------------------
+
+
+def test_ensure_evergoing_session_creates_single_flagged_session() -> None:
+    """The first call creates one evergoing session; repeats return the same one."""
+    store = _store()
+
+    first = store.ensure_evergoing_session(OPERATOR_OWNER)
+    assert first["evergoing"] is True
+    sid = cast(str, first["session_id"])
+
+    # Idempotent — a second call returns the same session, not a new one.
+    second = store.ensure_evergoing_session(OPERATOR_OWNER)
+    assert second["session_id"] == sid
+    assert store.evergoing_session_id() == sid
+
+
+def test_evergoing_session_appears_in_owner_list() -> None:
+    """The evergoing session is registered under the owner and flagged in metadata."""
+    store = _store()
+    ever = store.ensure_evergoing_session(OPERATOR_OWNER)
+    sid = cast(str, ever["session_id"])
+
+    sessions, _ = store.list_sessions(OPERATOR_OWNER)
+    flagged = [s for s in sessions if s["session_id"] == sid]
+    assert len(flagged) == 1
+    assert flagged[0]["evergoing"] is True
+
+
+def test_normal_session_is_not_evergoing() -> None:
+    """A regular session carries ``evergoing == False`` in its metadata."""
+    store = _store()
+    meta = store.create_session("c1")
+    assert meta["evergoing"] is False
+
+
+def test_trim_session_removes_leading_turns_from_history_and_agent_view() -> None:
+    """Trimming drops leading turns from both the UI transcript and agent view."""
+    store = _store()
+    store.begin("s0")
+    store.record("s0", None, "subject A q1", "a1")
+    store.record("s0", None, "subject A q2", "a2")
+    store.record("s0", None, "subject B q1", "b1")
+
+    result = store.trim_session(
+        "s0", 2, reason="subject changed A->B", decided_subject_change=True
+    )
+    assert result["trimmed"] is True
+    assert result["turns_trimmed"] == 2
+
+    # UI transcript reflects post-trim history.
+    assert store.history("s0") == [("subject B q1", "b1")]
+    # Agent view also excludes the trimmed turns.
+    assert store.agent_history("s0") == [("subject B q1", "b1")]
+
+
+def test_trim_session_guards_in_flight_turn() -> None:
+    """Trimming never removes the most recent (in-flight) turn."""
+    store = _store()
+    store.begin("s0")
+    store.record("s0", None, "q1", "a1")
+    store.record("s0", None, "q2", "a2")
+
+    # Ask to trim everything — clamped to keep the last turn.
+    result = store.trim_session("s0", 2, keep_min_recent=1)
+    assert result["trimmed_turn_index"] == 1
+    assert store.history("s0") == [("q2", "a2")]
+
+
+def test_trim_session_is_monotonic() -> None:
+    """A lower requested trim index never restores already-trimmed turns."""
+    store = _store()
+    store.begin("s0")
+    for i in range(4):
+        store.record("s0", None, f"q{i}", f"a{i}")
+
+    store.trim_session("s0", 2)
+    # Request a smaller index — no-op, stays at 2.
+    result = store.trim_session("s0", 1)
+    assert result["trimmed_turn_index"] == 2
+    assert store.history("s0") == [("q2", "a2"), ("q3", "a3")]
+
+
+def test_has_new_input_since_trim_tracks_watermark() -> None:
+    """The watermark skips trim passes when no new turns arrived."""
+    store = _store()
+    store.begin("s0")
+    store.record("s0", None, "q1", "a1")
+
+    assert store.has_new_input_since_trim("s0") is True
+    store.trim_session("s0", 0)  # advances watermark without dropping turns
+    assert store.has_new_input_since_trim("s0") is False
+
+    store.record("s0", None, "q2", "a2")
+    assert store.has_new_input_since_trim("s0") is True
+
+
+def test_evergoing_session_survives_lru_eviction() -> None:
+    """The evergoing session is never evicted even when the cap is exceeded."""
+    store = _store(max_conversations=2)
+    ever = store.ensure_evergoing_session(OPERATOR_OWNER)
+    ever_sid = cast(str, ever["session_id"])
+
+    # Create enough sessions to force eviction past the cap.
+    for _ in range(5):
+        store.create_session("c1")
+
+    assert store.evergoing_session_id() == ever_sid
+    assert store.get_session(ever_sid) is not None
+
+
+def test_trim_state_survives_persist_roundtrip() -> None:
+    """Evergoing flag and trim watermark round-trip through persistence."""
+    wall_clock = _FakeWallClock()
+    with tempfile.NamedTemporaryFile(suffix=".json", delete=False) as f:
+        persist_path = Path(f.name)
+
+    try:
+        store = _store(wall_clock=wall_clock, persist_path=persist_path)
+        ever = store.ensure_evergoing_session("c1")
+        sid = cast(str, ever["session_id"])
+        store.record(sid, "c1", "q1", "a1")
+        store.record(sid, "c1", "q2", "a2")
+        store.trim_session(sid, 1, reason="subject change")
+
+        store2 = _store(wall_clock=wall_clock, persist_path=persist_path)
+        reloaded = store2.get_session(sid)
+        assert reloaded is not None
+        assert reloaded.evergoing is True
+        assert reloaded.trimmed_turn_index == 1
+        assert reloaded.last_trim_turn_count == 2
+        assert store2.history(sid) == [("q2", "a2")]
+        assert store2.has_new_input_since_trim(sid) is False
+    finally:
+        persist_path.unlink(missing_ok=True)
