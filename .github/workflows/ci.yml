@@ -241,7 +241,7 @@ jobs:
           # timing it.
       # Smoke test (runtime end-to-end) — the lint/type/test gates all scan
       # SOURCE; none of them boot the built image, so a container that fails
-      # at runtime (import error, broken startup check, mis-wired ASGI app)
+      # at runtime (import error, broken startup check, misconfigured ASGI app)
       # can sail through green CI. Boot the freshly-built image with a
       # throwaway config + writable /data and confirm the server actually
       # starts and serves GET /health. Reuses the image-scan build (no extra
