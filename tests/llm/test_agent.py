@@ -1301,8 +1301,10 @@ async def test_turn_does_not_bind_a_cli_session_and_carries_history_in_prompt() 
 
 @pytest.mark.asyncio
 async def test_recalled_memory_is_prepended_once_to_the_current_turn_only() -> None:
-    """Recall output is attached to the newest user message (not the system
-    prompt, not the history), so each turn carries exactly one, fresh block.
+    """Recall output is attached once, to the newest user message only.
+
+    Not the system prompt, not the history — so each turn carries exactly one,
+    fresh block.
     """
     from robotsix_chat.llm.agent import _MEMORY_PROMPT_FOOTER, _MEMORY_PROMPT_HEADER
 
