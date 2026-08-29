@@ -1295,7 +1295,8 @@ async def test_turn_does_not_bind_a_cli_session_and_carries_history_in_prompt() 
         ]
 
     assert handle._build_options is sentinel_builder  # never wrapped
-    assert seen["history"] is not None and len(seen["history"]) == 4  # 2 turns
+    hist = seen["history"]
+    assert isinstance(hist, list) and len(hist) == 4  # 2 turns × (request, response)
     assert seen["prompt"] == "third question"
 
 
@@ -1349,6 +1350,5 @@ async def test_recalled_memory_is_prepended_once_to_the_current_turn_only() -> N
     assert "recalled fact about second question" in prompt
     # History is passed structurally and stays memory-free.
     hist = seen["history"]
-    assert hist is not None and all(
-        "recalled" not in str(getattr(m, "parts", "")) for m in hist
-    )
+    assert isinstance(hist, list)
+    assert all("recalled" not in str(getattr(m, "parts", "")) for m in hist)
