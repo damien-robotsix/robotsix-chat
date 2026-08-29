@@ -32,8 +32,7 @@ Tasks that are pending, in-progress, or blocked.
 - status: blocked
 - created: 2026-08-29T00:00:00Z
 - updated: 2026-08-29T00:00:00Z
-- notes: >-
-  Ticket 20260828T123000Z-deliver-queued-user-messages-between-too asks to inject queued user
+- notes: Ticket 20260828T123000Z-deliver-queued-user-messages-between-too asks to inject queued user
   messages at inter-tool step boundaries (after a tool_result, before the next model call). That
   boundary is owned entirely by the Claude Agent SDK subprocess inside `robotsix_llmio`, not by
   robotsix-chat. A chat/subsession turn is a single static `handle.run(prompt, message_history=...)`
