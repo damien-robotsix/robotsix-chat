@@ -11,10 +11,15 @@ from starlette.responses import JSONResponse
 
 from robotsix_chat.autonomous.models import AutonomousState
 from robotsix_chat.chat.conversation import ConversationStore
+from robotsix_chat.chat.events import session_model_frame
 from robotsix_chat.config.autonomous_models import (
     DEFAULT_TRIGGER_INTERVAL_SECONDS,
 )
-from robotsix_chat.config.constants import level_display_name
+from robotsix_chat.config.constants import (
+    FRONTIER_MODEL_LEVEL,
+    level_display_name,
+    level_needs_api_key,
+)
 from robotsix_chat.subsessions.registry import OWNER_CLOSED_REASON
 
 from ._shared import _get_session_id, _parse_json_body, build_transcript
@@ -806,3 +811,124 @@ async def autonomous_refinements_reset_endpoint(request: Request) -> JSONRespons
 
     ref_store.reset_refinements(name)
     return JSONResponse({"reset": True})
+
+
+# ---------------------------------------------------------------------------
+# Per-session model selection
+# ---------------------------------------------------------------------------
+
+
+def _build_model_options(
+    request: Request,
+) -> tuple[list[dict[str, object]], int | None]:
+    """Return the selectable model levels and the configured default level.
+
+    The list is sourced from robotsix-llmio's baked tier config (levels 1..
+    :data:`FRONTIER_MODEL_LEVEL`) via :func:`level_display_name`, never a
+    hard-coded roster.  A level is ``available`` when it needs no API key
+    (keyless claudeSDK tiers) or when one is configured.
+    """
+    api_key_available = bool(
+        getattr(request.app.state, "chat_api_key_available", False)
+    )
+    default_level = getattr(request.app.state, "chat_model_level", None)
+    models: list[dict[str, object]] = []
+    for level in range(1, FRONTIER_MODEL_LEVEL + 1):
+        needs_key = level_needs_api_key(level)
+        models.append(
+            {
+                "level": level,
+                "name": level_display_name(level),
+                "needs_api_key": needs_key,
+                "available": (not needs_key) or api_key_available,
+            }
+        )
+    return models, default_level if isinstance(default_level, int) else None
+
+
+async def models_list_endpoint(request: Request) -> JSONResponse:
+    """List the model levels the operator can select for a session.
+
+    ``GET /models`` returns::
+
+        {
+          "models": [
+            {"level": 1, "name": "...", "needs_api_key": true, "available": false},
+            ...
+          ],
+          "default_level": 3
+        }
+
+    ``default_level`` is the server's configured chat level — the level a
+    session runs at until the operator (or the agent) pins a different one.
+    """
+    models, default_level = _build_model_options(request)
+    return JSONResponse({"models": models, "default_level": default_level})
+
+
+async def session_model_set_endpoint(request: Request) -> JSONResponse:
+    """Pin a session to a selected model level.
+
+    ``POST /sessions/{session_id}/model`` with body ``{"level": N}`` pins the
+    session to level *N* for the rest of its lifetime (applies from the next
+    turn).  Returns the resolved model and broadcasts a ``session_model``
+    frame on ``GET /events`` so every attached view updates its badge live.
+
+    Rejects an out-of-range level (400) or one that needs an API key the
+    server does not have (409), and returns 404 for an unknown session.
+    """
+    session_id = request.path_params["session_id"]
+    body = await _parse_json_body(request)
+
+    raw = body.get("level")
+    if not isinstance(raw, int) or isinstance(raw, bool):
+        raise HTTPException(
+            status_code=400,
+            detail="'level' field is required and must be an integer",
+        )
+    level = raw
+    if level < 1 or level > FRONTIER_MODEL_LEVEL:
+        raise HTTPException(
+            status_code=400,
+            detail=f"'level' must be between 1 and {FRONTIER_MODEL_LEVEL}",
+        )
+
+    api_key_available = bool(
+        getattr(request.app.state, "chat_api_key_available", False)
+    )
+    if level_needs_api_key(level) and not api_key_available:
+        raise HTTPException(
+            status_code=409,
+            detail=f"model level {level} requires an API key that is not configured",
+        )
+
+    store: ConversationStore = request.app.state.conversation_store
+    if not store.set_model_level(session_id, level):
+        raise HTTPException(status_code=404, detail="session not found")
+
+    name = level_display_name(level)
+    default_level = getattr(request.app.state, "chat_model_level", None)
+    # "escalated" drives the UI badge that flags a session running off the
+    # server default; an explicit selection back to the default is not one.
+    escalated = not isinstance(default_level, int) or level != default_level
+
+    event_bus = getattr(request.app.state, "event_bus", None)
+    if event_bus is not None:
+        event_bus.publish(
+            session_id,
+            session_model_frame(
+                session_id=session_id,
+                model_level=level,
+                model_name=name,
+                escalated=escalated,
+            ),
+        )
+
+    return JSONResponse(
+        {
+            "session_id": session_id,
+            "model_level": level,
+            "model_name": name,
+            "escalated": escalated,
+        }
+    )

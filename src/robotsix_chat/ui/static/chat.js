@@ -658,6 +658,89 @@ import { renderMemoryBanner } from "./memory-banner.js";
       : "Model serving the active session";
   }
 
+  // ---- Per-session model selector --------------------------------------
+  // Options are sourced from GET /models (robotsix-llmio's configured tiers,
+  // never a hard-coded list). Selecting one pins the active session to that
+  // level from its next turn via POST /sessions/{id}/model; the choice is
+  // per-session and never leaks to other sessions.
+  var modelOptions = [];        // [{level, name, needs_api_key, available}]
+  var defaultModelLevel = null; // server's configured chat level
+  var pendingModelLevel = null; // active session's level, applied once options load
+
+  function loadModelOptions() {
+    fetch(apiBase() + "/models", { method: "GET" })
+      .then(function (r) { return r.ok ? r.json() : null; })
+      .then(function (data) {
+        if (!data || !Array.isArray(data.models)) return;
+        modelOptions = data.models;
+        defaultModelLevel = data.default_level;
+        populateModelSelector();
+      })
+      .catch(function () { /* selector stays empty; badge still works */ });
+  }
+
+  function populateModelSelector() {
+    var sel = document.getElementById("model-selector");
+    if (!sel) return;
+    sel.innerHTML = "";
+    for (var i = 0; i < modelOptions.length; i++) {
+      var m = modelOptions[i];
+      var opt = document.createElement("option");
+      opt.value = String(m.level);
+      var label = m.name || ("level " + m.level);
+      if (m.level === defaultModelLevel) label += " (default)";
+      if (!m.available) label += " — needs API key";
+      opt.textContent = label;
+      opt.disabled = !m.available;
+      sel.appendChild(opt);
+    }
+    if (pendingModelLevel != null) setActiveModelLevel(pendingModelLevel);
+  }
+
+  function setActiveModelLevel(level) {
+    pendingModelLevel = level;
+    var sel = document.getElementById("model-selector");
+    if (!sel || level == null) return;
+    var val = String(level);
+    for (var i = 0; i < sel.options.length; i++) {
+      if (sel.options[i].value === val) { sel.value = val; return; }
+    }
+  }
+
+  function onModelSelectorChange() {
+    var sel = document.getElementById("model-selector");
+    if (!sel || !activeSessionId) return;
+    var level = Number(sel.value);
+    if (!level) return;
+    fetch(
+      apiBase() + "/sessions/" + encodeURIComponent(activeSessionId) + "/model",
+      {
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({ level: level })
+      }
+    ).then(function (r) {
+      if (!r.ok) throw new Error("Failed to set model");
+      return r.json();
+    }).then(function (data) {
+      pendingModelLevel = data.model_level;
+      renderActiveModel(data.model_name, !!data.escalated);
+      for (var i = 0; i < sessionsList.length; i++) {
+        if (sessionsList[i].session_id === activeSessionId) {
+          sessionsList[i].model_name = data.model_name;
+          sessionsList[i].model_level = data.model_level;
+          sessionsList[i].model_escalated = !!data.escalated;
+          break;
+        }
+      }
+      renderSessionList({ sessions: sessionsList });
+    }).catch(function () {
+      showError("Could not change the model for this session.");
+      // Revert the selector to the session's known level.
+      refreshSessions();
+    });
+  }
+
   // ---- Session list rendering -----------------------------------------
   function renderSessionList(data) {
     if (!data || !Array.isArray(data.sessions)) return;
@@ -731,6 +814,9 @@ import { renderMemoryBanner } from "./memory-banner.js";
       // see at a glance which conversations cost more.
       if (s.model_name && s.session_id === activeSessionId) {
         renderActiveModel(s.model_name, !!s.model_escalated);
+      }
+      if (s.session_id === activeSessionId && s.model_level != null) {
+        setActiveModelLevel(s.model_level);
       }
       if (s.model_name) {
         var modelDiv = document.createElement("div");
@@ -2779,6 +2865,7 @@ import { renderMemoryBanner } from "./memory-banner.js";
           // badges immediately; the next session-list refetch confirms it.
           if (frame.session_id === activeSessionId) {
             renderActiveModel(frame.model_name, !!frame.escalated);
+            if (frame.model_level != null) setActiveModelLevel(frame.model_level);
           }
           for (var mi = 0; mi < sessionsList.length; mi++) {
             if (sessionsList[mi].session_id === frame.session_id) {
@@ -3604,6 +3691,13 @@ import { renderMemoryBanner } from "./memory-banner.js";
   // ---- Initial state ---------------------------------------------------
   setConnectionStatus(true);  // optimistic green; turns red on first error
   renderSubsessionsList();    // show the empty state until the snapshot lands
+
+  // Populate the per-session model selector and wire its change handler.
+  loadModelOptions();
+  (function () {
+    var modelSel = document.getElementById("model-selector");
+    if (modelSel) modelSel.addEventListener("change", onModelSelectorChange);
+  })();
 
   // Request browser notification permission early so the agent's
   // notify_user tool can push native alerts.  Silently ignored when the

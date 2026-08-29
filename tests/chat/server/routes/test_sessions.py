@@ -19,11 +19,17 @@ from robotsix_chat.chat.server.routes.sessions import (
     autonomous_refinements_reject_endpoint,
     autonomous_refinements_reset_endpoint,
     history_endpoint,
+    models_list_endpoint,
+    session_model_set_endpoint,
     sessions_close_endpoint,
     sessions_create_endpoint,
     sessions_delete_endpoint,
     sessions_list_endpoint,
     summary_endpoint,
+)
+from robotsix_chat.config.constants import (
+    FRONTIER_MODEL_LEVEL,
+    level_needs_api_key,
 )
 
 # ---------------------------------------------------------------------------
@@ -1413,3 +1419,140 @@ class TestAutonomousRefinementsResetEndpoint:
         assert response.status_code == 200
         body = json.loads(response.body)
         assert body["reset"] is True
+
+
+# ---------------------------------------------------------------------------
+# models_list_endpoint / session_model_set_endpoint
+# ---------------------------------------------------------------------------
+
+
+def _first_level_needing_key() -> int:
+    """Return the lowest configured level whose provider needs an API key."""
+    for level in range(1, FRONTIER_MODEL_LEVEL + 1):
+        if level_needs_api_key(level):
+            return level
+    raise AssertionError("expected at least one keyed level in llmio config")
+
+
+def _first_keyless_level() -> int:
+    """Return the lowest configured level whose provider needs no API key."""
+    for level in range(1, FRONTIER_MODEL_LEVEL + 1):
+        if not level_needs_api_key(level):
+            return level
+    raise AssertionError("expected at least one keyless level in llmio config")
+
+
+@pytest.mark.asyncio
+async def test_models_list_endpoint_all_available_with_key() -> None:
+    """Every configured level is available when an API key is present."""
+    state = MagicMock(chat_api_key_available=True, chat_model_level=3)
+    request = _make_request(app_state=state)
+
+    response = await models_list_endpoint(request)
+    assert response.status_code == 200
+    body = json.loads(response.body)  # type: ignore[arg-type]
+    assert body["default_level"] == 3
+    assert len(body["models"]) == FRONTIER_MODEL_LEVEL
+    assert all(m["available"] for m in body["models"])
+    assert [m["level"] for m in body["models"]] == list(
+        range(1, FRONTIER_MODEL_LEVEL + 1)
+    )
+
+
+@pytest.mark.asyncio
+async def test_models_list_endpoint_keyed_unavailable_without_key() -> None:
+    """Keyed levels are marked unavailable when no API key is configured."""
+    state = MagicMock(chat_api_key_available=False, chat_model_level=2)
+    request = _make_request(app_state=state)
+
+    response = await models_list_endpoint(request)
+    body = json.loads(response.body)  # type: ignore[arg-type]
+    for m in body["models"]:
+        assert m["available"] == (not m["needs_api_key"])
+
+
+@pytest.mark.asyncio
+async def test_session_model_set_endpoint_success() -> None:
+    """Pins the session, publishes a session_model frame, returns the model."""
+    mock_store = MagicMock()
+    mock_store.set_model_level.return_value = True
+    mock_bus = MagicMock()
+    level = _first_keyless_level()
+    state = MagicMock(
+        conversation_store=mock_store,
+        event_bus=mock_bus,
+        chat_api_key_available=False,
+        chat_model_level=level,
+    )
+    request = _make_json_request({"level": level})
+    request.scope["app"] = type("FakeApp", (), {"state": state})()
+    request.scope["path_params"] = {"session_id": "sess-1"}
+
+    response = await session_model_set_endpoint(request)
+    assert response.status_code == 200
+    body = json.loads(response.body)  # type: ignore[arg-type]
+    assert body["model_level"] == level
+    assert body["session_id"] == "sess-1"
+    mock_store.set_model_level.assert_called_once_with("sess-1", level)
+    mock_bus.publish.assert_called_once()
+
+
+@pytest.mark.asyncio
+async def test_session_model_set_endpoint_rejects_out_of_range() -> None:
+    """Levels outside 1..FRONTIER are rejected with 400."""
+    state = MagicMock(chat_api_key_available=True, chat_model_level=3)
+    request = _make_json_request({"level": FRONTIER_MODEL_LEVEL + 1})
+    request.scope["app"] = type("FakeApp", (), {"state": state})()
+    request.scope["path_params"] = {"session_id": "sess-1"}
+
+    with pytest.raises(HTTPException) as exc_info:
+        await session_model_set_endpoint(request)
+    assert exc_info.value.status_code == 400
+
+
+@pytest.mark.asyncio
+async def test_session_model_set_endpoint_rejects_non_integer() -> None:
+    """A non-integer level is rejected with 400."""
+    state = MagicMock(chat_api_key_available=True, chat_model_level=3)
+    request = _make_json_request({"level": "3"})
+    request.scope["app"] = type("FakeApp", (), {"state": state})()
+    request.scope["path_params"] = {"session_id": "sess-1"}
+
+    with pytest.raises(HTTPException) as exc_info:
+        await session_model_set_endpoint(request)
+    assert exc_info.value.status_code == 400
+
+
+@pytest.mark.asyncio
+async def test_session_model_set_endpoint_requires_api_key() -> None:
+    """A keyed level is rejected with 409 when no API key is configured."""
+    level = _first_level_needing_key()
+    state = MagicMock(chat_api_key_available=False, chat_model_level=2)
+    request = _make_json_request({"level": level})
+    request.scope["app"] = type("FakeApp", (), {"state": state})()
+    request.scope["path_params"] = {"session_id": "sess-1"}
+
+    with pytest.raises(HTTPException) as exc_info:
+        await session_model_set_endpoint(request)
+    assert exc_info.value.status_code == 409
+
+
+@pytest.mark.asyncio
+async def test_session_model_set_endpoint_unknown_session() -> None:
+    """Returns 404 when the session is not known to the store."""
+    mock_store = MagicMock()
+    mock_store.set_model_level.return_value = False
+    level = _first_keyless_level()
+    state = MagicMock(
+        conversation_store=mock_store,
+        event_bus=None,
+        chat_api_key_available=False,
+        chat_model_level=level,
+    )
+    request = _make_json_request({"level": level})
+    request.scope["app"] = type("FakeApp", (), {"state": state})()
+    request.scope["path_params"] = {"session_id": "ghost"}
+
+    with pytest.raises(HTTPException) as exc_info:
+        await session_model_set_endpoint(request)
+    assert exc_info.value.status_code == 404
