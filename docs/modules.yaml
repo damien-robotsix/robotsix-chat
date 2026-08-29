@@ -404,6 +404,7 @@ modules:
       - tests/subsessions/test_registry.py
       - tests/subsessions/test_resume.py
       - tests/subsessions/test_slot_budget.py
+      - tests/subsessions/test_subsession_waits.py
       - tests/subsessions/test_tools.py
       - tests/subsessions/test_watcher.py
       - tests/subsessions/test_worker.py
