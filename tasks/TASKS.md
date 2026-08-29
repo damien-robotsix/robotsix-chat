@@ -45,3 +45,33 @@ Tasks that are pending, in-progress, or blocked.
   `MessageCoalescer._batches` in `chat/server/routes/chat.py`; subsessions: `SubsessionRegistry`
   inbox deque in `subsessions/registry.py`) to drain at each step boundary instead of only at turn
   boundaries. Blocker also recorded as a comment on the ticket.
+
+## T-0004 — Browser / form-filling capability (Playwright MCP + Vaultwarden) — split required
+
+- status: blocked
+- created: 2026-08-29T00:00:00Z
+- updated: 2026-08-29T00:00:00Z
+- notes: Ticket 20260828T232023Z-add-interactive-browser-form-filling-cap-f67d asks for an
+  interactive browser / form-filling capability (Playwright MCP), Vaultwarden credential injection,
+  a submit-gate + 2FA-pause, a chat skill doc, and a live OVH case CS16584956 submission — in one
+  pass. This spans ≥3 independent subsystems and depends on hard prerequisites outside this repo's
+  implement stage, so it cannot ship as a single robotsix-chat code change (see AGENT.md "Ticket
+  scoping"). Findings verified against the current clone: (1) **No external-MCP-server support in
+  this repo.** The chat agent's tools are in-process Python function tools passed to
+  `provider.build_agent(..., tools=...)` (`src/robotsix_chat/llm/agent.py:685`); there is no
+  `mcp_servers` parameter. External services are reached only via the central-deploy roster
+  (`src/robotsix_chat/component_access/roster.py`) + the generic HTTP `component_request` tool
+  against robotsix HTTP components — there are no MCP connectors today. **Prerequisite (upstream):**
+  either robotsix_llmio's `build_agent` must accept and forward `mcp_servers` to
+  `ClaudeAgentOptions`, OR a new deployable HTTP component that wraps Playwright must be built
+  (separate repo/ticket). (2) **Fleet deployment + roster registration live in
+  robotsix-central-deploy**, not this repo. (3) **No Vaultwarden / Bitwarden CLI / EnvStore
+  integration exists** (only a deferral note in `claude_usage/README.md`). New external secret
+  client + operator-provisioned scoped single- collection service account + `BW_SESSION`/API key in
+  EnvStore — its own ticket. (4) **The live OVH submission** needs a running browser, real
+  credentials, and PII documents — out of scope for the implement stage. Recommended split
+  (dependency-ordered): (a) upstream robotsix_llmio MCP-server plumbing OR a Playwright-wrapping
+  HTTP component + central-deploy roster registration; (b) Vaultwarden secret client with
+  zero-leakage injection + tests, EnvStore wiring; (c) submit-gate / 2FA-pause agent wiring + chat
+  skill.md doc; (d) the live OVH CS16584956 submission (operator-driven). Blocker also recorded as
+  comment id=1647 on the ticket.
