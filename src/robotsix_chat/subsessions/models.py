@@ -17,8 +17,34 @@ from __future__ import annotations
 from dataclasses import dataclass, field
 from enum import StrEnum
 
+#: llmio capability level at or above which a subsession runs on a "costly
+#: tier" (keyless claudeSDK opus/fable) whose Claude weekly-cap headroom is
+#: the scarce resource.  Agents built at this level are told to orchestrate —
+#: delegate bulk reading/extraction to cheaper child subsessions — rather than
+#: burn frontier-model turns on it (see ``create_agent_from_settings``).
+COSTLY_TIER_MIN_LEVEL = 3
+
+#: System-prompt directive appended to a subsession agent built at
+#: :data:`COSTLY_TIER_MIN_LEVEL` or above so that proper orchestration is the
+#: default rather than requiring human steering.
+COSTLY_TIER_ORCHESTRATION_DIRECTIVE = (
+    "\n\n## Costly-tier orchestration\n\n"
+    "You are running at a costly model tier (frontier Claude); your own "
+    "turns are the most expensive resource in the fleet. Orchestrate rather "
+    "than do bulk work yourself: delegate large reads and mechanical "
+    "extraction (reading long traces, scanning source files, collecting "
+    "logs) to level-1/2 child subsessions via spawn_subsession, and reserve "
+    "your own turns for decomposition and synthesis. When you spawn a child "
+    "for reading/extraction, leave model_level unset so it defaults to a "
+    "cheap tier; only raise model_level when the subtask genuinely needs "
+    "reasoning. Keep each delegated child task bounded and well-scoped so "
+    "the fan-out stays cheap."
+)
+
 __all__ = [
     "ACTIVE_STATUSES",
+    "COSTLY_TIER_MIN_LEVEL",
+    "COSTLY_TIER_ORCHESTRATION_DIRECTIVE",
     "InboxMessage",
     "SubsessionCapacityError",
     "SubsessionDepthError",

@@ -1260,6 +1260,19 @@ def create_agent_from_settings(
     effective_level = (
         model_level if model_level is not None else settings.llmio_model_level
     )
+    # Costly-tier subsessions (level >=3, keyless claudeSDK opus/fable) get an
+    # orchestration directive so they delegate bulk reading/extraction to
+    # cheaper child subsessions by default instead of burning frontier-model
+    # turns on it themselves.  Only subsession agents receive it — the main
+    # chat agent is operator-attended and already interactive.
+    if subsession_ctx is not None:
+        from robotsix_chat.subsessions.models import (
+            COSTLY_TIER_MIN_LEVEL,
+            COSTLY_TIER_ORCHESTRATION_DIRECTIVE,
+        )
+
+        if effective_level >= COSTLY_TIER_MIN_LEVEL:
+            instruction = instruction + COSTLY_TIER_ORCHESTRATION_DIRECTIVE
     # Always hand over the configured key, even for a keyless (claudeSDK)
     # level. LlmioChatAgent forwards it only to levels whose provider takes
     # one, and it needs to be holding it for the tier fallback to reach a

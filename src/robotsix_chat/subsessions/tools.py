@@ -25,6 +25,7 @@ import httpx
 
 from .models import (
     ACTIVE_STATUSES,
+    COSTLY_TIER_MIN_LEVEL,
     SubsessionCapacityError,
     SubsessionDepthError,
     SubsessionInfo,
@@ -120,7 +121,21 @@ def _build_spawn_and_control_tools(
     env: SubsessionEnv, ctx: SubsessionContext
 ) -> list[Any]:
     """Build spawn/message/close/list closures bound to *ctx*."""
-    default_level = env.settings.subsessions.default_model_level
+
+    # Default child model_level.  A costly-tier parent (level >=3) is told to
+    # fan bulk reading/extraction out to cheap children, so its children
+    # spawned without an explicit model_level default to the cheaper
+    # ``delegated_read_model_level``; every other spawner (including the main
+    # chat agent) keeps the standard ``default_model_level``.  The parent's
+    # level is read at spawn time so a tier fallback is reflected.
+    def _default_child_level() -> int:
+        base = env.settings.subsessions.default_model_level
+        if ctx.subsession_id is None:
+            return base
+        parent = env.registry.get(ctx.subsession_id)
+        if parent is not None and parent.model_level >= COSTLY_TIER_MIN_LEVEL:
+            return env.settings.subsessions.delegated_read_model_level
+        return base
 
     async def spawn_subsession_tool(
         kind: str,
@@ -447,7 +462,9 @@ def _build_spawn_and_control_tools(
                 depth=effective_depth,
                 title=title,
                 prompt=instructions,
-                model_level=model_level if model_level is not None else default_level,
+                model_level=(
+                    model_level if model_level is not None else _default_child_level()
+                ),
                 interval_seconds=interval_seconds,
                 include_previous_result=include_previous_result,
                 max_runs=max_runs,
