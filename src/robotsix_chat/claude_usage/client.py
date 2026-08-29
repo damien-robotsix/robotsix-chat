@@ -19,8 +19,10 @@ challenges, and there is no official API backing it.
 from __future__ import annotations
 
 import asyncio
+import json
 import logging
 import re
+from pathlib import Path
 from typing import TYPE_CHECKING, Any
 
 if TYPE_CHECKING:
@@ -126,6 +128,23 @@ def is_cloudflare_challenge(title: str, html: str, url: str) -> bool:
     """
     haystacks = ((title or "").lower(), (html or "").lower(), (url or "").lower())
     return any(marker in hay for marker in _CLOUDFLARE_MARKERS for hay in haystacks)
+
+
+#: Path fragments that mark a URL as the claude.ai login / auth page.  When the
+#: session-state path navigates to the usage page and the captured session is
+#: expired, claude.ai redirects to one of these — the signal to re-capture.
+_LOGIN_REDIRECT_HINTS = ("/login", "/sign-in", "/signin", "/auth")
+
+
+def is_login_redirect(url: str) -> bool:
+    """Return ``True`` when *url* looks like the claude.ai login / auth page.
+
+    Used by the session-state path: navigating to the usage page while the
+    operator-captured session is expired redirects to the login page, so a
+    login URL means the session must be re-captured.
+    """
+    lowered = (url or "").lower()
+    return any(hint in lowered for hint in _LOGIN_REDIRECT_HINTS)
 
 
 #: Substrings that mark a Cloudflare **Turnstile** widget embedded in the login
@@ -255,6 +274,119 @@ class ClaudeUsageClient:
         snippet = (snapshot or "").strip()[:400]
         return f"title={title!r} aria={snippet!r}"
 
+    def _load_session_state(self) -> dict[str, Any] | None:
+        """Load the operator-captured Playwright storage-state JSON.
+
+        Reads the file at ``settings.session_state_path`` at call time and
+        returns the parsed cookies/localStorage dict, or ``None`` when the
+        path is unset, missing, empty, or not a valid JSON object.  The blob
+        contents are **never** logged.
+        """
+        path_str = self._settings.session_state_path
+        if not path_str:
+            return None
+        try:
+            raw = Path(path_str).read_text()
+        except OSError:
+            return None
+        if not raw.strip():
+            return None
+        try:
+            data = json.loads(raw)
+        except json.JSONDecodeError:
+            return None
+        if not isinstance(data, dict):
+            return None
+        return data
+
+    async def _fetch_via_session_state(
+        self,
+        result: dict[str, Any],
+        async_playwright: Any,
+        timeout_ms: float,
+    ) -> dict[str, Any]:
+        """Scrape the usage page reusing an operator-captured browser session.
+
+        Loads the Playwright storage-state JSON from ``session_state_path``,
+        creates a browser context seeded with it, navigates **directly** to
+        the usage page (no login page, no email, no magic-link poll), and
+        scrapes the remaining-cap value with :func:`parse_usage_value`.
+
+        Returns the same payload shape as :meth:`fetch_remaining_cap`.  When no
+        session is configured, or the loaded session has expired (the usage
+        page redirects to login / a Cloudflare interstitial is served), a
+        specific, actionable ``error`` is set instead.  Never raises.
+        """
+        state = self._load_session_state()
+        if state is None:
+            result["error"] = (
+                "no session state configured; operator must capture one — "
+                "export a Playwright storage-state JSON from a logged-in "
+                "claude.ai browser session and place it at the configured "
+                "session_state_path (see the claude_usage README)."
+            )
+            return result
+
+        expired_error = (
+            "claude.ai session expired or challenged — operator must "
+            "re-capture the browser session state."
+        )
+
+        try:
+            async with async_playwright() as p:
+                browser = await p.chromium.launch(
+                    headless=True,
+                    args=[
+                        "--no-sandbox",
+                        "--disable-setuid-sandbox",
+                        "--disable-blink-features=AutomationControlled",
+                    ],
+                )
+                try:
+                    # Seed the context with the captured cookies + localStorage
+                    # so the session is already authenticated.
+                    context = await browser.new_context(
+                        storage_state=state,
+                        user_agent=_USER_AGENT,
+                        locale=_LOCALE,
+                        timezone_id=_TIMEZONE,
+                        viewport=_VIEWPORT,
+                        extra_http_headers={"Accept-Language": _ACCEPT_LANGUAGE},
+                    )
+                    await context.add_init_script(_STEALTH_INIT_SCRIPT)
+                    page = await context.new_page()
+
+                    # Navigate DIRECTLY to the usage page — no login page.
+                    await page.goto(
+                        self._settings.usage_url,
+                        wait_until="domcontentloaded",
+                        timeout=timeout_ms,
+                    )
+                    result["page_url"] = page.url
+
+                    # An expired/challenged session redirects to the login page
+                    # or serves a Cloudflare interstitial instead of usage.
+                    if is_cloudflare_challenge(
+                        await page.title(), await page.content(), page.url
+                    ) or is_login_redirect(page.url):
+                        result["error"] = expired_error
+                        return result
+
+                    snapshot = await page.locator("body").aria_snapshot()
+                    raw_text = snapshot or ""
+                    result["raw_text"] = raw_text
+                    result["remaining_cap"] = parse_usage_value(raw_text)
+
+                    # Discard the session — nothing new is persisted.
+                    await context.close()
+                finally:
+                    await browser.close()
+        except Exception as exc:
+            logger.exception("claude_usage: session-state fetch failed")
+            result["error"] = f"{type(exc).__name__}: {exc}"
+
+        return result
+
     async def fetch_remaining_cap(self) -> dict[str, Any]:
         """Log in via magic-link and scrape the Claude.ai remaining-cap value.
 
@@ -287,6 +419,13 @@ class ClaudeUsageClient:
             return result
 
         timeout_ms = self._settings.timeout * 1000
+
+        # Session-state reuse mode skips the login page entirely, reusing an
+        # operator-captured authenticated browser session.
+        if self._settings.auth_mode == "session_state":
+            return await self._fetch_via_session_state(
+                result, async_playwright, timeout_ms
+            )
 
         try:
             cf_error = (

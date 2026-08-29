@@ -2,6 +2,8 @@
 
 from __future__ import annotations
 
+from typing import Literal
+
 from pydantic import BaseModel, ConfigDict
 
 
@@ -26,9 +28,30 @@ class ClaudeUsageSettings(BaseModel):
     browser and the ``mail`` integration to be enabled and reachable so the
     magic-link email can be read.
 
+    Two authentication modes are supported via ``auth_mode``:
+
+    * ``"magic_link"`` (the default) — the email magic-link flow described
+      above.
+    * ``"session_state"`` — reuse an operator-captured, already-authenticated
+      browser session.  A Playwright storage-state JSON (cookies +
+      localStorage) exported from a real logged-in claude.ai browser is loaded
+      from ``session_state_path``; the tool navigates **directly** to the usage
+      page (no login page, no email, no magic-link poll).  This durably sidesteps
+      Cloudflare's anti-bot login wall.  See the component README for the
+      capture procedure; captured sessions expire (days to weeks) and must be
+      periodically re-captured.
+
     Attributes:
         enabled: Master switch.  When ``False`` (the default), no
             ``fetch_claude_usage`` tool is offered.
+        auth_mode: Authentication strategy.  ``"magic_link"`` (default) uses
+            the email magic-link login flow; ``"session_state"`` reuses an
+            operator-captured browser session loaded from
+            ``session_state_path`` and navigates directly to the usage page.
+        session_state_path: Filesystem path (on the config/data volume) to a
+            Playwright storage-state JSON captured by the operator from a real
+            logged-in claude.ai browser session.  Read at call time when
+            ``auth_mode == "session_state"``; the blob is never logged.
         account_email: The Claude.ai account email to log in as.  Anthropic
             sends the one-time magic-link email to this address; it must be a
             mailbox the auto-mail integration can read.
@@ -46,6 +69,8 @@ class ClaudeUsageSettings(BaseModel):
     """
 
     enabled: bool = False
+    auth_mode: Literal["magic_link", "session_state"] = "magic_link"
+    session_state_path: str = ""
     account_email: str = "chat@robotsix.net"
     login_url: str = "https://claude.ai/login"
     usage_url: str = "https://claude.ai/settings/usage"

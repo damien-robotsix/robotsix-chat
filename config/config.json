@@ -250,6 +250,8 @@
   },
   "claude_usage": {
     "enabled": false,
+    "auth_mode": "magic_link",
+    "session_state_path": "",
     "account_email": "chat@robotsix.net",
     "login_url": "https://claude.ai/login",
     "usage_url": "https://claude.ai/settings/usage",

@@ -7,12 +7,29 @@ a headless browser.
 
 ## How it works (per call)
 
+The behaviour depends on the configured `claude_usage.auth_mode`:
+
+### `magic_link` mode (default)
+
 1. Initiates a login to claude.ai using Anthropic's **email magic-link** flow (Anthropic emails a
    one-time login link).
 1. Reads that one-time login email from the **auto-mail** inbox and extracts the link.
 1. Follows the link to establish a **task-scoped** authenticated session.
 1. Navigates to the usage/settings page and scrapes the remaining-cap value.
 1. Returns the value and **discards the session** — nothing is persisted.
+
+### `session_state` mode
+
+1. Loads an operator-captured Playwright **storage-state** JSON (cookies + localStorage) from
+   `claude_usage.session_state_path` — no login page, no email, no magic-link poll.
+1. Navigates **directly** to the usage page with that already-authenticated session and scrapes the
+   remaining-cap value.
+1. Returns the value and **discards the session** — nothing new is persisted.
+
+The operator captures the storage-state blob by logging into claude.ai in a normal browser and
+exporting cookies + localStorage as a Playwright storage-state JSON (see the component `README.md`
+for the exact procedure). Sessions expire (days–weeks) and must be periodically re-captured. There
+is **no CAPTCHA/Turnstile solving and no credential storage**.
 
 ## Confirmation gate — REQUIRED
 
@@ -50,6 +67,14 @@ A JSON string with:
     tool stops. This is a terminal condition — do **not** retry.
   - **No confirmation:** when the login-email submit did not reach the "check your email"
     confirmation state (page state is captured in `raw_text`)
+  - **No session state (session_state mode):**
+    `"no session state configured; operator must capture one …"` when `session_state_path` is unset
+    or the file is missing/empty. The operator must capture a session — see the component README.
+  - **Session expired (session_state mode):**
+    `"claude.ai session expired or challenged — operator must re-capture the browser session state."`
+    when the usage page redirects to login or a Cloudflare interstitial is served. This is the
+    signal to refresh the captured cookie, not to debug the code. Do **not** retry until the
+    operator re-captures.
 
 ## Fragility and caveats
 
