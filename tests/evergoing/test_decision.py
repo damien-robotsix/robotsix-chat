@@ -13,9 +13,7 @@ from robotsix_chat.evergoing.decision import (
 
 
 def test_parse_subject_changed_with_drop() -> None:
-    decision = parse_trim_decision(
-        "SUBJECT_CHANGED: yes\nDROP_LEADING: 2", max_drop=5
-    )
+    decision = parse_trim_decision("SUBJECT_CHANGED: yes\nDROP_LEADING: 2", max_drop=5)
     assert decision.subject_changed is True
     assert decision.drop_leading == 2
 
@@ -23,17 +21,13 @@ def test_parse_subject_changed_with_drop() -> None:
 def test_parse_subject_unchanged_forces_zero_drop() -> None:
     # Even if the model emits a positive DROP_LEADING, an unchanged subject
     # must never drop turns.
-    decision = parse_trim_decision(
-        "SUBJECT_CHANGED: no\nDROP_LEADING: 4", max_drop=5
-    )
+    decision = parse_trim_decision("SUBJECT_CHANGED: no\nDROP_LEADING: 4", max_drop=5)
     assert decision.subject_changed is False
     assert decision.drop_leading == 0
 
 
 def test_parse_clamps_drop_to_max() -> None:
-    decision = parse_trim_decision(
-        "SUBJECT_CHANGED: yes\nDROP_LEADING: 99", max_drop=3
-    )
+    decision = parse_trim_decision("SUBJECT_CHANGED: yes\nDROP_LEADING: 99", max_drop=3)
     assert decision.drop_leading == 3
 
 
@@ -92,9 +86,7 @@ class _RaisingAgent:
 
 def test_decide_trim_parses_agent_reply() -> None:
     agent = _ReplyAgent("SUBJECT_CHANGED: yes\nDROP_LEADING: 1")
-    decision = asyncio.run(
-        decide_trim(agent, "User: a", visible_count=3, max_drop=1)
-    )
+    decision = asyncio.run(decide_trim(agent, "User: a", visible_count=3, max_drop=1))
     assert decision.subject_changed is True
     assert decision.drop_leading == 1
 

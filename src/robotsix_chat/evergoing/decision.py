@@ -76,7 +76,9 @@ def parse_trim_decision(text: str, *, max_drop: int) -> TrimDecision:
     forced to ``0`` whenever the subject did not change.
     """
     subject_match = _SUBJECT_RE.search(text)
-    subject_changed = bool(subject_match) and subject_match.group(1).lower() == "yes"
+    subject_changed = (
+        subject_match is not None and subject_match.group(1).lower() == "yes"
+    )
 
     drop = 0
     drop_match = _DROP_RE.search(text)
@@ -94,7 +96,9 @@ def parse_trim_decision(text: str, *, max_drop: int) -> TrimDecision:
         reason = "subject unchanged" if not subject_changed else "no droppable turns"
     else:
         reason = f"subject changed; dropping {drop} finished leading turn(s)"
-    return TrimDecision(subject_changed=subject_changed, drop_leading=drop, reason=reason)
+    return TrimDecision(
+        subject_changed=subject_changed, drop_leading=drop, reason=reason
+    )
 
 
 async def decide_trim(

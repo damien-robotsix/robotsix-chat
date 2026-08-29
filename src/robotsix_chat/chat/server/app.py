@@ -471,6 +471,11 @@ def create_app(
             :class:`~robotsix_chat.config.models.HealthSettings` controlling
             the periodic health-check scheduler.  When ``None`` (default),
             the default settings are used (enabled, 300 s interval).
+        evergoing_settings: Optional
+            :class:`~robotsix_chat.config.models.EvergoingSettings` controlling
+            the single never-ending session and its periodic subject-aware
+            trim scheduler.  When ``None`` (default), the default settings are
+            used (disabled), so no evergoing session is created on boot.
         continuation_store: Shared
             :class:`~robotsix_chat.continuation.store.ContinuationStore`
             instance for pending post-restart continuations.  When
