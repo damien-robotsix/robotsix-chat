@@ -1262,10 +1262,12 @@ async def test_keyed_primary_level_still_receives_the_api_key() -> None:
 
 @pytest.mark.asyncio
 async def test_turn_does_not_bind_a_cli_session_and_carries_history_in_prompt() -> None:
-    """Each turn is stateless: the handle's option builder is left untouched (no
-    ``resume``/``session_id`` binding) and the conversation travels as
-    ``message_history``. Resuming a CLI session made the transcript keep every
-    earlier prompt — N history copies and N stale memory blocks by turn N.
+    """Each turn is stateless: no CLI session binding, history in the prompt.
+
+    The handle's option builder is left untouched (no ``resume``/``session_id``
+    binding) and the conversation travels as ``message_history``. Resuming a
+    CLI session made the transcript keep every earlier prompt — N history
+    copies and N stale memory blocks by turn N.
     """
     create_model, handle = _patched_create_model("ok")
     sentinel_builder = MagicMock(name="orig_build_options")
