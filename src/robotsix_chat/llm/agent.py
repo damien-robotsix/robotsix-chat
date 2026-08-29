@@ -545,6 +545,16 @@ class LlmioChatAgent:
         """
         return self._model_level
 
+    @property
+    def has_api_key(self) -> bool:
+        """Whether a non-empty API key is configured for keyed levels.
+
+        Keyless (claudeSDK) levels never need it; keyed (OpenRouter) levels
+        cannot serve a turn without it. Surfaced so the UI can mark keyed
+        model levels unavailable when no key is present.
+        """
+        return bool(self._api_key)
+
     async def stream(
         self,
         message: str,
