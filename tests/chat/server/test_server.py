@@ -1382,7 +1382,7 @@ async def test_run_server_from_config_creates_agent_from_settings(
         from robotsix_chat.continuation.store import ContinuationStore
 
         assert isinstance(continuation_store, ContinuationStore)
-        from robotsix_chat.config.models import HealthSettings
+        from robotsix_chat.config.models import EvergoingSettings, HealthSettings
 
         assert call_args[1] == {
             "host": "127.0.0.1",
@@ -1402,6 +1402,9 @@ async def test_run_server_from_config_creates_agent_from_settings(
             "correlation_id_header": "X-Request-ID",
             "health_settings": HealthSettings(
                 enabled=True, check_interval_seconds=300.0
+            ),
+            "evergoing_settings": EvergoingSettings(
+                enabled=False, trim_interval_seconds=1800.0, keep_min_recent=2
             ),
         }
 
