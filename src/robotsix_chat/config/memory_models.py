@@ -169,6 +169,24 @@ class MemorySettings(BaseModel):
             before the next write starts.  Prevents a burst of many concurrent
             writes from collectively exhausting the worker's memory.
             Default ``0.5``.
+        maintenance_enabled: When ``True`` (default), a background task
+            periodically compacts and prunes every table in the cognee
+            LanceDB store (LanceDB's ``Table.optimize`` — merge fragments and
+            drop old versions).  Every ``cognify`` write appends a fragment,
+            a version and deletion files but nothing ever compacts them, so a
+            vector search ends up scanning thousands of tiny fragments and
+            applying tens of thousands of deletion vectors — which starves
+            recall and saturates the host disk.  The pass runs under the
+            cognee write lock and processes tables sequentially, so it never
+            overlaps a live write or exhausts memory on a badly-fragmented
+            store.
+        maintenance_interval_seconds: Seconds between maintenance passes; the
+            first pass runs at startup.  Default ``21600.0`` (6 h).
+        maintenance_version_retention_seconds: Age (seconds) below which
+            LanceDB dataset versions are kept during pruning — passed as
+            ``cleanup_older_than`` to ``Table.optimize``.  Older versions are
+            removed so the on-disk version count stays bounded.  Default
+            ``3600.0`` (1 h).
         llm: Extraction-LLM config (graph building / consolidation).
         embedding: Embedding-server config (semantic search).
         langfuse_project: Name of the Langfuse project cognee's own LLM
@@ -200,6 +218,9 @@ class MemorySettings(BaseModel):
     frozen_store_recovery_minutes: float = 15.0
     recovery_cooldown_minutes: float = 30.0
     write_throttle_seconds: float = 0.5
+    maintenance_enabled: bool = True
+    maintenance_interval_seconds: float = 21600.0
+    maintenance_version_retention_seconds: float = 3600.0
     llm: MemoryLlmSettings = Field(default_factory=MemoryLlmSettings)
     embedding: MemoryEmbeddingSettings = Field(default_factory=MemoryEmbeddingSettings)
     langfuse_project: str = PROJECT_MEMORY
