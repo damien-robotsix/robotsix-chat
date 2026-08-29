@@ -813,10 +813,16 @@ def _skill_registry(
     serves bodies on demand. Keeping them on one list is what stops the
     index from advertising a skill the tool cannot fetch.
     """
+    from robotsix_chat.evergoing import load_cross_session_skill
     from robotsix_chat.subsessions import load_subsessions_skill
 
     return [
         (True, "subsessions", load_subsessions_skill),
+        (
+            settings.evergoing.enabled,
+            "evergoing_cross_session",
+            load_cross_session_skill,
+        ),
         (settings.lifecycle.enabled, "lifecycle", load_lifecycle_skill),
         (settings.notification.enabled, "notification", load_notification_skill),
         (settings.http_probe.enabled, "http_probe", load_http_probe_skill),
@@ -1198,6 +1204,19 @@ def _build_request_tools_factory(
             )
 
         req_factories.append(_make_notification_tools)
+
+    if settings.evergoing.enabled and conversation_store is not None:
+        from robotsix_chat.evergoing import build_cross_session_tools
+
+        cross_session_store = conversation_store
+
+        def _make_cross_session_tools(session_id: str) -> list[Any]:
+            return build_cross_session_tools(
+                conversation_store=cross_session_store,
+                session_id=session_id,
+            )
+
+        req_factories.append(_make_cross_session_tools)
 
     if conversation_store is not None and configured_level is not None:
         from robotsix_chat.llm.escalation import build_escalation_tools
