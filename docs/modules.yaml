@@ -149,6 +149,7 @@ modules:
     paths:
       - src/robotsix_chat/config/__init__.py
       - src/robotsix_chat/config/autonomous_models.py
+      - src/robotsix_chat/config/claude_usage_models.py
       - src/robotsix_chat/config/component_models.py
       - src/robotsix_chat/config/constants.py
       - src/robotsix_chat/config/deploy_models.py
@@ -410,6 +411,15 @@ modules:
       - src/robotsix_chat/refdocs/client.py
       - tests/refdocs/__init__.py
       - tests/refdocs/test_refdocs.py
+  - id: claude-usage
+    description: "On-demand Claude.ai remaining-cap scraper — headless Chromium (Playwright) driven through Anthropic's email magic-link login flow (link retrieved via the auto-mail inbox), scrapes the usage page, and discards the task-scoped session. No credentials stored. Exposes build_claude_usage_tools(), a factory returning the confirmation-gated fetch_claude_usage async tool."
+    paths:
+      - src/robotsix_chat/claude_usage/README.md
+      - src/robotsix_chat/claude_usage/__init__.py
+      - src/robotsix_chat/claude_usage/client.py
+      - src/robotsix_chat/claude_usage/skill.md
+      - tests/claude_usage/__init__.py
+      - tests/claude_usage/test_claude_usage.py
   - id: render-url
     description: "Read-only URL rendering tool — headless Chromium (Playwright) that captures full-page screenshots and accessibility trees for UI verification. Exposes build_render_url_tools(), a factory returning a single render_url async tool."
     paths:

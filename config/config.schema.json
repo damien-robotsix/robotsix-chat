@@ -229,6 +229,54 @@
       "title": "CentralDeploySettings",
       "type": "object"
     },
+    "ClaudeUsageSettings": {
+      "additionalProperties": false,
+      "description": "On-demand Claude.ai remaining-cap scraper via headless browser.\n\nWhen enabled, the agent gains a confirmation-gated ``fetch_claude_usage``\ntool that, **per call**, drives a headless Chromium browser through\nAnthropic's email magic-link login flow for the configured account,\nretrieves the one-time login link from the auto-mail inbox (via the\n``mail`` integration), follows it to establish a **task-scoped**\nauthenticated session, scrapes the usage/settings page for the remaining\nweekly-cap / token value, and then discards the session.\n\n**No credentials are stored.**  The magic-link email is the sole auth per\nrun \u2014 there is no password or API-key vault path.  The scraper is\ndeliberately fragile (see the component README): it breaks on claude.ai\nlayout changes, CAPTCHA, or device-verification challenges, and there is\nno official API backing it.\n\nRequires the ``render-url`` extra (``playwright``) for the headless\nbrowser and the ``mail`` integration to be enabled and reachable so the\nmagic-link email can be read.\n\nAttributes:\n    enabled: Master switch.  When ``False`` (the default), no\n        ``fetch_claude_usage`` tool is offered.\n    account_email: The Claude.ai account email to log in as.  Anthropic\n        sends the one-time magic-link email to this address; it must be a\n        mailbox the auto-mail integration can read.\n    login_url: Claude.ai login page URL where the email magic-link flow is\n        initiated.\n    usage_url: Claude.ai usage/settings page URL scraped for the\n        remaining-cap value after login.\n    mail_account_id: Optional auto-mail ``account_id`` to scope the inbox\n        search to.  Empty means the auto-mail server's default account.\n    mail_poll_attempts: How many times to poll the auto-mail board for the\n        Anthropic login email before giving up.\n    mail_poll_interval: Seconds to wait between auto-mail board polls.\n    timeout: Per-navigation timeout in seconds for browser page loads.",
+      "properties": {
+        "enabled": {
+          "default": false,
+          "title": "Enabled",
+          "type": "boolean"
+        },
+        "account_email": {
+          "default": "chat@robotsix.net",
+          "title": "Account Email",
+          "type": "string"
+        },
+        "login_url": {
+          "default": "https://claude.ai/login",
+          "title": "Login Url",
+          "type": "string"
+        },
+        "usage_url": {
+          "default": "https://claude.ai/settings/usage",
+          "title": "Usage Url",
+          "type": "string"
+        },
+        "mail_account_id": {
+          "default": "",
+          "title": "Mail Account Id",
+          "type": "string"
+        },
+        "mail_poll_attempts": {
+          "default": 12,
+          "title": "Mail Poll Attempts",
+          "type": "integer"
+        },
+        "mail_poll_interval": {
+          "default": 5.0,
+          "title": "Mail Poll Interval",
+          "type": "number"
+        },
+        "timeout": {
+          "default": 30.0,
+          "title": "Timeout",
+          "type": "number"
+        }
+      },
+      "title": "ClaudeUsageSettings",
+      "type": "object"
+    },
     "ComponentClientSettings": {
       "additionalProperties": false,
       "description": "Component agent client settings \u2014 inspect and configure remote agents.\n\nWhen enabled, the chat agent gains four tools: ``list_component_agents``,\n``get_component_telemetry``, ``get_component_config``, and\n``set_component_config`` so it can enumerate configured component agents,\nread live telemetry, and read/update configuration on demand via direct\nHTTP.\n\nAttributes:\n    enabled: Master switch.\n    timeout: Per-request HTTP timeout (seconds).\n    components: Allowlist of component agents the chat may contact.\n        Each entry has a ``base_url`` and an optional ``label``.",
@@ -1773,6 +1821,10 @@
     },
     "render_url": {
       "$ref": "#/$defs/RenderUrlSettings",
+      "advanced": true
+    },
+    "claude_usage": {
+      "$ref": "#/$defs/ClaudeUsageSettings",
       "advanced": true
     },
     "knowledge": {

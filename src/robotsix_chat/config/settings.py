@@ -19,6 +19,7 @@ from robotsix_chat.config.models import (
     AutonomousSettings,
     AutonomySettings,
     CentralDeploySettings,
+    ClaudeUsageSettings,
     ComponentClientSettings,
     ContinuationSettings,
     ConversationSettings,
@@ -1646,6 +1647,9 @@ class Settings(BaseModel):
     )
     render_url: RenderUrlSettings = Field(
         default_factory=RenderUrlSettings, json_schema_extra={"advanced": True}
+    )
+    claude_usage: ClaudeUsageSettings = Field(
+        default_factory=ClaudeUsageSettings, json_schema_extra={"advanced": True}
     )
     knowledge: KnowledgeSettings = Field(default_factory=KnowledgeSettings)
     self_review: SelfReviewSettings = Field(
