@@ -128,6 +128,66 @@ def is_cloudflare_challenge(title: str, html: str, url: str) -> bool:
     return any(marker in hay for marker in _CLOUDFLARE_MARKERS for hay in haystacks)
 
 
+#: Substrings that mark a Cloudflare **Turnstile** widget embedded in the login
+#: form itself (as opposed to the full-page interstitial detected above).  An
+#: unsatisfied Turnstile blocks the login-email submit, so the magic-link is
+#: never sent — a terminal condition for headless automation.
+_TURNSTILE_MARKERS = (
+    "challenges.cloudflare.com",
+    "cf-turnstile",
+    "cf-chl-widget",
+    "turnstile",
+    "challenge-form",
+)
+
+
+def is_turnstile_challenge(html: str) -> bool:
+    """Return ``True`` when *html* contains a Cloudflare Turnstile widget.
+
+    Scans the login page markup for the Turnstile iframe/element markers
+    (``challenges.cloudflare.com``, ``cf-turnstile``, ``#challenge-form``, …).
+    When present at submit time the automated browser cannot satisfy the
+    challenge, so Anthropic never sends the magic-link email — the caller
+    returns a specific Turnstile error instead of a generic email-timeout.
+    """
+    lowered = (html or "").lower()
+    return any(marker in lowered for marker in _TURNSTILE_MARKERS)
+
+
+#: Substrings that mark the post-submit "we sent you a login link" confirmation
+#: view.  Reaching this state proves the email submit actually triggered
+#: Anthropic to send the magic-link, so it gates the start of the mail poll.
+_CONFIRMATION_MARKERS = (
+    "check your email",
+    "check your inbox",
+    "we sent",
+    "we've sent",
+    "sent you a link",
+    "sent a link",
+    "sent a login link",
+    "magic link",
+    "verify your email",
+    "confirm your email",
+)
+
+
+#: How many times / how long to poll for the post-submit confirmation view
+#: before treating the submit as failed.
+_CONFIRMATION_POLL_ATTEMPTS = 8
+_CONFIRMATION_POLL_INTERVAL = 1.0
+
+
+def is_login_email_confirmation(title: str, text: str) -> bool:
+    """Return ``True`` when the page shows the post-submit "check your email" view.
+
+    Scans the page *title* and visible *text* for confirmation markers
+    ("Check your email", "We sent you a link", …).  Used to prove the login
+    email was actually submitted before the caller starts polling the inbox.
+    """
+    haystacks = ((title or "").lower(), (text or "").lower())
+    return any(marker in hay for marker in _CONFIRMATION_MARKERS for hay in haystacks)
+
+
 class ClaudeUsageClient:
     """Headless-browser scraper for the Claude.ai remaining-cap value."""
 
@@ -158,6 +218,42 @@ class ClaudeUsageClient:
             if attempt + 1 < self._settings.mail_poll_attempts:
                 await asyncio.sleep(self._settings.mail_poll_interval)
         return None
+
+    async def _await_login_confirmation(self, page: Any) -> bool:
+        """Poll the page for the post-submit "check your email" confirmation.
+
+        Returns ``True`` once the confirmation view appears (proving the login
+        email was actually sent), or ``False`` when it never appears within a
+        bounded number of short polls.
+        """
+        for attempt in range(_CONFIRMATION_POLL_ATTEMPTS):
+            try:
+                title = await page.title()
+                text = await page.content()
+            except Exception:
+                title = text = ""
+            if is_login_email_confirmation(title, text):
+                return True
+            if attempt + 1 < _CONFIRMATION_POLL_ATTEMPTS:
+                await asyncio.sleep(_CONFIRMATION_POLL_INTERVAL)
+        return False
+
+    async def _capture_page_state(self, page: Any) -> str:
+        """Return a short ``title + aria-snippet`` description of *page*.
+
+        Used to record exactly where the login flow stopped so the operator
+        can diagnose a failed submit from the tool's returned payload.
+        """
+        try:
+            title = await page.title()
+        except Exception:
+            title = ""
+        try:
+            snapshot = await page.locator("body").aria_snapshot()
+        except Exception:
+            snapshot = ""
+        snippet = (snapshot or "").strip()[:400]
+        return f"title={title!r} aria={snippet!r}"
 
     async def fetch_remaining_cap(self) -> dict[str, Any]:
         """Log in via magic-link and scrape the Claude.ai remaining-cap value.
@@ -199,6 +295,13 @@ class ClaudeUsageClient:
                 "Headless-browser login is not viable for this account without "
                 "an authenticated-session path; do not add more aggressive "
                 "evasion."
+            )
+            turnstile_error = (
+                "blocked by Cloudflare Turnstile on the login form — automated "
+                "submit cannot proceed. Anthropic does not send the magic-link "
+                "email until the Turnstile challenge is satisfied, which "
+                "headless automation cannot do. Pivot to an authenticated-"
+                "session path; do not add a CAPTCHA/Turnstile-solving service."
             )
             async with async_playwright() as p:
                 browser = await p.chromium.launch(
@@ -271,9 +374,58 @@ class ClaudeUsageClient:
                         return result
 
                     await email_input.fill(self._settings.account_email)
-                    await email_input.press("Enter")
 
-                    # 2. Retrieve the one-time login link from the inbox.
+                    # A Cloudflare Turnstile widget on the login form must be
+                    # satisfied before Anthropic sends the magic-link email.
+                    # The automated browser cannot pass it, so detect it and
+                    # return a specific terminal error instead of a generic
+                    # "no email arrived" timeout later on.
+                    if is_turnstile_challenge(await page.content()):
+                        result["error"] = turnstile_error
+                        result["page_url"] = page.url
+                        return result
+
+                    # 2. Explicitly trigger submission.  Filling the field does
+                    # NOT send the request — click the submit / "Continue with
+                    # email" control, falling back to an Enter keypress.
+                    submitted = False
+                    try:
+                        submit_btn = page.get_by_role(
+                            "button",
+                            name=re.compile(
+                                "continue|sign in|log in|submit|next|email",
+                                re.IGNORECASE,
+                            ),
+                        )
+                        if await submit_btn.count():
+                            await submit_btn.first.click()
+                            submitted = True
+                    except Exception:
+                        logger.debug("claude_usage: submit-button click failed")
+                    if not submitted:
+                        await email_input.press("Enter")
+
+                    # 3. Wait for the post-submit "check your email" confirmation
+                    # before polling the inbox — reaching it proves the submit
+                    # actually triggered the magic-link send.
+                    if not await self._await_login_confirmation(page):
+                        page_state = await self._capture_page_state(page)
+                        result["raw_text"] = page_state
+                        result["page_url"] = page.url
+                        # A Turnstile that appeared/gated the submit is the
+                        # terminal condition; report it specifically.
+                        if is_turnstile_challenge(await page.content()):
+                            result["error"] = turnstile_error
+                        else:
+                            result["error"] = (
+                                "claude.ai did not show the 'check your email' "
+                                "confirmation after the login-email submit, so "
+                                "the magic-link was likely never sent; "
+                                f"post-submit page state: {page_state}"
+                            )
+                        return result
+
+                    # 4. Retrieve the one-time login link from the inbox.
                     link = await self._poll_magic_link()
                     if not link:
                         result["error"] = (
@@ -282,14 +434,14 @@ class ClaudeUsageClient:
                         )
                         return result
 
-                    # 3. Follow the link to establish a task-scoped session.
+                    # 5. Follow the link to establish a task-scoped session.
                     await page.goto(
                         link,
                         wait_until="domcontentloaded",
                         timeout=timeout_ms,
                     )
 
-                    # 4. Navigate to the usage page and scrape the value.
+                    # 6. Navigate to the usage page and scrape the value.
                     await page.goto(
                         self._settings.usage_url,
                         wait_until="domcontentloaded",
@@ -301,7 +453,7 @@ class ClaudeUsageClient:
                     result["raw_text"] = raw_text
                     result["remaining_cap"] = parse_usage_value(raw_text)
 
-                    # 5. Discard the session.
+                    # 7. Discard the session.
                     await context.close()
                 finally:
                     await browser.close()

@@ -38,7 +38,7 @@ def _fake_playwright_module(
     usage_text: str,
     *,
     title: str = "Claude",
-    content: str = "<html><body>login</body></html>",
+    content: str = "<html><body>login — Check your email</body></html>",
 ) -> Any:
     """Return a mock ``playwright.async_api`` module with a fake browser chain.
 
