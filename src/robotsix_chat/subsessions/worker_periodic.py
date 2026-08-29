@@ -20,6 +20,7 @@ from robotsix_chat.chat.events import SSE_NOTIFICATION_TYPE, subsession_result_f
 
 from .models import InboxMessage, SubsessionInfo, SubsessionStatus
 from .registry import SubsessionRegistry
+from .subsession_waits import _paused_wait_loop, _queued_wait_loop
 from .worker import (
     _NO_CHANGE_SENTINEL,
     _QUEUED_SENTINEL,
@@ -30,8 +31,6 @@ from .worker import (
     _is_queued,
     _is_ticket_pre_authorized,
     _ordinal_suffix,
-    _paused_wait_loop,
-    _queued_wait_loop,
     _render_turn_input,
 )
 
