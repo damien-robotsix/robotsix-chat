@@ -807,9 +807,17 @@ challenges, and there is no official API backing it (automated console access ma
 Claude.ai ToS). Requires the `render-url` extra (`playwright`) and the `mail` integration enabled
 and reachable. Disabled by default.
 
+A second `auth_mode` — `session_state` — skips the login page entirely by reusing an
+operator-captured, already-authenticated browser session (a Playwright storage-state JSON at
+`session_state_path`), navigating directly to the usage page. This durably sidesteps Cloudflare's
+anti-bot login wall. See the component README for the capture procedure; captured sessions expire
+(days–weeks) and must be periodically re-captured.
+
 | JSON key                          | Type      | Default                            | Description                                                                         |
 | --------------------------------- | --------- | ---------------------------------- | ----------------------------------------------------------------------------------- |
 | `claude_usage.enabled`            | `boolean` | `false`                            | Master switch. When `False`, no `fetch_claude_usage` tool is offered.               |
+| `claude_usage.auth_mode`          | `string`  | `magic_link`                       | Auth strategy: `magic_link` (email login flow) or `session_state` (reuse a captured session). |
+| `claude_usage.session_state_path` | `string`  | `""`                               | Path to a Playwright storage-state JSON captured by the operator; read when `auth_mode` is `session_state`. |
 | `claude_usage.account_email`      | `string`  | `chat@robotsix.net`                | Claude.ai account email to log in as; must be a mailbox the auto-mail can read.     |
 | `claude_usage.login_url`          | `string`  | `https://claude.ai/login`          | Claude.ai login page URL where the email magic-link flow is initiated.              |
 | `claude_usage.usage_url`          | `string`  | `https://claude.ai/settings/usage` | Claude.ai usage/settings page URL scraped for the remaining-cap value after login.  |

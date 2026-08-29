@@ -20,6 +20,7 @@ from robotsix_chat.claude_usage.client import (
     extract_magic_link,
     is_cloudflare_challenge,
     is_login_email_confirmation,
+    is_login_redirect,
     is_turnstile_challenge,
     parse_usage_value,
 )
@@ -372,5 +373,130 @@ async def test_fetch_claude_usage_clicks_submit_button(
         # The submit button was clicked; the Enter-keypress fallback was not used.
         assert locator.click.await_count >= 1
         assert locator.press.await_count == 0
+    finally:
+        _remove_fake_playwright()
+
+
+# ---------------------------------------------------------------------------
+# is_login_redirect
+# ---------------------------------------------------------------------------
+
+
+def test_is_login_redirect_detects_login_urls() -> None:
+    """URLs pointing at the login / auth page are flagged."""
+    assert is_login_redirect("https://claude.ai/login")
+    assert is_login_redirect("https://claude.ai/login?returnTo=/settings/usage")
+    assert is_login_redirect("https://claude.ai/sign-in")
+
+
+def test_is_login_redirect_negative() -> None:
+    """The usage page itself is not flagged as a login redirect."""
+    assert not is_login_redirect("https://claude.ai/settings/usage")
+
+
+# ---------------------------------------------------------------------------
+# ClaudeUsageSettings — session_state config
+# ---------------------------------------------------------------------------
+
+
+def test_claude_usage_settings_auth_mode_default() -> None:
+    """``auth_mode`` defaults to magic_link and session_state_path is empty."""
+    s = ClaudeUsageSettings()
+    assert s.auth_mode == "magic_link"
+    assert s.session_state_path == ""
+
+
+# ---------------------------------------------------------------------------
+# fetch_claude_usage — session_state mode
+# ---------------------------------------------------------------------------
+
+
+@pytest.mark.asyncio
+async def test_fetch_claude_usage_session_state_success(tmp_path: Any) -> None:
+    """A valid captured session scrapes usage directly, bypassing login/mail."""
+    state_file = tmp_path / "claude-session.json"
+    state_file.write_text(json.dumps({"cookies": [], "origins": []}))
+    fake = _install_fake_playwright("Weekly usage: 88% of cap remaining")
+    try:
+        tools = build_claude_usage_tools(
+            _settings(auth_mode="session_state", session_state_path=str(state_file)),
+            MailSettings(),
+        )
+        payload = json.loads(await tools[0]())
+        assert payload["error"] == ""
+        assert payload["remaining_cap"] == "Weekly usage: 88% of cap remaining"
+        assert payload["page_url"] == "https://claude.ai/settings/usage"
+        # The context was seeded with the captured storage-state blob, and the
+        # login page was never visited (goto called exactly once → usage_url).
+        entered = fake.async_playwright.return_value.__aenter__.return_value
+        new_context = entered.chromium.launch.return_value.new_context
+        assert new_context.await_args.kwargs["storage_state"] == {
+            "cookies": [],
+            "origins": [],
+        }
+        assert fake._test_page.goto.await_count == 1
+    finally:
+        _remove_fake_playwright()
+
+
+@pytest.mark.asyncio
+async def test_fetch_claude_usage_session_state_missing_file() -> None:
+    """A missing/empty session state yields the actionable no-session error."""
+    _install_fake_playwright("irrelevant")
+    try:
+        tools = build_claude_usage_tools(
+            _settings(auth_mode="session_state", session_state_path=""),
+            MailSettings(),
+        )
+        payload = json.loads(await tools[0]())
+        assert payload["remaining_cap"] is None
+        assert "no session state configured" in payload["error"]
+        assert "capture" in payload["error"]
+    finally:
+        _remove_fake_playwright()
+
+
+@pytest.mark.asyncio
+async def test_fetch_claude_usage_session_state_expired_redirect(
+    tmp_path: Any,
+) -> None:
+    """An expired session (usage page redirects to login) → re-capture error."""
+    state_file = tmp_path / "claude-session.json"
+    state_file.write_text(json.dumps({"cookies": [], "origins": []}))
+    fake = _install_fake_playwright("irrelevant")
+    fake._test_page.url = "https://claude.ai/login?returnTo=/settings/usage"
+    try:
+        tools = build_claude_usage_tools(
+            _settings(auth_mode="session_state", session_state_path=str(state_file)),
+            MailSettings(),
+        )
+        payload = json.loads(await tools[0]())
+        assert payload["remaining_cap"] is None
+        assert "session expired or challenged" in payload["error"]
+        assert "re-capture" in payload["error"]
+    finally:
+        _remove_fake_playwright()
+
+
+@pytest.mark.asyncio
+async def test_fetch_claude_usage_session_state_cloudflare_challenge(
+    tmp_path: Any,
+) -> None:
+    """A Cloudflare interstitial on the usage page → re-capture error."""
+    state_file = tmp_path / "claude-session.json"
+    state_file.write_text(json.dumps({"cookies": [], "origins": []}))
+    _install_fake_playwright(
+        "irrelevant",
+        title="Just a moment...",
+        content="<form id='challenge-form'>Performing security verification</form>",
+    )
+    try:
+        tools = build_claude_usage_tools(
+            _settings(auth_mode="session_state", session_state_path=str(state_file)),
+            MailSettings(),
+        )
+        payload = json.loads(await tools[0]())
+        assert payload["remaining_cap"] is None
+        assert "session expired or challenged" in payload["error"]
     finally:
         _remove_fake_playwright()
