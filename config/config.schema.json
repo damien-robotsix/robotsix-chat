@@ -531,6 +531,31 @@
       "title": "DockerDigestSettings",
       "type": "object"
     },
+    "EvergoingSettings": {
+      "additionalProperties": false,
+      "description": "Evergoing-session settings \u2014 the single never-ending chat session.\n\nWhen enabled, exactly one *evergoing* session is created on boot and\nkept alive across restarts: it is never auto-closed or auto-evicted and\nalways appears in the operator's session list flagged ``evergoing``.  A\nbackground scheduler runs every *trim_interval_seconds* and, **only when\nnew turns have arrived since the last pass**, asks a cheap summary-tier\nmodel whether the conversation's subject has clearly changed and how\nmany finished leading turns can be dropped, then physically trims them\nfrom the session.  A no-input interval performs zero LLM calls.\n\nAttributes:\n    enabled: Master switch.  When ``False`` (default) no evergoing\n        session is created and the trim scheduler does not run.  Set to\n        ``true`` to activate the feature.\n    trim_interval_seconds: Seconds between scheduled trim passes.\n        Default ``1800`` (30 minutes).\n    keep_min_recent: Minimum number of most-recent turns the trim pass\n        must always keep \u2014 guarantees the in-flight turn is never\n        trimmed away.  Default ``2``.",
+      "properties": {
+        "enabled": {
+          "default": false,
+          "title": "Enabled",
+          "type": "boolean"
+        },
+        "trim_interval_seconds": {
+          "default": 1800.0,
+          "exclusiveMinimum": 0,
+          "title": "Trim Interval Seconds",
+          "type": "number"
+        },
+        "keep_min_recent": {
+          "default": 2,
+          "minimum": 1,
+          "title": "Keep Min Recent",
+          "type": "integer"
+        }
+      },
+      "title": "EvergoingSettings",
+      "type": "object"
+    },
     "FeedbackSettings": {
       "additionalProperties": false,
       "description": "Automated feedback analysis for continuous self-improvement.\n\nWhen enabled, a feedback run analyses the conversation at compaction\nand session-end boundaries, then files improvement tickets via the\nboard's ``POST /tickets/ingest`` endpoint.  Tickets flow through the\nnormal human-approval workflow \u2014 the feedback run never auto-approves.\n\nAttributes:\n    enabled: Master switch.  When ``False``, no feedback runs occur.\n    model_level: llmio capability level for the feedback-analysis\n        agent (a cheap, single-turn extraction call).  Default ``1``.\n    board_url: Base URL of the board HTTP API (no trailing slash).\n        Required when *enabled* \u2014 the runner POSTs to\n        ``{board_url}/tickets/ingest``.\n    board_api_token: Optional Bearer token for the board API.\n    deploy_api_key: Bearer / X-API-Key token for the central-deploy\n        roster endpoint (``GET /chat/components``). Required when\n        the feedback runner needs to resolve allowed repos via the\n        deploy roster.\n    timeout: Per-request HTTP timeout in seconds for ingest calls.\n        The set of allowed target repos is resolved dynamically at\n        run-time from the deploy server's chat-component roster\n        intersected with the mill board's repo registry \u2014 no static\n        allowlist is needed.\n    max_tickets_per_run: Ceiling on tickets filed by one feedback run.\n        A run fires at every compaction and session-end boundary, and\n        was previously unbounded: across 37 observed runs it filed 114\n        tickets, mean 3.08, peaking at 9 from a single run. Excess\n        tickets are dropped with a warning naming each one. ``0``\n        disables filing while leaving analysis on.\n    dedup_window_seconds: Time window (in seconds) for suppressing\n        duplicate feedback runs and duplicate ticket titles.  When\n        two feedback runs for the same session are scheduled within\n        this window, the second is skipped.  Similarly, when two\n        tickets with the same normalized title (lowercased, stripped)\n        are filed within this window, the second is skipped.  Default\n        ``60.0`` balances promptness against the risk of near-\n        simultaneous duplicate creation during concurrent monitor\n        runs.\n    ingest_max_retries: Number of automatic retries when a\n        ``POST /tickets/ingest`` call fails with a transport-level\n        error (e.g. ``ReadTimeout``).  Between retries the runner\n        queries the board idempotently to confirm whether the\n        timed-out request already created the ticket, so a retry\n        never files a duplicate.  ``0`` disables retrying (a single\n        attempt).  Default ``2`` (up to three attempts total).",
@@ -1921,6 +1946,10 @@
     },
     "continuation": {
       "$ref": "#/$defs/ContinuationSettings",
+      "advanced": true
+    },
+    "evergoing": {
+      "$ref": "#/$defs/EvergoingSettings",
       "advanced": true
     },
     "max_images_per_message": {

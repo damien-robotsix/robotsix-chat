@@ -371,6 +371,25 @@ after a self-restart without human intervention. Disabled by default.
 | `continuation.store_path`      | `string`  | `"/data/continuation.json"` | Path to the JSON persistence file. Must be on a persistent volume to survive container recreation. |
 | `continuation.max_consecutive` | `integer` | `3`                         | Maximum consecutive auto-continuations before the guardrail blocks further automatic firing.       |
 
+### Evergoing
+
+The single never-ending "evergoing" session. When enabled, exactly one evergoing session is created
+on boot (idempotent, kept across restarts): it appears in the operator's session list flagged
+`evergoing` and is never auto-closed or auto-evicted. A background scheduler runs every
+`evergoing.trim_interval_seconds` and calls the new-input gate **first** — a no-input interval makes
+zero LLM calls. When new turns have arrived, a cheap summary-tier model decides whether the
+conversation's subject has clearly changed and how many finished leading turns to drop, then those
+turns are physically trimmed from both the agent view and the UI transcript (distinct from the
+summary/compaction card, which keeps the full transcript). The most-recent `keep_min_recent` turns
+are never trimmed, so the in-flight turn is always preserved. Disabled by default — set
+`evergoing.enabled` to `true` to activate.
+
+| JSON key                        | Type      | Default  | Description                                                                                           |
+| ------------------------------- | --------- | -------- | --------------------------------------------------------------------------------------------------- |
+| `evergoing.enabled`             | `boolean` | `false`  | Master switch. When `false`, no evergoing session is created and the trim scheduler does not run.    |
+| `evergoing.trim_interval_seconds` | `number` | `1800.0` | Seconds between scheduled subject-aware trim passes. Must be >0. Default 1800 (30 minutes).          |
+| `evergoing.keep_min_recent`     | `integer` | `2`      | Minimum most-recent turns the trim pass always keeps — guarantees the in-flight turn is never trimmed. |
+
 ### Subsessions
 
 Background sub-agent spawning configuration.

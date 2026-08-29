@@ -66,6 +66,7 @@ def run_server(
     diagnostic_store: Any = None,
     knowledge_store: Any = None,
     health_settings: Any = None,
+    evergoing_settings: Any = None,
     continuation_store: Any = None,
 ) -> None:
     """Start the chat SSE server on ``host:port``.
@@ -104,6 +105,7 @@ def run_server(
         diagnostic_store=diagnostic_store,
         knowledge_store=knowledge_store,
         health_settings=health_settings,
+        evergoing_settings=evergoing_settings,
         continuation_store=continuation_store,
     )
     uvicorn.run(app, host=host, port=port)
@@ -677,5 +679,6 @@ def run_server_from_config(agent: ChatAgent | None = None) -> None:
         diagnostic_store=diagnostic_store,
         knowledge_store=knowledge_store,
         health_settings=settings.health,
+        evergoing_settings=settings.evergoing,
         continuation_store=continuation_store,
     )
