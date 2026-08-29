@@ -6,11 +6,11 @@ lines of work instead of cramming everything into this one conversation.
 
 ## Available tools
 
-| Tool             | Description                                                             |
-| ---------------- | ----------------------------------------------------------------------- |
-| `list_sessions`  | Enumerate every session owned by you (the operator)                     |
-| `create_session` | Spawn a new, independent empty session under the same owner             |
-| `close_session`  | Close (not delete) an existing session by id                            |
+| Tool             | Description                                                 |
+| ---------------- | ----------------------------------------------------------- |
+| `list_sessions`  | Enumerate every session owned by you (the operator)         |
+| `create_session` | Spawn a new, independent empty session under the same owner |
+| `close_session`  | Close (not delete) an existing session by id                |
 
 All three act on **your owner scope** — the owner that owns this evergoing session. You never see or
 touch another operator's sessions.
