@@ -384,11 +384,11 @@ summary/compaction card, which keeps the full transcript). The most-recent `keep
 are never trimmed, so the in-flight turn is always preserved. Disabled by default — set
 `evergoing.enabled` to `true` to activate.
 
-| JSON key                        | Type      | Default  | Description                                                                                           |
-| ------------------------------- | --------- | -------- | --------------------------------------------------------------------------------------------------- |
-| `evergoing.enabled`             | `boolean` | `false`  | Master switch. When `false`, no evergoing session is created and the trim scheduler does not run.    |
-| `evergoing.trim_interval_seconds` | `number` | `1800.0` | Seconds between scheduled subject-aware trim passes. Must be >0. Default 1800 (30 minutes).          |
-| `evergoing.keep_min_recent`     | `integer` | `2`      | Minimum most-recent turns the trim pass always keeps — guarantees the in-flight turn is never trimmed. |
+| JSON key                          | Type      | Default  | Description                                                                                            |
+| --------------------------------- | --------- | -------- | ------------------------------------------------------------------------------------------------------ |
+| `evergoing.enabled`               | `boolean` | `false`  | Master switch. When `false`, no evergoing session is created and the trim scheduler does not run.      |
+| `evergoing.trim_interval_seconds` | `number`  | `1800.0` | Seconds between scheduled subject-aware trim passes. Must be >0. Default 1800 (30 minutes).            |
+| `evergoing.keep_min_recent`       | `integer` | `2`      | Minimum most-recent turns the trim pass always keeps — guarantees the in-flight turn is never trimmed. |
 
 ### Subsessions
 

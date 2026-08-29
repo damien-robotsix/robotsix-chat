@@ -32,16 +32,15 @@ Tasks that are pending, in-progress, or blocked.
 - status: pending
 - created: 2026-08-29T07:47:00Z
 - updated: 2026-08-29T07:47:00Z
-- notes: Ticket 20260829T074717Z-wire-up-the-evergoing-session-v2-activat wired the core
-  evergoing feature (activation on boot behind `evergoing.enabled`, the periodic subject-aware
-  trim scheduler with the new-input gate, cheap-tier trim decision, UI marker). The remaining
-  acceptance-criterion sub-item — surfacing agent-facing tools to the evergoing session so the
-  agent can *enumerate other sessions* and *spawn a new independent session / close an existing
-  one* — is a separate subsystem (in-process function tools wired into
-  `create_agent_from_settings` + `skill.md` docs, mirroring `repo/direct`). The HTTP endpoints
-  already exist (`GET/POST /sessions`, `DELETE /sessions/{id}`, `POST /sessions/{id}/close`); this
-  task is only the agent-tool wrapper layer. Split out per the repo scope-split convention to keep
-  the wiring ticket shippable.
+- notes: Ticket 20260829T074717Z-wire-up-the-evergoing-session-v2-activat wired the core evergoing
+  feature (activation on boot behind `evergoing.enabled`, the periodic subject-aware trim scheduler
+  with the new-input gate, cheap-tier trim decision, UI marker). The remaining acceptance-criterion
+  sub-item — surfacing agent-facing tools to the evergoing session so the agent can *enumerate other
+  sessions* and *spawn a new independent session / close an existing one* — is a separate subsystem
+  (in-process function tools wired into `create_agent_from_settings` + `skill.md` docs, mirroring
+  `repo/direct`). The HTTP endpoints already exist (`GET/POST /sessions`, `DELETE /sessions/{id}`,
+  `POST /sessions/{id}/close`); this task is only the agent-tool wrapper layer. Split out per the
+  repo scope-split convention to keep the wiring ticket shippable.
 
 ## T-0003 — Deliver queued user messages between tool calls (blocked on robotsix_llmio)
 
