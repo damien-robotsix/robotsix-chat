@@ -2089,6 +2089,65 @@ def test_bare_agent_has_no_subsession_tools() -> None:
     assert "complete_subsession" not in names
 
 
+def test_costly_tier_subsession_gets_orchestration_directive() -> None:
+    """A subsession built at level >=3 receives the orchestration directive."""
+    from robotsix_chat.subsessions import CloseState, SubsessionContext
+    from robotsix_chat.subsessions.models import (
+        COSTLY_TIER_ORCHESTRATION_DIRECTIVE,
+    )
+    from tests.common.subsession_fakes import build_env
+
+    settings = Settings()
+    env = build_env()
+    ctx = SubsessionContext(owner_session_id="sess-1", subsession_id="sub-1", depth=1)
+
+    agent = create_agent_from_settings(
+        settings=settings,
+        subsession_env=env,
+        subsession_ctx=ctx,
+        subsession_close_state=CloseState(),
+        model_level=3,
+    )
+
+    assert COSTLY_TIER_ORCHESTRATION_DIRECTIVE in agent._instruction
+
+
+def test_cheap_tier_subsession_has_no_orchestration_directive() -> None:
+    """A subsession built at level <3 does not get the orchestration directive."""
+    from robotsix_chat.subsessions import CloseState, SubsessionContext
+    from robotsix_chat.subsessions.models import (
+        COSTLY_TIER_ORCHESTRATION_DIRECTIVE,
+    )
+    from tests.common.subsession_fakes import build_env
+
+    settings = Settings(llmio_api_key="sk-key")
+    env = build_env()
+    ctx = SubsessionContext(owner_session_id="sess-1", subsession_id="sub-1", depth=1)
+
+    agent = create_agent_from_settings(
+        settings=settings,
+        subsession_env=env,
+        subsession_ctx=ctx,
+        subsession_close_state=CloseState(),
+        model_level=2,
+    )
+
+    assert COSTLY_TIER_ORCHESTRATION_DIRECTIVE not in agent._instruction
+
+
+def test_main_agent_costly_level_has_no_orchestration_directive() -> None:
+    """The directive targets subsessions only — the main chat agent never gets it."""
+    from robotsix_chat.subsessions.models import (
+        COSTLY_TIER_ORCHESTRATION_DIRECTIVE,
+    )
+
+    settings = Settings()  # level 3, no subsession ctx → main agent
+
+    agent = create_agent_from_settings(settings=settings, model_level=4)
+
+    assert COSTLY_TIER_ORCHESTRATION_DIRECTIVE not in agent._instruction
+
+
 # ---------------------------------------------------------------------------
 # Chat endpoint — subsession tool scoping via client_id
 # ---------------------------------------------------------------------------

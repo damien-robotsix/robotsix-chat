@@ -464,6 +464,76 @@ async def test_spawn_tool_starts_a_worker() -> None:
 
 
 @pytest.mark.asyncio
+async def test_costly_tier_parent_defaults_children_to_cheap_level() -> None:
+    """A level>=3 parent's unspecified-level children default to the cheap tier."""
+    env = build_env(agent=FakeAgent(["done"]))
+    parent = _register(env, model_level=3, title="parent")
+    tools = build_subsession_tools(env, ctx=_ctx(subsession_id=parent.id, depth=1))
+    spawn = _by_name(tools, "spawn_subsession")
+
+    result = await spawn("task", "read traces", "read the big trace")
+
+    assert result.startswith("Started task subsession ")
+    child = next(
+        i for i in env.registry.list_for_owner(OWNER) if i.parent_id == parent.id
+    )
+    assert child.model_level == env.settings.subsessions.delegated_read_model_level
+    assert child.model_level == 2
+    await wait_until(lambda: not child.is_active)
+
+
+@pytest.mark.asyncio
+async def test_cheap_tier_parent_uses_default_model_level_for_children() -> None:
+    """A parent below the costly tier keeps the standard default_model_level."""
+    env = build_env(agent=FakeAgent(["done"]))
+    parent = _register(env, model_level=2, title="parent")
+    tools = build_subsession_tools(env, ctx=_ctx(subsession_id=parent.id, depth=1))
+    spawn = _by_name(tools, "spawn_subsession")
+
+    result = await spawn("task", "child", "do it")
+
+    assert result.startswith("Started task subsession ")
+    child = next(
+        i for i in env.registry.list_for_owner(OWNER) if i.parent_id == parent.id
+    )
+    assert child.model_level == env.settings.subsessions.default_model_level
+    assert child.model_level == 3
+    await wait_until(lambda: not child.is_active)
+
+
+@pytest.mark.asyncio
+async def test_explicit_model_level_overrides_cheap_default_for_costly_parent() -> None:
+    """An explicit model_level wins over the cheap delegated default."""
+    env = build_env(agent=FakeAgent(["done"]))
+    parent = _register(env, model_level=3, title="parent")
+    tools = build_subsession_tools(env, ctx=_ctx(subsession_id=parent.id, depth=1))
+    spawn = _by_name(tools, "spawn_subsession")
+
+    result = await spawn("task", "hard reasoning", "think hard", model_level=4)
+
+    assert result.startswith("Started task subsession ")
+    child = next(
+        i for i in env.registry.list_for_owner(OWNER) if i.parent_id == parent.id
+    )
+    assert child.model_level == 4
+    await wait_until(lambda: not child.is_active)
+
+
+@pytest.mark.asyncio
+async def test_main_agent_children_use_default_model_level() -> None:
+    """The main chat agent (no parent subsession) is unaffected by the cheap default."""
+    env = build_env(agent=FakeAgent(["done"]))
+    spawn = _by_name(build_subsession_tools(env, ctx=_ctx()), "spawn_subsession")
+
+    result = await spawn("task", "job", "do it")
+
+    assert result.startswith("Started task subsession ")
+    info = env.registry.list_for_owner(OWNER)[0]
+    assert info.model_level == env.settings.subsessions.default_model_level
+    await wait_until(lambda: not info.is_active)
+
+
+@pytest.mark.asyncio
 async def test_spawn_tool_forwards_auto_stop_no_change_runs_override() -> None:
     """The spawn tool persists the per-monitor no-change threshold."""
     env = build_env()
