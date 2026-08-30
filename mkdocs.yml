@@ -34,6 +34,7 @@ nav:
       - Settings UI: user-guide/settings-ui.md
   - API Reference:
       - robotsix_chat: api/robotsix_chat.md
+      - Mobile SSO endpoints: api/mobile-sso.md
       - robotsix_chat.config: config/api.md
       - robotsix_chat.chat.server: chat/server.md
       - robotsix_chat.chat.server.routes.admin: chat/server/routes/admin.md
