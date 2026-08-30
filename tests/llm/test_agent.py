@@ -850,10 +850,11 @@ async def test_usage_exhausted_falls_back_to_another_tier() -> None:
 
 @pytest.mark.asyncio
 async def test_usage_exhausted_fallback_also_failing_raises() -> None:
-    """If the fallback tier ALSO fails, the failure propagates.
+    """If every fallback tier ALSO fails, the failure propagates.
 
-    Scoped to one promotion — does not keep cascading through every
-    remaining tier.
+    The walk may visit every other tier (the subscription cap takes all
+    Claude tiers down together, so it must be able to reach a keyed one);
+    when they all fail, the last failure surfaces.
     """
     from robotsix_llmio.claude_sdk import ClaudeSDKUsageExhaustedError
 
@@ -878,7 +879,9 @@ async def test_usage_exhausted_fallback_also_failing_raises() -> None:
     level3_provider.build_agent.return_value = level3_handle
 
     create_model_patch = MagicMock(
-        side_effect=[level4_provider, level4_provider, level3_provider]
+        side_effect=lambda *, level, **_kw: (
+            level4_provider if level == 4 else level3_provider
+        )
     )
 
     with patch("robotsix_chat.llm.agent.create_model", create_model_patch):
@@ -886,7 +889,8 @@ async def test_usage_exhausted_fallback_also_failing_raises() -> None:
         with pytest.raises(RuntimeError, match="opus is also down"):
             _ = [c async for c in agent.stream("hi")]
 
-    assert create_model_patch.call_count == 3
+    # 4 (retry), then every other tier — all failing — before the error surfaces.
+    assert create_model_patch.call_count >= 3
 
 
 @pytest.mark.asyncio
@@ -1150,11 +1154,11 @@ async def test_auth_failure_falls_back_past_every_claude_sdk_tier() -> None:
 
 
 @pytest.mark.asyncio
-async def test_usage_exhausted_fallback_stays_one_step() -> None:
-    """Widening the reach for auth failures must not widen it for exhaustion.
+async def test_usage_exhausted_fallback_walks_every_remaining_tier() -> None:
+    """Every remaining tier is walked before the last failure surfaces.
 
-    Usage exhaustion is scoped to the tier that reported it, so the next tier
-    is already a working one — cascading further would burn tiers needlessly.
+    Exhaustion is per-subscription under the five-tier map, so the walk may
+    reach every other tier (it must be able to land on keyed level 3).
     """
     from robotsix_llmio.claude_sdk import ClaudeSDKUsageExhaustedError
 
@@ -1171,11 +1175,11 @@ async def test_usage_exhausted_fallback_stays_one_step() -> None:
         return provider
 
     create_model_patch = MagicMock(
-        side_effect=[
-            _failing_provider(ClaudeSDKUsageExhaustedError("out of usage credits")),
-            _failing_provider(ClaudeSDKUsageExhaustedError("out of usage credits")),
-            _failing_provider(RuntimeError("opus is also down")),
-        ]
+        side_effect=lambda *, level, **_kw: (
+            _failing_provider(ClaudeSDKUsageExhaustedError("out of usage credits"))
+            if level == 4
+            else _failing_provider(RuntimeError("opus is also down"))
+        )
     )
 
     with patch("robotsix_chat.llm.agent.create_model", create_model_patch):
@@ -1187,8 +1191,9 @@ async def test_usage_exhausted_fallback_stays_one_step() -> None:
         with pytest.raises(RuntimeError, match="opus is also down"):
             _ = [c async for c in agent.stream("hi")]
 
-    # Stops after the single promotion — never reaches level 2 or 1.
-    assert create_model_patch.call_count == 3
+    # Walks past the sibling Claude tier down to the keyed ones.
+    assert create_model_patch.call_count >= 3
+    assert 3 in [c.kwargs["level"] for c in create_model_patch.call_args_list]
 
 
 @pytest.mark.asyncio
@@ -1352,3 +1357,54 @@ async def test_recalled_memory_is_prepended_once_to_the_current_turn_only() -> N
     hist = seen["history"]
     assert isinstance(hist, list)
     assert all("recalled" not in str(getattr(m, "parts", "")) for m in hist)
+
+
+@pytest.mark.asyncio
+async def test_usage_exhausted_walks_past_sibling_claude_tier_to_keyed_level() -> None:
+    """An exhausted level 5 walks past level 4 down to keyed level 3 (mimo).
+
+    Under the five-tier map levels 5 (fable) and 4 (opus) share the subscription
+    cap, so the walk must not stop at 4 with "fallback depth exhausted" (the
+    2026-08-29 'internal error').
+    """
+    from robotsix_llmio.claude_sdk import ClaudeSDKUsageExhaustedError
+
+    seen: list[int] = []
+
+    def _provider(level: int) -> MagicMock:
+        handle = MagicMock()
+        if level in (5, 4):
+
+            async def exhausted(_m: str, *, message_history: object = None) -> None:
+                raise ClaudeSDKUsageExhaustedError(
+                    "You've hit your session limit · resets 1am (UTC)"
+                )
+
+            handle.run = exhausted
+        else:
+
+            async def recovered(
+                _m: str, *, message_history: object = None
+            ) -> MagicMock:
+                result = MagicMock()
+                result.output = "mimo reply"
+                result.all_messages.return_value = []
+                result.usage.return_value = None
+                return result
+
+            handle.run = recovered
+        handle.close = MagicMock()
+        provider = MagicMock()
+        provider.build_agent.return_value = handle
+        return provider
+
+    def _create_model(*, level: int, **_kw: object) -> MagicMock:
+        seen.append(level)
+        return _provider(level)
+
+    with patch("robotsix_chat.llm.agent.create_model", side_effect=_create_model):
+        agent = LlmioChatAgent(model_level=5, instruction="Be helpful.")
+        chunks = [c async for c in agent.stream("hi")]
+
+    assert chunks == ["mimo reply"]
+    assert seen[-1] == 3, seen

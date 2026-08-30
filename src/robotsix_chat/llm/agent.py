@@ -48,10 +48,18 @@ from robotsix_chat.memory import ChatMemory, NullMemory
 
 logger = logging.getLogger(__name__)
 
-# Promotions allowed when a tier reports exhausted usage credits. One step is
-# enough: exhaustion is scoped to the tier that reported it, so the very next
-# tier is already a working one.
-_USAGE_FALLBACK_DEPTH = 1
+# Promotions allowed when a tier reports exhausted usage credits. This used
+# to be 1, on the assumption that "the very next tier is a working one". That
+# held for the four-tier map (level 4 fable -> level 3 opus, different
+# limits). Under the five-tier map every Claude level (2 haiku, 4 opus,
+# 5 fable) draws on ONE subscription cap: when level 5 is exhausted, level 4
+# is too, and a depth-1 walk from 5 dies on 4 with "fallback depth (1)
+# exhausted" — surfaced to the user as "The assistant hit an internal error"
+# (observed 2026-08-29 22:04Z and again 23:28Z). The walk must be able to
+# reach a keyed provider (level 3 mimo); the intervening Claude tier is
+# already in llmio's cooldown and is skipped without a call. Operator's
+# rule for chat: Claude first, graceful paid fallback when Claude is depleted.
+_USAGE_FALLBACK_DEPTH = 4  # == len(TierLevel) - 1: may walk every other tier
 
 # A prior conversation turn replayed to the agent: ``(user, assistant)``.
 Turn = tuple[str, str]
@@ -639,9 +647,11 @@ class LlmioChatAgent:
         *credential_is_dead* distinguishes the two causes, because they need
         different reach:
 
-        * **Usage exhaustion** is per-tier, so one promotion is enough —
-          claudeSDK level 5 -> level 4 leaves the exhausted
-          tier behind.
+        * **Usage exhaustion** is per-*subscription* under the five-tier map
+          (haiku/opus/fable all draw on one cap), so the walk must be able to
+          pass the sibling Claude tiers — already in llmio's cooldown, so
+          skipped without a call — and land on the keyed level 3 (mimo). Chat
+          degrades to paid tokens rather than failing the turn.
         * **An expired credential is shared by every claudeSDK tier**, since
           they all drive the same ``claude`` CLI against the same
           ``.credentials.json``. A single promotion would land on level 3 and
@@ -707,9 +717,9 @@ class LlmioChatAgent:
             tier_config=tier_config,
             level=TierLevel(f"level{self._model_level if level is None else level}"),
             fallback_enabled=True,
-            # A dead credential can take every claudeSDK tier with it, so the
-            # walk must be able to reach a keyed provider; usage exhaustion is
-            # per-tier and needs only the one step it has always taken.
+            # Both a dead credential and an exhausted subscription take every
+            # claudeSDK tier with them, so the walk must reach a keyed provider
+            # either way.
             max_fallback_depth=(
                 len(TierLevel) - 1 if credential_is_dead else _USAGE_FALLBACK_DEPTH
             ),
