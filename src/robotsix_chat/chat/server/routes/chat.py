@@ -1143,3 +1143,5 @@ def _build_subsession_status_context(
         lines.append("\n".join(parts))
 
     return _STATUS_CONTEXT_HEADER + "\n".join(lines) + "\n" + _STATUS_CONTEXT_FOOTER
+> <one option per line>
+> 
