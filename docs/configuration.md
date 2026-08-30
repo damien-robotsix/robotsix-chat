@@ -896,6 +896,18 @@ local-filesystem-only primitive with no remote access and no write capability. E
 Mobile SSO authentication via tinyauth reverse proxy. When enabled, exposes `GET /auth/login` and
 `POST /chat/auth/mobile-token` for the mobile app's authentication flow. Disabled by default.
 
+> **Deployment note:** The auth endpoints (`GET /auth/login`, `POST /chat/auth/mobile-token`)
+> are only served when **both** conditions hold:
+>
+> 1. The chat backend image running in production contains this implementation (i.e. the
+>    container was **redeployed** from a build that includes the auth routes), **and**
+> 2. `mobile_auth.enabled` is set to `true` in the production config file.
+>
+> When `enabled` is `false` (the default) — or when `mobile_auth` is absent from the config —
+> the endpoints deliberately return `404` (the routes exist but are gated off). A green CI run
+> proves the code compiles and unit tests pass; it does **not** prove the endpoints are live.
+> Always verify with a live HTTP probe against the deployed backend after enabling.
+
 | JSON key                              | Type              | Default              | Description                                                                                                              |
 | ------------------------------------- | ----------------- | -------------------- | ------------------------------------------------------------------------------------------------------------------------ |
 | `mobile_auth.enabled`                 | `boolean`         | `false`              | Master switch. When `false`, the auth endpoints return 404.                                                              |
@@ -906,6 +918,28 @@ Mobile SSO authentication via tinyauth reverse proxy. When enabled, exposes `GET
 | `mobile_auth.token_ttl_seconds`       | `integer`         | `3600`               | Bearer token lifetime in seconds. Must be > 0.                                                                           |
 | `mobile_auth.allowed_redirect_domains` | `array[string]`  | `[]`                 | Allowlist of domains for the `redirect_to` query parameter in `GET /auth/login`. Must be non-empty when `enabled` is `true`. |
 | `mobile_auth.callback_base_url`       | `string`          | `""`                 | Public base URL of this chat server (e.g. `"https://chat.robotsix.net"`), used to construct the tinyauth callback URL.   |
+
+**Required values when `enabled` is `true`** — the server will not provide a functional
+handshake unless the following are set: `tinyauth_url`, `token_secret`,
+`allowed_redirect_domains` (non-empty), and `callback_base_url`.
+
+**Live verification** — the canonical check that the endpoints are live and behaving per
+contract:
+
+```bash
+# GET /auth/login should NOT be 404 once enabled
+curl -s -o /dev/null -w '%{http_code}\n' 'https://chat.robotsix.net/auth/login?redirect_to=<allowed-app-domain>'
+
+# POST /chat/auth/mobile-token — missing identity header should be 401 (not 404)
+curl -s -o /dev/null -w '%{http_code}\n' -X POST https://chat.robotsix.net/chat/auth/mobile-token
+
+# POST /chat/auth/mobile-token — with a tinyauth identity header set by the edge proxy
+curl -s -X POST -H 'X-Forwarded-User: <user>' https://chat.robotsix.net/chat/auth/mobile-token
+```
+
+The identity for `POST /chat/auth/mobile-token` is always taken from the configured
+`subject_header` (default `X-Forwarded-User`), which only the trusted tinyauth reverse proxy
+can set — never from the request body.
 
 ## Schema
 
