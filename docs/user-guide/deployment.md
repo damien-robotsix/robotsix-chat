@@ -303,16 +303,16 @@ server {
 }
 ```
 
-> **Central-deploy note:** Under central-deploy the gateway handles routing and tinyauth
-> integration automatically. The operator configures `mobile_auth.*` keys in the config form; no
-> manual nginx edits are needed. The snippet above is for standalone deployments that manage their
-> own reverse proxy.
+> **Central-deploy note:** Under central-deploy the gateway handles routing and tinyauth integration
+> automatically. The operator configures `mobile_auth.*` keys in the config form; no manual nginx
+> edits are needed. The snippet above is for standalone deployments that manage their own reverse
+> proxy.
 
 ### 9.2 Tinyauth bypass for `POST /chat/auth/mobile-token`
 
-The mobile app calls `POST /chat/auth/mobile-token` **programmatically** — it has no browser
-session and cannot complete a tinyauth redirect. The endpoint must therefore be reachable without
-an existing SSO session at the edge.
+The mobile app calls `POST /chat/auth/mobile-token` **programmatically** — it has no browser session
+and cannot complete a tinyauth redirect. The endpoint must therefore be reachable without an
+existing SSO session at the edge.
 
 **Security model:** The gate is the subject token, not tinyauth. The endpoint validates the subject
 token (HMAC signature, expiry, single-user binding) before issuing an access token. An attacker
@@ -335,13 +335,13 @@ authenticated through tinyauth (the only way to obtain one).
 
 #### Subject token
 
-| Property   | Value                                                                          |
-| ---------- | ------------------------------------------------------------------------------ |
-| Issued by  | `GET /auth/login` (via the tinyauth callback flow)                             |
-| Format     | Opaque string: `{subject}\|{expiry_unix}\|{hmac_sha256_tag}`                  |
-| Binding    | Single user (the tinyauth identity at issuance time)                           |
-| Lifetime   | Controlled by `mobile_auth.token_ttl_seconds` (default 3600 s / 1 h)          |
-| Storage    | Cached by the mobile app on the device                                         |
+| Property   | Value                                                                                |
+| ---------- | ------------------------------------------------------------------------------------ |
+| Issued by  | `GET /auth/login` (via the tinyauth callback flow)                                   |
+| Format     | Opaque string: `{subject}\|{expiry_unix}\|{hmac_sha256_tag}`                         |
+| Binding    | Single user (the tinyauth identity at issuance time)                                 |
+| Lifetime   | Controlled by `mobile_auth.token_ttl_seconds` (default 3600 s / 1 h)                 |
+| Storage    | Cached by the mobile app on the device                                               |
 | Revocation | Rotate `mobile_auth.token_secret` — all outstanding tokens are invalidated instantly |
 
 The subject token is HMAC-signed with `mobile_auth.token_secret`. The server verifies the signature
@@ -351,14 +351,14 @@ re-login on the next `401`).
 
 #### Access token
 
-| Property    | Value                                                                          |
-| ----------- | ------------------------------------------------------------------------------ |
-| Issued by   | `POST /chat/auth/mobile-token`                                                 |
-| Format      | Same HMAC-signed format as the subject token                                   |
-| Binding     | Single user (same subject as the subject token)                                |
-| Lifetime    | Controlled by `mobile_auth.token_ttl_seconds` (default 3600 s / 1 h)          |
-| Storage     | Cached by the mobile app; discarded on expiry                                  |
-| Re-exchange | App silently re-exchanges the subject token when the access token expires      |
+| Property    | Value                                                                     |
+| ----------- | ------------------------------------------------------------------------- |
+| Issued by   | `POST /chat/auth/mobile-token`                                            |
+| Format      | Same HMAC-signed format as the subject token                              |
+| Binding     | Single user (same subject as the subject token)                           |
+| Lifetime    | Controlled by `mobile_auth.token_ttl_seconds` (default 3600 s / 1 h)      |
+| Storage     | Cached by the mobile app; discarded on expiry                             |
+| Re-exchange | App silently re-exchanges the subject token when the access token expires |
 
 #### Expiry behaviour
 
@@ -372,26 +372,26 @@ re-login on the next `401`).
 
 #### Key metrics to watch
 
-| Metric / signal                              | Where to log                           | What it tells you                                        |
-| -------------------------------------------- | -------------------------------------- | -------------------------------------------------------- |
-| `auth_login` log entries                     | Chat backend logs (structured JSON)    | Login flow initiation rate; `redirect_to` values         |
-| `auth_callback` log entries                  | Chat backend logs                      | Successful tinyauth callbacks (user completed login)     |
-| `mobile_token` log entries                   | Chat backend logs                      | Token issuance rate; subject values                      |
-| `401` on `/chat/auth/mobile-token`           | Reverse proxy access logs              | Failed exchanges — expected on expiry; spikes indicate revocation or misconfiguration |
-| `400` on `/auth/login`                       | Reverse proxy access logs              | Bad `redirect_to` values — possible app bug or attack    |
-| `404` on auth endpoints                      | Reverse proxy access logs              | Endpoints disabled (`mobile_auth.enabled: false`) or image too old |
+| Metric / signal                    | Where to log                        | What it tells you                                                                     |
+| ---------------------------------- | ----------------------------------- | ------------------------------------------------------------------------------------- |
+| `auth_login` log entries           | Chat backend logs (structured JSON) | Login flow initiation rate; `redirect_to` values                                      |
+| `auth_callback` log entries        | Chat backend logs                   | Successful tinyauth callbacks (user completed login)                                  |
+| `mobile_token` log entries         | Chat backend logs                   | Token issuance rate; subject values                                                   |
+| `401` on `/chat/auth/mobile-token` | Reverse proxy access logs           | Failed exchanges — expected on expiry; spikes indicate revocation or misconfiguration |
+| `400` on `/auth/login`             | Reverse proxy access logs           | Bad `redirect_to` values — possible app bug or attack                                 |
+| `404` on auth endpoints            | Reverse proxy access logs           | Endpoints disabled (`mobile_auth.enabled: false`) or image too old                    |
 
 #### Common failure modes
 
-| Symptom                                                         | Likely cause                                                                        | Fix                                                                          |
-| --------------------------------------------------------------- | ----------------------------------------------------------------------------------- | ---------------------------------------------------------------------------- |
-| `GET /auth/login` returns JSON `{"error": "not found"}`         | `mobile_auth.enabled` is `false` or the running image predates the feature          | Set `enabled: true` and redeploy from a current image                        |
-| `GET /auth/login` returns `400` "redirect_to domain is not in the allowlist" | `redirect_to` host is not in `allowed_redirect_domains`            | Add the app's callback domain to the allowlist                               |
-| `GET /auth/login` returns `401` "missing identity header"       | Tinyauth did not set `X-Forwarded-User` — the edge is not passing through tinyauth  | Check edge config: `/auth/login` must be tinyauth-protected                  |
-| `POST /chat/auth/mobile-token` returns `401` "missing identity header" | The edge is applying tinyauth to this path (should be bypassed)             | Add a tinyauth bypass `location` block for `/chat/auth/mobile-token`         |
-| `POST /chat/auth/mobile-token` returns `401` on valid subject token | Subject token expired or `token_secret` was rotated                              | App will prompt re-login; if unintended, check secret rotation timing        |
-| `POST /chat/auth/mobile-token` returns `500` "token_secret is not configured" | `mobile_auth.token_secret` is empty                                     | Set a strong random secret in the config                                     |
-| App shows tinyauth login page instead of redirecting back       | `callback_base_url` is wrong or the tinyauth callback URL is misconfigured          | Verify `callback_base_url` matches the public URL tinyauth can reach         |
+| Symptom                                                                       | Likely cause                                                                       | Fix                                                                   |
+| ----------------------------------------------------------------------------- | ---------------------------------------------------------------------------------- | --------------------------------------------------------------------- |
+| `GET /auth/login` returns JSON `{"error": "not found"}`                       | `mobile_auth.enabled` is `false` or the running image predates the feature         | Set `enabled: true` and redeploy from a current image                 |
+| `GET /auth/login` returns `400` "redirect_to domain is not in the allowlist"  | `redirect_to` host is not in `allowed_redirect_domains`                            | Add the app's callback domain to the allowlist                        |
+| `GET /auth/login` returns `401` "missing identity header"                     | Tinyauth did not set `X-Forwarded-User` — the edge is not passing through tinyauth | Check edge config: `/auth/login` must be tinyauth-protected           |
+| `POST /chat/auth/mobile-token` returns `401` "missing identity header"        | The edge is applying tinyauth to this path (should be bypassed)                    | Add a tinyauth bypass `location` block for `/chat/auth/mobile-token`  |
+| `POST /chat/auth/mobile-token` returns `401` on valid subject token           | Subject token expired or `token_secret` was rotated                                | App will prompt re-login; if unintended, check secret rotation timing |
+| `POST /chat/auth/mobile-token` returns `500` "token_secret is not configured" | `mobile_auth.token_secret` is empty                                                | Set a strong random secret in the config                              |
+| App shows tinyauth login page instead of redirecting back                     | `callback_base_url` is wrong or the tinyauth callback URL is misconfigured         | Verify `callback_base_url` matches the public URL tinyauth can reach  |
 
 #### Debugging steps
 
@@ -413,9 +413,8 @@ re-login on the next `401`).
    # Should return 200 with a token JSON body
    ```
 
-1. **Check structured logs** — all auth endpoints log at `INFO` level with `subject`,
-   `redirect_to`, and `ttl` fields. Filter for `auth_login`, `auth_callback`, or `mobile_token` in
-   the log stream.
+1. **Check structured logs** — all auth endpoints log at `INFO` level with `subject`, `redirect_to`,
+   and `ttl` fields. Filter for `auth_login`, `auth_callback`, or `mobile_token` in the log stream.
 
 ### 9.5 Rollback / disable
 
@@ -424,8 +423,8 @@ Mobile SSO can be disabled at two levels:
 #### Config-level disable (preferred)
 
 Set `mobile_auth.enabled: false` in the config file and restart the chat backend. The endpoints
-remain registered but return `404` on every request — the app treats this as "SSO not available"
-and falls back gracefully.
+remain registered but return `404` on every request — the app treats this as "SSO not available" and
+falls back gracefully.
 
 This is the recommended approach for temporary disabling (e.g. during an incident) because it
 requires no edge changes and can be reversed by setting `enabled: true` and restarting.
