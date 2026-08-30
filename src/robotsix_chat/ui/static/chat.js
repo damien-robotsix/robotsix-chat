@@ -3,6 +3,8 @@ import { renderMemoryBanner } from "./memory-banner.js";
 import {
   parseSuggestions,
   stripStreamingSuggestions,
+  renderSuggestionChips,
+  disableStaleSuggestionChips,
 } from "./suggestions.js";
 
 // ---- AppShell initialization ------------------------------------------
@@ -2462,54 +2464,7 @@ import {
   }
 
   // ---- Suggested answer options ----------------------------------------
-  // The ```suggestions parsing/stripping helpers (parseSuggestions,
-  // stripStreamingSuggestions) live in ./suggestions.js so they can be
-  // unit-tested; this file owns the DOM-coupled chip rendering below.
-
-  function renderSuggestionChips(suggestions, onSubmit, afterElement, disabled) {
-    var container = document.createElement("div");
-    container.className = "suggestion-chips";
-    if (disabled) container.classList.add("suggestion-chips--stale");
-    for (var i = 0; i < suggestions.length; i++) {
-      var chip = document.createElement("button");
-      chip.type = "button";
-      chip.className = "suggestion-chip";
-      chip.textContent = suggestions[i];
-      if (disabled) {
-        // Stale chip: the decision it answered is no longer the current one,
-        // so it is rendered inert (visible for context, not clickable).
-        chip.disabled = true;
-        chip.classList.add("suggestion-chip--stale");
-        chip.title = suggestions[i];
-      } else {
-        chip.title = "Click to reply: " + suggestions[i];
-        chip.addEventListener("click", (function (text) {
-          return function () { onSubmit(text); };
-        })(suggestions[i]));
-      }
-      container.appendChild(chip);
-    }
-    // Insert after the bubble element so chips sit below the message.
-    if (afterElement && afterElement.parentNode) {
-      afterElement.parentNode.insertBefore(container, afterElement.nextSibling);
-    }
-    return container;
-  }
-
-  // Disable every suggestion chip currently in the main transcript. Called
-  // when a newer message supersedes the decision the chips answered (the
-  // operator sent a reply, or a new assistant turn started), so clicking an
-  // old chip can never submit a stale answer.
-  function disableStaleSuggestionChips() {
-    var chips = chatEl.querySelectorAll(".suggestion-chip:not([disabled])");
-    for (var i = 0; i < chips.length; i++) {
-      chips[i].disabled = true;
-      chips[i].classList.add("suggestion-chip--stale");
-      if (chips[i].parentNode) {
-        chips[i].parentNode.classList.add("suggestion-chips--stale");
-      }
-    }
-  }
+  // Chip rendering and stale-disable helpers live in ./suggestions.js.
 
   // Submit a suggestion as a user reply in the main chat.
   function submitMainChatSuggestion(text) {
@@ -2635,7 +2590,7 @@ import {
   function createAssistantBubble() {
     if (currentAssistantBubble) return currentAssistantBubble;
     // A new assistant turn supersedes any pending decision — retire its chips.
-    disableStaleSuggestionChips();
+    disableStaleSuggestionChips(chatEl);
     var div = document.createElement("div");
     div.className = "bubble assistant";
     div.textContent = "";
@@ -2950,7 +2905,7 @@ import {
 
     // The operator answered — retire any pending suggestion chips so an old
     // chip can never submit a stale reply to a superseded question.
-    disableStaleSuggestionChips();
+    disableStaleSuggestionChips(chatEl);
 
     // Create the user bubble — if we're busy, mark it queued.
     var el = addUserBubble(message);
