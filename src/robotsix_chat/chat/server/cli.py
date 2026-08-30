@@ -17,6 +17,7 @@ from typing import Any
 
 from robotsix_chat.chat.conversation import ConversationStore
 from robotsix_chat.chat.events import EventBus
+from robotsix_chat.chat.summarize import SUMMARY_SYSTEM_PROMPT
 from robotsix_chat.config import PROJECT_MAIN, Settings
 from robotsix_chat.config.constants import level_needs_api_key
 from robotsix_chat.continuation.store import ContinuationStore
@@ -443,16 +444,19 @@ def run_server_from_config(agent: ChatAgent | None = None) -> None:
     # turn instead of a passive history record.
     delivery.set_agent(agent)
 
-    # Cheap dedicated agent for POST /summary (bounded extraction, not
-    # open-ended reasoning) — avoids running the main agent's often-pricier
-    # level on every single turn just to regenerate the summary. Unlike
-    # llmio_model_level, a missing key for this level is not fatal: fall
-    # back to the keyless tier (3) so a deployment without an OpenRouter
-    # key still starts. bare=True: the summary is a single bounded
-    # text-transformation call over an explicit transcript — it has no
-    # business paying for cross-session memory recall or agentic tool
-    # access (ChatMemory.recall() alone was observed taking 90+ seconds in
-    # production, dwarfing the actual model call).
+    # Dedicated summariser agent for the idle-timeout compaction summary,
+    # the carryover summary and conversation titles (bounded text
+    # transformation, not open-ended reasoning).  It runs on its own
+    # capability level and — crucially — its OWN system prompt: handed the
+    # chat agent's prompt it behaved as the assistant and "continued" the
+    # conversation (the 2026-08-30 compaction run echoed the last reply
+    # verbatim: 65k chars in, 142 tokens out).  Unlike llmio_model_level, a
+    # missing key for this level is not fatal: fall back to a keyless tier
+    # so a deployment without an OpenRouter key still starts.  bare=True:
+    # a summary is a single bounded call over an explicit transcript — it
+    # has no business paying for cross-session memory recall or agentic
+    # tool access (ChatMemory.recall() alone was observed taking 90+
+    # seconds in production, dwarfing the actual model call).
     summary_model_level = settings.summary_model_level
     if (
         level_needs_api_key(summary_model_level)
@@ -460,11 +464,12 @@ def run_server_from_config(agent: ChatAgent | None = None) -> None:
     ):
         logger.warning(
             "summary_model_level=%d needs an OpenRouter API key which is not "
-            "configured — falling back to level 3 for POST /summary",
+            "configured — falling back to level 3 for the summariser agent",
             summary_model_level,
         )
         summary_model_level = 3
     summary_agent = create_agent_from_settings(
+        instruction=SUMMARY_SYSTEM_PROMPT,
         settings=settings,
         conversation_store=conversation_store,
         model_level=summary_model_level,

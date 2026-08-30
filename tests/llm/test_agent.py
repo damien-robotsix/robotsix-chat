@@ -1408,3 +1408,132 @@ async def test_usage_exhausted_walks_past_sibling_claude_tier_to_keyed_level() -
 
     assert chunks == ["mimo reply"]
     assert seen[-1] == 3, seen
+
+
+# ---------------------------------------------------------------------------
+# Per-turn actions log collection
+# ---------------------------------------------------------------------------
+
+
+@pytest.mark.asyncio
+async def test_activity_events_feed_the_actions_collector() -> None:
+    """tool_call / tool_result events land as paired entries in the collector.
+
+    Works without an event sink: the collector is the caller's, the sink is
+    the UI's, and either alone is reason enough to wire the callback.
+    """
+    from robotsix_llmio.claude_sdk import ClaudeSDKActivityEvent
+    from robotsix_llmio.claude_sdk._stream import _current_on_event
+
+    from robotsix_chat.chat.actions import collect_actions
+
+    handle = MagicMock()
+
+    async def fake_run(message: str, *, message_history: object = None) -> MagicMock:
+        on_event = _current_on_event.get()
+        assert on_event is not None
+        on_event(
+            ClaudeSDKActivityEvent(
+                kind="tool_call",
+                turn=1,
+                tool_name="create_ticket",
+                detail='{"title": "Volume file-write"}',
+            )
+        )
+        on_event(
+            ClaudeSDKActivityEvent(
+                kind="tool_result", turn=1, detail='{"ticket_id": "T-04d8"}'
+            )
+        )
+        on_event(
+            ClaudeSDKActivityEvent(
+                kind="tool_call", turn=2, tool_name="merge_pr", detail='{"pr": 812}'
+            )
+        )
+        on_event(
+            ClaudeSDKActivityEvent(
+                kind="tool_result", turn=2, detail="405 not mergeable", is_error=True
+            )
+        )
+        result = MagicMock()
+        result.output = "done"
+        result.all_messages = MagicMock(return_value=[])
+        return result
+
+    handle.run = fake_run
+    handle.close = MagicMock()
+    provider = MagicMock()
+    provider.build_agent.return_value = handle
+
+    with patch(
+        "robotsix_chat.llm.agent.create_model", MagicMock(return_value=provider)
+    ):
+        agent = LlmioChatAgent(model_level=3, instruction="Be helpful.")
+        with collect_actions() as actions:
+            _ = [c async for c in agent.stream("file it", session_id="sess-1")]
+
+    assert len(actions) == 2
+    assert actions[0].startswith("create_ticket(") and "T-04d8" in actions[0]
+    assert (
+        actions[1].startswith("merge_pr(") and "ERROR 405 not mergeable" in actions[1]
+    )
+    # all_messages() was consulted but the event-fed log was kept as is.
+    assert handle.run is fake_run
+
+
+@pytest.mark.asyncio
+async def test_result_messages_fill_collector_when_no_events_fired() -> None:
+    """Keyed tiers report tool calls only via ``result.all_messages()``."""
+    from pydantic_ai.messages import (
+        ModelRequest,
+        ModelResponse,
+        ToolCallPart,
+        ToolReturnPart,
+    )
+
+    from robotsix_chat.chat.actions import collect_actions
+
+    handle = MagicMock()
+
+    async def fake_run(message: str, *, message_history: object = None) -> MagicMock:
+        result = MagicMock()
+        result.output = "done"
+        result.all_messages = MagicMock(
+            return_value=[
+                ModelResponse(
+                    parts=[
+                        ToolCallPart(
+                            tool_name="spawn_subsession",
+                            args={"kind": "task"},
+                            tool_call_id="c1",
+                        )
+                    ]
+                ),
+                ModelRequest(
+                    parts=[
+                        ToolReturnPart(
+                            tool_name="spawn_subsession",
+                            content="sub-42",
+                            tool_call_id="c1",
+                        )
+                    ]
+                ),
+            ]
+        )
+        return result
+
+    handle.run = fake_run
+    handle.close = MagicMock()
+    provider = MagicMock()
+    provider.build_agent.return_value = handle
+
+    with patch(
+        "robotsix_chat.llm.agent.create_model", MagicMock(return_value=provider)
+    ):
+        agent = LlmioChatAgent(model_level=1, api_key="k", instruction="Be helpful.")
+        with collect_actions() as actions:
+            _ = [c async for c in agent.stream("go", session_id="sess-1")]
+        # Without a collector nothing is recorded and nothing breaks.
+        _ = [c async for c in agent.stream("go again", session_id="sess-1")]
+
+    assert actions == ['spawn_subsession({"kind": "task"}) -> sub-42']

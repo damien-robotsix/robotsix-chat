@@ -115,10 +115,6 @@ class TestHtmlDomStructure:
         """Cancel-queued button exists (hidden by default)."""
         assert 'id="cancel-queued-btn"' in ui_html
 
-    def test_summary_container(self, ui_html: str) -> None:
-        """Summary container exists above chat."""
-        assert 'id="summary-container"' in ui_html
-
 
 class TestHtmlMetaAndScripts:
     """Meta tags and external script loading."""

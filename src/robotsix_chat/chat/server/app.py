@@ -148,7 +148,6 @@ from .routes import (
     subsessions_list_endpoint,
     subsessions_message_endpoint,
     subsessions_transcript_endpoint,
-    summary_endpoint,
     ui_endpoint,
     unhandled_exception_handler,
 )
@@ -369,11 +368,13 @@ def create_app(
 
     Args:
         agent: Object whose ``stream(message)`` yields response tokens.
-        summary_agent: Agent used by ``POST /summary`` to generate the
-            structured conversation summary. ``None`` (default) reuses
-            *agent* — pass a separate, cheaper agent (see
-            ``settings.summary_model_level``) to avoid running the
-            (often pricier) main agent on every turn just for extraction.
+        summary_agent: Dedicated summariser agent used for the idle-timeout
+            compaction summary, the carryover summary and conversation
+            titles. ``None`` (default) reuses *agent* — pass a separate
+            agent built on ``settings.summary_model_level`` with the
+            summariser system prompt (see ``cli.py``) so those bounded
+            text-transformation calls neither pay for the main agent's tier
+            nor inherit its tool-oriented instructions.
         serve_ui: When ``True`` (default), serve the bundled browser chat
             UI at ``GET /`` so the UI and ``/chat`` share one origin.
         idle_timeout_minutes: Minutes of no user activity before the UI
@@ -514,7 +515,6 @@ def create_app(
         Route("/chat/queue/cancel", cancel_queued_endpoint, methods=["POST"]),
         Route("/events", events_endpoint, methods=["GET"]),
         Route("/history", history_endpoint, methods=["GET"]),
-        Route("/summary", summary_endpoint, methods=["POST"]),
         Route("/models", models_list_endpoint, methods=["GET"]),
         Route("/sessions", sessions_list_endpoint, methods=["GET"]),
         Route("/sessions", sessions_create_endpoint, methods=["POST"]),
@@ -1333,7 +1333,7 @@ def create_agent_from_settings(
     *bare* (default ``False``) skips skill injection, feature tools,
     subsession wiring, and memory — the agent gets a ``NullMemory`` and no
     tools.  Use it for bounded text-transformation calls (e.g. the
-    ``POST /summary`` agent).
+    compaction summary agent).
 
     *memory_enabled* (default ``True``) gates only long-term (cognee) memory
     while leaving tools and subsession wiring intact.  Set ``False`` for

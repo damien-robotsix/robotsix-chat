@@ -414,10 +414,7 @@ body {
   background: var(--error-banner-bg); color: var(--error-banner-fg);
   border-bottom: 1px solid var(--error-banner-border);
   font-size: 0.9rem; flex-shrink: 0;
-  /* The summary overlay (#summary-container) is absolutely positioned at
-     top:0 of #content-wrap with z-index:10 — the same spot as this in-flow
-     banner. Without a higher stacking order the error is painted behind the
-     summary and hidden. Sit above it (the banner is opaque). */
+  /* Sits above any absolutely-positioned overlay in #content-wrap. */
   position: relative; z-index: 11;
 }
 #error-banner.visible { display: flex; }
@@ -446,26 +443,10 @@ body {
 #memory-banner .detail { opacity: 0.85; }
 
 /* ------------------------------------------------------------------ */
-/* Summary container — absolutely positioned overlay so it never      */
-/* participates in the flex layout; the chat's scroll offset is stable.*/
-/* ------------------------------------------------------------------ */
-#summary-container {
-  position: absolute;
-  top: 0;
-  left: 0;
-  right: 0;
-  z-index: 10;
-}
-#summary-container:not(:empty) {
-  padding: 0.5rem 1rem 0 1rem;
-}
-
-/* ------------------------------------------------------------------ */
 /* Chat area                                                           */
 /* ------------------------------------------------------------------ */
 #chat {
   flex: 1; overflow-y: auto; padding: 1rem;
-  padding-top: calc(1rem + var(--summary-height, 0px));
   display: flex; flex-direction: column; gap: 0.75rem;
 }
 .bubble {
@@ -650,43 +631,6 @@ body {
   border-radius: 6px;
 }
 
-/* Conversation summary banner — pinned above the scrollable chat */
-.summary-banner {
-  flex-shrink: 0;
-  background: #1e293b;
-  border: 1px solid #334155;
-  border-left: 3px solid #3b82f6;
-  border-radius: 8px;
-  padding: 0.6rem 1rem;
-  font-size: 0.85rem;
-  line-height: 1.5;
-  color: #cbd5e1;
-}
-.summary-banner .summary-header {
-  display: flex; align-items: center; gap: 0.4rem;
-  cursor: pointer; user-select: none;
-  font-weight: 600; font-size: 0.8rem; color: #94a3b8;
-  text-transform: uppercase; letter-spacing: 0.04em;
-}
-.summary-banner .summary-toggle {
-  font-size: 0.7rem; transition: transform 0.15s;
-}
-.summary-banner.collapsed .summary-toggle {
-  transform: rotate(-90deg);
-}
-.summary-banner .summary-body {
-  margin-top: 0.5rem; display: flex; flex-direction: column; gap: 0.4rem;
-}
-.summary-banner.collapsed .summary-body {
-  display: none;
-}
-.summary-banner .summary-text {
-  color: #e2e8f0; white-space: pre-wrap;
-}
-.summary-banner .summary-loading {
-  color: #64748b; font-style: italic;
-}
-
 /* ------------------------------------------------------------------ */
 /* Composer row                                                        */
 /* ------------------------------------------------------------------ */
@@ -865,7 +809,7 @@ body {
 #content-wrap {
   display: flex; flex-direction: column; flex: 1; min-height: 0;
   transition: margin-left 0.3s ease, margin-right 0.3s ease;
-  position: relative;  /* containing block for absolute summary overlay */
+  position: relative;  /* containing block for absolute overlays */
 }
 
 /* ------------------------------------------------------------------ */

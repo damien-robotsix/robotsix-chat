@@ -22,7 +22,7 @@ from robotsix_chat.config.constants import (
 )
 from robotsix_chat.subsessions.registry import OWNER_CLOSED_REASON
 
-from ._shared import _get_session_id, _parse_json_body, build_transcript
+from ._shared import _get_session_id, _parse_json_body
 from .chat import ChatAgent
 
 logger = logging.getLogger(__name__)
@@ -381,72 +381,6 @@ async def sessions_close_endpoint(request: Request) -> JSONResponse:
             "subsessions_closed": subsessions_closed,
         }
     )
-
-
-async def summary_endpoint(request: Request) -> JSONResponse:
-    """Generate a quick, free-form conversation summary.
-
-    ``POST /summary`` with JSON body ``{"session_id": "..."}`` returns
-    ``{"summary": "..."}`` — a short plain-text summary, empty when there
-    is no history yet.
-
-    Deliberately unconstrained: an earlier version forced a fixed 5-field
-    JSON schema, which made the cheap summary-tier model (reasoning
-    nominally disabled) ramble at length trying to satisfy the schema and
-    frequently run past its token budget before producing valid JSON —
-    slow and often empty. Plain prose has no schema to fail.
-
-    The summary is regenerated from the full server-side history on
-    every call — callers should invoke it after each assistant turn to
-    keep the display current.
-    """
-    agent: ChatAgent = request.app.state.summary_agent
-    store: ConversationStore = request.app.state.conversation_store
-
-    body = await _parse_json_body(request)
-
-    session_id = body.get("session_id")
-    if not session_id or not isinstance(session_id, str):
-        raise HTTPException(status_code=400, detail="session_id is required")
-
-    turns = store.history(session_id)
-    if not turns:
-        return JSONResponse({"summary": ""})
-
-    transcript = build_transcript(turns)
-
-    _summary_prompt = (
-        "Write a brief, plain-text summary of the conversation below — "
-        "what it's about, what's currently in progress, and anything "
-        "blocking or worth remembering. If any unresolved operator "
-        "prerequisites are identified (actions only a human can take, "
-        "such as provisioning credentials, granting permissions, or "
-        "updating infrastructure), call them out explicitly so the "
-        "operator is reminded. Preserve any durable identifiers verbatim "
-        "(ticket IDs like '20260803T103612Z-fix-foo-a3f2', PR URLs, "
-        "subsession IDs). A few sentences of prose. No headers, "
-        "no bullet points, no JSON, no markdown fences — just plain "
-        "text.\n\nConversation:\n"
-    )
-    prompt = f"{_summary_prompt}{transcript}\n\nSummary:"
-
-    reply_parts: list[str] = []
-    try:
-        async for token in agent.stream(
-            prompt,
-            history=None,
-            session_id=None,
-            client_id=None,
-            trace_name="session-summary",
-        ):
-            reply_parts.append(token)
-    except Exception:
-        logger.exception("Summary generation failed")
-        raise HTTPException(
-            status_code=500, detail="summary generation failed"
-        ) from None
-
-    return JSONResponse({"summary": "".join(reply_parts).strip()})
 
 
 # -- session carryover -----------------------------------------------------

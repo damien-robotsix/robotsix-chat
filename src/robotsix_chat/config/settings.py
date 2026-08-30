@@ -105,12 +105,14 @@ class Settings(BaseModel):
             route chat turns to a different tier (e.g. ``4`` for fable-5)
             while other consumers (subsessions, autonomous, summary) still
             use ``llmio_model_level`` or their own overrides.
-        summary_model_level: Capability level used to generate the
-            structured conversation summary (``POST /summary``, regenerated
-            after every assistant turn). Defaults to the cheapest tier since
-            it is a bounded extraction task, not open-ended reasoning —
-            reusing the main agent's (often much pricier) level here would
-            burn a full-capability call on every single turn.
+        summary_model_level: Capability level of the dedicated summariser
+            agent — the idle-timeout compaction summary, the carryover
+            summary and conversation titles. Defaults to ``2`` (the
+            keyless subscription tier the fleet prefers): the compaction
+            summary must faithfully reconstruct a long session's steps and
+            identifiers, which the cheapest keyed tier proved too weak for
+            (it echoed the last reply). A summary runs once per idle gap,
+            not per turn, so the stronger tier costs little.
         llmio_task_budget_tokens: Optional advisory per-task token budget
             forwarded to the keyless Claude SDK tiers as ``task_budget`` so
             the model sees a live budget-remaining countdown. ``None``
@@ -167,7 +169,7 @@ class Settings(BaseModel):
     chat_model_level: int | None = Field(
         default=None, json_schema_extra={"advanced": True}
     )
-    summary_model_level: int = Field(default=1, json_schema_extra={"advanced": True})
+    summary_model_level: int = Field(default=2, json_schema_extra={"advanced": True})
     llmio_task_budget_tokens: int | None = Field(
         default=None,
         json_schema_extra={"advanced": True},
@@ -1808,8 +1810,8 @@ class Settings(BaseModel):
             )
         # Unlike llmio_model_level, a missing key here is not fatal at config
         # load — create_agent_from_settings falls back to a keyless level
-        # (see cli.py) so the default (level 1) never breaks a deployment
-        # that has not configured an OpenRouter key.
+        # (see cli.py) so a keyed level never breaks a deployment that has
+        # not configured an OpenRouter key.
         if self.memory.enabled:
             alias = self.memory.langfuse_project or PROJECT_MEMORY
             if not self.openrouter.key(alias).get_secret_value():

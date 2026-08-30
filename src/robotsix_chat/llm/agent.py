@@ -42,6 +42,12 @@ from robotsix_llmio.config.tier import TierConfig, TierLevel, TierLevelConfig
 from robotsix_llmio.core.tier_fallback import acall_with_tier_fallback
 from robotsix_llmio.openrouter import is_openrouter_transient
 
+from robotsix_chat.chat.actions import (
+    actions_from_messages,
+    current_actions,
+    format_action,
+    record_action,
+)
 from robotsix_chat.chat.events import EventSink, activity_frame
 from robotsix_chat.config import level_needs_api_key
 from robotsix_chat.memory import ChatMemory, NullMemory
@@ -347,27 +353,77 @@ class LlmioChatAgent:
     ) -> Callable[[ClaudeSDKActivityEvent], None] | None:
         """Build the ``on_event`` callback for :func:`activity_events`.
 
-        Bound to *session_id*. Returns ``None`` when there is nowhere to
-        publish to (no sink configured, or no session to scope the frame to)
-        so the caller can skip wrapping the run in a no-op context.
+        Bound to *session_id*.  The callback does two things: publishes an
+        activity frame to the event sink (when one is configured and there
+        is a session to scope it to), and records ``tool_call`` /
+        ``tool_result`` pairs into the caller's actions collector (see
+        :func:`robotsix_chat.chat.actions.collect_actions`) when one is
+        active.  Returns ``None`` when neither applies so the caller can
+        skip wrapping the run in a no-op context.
         """
-        if self._event_sink is None or not session_id:
+        sink = self._event_sink if session_id else None
+        actions = current_actions()
+        if sink is None and actions is None:
             return None
-        sink = self._event_sink
+
+        # A tool_call event carries the name + args; the matching tool_result
+        # arrives as a separate event without the name.  Record the call
+        # immediately and patch its entry when the result shows up so a call
+        # that never returns (turn aborted) still leaves a trace.
+        pending: list[tuple[int, str, str]] = []
+
+        def _record(event: ClaudeSDKActivityEvent) -> None:
+            if actions is None:
+                return
+            if event.kind == "tool_call" and event.tool_name:
+                before = len(actions)
+                record_action(event.tool_name, event.detail, entries=actions)
+                if len(actions) > before:
+                    pending.append((before, event.tool_name, event.detail))
+            elif event.kind == "tool_result" and pending:
+                idx, name, args = pending.pop(0)
+                actions[idx] = format_action(
+                    name, args, event.detail, is_error=event.is_error
+                )
 
         def _on_activity(event: ClaudeSDKActivityEvent) -> None:
-            sink.publish(
-                session_id,
-                activity_frame(
-                    event.kind,
-                    event.turn,
-                    tool_name=event.tool_name,
-                    detail=event.detail,
-                    is_error=event.is_error,
-                ),
-            )
+            _record(event)
+            if sink is not None and session_id:
+                sink.publish(
+                    session_id,
+                    activity_frame(
+                        event.kind,
+                        event.turn,
+                        tool_name=event.tool_name,
+                        detail=event.detail,
+                        is_error=event.is_error,
+                    ),
+                )
 
         return _on_activity
+
+    @staticmethod
+    def _record_actions_from_result(result: Any) -> None:
+        """Fill the active actions collector from a run result's messages.
+
+        The keyed (pydantic-ai) tiers report tool calls only through
+        ``result.all_messages()`` — no activity events fire for them.  When
+        the collector is still empty after the run, extract the
+        ``ToolCallPart`` / ``ToolReturnPart`` pairs from there.  A collector
+        already populated by activity events is left as is (the SDK tiers
+        would otherwise double-count).  Never raises.
+        """
+        actions = current_actions()
+        if actions is None or actions or result is None:
+            return
+        all_messages = getattr(result, "all_messages", None)
+        if not callable(all_messages):
+            return
+        try:
+            messages = all_messages()
+        except Exception:
+            return
+        actions.extend(actions_from_messages(messages))
 
     def _publish_synthetic_activity(
         self,
@@ -612,6 +668,7 @@ class LlmioChatAgent:
             )
 
         # The loop above always either raises or breaks with `result` set.
+        self._record_actions_from_result(result)
         text = result.output
         # Persist the exchange in the background so memory consolidation never
         # blocks the reply. The task is tracked to avoid premature GC.

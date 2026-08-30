@@ -396,6 +396,19 @@ class TestRunServerFromConfig:
         # create_agent_from_settings is called twice: once for the main agent
         # (because agent=None) and once for the summary_agent.
         assert mock_create_agent.call_count >= 2
+        # The summariser is built bare, on its own level, with the dedicated
+        # summariser system prompt — never the chat agent's instruction
+        # (which made it "continue" the conversation instead of summarising).
+        from robotsix_chat.chat.summarize import SUMMARY_SYSTEM_PROMPT
+
+        summary_calls = [
+            c
+            for c in mock_create_agent.call_args_list
+            if c.kwargs.get("instruction") == SUMMARY_SYSTEM_PROMPT
+        ]
+        assert len(summary_calls) == 1
+        assert summary_calls[0].kwargs["bare"] is True
+        assert summary_calls[0].kwargs["model_level"] == Settings().summary_model_level
         # The agent passed to run_server should be the one we created.
         mock_run_server.assert_called_once()
         assert mock_run_server.call_args.args[0] is mock_agent
