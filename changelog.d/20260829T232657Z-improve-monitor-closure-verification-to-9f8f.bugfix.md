@@ -1,0 +1,1 @@
+The paused-monitor watcher now cross-checks a terminal ticket's own event/state-transition history for implementation and PR-creation/merge evidence before classifying it as "closed with no PR evidence", preventing false "closed without a PR" alarms when the board's ``pr_url`` is null but the work was actually implemented and merged.

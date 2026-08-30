@@ -247,6 +247,89 @@ async def _search_prs_referencing_ticket(
         return []
 
 
+def _history_shows_implementation_and_pr(ticket_data: dict[str, object]) -> bool:
+    """Return whether the ticket history shows implementation AND PR evidence.
+
+    Scans the board ticket's ``events`` and ``history`` arrays (state
+    transitions and lifecycle events).  A record counts as *implementation*
+    evidence when its descriptive fields mention ``implement``, ``document``
+    or ``deliver``; it counts as *PR* evidence when they mention a pull
+    request (``open_pr``, ``pull_request``, ``/pull/``, ``merge``) or carry a
+    non-empty ``pr_url`` / ``pr_number``.  Only when both kinds of evidence
+    appear does the function return ``True``.
+
+    This is the final cross-check before the watcher classifies a terminal
+    ticket as "closed with no PR evidence": a ticket whose history shows an
+    implement cycle *and* a PR-creation/merge event was almost certainly
+    delivered, and the null ``pr_url`` is a board metadata gap rather than a
+    genuine "closed without a PR".
+    """
+    records: list[dict[str, object]] = []
+    for key in ("events", "history"):
+        seq = ticket_data.get(key)
+        if isinstance(seq, list):
+            records.extend(rec for rec in seq if isinstance(rec, dict))
+    if not records:
+        return False
+
+    saw_impl = False
+    saw_pr = False
+    for rec in records:
+        blob = " ".join(
+            str(rec.get(field, ""))
+            for field in ("type", "action", "state", "to", "kind", "summary", "detail")
+        ).lower()
+        if "implement" in blob or "document" in blob or "deliver" in blob:
+            saw_impl = True
+        if (
+            "open_pr" in blob
+            or "pull_request" in blob
+            or "/pull/" in blob
+            or "merge" in blob
+            or rec.get("pr_url")
+            or rec.get("pr_number")
+        ):
+            saw_pr = True
+        if saw_impl and saw_pr:
+            return True
+    return False
+
+
+async def _ticket_history_has_merge_evidence(
+    board_url: str,
+    ticket_id: str,
+    sub_id: str,
+) -> bool:
+    """Fetch the ticket JSON and return whether its history shows PR evidence.
+
+    Delegates the classification to
+    :func:`_history_shows_implementation_and_pr`.  Returns ``False`` on any
+    fetch or parse error so the caller falls back to the existing
+    "keep paused" behaviour rather than resuming on unverified data.
+    """
+    try:
+        base = httpx.URL(board_url.rstrip("/"))
+        ticket_url = base.copy_with(path=f"/tickets/{ticket_id}")
+    except Exception:
+        return False
+    try:
+        async with httpx.AsyncClient(timeout=httpx.Timeout(10.0)) as client:
+            response = await client.get(str(ticket_url))
+            response.raise_for_status()
+            ticket_data: object = response.json()
+    except Exception:
+        logger.debug(
+            "Watcher: could not fetch ticket %s history for merge-evidence "
+            "cross-check (subsession %s).",
+            ticket_id,
+            sub_id,
+        )
+        return False
+    if not isinstance(ticket_data, dict):
+        return False
+    return _history_shows_implementation_and_pr(ticket_data)
+
+
 async def _resume_paused_monitor(
     env: SubsessionEnv,
     sub_id: str,
@@ -960,13 +1043,30 @@ async def watch_paused_monitors(env: SubsessionEnv) -> None:
                                             current_state,
                                         )
                                         continue
+                                elif await _ticket_history_has_merge_evidence(
+                                    board_url, ticket_id, info.id
+                                ):
+                                    logger.info(
+                                        "Watcher: subsession %s ticket %s "
+                                        "terminal (%s) — pr_url is null and "
+                                        "GitHub search found no PRs, but the "
+                                        "ticket history shows implementation "
+                                        "and PR/merge evidence; resuming "
+                                        "(avoiding false 'no PR' warning).",
+                                        info.id,
+                                        ticket_id,
+                                        current_state,
+                                    )
+                                    # Fall through to the resume path below.
                                 else:
                                     logger.warning(
                                         "Watcher: subsession %s ticket %s "
                                         "terminal (%s) but pr_url is null, "
-                                        "checkpoint has no pr_number, and "
+                                        "checkpoint has no pr_number, "
                                         "GitHub search found no PRs "
-                                        "referencing the ticket in %s — "
+                                        "referencing the ticket in %s, and "
+                                        "the ticket history shows no "
+                                        "implementation/PR evidence — "
                                         "keeping paused (ticket was closed "
                                         "with no PR evidence).",
                                         info.id,
@@ -975,13 +1075,29 @@ async def watch_paused_monitors(env: SubsessionEnv) -> None:
                                         repo_raw,
                                     )
                                     continue
+                            elif await _ticket_history_has_merge_evidence(
+                                board_url, ticket_id, info.id
+                            ):
+                                logger.info(
+                                    "Watcher: subsession %s ticket %s terminal "
+                                    "(%s) — pr_url is null and checkpoint has "
+                                    "no pr_number or repo_full_name, but the "
+                                    "ticket history shows implementation and "
+                                    "PR/merge evidence; resuming (avoiding "
+                                    "false 'no PR' warning).",
+                                    info.id,
+                                    ticket_id,
+                                    current_state,
+                                )
+                                # Fall through to the resume path below.
                             else:
                                 logger.warning(
                                     "Watcher: subsession %s ticket %s terminal "
-                                    "(%s) but pr_url is null and checkpoint has "
-                                    "no pr_number or repo_full_name — keeping "
-                                    "paused (ticket was closed with no PR "
-                                    "evidence).",
+                                    "(%s) but pr_url is null, checkpoint has "
+                                    "no pr_number or repo_full_name, and the "
+                                    "ticket history shows no implementation/PR "
+                                    "evidence — keeping paused (ticket was "
+                                    "closed with no PR evidence).",
                                     info.id,
                                     ticket_id,
                                     current_state,
