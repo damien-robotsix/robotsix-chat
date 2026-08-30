@@ -10,6 +10,7 @@ from starlette.exceptions import HTTPException
 from starlette.requests import Request
 
 from robotsix_chat.autonomous.models import AutonomousState
+from robotsix_chat.chat.conversation import ConversationStore
 from robotsix_chat.chat.events import SSE_AUTONOMOUS_STATE_TYPE
 from robotsix_chat.chat.server.routes.sessions import (
     _cleanup_session,
@@ -898,6 +899,58 @@ async def test_delete_autonomous_preset_session_retargets_to_subscope_owner() ->
 
 
 @pytest.mark.asyncio
+async def test_delete_dual_owned_session_purges_all_scopes_in_one_pass() -> None:
+    """One operator delete removes a dual-owned session from every scope.
+
+    A session the operator chats with is adopted under both the operator's
+    own scope and the autonomous scope that drives it.  ``GET /sessions``
+    merges both lists, so deleting only the operator's copy would leave the
+    autonomous copy to resurface on the next refresh — forcing a second
+    delete.  The endpoint must purge every autonomous scope in one pass so a
+    single refetch of either merged scope no longer surfaces the session.
+    """
+    ids = iter(f"s{i}" for i in range(100))
+    store = ConversationStore(session_factory=lambda: next(ids))
+    store.create_session("operator")
+    shared = str(store.create_session("autonomous")["session_id"])
+    # The operator speaks to the autonomous session, adopting it into their
+    # own registry (genuinely dual-owned).
+    store.record(shared, "operator", "hello", "hi")
+    assert set(store.owner_ids_for(shared)) == {"autonomous", "operator"}
+
+    mock_runner = MagicMock()
+    mock_runner.bootstrap_owner = "autonomous"
+    mock_runner.is_autonomous.return_value = False
+    mock_runner.is_autonomous_owner.side_effect = lambda oid: oid == "autonomous"
+
+    state = MagicMock(
+        conversation_store=store,
+        subsession_registry=None,
+        feedback_runner=None,
+        knowledge_store=None,
+        autonomous_runner=mock_runner,
+    )
+    request = _make_request(
+        method="DELETE",
+        query_string="owner_id=operator",
+        path_params={"session_id": shared},
+        app_state=state,
+    )
+
+    response = await sessions_delete_endpoint(request)
+    assert response.status_code == 200
+    assert json.loads(response.body)["deleted"] is True  # type: ignore[arg-type]
+
+    # A single refetch of either merged scope no longer surfaces the session.
+    op_sessions, _ = store.list_sessions("operator")
+    assert shared not in [s["session_id"] for s in op_sessions]
+    auto_sessions, _ = store.list_sessions("autonomous", create_default=False)
+    assert shared not in [s["session_id"] for s in auto_sessions]
+    # No scope references it any more — it cannot reappear.
+    assert store.owner_ids_for(shared) == []
+
+
+@pytest.mark.asyncio
 async def test_close_autonomous_session_forgets_and_restarts() -> None:
     """Close an executing autonomous session and schedule a restart.
 
@@ -978,6 +1031,9 @@ async def test_delete_non_autonomous_session_leaves_runner_untouched() -> None:
     mock_runner.bootstrap_owner = "autonomous"
     mock_runner.is_autonomous.return_value = False
     mock_runner.is_autonomous_owner.return_value = False
+    # Single-owned operator session: no other scope holds it, so the
+    # autonomous-copy purge is a no-op and delete_session fires exactly once.
+    mock_store.owner_ids_for.return_value = []
 
     state = MagicMock(
         conversation_store=mock_store,
