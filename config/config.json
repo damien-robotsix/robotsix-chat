@@ -301,5 +301,14 @@
     "image/jpeg",
     "image/gif",
     "image/webp"
-  ]
+  ],
+  "mobile_auth": {
+    "enabled": false,
+    "tinyauth_url": "",
+    "subject_header": "X-Forwarded-User",
+    "session_header": "X-Forwarded-Session",
+    "token_ttl_seconds": 3600,
+    "allowed_redirect_domains": ["auth"],
+    "callback_base_url": ""
+  }
 }

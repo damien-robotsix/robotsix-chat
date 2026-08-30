@@ -36,11 +36,11 @@ authenticated user and redirects the browser back into the app.
 
 ### Query parameters
 
-| Parameter  | Required | Description                                                                                                      |
-| ---------- | -------- | ---------------------------------------------------------------------------------------------------------------- |
-| `redirect` | yes      | The app callback URI to redirect to with the minted token appended. Must satisfy the redirect allowlist (below). |
+| Parameter     | Required | Description                                                                                                      |
+| ------------- | -------- | ---------------------------------------------------------------------------------------------------------------- |
+| `redirect_to` | yes      | The app callback URI to redirect to with the minted token appended. Must satisfy the redirect allowlist (below). |
 
-**Redirect allowlist** — the `redirect` value is validated component-by-component and rejected
+**Redirect allowlist** — the `redirect_to` value is validated component-by-component and rejected
 unless it matches exactly:
 
 - scheme `robotsixchat`
@@ -49,7 +49,7 @@ unless it matches exactly:
 
 i.e. only `robotsixchat://auth/callback` is accepted. This prevents open-redirect / token-leakage
 attacks: because the subject token is appended to the redirect target, an attacker who could supply
-an arbitrary `redirect` would exfiltrate a valid, single-user-bound token.
+an arbitrary `redirect_to` would exfiltrate a valid, single-user-bound token.
 
 **Security** — identity is derived **only** from the tinyauth-forwarded identity (e.g. the
 `Remote-User` header set at the edge). The endpoint never mints a token for an unauthenticated
@@ -58,7 +58,7 @@ request.
 **Response** — `HTTP 302` redirect to:
 
 ```text
-{redirect}?token={subject_token}
+{redirect_to}?token={subject_token}
 ```
 
 For example:
@@ -69,10 +69,10 @@ Location: robotsixchat://auth/callback?token=<subject-token>
 
 ### Error responses
 
-| Status | Condition                                                          |
-| ------ | ------------------------------------------------------------------ |
-| `401`  | Request is not authenticated at the tinyauth edge.                 |
-| `400`  | `redirect` is missing, malformed, or fails the redirect allowlist. |
+| Status | Condition                                                             |
+| ------ | --------------------------------------------------------------------- |
+| `401`  | Request is not authenticated at the tinyauth edge.                    |
+| `400`  | `redirect_to` is missing, malformed, or fails the redirect allowlist. |
 
 ## `POST /chat/auth/mobile-token`
 
@@ -117,7 +117,7 @@ require or consult a browser SSO session.
 
 ## Complete flow
 
-1. The app opens `GET /auth/login?redirect=robotsixchat://auth/callback` in an external browser.
+1. The app opens `GET /auth/login?redirect_to=robotsixchat://auth/callback` in an external browser.
 
 1. The user authenticates at the tinyauth edge; the authenticated request reaches the chat backend.
 
