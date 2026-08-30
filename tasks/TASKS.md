@@ -81,12 +81,11 @@ Tasks that are pending, in-progress, or blocked.
   `ClaudeAgentOptions`, OR a new deployable HTTP component that wraps Playwright must be built
   (separate repo/ticket). (2) **Fleet deployment + roster registration live in
   robotsix-central-deploy**, not this repo. (3) **No Vaultwarden / Bitwarden CLI / EnvStore
-  integration exists**. New external secret
-  client + operator-provisioned scoped single- collection service account + `BW_SESSION`/API key in
-  EnvStore — its own ticket. (4) **The live OVH submission** needs a running browser, real
-  credentials, and PII documents — out of scope for the implement stage. Recommended split
-  (dependency-ordered): (a) upstream robotsix_llmio MCP-server plumbing OR a Playwright-wrapping
-  HTTP component + central-deploy roster registration; (b) Vaultwarden secret client with
-  zero-leakage injection + tests, EnvStore wiring; (c) submit-gate / 2FA-pause agent wiring + chat
-  skill.md doc; (d) the live OVH CS16584956 submission (operator-driven). Blocker also recorded as
-  comment id=1647 on the ticket.
+  integration exists**. New external secret client + operator-provisioned scoped single- collection
+  service account + `BW_SESSION`/API key in EnvStore — its own ticket. (4) **The live OVH
+  submission** needs a running browser, real credentials, and PII documents — out of scope for the
+  implement stage. Recommended split (dependency-ordered): (a) upstream robotsix_llmio MCP-server
+  plumbing OR a Playwright-wrapping HTTP component + central-deploy roster registration; (b)
+  Vaultwarden secret client with zero-leakage injection + tests, EnvStore wiring; (c) submit-gate /
+  2FA-pause agent wiring + chat skill.md doc; (d) the live OVH CS16584956 submission
+  (operator-driven). Blocker also recorded as comment id=1647 on the ticket.
