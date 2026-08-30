@@ -518,6 +518,7 @@ modules:
       - src/robotsix_chat/ui/static/reconnect-guard.js
       - src/robotsix_chat/ui/static/sse-parser.js
       - src/robotsix_chat/ui/static/suggestions.js
+      - docs/user-guide/chat-interface.md
       - docs/user-guide/settings-ui.md
       - tests/js/memory-banner.test.js
       - tests/js/message-queue.test.js
