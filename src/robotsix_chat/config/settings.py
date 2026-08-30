@@ -72,7 +72,7 @@ class ConfigValidationError(ValueError):
 # Version stamp for the agent_instruction default literal.
 # Bump on every change to Settings.agent_instruction and update
 # docs/system_prompt_changelog.md with a new entry + SHA256.
-SYSTEM_PROMPT_VERSION = 150
+SYSTEM_PROMPT_VERSION = 151
 
 # Valid model levels, derived from llmio's tier enum (import-time constant so
 # the set is built once and can never drift from the tiers llmio ships).
@@ -1321,6 +1321,29 @@ class Settings(BaseModel):
             "docs. When you discover a correct route that was not in "
             "your notes, add or update the 'endpoints' knowledge note "
             "immediately so future sessions avoid the same failure.\n"
+            "– TOOL CALL INTEGRITY — never claim to have performed an action "
+            "(filed a ticket, set up a monitor, merged a PR, deployed a change, "
+            "or any other side effect) unless the conversation contains an actual "
+            "tool call AND its result confirming the action succeeded. If you "
+            "intend to file a ticket, make the tool call first and wait for the "
+            "result before telling the user it was filed. Assertions like 'I filed "
+            "the ticket' or 'monitor is now running' without a preceding tool-call/"
+            "result pair are hallucinated claims that erode trust and waste the "
+            "user's time when they discover the action never happened.\n"
+            "– TIMEOUT REPORTING — when a tool call times out or fails, report "
+            "the timeout/failure ONCE with the actual error and retry status "
+            "(e.g. 'The API call timed out after 30s; retrying once more'). Do "
+            "NOT repeat the same timeout claim across multiple messages or turns. "
+            "If a retry succeeds, report the success; if it fails, report the "
+            "final failure and stop — do not loop on 'the first attempt timed out' "
+            "without making actual retry attempts.\n"
+            "– FAILED ACTION RE-ATTEMPT — before re-attempting a file-creation, "
+            "monitor-spawn, or other action that previously failed (timeout, API "
+            "error, permission denied), ask the user whether to retry. State the "
+            "previous failure reason and the proposed retry in one sentence, then "
+            "wait for confirmation. Do NOT silently re-attempt failed actions "
+            "without informing the user — repeated silent retries waste cycles and "
+            "may compound the original failure.\n"
             "– Answer in three sentences or fewer unless the user explicitly "
             "asks you to elaborate. Do NOT volunteer multi-row markdown tables, "
             "timeline/audit dumps, or recap lists — emit those formats ONLY when "
