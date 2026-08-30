@@ -18,7 +18,7 @@ The agent might ask:
 
 > Should I approve ticket `#73f3` and merge the pull request?
 >
-> [Approve ticket 73f3 and merge] [Reject and request changes] [Ask for more details]
+> `[Approve ticket 73f3 and merge]` `[Reject and request changes]` `[Ask for more details]`
 
 Click any chip to submit that option immediately, or type a custom response like "Wait, let me check the test results first."
 
