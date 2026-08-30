@@ -1155,10 +1155,10 @@ async def test_auth_failure_falls_back_past_every_claude_sdk_tier() -> None:
 
 @pytest.mark.asyncio
 async def test_usage_exhausted_fallback_walks_every_remaining_tier() -> None:
-    """Exhaustion is per-subscription under the five-tier map, so the walk may
+    """Every remaining tier is walked before the last failure surfaces.
 
-    reach every other tier (it must be able to land on keyed level 3); when all
-    of them fail, the last failure surfaces.
+    Exhaustion is per-subscription under the five-tier map, so the walk may
+    reach every other tier (it must be able to land on keyed level 3).
     """
     from robotsix_llmio.claude_sdk import ClaudeSDKUsageExhaustedError
 
@@ -1361,10 +1361,11 @@ async def test_recalled_memory_is_prepended_once_to_the_current_turn_only() -> N
 
 @pytest.mark.asyncio
 async def test_usage_exhausted_walks_past_sibling_claude_tier_to_keyed_level() -> None:
-    """Five-tier map: level 5 (fable) and level 4 (opus) share the subscription
+    """An exhausted level 5 walks past level 4 down to keyed level 3 (mimo).
 
-    cap. When 5 is exhausted the walk must not stop at 4 with "fallback depth
-    exhausted" (the 2026-08-29 'internal error') — it reaches level 3 (mimo).
+    Under the five-tier map levels 5 (fable) and 4 (opus) share the subscription
+    cap, so the walk must not stop at 4 with "fallback depth exhausted" (the
+    2026-08-29 'internal error').
     """
     from robotsix_llmio.claude_sdk import ClaudeSDKUsageExhaustedError
 
