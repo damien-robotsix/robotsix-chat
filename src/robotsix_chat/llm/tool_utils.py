@@ -23,11 +23,21 @@ from __future__ import annotations
 import functools
 import inspect
 from collections.abc import Awaitable, Callable
-from typing import Any, cast
+from typing import Any, cast, overload
 
 # ---------------------------------------------------------------------------
 # Public API
 # ---------------------------------------------------------------------------
+
+
+@overload
+def require_args(
+    fn: Callable[..., Awaitable[str]],
+) -> Callable[..., Awaitable[str]]: ...
+
+
+@overload
+def require_args(fn: Callable[..., str]) -> Callable[..., str]: ...
 
 
 def require_args(
