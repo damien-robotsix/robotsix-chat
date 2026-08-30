@@ -67,6 +67,20 @@ logger = logging.getLogger(__name__)
 # rule for chat: Claude first, graceful paid fallback when Claude is depleted.
 _USAGE_FALLBACK_DEPTH = 4  # == len(TierLevel) - 1: may walk every other tier
 
+# Prepended to a keyed (non-SDK) fallback tier's system prompt when the turn
+# carries prior context. A keyed provider does not share the Claude SDK's
+# resume session — it sees ONLY the explicit ``message_history`` — so a terse
+# follow-up ("ok, file a ticket and watch") can read to it as a fresh, topicless
+# request and it replies "I don't have full context on what 'it' refers to"
+# (observed 2026-08-30 on a usage-exhausted fallback to level 3). The note tells
+# it plainly it is mid-conversation so it uses the provided turns instead of
+# asking the user to restate the topic.
+_FALLBACK_CONTINUATION_NOTE = (
+    "You are continuing an ongoing conversation; the prior turns are provided "
+    "as message history. Do not ask the user to restate the topic or clarify "
+    "what a pronoun refers to — read the prior turns for that context."
+)
+
 # A prior conversation turn replayed to the agent: ``(user, assistant)``.
 Turn = tuple[str, str]
 
@@ -747,9 +761,21 @@ class LlmioChatAgent:
                 fallback_provider = create_model(
                     level=level, **self._provider_kwargs(level)
                 )
+                # A keyed (non-SDK) fallback tier does not share the Claude SDK
+                # resume session; it relies entirely on the explicit
+                # ``message_history`` passed to ``run`` below. When this turn
+                # carries prior context, tell the fallback plainly that it is
+                # mid-conversation so it does not wipe the topic and ask the
+                # user to restate it. The SDK tiers keep the bare instruction —
+                # their session already frames the exchange.
+                system_prompt = self._instruction
+                if message_history and level_needs_api_key(level):
+                    system_prompt = (
+                        f"{self._instruction}\n\n{_FALLBACK_CONTINUATION_NOTE}"
+                    )
                 fallback_handle = fallback_provider.build_agent(
                     level=level,
-                    system_prompt=self._instruction,
+                    system_prompt=system_prompt,
                     tools=tools_arg,
                     builtin_tools=False,
                     web_tools=True,  # see the primary handle above
