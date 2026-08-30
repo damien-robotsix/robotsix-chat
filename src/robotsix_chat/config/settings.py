@@ -73,7 +73,7 @@ class ConfigValidationError(ValueError):
 # Version stamp for the agent_instruction default literal.
 # Bump on every change to Settings.agent_instruction and update
 # docs/system_prompt_changelog.md with a new entry + SHA256.
-SYSTEM_PROMPT_VERSION = 147
+SYSTEM_PROMPT_VERSION = 148
 
 # Valid model levels, derived from llmio's tier enum (import-time constant so
 # the set is built once and can never drift from the tiers llmio ships).
@@ -1962,9 +1962,13 @@ class Settings(BaseModel):
 
         # Strip pre_authorized_ticket_patterns from subsessions.
         subsessions = data.get("subsessions")
-        if isinstance(subsessions, dict) and "pre_authorized_ticket_patterns" in subsessions:
+        if (
+            isinstance(subsessions, dict)
+            and "pre_authorized_ticket_patterns" in subsessions
+        ):
             logger.info(
-                "Dropping removed config key 'subsessions.pre_authorized_ticket_patterns' "
+                "Dropping removed config key "
+                "'subsessions.pre_authorized_ticket_patterns' "
                 "(standing policy is now baked into the prompt layer)"
             )
             subsessions = dict(subsessions)
@@ -2020,9 +2024,7 @@ class Settings(BaseModel):
 
         # Strip removed autonomy/authorization keys.
         if "autonomy" in data:
-            logger.info(
-                "migrate_legacy_config: dropping removed key 'autonomy'"
-            )
+            logger.info("migrate_legacy_config: dropping removed key 'autonomy'")
             del data["autonomy"]
         if "low_risk_actions" in data:
             logger.info(
@@ -2030,7 +2032,10 @@ class Settings(BaseModel):
             )
             del data["low_risk_actions"]
         subsessions = data.get("subsessions")
-        if isinstance(subsessions, dict) and "pre_authorized_ticket_patterns" in subsessions:
+        if (
+            isinstance(subsessions, dict)
+            and "pre_authorized_ticket_patterns" in subsessions
+        ):
             logger.info(
                 "migrate_legacy_config: dropping removed key "
                 "'subsessions.pre_authorized_ticket_patterns'"

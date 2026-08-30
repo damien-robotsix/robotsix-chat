@@ -29,7 +29,6 @@ from .worker import (
     _is_duplicate_reply,
     _is_no_change,
     _is_queued,
-    _is_ticket_pre_authorized,
     _ordinal_suffix,
     _render_turn_input,
 )
@@ -41,7 +40,6 @@ def _build_periodic_input(
     info: SubsessionInfo,
     previous_result: str | None,
     steering: list[InboxMessage],
-    pre_authorized_patterns: list[str] | None = None,
     auto_drive_promote_ready_drafts: bool = False,
     *,
     sub_id: str = "",
@@ -170,8 +168,7 @@ def _build_periodic_input(
         "intervening work states or merge events).\n\n"
     )
     # Resolve and repair the ticket_id from the checkpoint (or fall
-    # back to dedup_key).  This runs unconditionally — not only when
-    # pre_authorized_patterns are configured — so that the ticket_id
+    # back to dedup_key).  This runs unconditionally so that the ticket_id
     # survives agent set_checkpoint calls and restarts even for
     # monitors without pre-authorization rules.
     ticket_id_raw = info.checkpoint.get("ticket_id") if info.checkpoint else None
@@ -190,22 +187,6 @@ def _build_periodic_input(
             checkpoint["ticket_id"] = ticket_id
             registry.update_checkpoint(sub_id, checkpoint)
 
-    # Inject the PRE-AUTHORIZED instruction BEFORE the
-    # decision-blocked paragraph so it has priority — a monitor that
-    # sees both must follow the pre-authorized directive.
-    pre_authorized = bool(
-        pre_authorized_patterns
-        and ticket_id
-        and _is_ticket_pre_authorized(ticket_id, pre_authorized_patterns)
-    )
-    if pre_authorized:
-        parts.append(
-            "PRE-AUTHORIZED TICKET: this ticket has been pre-authorized "
-            "under a standing operator directive.  The "
-            "human_issue_approval gate does NOT apply — do not treat "
-            "this ticket as decision-blocked.  Continue monitoring "
-            "normally as if the approval were already granted.\n\n"
-        )
     parts.append(
         "Decision-blocked tickets: when the monitored ticket is awaiting an "
         "operator decision — stuck in human_issue_approval, waiting on an "
@@ -245,21 +226,18 @@ def _build_periodic_input(
         "are NOT promotable — never promote them, never comment on "
         "them, and follow the normal rules above instead."
     )
-    if auto_drive_promote_ready_drafts and pre_authorized:
+    if auto_drive_promote_ready_drafts:
         parts.append(
             "DRAFT TICKETS — AUTO-PROMOTE BRANCH (the "
-            "auto_drive_promote_ready_drafts gate is ON and this ticket "
-            "matches a pre_authorized_ticket_patterns entry):\n"
+            "auto_drive_promote_ready_drafts gate is ON):\n"
             + promotable_draft_definition
             + "\n"
             f"When the monitored ticket ({ticket_id}) is a promotable "
             "draft, call mark_ticket_ready(ticket_id, justification="
-            "'auto-drive: refine-passed spec, no blocking review, "
-            "pre-authorized promotion') to transition it out of draft "
-            "into the ready queue.  This ticket is pre-authorized under "
-            "a standing operator directive, so no per-ticket approval "
-            "is required.  Do NOT post an operator-decision comment in "
-            "this branch.  After the transition succeeds, reply "
+            "'auto-drive: refine-passed spec, no blocking review') "
+            "to transition it out of draft into the ready queue.  "
+            "Do NOT post an operator-decision comment in this branch.  "
+            "After the transition succeeds, reply "
             f"{_QUEUED_SENTINEL} (and nothing else) so the monitor "
             "switches to event-driven waiting while the implement stage "
             "picks the ticket up — do not burn the run budget "
@@ -271,8 +249,7 @@ def _build_periodic_input(
     else:
         parts.append(
             "DRAFT TICKETS — OPERATOR-DECISION BRANCH (the "
-            "auto_drive_promote_ready_drafts gate is OFF or this ticket "
-            "does not match a pre_authorized_ticket_patterns entry):\n"
+            "auto_drive_promote_ready_drafts gate is OFF):\n"
             + promotable_draft_definition
             + "\n"
             "When the monitored ticket is a promotable draft:\n"
@@ -701,44 +678,11 @@ async def _run_periodic_turn(
     # consecutive NO_CHANGE runs, switch to event-driven waiting so the
     # monitor stays alive until the ticket reaches a terminal state or
     # the user explicitly stops tracking.
-    #
-    # Pre-authorized fast-path: when the monitored ticket matches a
-    # pre_authorized_ticket_patterns entry, escalate immediately on the
-    # first NO_CHANGE run instead of waiting — pre-authorized tickets
-    # bypass the approval gate.
     checkpoint = info.checkpoint or {}
     last_known = checkpoint.get("last_known_state", "")
     if isinstance(last_known, str) and last_known.lower() == "human_issue_approval":
-        patterns = env.settings.subsessions.pre_authorized_ticket_patterns
         ticket_id_raw = checkpoint.get("ticket_id")
         ticket_id = ticket_id_raw if isinstance(ticket_id_raw, str) else ""
-        pre_authorized = _is_ticket_pre_authorized(ticket_id, patterns)
-
-        if pre_authorized and consecutive_no_change >= 1:
-            logger.info(
-                "Subsession %s: pre-authorized ticket %s in "
-                "human_issue_approval — auto-escalating immediately.",
-                sub_id,
-                ticket_id,
-            )
-            elapsed = _format_duration(registry.now() - info.created_at)
-            summary = (
-                f"Pre-authorized ticket {ticket_id} entered "
-                f"human_issue_approval — auto-escalating immediately "
-                f"under standing operator directive "
-                f"({elapsed} elapsed)."
-            )
-            closed = registry.mark_closed(
-                sub_id,
-                summary=summary,
-                reason="pre_authorized_approval",
-                closed_by="system",
-            )
-            if closed is not None:
-                await env.delivery.deliver_summary(
-                    closed, summary, "pre_authorized_approval"
-                )
-            return None
 
         # Track how long the checkpoint has carried human_issue_approval
         # so we can switch to event-driven wait after enough no-change

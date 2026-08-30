@@ -733,8 +733,7 @@ def build_mark_ticket_ready_tool(
         This is a state mutation — only call it when the transition is
         authorized: operator consent, a standing directive for the
         specific ticket / gate, or the auto-drive promotable-draft
-        branch (subsessions.auto_drive_promote_ready_drafts ON and the
-        ticket matching pre_authorized_ticket_patterns).
+        branch (subsessions.auto_drive_promote_ready_drafts ON).
 
         Args:
             ticket_id: The ticket ID to transition (e.g.

@@ -3,6 +3,25 @@
 Governed artifact: `Settings.agent_instruction` default literal in
 `src/robotsix_chat/config/settings.py`. Version stamp: `SYSTEM_PROMPT_VERSION` in the same module.
 
+## v148 — 2026-08-30 — 20260830T091957Z-remove-granular-autonomy-authorization-t-d424
+
+**Summary:** Replace the granular autonomy tier (`autonomy.*` toggles,
+`low_risk_actions`, `subsessions.pre_authorized_ticket_patterns`) with a
+standing autonomy policy baked into the prompt layer: act autonomously for
+anything safe and reversible; require operator confirmation only for
+destructive, irreversible, security-sensitive, or genuinely ambiguous
+actions.  The non-negotiable hard gates (secrets/credentials paths,
+`.github/workflows/**`, deletions, non-agent authorship) always apply and
+are never weakened.
+
+**Rationale:** The granular toggle surface was too fine-grained — operators
+rarely tuned individual booleans, and the defaults were conservative enough
+that the toggles were effectively dead code.  A single standing-policy
+sentence in the system prompt achieves the same intent with less config
+surface and no stale-schema drift risk.
+
+**SHA256:** `c4d91e3a547bfda3e45ade3ab18e17b8648a6a7cc2f730b433c4e718f004b28c`
+
 ## v147 — 2026-08-30 — trace-970163b41f958d46f512639d58819ca5-closed-ticket-called-dropped
 
 **Summary:** Add a grounding rule to the live-verification bullets: before
@@ -2732,6 +2751,21 @@ The hash is computed on the output of `build_autonomous_instruction(Settings())`
 autonomous settings at their pydantic field defaults
 (`completion_marker="---AUTONOMOUS COMPLETE---"`, `stale_monitor_runs_before_completion=3`,
 `queue_tolerance_runs_before_escalation=3`).
+
+## AUTONOMOUS v51 — 2026-08-30 — 20260830T091957Z-remove-granular-autonomy-authorization-t-d424
+
+**Summary:** Remove the eight `autonomy.*` variable bindings
+(`auto_approve`, `allowlist`, `routine_secret`, `suppress_no_change`,
+`auto_self_restart`, `auto_escalate_secret_scan`, `auto_approve_low_risk`,
+`operator_review_hours`) and the `allowlist_str` formatting from
+`build_autonomous_instruction()`.  The standing autonomy policy is now a
+single sentence in the main system prompt; the autonomous appendix no
+longer references per-toggle config knobs.
+
+**Rationale:** See v148 — the granular toggles are replaced by a standing
+policy baked into the prompt layer.
+
+**SHA256:** `6c513bd6a270fd4f3a60bf47b43b380cc982c5ec0df68cc94749e2cc322edaa4`
 
 ## AUTONOMOUS v50 — 2026-08-30 — trace-970163b41f958d46f512639d58819ca5-closed-ticket-called-dropped
 

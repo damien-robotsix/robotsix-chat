@@ -15,25 +15,12 @@ class TestBuildAutonomousInstruction:
         completion_marker: str = "---AUTONOMOUS COMPLETE---",
         stale_threshold: int = 3,
         queue_tolerance: int = 3,
-        auto_approve: bool = False,
-        allowlist: list[str] | None = None,
-        suppress_no_change: bool = False,
-        auto_self_restart: bool = False,
-        auto_escalate_secret_scan: bool = True,
-        operator_review_hours: int = 48,
     ) -> MagicMock:
-        """Build a mock Settings with the given autonomy parameters."""
+        """Build a mock Settings with the given parameters."""
         settings = MagicMock()
         settings.autonomous.completion_marker = completion_marker
         settings.autonomous.stale_monitor_runs_before_completion = stale_threshold
         settings.autonomous.queue_tolerance_runs_before_escalation = queue_tolerance
-        settings.autonomy.auto_approve_self_authored = auto_approve
-        settings.autonomy.auto_approve_repo_allowlist = allowlist or []
-        settings.autonomy.auto_approve_routine_secret_provisioning = False
-        settings.autonomy.suppress_no_change_monitors = suppress_no_change
-        settings.autonomy.auto_self_restart = auto_self_restart
-        settings.autonomy.auto_escalate_secret_scan_alerts = auto_escalate_secret_scan
-        settings.autonomy.operator_review_escalation_hours = operator_review_hours
         return settings
 
     def test_includes_lifecycle_sections(self) -> None:
@@ -101,51 +88,25 @@ class TestBuildAutonomousInstruction:
         assert "7 consecutive NO_CHANGE cycles as queue wait" in result
         assert "3 consecutive NO_CHANGE cycles as queue wait" not in result
 
-    def test_autonomy_tier_section_present(self) -> None:
-        """AUTONOMY TIER section is always present, with tier status."""
+    def test_standing_autonomy_policy_present(self) -> None:
+        """Standing autonomy policy section is present."""
         settings = self._make_settings()
         result = build_autonomous_instruction(settings)
-        assert "AUTONOMY TIER" in result
-        assert "auto_approve_self_authored=OFF" in result
-        assert "allowlist=[(none)]" in result
-        assert "suppress_no_change_monitors=OFF" in result
-        assert "non-negotiable" in result
+        assert "STANDING AUTONOMY POLICY" in result
+        assert "act autonomously for anything safe" in result
+        assert "non-negotiable hard gates" in result
 
-    def test_autonomy_tier_auto_approve_enabled(self) -> None:
-        """When auto_approve is ON, the tier line and rules reflect it."""
-        settings = self._make_settings(
-            auto_approve=True,
-            allowlist=["robotsix-chat"],
-        )
+    def test_autonomy_tier_standing_policy(self) -> None:
+        """Standing autonomy policy is present without config toggles."""
+        settings = self._make_settings()
         result = build_autonomous_instruction(settings)
-        assert "auto_approve_self_authored=ON" in result
-        assert "allowlist=[robotsix-chat]" in result
-        assert "suppress_no_change_monitors=OFF" in result
-
-    def test_autonomy_tier_suppress_enabled(self) -> None:
-        """When suppress_no_change_monitors is ON, suppression rules appear."""
-        settings = self._make_settings(suppress_no_change=True)
-        result = build_autonomous_instruction(settings)
-        assert "suppress_no_change_monitors=ON" in result
-        assert "MONITOR OUTCOME SUPPRESSION" in result
-
-    def test_autonomy_tier_both_enabled(self) -> None:
-        """Both auto_approve and suppress can be ON together."""
-        settings = self._make_settings(
-            auto_approve=True,
-            allowlist=["robotsix-chat", "robotsix-mill"],
-            suppress_no_change=True,
-        )
-        result = build_autonomous_instruction(settings)
-        assert "auto_approve_self_authored=ON" in result
-        assert "allowlist=[robotsix-chat, robotsix-mill]" in result
-        assert "suppress_no_change_monitors=ON" in result
-        assert "AUTO-APPROVAL RULES" in result
-        assert "MONITOR OUTCOME SUPPRESSION" in result
+        assert "STANDING AUTONOMY POLICY" in result
+        assert "act autonomously for anything safe" in result
+        assert "non-negotiable hard gates" in result
 
     def test_human_issue_approval_references_autonomy_tier(self) -> None:
         """HUMAN_ISSUE_APPROVAL section references the AUTONOMY TIER rules."""
-        settings = self._make_settings(auto_approve=True, allowlist=["r"])
+        settings = self._make_settings()
         result = build_autonomous_instruction(settings)
         assert "AUTONOMY TIER rules" in result
 
@@ -158,31 +119,21 @@ class TestBuildAutonomousInstruction:
         assert "human_issue_approval" in result
         assert "pause the monitor" in result
 
-    def test_secret_scan_escalation_on(self) -> None:
+    def test_secret_scan_escalation_present(self) -> None:
         """SECRET-SCAN ESCALATION directs auto-filing a rotation ticket."""
-        settings = self._make_settings(auto_escalate_secret_scan=True)
+        settings = self._make_settings()
         result = build_autonomous_instruction(settings)
         assert "SECRET-SCAN ESCALATION" in result
         assert "credential-rotation workflow" in result
         assert "rotate credentials" in result
         assert "close vs restore" in result
-        assert "auto_escalate_secret_scan=ON" in result
 
-    def test_secret_scan_escalation_off(self) -> None:
-        """When OFF, the agent surfaces findings instead of auto-filing."""
-        settings = self._make_settings(auto_escalate_secret_scan=False)
-        result = build_autonomous_instruction(settings)
-        assert "do not auto-file" in result
-        assert "auto_escalate_secret_scan=OFF" in result
-
-    def test_operator_review_escalation_threshold(self) -> None:
-        """OPERATOR REVIEW ESCALATION injects the configured hour threshold."""
-        settings = self._make_settings(operator_review_hours=24)
+    def test_operator_review_escalation_present(self) -> None:
+        """OPERATOR REVIEW ESCALATION section is present."""
+        settings = self._make_settings()
         result = build_autonomous_instruction(settings)
         assert "OPERATOR REVIEW ESCALATION" in result
-        assert "more than 24 hours" in result
-        assert "operator_review_escalation_hours=24" in result
-        assert "48 hours" not in result
+        assert "48 hours" in result
 
     # -- config-restart guidance (spec: config-changes-requiring-restart) ----
 
@@ -209,28 +160,12 @@ class TestBuildAutonomousInstruction:
         assert "CONFIG-APPLY-AND-VERIFY" in result
         assert "schedule_continuation" in result
         assert "GET /autonomous/definitions" in result
-        assert "arm → announce → restart → verify" in result
-
-    def test_config_apply_and_verify_auto_restart_on_path(self) -> None:
-        """When auto_self_restart is ON, the ON path is described."""
-        settings = self._make_settings(auto_self_restart=True)
-        result = build_autonomous_instruction(settings)
-        assert "When auto_self_restart is ON" in result
-        assert "Arm a post-restart continuation" in result
-
-    def test_config_apply_and_verify_auto_restart_off_path(self) -> None:
-        """When auto_self_restart is OFF, the OFF path is described."""
-        settings = self._make_settings(auto_self_restart=False)
-        result = build_autonomous_instruction(settings)
-        assert "When auto_self_restart is OFF" in result
-        assert "MUTATION requiring explicit operator authorization" in result
 
     def test_auto_self_restart_covers_session_definitions(self) -> None:
         """AUTO SELF-RESTART lists autonomous.sessions changes as valid reason."""
         settings = self._make_settings()
         result = build_autonomous_instruction(settings)
         assert "autonomous.sessions changes ARE a valid reason" in result
-        assert "is a valid reason to auto-self-restart" in result
 
     def test_delegated_decision_non_duplication_present(self) -> None:
         """DELEGATED DECISION NON-DUPLICATION section is present."""
