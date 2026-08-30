@@ -1382,8 +1382,14 @@ async def test_run_server_from_config_creates_agent_from_settings(
         from robotsix_chat.continuation.store import ContinuationStore
 
         assert isinstance(continuation_store, ContinuationStore)
-        from robotsix_chat.config.models import EvergoingSettings, HealthSettings
+        from robotsix_chat.config.models import (
+            EvergoingSettings,
+            HealthSettings,
+            MobileAuthSettings,
+        )
 
+        mobile_auth = call_args[1].pop("mobile_auth")
+        assert isinstance(mobile_auth, MobileAuthSettings)
         assert call_args[1] == {
             "host": "127.0.0.1",
             "port": 8080,
