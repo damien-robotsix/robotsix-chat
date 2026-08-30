@@ -18,18 +18,17 @@ redirects (up to the configured limit), and returns a structured health report.
 
 ## Confirm endpoint paths before probing
 
-When verifying a service endpoint (API route, auth callback, webhook, etc.), **always read the
-route definitions from the source code first** to confirm the exact path. Do NOT guess or
-construct paths from naming conventions — a wrong path returns a misleading 400/401/403 instead
-of a clear 404, confusing the operator about whether the endpoint is broken or simply
-non-existent.
+When verifying a service endpoint (API route, auth callback, webhook, etc.), **always read the route
+definitions from the source code first** to confirm the exact path. Do NOT guess or construct paths
+from naming conventions — a wrong path returns a misleading 400/401/403 instead of a clear 404,
+confusing the operator about whether the endpoint is broken or simply non-existent.
 
 Steps:
 
 1. Read the route registration file (e.g. `app.py` route table, FastAPI/Starlette `Route(...)`
    declarations, or the framework's URL config).
-2. Extract the exact path string (e.g. `/auth/login`, `/chat/auth/mobile-token`).
-3. Probe that exact path — do not substitute `/mobile/auth/login` for `/auth/login` or
+1. Extract the exact path string (e.g. `/auth/login`, `/chat/auth/mobile-token`).
+1. Probe that exact path — do not substitute `/mobile/auth/login` for `/auth/login` or
    `/api/mobile_auth/start` for `/chat/auth/mobile-token`.
 
 ## Allowed operation
