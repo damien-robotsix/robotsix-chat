@@ -1,1 +1,0 @@
-Added "Standards compliance verification" rule to AGENT.md: the agent must consult the live robotsix-standards repo (docs/distribution-packaging.md) before making packaging or dependency compliance claims, rather than relying on recalled memory.

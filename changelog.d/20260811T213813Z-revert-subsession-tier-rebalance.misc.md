@@ -1,1 +1,0 @@
-Revert the model-tier rebalance from #1327. `subsessions.default_model_level` returns to `2`, resumed subsession entries default to level `3` again, autonomous auto-continue turns go back to `llmio_model_level`, and the system prompt no longer recommends the frontier tier (level 4, fable-5) for routine checks.

@@ -1,1 +1,0 @@
-Add POST /admin/memory/ingestion-structure endpoint that ingests a fixed sample document into an isolated cognee dataset and returns entity/relation counts and summary lengths, enabling before/after comparison of extraction quality across model or config changes.

@@ -1,1 +1,0 @@
-Monitor status reporting in SSE notifications and reaction prompts now correctly distinguishes auto-stopped (closed/terminated, worker gone) from auto-paused (reversible, worker alive), preventing the two states from being conflated.

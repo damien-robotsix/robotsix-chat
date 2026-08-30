@@ -1,1 +1,0 @@
-Remove the dead `LEVEL4_DEFAULT` ImportError fallback in `config/constants.py`. `robotsix-llmio` is pinned to an exact commit and exports the constant, so the fallback could not fire — and had it fired it would have silently degraded level 4 to level 3's model rather than failing loudly.

@@ -1,1 +1,0 @@
-A Claude usage-exhaustion on the chat turn now falls back all the way to the keyed level 3 (mimo) instead of dying on the sibling Claude tier with "fallback depth (1) exhausted" — which the user saw as "The assistant hit an internal error" (2026-08-29). Under the five-tier map every Claude level shares one subscription cap, so the walk must be able to pass them.

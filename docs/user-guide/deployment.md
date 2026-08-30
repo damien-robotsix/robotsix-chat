@@ -72,8 +72,8 @@ calls the fleet's shared `docker-release.yml` to build and push the image to
 Every build also produces provenance and SBOM attestations, and a Trivy publish gate blocks on
 fixable CRITICAL findings. There is no `latest` tag.
 
-`v*` tags are cut by the shared **auto-release** workflow (weekly + on demand) from the
-`changelog.d/` fragments — versions are not tagged by hand.
+`v*` tags are cut by the shared **auto-release** workflow (weekly + on demand) via
+release-please — versions are not tagged by hand.
 
 There is no CI-to-deploy automation — the release workflow only publishes images. central-deploy
 pulls them when the operator triggers an update.
