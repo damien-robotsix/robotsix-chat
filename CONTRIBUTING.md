@@ -52,8 +52,8 @@ The changelog is generated automatically by **release-please** from
 [conventional commits](https://www.conventionalcommits.org/). PR titles and commit subjects must use
 the conventional format: `feat:`, `fix:`, `chore:`, `docs:`, `refactor:`, `test:`, or `ci:`.
 
-No manual changelog fragment files are needed — release-please creates and updates `CHANGELOG.md`
-as part of its release workflow.
+No manual changelog fragment files are needed — release-please creates and updates `CHANGELOG.md` as
+part of its release workflow.
 
 ## Pre-commit hooks
 
