@@ -9,6 +9,7 @@ from unittest.mock import AsyncMock, MagicMock, patch
 import pytest
 
 from robotsix_chat.autonomous.models import AutonomousSession, AutonomousState
+from robotsix_chat.chat.events import SSE_NOTIFICATION_TYPE
 from robotsix_chat.subsessions.delivery import (
     _BATCH_REACT_PROMPT_TEMPLATE,
     _REACT_PROMPT_TEMPLATE,
@@ -22,6 +23,7 @@ from robotsix_chat.subsessions.models import (
     SubsessionKind,
     SubsessionStatus,
 )
+from tests.common.subsession_fakes import RecordingSink
 
 # ---------------------------------------------------------------------------
 # module-level constants
@@ -224,8 +226,10 @@ async def test_deliver_summary_with_agent_publishes_agent_message_frame() -> Non
     await delivery.deliver_summary(info, "all done", "completed")
     await _await_reaction_tasks(delivery)
 
-    event_sink.publish.assert_called_once()
-    session_id, frame = event_sink.publish.call_args[0]
+    # Two frames are published: the agent_message reply and a proactive
+    # notification for the terminal "completed" reason.
+    assert event_sink.publish.call_count == 2
+    session_id, frame = event_sink.publish.call_args_list[0][0]
     assert session_id == "owner-sess-1"
     assert frame["type"] == SSE_AGENT_MESSAGE_TYPE
     assert frame["text"] == "reaction reply"
@@ -255,6 +259,7 @@ async def test_deliver_summary_empty_reply_skips_publish() -> None:
     """An empty reply from the reaction turn is still recorded.
 
     But no agent_message frame is published for empty text.
+    A proactive notification frame IS still emitted for terminal reasons.
     """
     store = MagicMock()
     store.history.return_value = []
@@ -272,7 +277,10 @@ async def test_deliver_summary_empty_reply_skips_publish() -> None:
     store.record_for_session.assert_called_once()
     args, _kwargs = store.record_for_session.call_args
     assert args[2] == ""
-    event_sink.publish.assert_not_called()
+    # Only the proactive notification frame is published (no agent_message).
+    assert event_sink.publish.call_count == 1
+    _sid, frame = event_sink.publish.call_args[0]
+    assert frame["type"] == SSE_NOTIFICATION_TYPE
 
 
 @pytest.mark.asyncio
@@ -306,9 +314,10 @@ async def test_deliver_summary_reaction_turn_failure_degrades_to_passive_record(
     assert args[2] == "all done"  # raw outcome, not a generated reply
 
     # Fallback agent_message frame is published so the user sees the
-    # outcome even when the LLM call fails.
-    event_sink.publish.assert_called_once()
-    call_args, _ = event_sink.publish.call_args
+    # outcome even when the LLM call fails.  A proactive notification
+    # frame is also emitted for the terminal "completed" reason.
+    assert event_sink.publish.call_count == 2
+    call_args, _ = event_sink.publish.call_args_list[0]
     assert call_args[0] == "owner-sess-1"
     frame = call_args[1]
     from robotsix_chat.chat.events import SSE_AGENT_MESSAGE_TYPE
@@ -1956,3 +1965,232 @@ def test_batch_react_prompt_template_contains_phrasing_examples() -> None:
         in text
     )
     assert "Phrase as 'Monitor for ticket X is paused" in text
+
+
+# ---------------------------------------------------------------------------
+# Proactive monitor notification (SSE_NOTIFICATION_TYPE)
+# ---------------------------------------------------------------------------
+
+
+@pytest.mark.asyncio
+async def test_terminal_reason_emits_notification_frame() -> None:
+    """A terminal reason (completed) emits an SSE notification frame."""
+    sink = RecordingSink()
+    store = MagicMock()
+    store.history.return_value = []
+    registry = MagicMock()
+    agent = _fake_agent(["All done."])
+    delivery = _build_delivery(
+        store=store, registry=registry, agent=agent, event_sink=sink
+    )
+    info = _make_info(parent_id=None)
+
+    await delivery.deliver_summary(info, "ticket resolved", "completed")
+    await _await_reaction_tasks(delivery)
+
+    notifications = sink.of_type(SSE_NOTIFICATION_TYPE)
+    assert len(notifications) == 1
+    _sid, frame = notifications[0]
+    assert frame["title"] == "Monitor completed: test-job"
+    assert "completed" in str(frame["body"])
+    assert frame["urgency"] == "default"
+
+
+@pytest.mark.asyncio
+async def test_ticket_terminal_reason_emits_notification_frame() -> None:
+    """The ticket_terminal reason emits a notification with default urgency."""
+    sink = RecordingSink()
+    store = MagicMock()
+    store.history.return_value = []
+    registry = MagicMock()
+    registry.is_duplicate_ticket_terminal.return_value = False
+    agent = _fake_agent(["Tracking complete."])
+    delivery = _build_delivery(
+        store=store, registry=registry, agent=agent, event_sink=sink
+    )
+    info = _make_info(
+        parent_id=None,
+        title="monitor ticket-42",
+    )
+    # Set a checkpoint with ticket_id so the notification uses it.
+    info.checkpoint = {"ticket_id": "ticket-42"}
+
+    await delivery.deliver_summary(info, "terminal state reached", "ticket_terminal")
+    await _await_reaction_tasks(delivery)
+
+    notifications = sink.of_type(SSE_NOTIFICATION_TYPE)
+    assert len(notifications) == 1
+    _sid, frame = notifications[0]
+    assert frame["title"] == "Monitor completed: ticket-42"
+    assert "terminal state" in str(frame["body"])
+    assert frame["urgency"] == "default"
+    assert frame["link"] == "ticket-42"
+
+
+@pytest.mark.asyncio
+async def test_blocker_reason_emits_high_urgency_notification() -> None:
+    """A blocker reason (repeated_blocked) emits a high-urgency notification."""
+    sink = RecordingSink()
+    store = MagicMock()
+    store.history.return_value = []
+    registry = MagicMock()
+    agent = _fake_agent(["Ticket is blocked."])
+    delivery = _build_delivery(
+        store=store, registry=registry, agent=agent, event_sink=sink
+    )
+    info = _make_info(parent_id=None, title="monitor blocker-ticket")
+
+    await delivery.deliver_summary(info, "blocked repeatedly", "repeated_blocked")
+    await _await_reaction_tasks(delivery)
+
+    notifications = sink.of_type(SSE_NOTIFICATION_TYPE)
+    assert len(notifications) == 1
+    _sid, frame = notifications[0]
+    assert frame["title"] == "Monitor blocked: monitor blocker-ticket"
+    assert "repeatedly blocked" in str(frame["body"])
+    assert frame["urgency"] == "high"
+
+
+@pytest.mark.asyncio
+async def test_needs_operator_emits_high_urgency_notification() -> None:
+    """The needs_operator reason emits a high-urgency notification."""
+    sink = RecordingSink()
+    store = MagicMock()
+    store.history.return_value = []
+    registry = MagicMock()
+    agent = _fake_agent(["Decision needed."])
+    delivery = _build_delivery(
+        store=store, registry=registry, agent=agent, event_sink=sink
+    )
+    info = _make_info(parent_id=None, title="decision monitor")
+
+    await delivery.deliver_summary(info, "operator decision needed", "needs_operator")
+    await _await_reaction_tasks(delivery)
+
+    notifications = sink.of_type(SSE_NOTIFICATION_TYPE)
+    assert len(notifications) == 1
+    _sid, frame = notifications[0]
+    assert frame["title"] == "Monitor blocked: decision monitor"
+    assert "operator decision" in str(frame["body"]).lower()
+    assert frame["urgency"] == "high"
+
+
+@pytest.mark.asyncio
+async def test_non_terminal_reason_no_notification() -> None:
+    """A non-terminal reason (max_runs) does NOT emit a notification frame."""
+    sink = RecordingSink()
+    store = MagicMock()
+    store.history.return_value = []
+    registry = MagicMock()
+    agent = _fake_agent(["Run limit reached."])
+    delivery = _build_delivery(
+        store=store, registry=registry, agent=agent, event_sink=sink
+    )
+    info = _make_info(parent_id=None)
+
+    await delivery.deliver_summary(info, "hit run limit", "max_runs")
+    await _await_reaction_tasks(delivery)
+
+    notifications = sink.of_type(SSE_NOTIFICATION_TYPE)
+    assert len(notifications) == 0
+
+
+@pytest.mark.asyncio
+async def test_notification_emitted_when_reaction_fails() -> None:
+    """Notification still fires when the LLM reaction turn raises."""
+    sink = RecordingSink()
+    store = MagicMock()
+    store.history.return_value = []
+    registry = MagicMock()
+    agent = _raising_agent(RuntimeError("LLM unavailable"))
+    delivery = _build_delivery(
+        store=store, registry=registry, agent=agent, event_sink=sink
+    )
+    info = _make_info(parent_id=None)
+
+    await delivery.deliver_summary(info, "ticket done", "completed")
+    await _await_reaction_tasks(delivery)
+
+    # The fallback agent_message_frame is published, AND the notification.
+    notifications = sink.of_type(SSE_NOTIFICATION_TYPE)
+    assert len(notifications) == 1
+    _sid, frame = notifications[0]
+    assert frame["title"] == "Monitor completed: test-job"
+    assert frame["urgency"] == "default"
+
+
+@pytest.mark.asyncio
+async def test_notification_emitted_when_no_agent_wired() -> None:
+    """Notification fires even when no agent is wired (passive record path)."""
+    sink = RecordingSink()
+    store = MagicMock()
+    registry = MagicMock()
+    delivery = _build_delivery(store=store, registry=registry, event_sink=sink)
+    info = _make_info(parent_id=None)
+
+    await delivery.deliver_summary(info, "ticket done", "ticket_terminal")
+    await _await_reaction_tasks(delivery)
+
+    notifications = sink.of_type(SSE_NOTIFICATION_TYPE)
+    assert len(notifications) == 1
+    _sid, frame = notifications[0]
+    assert frame["title"] == "Monitor completed: test-job"
+    assert frame["urgency"] == "default"
+
+
+@pytest.mark.asyncio
+async def test_batched_outcomes_emit_individual_notifications() -> None:
+    """Each terminal/blocked outcome in a batch gets its own notification."""
+    sink = RecordingSink()
+    store = MagicMock()
+    store.history.return_value = []
+    registry = MagicMock()
+    agent = _fake_agent(["Consolidated reply."])
+    delivery = _build_delivery(
+        store=store,
+        registry=registry,
+        agent=agent,
+        event_sink=sink,
+        batch_window_seconds=0,
+    )
+
+    info_terminal = _make_info(sub_id="sub-term1", title="terminal-mon", parent_id=None)
+    info_blocker = _make_info(sub_id="sub-block1", title="blocker-mon", parent_id=None)
+    info_other = _make_info(sub_id="sub-other1", title="other-mon", parent_id=None)
+
+    outcomes = [
+        (info_terminal, "resolved", "completed", "[label-term]"),
+        (info_blocker, "blocked", "repeated_blocked", "[label-block]"),
+        (info_other, "run limit", "max_runs", "[label-other]"),
+    ]
+
+    await delivery._react_batched("owner-sess-1", outcomes)
+
+    notifications = sink.of_type(SSE_NOTIFICATION_TYPE)
+    # Only terminal and blocker reasons emit notifications (not max_runs).
+    assert len(notifications) == 2
+
+    titles = {frame["title"] for _sid, frame in notifications}
+    assert "Monitor completed: terminal-mon" in titles
+    assert "Monitor blocked: blocker-mon" in titles
+
+    urgencies = {frame["urgency"] for _sid, frame in notifications}
+    assert "default" in urgencies
+    assert "high" in urgencies
+
+
+@pytest.mark.asyncio
+async def test_no_notification_when_no_event_sink() -> None:
+    """No crash when event_sink is None — notification is silently skipped."""
+    store = MagicMock()
+    store.history.return_value = []
+    registry = MagicMock()
+    agent = _fake_agent(["ok"])
+    delivery = _build_delivery(
+        store=store, registry=registry, agent=agent, event_sink=None
+    )
+    info = _make_info(parent_id=None)
+
+    # Must not raise.
+    await delivery.deliver_summary(info, "done", "completed")
+    await _await_reaction_tasks(delivery)
