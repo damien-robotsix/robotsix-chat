@@ -1,10 +1,11 @@
-// Pure helpers for the ```suggestions fenced block that the chat UI turns
-// into clickable answer chips.
+// Helpers for the ```suggestions fenced block that the chat UI turns into
+// clickable answer chips.
 //
-// These are DOM-free string transforms kept in their own module so they can
-// be unit-tested (see tests/js/suggestions.test.js) — chat.js imports them
-// and owns the DOM-coupled chip rendering (renderSuggestionChips,
-// disableStaleSuggestionChips).
+// String transforms (parseSuggestions, stripStreamingSuggestions) are pure
+// and DOM-free.  The DOM-coupled chip helpers (renderSuggestionChips,
+// disableStaleSuggestionChips) also live here so they can be unit-tested
+// under jsdom (see tests/js/suggestions.test.js).  chat.js imports
+// everything from this single module.
 
 // Parses a ```suggestions fenced block from the assistant message text.
 // Returns { cleanText: string, suggestions: string[] | null }: cleanText has
@@ -56,4 +57,50 @@ export function parseSuggestions(raw) {
     cleanText: cleanText,
     suggestions: suggestions.length > 0 ? suggestions : null,
   };
+}
+
+// ---- DOM-coupled chip helpers -----------------------------------------
+
+// Render clickable suggestion chips below *afterElement*.  Each chip calls
+// *onSubmit(chipText)* when clicked.  When *disabled* is true the chips are
+// rendered inert (visible for context, not clickable).
+export function renderSuggestionChips(suggestions, onSubmit, afterElement, disabled) {
+  var container = document.createElement("div");
+  container.className = "suggestion-chips";
+  if (disabled) container.classList.add("suggestion-chips--stale");
+  for (var i = 0; i < suggestions.length; i++) {
+    var chip = document.createElement("button");
+    chip.type = "button";
+    chip.className = "suggestion-chip";
+    chip.textContent = suggestions[i];
+    if (disabled) {
+      chip.disabled = true;
+      chip.classList.add("suggestion-chip--stale");
+      chip.title = suggestions[i];
+    } else {
+      chip.title = "Click to reply: " + suggestions[i];
+      chip.addEventListener("click", (function (text) {
+        return function () { onSubmit(text); };
+      })(suggestions[i]));
+    }
+    container.appendChild(chip);
+  }
+  if (afterElement && afterElement.parentNode) {
+    afterElement.parentNode.insertBefore(container, afterElement.nextSibling);
+  }
+  return container;
+}
+
+// Disable every non-disabled suggestion chip under *root* (typically the
+// chat container).  Called when a newer message supersedes the decision the
+// chips answered.
+export function disableStaleSuggestionChips(root) {
+  var chips = root.querySelectorAll(".suggestion-chip:not([disabled])");
+  for (var i = 0; i < chips.length; i++) {
+    chips[i].disabled = true;
+    chips[i].classList.add("suggestion-chip--stale");
+    if (chips[i].parentNode) {
+      chips[i].parentNode.classList.add("suggestion-chips--stale");
+    }
+  }
 }
