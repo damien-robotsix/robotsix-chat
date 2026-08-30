@@ -1275,6 +1275,30 @@ def _build_request_tools_factory(
     return _compose
 
 
+# Standing, code-level instruction appended to the main chat agent's system
+# prompt (never sourced from the operator-editable config document, so it
+# holds for every session regardless of config edits).  It teaches the agent
+# to emit the ``suggestions`` fenced block that the browser UI
+# (``parseSuggestions`` / ``renderSuggestionChips`` in ``chat.js``) turns into
+# clickable answer chips.
+_SUGGESTIONS_INSTRUCTION = (
+    "\n\n"
+    "## Multiple-choice decisions — clickable answer chips\n"
+    "When you present the operator with a discrete multiple-choice decision "
+    "(approve/reject, Option A/B/C, yes/no, pick-one-of-N), END your message "
+    "with a fenced block:\n"
+    "```suggestions\n"
+    "<one option per line>\n"
+    "```\n"
+    "Rules: use it ONLY for genuine discrete choices awaiting an operator "
+    "reply — never for rhetorical lists or FYI enumerations; give 2-5 "
+    "options; each line must be <= ~80 characters, self-contained and "
+    'actionable as a verbatim reply (e.g. "Approve ticket 73f3 and merge", '
+    'not "Option A"); and always phrase the surrounding prose so a typed '
+    "free-text answer is equally valid."
+)
+
+
 def create_agent_from_settings(
     instruction: str | None = None,
     settings: Settings | None = None,
@@ -1338,6 +1362,14 @@ def create_agent_from_settings(
         instruction = settings.agent_instruction
 
     instruction = _inject_skills(settings, instruction, bare=bare)
+
+    # The main chat agent (operator-attended, no fixed subsession identity)
+    # gets the standing suggestion-chip contract so multiple-choice decisions
+    # render as clickable answer buttons.  Bare text-transformation agents and
+    # subsession children are excluded — subsessions get their own suggestion
+    # directive via ``_USER_CHAT_FIRST_TURN_NOTE`` in the worker.
+    if not bare and subsession_ctx is None:
+        instruction = instruction + _SUGGESTIONS_INSTRUCTION
 
     effective_level = (
         model_level if model_level is not None else settings.llmio_model_level

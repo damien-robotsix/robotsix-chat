@@ -829,6 +829,19 @@ body {
 .suggestion-chip:active {
   background: rgba(59, 130, 246, 0.45);
 }
+.suggestion-chip--stale,
+.suggestion-chip:disabled {
+  cursor: default;
+  opacity: 0.45;
+  color: #94a3b8;
+  background: rgba(100, 116, 139, 0.12);
+  border-color: rgba(100, 116, 139, 0.3);
+}
+.suggestion-chip--stale:hover,
+.suggestion-chip:disabled:hover {
+  background: rgba(100, 116, 139, 0.12);
+  border-color: rgba(100, 116, 139, 0.3);
+}
 
 /* Suggestion chips inside subsession transcripts */
 .subs-transcript > .suggestion-chips {

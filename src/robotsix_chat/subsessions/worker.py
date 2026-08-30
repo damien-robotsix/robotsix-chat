@@ -214,7 +214,16 @@ _USER_CHAT_FIRST_TURN_NOTE = (
     'after auto-mail migrates) is the right call."  This applies to every '
     "turn — the initial recommendation and any follow-up confirmation-gate "
     "turns.  If you present multiple options, show ALL of them with their "
-    "definitions so the operator can compare.]"
+    "definitions so the operator can compare.  Whenever a turn asks the "
+    "operator to pick between discrete options (Option A/B/C, approve/reject, "
+    "yes/no, pick-one-of-N), ALSO end that message with a fenced block:\n"
+    "```suggestions\n"
+    "<one option per line>\n"
+    "```\n"
+    "one self-contained option per line (2-5 options, each <= ~80 chars, "
+    "actionable as a verbatim reply) so the operator can answer with a single "
+    "click; keep the surrounding prose so a typed free-text answer is equally "
+    "valid.]"
 )
 
 
