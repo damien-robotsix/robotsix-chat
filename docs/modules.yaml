@@ -220,7 +220,6 @@ modules:
       - docs/chat/server/mobile_sso_runbook.md
       - docs/chat/server/routes/admin.md
       - docs/chat/server/routes/mail.md
-      - deploy/alerts/mobile_sso.yml
       - tests/chat/__init__.py
       - tests/chat/test_cli.py
       - tests/chat/test_conversation.py

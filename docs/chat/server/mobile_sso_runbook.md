@@ -262,6 +262,6 @@ Bearer tokens are HMAC-signed with the following structure:
 
 ## Related Documentation
 
-- [Mobile SSO Configuration](../configuration.md#mobile-auth)
-- [Architecture: Authentication](../architecture.md)
-- [API Reference: Auth Endpoints](../api/)
+- [Mobile SSO Configuration](../../configuration.md#mobile-auth-sso)
+- [Architecture: Authentication](../../architecture.md)
+- [API Reference: Auth Endpoints](../../api/mobile-sso.md)
