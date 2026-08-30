@@ -65,7 +65,13 @@ logger = logging.getLogger(__name__)
 # reach a keyed provider (level 3 mimo); the intervening Claude tier is
 # already in llmio's cooldown and is skipped without a call. Operator's
 # rule for chat: Claude first, graceful paid fallback when Claude is depleted.
-_USAGE_FALLBACK_DEPTH = 4  # == len(TierLevel) - 1: may walk every other tier
+# Two promotions reach the keyed level 3 (mimo) from any Claude tier — the
+# higher-then-lower walk visits the sibling Claude tier (in llmio's cooldown,
+# fails fast) and then mimo — and stop there. Walking further lands on the
+# tier-1/2 models, which cannot carry a long agentic chat context: a flash
+# turn on a 20k-token session disowns the whole conversation ("digest
+# corrupted"), which is worse than failing the turn with a clear error.
+_USAGE_FALLBACK_DEPTH = 2
 
 # Prepended to a keyed (non-SDK) fallback tier's system prompt when the turn
 # carries prior context. A keyed provider does not share the Claude SDK's
@@ -801,11 +807,9 @@ class LlmioChatAgent:
             level=TierLevel(f"level{self._model_level if level is None else level}"),
             fallback_enabled=True,
             # Both a dead credential and an exhausted subscription take every
-            # claudeSDK tier with them, so the walk must reach a keyed provider
-            # either way.
-            max_fallback_depth=(
-                len(TierLevel) - 1 if credential_is_dead else _USAGE_FALLBACK_DEPTH
-            ),
+            # claudeSDK tier with them; two promotions reach the keyed level 3
+            # from any Claude tier, and the walk deliberately stops there.
+            max_fallback_depth=_USAGE_FALLBACK_DEPTH,
             what=(
                 "chat turn (auth-failure fallback)"
                 if credential_is_dead

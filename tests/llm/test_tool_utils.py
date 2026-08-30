@@ -2,6 +2,8 @@
 
 from __future__ import annotations
 
+import inspect
+
 import pytest
 
 from robotsix_chat.llm.tool_utils import require_args
@@ -165,3 +167,27 @@ async def test_preserves_name() -> None:
 
     wrapped = require_args(_named_tool)
     assert wrapped.__name__ == "_named_tool"
+
+
+# ---------------------------------------------------------------------------
+# Sync tools keep their sync nature (regression: read_skill on the keyed
+# fallback tier raised ``TypeError: 'str' object can't be awaited``).
+# ---------------------------------------------------------------------------
+
+
+def _sync_required(name: str) -> str:
+    return f"skill:{name}"
+
+
+def test_sync_tool_stays_sync_and_validates() -> None:
+    wrapped = require_args(_sync_required)
+    assert not inspect.iscoroutinefunction(wrapped)
+    assert wrapped("x") == "skill:x"
+    assert wrapped("") == "Error: _sync_required requires a non-empty 'name' argument."
+
+
+@pytest.mark.asyncio
+async def test_async_tool_stays_async() -> None:
+    wrapped = require_args(_identity)
+    assert inspect.iscoroutinefunction(wrapped)
+    assert await wrapped("a") == await _identity("a")
