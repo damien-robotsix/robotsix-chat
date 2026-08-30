@@ -188,6 +188,8 @@ modules:
     paths:
       - src/robotsix_chat/chat/__init__.py
       - src/robotsix_chat/chat/conversation.py
+      - src/robotsix_chat/chat/summarize.py
+      - src/robotsix_chat/chat/actions.py
       - src/robotsix_chat/chat/events.py
       - src/robotsix_chat/chat/server/__init__.py
       - src/robotsix_chat/chat/server/app.py
@@ -218,6 +220,8 @@ modules:
       - tests/chat/__init__.py
       - tests/chat/test_cli.py
       - tests/chat/test_conversation.py
+      - tests/chat/test_summarize.py
+      - tests/chat/test_actions.py
       - tests/chat/test_events.py
       - tests/chat/test_subsessions_e2e.py
       - tests/chat/server/__init__.py
