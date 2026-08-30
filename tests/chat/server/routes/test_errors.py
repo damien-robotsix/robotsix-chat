@@ -9,6 +9,7 @@ from __future__ import annotations
 
 import asyncio
 import json
+from datetime import UTC
 from unittest.mock import Mock
 
 from asgi_correlation_id import correlation_id as cid_ctx
@@ -305,8 +306,11 @@ def test_stream_error_code_maps_usage_exhausted_to_budget_exhausted() -> None:
     )
 
 
-def test_curated_stream_error_budget_exhausted_is_actionable() -> None:
-    """The budget-exhausted payload names the code and a recovery action."""
+def test_curated_stream_error_budget_exhausted_names_reset_time() -> None:
+    """Name the UTC reset time and wait, not the generic internal error.
+
+    Also hints at paid fallback when it is disabled.
+    """
     from robotsix_llmio.claude_sdk import ClaudeSDKUsageExhaustedError
 
     from robotsix_chat.chat.server.routes.errors import (
@@ -315,14 +319,119 @@ def test_curated_stream_error_budget_exhausted_is_actionable() -> None:
     )
 
     payload = curated_stream_error(
-        ClaudeSDKUsageExhaustedError("You are out of usage credits"),
+        ClaudeSDKUsageExhaustedError("You've hit your limit · resets 1am (UTC)"),
         fallback_id="turn-1",
     )
     assert payload["code"] == STREAM_ERROR_BUDGET_EXHAUSTED
-    assert "new message" in payload["message"]
-    assert "model level" in payload["message"]
-    # The curated message never echoes the upstream exception text.
-    assert "usage credits" not in payload["message"]
+    # Names the parsed reset clock time in UTC (deterministic regardless of now).
+    assert "01:00 UTC" in payload["message"]
+    assert "quota exhausted" in payload["message"].lower()
+    # Paid fallback disabled by default → hint to enable it.
+    assert "paid fallback" in payload["message"]
+    # Never the generic internal-error surface for this class.
+    assert "internal error" not in payload["message"].lower()
+    # The curated message never echoes the raw upstream exception text.
+    assert "hit your limit" not in payload["message"]
+
+
+def test_curated_stream_error_budget_exhausted_paid_fallback_enabled() -> None:
+    """With paid fallback enabled the message drops the enable-it hint."""
+    from robotsix_llmio.claude_sdk import ClaudeSDKUsageExhaustedError
+
+    from robotsix_chat.chat.server.routes.errors import curated_stream_error
+
+    payload = curated_stream_error(
+        ClaudeSDKUsageExhaustedError("You've hit your limit · resets 1am (UTC)"),
+        fallback_id="turn-1",
+        paid_fallback_enabled=True,
+    )
+    assert "01:00 UTC" in payload["message"]
+    assert "paid fallback" not in payload["message"]
+
+
+def test_claude_usage_reset_at_parses_reset_hint() -> None:
+    """A ``resets <time> (UTC)`` hint resolves to the next UTC occurrence."""
+    from datetime import datetime
+
+    from robotsix_llmio.claude_sdk import ClaudeSDKUsageExhaustedError
+
+    from robotsix_chat.chat.server.routes.errors import claude_usage_reset_at
+
+    now = datetime(2026, 8, 30, 0, 4, tzinfo=UTC)
+    reset = claude_usage_reset_at(
+        ClaudeSDKUsageExhaustedError("You've hit your limit · resets 1am (UTC)"),
+        now=now,
+    )
+    assert reset == datetime(2026, 8, 30, 1, 0, tzinfo=UTC)
+
+
+def test_claude_usage_reset_at_rolls_to_next_day_when_passed() -> None:
+    """A reset clock time already behind ``now`` resolves to tomorrow."""
+    from datetime import datetime
+
+    from robotsix_llmio.claude_sdk import ClaudeSDKUsageExhaustedError
+
+    from robotsix_chat.chat.server.routes.errors import claude_usage_reset_at
+
+    now = datetime(2026, 8, 30, 2, 0, tzinfo=UTC)
+    reset = claude_usage_reset_at(
+        ClaudeSDKUsageExhaustedError("resets 11:10am (UTC)"),
+        now=now,
+    )
+    assert reset == datetime(2026, 8, 30, 11, 10, tzinfo=UTC)
+
+    now_late = datetime(2026, 8, 30, 23, 0, tzinfo=UTC)
+    reset_late = claude_usage_reset_at(
+        ClaudeSDKUsageExhaustedError("resets 8pm (UTC)"),
+        now=now_late,
+    )
+    assert reset_late == datetime(2026, 8, 31, 20, 0, tzinfo=UTC)
+
+
+def test_claude_usage_reset_at_returns_none_without_hint() -> None:
+    """No parseable reset hint (bare 'out of usage credits') yields ``None``."""
+    from robotsix_llmio.claude_sdk import ClaudeSDKUsageExhaustedError
+
+    from robotsix_chat.chat.server.routes.errors import claude_usage_reset_at
+
+    assert (
+        claude_usage_reset_at(
+            ClaudeSDKUsageExhaustedError("You're out of usage credits")
+        )
+        is None
+    )
+
+
+def test_budget_exhausted_message_names_wait_duration() -> None:
+    """The message states the approximate wait ('in 56 min') from the reset."""
+    from datetime import datetime
+
+    from robotsix_llmio.claude_sdk import ClaudeSDKUsageExhaustedError
+
+    from robotsix_chat.chat.server.routes.errors import budget_exhausted_message
+
+    now = datetime(2026, 8, 30, 0, 4, tzinfo=UTC)
+    message = budget_exhausted_message(
+        ClaudeSDKUsageExhaustedError("You've hit your limit · resets 1am (UTC)"),
+        now=now,
+    )
+    assert "resets at 01:00 UTC" in message
+    assert "in 56 min" in message
+    assert "enable paid fallback" in message
+
+
+def test_budget_exhausted_message_without_reset_hint() -> None:
+    """With no reset hint the message degrades gracefully but stays actionable."""
+    from robotsix_llmio.claude_sdk import ClaudeSDKUsageExhaustedError
+
+    from robotsix_chat.chat.server.routes.errors import budget_exhausted_message
+
+    message = budget_exhausted_message(
+        ClaudeSDKUsageExhaustedError("You're out of usage credits")
+    )
+    assert "Claude quota exhausted" in message
+    assert "enable paid fallback" in message
+    assert "UTC" not in message
 
 
 def test_curated_stream_error_hides_exception_text() -> None:
