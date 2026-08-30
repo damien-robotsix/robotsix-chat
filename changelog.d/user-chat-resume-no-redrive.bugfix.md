@@ -1,1 +1,0 @@
-A `user_chat` subsession that was waiting for the operator's reply now resumes straight into waiting after a server restart instead of re-running an agent turn that re-asked the same question; restart notes appended to its prompt no longer stack across restarts.

@@ -1,1 +1,0 @@
-Adopt the shared robotsix-ui AppShell (v0.1.40) as the top-of-page chrome, replacing the custom header with the fleet-standard brand, nav links, and Settings entry. No ConfigPanel — the config surface uses admin-prefixed routes, not the standard GET/PUT /config endpoints.

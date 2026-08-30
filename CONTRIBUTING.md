@@ -48,32 +48,12 @@ process.
 
 ## Changelog
 
-Every pull request that changes user-facing behaviour must include a changelog fragment in
-`changelog.d/`. The fragment file is named `<id>.<type>.md` where `<id>` is the issue number, PR
-number, or ticket identifier and `<type>` is one of:
+The changelog is generated automatically by **release-please** from
+[conventional commits](https://www.conventionalcommits.org/). PR titles and commit subjects must use
+the conventional format: `feat:`, `fix:`, `chore:`, `docs:`, `refactor:`, `test:`, or `ci:`.
 
-- `feature` — a new feature
-- `bugfix` — a bug fix
-- `doc` — documentation improvement
-- `removal` — a deprecation or removal
-- `misc` — minor changes not fitting the above
-
-Example: `changelog.d/42.feature.md` with content like `Added the /status health-check endpoint`.
-
-CI enforces that a fragment was added (or modified) via `towncrier check`. For trivial or docs-only
-PRs that do not need a changelog entry, apply the `skip-changelog` label to the PR.
-
-### Assembling the changelog on release
-
-During release preparation, run:
-
-```bash
-uv run --with towncrier towncrier build --version X.Y.Z --yes
-```
-
-This collects all fragments from `changelog.d/`, inserts a new `## [X.Y.Z] - YYYY-MM-DD` section
-into `CHANGELOG.md`, and removes the consumed fragment files. Commit the updated `CHANGELOG.md` and
-the deleted fragments together.
+No manual changelog fragment files are needed — release-please creates and updates `CHANGELOG.md` as
+part of its release workflow.
 
 ## Pre-commit hooks
 

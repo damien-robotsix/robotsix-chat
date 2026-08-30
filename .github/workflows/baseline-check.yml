@@ -1,8 +1,8 @@
 name: Baseline Check
 
 # Repo-baseline conformance gate (robotsix-standards): AGENT.md/README
-# standards links, MIT LICENSE, dependabot ecosystem coverage, towncrier
-# wiring, and docs/modules.yaml drift (via robotsix-modules).
+# standards links, MIT LICENSE, dependabot ecosystem coverage,
+# and docs/modules.yaml drift (via robotsix-modules).
 on:
   push:
     branches: [main]

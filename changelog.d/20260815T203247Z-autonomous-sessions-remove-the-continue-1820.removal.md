@@ -1,1 +1,0 @@
-Remove the autonomous continue/re-prompt system. Each autonomous session now runs a single prompt — the base autonomous instruction injected into the agent system prompt plus the preset's custom prompt — and closes when the agent emits the completion marker. The runner no longer re-prompts the agent to continue, and the continue-throttle gate is gone.

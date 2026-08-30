@@ -1,1 +1,0 @@
-Bumped the pinned `robotsix-llmio` from 0.1.5 to 0.4.0, picking up the fix that stops an `E2BIG` CLI-spawn refusal ("Argument list too long") from being retried three times before surfacing an opaque `server_error`.

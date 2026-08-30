@@ -1,1 +1,0 @@
-GitHub API rate-limit responses (403/429) are now handled with a 60 s backoff and single retry in the DirectRepoClient HTTP layer, and treated as transient errors in periodic subsession monitors so they skip the cycle instead of crashing.

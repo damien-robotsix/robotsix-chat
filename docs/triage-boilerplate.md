@@ -32,7 +32,6 @@ Do NOT apply when:
 ### Additional files covered by the same pattern
 
 - `docs/configuration.md` updates accompanying config changes
-- `changelog.d/` fragment files (towncrier)
 
 ### Observed frequency
 
