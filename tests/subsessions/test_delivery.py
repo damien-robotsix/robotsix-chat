@@ -2194,3 +2194,47 @@ async def test_no_notification_when_no_event_sink() -> None:
     # Must not raise.
     await delivery.deliver_summary(info, "done", "completed")
     await _await_reaction_tasks(delivery)
+
+
+@pytest.mark.asyncio
+async def test_batch_autonomous_executing_no_double_notification() -> None:
+    """When autonomous session is executing, delegated outcomes get one notification each.
+
+    _react_batched delegates to individual _react_in_main_chat calls (each
+    emitting a notification in its own finally block).  The batched finally
+    block must NOT re-emit notifications for those same outcomes.
+    """
+    sink = RecordingSink()
+    store = MagicMock()
+    store.history.return_value = []
+    registry = MagicMock()
+    agent = _fake_agent(["Noted — continuing."])
+    runner = _mock_autonomous_runner("sess-1", AutonomousState.executing)
+    delivery = _build_delivery(
+        store=store,
+        registry=registry,
+        agent=agent,
+        event_sink=sink,
+        batch_window_seconds=0,
+    )
+    delivery.set_autonomous_runner(runner)
+
+    info_a = _make_info(sub_id="sub-a", kind=SubsessionKind.PERIODIC, title="Monitor A")
+    info_b = _make_info(sub_id="sub-b", kind=SubsessionKind.PERIODIC, title="Monitor B")
+
+    outcomes = [
+        (info_a, "Outcome A.", "completed", "[label-a]"),
+        (info_b, "Outcome B.", "repeated_blocked", "[label-b]"),
+    ]
+
+    await delivery._react_batched("sess-1", outcomes)
+
+    # Each outcome should get exactly one notification (from its individual
+    # _react_in_main_chat call), not two (one from the individual call
+    # plus one from the batched finally block).
+    notifications = sink.of_type(SSE_NOTIFICATION_TYPE)
+    assert len(notifications) == 2
+
+    titles = {frame["title"] for _sid, frame in notifications}
+    assert "Monitor completed: Monitor A" in titles
+    assert "Monitor blocked: Monitor B" in titles

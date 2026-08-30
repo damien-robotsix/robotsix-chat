@@ -890,6 +890,7 @@ class ParentDelivery:
         Degrades to passive records when no agent is wired or the turn
         fails — each outcome is recorded individually so none are lost.
         """
+        delegated_to_individual = False
         try:
             if self._agent is None:
                 async with self._run_serializer.for_owner(session_id):
@@ -905,6 +906,7 @@ class ParentDelivery:
             if self._autonomous_runner is not None:
                 aq = self._autonomous_runner.get_session(session_id)
                 if aq is not None and aq.state is AutonomousState.executing:
+                    delegated_to_individual = True
                     for info, outcome, reason, label in outcomes:
                         await self._react_in_main_chat(info, outcome, reason, label)
                     return
@@ -980,8 +982,12 @@ class ParentDelivery:
             else:
                 self._reaction_depth[session_id] = depth
             # Proactive browser notification for terminal/blocked monitors.
-            for batch_info, _outcome, batch_reason, _label in outcomes:
-                self._emit_monitor_notification(batch_info, batch_reason)
+            # Skip when outcomes were delegated to individual
+            # _react_in_main_chat calls — each of those already emits its
+            # own notification in its own finally block.
+            if not delegated_to_individual:
+                for batch_info, _outcome, batch_reason, _label in outcomes:
+                    self._emit_monitor_notification(batch_info, batch_reason)
 
     async def _record_passive(self, session_id: str, label: str, outcome: str) -> None:
         """Record *outcome* as a passive, system-authored turn under the lock.
