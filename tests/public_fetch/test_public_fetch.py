@@ -108,6 +108,90 @@ async def test_fetch_basic_success(respx_mock: respx.MockRouter) -> None:
 
 
 @pytest.mark.asyncio
+async def test_fetch_with_cookies(respx_mock: respx.MockRouter) -> None:
+    """Cookies are injected into the request headers."""
+    respx_mock.get("https://example.com/api").mock(
+        return_value=httpx.Response(200, text="authenticated content")
+    )
+
+    with mock.patch(
+        "robotsix_chat.common.http_fetch.socket.getaddrinfo",
+        return_value=_MOCK_SOCKET_RETURN,
+    ):
+        tools = build_public_fetch_tools(_settings())
+        result = json.loads(
+            await tools[0](
+                "https://example.com/api",
+                cookies={"session_id": "abc123", "user_token": "xyz789"},
+            )
+        )
+
+    assert result["error"] == ""
+    assert result["status_code"] == 200
+    assert "authenticated content" in result["text"]
+    # Verify cookies were sent in the request
+    assert "Cookie" in respx_mock.calls.last.request.headers
+    cookie_header = respx_mock.calls.last.request.headers["Cookie"]
+    assert "session_id=abc123" in cookie_header
+    assert "user_token=xyz789" in cookie_header
+
+
+@pytest.mark.asyncio
+async def test_fetch_with_cookies_redirect(respx_mock: respx.MockRouter) -> None:
+    """Cookies are forwarded through redirects."""
+    respx_mock.get("https://example.com/old").mock(
+        return_value=httpx.Response(
+            301, headers={"Location": "https://example.com/new"}
+        )
+    )
+    respx_mock.get("https://example.com/new").mock(
+        return_value=httpx.Response(200, text="redirected content")
+    )
+
+    with mock.patch(
+        "robotsix_chat.common.http_fetch.socket.getaddrinfo",
+        return_value=_MOCK_SOCKET_RETURN,
+    ):
+        tools = build_public_fetch_tools(_settings())
+        result = json.loads(
+            await tools[0](
+                "https://example.com/old",
+                cookies={"session_id": "abc123"},
+            )
+        )
+
+    assert result["error"] == ""
+    assert result["status_code"] == 200
+    assert result["final_url"] == "https://example.com/new"
+    assert "redirected content" in result["text"]
+    # Verify cookies were sent in the redirect request
+    assert "Cookie" in respx_mock.calls.last.request.headers
+    cookie_header = respx_mock.calls.last.request.headers["Cookie"]
+    assert "session_id=abc123" in cookie_header
+
+
+@pytest.mark.asyncio
+async def test_fetch_without_cookies(respx_mock: respx.MockRouter) -> None:
+    """When no cookies are provided, no Cookie header is sent."""
+    respx_mock.get("https://example.com/api").mock(
+        return_value=httpx.Response(200, text="public content")
+    )
+
+    with mock.patch(
+        "robotsix_chat.common.http_fetch.socket.getaddrinfo",
+        return_value=_MOCK_SOCKET_RETURN,
+    ):
+        tools = build_public_fetch_tools(_settings())
+        result = json.loads(await tools[0]("https://example.com/api", cookies=None))
+
+    assert result["error"] == ""
+    assert result["status_code"] == 200
+    assert "public content" in result["text"]
+    # Verify no Cookie header was sent
+    assert "Cookie" not in respx_mock.calls.last.request.headers
+
+
+@pytest.mark.asyncio
 async def test_fetch_github_raw(respx_mock: respx.MockRouter) -> None:
     """GitHub raw URL shape works correctly."""
     respx_mock.get(
