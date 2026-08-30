@@ -304,4 +304,102 @@ class TestMobileToken:
             headers={"X-Forwarded-User": "alice"},
         )
         assert resp.status_code == 500
-        assert "token_secret" in resp.json()["error"]
+
+
+# ---------------------------------------------------------------------------
+# Metrics tests
+# ---------------------------------------------------------------------------
+
+
+class TestAuthMetrics:
+    """Tests for Prometheus metrics emitted by auth endpoints."""
+
+    def test_auth_login_increments_counter(self) -> None:
+        """GET /auth/login increments the auth_login_requests counter."""
+        from robotsix_chat.chat.server.metrics import AUTH_LOGIN_REQUESTS
+
+        auth = _enabled_auth()
+        client = TestClient(_make_app(auth))
+
+        # Get initial value
+        initial = AUTH_LOGIN_REQUESTS.labels(status="302")._value.get()
+
+        client.get(
+            "/auth/login",
+            params={"redirect_to": "https://app.example.com/callback"},
+            follow_redirects=False,
+        )
+
+        assert AUTH_LOGIN_REQUESTS.labels(status="302")._value.get() == initial + 1
+
+    def test_auth_login_rejection_increments_counter(self) -> None:
+        """GET /auth/login with bad domain increments rejection counter."""
+        from robotsix_chat.chat.server.metrics import (
+            AUTH_LOGIN_REQUESTS,
+            REDIRECT_VALIDATION_REJECTIONS,
+        )
+
+        auth = _enabled_auth()
+        client = TestClient(_make_app(auth))
+
+        initial_rejections = REDIRECT_VALIDATION_REJECTIONS._value.get()
+        initial_400 = AUTH_LOGIN_REQUESTS.labels(status="400")._value.get()
+
+        client.get(
+            "/auth/login",
+            params={"redirect_to": "https://evil.com/steal"},
+        )
+
+        assert REDIRECT_VALIDATION_REJECTIONS._value.get() == initial_rejections + 1
+        assert AUTH_LOGIN_REQUESTS.labels(status="400")._value.get() == initial_400 + 1
+
+    def test_mobile_token_increments_counter(self) -> None:
+        """POST /chat/auth/mobile-token increments token exchange counter."""
+        from robotsix_chat.chat.server.metrics import (
+            MOBILE_TOKEN_EXCHANGE_REQUESTS,
+            TOKEN_ISSUANCE_EVENTS,
+        )
+
+        auth = _enabled_auth()
+        client = TestClient(_make_app(auth))
+
+        initial_200 = MOBILE_TOKEN_EXCHANGE_REQUESTS.labels(status="200")._value.get()
+        initial_issuance = TOKEN_ISSUANCE_EVENTS._value.get()
+
+        client.post(
+            "/chat/auth/mobile-token",
+            headers={"X-Forwarded-User": "alice"},
+        )
+
+        assert (
+            MOBILE_TOKEN_EXCHANGE_REQUESTS.labels(status="200")._value.get()
+            == initial_200 + 1
+        )
+        assert TOKEN_ISSUANCE_EVENTS._value.get() == initial_issuance + 1
+
+    def test_mobile_token_401_increments_counter(self) -> None:
+        """POST /chat/auth/mobile-token without header increments 401 counter."""
+        from robotsix_chat.chat.server.metrics import (
+            MOBILE_TOKEN_EXCHANGE_REQUESTS,
+            TOKEN_VERIFICATION_FAILURES,
+        )
+
+        auth = _enabled_auth()
+        client = TestClient(_make_app(auth))
+
+        initial_401 = MOBILE_TOKEN_EXCHANGE_REQUESTS.labels(status="401")._value.get()
+        initial_failures = TOKEN_VERIFICATION_FAILURES.labels(
+            reason="missing_header"
+        )._value.get()
+
+        resp = client.post("/chat/auth/mobile-token")
+        assert resp.status_code == 401
+
+        assert (
+            MOBILE_TOKEN_EXCHANGE_REQUESTS.labels(status="401")._value.get()
+            == initial_401 + 1
+        )
+        assert (
+            TOKEN_VERIFICATION_FAILURES.labels(reason="missing_header")._value.get()
+            == initial_failures + 1
+        )

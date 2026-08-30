@@ -19,6 +19,14 @@ from starlette.exceptions import HTTPException
 from starlette.requests import Request
 from starlette.responses import JSONResponse, RedirectResponse
 
+from robotsix_chat.chat.server.metrics import (
+    AUTH_CALLBACK_REQUESTS,
+    AUTH_LOGIN_REQUESTS,
+    MOBILE_TOKEN_EXCHANGE_REQUESTS,
+    REDIRECT_VALIDATION_REJECTIONS,
+    TOKEN_ISSUANCE_EVENTS,
+    TOKEN_VERIFICATION_FAILURES,
+)
 from robotsix_chat.config.models import MobileAuthSettings
 
 logger = logging.getLogger(__name__)
@@ -92,12 +100,23 @@ async def auth_login_endpoint(request: Request) -> RedirectResponse:
 
     redirect_to = request.query_params.get("redirect_to")
     if not redirect_to:
+        AUTH_LOGIN_REQUESTS.labels(status="400").inc()
         raise HTTPException(
             status_code=400,
             detail="redirect_to query parameter is required",
         )
 
     if not _domain_allowed(redirect_to, auth.allowed_redirect_domains):
+        REDIRECT_VALIDATION_REJECTIONS.inc()
+        AUTH_LOGIN_REQUESTS.labels(status="400").inc()
+        logger.warning(
+            "auth_login: redirect validation rejected",
+            extra={
+                "redirect_to": redirect_to,
+                "allowed_domains": auth.allowed_redirect_domains,
+                "event": "redirect_validation_rejection",
+            },
+        )
         raise HTTPException(
             status_code=400,
             detail="redirect_to domain is not in the allowlist",
@@ -116,9 +135,14 @@ async def auth_login_endpoint(request: Request) -> RedirectResponse:
         f"{auth.tinyauth_url.rstrip('/')}/login?{urlencode({'callback': callback_url})}"
     )
 
+    AUTH_LOGIN_REQUESTS.labels(status="302").inc()
     logger.info(
         "auth_login: redirecting to tinyauth",
-        extra={"redirect_to": redirect_to, "tinyauth_url": tinyauth_login},
+        extra={
+            "redirect_to": redirect_to,
+            "tinyauth_url": tinyauth_login,
+            "event": "auth_login_redirect",
+        },
     )
     return RedirectResponse(url=tinyauth_login, status_code=302)
 
@@ -135,12 +159,23 @@ async def auth_callback_endpoint(request: Request) -> RedirectResponse:
 
     redirect_to = request.query_params.get("redirect_to")
     if not redirect_to:
+        AUTH_CALLBACK_REQUESTS.labels(status="400").inc()
         raise HTTPException(
             status_code=400,
             detail="redirect_to query parameter is required",
         )
 
     if not _domain_allowed(redirect_to, auth.allowed_redirect_domains):
+        REDIRECT_VALIDATION_REJECTIONS.inc()
+        AUTH_CALLBACK_REQUESTS.labels(status="400").inc()
+        logger.warning(
+            "auth_callback: redirect validation rejected",
+            extra={
+                "redirect_to": redirect_to,
+                "allowed_domains": auth.allowed_redirect_domains,
+                "event": "redirect_validation_rejection",
+            },
+        )
         raise HTTPException(
             status_code=400,
             detail="redirect_to domain is not in the allowlist",
@@ -149,14 +184,20 @@ async def auth_callback_endpoint(request: Request) -> RedirectResponse:
     # The identity is set by the tinyauth edge proxy in the header.
     subject = request.headers.get(auth.subject_header)
     if not subject:
+        AUTH_CALLBACK_REQUESTS.labels(status="401").inc()
         raise HTTPException(
             status_code=401,
             detail="missing identity header — request must pass through tinyauth",
         )
 
+    AUTH_CALLBACK_REQUESTS.labels(status="302").inc()
     logger.info(
         "auth_callback: redirecting to app",
-        extra={"subject": subject, "redirect_to": redirect_to},
+        extra={
+            "subject": subject,
+            "redirect_to": redirect_to,
+            "event": "auth_callback_redirect",
+        },
     )
     return RedirectResponse(url=redirect_to, status_code=302)
 
@@ -174,6 +215,12 @@ async def mobile_token_endpoint(request: Request) -> JSONResponse:
 
     subject = request.headers.get(auth.subject_header)
     if not subject:
+        MOBILE_TOKEN_EXCHANGE_REQUESTS.labels(status="401").inc()
+        TOKEN_VERIFICATION_FAILURES.labels(reason="missing_header").inc()
+        logger.warning(
+            "mobile_token: missing identity header",
+            extra={"event": "token_exchange_failure", "reason": "missing_header"},
+        )
         raise HTTPException(
             status_code=401,
             detail="missing identity header — request must pass through tinyauth",
@@ -181,6 +228,7 @@ async def mobile_token_endpoint(request: Request) -> JSONResponse:
 
     secret = auth.token_secret.get_secret_value()
     if not secret:
+        MOBILE_TOKEN_EXCHANGE_REQUESTS.labels(status="500").inc()
         raise HTTPException(
             status_code=500,
             detail="token_secret is not configured",
@@ -188,9 +236,15 @@ async def mobile_token_endpoint(request: Request) -> JSONResponse:
 
     token = _sign_token(subject, secret, auth.token_ttl_seconds)
 
+    TOKEN_ISSUANCE_EVENTS.inc()
+    MOBILE_TOKEN_EXCHANGE_REQUESTS.labels(status="200").inc()
     logger.info(
         "mobile_token: issued token",
-        extra={"subject": subject, "ttl": auth.token_ttl_seconds},
+        extra={
+            "subject": subject,
+            "ttl": auth.token_ttl_seconds,
+            "event": "token_issuance",
+        },
     )
     return JSONResponse(
         {

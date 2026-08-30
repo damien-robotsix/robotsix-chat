@@ -1,0 +1,82 @@
+# Prometheus alerting rules for mobile SSO authentication endpoints.
+#
+# Deploy this file to your Prometheus server's rules directory and add it
+# to the `rule_files` configuration.  See the Prometheus documentation
+# for details: https://prometheus.io/docs/prometheus/latest/configuration/alerting_rules/
+#
+# Runbook: docs/chat/server/mobile_sso_runbook.md
+
+groups:
+  - name: mobile_sso_alerts
+    rules:
+      # Alert: High rate of token exchange 401 responses.
+      # This may indicate an attack (brute-force subject token guessing),
+      # mass token expiry, or a misconfigured edge proxy stripping headers.
+      - alert: MobileSsoTokenExchange401Spike
+        expr: |
+          rate(robotsix_chat_mobile_token_exchange_requests_total{status="401"}[5m])
+          > 0.1
+        for: 5m
+        labels:
+          severity: warning
+          component: mobile-sso
+        annotations:
+          summary: "High rate of 401 responses from mobile token exchange"
+          description: >-
+            The rate of 401 responses from POST /chat/auth/mobile-token has
+            exceeded 0.1/sec for 5 minutes.  This may indicate an attack,
+            mass token expiry, or a misconfigured edge proxy.
+          runbook: "docs/chat/server/mobile_sso_runbook.md#token-exchange-401-spike"
+
+      # Alert: High rate of redirect validation rejections.
+      # This may indicate a misconfigured mobile app or an attack attempting
+      # open-redirect exploitation.
+      - alert: MobileSsoRedirectValidationRejections
+        expr: |
+          rate(robotsix_chat_redirect_validation_rejections_total[5m])
+          > 0.05
+        for: 5m
+        labels:
+          severity: warning
+          component: mobile-sso
+        annotations:
+          summary: "High rate of redirect validation rejections"
+          description: >-
+            The rate of redirect-validation rejections has exceeded 0.05/sec
+            for 5 minutes.  This may indicate a misconfigured mobile app
+            or an attack attempting open-redirect exploitation.
+          runbook: "docs/chat/server/mobile_sso_runbook.md#redirect-validation-rejections"
+
+      # Alert: Token verification failures spike.
+      # This may indicate token tampering or clock skew between servers.
+      - alert: MobileSsoTokenVerificationFailures
+        expr: |
+          rate(robotsix_chat_token_verification_failures_total[5m])
+          > 0.1
+        for: 5m
+        labels:
+          severity: warning
+          component: mobile-sso
+        annotations:
+          summary: "High rate of bearer token verification failures"
+          description: >-
+            The rate of bearer token verification failures has exceeded
+            0.1/sec for 5 minutes.  This may indicate token tampering,
+            clock skew, or a rotated token secret.
+          runbook: "docs/chat/server/mobile_sso_runbook.md#token-verification-failures"
+
+      # Alert: Mobile SSO endpoints disabled.
+      # This is informational — the endpoints may be intentionally disabled.
+      - alert: MobileSsoEndpointsDisabled
+        expr: |
+          absent(robotsix_chat_auth_login_requests_total)
+        for: 10m
+        labels:
+          severity: info
+          component: mobile-sso
+        annotations:
+          summary: "Mobile SSO endpoints appear to be disabled"
+          description: >-
+            No auth_login_requests metrics have been recorded for 10 minutes.
+            The mobile SSO endpoints may be disabled via configuration.
+          runbook: "docs/chat/server/mobile_sso_runbook.md#endpoints-disabled"
