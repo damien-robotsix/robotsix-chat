@@ -81,7 +81,7 @@ Tasks that are pending, in-progress, or blocked.
   `ClaudeAgentOptions`, OR a new deployable HTTP component that wraps Playwright must be built
   (separate repo/ticket). (2) **Fleet deployment + roster registration live in
   robotsix-central-deploy**, not this repo. (3) **No Vaultwarden / Bitwarden CLI / EnvStore
-  integration exists** (only a deferral note in `claude_usage/README.md`). New external secret
+  integration exists**. New external secret
   client + operator-provisioned scoped single- collection service account + `BW_SESSION`/API key in
   EnvStore — its own ticket. (4) **The live OVH submission** needs a running browser, real
   credentials, and PII documents — out of scope for the implement stage. Recommended split

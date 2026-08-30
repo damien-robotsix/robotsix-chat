@@ -28,10 +28,6 @@ from structlog.contextvars import bind_contextvars, clear_contextvars
 from robotsix_chat import PROJECT_TITLE
 from robotsix_chat.chat.conversation import ConversationStore
 from robotsix_chat.chat.events import EventBus, EventSink
-from robotsix_chat.claude_usage import (
-    build_claude_usage_tools,
-    load_claude_usage_skill,
-)
 from robotsix_chat.component_access import build_component_access_tools
 from robotsix_chat.component_client import build_component_tools
 from robotsix_chat.config import Settings
@@ -870,7 +866,6 @@ def _skill_registry(
         ),
         (settings.public_fetch.enabled, "public_fetch", load_public_fetch_skill),
         (settings.render_url.enabled, "render_url", load_render_url_skill),
-        (settings.claude_usage.enabled, "claude_usage", load_claude_usage_skill),
         (settings.github_security.enabled, "github_security", load_github_skill),
         (settings.github_actions.enabled, "github_actions", load_github_actions_skill),
         (settings.direct_repo.enabled, "direct_repo", load_direct_repo_skill),
@@ -1077,7 +1072,6 @@ def _build_static_tools(
         *build_version_check_tools(settings.version_check, settings.direct_repo),
         *build_lifecycle_tools(settings.lifecycle),
         *build_render_url_tools(settings.render_url),
-        *build_claude_usage_tools(settings.claude_usage, settings.mail),
         *build_http_probe_tools(settings.http_probe, settings.central_deploy),
         *build_docker_digest_tools(settings.docker_digest),
         *build_gateway_route_tools(settings.gateway_route, settings.central_deploy),
