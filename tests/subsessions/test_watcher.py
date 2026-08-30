@@ -19,6 +19,7 @@ from robotsix_chat.subsessions import (
     SubsessionStatus,
 )
 from robotsix_chat.subsessions.watcher import (
+    _history_shows_implementation_and_pr,
     _query_ticket_state,
     _resume_merged_pr_monitor,
     _resume_paused_monitor,
@@ -332,15 +333,21 @@ def _make_paused_monitor(env, ticket_id="TICKET-1", last_known="open", title="mo
     return info
 
 
-def _mock_ticket_client(*, state="open", pr_url=None):
+def _mock_ticket_client(*, state="open", pr_url=None, events=None, history=None):
     """Build a mock ``httpx.AsyncClient`` returning the given ticket state.
 
     When *pr_url* is provided it is included in the JSON response;
-    when ``None`` (the default) the key is absent.
+    when ``None`` (the default) the key is absent.  *events*/*history*
+    populate the ticket's lifecycle arrays so the watcher's
+    history-merge-evidence cross-check can be exercised.
     """
     body: dict[str, Any] = {"state": state}
     if pr_url is not None:
         body["pr_url"] = pr_url
+    if events is not None:
+        body["events"] = events
+    if history is not None:
+        body["history"] = history
 
     mock_response = MagicMock()
     mock_response.json.return_value = body
@@ -1494,6 +1501,76 @@ async def test_watcher_terminal_no_pr_evidence_keeps_paused() -> None:
     reopened = env.registry.get(info.id)
     assert reopened is not None
     assert not reopened.is_active
+
+
+def test_history_shows_implementation_and_pr_requires_both() -> None:
+    """The pure predicate needs BOTH implementation and PR evidence."""
+    # Both kinds of evidence present -> True.
+    assert _history_shows_implementation_and_pr(
+        {
+            "events": [
+                {"type": "implement_complete"},
+                {"type": "open_pr", "pr_url": "https://github.com/org/repo/pull/7"},
+            ]
+        }
+    )
+    # Implementation only -> False.
+    assert not _history_shows_implementation_and_pr(
+        {"events": [{"type": "implement_complete"}]}
+    )
+    # PR only -> False.
+    assert not _history_shows_implementation_and_pr(
+        {"history": [{"action": "open_pr"}]}
+    )
+    # Empty / missing arrays -> False.
+    assert not _history_shows_implementation_and_pr({"state": "closed"})
+    # Evidence split across events and history, merge event counts as PR.
+    assert _history_shows_implementation_and_pr(
+        {
+            "events": [{"action": "implement"}],
+            "history": [{"to": "delivered", "type": "pr_merged"}],
+        }
+    )
+
+
+@pytest.mark.asyncio
+async def test_watcher_terminal_no_pr_evidence_but_history_resumes() -> None:
+    """Terminal ticket with history evidence resumes instead of false warning.
+
+    A null ``pr_url`` but history showing implementation + PR/merge evidence
+    resumes rather than emitting a false 'no PR' warning.
+    """
+    settings = _settings_with_direct_repo(
+        board_api_token=type("_st", (), {"get_secret_value": lambda: ""})(),
+        timeout=10.0,
+    )
+    sink = RecordingSink()
+    env = build_env(settings=settings, event_sink=sink)
+
+    info = _make_paused_monitor(env, ticket_id="T-1", last_known="in_progress")
+
+    mock_ticket_client = _mock_ticket_client(
+        state="closed",
+        events=[
+            {"type": "implement_complete"},
+            {"type": "open_pr", "pr_url": "https://github.com/org/repo/pull/9"},
+        ],
+    )
+
+    watcher_task = asyncio.create_task(watch_paused_monitors(env))
+
+    with patch("httpx.AsyncClient", mock_ticket_client):
+        await asyncio.sleep(0.20)
+
+    watcher_task.cancel()
+    with pytest.raises(asyncio.CancelledError):
+        _ = await watcher_task
+
+    reopened = env.registry.get(info.id)
+    assert reopened is not None
+    # The monitor was resumed from pause rather than kept paused with a
+    # false "no PR evidence" warning.
+    assert reopened.close_reason != "paused"
 
 
 @pytest.mark.asyncio
