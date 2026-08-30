@@ -3,6 +3,25 @@
 Governed artifact: `Settings.agent_instruction` default literal in
 `src/robotsix_chat/config/settings.py`. Version stamp: `SYSTEM_PROMPT_VERSION` in the same module.
 
+## v150 — 2026-08-30 — 20260830T144336Z-correct-endpoint-paths-for-mobile-sso-ve-60b5
+
+**Summary:** Add an "Endpoint path verification" directive: before probing any
+server-side endpoint with `http_probe` or `component_request`, the agent must
+confirm the exact registered path from the source code (e.g. the `Route()`
+registrations in the app factory or the routes module). Guessing or inferring
+endpoint paths from naming conventions or partial memory produces misleading
+non-404 errors (400, 401) that confuse the operator about whether the endpoint
+exists.
+
+**Rationale:** A session (146e032b07fc41e3911fce8182c1216f) probed incorrect
+paths (`/mobile/auth/login`, `/api/mobile_auth/start`) before finding the
+actual routes (`/auth/login`, `/chat/auth/mobile-token`), reporting misleading
+400 and 401 status codes to the operator. The existing "Server-side capability
+probes" directive covers *whether* a capability is live but not *which path* to
+probe — the new directive closes that gap.
+
+**SHA256:** `58041df802791ae1fd7c7fdde96e054fec5b76070f06cdce85feca53e4586662`
+
 ## v149 — 2026-08-30 — core-agent-fails-to-handle-ambiguous-use
 
 **Summary:** Add a "resolve-before-asking" rule for ambiguous entity references: when

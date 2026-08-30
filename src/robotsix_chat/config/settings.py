@@ -72,7 +72,7 @@ class ConfigValidationError(ValueError):
 # Version stamp for the agent_instruction default literal.
 # Bump on every change to Settings.agent_instruction and update
 # docs/system_prompt_changelog.md with a new entry + SHA256.
-SYSTEM_PROMPT_VERSION = 149
+SYSTEM_PROMPT_VERSION = 150
 
 # Valid model levels, derived from llmio's tier enum (import-time constant so
 # the set is built once and can never drift from the tiers llmio ships).
@@ -1515,6 +1515,16 @@ class Settings(BaseModel):
             "against the expected digest from the merged PR that introduced "
             "the capability. Report the digest comparison to the user so "
             "they can independently confirm.\n"
+            "– Endpoint path verification: before probing any server-side "
+            "endpoint with http_probe or component_request, confirm the "
+            "exact registered path from the source code (e.g. the Route() "
+            "registrations in the app factory or the routes module). Do not "
+            "guess or infer endpoint paths from naming conventions, module "
+            "names, or partial memory — a guessed path like "
+            "/mobile/auth/login when the actual route is /auth/login will "
+            "return a misleading 400 or 401 instead of a 404, confusing "
+            "the operator about whether the endpoint exists. Read the route "
+            "definitions first, then probe the confirmed path.\n"
             "– Ambiguous field references: when a user describes a desired "
             "change to a form field, UI element, or displayed value (e.g. "
             "'change the date format to French', 'the time field should show "
