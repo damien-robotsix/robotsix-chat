@@ -148,6 +148,7 @@ modules:
     description: "Typed configuration — pydantic Settings model loaded from the one JSON config file via robotsix-config."
     paths:
       - src/robotsix_chat/config/__init__.py
+      - src/robotsix_chat/config/auth_models.py
       - src/robotsix_chat/config/autonomous_models.py
       - src/robotsix_chat/config/claude_usage_models.py
       - src/robotsix_chat/config/component_models.py
@@ -195,6 +196,7 @@ modules:
       - src/robotsix_chat/chat/server/routes/__init__.py
       - src/robotsix_chat/chat/server/routes/_shared.py
       - src/robotsix_chat/chat/server/routes/admin.py
+      - src/robotsix_chat/chat/server/routes/auth.py
       - src/robotsix_chat/chat/server/routes/chat.py
       - src/robotsix_chat/chat/server/routes/constants.py
       - src/robotsix_chat/chat/server/routes/errors.py
@@ -226,6 +228,7 @@ modules:
       - tests/chat/server/routes/__init__.py
       - tests/chat/server/routes/conftest.py
       - tests/chat/server/routes/test_admin.py
+      - tests/chat/server/routes/test_auth.py
       - tests/chat/server/routes/test_chat_skill.py
       - tests/chat/server/routes/test_shared.py
       - tests/chat/server/routes/test_config.py

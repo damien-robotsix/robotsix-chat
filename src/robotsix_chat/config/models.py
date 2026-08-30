@@ -113,6 +113,7 @@ __all__ = [
     "MemoryEmbeddingSettings",
     "MemoryLlmSettings",
     "MemorySettings",
+    "MobileAuthSettings",
     "NotificationSettings",
     "OpenRouterSettings",
     "PublicFetchSettings",

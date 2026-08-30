@@ -97,6 +97,8 @@ from .routes import (
     ChatAgent,
     MessageCoalescer,
     RunSerializer,
+    auth_callback_endpoint,
+    auth_login_endpoint,
     autonomous_definitions_list_endpoint,
     autonomous_definitions_run_endpoint,
     autonomous_refinements_accept_endpoint,
@@ -130,6 +132,7 @@ from .routes import (
     mail_archive_root_check_endpoint,
     memory_ingestion_structure_endpoint,
     mill_events_endpoint,
+    mobile_token_endpoint,
     models_list_endpoint,
     not_found_handler,
     prune_endpoint,
@@ -155,6 +158,7 @@ if TYPE_CHECKING:
         DirectRepoSettings,
         GitHubActionsSettings,
         GitHubSecuritySettings,
+        MobileAuthSettings,
     )
     from robotsix_chat.subsessions import (
         CloseState,
@@ -347,6 +351,7 @@ def create_app(
     direct_repo_settings: DirectRepoSettings | None = None,
     github_security_settings: GitHubSecuritySettings | None = None,
     github_actions_settings: GitHubActionsSettings | None = None,
+    mobile_auth: MobileAuthSettings | None = None,
     config_path: str | None = None,
     draft_store_dir: str | None = None,
     diagnostic_store: Any = None,
@@ -451,6 +456,8 @@ def create_app(
         github_actions_settings: GitHub Actions config (org, deploy API key)
             used by the Actions secrets and workflow dispatch endpoints.
             When ``None``, the endpoints return 503.
+        mobile_auth: Mobile SSO authentication settings.  When ``None``
+            or disabled, the auth endpoints return 404.
         config_path: Path to the config JSON file, used by the
             ``GET /config`` and ``PUT /config`` endpoints.  When ``None``
             (default), the path is resolved from the
@@ -487,6 +494,13 @@ def create_app(
     """
     routes: list[Route | Mount] = [
         Route("/health", health_endpoint, methods=["GET"]),
+        Route("/auth/login", auth_login_endpoint, methods=["GET"]),
+        Route("/auth/callback", auth_callback_endpoint, methods=["GET"]),
+        Route(
+            "/chat/auth/mobile-token",
+            mobile_token_endpoint,
+            methods=["POST"],
+        ),
         Route("/admin/disk", disk_usage_endpoint, methods=["GET"]),
         Route("/admin/prune", prune_endpoint, methods=["POST"]),
         Route(
@@ -709,6 +723,7 @@ def create_app(
     app.state.direct_repo_settings = direct_repo_settings
     app.state.github_security_settings = github_security_settings
     app.state.github_actions_settings = github_actions_settings
+    app.state.mobile_auth = mobile_auth
     app.state.feedback_runner = feedback_runner  # may be None
     app.state.autonomous_runner = autonomous_runner  # may be None
     app.state.diagnostic_store = diagnostic_store  # may be None

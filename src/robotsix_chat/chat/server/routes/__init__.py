@@ -11,6 +11,11 @@ from .admin import (
     disk_usage_endpoint,
     prune_endpoint,
 )
+from .auth import (
+    auth_callback_endpoint,
+    auth_login_endpoint,
+    mobile_token_endpoint,
+)
 from .chat import (
     ChatAgent,
     MessageCoalescer,
@@ -116,6 +121,8 @@ __all__ = [
     "_parse_json_body",
     "_resolve_subsession",
     "_sse_frame",
+    "auth_callback_endpoint",
+    "auth_login_endpoint",
     "autonomous_definitions_list_endpoint",
     "autonomous_definitions_run_endpoint",
     "autonomous_refinements_accept_endpoint",
@@ -149,6 +156,7 @@ __all__ = [
     "mail_archive_root_check_endpoint",
     "memory_ingestion_structure_endpoint",
     "mill_events_endpoint",
+    "mobile_token_endpoint",
     "models_list_endpoint",
     "not_found_handler",
     "prune_endpoint",

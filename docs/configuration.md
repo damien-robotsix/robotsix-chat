@@ -891,6 +891,22 @@ local-filesystem-only primitive with no remote access and no write capability. E
 | `volume_tools.enabled`   | `boolean` | `true`    | Master switch. When `false`, no `list_volume_files` tool is offered.          |
 | `volume_tools.root_path` | `string`  | `"/data"` | Root directory for volume file listings. Paths outside this root are refused. |
 
+### Mobile Auth (SSO)
+
+Mobile SSO authentication via tinyauth reverse proxy. When enabled, exposes `GET /auth/login` and
+`POST /chat/auth/mobile-token` for the mobile app's authentication flow. Disabled by default.
+
+| JSON key                              | Type              | Default              | Description                                                                                                              |
+| ------------------------------------- | ----------------- | -------------------- | ------------------------------------------------------------------------------------------------------------------------ |
+| `mobile_auth.enabled`                 | `boolean`         | `false`              | Master switch. When `false`, the auth endpoints return 404.                                                              |
+| `mobile_auth.tinyauth_url`            | `string`          | `""`                 | Base URL of the tinyauth instance (e.g. `"https://auth.robotsix.net"`).                                                  |
+| `mobile_auth.subject_header`          | `string`          | `"X-Forwarded-User"` | HTTP header where tinyauth writes the authenticated user identity.                                                       |
+| `mobile_auth.session_header`          | `string`          | `"X-Forwarded-Session"` | HTTP header where tinyauth writes the session identifier.                                                             |
+| `mobile_auth.token_secret`            | `string` (secret) | `""`                 | HMAC secret used to sign the short-lived bearer tokens. Must be set when `enabled` is `true`.                            |
+| `mobile_auth.token_ttl_seconds`       | `integer`         | `3600`               | Bearer token lifetime in seconds. Must be > 0.                                                                           |
+| `mobile_auth.allowed_redirect_domains` | `array[string]`  | `[]`                 | Allowlist of domains for the `redirect_to` query parameter in `GET /auth/login`. Must be non-empty when `enabled` is `true`. |
+| `mobile_auth.callback_base_url`       | `string`          | `""`                 | Public base URL of this chat server (e.g. `"https://chat.robotsix.net"`), used to construct the tinyauth callback URL.   |
+
 ## Schema
 
 The committed `config/config.schema.json` is the authoritative schema for the `Settings` model. It
