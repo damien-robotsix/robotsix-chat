@@ -574,10 +574,13 @@ modules:
     paths:
       - src/robotsix_chat/ticket_poll/__init__.py
       - src/robotsix_chat/ticket_poll/cache.py
+      - src/robotsix_chat/ticket_poll/mill_states.py
       - src/robotsix_chat/ticket_poll/skill.md
       - docs/ticket-poll/skill.md
       - tests/ticket_poll/__init__.py
       - tests/ticket_poll/test_cache.py
+      - tests/ticket_poll/test_mill_states.py
+      - tests/ticket_poll/test_resolve_repo.py
       - tests/ticket_poll/test_ticket_poll.py
 
   - id: lifecycle

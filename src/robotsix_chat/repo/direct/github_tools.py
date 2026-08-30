@@ -1119,67 +1119,135 @@ def build_github_tools(
         return f"Filed CI stabilization ticket {ticket_id}: {title}"
 
     async def list_open_prs(
-        org_name: str,
+        repo: str = "",
+        owner: str = "",
+        state: str = "all",
+        since_days: int = 30,
     ) -> str:
-        """List open pull requests across an organization's repositories in one batch.
+        """List pull requests for a repository or the whole GitHub account in one batch.
 
-        Uses GitHub's Search API (``/search/issues?q=type:pr+state:open+org:...``)
-        to return every open PR the GitHub App can access in *org_name* with a
-        single search query — instead of one WebFetch/API call per repository.
-        Prefer this tool whenever the user asks about PRs across several
-        repositories (a batch-worthy number of targets).
+        Uses GitHub's Search API (``/search/issues?q=type:pr …``) to return
+        every matching PR the GitHub App can access with a single query —
+        instead of one API call per repository.  Despite the name it
+        lists *closed and merged* PRs too (``state="all"`` is the default
+        with a ``since_days`` window), so a merged PR is visible instead
+        of vanishing into "No open PRs".
+
+        **Repository identity.** *repo* may be a mill ``repo_id`` (e.g.
+        ``"robotsix-central-deploy"``) — it is resolved to ``owner/repo``
+        through the mill's repo registry — or a full ``owner/repo``.  When
+        *repo* is empty the search spans the account the GitHub App is
+        installed on (*owner*, defaulting to the installation's own
+        account).  Never pass a guessed organisation name.
 
         **Read-only.** Does not modify any repository state and does not
-        require a ticket to be in BLOCKED state.  Results are limited to the
-        repositories the robotsix-mill GitHub App is installed on.
+        require a ticket to be in ``blocked`` state.
 
         Args:
-            org_name: GitHub organization name (e.g. ``"robotsix"``).
+            repo: Mill ``repo_id`` or ``owner/repo``; empty for account-wide.
+            owner: GitHub account to search when *repo* is empty.  Defaults
+                to the GitHub App installation's account.
+            state: ``"open"``, ``"closed"`` or ``"all"`` (default).
+            since_days: Only PRs updated within this many days (default 30;
+                ``0`` disables the window).  Ignored when *state* is
+                ``"open"``.
 
         Returns:
-            A summary grouped by repository listing each open PR's number,
-            title, URL, author, and draft status — plus a total count and a
-            truncation note when GitHub's search-result limit is reached.
+            A summary grouped by repository listing each PR's number,
+            title, URL, author, state (open / merged / closed) and draft
+            status — plus a total count and a truncation note when
+            GitHub's search-result limit is reached.
 
         """
-        try:
-            items = await client.search_open_prs(org_name=org_name)
-        except Exception as exc:
-            return f"Error listing open PRs for org '{org_name}': {exc}"
+        state_norm = state.strip().lower() or "all"
+        if state_norm not in ("open", "closed", "all"):
+            return f"Error: state must be 'open', 'closed' or 'all' (got {state!r})."
 
+        repo_full_name: str | None = None
+        scope_owner: str | None = None
+        if repo.strip():
+            repo_full_name = await board.resolve_repo_full_name(repo)
+            if repo_full_name is None:
+                return (
+                    f"Error: {repo!r} is neither a registered mill repo_id nor "
+                    "an 'owner/repo' full name.  Call resolve_repo(repo_id) "
+                    "to look it up in the mill registry, or pass the exact "
+                    "owner/repo — do not guess an organisation."
+                )
+        else:
+            scope_owner = owner.strip() or None
+            if scope_owner is None:
+                try:
+                    scope_owner = await client.installation_account()
+                except Exception as exc:
+                    return f"Error resolving the GitHub App installation account: {exc}"
+                if scope_owner is None:
+                    return (
+                        "Error: the GitHub App installation has no repositories, "
+                        "so there is no account to search; pass owner explicitly."
+                    )
+
+        since: str | None = None
+        if state_norm != "open" and since_days > 0:
+            from datetime import UTC, datetime, timedelta
+
+            since = (datetime.now(UTC) - timedelta(days=since_days)).strftime(
+                "%Y-%m-%d"
+            )
+
+        scope_label = repo_full_name or f"account '{scope_owner}'"
+        try:
+            items = await client.search_prs(
+                owner=scope_owner,
+                repo_full_name=repo_full_name,
+                state=state_norm,
+                since=since,
+            )
+        except Exception as exc:
+            return f"Error listing PRs for {scope_label}: {exc}"
+
+        window = f" updated in the last {since_days} days" if since else ""
         if not items:
             return (
-                f"No open PRs found for org '{org_name}' "
+                f"No {state_norm} PRs found for {scope_label}{window} "
                 "(in repositories the GitHub App can access)."
             )
 
         by_repo: dict[str, list[dict[str, Any]]] = {}
         for item in items:
             repository_url = item.get("repository_url", "")
-            repo = (
+            repo_key = (
                 repository_url.rsplit("/repos/", 1)[-1]
                 if "/repos/" in repository_url
                 else "(unknown repo)"
             )
-            by_repo.setdefault(repo, []).append(item)
+            by_repo.setdefault(repo_key, []).append(item)
 
         lines = [
-            f"Open PRs across org '{org_name}' — {len(items)} total:",
+            f"PRs ({state_norm}{window}) for {scope_label} — {len(items)} total:",
         ]
-        for repo in sorted(by_repo):
-            lines.append(f"\n{repo}:")
-            for item in sorted(by_repo[repo], key=lambda p: p.get("number", 0)):
+        for repo_key in sorted(by_repo):
+            lines.append(f"\n{repo_key}:")
+            for item in sorted(by_repo[repo_key], key=lambda p: p.get("number", 0)):
                 number = item.get("number", "?")
                 title = item.get("title", "(no title)")
                 html_url = item.get("html_url", "")
                 author = (item.get("user") or {}).get("login", "unknown")
                 draft = " [draft]" if item.get("draft") else ""
-                lines.append(f"  - #{number} {title}{draft} (by {author}) — {html_url}")
+                pr_meta = item.get("pull_request") or {}
+                if item.get("state") == "closed":
+                    pr_state = "merged" if pr_meta.get("merged_at") else "closed"
+                else:
+                    pr_state = "open"
+                lines.append(
+                    f"  - #{number} {title}{draft} [{pr_state}] "
+                    f"(by {author}) — {html_url}"
+                )
 
         if len(items) >= 1000:
             lines.append(
                 "\nNote: GitHub's search API caps results at 1000 items; "
-                "there may be more open PRs than shown."
+                "there may be more PRs than shown."
             )
 
         return "\n".join(lines)

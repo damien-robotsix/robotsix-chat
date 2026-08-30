@@ -31,6 +31,12 @@ Also provides ``list_stale_ready_tickets()`` — a queue-health monitoring tool
 that surfaces tickets stuck in ``ready`` state beyond the configured
 staleness threshold, enabling the agent to detect and escalate queue stalls.
 
+Also provides ``resolve_repo(repo_id)`` — maps a mill ``repo_id`` to the
+GitHub ``owner/repo`` full name via the mill's ``GET /repos`` registry, so
+GitHub tools are never called with a guessed owner.
+
+The mill state names live in :mod:`robotsix_chat.ticket_poll.mill_states`.
+
 Exposes :func:`build_ticket_poll_tools` and
 :func:`build_merge_pull_request_tool` — factories returning the LLM tools.
 Returns no tools when neither ``component_request`` nor
@@ -52,7 +58,14 @@ from typing import TYPE_CHECKING, Any
 import httpx
 from robotsix_http import RetryClient, RetryConfig
 
-from robotsix_chat.repo.direct.board_client import BoardClient
+from robotsix_chat.repo.direct.board_client import BoardClient, parse_owner_repo
+from robotsix_chat.ticket_poll.mill_states import (
+    ACTIVE_WORK_STATES,
+    MERGE_STATES,
+    OPEN_STATES,
+    TERMINAL_STATES,
+    normalize_state,
+)
 
 if TYPE_CHECKING:
     from robotsix_chat.config import Settings
@@ -65,6 +78,7 @@ __all__ = [
     "build_mark_ticket_ready_tool",
     "build_merge_pull_request_tool",
     "build_prioritize_all_open_tickets_tool",
+    "build_resolve_repo_tool",
     "build_ticket_poll_tools",
     "load_ticket_poll_skill",
 ]
@@ -370,95 +384,152 @@ async def _resolve_ticket_ids(
 
 
 # ---------------------------------------------------------------------------
-# Unexpected-terminal-state detection
+# Unexpected-terminal-state detection / delivery evidence
 # ---------------------------------------------------------------------------
 
-# Board API states that indicate the ticket was in active work (picked up
-# by an agent or reviewer), not sitting unexamined in draft/pre-review.
-# States that tell us the ticket was actively worked on (not just sitting
-# in a queue).  READY and DRAFT are deliberately absent: a ticket that
-# is only READY/DRAFT → CLOSED has not yet had work done on it.
-_ACTIVE_WORK_STATES = frozenset(
-    {
-        "APPROVED",
-        "IN_PROGRESS",
-        "BLOCKED",
-        "IMPLEMENT_COMPLETE",
-        "REVIEW",
-        "WAITING_AUTO_MERGE",
-        "HUMAN_MR_APPROVAL",
-    }
+# Keywords in an event ``type`` / ``action`` / ``note`` that signal the
+# ticket was worked on before it reached its terminal state.
+_ACTIVITY_KEYWORDS = (
+    "implement",
+    "unblock",
+    "resume",
+    "merge",
+    "approve",
+    "complete",
+    "retrospect",
+    "pull request",
 )
 
-# States that tell us the ticket reached a terminal outcome.
-_TERMINAL_STATES = frozenset({"CLOSED", "DONE"})
+
+def _history_states(data: dict[str, Any]) -> list[str]:
+    """Return the normalised state names found in *data*'s history.
+
+    Accepts the ``history`` array (mill ``GET /tickets/{id}/history``
+    rows, each carrying ``state``) or legacy entries that use ``to``.
+    Non-dict entries are skipped.
+    """
+    history = data.get("history")
+    if not isinstance(history, list):
+        return []
+    states: list[str] = []
+    for entry in history:
+        if not isinstance(entry, dict):
+            continue
+        states.append(normalize_state(entry.get("state", entry.get("to", ""))))
+    return states
+
+
+def _has_activity_event(data: dict[str, Any]) -> bool:
+    """Return True when any event/history note carries an activity keyword."""
+    for key in ("events", "history"):
+        rows = data.get(key)
+        if not isinstance(rows, list):
+            continue
+        for row in rows:
+            if not isinstance(row, dict):
+                continue
+            text = " ".join(
+                str(row.get(field, "")) for field in ("type", "action", "note")
+            ).lower()
+            if any(keyword in text for keyword in _ACTIVITY_KEYWORDS):
+                return True
+    return False
+
+
+def _delivery_evidence(data: dict[str, Any]) -> tuple[bool, str | None]:
+    """Return ``(delivered, note)`` for the ticket in *data*.
+
+    *delivered* is True when the ticket is in a terminal state AND carries
+    evidence that work shipped: a ``pr_url`` on the ticket, a merge-path
+    state (``implement_complete`` / ``human_mr_approval`` /
+    ``waiting_auto_merge`` / ``done``) in its history, or a ``done``
+    transition before ``closed``.  *note* is a human-readable delivery
+    summary (``None`` when nothing can be said).
+    """
+    state = normalize_state(data.get("state"))
+    pr_url = data.get("pr_url")
+    if not isinstance(pr_url, str) or not pr_url.strip():
+        pr_url = None
+    history = _history_states(data)
+    merged_path = any(prior in MERGE_STATES for prior in history)
+
+    if state not in TERMINAL_STATES:
+        return False, None
+    if pr_url is None and not merged_path:
+        return False, None
+
+    pr_part = f"PR {pr_url}" if pr_url else "PR merged (see ticket history)"
+    if state == "closed":
+        return True, f"closed after delivery (retrospect): {pr_part}"
+    if state == "done":
+        return True, f"done — {pr_part} merged, awaiting retrospect"
+    return True, pr_part
 
 
 def _check_unexpected_terminal(data: dict[str, Any]) -> str | None:
-    """Check whether *data* shows an unexpected path to a terminal state.
+    """Check whether *data* shows a ticket closed without any work.
 
-    Returns a diagnostic string when the ticket is ``CLOSED`` or ``DONE``
-    yet the ``events`` / ``history`` arrays show no sign that the ticket
-    was ever picked up for implementation, review, or triage — suggesting
-    it was closed prematurely (e.g.  ``DRAFT → CLOSED`` without approval).
-    Returns ``None`` when the transition looks normal or when the data
-    carries insufficient history to decide (no false positives).
+    Returns a diagnostic string ONLY when the ticket is ``closed`` /
+    ``done`` and:
 
-    Active-work evidence includes ANY of:
-      - A prior state in the implementation pipeline (APPROVED, IN_PROGRESS,
-        BLOCKED, IMPLEMENT_COMPLETE, REVIEW, WAITING_AUTO_MERGE,
-        HUMAN_MR_APPROVAL, READY).
-      - An event whose type/action contains one of: implement, unblock,
-        resume, merge, approve, close, complete.
+      - it has no ``pr_url``, AND
+      - its ``history`` shows no active-work state
+        (:data:`~robotsix_chat.ticket_poll.mill_states.ACTIVE_WORK_STATES`)
+        and no merge-path state
+        (:data:`~robotsix_chat.ticket_poll.mill_states.MERGE_STATES`), AND
+      - no event / history note mentions implement / merge / approve /
+        unblock / resume / complete activity.
+
+    That is the ``draft → closed`` (or ``ready → closed``) shape — a
+    ticket dropped by a triage gate or closed by hand before an agent
+    touched it.  The normal delivery path (``ready → code_review → … →
+    implement_complete → … → done → closed``) never trips it.  Returns
+    ``None`` in every other case, including when the data carries no
+    history at all but does carry a ``pr_url``.
 
     This is a pure function — no I/O.  Callers supply the parsed JSON
-    body from a ``GET /tickets/{id}`` response.
+    body from ``GET /tickets/{id}``, optionally augmented with the
+    ``history`` rows from ``GET /tickets/{id}/history``.
     """
-    state = data.get("state")
-    if not isinstance(state, str) or state.upper() not in _TERMINAL_STATES:
+    state = normalize_state(data.get("state"))
+    if state not in TERMINAL_STATES:
         return None
 
-    # 1. Check history entries for a prior active-work state.
-    history: list[dict[str, Any]] = data.get("history", [])
-    if isinstance(history, list):
-        for entry in history:
-            if not isinstance(entry, dict):
-                continue
-            prior = str(entry.get("state", entry.get("to", ""))).upper()
-            if prior in _ACTIVE_WORK_STATES:
-                return None  # Ticket reached an active state — normal.
+    delivered, _note = _delivery_evidence(data)
+    if delivered:
+        return None
 
-    # 2. Check events for implement / unblock / resume / merge / close
-    #    activity.  Any of these keywords in the event history signals
-    #    that the ticket was actively worked on before reaching its
-    #    terminal state.
-    events: list[dict[str, Any]] = data.get("events", [])
-    if isinstance(events, list):
-        for ev in events:
-            if not isinstance(ev, dict):
-                continue
-            ev_type = str(ev.get("type", ev.get("action", ""))).lower()
-            if any(
-                keyword in ev_type
-                for keyword in (
-                    "implement",
-                    "unblock",
-                    "resume",
-                    "merge",
-                    "approve",
-                    "close",
-                    "complete",
-                )
-            ):
-                return None  # Implementation activity — normal.
+    history = _history_states(data)
+    if any(prior in ACTIVE_WORK_STATES or prior in MERGE_STATES for prior in history):
+        return None
+    if _has_activity_event(data):
+        return None
 
-    # 3. No active-work evidence found — flag the transition.
+    seen = [s for s in history if s and s != state]
+    path = " → ".join([*seen, state]) if seen else state
     return (
-        f"Ticket reached {state} without ever entering an active work "
-        f"state (APPROVED, IN_PROGRESS, or BLOCKED).  "
-        f"This may indicate the ticket was closed from a draft or "
-        f"pre-review state without approval."
+        f"Ticket reached {state} without a PR and without ever entering an "
+        f"active work state ({path}).  It was closed from a draft / "
+        f"pre-implementation state — dropped, not delivered."
     )
+
+
+def _delivery_fields(data: dict[str, Any]) -> dict[str, Any]:
+    """Return the delivery-evidence fields every poll result carries.
+
+    ``pr_url`` (or ``None``), ``delivered`` (bool), ``delivery_note``
+    (string or ``None``) and ``unexpected_terminal`` (string or ``None``).
+    """
+    delivered, note = _delivery_evidence(data)
+    pr_url = data.get("pr_url")
+    if not isinstance(pr_url, str) or not pr_url.strip():
+        pr_url = None
+    return {
+        "pr_url": pr_url,
+        "delivered": delivered,
+        "delivery_note": note,
+        "unexpected_terminal": _check_unexpected_terminal(data),
+    }
 
 
 def load_ticket_poll_skill() -> str:
@@ -985,20 +1056,7 @@ def build_prioritize_all_open_tickets_tool(
     board_url, board_token, timeout = conn
 
     # States that indicate a ticket is still open (not terminal).
-    _open_states = frozenset(
-        {
-            "DRAFT",
-            "REFINING",
-            "APPROVED",
-            "BLOCKED",
-            "IN_PROGRESS",
-            "IMPLEMENT_COMPLETE",
-            "REVIEW",
-            "WAITING_AUTO_MERGE",
-            "HUMAN_MR_APPROVAL",
-            "AWAITING_USER_REPLY",
-        }
-    )
+    _open_states = OPEN_STATES
 
     async def _list_all_tickets() -> tuple[list[dict[str, Any]] | None, str]:
         """Fetch the full ticket list from the board API.
@@ -1160,7 +1218,7 @@ def build_prioritize_all_open_tickets_tool(
             tid = t.get("ticket_id")
             if not isinstance(tid, str) or not tid:
                 continue
-            state = str(t.get("state", "")).upper()
+            state = normalize_state(t.get("state", ""))
             # Skip terminal (closed/done) tickets.
             if state not in _open_states:
                 continue
@@ -1714,6 +1772,149 @@ def build_file_ticket_tool(
     return [file_ticket]
 
 
+def build_resolve_repo_tool(
+    settings: Settings,
+    *,
+    component_request: Callable[..., Any] | None = None,
+) -> list[Callable[..., Any]]:
+    """Return the ``resolve_repo`` tool.
+
+    Maps a mill ``repo_id`` (e.g. ``"robotsix-central-deploy"``) to the
+    GitHub ``owner/repo`` full name using the mill's ``GET /repos``
+    registry — the entry's ``forge_remote_url`` (older mills: ``git_url``)
+    is parsed for its last two path components.  Never guesses an owner:
+    when the registry has no match the tool says so and lists the known
+    repo ids.
+
+    Returns ``[]`` when the board API is not configured.
+    """
+    conn = _board_connection(settings, component_request)
+    if conn is None:
+        return []
+    board_client = BoardClient(settings.direct_repo)
+
+    async def _registry() -> list[dict[str, Any]] | None:
+        if component_request is not None:
+            resp = await component_request("mill", "GET", "/repos")
+            if isinstance(resp, str) and resp.startswith("HTTP "):
+                try:
+                    status_code = int(resp.split(maxsplit=2)[1])
+                    body_str = resp[resp.index("\n") + 1 :]
+                except IndexError, ValueError:
+                    status_code, body_str = 0, ""
+                if status_code and status_code < 400:
+                    rows, parse_error = _parse_json_body(body_str)
+                    if not parse_error and isinstance(rows, list):
+                        return [r for r in rows if isinstance(r, dict)]
+        return await board_client.list_repos()
+
+    async def resolve_repo(repo_id: str) -> str:
+        """Map a mill ticket ``repo_id`` to its GitHub ``owner/repo`` full name.
+
+        Use this BEFORE calling any GitHub tool (``list_open_prs``,
+        ``fetch_repo_for_study``, PR inspection …) with a repository you
+        only know by its mill ``repo_id`` (the ``repo_id`` / ``board_id``
+        field on a ticket, e.g. ``"robotsix-central-deploy"``).  The GitHub
+        account is NOT an organisation named after the fleet — never guess
+        ``"<fleet>/<repo>"``; read the owner from this tool's answer.
+
+        Args:
+            repo_id: A mill repo id (``"robotsix-chat"``), a board id, or an
+                already-qualified ``owner/repo`` (returned as-is).
+
+        Returns:
+            A JSON string: ``{"repo_id": ..., "full_name": "owner/repo",
+            "owner": ..., "repo": ..., "forge_remote_url": ..., "error": ""}``
+            — or ``full_name: null`` with an ``error`` and the list of
+            ``known_repo_ids`` when the id is not in the mill registry.
+
+        """
+        wanted = repo_id.strip()
+        if "/" in wanted or "://" in wanted or ":" in wanted:
+            full = parse_owner_repo(wanted)
+            if full is None:
+                return json.dumps(
+                    {
+                        "repo_id": repo_id,
+                        "full_name": None,
+                        "error": f"Could not parse an owner/repo from {repo_id!r}",
+                    },
+                    ensure_ascii=False,
+                )
+            owner, name = full.split("/", 1)
+            return json.dumps(
+                {
+                    "repo_id": repo_id,
+                    "full_name": full,
+                    "owner": owner,
+                    "repo": name,
+                    "forge_remote_url": None,
+                    "error": "",
+                },
+                ensure_ascii=False,
+            )
+
+        rows = await _registry()
+        if rows is None:
+            return json.dumps(
+                {
+                    "repo_id": repo_id,
+                    "full_name": None,
+                    "error": "Mill repo registry (GET /repos) unreachable",
+                },
+                ensure_ascii=False,
+            )
+        known: list[str] = []
+        match: dict[str, Any] | None = None
+        by_name: list[dict[str, Any]] = []
+        for row in rows:
+            rid = str(row.get("repo_id", ""))
+            if rid:
+                known.append(rid)
+            url = row.get("forge_remote_url") or row.get("git_url")
+            full = parse_owner_repo(url if isinstance(url, str) else None)
+            if full is None:
+                continue
+            if rid.lower() == wanted.lower() or (
+                str(row.get("board_id", "")).lower() == wanted.lower()
+            ):
+                match = {**row, "_full": full}
+                break
+            if full.rsplit("/", 1)[1].lower() == wanted.lower():
+                by_name.append({**row, "_full": full})
+        if match is None and len(by_name) == 1:
+            match = by_name[0]
+        if match is None:
+            return json.dumps(
+                {
+                    "repo_id": repo_id,
+                    "full_name": None,
+                    "known_repo_ids": sorted(known),
+                    "error": (
+                        f"{repo_id!r} is not a registered mill repo id; "
+                        "pass one of known_repo_ids or an explicit owner/repo"
+                    ),
+                },
+                ensure_ascii=False,
+            )
+        full = str(match["_full"])
+        owner, name = full.split("/", 1)
+        return json.dumps(
+            {
+                "repo_id": str(match.get("repo_id", repo_id)),
+                "full_name": full,
+                "owner": owner,
+                "repo": name,
+                "forge_remote_url": match.get("forge_remote_url")
+                or match.get("git_url"),
+                "error": "",
+            },
+            ensure_ascii=False,
+        )
+
+    return [resolve_repo]
+
+
 def build_ticket_poll_tools(
     settings: Settings,
     *,
@@ -1801,6 +2002,36 @@ def build_ticket_poll_tools(
             )
         return status_code, body_str, ""
 
+    async def _augment_with_history(ticket_id: str, data: dict[str, Any]) -> None:
+        """Attach ``GET /tickets/{id}/history`` rows to *data* for terminal tickets.
+
+        ``GET /tickets/{id}`` returns no history, so the delivery check
+        would otherwise see only ``state`` + ``pr_url``.  Only terminal
+        tickets pay the extra round-trip; failures leave *data* untouched.
+        """
+        if normalize_state(data.get("state")) not in TERMINAL_STATES:
+            return
+        if isinstance(data.get("history"), list):
+            return
+        if component_request is not None:
+            resp = await component_request(
+                "mill", "GET", f"/tickets/{ticket_id}/history"
+            )
+            if isinstance(resp, str) and resp.startswith("HTTP "):
+                try:
+                    status_code = int(resp.split(maxsplit=2)[1])
+                    body_str = resp[resp.index("\n") + 1 :]
+                except IndexError, ValueError:
+                    status_code, body_str = 0, ""
+                if status_code and status_code < 400:
+                    rows, parse_error = _parse_json_body(body_str)
+                    if not parse_error and isinstance(rows, list):
+                        data["history"] = [r for r in rows if isinstance(r, dict)]
+                        return
+        rows_direct = await board_client.get_ticket_history(ticket_id)
+        if rows_direct is not None:
+            data["history"] = rows_direct
+
     async def ticket_poll(ticket_id: str) -> str:
         """Poll the mill board for a ticket's current state.
 
@@ -1822,10 +2053,16 @@ def build_ticket_poll_tools(
 
         Returns:
             A JSON string with ``ticket_id``, ``state`` (or ``null`` when
-            the field is absent), ``error`` (empty on success), and
-            ``unexpected_terminal`` — a diagnostic string when the ticket
-            reached a terminal state (``CLOSED`` / ``DONE``) without ever
-            passing through an active-work state, or ``null`` otherwise.
+            the field is absent), ``error`` (empty on success), plus the
+            delivery evidence: ``pr_url`` (the ticket's PR, or ``null``),
+            ``delivered`` (true when a ``done`` / ``closed`` ticket has a
+            PR or passed through a merge state — a closed ticket with a
+            PR is DELIVERED, not dropped), ``delivery_note`` (e.g.
+            ``"closed after delivery (retrospect): PR <url>"``) and
+            ``unexpected_terminal`` — a diagnostic string ONLY when the
+            ticket reached ``closed`` / ``done`` with no PR and without
+            ever entering an active-work or merge state (``draft →
+            closed``), ``null`` otherwise.
             When the board is unreachable and a cached entry exists, the
             ``cache_caveat`` field carries a staleness note.
 
@@ -1847,12 +2084,12 @@ def build_ticket_poll_tools(
                 data, parse_error = _parse_json_body(body)
                 if not parse_error and data is not None:
                     state = data.get("state")
-                    unexpected = _check_unexpected_terminal(data)
+                    await _augment_with_history(effective_id, data)
                     result: dict[str, Any] = {
                         "ticket_id": effective_id,
                         "state": state,
                         "error": "",
-                        "unexpected_terminal": unexpected,
+                        **_delivery_fields(data),
                     }
                     # Populate the cache on every successful fetch so the
                     # fallback path always has a recent entry.
@@ -1898,13 +2135,13 @@ def build_ticket_poll_tools(
                 ensure_ascii=False,
             )
         state = data.get("state")
-        unexpected = _check_unexpected_terminal(data)
+        await _augment_with_history(ticket_id, data)
         return json.dumps(
             {
                 "ticket_id": ticket_id,
                 "state": state,
                 "error": "",
-                "unexpected_terminal": unexpected,
+                **_delivery_fields(data),
             },
             ensure_ascii=False,
         )
@@ -1932,8 +2169,13 @@ def build_ticket_poll_tools(
 
             - ``ticket_id`` — the supplied identifier
             - ``state`` — the ticket's current state string (or ``null``)
-            - ``data`` — the full JSON response from the board API
+            - ``data`` — the full JSON response from the board API (for
+              terminal tickets, augmented with the ``history`` rows from
+              ``GET /tickets/{id}/history``)
             - ``error`` — empty on success, or a diagnostic message on failure
+            - ``pr_url`` / ``delivered`` / ``delivery_note`` /
+              ``unexpected_terminal`` — same delivery evidence as
+              ``ticket_poll``
 
         """
         # Resolve paraphrased / abbreviated IDs against the live board
@@ -1991,12 +2233,13 @@ def build_ticket_poll_tools(
                             "data": None,
                             "error": "Empty parsed response from board API",
                         }
+                    await _augment_with_history(ticket_id, data)
                     result: dict[str, Any] = {
                         "ticket_id": ticket_id,
                         "state": data.get("state"),
                         "data": data,
                         "error": "",
-                        "unexpected_terminal": _check_unexpected_terminal(data),
+                        **_delivery_fields(data),
                     }
                     # Populate cache on every successful batch fetch.
                     from robotsix_chat.ticket_poll.cache import ticket_state_cache
@@ -2019,12 +2262,13 @@ def build_ticket_poll_tools(
                         "data": None,
                         "error": reason or "Board API request failed",
                     }
+                await _augment_with_history(ticket_id, data)
                 result: dict[str, Any] = {
                     "ticket_id": ticket_id,
                     "state": data.get("state"),
                     "data": data,
                     "error": "",
-                    "unexpected_terminal": _check_unexpected_terminal(data),
+                    **_delivery_fields(data),
                 }
                 # Populate cache on every successful batch fetch.
                 from robotsix_chat.ticket_poll.cache import ticket_state_cache

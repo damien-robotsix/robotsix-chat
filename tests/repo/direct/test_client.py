@@ -966,6 +966,93 @@ async def test_search_open_prs_paginates(respx_mock: respx.MockRouter) -> None:
 
 
 @pytest.mark.asyncio
+async def test_search_prs_repo_scope_all_states_with_since(
+    respx_mock: respx.MockRouter,
+) -> None:
+    """search_prs scopes by repo:, omits state: for 'all', and adds updated:>=."""
+    from tests.repo.direct.conftest import _prepopulate_installation_token, _settings
+
+    s = _settings()
+    _prepopulate_installation_token(s)
+    client = DirectRepoClient(s)
+
+    route = respx_mock.get(
+        "https://api.github.com/search/issues"
+        "?q=type%3Apr%20repo%3Adamien-robotsix%2Frobotsix-central-deploy"
+        "%20updated%3A%3E%3D2026-08-01&per_page=100&page=1"
+    ).mock(
+        return_value=httpx.Response(
+            200, text=json.dumps({"items": [{"number": 821, "state": "closed"}]})
+        )
+    )
+    items = await client.search_prs(
+        repo_full_name="damien-robotsix/robotsix-central-deploy",
+        state="all",
+        since="2026-08-01",
+    )
+    assert route.called
+    assert items[0]["number"] == 821
+
+
+@pytest.mark.asyncio
+async def test_search_prs_owner_scope_uses_user_qualifier(
+    respx_mock: respx.MockRouter,
+) -> None:
+    """Account scope uses user: (matches users AND orgs) and state:open when asked."""
+    from tests.repo.direct.conftest import _prepopulate_installation_token, _settings
+
+    s = _settings()
+    _prepopulate_installation_token(s)
+    client = DirectRepoClient(s)
+
+    route = respx_mock.get(
+        "https://api.github.com/search/issues"
+        "?q=type%3Apr%20state%3Aopen%20user%3Adamien-robotsix&per_page=100&page=1"
+    ).mock(return_value=httpx.Response(200, text=json.dumps({"items": []})))
+    assert await client.search_prs(owner="damien-robotsix", state="open") == []
+    assert route.called
+
+
+@pytest.mark.asyncio
+async def test_search_prs_requires_scope() -> None:
+    """Neither owner nor repo → RuntimeError, never an unscoped search."""
+    from tests.repo.direct.conftest import _prepopulate_installation_token, _settings
+
+    s = _settings()
+    _prepopulate_installation_token(s)
+    with pytest.raises(RuntimeError, match="owner or a repo_full_name"):
+        await DirectRepoClient(s).search_prs()
+
+
+@pytest.mark.asyncio
+async def test_installation_account_is_most_common_owner(
+    respx_mock: respx.MockRouter,
+) -> None:
+    """The installation account is read from the installation repos, not guessed."""
+    from tests.repo.direct.conftest import _prepopulate_installation_token, _settings
+
+    s = _settings()
+    _prepopulate_installation_token(s)
+    respx_mock.get(
+        url__startswith="https://api.github.com/installation/repositories"
+    ).mock(
+        return_value=httpx.Response(
+            200,
+            text=json.dumps(
+                {
+                    "repositories": [
+                        {"full_name": "damien-robotsix/robotsix-chat"},
+                        {"full_name": "damien-robotsix/robotsix-mill"},
+                        {"full_name": "someone-else/fork"},
+                    ]
+                }
+            ),
+        )
+    )
+    assert await DirectRepoClient(s).installation_account() == "damien-robotsix"
+
+
+@pytest.mark.asyncio
 async def test_search_open_prs_error_raises(respx_mock: respx.MockRouter) -> None:
     from tests.repo.direct.conftest import _prepopulate_installation_token, _settings
 

@@ -16,7 +16,7 @@ import pytest
 import respx
 
 from robotsix_chat.config import DirectRepoSettings
-from robotsix_chat.repo.direct.board_client import BoardClient
+from robotsix_chat.repo.direct.board_client import BoardClient, parse_owner_repo
 
 # ---------------------------------------------------------------------------
 # helpers
@@ -402,3 +402,103 @@ async def test_create_ticket_returns_none_when_verification_fails(
     client = _client()
     ticket_id = await client.create_ticket(title="Phantom ticket")
     assert ticket_id is None
+
+
+# ============================================================================
+# parse_owner_repo / resolve_repo_full_name / get_ticket_history
+# ============================================================================
+
+
+@pytest.mark.parametrize(
+    ("url", "expected"),
+    [
+        (
+            "https://github.com/damien-robotsix/robotsix-central-deploy.git",
+            "damien-robotsix/robotsix-central-deploy",
+        ),
+        (
+            "https://github.com/damien-robotsix/robotsix-chat",
+            "damien-robotsix/robotsix-chat",
+        ),
+        (
+            "https://x:t0k3n@github.com/o/repo.git",  # pragma: allowlist secret
+            "o/repo",
+        ),
+        ("git@github.com:owner/repo.git", "owner/repo"),
+        ("ssh://git@github.com/owner/repo.git", "owner/repo"),
+        ("owner/repo", "owner/repo"),
+        ("owner/repo.git", "owner/repo"),
+        ("https://github.com/owner", None),
+        ("", None),
+        (None, None),
+        ("   ", None),
+    ],
+)
+def test_parse_owner_repo(url: str | None, expected: str | None) -> None:
+    """Owner/repo is taken from the last two path components of any remote shape."""
+    assert parse_owner_repo(url) == expected
+
+
+@pytest.mark.asyncio
+async def test_resolve_repo_full_name_from_registry(
+    respx_mock: respx.MockRouter,
+) -> None:
+    """A mill repo_id resolves through GET /repos to owner/repo."""
+    respx_mock.get("http://127.0.0.1:8077/repos").mock(
+        return_value=httpx.Response(
+            200,
+            text=json.dumps(
+                [
+                    {
+                        "repo_id": "robotsix-central-deploy",
+                        "board_id": "robotsix-central-deploy",
+                        "forge_remote_url": "https://github.com/damien-robotsix/robotsix-central-deploy.git",
+                    },
+                    {"repo_id": "meta", "board_id": "meta", "forge_remote_url": None},
+                ]
+            ),
+        )
+    )
+    client = _client()
+    assert (
+        await client.resolve_repo_full_name("robotsix-central-deploy")
+        == "damien-robotsix/robotsix-central-deploy"
+    )
+    # Repository-name match on the remote URL when the id differs.
+    assert (
+        await client.resolve_repo_full_name("ROBOTSIX-CENTRAL-DEPLOY")
+        == "damien-robotsix/robotsix-central-deploy"
+    )
+    # Unknown → None, never a guess.
+    assert await client.resolve_repo_full_name("central-deploy") is None
+    # Full names pass through without hitting the registry.
+    assert await client.resolve_repo_full_name("a/b") == "a/b"
+
+
+@pytest.mark.asyncio
+async def test_resolve_repo_full_name_registry_error(
+    respx_mock: respx.MockRouter,
+) -> None:
+    """A registry outage yields None."""
+    respx_mock.get("http://127.0.0.1:8077/repos").mock(return_value=httpx.Response(500))
+    assert await _client().resolve_repo_full_name("robotsix-chat") is None
+
+
+@pytest.mark.asyncio
+async def test_get_ticket_history(respx_mock: respx.MockRouter) -> None:
+    """GET /tickets/{id}/history rows come back as dicts; failures → None."""
+    respx_mock.get("http://127.0.0.1:8077/tickets/t-1/history").mock(
+        return_value=httpx.Response(
+            200,
+            text=json.dumps([{"state": "ready"}, {"state": "done", "note": "ok"}, 3]),
+        )
+    )
+    respx_mock.get("http://127.0.0.1:8077/tickets/t-2/history").mock(
+        return_value=httpx.Response(404)
+    )
+    client = _client()
+    assert await client.get_ticket_history("t-1") == [
+        {"state": "ready"},
+        {"state": "done", "note": "ok"},
+    ]
+    assert await client.get_ticket_history("t-2") is None

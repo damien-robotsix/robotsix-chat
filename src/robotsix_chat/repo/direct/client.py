@@ -940,6 +940,60 @@ class DirectRepoClient:
             raise RuntimeError(f"GitHub API GET {path}: {result.error}")
         return result.text or ""
 
+    async def installation_account(self) -> str | None:
+        """Return the GitHub account (user or org) the App is installed on.
+
+        Derived from the owner prefix of the installation's repositories —
+        the most common owner wins, so the answer is the account that
+        actually holds the fleet's code (a *user* such as
+        ``damien-robotsix``, not an organisation guessed from a product
+        name).  Returns ``None`` when the installation has no repositories.
+        """
+        repos = await self.list_installation_repos()
+        counts: dict[str, int] = {}
+        for full in repos:
+            owner = full.split("/", 1)[0]
+            if owner:
+                counts[owner] = counts.get(owner, 0) + 1
+        if not counts:
+            return None
+        return max(counts, key=lambda k: (counts[k], k))
+
+    async def search_prs(
+        self,
+        *,
+        owner: str | None = None,
+        repo_full_name: str | None = None,
+        state: str = "all",
+        since: str | None = None,
+        per_page: int = 100,
+    ) -> list[dict[str, Any]]:
+        """Return PRs matching the scope via one ``/search/issues`` query.
+
+        Scope is either a single repository (``repo:<owner>/<name>``) or an
+        account (``user:<owner>`` — GitHub's ``user:`` qualifier matches
+        both personal accounts and organisations, unlike ``org:``).
+        *state* is ``"open"``, ``"closed"`` or ``"all"``; *since* is an
+        ISO date (``YYYY-MM-DD``) applied as ``updated:>=<since>`` so merged
+        PRs stay visible.  Paginates through the result pages (GitHub caps
+        search results at 10 pages / 1000 items); results are limited to
+        repositories the GitHub App installation can access.
+
+        Raises RuntimeError on failure (callers catch and format).
+        """
+        terms = ["type:pr"]
+        if state in ("open", "closed"):
+            terms.append(f"state:{state}")
+        if repo_full_name:
+            terms.append(f"repo:{repo_full_name}")
+        elif owner:
+            terms.append(f"user:{owner}")
+        else:
+            raise RuntimeError("search_prs needs an owner or a repo_full_name")
+        if since:
+            terms.append(f"updated:>={since}")
+        return await self._search_issues(" ".join(terms), per_page=per_page)
+
     async def search_open_prs(
         self,
         *,
@@ -948,15 +1002,20 @@ class DirectRepoClient:
     ) -> list[dict[str, Any]]:
         """Return open PRs across *org_name*'s repositories via the Search API.
 
-        Uses a single ``/search/issues`` batch query
-        (``type:pr state:open org:<org_name>``) instead of one REST call per
-        repository.  Paginates through the result pages (GitHub caps search
-        results at 10 pages / 1000 items); results are limited to
-        repositories the GitHub App installation can access.
+        Thin wrapper over :meth:`search_prs` kept for callers that already
+        hold an organisation name (``type:pr state:open org:<org_name>``).
 
         Raises RuntimeError on failure (callers catch and format).
         """
-        query = quote(f"type:pr state:open org:{org_name}", safe="")
+        return await self._search_issues(
+            f"type:pr state:open org:{org_name}", per_page=per_page
+        )
+
+    async def _search_issues(
+        self, raw_query: str, *, per_page: int = 100
+    ) -> list[dict[str, Any]]:
+        """Run *raw_query* against ``/search/issues`` and gather every page."""
+        query = quote(raw_query, safe="")
         all_items: list[dict[str, Any]] = []
         page = 1
 

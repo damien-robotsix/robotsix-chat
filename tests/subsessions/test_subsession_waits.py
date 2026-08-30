@@ -42,6 +42,6 @@ def test_wait_for_event_prompt_requires_history_merge_evidence_check() -> None:
     assert "INDETERMINATE" in result
     # Must consult the ticket state-change history for merge evidence.
     assert "/tickets/{id}/history" in result
-    assert "IMPLEMENT_COMPLETE" in result
+    assert "implement_complete" in result
     # Indeterminate cases prompt verification rather than asserting a drop.
     assert "verification recommended" in result

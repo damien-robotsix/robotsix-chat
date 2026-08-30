@@ -3,6 +3,31 @@
 Governed artifact: `Settings.agent_instruction` default literal in
 `src/robotsix_chat/config/settings.py`. Version stamp: `SYSTEM_PROMPT_VERSION` in the same module.
 
+## v147 — 2026-08-30 — trace-970163b41f958d46f512639d58819ca5-closed-ticket-called-dropped
+
+**Summary:** Add a grounding rule to the live-verification bullets: before
+claiming a ticket's work was dropped / not implemented / confabulated, call
+`ticket_poll` and quote its `state`, `pr_url` and `delivered` fields — a
+`closed` ticket with a PR is delivered (`closed` follows `done` when the
+retrospect finishes) and only `unexpected_terminal` (no PR, no active-work
+state) means dropped.  Also: resolve repositories with `resolve_repo(repo_id)`
+instead of guessing an organisation name, and `list_open_prs` hides merged
+PRs unless `state` is `all`.
+
+**Rationale:** Langfuse trace 970163b41f958d46f512639d58819ca5 (2026-08-30
+14:45Z): the assistant told the operator ticket
+`20260830T091612Z-add-chat-scoped-volume-file-write-endpoi-69be` was "closed
+without ever being implemented — dropped" while its PR (central-deploy #821)
+had merged at 14:11Z and the retrospect closed the ticket at 14:33Z.  The
+`ticket_poll` tool flagged every delivered ticket because it looked for the
+non-existent states APPROVED / IN_PROGRESS; the assistant then "verified"
+with `list_open_prs(org_name="robotsix")` (a guessed org; the PR was merged,
+not open) and `fetch_repo_for_study("robotsix/central-deploy")` (guessed
+slug → 404).  The tool now returns real delivery evidence; the prompt tells
+the assistant to quote it.
+
+**SHA256:** `a1f3c8cfcf64c5c809263d4b41b466a6eaad990918917ad8533474d1de3dcda2`
+
 ## v146 — 2026-08-29 — five-tier-levels
 
 **Summary:** Re-describe the llmio capability levels for the five-tier map
@@ -2872,6 +2897,22 @@ autonomous settings at their pydantic field defaults
 (``completion_marker="---AUTONOMOUS COMPLETE---"``,
 ``stale_monitor_runs_before_completion=3``,
 ``queue_tolerance_runs_before_escalation=3``).
+
+## AUTONOMOUS v50 — 2026-08-30 — trace-970163b41f958d46f512639d58819ca5-closed-ticket-called-dropped
+
+**Summary:** The "TICKET TIMELINE CROSS-REFERENCE" bullet listed pipeline
+stages that do not exist in robotsix-mill (`IN_PROGRESS`, `REVIEW`, upper-case
+names).  It now names the real states (`code_review`, `documenting`,
+`deliverable`, `implement_complete`, `human_mr_approval`,
+`waiting_auto_merge`, `fixing_ci`, `rebasing`, `addressing_review`, `done`),
+says explicitly that there is no `in_progress` / `approved` / `review` state,
+treats a `pr_url` as delivery evidence, and points at the `pr_url` /
+`delivered` / `delivery_note` fields `ticket_poll` now returns.
+
+**Rationale:** See v147 — the fictional state list could never match a real
+history, so the "was it delivered?" check always came back negative.
+
+**SHA256:** `a01a8307a9afaba44782d7f3b46f6ef803b06cb532d8907148e79c3d0540c541`
 
 ## AUTONOMOUS v49 — 2026-08-28 — 20260828T210340Z-bug-monitor-spawn-guard-blocks-re-openin-032a
 

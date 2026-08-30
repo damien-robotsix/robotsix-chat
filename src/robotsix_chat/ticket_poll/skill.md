@@ -44,6 +44,12 @@ and filing new tickets.
   external repo ids include `robotsix-llmio`, `robotsix-mill`, `robotsix-standards`, and
   `robotsix-central-deploy`.
 
+- **Resolve a repo id to GitHub** — use `resolve_repo(repo_id)` before calling any GitHub tool
+  (`list_open_prs`, `fetch_repo_for_study`, PR inspection) with a repository you only know by its
+  mill `repo_id` (e.g. `robotsix-central-deploy`). It reads the mill registry (`GET /repos`) and
+  parses `owner/repo` from the remote URL. The GitHub account is a personal account, not an
+  organisation named after the fleet — never guess `<fleet>/<repo>`.
+
 - **Queue health monitoring** — use `list_stale_ready_tickets` to detect tickets that have been
   sitting in the `ready` state without being picked up by a worker. This surfaces queue stalls so
   the agent can escalate or notify the operator rather than silently waiting.
@@ -58,6 +64,7 @@ and filing new tickets.
 | Tool                          | Description                                                                   |
 | ----------------------------- | ----------------------------------------------------------------------------- |
 | `ticket_poll`                 | HTTP GET to the board API; returns the ticket's current state.                |
+| `resolve_repo`                | Map a mill `repo_id` to its GitHub `owner/repo` via `GET /repos`.             |
 | `ticket_poll_batch`           | Concurrent HTTP GETs for multiple tickets; returns full details for triage.   |
 | `merge_pull_request`          | HTTP POST to merge the approved PR associated with a ticket.                  |
 | `mark_ticket_ready`           | HTTP POST to force a stalled draft/human_issue_approval ticket to `ready`.    |
@@ -116,18 +123,35 @@ operator** before you call them (see the main prompt's MUTATION AUTHORIZATION se
 A JSON string with these fields:
 
 - `ticket_id` — the ticket identifier you supplied
-- `state` — the ticket's current state string (e.g. `"BLOCKED"`, `"IN_PROGRESS"`, `"DONE"`), or
-  `null` when the state could not be determined
+- `state` — the ticket's current state string, one of the real mill states: `draft`,
+  `human_issue_approval`, `ready`, `code_review`, `documenting`, `deliverable`,
+  `implement_complete`, `human_mr_approval`, `waiting_auto_merge`, `rebasing`, `fixing_ci`,
+  `addressing_review`, `done`, `closed`, `blocked`, `errored`, `awaiting_user_reply`, `epic_open`,
+  `epic_closed` (there is NO `in_progress`, `approved` or `review` state); `null` when the state
+  could not be determined
 - `error` — empty string on success, or a diagnostic message on failure
-- `unexpected_terminal` — a human-readable diagnostic string when the ticket reached a terminal
-  state (`CLOSED` or `DONE`) without ever passing through an active-work state (`APPROVED`,
-  `IN_PROGRESS`, or `BLOCKED`); `null` when the transition looks normal or when the data carries
-  insufficient history to decide. Use this to detect tickets that were closed prematurely — e.g. a
-  `DRAFT → CLOSED` transition without approval — and alert the operator.
+- `pr_url` — the ticket's pull-request URL, or `null`
+- `delivered` — `true` when a `done` / `closed` ticket has a `pr_url` or passed through a merge
+  state (`implement_complete`, `human_mr_approval`, `waiting_auto_merge`, `done`). **A `closed`
+  ticket with a PR is delivered, not dropped** — `closed` follows `done` when the retrospect
+  finishes.
+- `delivery_note` — e.g. `"closed after delivery (retrospect): PR <url>"`, or `null`
+- `unexpected_terminal` — a human-readable diagnostic string ONLY when the ticket reached `closed` /
+  `done` with no PR and without ever entering an active-work or merge state (the `draft → closed` /
+  `ready → closed` shape); `null` otherwise. Before telling the operator that work was dropped,
+  quote `state`, `pr_url` and `delivered` from this tool — never infer "dropped" from `closed`
+  alone.
 - `cache_caveat` — *(present only when the board API was unreachable and the response was served
   from the ticket-state cache)* a human-readable staleness note, e.g.
   `[last-known state — board API unreachable; showing cached state from 120s ago]`. Entries older
   than 1 hour are flagged as `stale`.
+
+### `resolve_repo`
+
+A JSON string:
+`{"repo_id", "full_name": "owner/repo", "owner", "repo", "forge_remote_url", "error": ""}`. When the
+id is unknown: `full_name: null`, an `error`, and `known_repo_ids` listing the registered ids — pick
+one of those or pass an explicit `owner/repo`.
 
 ### `ticket_poll_batch`
 

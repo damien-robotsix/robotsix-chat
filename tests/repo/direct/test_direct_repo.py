@@ -1038,59 +1038,146 @@ async def test_check_pr_merge_conflict_rejects_non_blocked(
 # list_open_prs
 # ---------------------------------------------------------------------------
 
+_SEARCH_ITEMS = [
+    {
+        "number": 12,
+        "title": "Add batch PR listing",
+        "html_url": "https://github.com/damien-robotsix/repo-a/pull/12",
+        "user": {"login": "octocat"},
+        "draft": False,
+        "state": "open",
+        "repository_url": "https://api.github.com/repos/damien-robotsix/repo-a",
+    },
+    {
+        "number": 821,
+        "title": "Add chat-scoped volume file write endpoint",
+        "html_url": "https://github.com/damien-robotsix/robotsix-central-deploy/pull/821",
+        "user": {"login": "robotsix-mill[bot]"},
+        "draft": False,
+        "state": "closed",
+        "pull_request": {"merged_at": "2026-08-30T14:11:00Z"},
+        "repository_url": (
+            "https://api.github.com/repos/damien-robotsix/robotsix-central-deploy"
+        ),
+    },
+]
 
-@pytest.mark.asyncio
-async def test_list_open_prs_groups_by_repo(
-    respx_mock: respx.MockRouter,
-) -> None:
-    """Open PRs are batched into one search query and grouped by repo."""
-    settings = _settings()
-    _prepopulate_installation_token(settings)
 
-    respx_mock.get(url__startswith="https://api.github.com/search/issues").mock(
+def _mock_installation_repos(respx_mock: respx.MockRouter) -> None:
+    respx_mock.get(
+        url__startswith="https://api.github.com/installation/repositories"
+    ).mock(
         return_value=httpx.Response(
             200,
             text=json.dumps(
                 {
-                    "items": [
-                        {
-                            "number": 12,
-                            "title": "Add batch PR listing",
-                            "html_url": "https://github.com/org/repo-a/pull/12",
-                            "user": {"login": "octocat"},
-                            "draft": False,
-                            "repository_url": "https://api.github.com/repos/org/repo-a",
-                        },
-                        {
-                            "number": 3,
-                            "title": "Draft feature",
-                            "html_url": "https://github.com/org/repo-b/pull/3",
-                            "user": {"login": "hubot"},
-                            "draft": True,
-                            "repository_url": "https://api.github.com/repos/org/repo-b",
-                        },
+                    "repositories": [
+                        {"full_name": "damien-robotsix/repo-a"},
+                        {"full_name": "damien-robotsix/robotsix-central-deploy"},
                     ]
                 }
             ),
         )
     )
 
+
+@pytest.mark.asyncio
+async def test_list_open_prs_defaults_to_installation_account_and_shows_merged(
+    respx_mock: respx.MockRouter,
+) -> None:
+    """No org guess: the owner comes from the installation; merged PRs are listed."""
+    settings = _settings()
+    _prepopulate_installation_token(settings)
+    _mock_installation_repos(respx_mock)
+
+    search = respx_mock.get(
+        url__startswith="https://api.github.com/search/issues"
+    ).mock(return_value=httpx.Response(200, text=json.dumps({"items": _SEARCH_ITEMS})))
+
     tools = build_direct_repo_tools(settings)
     fn = [t for t in tools if t.__name__ == "list_open_prs"][0]
 
-    out = await fn(org_name="org")
-    assert "Open PRs across org 'org' — 2 total:" in out
-    assert "org/repo-a" in out
-    assert "org/repo-b" in out
-    assert "#12 Add batch PR listing (by octocat)" in out
-    assert "#3 Draft feature [draft] (by hubot)" in out
+    out = await fn()
+    query = search.calls[0].request.url.params["q"]
+    assert "user:damien-robotsix" in query
+    assert "state:" not in query  # default state=all
+    assert "updated:>=" in query
+    assert (
+        "PRs (all updated in the last 30 days) for account 'damien-robotsix' — 2 total:"
+        in out
+    )
+    assert "damien-robotsix/repo-a" in out
+    assert "#12 Add batch PR listing [open] (by octocat)" in out
+    assert "#821 Add chat-scoped volume file write endpoint [merged]" in out
+
+
+@pytest.mark.asyncio
+async def test_list_open_prs_resolves_mill_repo_id(
+    respx_mock: respx.MockRouter,
+) -> None:
+    """A mill repo_id is resolved through GET /repos into repo:<owner>/<name>."""
+    settings = _settings()
+    _prepopulate_installation_token(settings)
+    respx_mock.get("http://127.0.0.1:8077/repos").mock(
+        return_value=httpx.Response(
+            200,
+            text=json.dumps(
+                [
+                    {
+                        "repo_id": "robotsix-central-deploy",
+                        "board_id": "robotsix-central-deploy",
+                        "forge_remote_url": "https://github.com/damien-robotsix/robotsix-central-deploy.git",
+                    }
+                ]
+            ),
+        )
+    )
+    search = respx_mock.get(
+        url__startswith="https://api.github.com/search/issues"
+    ).mock(
+        return_value=httpx.Response(200, text=json.dumps({"items": [_SEARCH_ITEMS[1]]}))
+    )
+
+    tools = build_direct_repo_tools(settings)
+    fn = [t for t in tools if t.__name__ == "list_open_prs"][0]
+
+    out = await fn(repo="robotsix-central-deploy", state="closed", since_days=0)
+    query = search.calls[0].request.url.params["q"]
+    assert "repo:damien-robotsix/robotsix-central-deploy" in query
+    assert "state:closed" in query
+    assert "updated:" not in query
+    assert "for damien-robotsix/robotsix-central-deploy — 1 total" in out
+    assert "#821" in out and "[merged]" in out
+
+
+@pytest.mark.asyncio
+async def test_list_open_prs_unknown_repo_id_refuses_to_guess(
+    respx_mock: respx.MockRouter,
+) -> None:
+    """An unknown bare name is an error pointing at resolve_repo — no search happens."""
+    settings = _settings()
+    _prepopulate_installation_token(settings)
+    respx_mock.get("http://127.0.0.1:8077/repos").mock(
+        return_value=httpx.Response(200, text=json.dumps([]))
+    )
+    search = respx_mock.get(
+        url__startswith="https://api.github.com/search/issues"
+    ).mock(return_value=httpx.Response(200, text=json.dumps({"items": []})))
+
+    tools = build_direct_repo_tools(settings)
+    fn = [t for t in tools if t.__name__ == "list_open_prs"][0]
+
+    out = await fn(repo="robotsix")
+    assert out.startswith("Error: 'robotsix' is neither a registered mill repo_id")
+    assert "resolve_repo" in out
+    assert not search.called
 
 
 @pytest.mark.asyncio
 async def test_list_open_prs_no_results(
     respx_mock: respx.MockRouter,
 ) -> None:
-    """Empty search results produce a clear no-open-PRs message."""
+    """Empty search results produce a clear no-PRs message naming the scope."""
     settings = _settings()
     _prepopulate_installation_token(settings)
 
@@ -1101,8 +1188,8 @@ async def test_list_open_prs_no_results(
     tools = build_direct_repo_tools(settings)
     fn = [t for t in tools if t.__name__ == "list_open_prs"][0]
 
-    out = await fn(org_name="org")
-    assert "No open PRs found for org 'org'" in out
+    out = await fn(repo="damien-robotsix/repo-a", state="open")
+    assert "No open PRs found for damien-robotsix/repo-a" in out
 
 
 @pytest.mark.asyncio
@@ -1120,8 +1207,18 @@ async def test_list_open_prs_api_error(
     tools = build_direct_repo_tools(settings)
     fn = [t for t in tools if t.__name__ == "list_open_prs"][0]
 
-    out = await fn(org_name="org")
-    assert "Error listing open PRs for org 'org'" in out
+    out = await fn(owner="damien-robotsix")
+    assert "Error listing PRs for account 'damien-robotsix'" in out
+
+
+@pytest.mark.asyncio
+async def test_list_open_prs_rejects_bad_state() -> None:
+    """An invalid state is rejected before any network call."""
+    settings = _settings()
+    _prepopulate_installation_token(settings)
+    tools = build_direct_repo_tools(settings)
+    fn = [t for t in tools if t.__name__ == "list_open_prs"][0]
+    assert (await fn(owner="x", state="merged")).startswith("Error: state must be")
 
 
 # ---------------------------------------------------------------------------

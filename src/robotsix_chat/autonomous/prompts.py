@@ -10,7 +10,7 @@ if TYPE_CHECKING:
 # Version stamp for the autonomous appendix (build_autonomous_instruction).
 # Bump on every change to the instruction text and update
 # docs/system_prompt_changelog.md with a new AUTONOMOUS entry + SHA256.
-AUTONOMOUS_PROMPT_VERSION = 49
+AUTONOMOUS_PROMPT_VERSION = 50
 
 
 def build_autonomous_instruction(settings: Settings) -> str:
@@ -583,8 +583,10 @@ def build_autonomous_instruction(settings: Settings) -> str:
         "(GET /tickets/{id}/history or the events array in the ticket "
         "data).  Look for:\n"
         "  - State transitions through active pipeline stages "
-        "(READY, IN_PROGRESS, IMPLEMENT_COMPLETE, REVIEW, "
-        "WAITING_AUTO_MERGE, HUMAN_MR_APPROVAL, DONE).\n"
+        "(code_review, documenting, deliverable, implement_complete, "
+        "human_mr_approval, waiting_auto_merge, fixing_ci, rebasing, "
+        "addressing_review, done) — these are the real mill state names; "
+        "there is no 'in_progress', 'approved' or 'review' state.\n"
         "  - Events containing: merge, pull, approve, implement, "
         "complete, close.\n"
         "  - A PR merged event or a linked PR in merged/closed state.\n"
@@ -593,11 +595,15 @@ def build_autonomous_instruction(settings: Settings) -> str:
         "MUST be 'Tracking complete — the last remaining task was "
         "delivered.' NOT 'Closed without implementation — re-file "
         "needed.'  Only recommend re-filing when the timeline shows "
-        "the ticket was genuinely dropped (e.g. DRAFT → CLOSED "
-        "with no intervening work states or PR merge events).  "
-        "A ticket that CLOSED or DONE after passing through "
-        "IMPLEMENT_COMPLETE or REVIEW was almost certainly "
-        "delivered — the PR was merged and the code shipped.  "
+        "the ticket was genuinely dropped (e.g. draft → closed "
+        "with no intervening work states, no pr_url and no PR merge "
+        "events).  A ticket that reached done or closed after passing "
+        "through implement_complete / waiting_auto_merge / "
+        "human_mr_approval — or that carries a pr_url — was "
+        "delivered: the PR was merged and the code shipped; 'closed' "
+        "after 'done' is the retrospect finishing, not a drop.  "
+        "ticket_poll returns pr_url, delivered and delivery_note for "
+        "exactly this check — quote them.  "
         "Reporting it as undelivered undermines operator confidence "
         "and wastes turns verifying already-completed work.\n"
         "\n"

@@ -8,7 +8,7 @@ the mill board API so you can create a concrete, dependency-ordered child ticket
 - **Spawn exhaustion detected** — when a monitor reports that the implement agent exhausted all 3
   spawn attempts on an epic, call `decompose_epic` to get a structured analysis before creating
   child tickets.
-- **Scope-too-broad diagnosis** — when an epic has been sitting in `IN_PROGRESS` or `BLOCKED` across
+- **Scope-too-broad diagnosis** — when an epic has been cycling through `ready` / `blocked` across
   multiple implement cycles without producing a mergeable change.
 - **Pre-ingest triage** — when the operator asks you to ingest a new epic and you want to
   proactively plan its decomposition before the first implement attempt.
