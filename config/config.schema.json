@@ -1167,6 +1167,59 @@
       "title": "MemorySettings",
       "type": "object"
     },
+    "MobileAuthSettings": {
+      "additionalProperties": false,
+      "description": "Mobile SSO authentication via tinyauth reverse proxy.\n\nWhen enabled, two endpoints are exposed for the mobile app's\nauthentication flow:\n\n- ``GET /auth/login`` \u2014 initiates the tinyauth redirect handshake and\n  redirects back to the app via a validated deep-link allowlist.\n- ``POST /chat/auth/mobile-token`` \u2014 exchanges the tinyauth edge-header\n  identity for a short-lived bearer token the mobile app uses for API\n  calls.\n\nThe identity is **always** taken from the tinyauth edge header\n(``subject_header``) \u2014 never from the request body.  This prevents\nsubject spoofing: only the trusted reverse proxy can set the header.\n\nAttributes:\n    enabled: Master switch.  Default ``False``.\n    tinyauth_url: Base URL of the tinyauth instance\n        (e.g. ``\"https://auth.robotsix.net\"``).\n    subject_header: HTTP header where tinyauth writes the\n        authenticated user identity (username or email).\n    session_header: HTTP header where tinyauth writes the session\n        identifier.\n    token_secret: HMAC secret used to sign the short-lived bearer\n        tokens issued by ``/chat/auth/mobile-token``.  Must be set\n        when *enabled* is ``true``.\n    token_ttl_seconds: Bearer token lifetime in seconds.\n        Must be > 0.\n    allowed_redirect_domains: Allowlist of domains that the\n        ``redirect_to`` query parameter in ``GET /auth/login`` is\n        validated against.  Must be non-empty when *enabled* is\n        ``true``.\n    callback_base_url: The public base URL of this chat server\n        (e.g. ``\"https://chat.robotsix.net\"``), used to construct\n        the tinyauth callback URL.  Must be set when *enabled* is\n        ``true``.",
+      "properties": {
+        "enabled": {
+          "default": false,
+          "title": "Enabled",
+          "type": "boolean"
+        },
+        "tinyauth_url": {
+          "default": "",
+          "title": "Tinyauth Url",
+          "type": "string"
+        },
+        "subject_header": {
+          "default": "X-Forwarded-User",
+          "title": "Subject Header",
+          "type": "string"
+        },
+        "session_header": {
+          "default": "X-Forwarded-Session",
+          "title": "Session Header",
+          "type": "string"
+        },
+        "token_secret": {
+          "default": "",
+          "format": "password",
+          "title": "Token Secret",
+          "type": "string",
+          "writeOnly": true
+        },
+        "token_ttl_seconds": {
+          "default": 3600,
+          "exclusiveMinimum": 0,
+          "title": "Token Ttl Seconds",
+          "type": "integer"
+        },
+        "allowed_redirect_domains": {
+          "items": {
+            "type": "string"
+          },
+          "title": "Allowed Redirect Domains",
+          "type": "array"
+        },
+        "callback_base_url": {
+          "default": "",
+          "title": "Callback Base Url",
+          "type": "string"
+        }
+      },
+      "title": "MobileAuthSettings",
+      "type": "object"
+    },
     "NotificationSettings": {
       "additionalProperties": false,
       "description": "Browser notification settings \u2014 lets the agent alert the user proactively.\n\nWhen enabled, the agent gains a ``notify_user`` tool that publishes a\nnotification event to connected clients over the existing SSE channel\n(EventBus).  The user's browser renders the event via the native\nNotifications API.\n\nDelivery only reaches clients that are currently connected \u2014 the\nnotification is silently dropped when no browser is listening.\n\nAttributes:\n    enabled: Master switch.  When ``False``, no notify_user tool is\n        offered.",
@@ -1738,7 +1791,7 @@
     }
   },
   "additionalProperties": false,
-  "description": "Application settings, loaded from a single JSON config file.\n\nThe LLM is configured the robotsix-llmio way \u2014 pick a capability\n``model_level`` and llmio resolves the provider + model for that level\n(from its baked default :class:`~robotsix_llmio.config.TierLevelConfig`).\n\nAttributes:\n    llmio_model_level: Capability level \u2014 ``1`` (cheapest/fastest) to\n        ``5`` (frontier). The level encodes the provider + model: by\n        default level 1 and level 3 use ``openrouter`` (flash / mimo),\n        level 2 ``claudeSDK``/``haiku``, level 4 ``claudeSDK``/``opus``,\n        level 5 ``claudeSDK`` frontier.\n    llmio_api_key: Provider API key, forwarded to llmio when the chosen\n        level's provider needs one (e.g. ``openrouter``); unused\n        by keyless providers like ``claudeSDK``.\n    chat_model_level: Optional override of ``llmio_model_level`` for the\n        main interactive chat agent.  When ``None`` (default), the chat\n        agent uses ``llmio_model_level``.  Set to a specific level to\n        route chat turns to a different tier (e.g. ``4`` for fable-5)\n        while other consumers (subsessions, autonomous, summary) still\n        use ``llmio_model_level`` or their own overrides.\n    summary_model_level: Capability level used to generate the\n        structured conversation summary (``POST /summary``, regenerated\n        after every assistant turn). Defaults to the cheapest tier since\n        it is a bounded extraction task, not open-ended reasoning \u2014\n        reusing the main agent's (often much pricier) level here would\n        burn a full-capability call on every single turn.\n    llmio_task_budget_tokens: Optional advisory per-task token budget\n        forwarded to the keyless Claude SDK tiers as ``task_budget`` so\n        the model sees a live budget-remaining countdown. ``None``\n        (default) sends no budget.\n    agent_instruction: System instruction handed to the LLM agent.\n        Includes guidance on spawning subsessions for background work.\n    server_host: Host address the chat SSE server binds to.\n    server_port: Port the chat SSE server listens on.\n    idle_timeout_minutes: Minutes of no user activity before the UI\n        auto-restarts the conversation; ``0`` disables the feature.\n    subsessions: Unified subsession system (background/periodic/user-chat\n        sub-agents) \u2014 see :class:`SubsessionsSettings`.\n    log_level: Python logging level name.\n    log_json_format: When ``True`` (default), log lines are emitted as\n        structured JSON via structlog.  Set to ``False`` for human-readable\n        console output during local development.\n    cors_allow_origins: Origins allowed to call /chat cross-origin\n        (empty = none; ``[\"*\"]`` = any). Only needed when the browser\n        UI is hosted on a different origin than the server.\n    correlation_id_header: HTTP header name used for the correlation /\n        request-id (both inbound and outbound). Default ``X-Request-ID``.\n    langfuse: The component's canonical Langfuse credential block \u2014\n        instance host plus every project it traces to, keyed by project\n        name (``robotsix-chat`` for the main agent,\n        ``robotsix-chat-cognee`` for the memory subsystem).\n    openrouter: The component's canonical OpenRouter credential block \u2014\n        provider API keys keyed by the Langfuse project alias they bill\n        under (``robotsix-chat-cognee`` for the memory subsystem).\n    langfuse_inspect: Langfuse trace-inspection tool \u2014 lets the agent\n        fetch and summarise recent implement traces for a given ticket\n        or trace id.  Default-disabled.\n    feedback: Automated feedback analysis that files improvement\n        tickets at compaction and session-end boundaries.\n    max_images_per_message: Maximum number of images a client may attach to\n        a single ``POST /chat`` request.  Default ``8``.\n    max_image_bytes: Maximum decoded size (bytes) of a single attached\n        image.  Default ``5_242_880`` (5 MiB).\n    allowed_image_media_types: Media types accepted for image attachments.\n        Default ``[\"image/png\", \"image/jpeg\", \"image/gif\", \"image/webp\"]``.\n    low_risk_actions: Action names or descriptions that the agent may\n        perform without requesting human confirmation.  When non-empty,\n        the system prompt instructs the agent that these actions are\n        pre-authorized and any safety gates on them are lifted \u2014\n        the agent should execute them without asking.  Default ``[]``.",
+  "description": "Application settings, loaded from a single JSON config file.\n\nThe LLM is configured the robotsix-llmio way \u2014 pick a capability\n``model_level`` and llmio resolves the provider + model for that level\n(from its baked default :class:`~robotsix_llmio.config.TierLevelConfig`).\n\nAttributes:\n    llmio_model_level: Capability level \u2014 ``1`` (cheapest/fastest) to\n        ``5`` (frontier). The level encodes the provider + model: by\n        default level 1 and level 3 use ``openrouter`` (flash / mimo),\n        level 2 ``claudeSDK``/``haiku``, level 4 ``claudeSDK``/``opus``,\n        level 5 ``claudeSDK`` frontier.\n    llmio_api_key: Provider API key, forwarded to llmio when the chosen\n        level's provider needs one (e.g. ``openrouter``); unused\n        by keyless providers like ``claudeSDK``.\n    chat_model_level: Optional override of ``llmio_model_level`` for the\n        main interactive chat agent.  When ``None`` (default), the chat\n        agent uses ``llmio_model_level``.  Set to a specific level to\n        route chat turns to a different tier (e.g. ``4`` for fable-5)\n        while other consumers (subsessions, autonomous, summary) still\n        use ``llmio_model_level`` or their own overrides.\n    summary_model_level: Capability level used to generate the\n        structured conversation summary (``POST /summary``, regenerated\n        after every assistant turn). Defaults to the cheapest tier since\n        it is a bounded extraction task, not open-ended reasoning \u2014\n        reusing the main agent's (often much pricier) level here would\n        burn a full-capability call on every single turn.\n    llmio_task_budget_tokens: Optional advisory per-task token budget\n        forwarded to the keyless Claude SDK tiers as ``task_budget`` so\n        the model sees a live budget-remaining countdown. ``None``\n        (default) sends no budget.\n    agent_instruction: System instruction handed to the LLM agent.\n        Includes guidance on spawning subsessions for background work.\n    server_host: Host address the chat SSE server binds to.\n    server_port: Port the chat SSE server listens on.\n    idle_timeout_minutes: Minutes of no user activity before the UI\n        auto-restarts the conversation; ``0`` disables the feature.\n    subsessions: Unified subsession system (background/periodic/user-chat\n        sub-agents) \u2014 see :class:`SubsessionsSettings`.\n    log_level: Python logging level name.\n    log_json_format: When ``True`` (default), log lines are emitted as\n        structured JSON via structlog.  Set to ``False`` for human-readable\n        console output during local development.\n    cors_allow_origins: Origins allowed to call /chat cross-origin\n        (empty = none; ``[\"*\"]`` = any). Only needed when the browser\n        UI is hosted on a different origin than the server.\n    correlation_id_header: HTTP header name used for the correlation /\n        request-id (both inbound and outbound). Default ``X-Request-ID``.\n    langfuse: The component's canonical Langfuse credential block \u2014\n        instance host plus every project it traces to, keyed by project\n        name (``robotsix-chat`` for the main agent,\n        ``robotsix-chat-cognee`` for the memory subsystem).\n    openrouter: The component's canonical OpenRouter credential block \u2014\n        provider API keys keyed by the Langfuse project alias they bill\n        under (``robotsix-chat-cognee`` for the memory subsystem).\n    langfuse_inspect: Langfuse trace-inspection tool \u2014 lets the agent\n        fetch and summarise recent implement traces for a given ticket\n        or trace id.  Default-disabled.\n    feedback: Automated feedback analysis that files improvement\n        tickets at compaction and session-end boundaries.\n    max_images_per_message: Maximum number of images a client may attach to\n        a single ``POST /chat`` request.  Default ``8``.\n    max_image_bytes: Maximum decoded size (bytes) of a single attached\n        image.  Default ``5_242_880`` (5 MiB).\n    allowed_image_media_types: Media types accepted for image attachments.\n        Default ``[\"image/png\", \"image/jpeg\", \"image/gif\", \"image/webp\"]``.\n    low_risk_actions: Action names or descriptions that the agent may\n        perform without requesting human confirmation.  When non-empty,\n        the system prompt instructs the agent that these actions are\n        pre-authorized and any safety gates on them are lifted \u2014\n        the agent should execute them without asking.  Default ``[]``.\n    mobile_auth: Mobile SSO authentication via tinyauth reverse proxy.\n        When enabled, exposes ``GET /auth/login`` and\n        ``POST /chat/auth/mobile-token`` for the mobile app's\n        authentication flow.  Default-disabled.",
   "properties": {
     "llmio_model_level": {
       "default": 4,
@@ -2008,6 +2061,10 @@
       },
       "title": "Low Risk Actions",
       "type": "array"
+    },
+    "mobile_auth": {
+      "$ref": "#/$defs/MobileAuthSettings",
+      "advanced": true
     }
   },
   "title": "Settings",

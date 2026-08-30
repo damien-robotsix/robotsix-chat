@@ -40,6 +40,7 @@ from robotsix_chat.config.models import (
     LifecycleSettings,
     MailSettings,
     MemorySettings,
+    MobileAuthSettings,
     NotificationSettings,
     OpenRouterSettings,
     PublicFetchSettings,
@@ -154,6 +155,10 @@ class Settings(BaseModel):
             the system prompt instructs the agent that these actions are
             pre-authorized and any safety gates on them are lifted —
             the agent should execute them without asking.  Default ``[]``.
+        mobile_auth: Mobile SSO authentication via tinyauth reverse proxy.
+            When enabled, exposes ``GET /auth/login`` and
+            ``POST /chat/auth/mobile-token`` for the mobile app's
+            authentication flow.  Default-disabled.
 
     """
 
@@ -1739,6 +1744,9 @@ class Settings(BaseModel):
     )
     low_risk_actions: list[str] = Field(
         default_factory=list, json_schema_extra={"advanced": True}
+    )
+    mobile_auth: MobileAuthSettings = Field(
+        default_factory=MobileAuthSettings, json_schema_extra={"advanced": True}
     )
 
     model_config = ConfigDict(extra="forbid")
