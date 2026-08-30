@@ -86,6 +86,7 @@ from robotsix_chat.ticket_poll import (
     build_mark_ticket_ready_tool,
     build_merge_pull_request_tool,
     build_prioritize_all_open_tickets_tool,
+    build_resolve_repo_tool,
     build_ticket_poll_tools,
     load_ticket_poll_skill,
 )
@@ -1150,6 +1151,7 @@ def _build_static_tools(
         *build_mark_ticket_ready_tool(settings, component_request=component_request),
         *build_mark_ticket_done_tool(settings, component_request=component_request),
         *build_find_ticket_by_pr_tool(settings, component_request=component_request),
+        *build_resolve_repo_tool(settings, component_request=component_request),
         *build_prioritize_all_open_tickets_tool(
             settings, component_request=component_request
         ),

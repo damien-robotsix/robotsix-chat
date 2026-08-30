@@ -42,6 +42,59 @@ def build_repo_study_tools(
 
     manager = WorkspaceManager(settings, direct_repo)
 
+    async def _resolve_repo(repo: str) -> tuple[str | None, str]:
+        """Turn a mill ``repo_id`` or ``owner/repo`` into ``(full_name, error)``.
+
+        ``owner/repo`` passes through untouched.  A bare name is looked up
+        in the mill repo registry (``GET /repos``, via
+        :class:`~robotsix_chat.repo.direct.board_client.BoardClient`) and,
+        failing that, matched by repository name against the GitHub App
+        installation's repositories.  Never guesses an owner.
+        """
+        text = repo.strip()
+        if not text or "/" in text:
+            return (text or None), ""
+        candidates: list[str] = []
+        if direct_repo.board_api_base_url.strip():
+            from robotsix_chat.repo.direct.board_client import BoardClient
+
+            try:
+                resolved = await BoardClient(direct_repo).resolve_repo_full_name(text)
+            except Exception as exc:  # defensive — never break the tool
+                logger.warning("repo_study: mill registry lookup failed: %s", exc)
+                resolved = None
+            if resolved:
+                return resolved, ""
+        if (
+            direct_repo.github_app_id
+            and direct_repo.github_app_private_key.get_secret_value()
+            and direct_repo.github_app_installation_id
+        ):
+            from robotsix_chat.repo.direct.client import DirectRepoClient
+
+            try:
+                installed = await DirectRepoClient(
+                    direct_repo
+                ).list_installation_repos()
+            except Exception as exc:
+                logger.warning("repo_study: installation repo list failed: %s", exc)
+                installed = []
+            candidates = [
+                full
+                for full in installed
+                if full.rsplit("/", 1)[-1].lower() == text.lower()
+            ]
+            if len(candidates) == 1:
+                return candidates[0], ""
+        return None, (
+            f"Error: {repo!r} is not an 'owner/name' full name, not a registered "
+            "mill repo_id, and does not uniquely match a repository in the "
+            "GitHub App installation"
+            + (f" (candidates: {', '.join(sorted(candidates))})" if candidates else "")
+            + ".  Call resolve_repo(repo_id) or pass the exact owner/name — "
+            "do not guess an organisation."
+        )
+
     async def fetch_repo_for_study(repo: str, ref: str = "") -> str:
         """Download a GitHub repo snapshot into a temporary local workspace.
 
@@ -53,7 +106,10 @@ def build_repo_study_tools(
         installation scope; public repos always work.
 
         Args:
-            repo: The ``owner/name`` GitHub repository full name.
+            repo: The ``owner/name`` GitHub repository full name, or a mill
+                ``repo_id`` (e.g. ``"robotsix-central-deploy"``) — resolved
+                to ``owner/name`` through the mill repo registry / the
+                GitHub App installation.  Never pass a guessed owner.
             ref: Optional branch, tag, or commit SHA (default branch when
                 empty).
 
@@ -62,6 +118,16 @@ def build_repo_study_tools(
             tools, or a clear error message.
 
         """
+        full_name, resolve_error = await _resolve_repo(repo)
+        if resolve_error:
+            if diagnostic_store is not None:
+                diagnostic_store.record_event(
+                    category="CLONE_TARGET",
+                    message=f"Repo fetch failed for {repo}: {resolve_error}",
+                    details={"repo": repo, "ref": ref, "error": resolve_error},
+                )
+            return resolve_error
+        repo = full_name or repo
         try:
             return await manager.fetch(repo, ref)
         except WorkspaceError as exc:

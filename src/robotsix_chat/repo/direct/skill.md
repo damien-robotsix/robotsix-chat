@@ -222,30 +222,42 @@ ______________________________________________________________________
 
 ## Agent tool: `list_open_prs`
 
-List every open pull request across an organization's repositories in a single batched GitHub Search
-API query (`/search/issues?q=type:pr state:open org:<org>`). Use this **before** iterating
-repository-by-repository with per-repo PR lookups whenever the user asks about PRs across several
-repositories — it replaces O(n) individual calls with one batch query.
+List pull requests for one repository or for the whole GitHub account in a single batched GitHub
+Search API query (`/search/issues?q=type:pr …`). Despite the name it lists **merged and closed PRs
+too**: `state` defaults to `all` with a `since_days` window (default 30), so a PR that was merged
+does not vanish into "No open PRs". Use this **before** iterating repository-by-repository with
+per-repo PR lookups.
 
-**Read-only.** Does not modify any repository state and does not require a ticket to be in BLOCKED
+**Repository identity.** `repo` accepts a mill `repo_id` (e.g. `robotsix-central-deploy`, resolved
+through the mill registry — see `resolve_repo`) or a full `owner/repo`. With `repo` empty the search
+spans the account the GitHub App is installed on (`owner`, defaulting to the installation's own
+account). Never pass a guessed organisation name — the fleet's code lives under a personal GitHub
+account, not an org named after it.
+
+**Read-only.** Does not modify any repository state and does not require a ticket to be in `blocked`
 state. Results are limited to the repositories the robotsix-mill GitHub App is installed on.
 
-### Preconditions
+### Parameters
 
-- The GitHub App installation must include at least one repository in *org_name*.
+- `repo` — mill `repo_id` or `owner/repo`; empty for account-wide.
+- `owner` — account to search when `repo` is empty (default: the installation's account).
+- `state` — `open`, `closed` or `all` (default).
+- `since_days` — only PRs updated within this many days (default 30, `0` disables; ignored for
+  `open`).
 
 ### Returned information
 
-- Total count of open PRs, grouped by repository.
-- Per PR: number, title, URL, author, and draft status.
+- Total count of PRs, grouped by repository.
+- Per PR: number, title, URL, author, state (`open` / `merged` / `closed`) and draft status.
 - A truncation note when GitHub's 1000-result search cap is reached.
 
 ### Error responses
 
-| Condition         | Message                                                                          |
-| ----------------- | -------------------------------------------------------------------------------- |
-| Search API error  | `Error listing open PRs for org '<org>': <detail>`                               |
-| No accessible PRs | `No open PRs found for org '<org>' (in repositories the GitHub App can access).` |
+| Condition        | Message                                                                                 |
+| ---------------- | --------------------------------------------------------------------------------------- |
+| Unknown repo id  | `Error: '<repo>' is neither a registered mill repo_id nor an 'owner/repo' full name. …` |
+| Search API error | `Error listing PRs for <scope>: <detail>`                                               |
+| No matching PRs  | `No <state> PRs found for <scope> … (in repositories the GitHub App can access).`       |
 
 ______________________________________________________________________
 

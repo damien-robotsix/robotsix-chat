@@ -13,6 +13,7 @@ from __future__ import annotations
 
 import json
 import logging
+import re
 from typing import TYPE_CHECKING, Any, cast
 
 import httpx
@@ -33,6 +34,51 @@ _BOARD_RETRY_CONFIG = RetryConfig(
     backoff_cap=10.0,
     jitter_factor=0.5,
 )
+
+
+_OWNER_REPO_RE = re.compile(r"^[A-Za-z0-9_.-]+/[A-Za-z0-9_.-]+$")
+
+
+def parse_owner_repo(url: str | None) -> str | None:
+    """Return ``owner/repo`` parsed from a forge remote URL, or ``None``.
+
+    Accepts the shapes the mill registry stores in ``forge_remote_url`` /
+    ``git_url``::
+
+        https://github.com/damien-robotsix/robotsix-central-deploy.git
+        https://x-access-token:***@github.com/owner/repo
+        git@github.com:owner/repo.git
+        ssh://git@github.com/owner/repo.git
+        owner/repo                      (already a full name)
+
+    Only the last two path components are used, so a host or credential
+    prefix never leaks into the result.  Returns ``None`` when *url* is
+    empty or does not carry two path components.
+    """
+    if not isinstance(url, str):
+        return None
+    text = url.strip()
+    if not text:
+        return None
+    if _OWNER_REPO_RE.match(text):
+        return text.removesuffix(".git") if text.endswith(".git") else text
+    # scp-like ssh form: git@host:owner/repo(.git)
+    if "://" not in text and ":" in text:
+        text = text.split(":", 1)[1]
+    else:
+        # strip scheme + netloc
+        if "://" in text:
+            text = text.split("://", 1)[1]
+        if "/" in text:
+            text = text.split("/", 1)[1]
+        else:
+            return None
+    parts = [p for p in text.strip("/").split("/") if p]
+    if len(parts) < 2:
+        return None
+    owner, repo = parts[-2], parts[-1].removesuffix(".git")
+    full = f"{owner}/{repo}"
+    return full if _OWNER_REPO_RE.match(full) else None
 
 
 class BoardClient:
@@ -400,6 +446,106 @@ class BoardClient:
         "Board API request failed".
         """
         return await self._fetch_ticket(ticket_id, "data")
+
+    async def _get_json(self, path: str, label: str) -> tuple[Any, str | None]:
+        """GET *path* on the board API.
+
+        Returns ``(parsed_json, None)`` on success or ``(None, reason)``.
+        """
+        url = f"{self._board_url}{path}"
+        headers: dict[str, str] = {"Accept": "application/json"}
+        if self._s.board_api_token.get_secret_value():
+            headers["Authorization"] = (
+                f"Bearer {self._s.board_api_token.get_secret_value()}"
+            )
+        try:
+            async with httpx.AsyncClient(timeout=self._s.timeout) as client:
+                retry_client = RetryClient(client, config=_BOARD_RETRY_CONFIG)
+                response = await retry_client.get(url, headers=headers)
+                response.raise_for_status()
+                text = response.text
+        except (httpx.HTTPStatusError, ExternalHTTPError) as exc:
+            code = (
+                exc.status_code
+                if isinstance(exc, ExternalHTTPError)
+                else exc.response.status_code
+            )
+            logger.warning("Board API %s failed: HTTP %s", label, code)
+            return None, f"Board API error: HTTP {code}"
+        except httpx.TimeoutException:
+            logger.warning("Board API %s timed out after %ss", label, self._s.timeout)
+            return None, f"Board API timeout after {self._s.timeout}s"
+        except Exception as exc:
+            logger.warning("Board API %s failed: %s", label, exc)
+            return None, f"Board API unreachable: {exc}"
+        try:
+            return json.loads(text), None
+        except json.JSONDecodeError, TypeError:
+            logger.warning("Non-JSON response for %s: %s", label, text[:200])
+            return None, "Board API returned a non-JSON response"
+
+    async def get_ticket_history(self, ticket_id: str) -> list[dict[str, Any]] | None:
+        """Return the ``GET /tickets/{id}/history`` rows, or ``None`` on failure.
+
+        Each row is a mill ``TicketEvent``: ``{"state": ..., "note": ...,
+        "at": ...}`` in chronological order.  Never raises.
+        """
+        data, _reason = await self._get_json(
+            f"/tickets/{ticket_id}/history", f"history for {ticket_id}"
+        )
+        if isinstance(data, list):
+            return [row for row in data if isinstance(row, dict)]
+        return None
+
+    async def list_repos(self) -> list[dict[str, Any]] | None:
+        """Return the mill repo registry (``GET /repos``), or ``None`` on failure.
+
+        Each entry carries ``repo_id``, ``board_id`` and a credential-stripped
+        ``forge_remote_url`` (older mills: ``git_url``).  Never raises.
+        """
+        data, _reason = await self._get_json("/repos", "repo registry")
+        if isinstance(data, list):
+            return [row for row in data if isinstance(row, dict)]
+        if isinstance(data, dict) and isinstance(data.get("repos"), list):
+            return [row for row in data["repos"] if isinstance(row, dict)]
+        return None
+
+    async def resolve_repo_full_name(self, repo: str) -> str | None:
+        """Map a mill ``repo_id`` (or an ``owner/repo``) to ``owner/repo``.
+
+        * ``owner/repo`` input is returned unchanged.
+        * Otherwise the mill registry is consulted: an entry whose
+          ``repo_id`` (or ``board_id``) equals *repo* — or, failing that,
+          whose remote URL's repository name equals *repo* — yields the
+          ``owner/repo`` parsed from its ``forge_remote_url`` / ``git_url``.
+
+        Returns ``None`` when nothing matches or the registry is
+        unreachable — never a guessed owner.
+        """
+        text = repo.strip()
+        if not text:
+            return None
+        if "/" in text or "://" in text or ":" in text:
+            return parse_owner_repo(text)
+        repos = await self.list_repos()
+        if not repos:
+            return None
+        wanted = text.lower()
+        by_name: list[str] = []
+        for entry in repos:
+            url = entry.get("forge_remote_url") or entry.get("git_url")
+            full = parse_owner_repo(url if isinstance(url, str) else None)
+            if full is None:
+                continue
+            if str(entry.get("repo_id", "")).lower() == wanted:
+                return full
+            if str(entry.get("board_id", "")).lower() == wanted:
+                return full
+            if full.rsplit("/", 1)[1].lower() == wanted:
+                by_name.append(full)
+        if len(by_name) == 1:
+            return by_name[0]
+        return None
 
     async def find_ticket_by_pr_url(self, pr_url: str) -> dict[str, Any] | None:
         """Find a ticket by its linked PR URL.

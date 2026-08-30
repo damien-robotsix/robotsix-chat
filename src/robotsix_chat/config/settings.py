@@ -74,7 +74,7 @@ class ConfigValidationError(ValueError):
 # Version stamp for the agent_instruction default literal.
 # Bump on every change to Settings.agent_instruction and update
 # docs/system_prompt_changelog.md with a new entry + SHA256.
-SYSTEM_PROMPT_VERSION = 146
+SYSTEM_PROMPT_VERSION = 147
 
 # Valid model levels, derived from llmio's tier enum (import-time constant so
 # the set is built once and can never drift from the tiers llmio ships).
@@ -619,6 +619,15 @@ class Settings(BaseModel):
             "deleted, closed, or from a different repo), and reporting "
             "them unverified triggers a round of failed lookups before the "
             "right item is found.\n"
+            "– Before claiming that a ticket's work was dropped, not "
+            "implemented, or confabulated, call ticket_poll and quote its "
+            "state, pr_url and delivered fields: a closed ticket with a PR "
+            "(delivered=true) was delivered — closed follows done when the "
+            "retrospect finishes — and only unexpected_terminal (no PR, no "
+            "active-work state) means dropped.  Resolve repositories with "
+            "resolve_repo(repo_id) instead of guessing an organisation name, "
+            "and remember list_open_prs hides merged PRs unless state is "
+            "all.\n"
             "– When a user reference to a known entity — a ticket name or id, "
             "a repo name, a common term — does not match anything literally "
             "(for example 'moblie app' for 'mobile app'), do NOT match the "

@@ -17,6 +17,7 @@ import respx
 from robotsix_chat.config import AutonomousSettings, DirectRepoSettings, Settings
 from robotsix_chat.ticket_poll import (
     _check_unexpected_terminal,
+    _delivery_fields,
     build_file_ticket_tool,
     build_find_ticket_by_pr_tool,
     build_list_stale_ready_tickets_tool,
@@ -26,6 +27,7 @@ from robotsix_chat.ticket_poll import (
     build_ticket_poll_tools,
     load_ticket_poll_skill,
 )
+from robotsix_chat.ticket_poll.mill_states import ACTIVE_WORK_STATES, MERGE_STATES
 
 
 def _settings(**kw: Any) -> Settings:
@@ -1086,173 +1088,196 @@ async def test_merge_pull_request_resolves_paraphrased_id(
 
 
 # ============================================================================
-# _check_unexpected_terminal
+# _check_unexpected_terminal / delivery evidence (real mill states)
 # ============================================================================
+
+# The 69be-shaped history: the real mill delivery path for
+# 20260830T091612Z-add-chat-scoped-volume-file-write-endpoi-69be, whose PR
+# (central-deploy #821) merged and whose retrospect then closed the ticket.
+_69BE_PR = "https://github.com/damien-robotsix/robotsix-central-deploy/pull/821"
+_69BE_HISTORY = [
+    {"state": s}
+    for s in (
+        "draft",
+        "ready",
+        "code_review",
+        "documenting",
+        "deliverable",
+        "implement_complete",
+        "waiting_auto_merge",
+        "done",
+        "closed",
+    )
+]
 
 
 def test_unexpected_terminal_null_for_active_state() -> None:
-    """Ticket in IN_PROGRESS — not terminal, returns None."""
-    result = _check_unexpected_terminal({"state": "IN_PROGRESS"})
-    assert result is None
+    """Ticket in code_review — not terminal, returns None."""
+    assert _check_unexpected_terminal({"state": "code_review"}) is None
 
 
 def test_unexpected_terminal_null_for_unknown_state() -> None:
     """Ticket with no state field — returns None (no false positives)."""
-    result = _check_unexpected_terminal({})
-    assert result is None
+    assert _check_unexpected_terminal({}) is None
 
 
-def test_unexpected_terminal_null_with_history_active_state() -> None:
-    """CLOSED ticket that was previously BLOCKED — transition is normal."""
+def test_unexpected_terminal_69be_delivered_not_flagged() -> None:
+    """The real delivery path with a pr_url is delivered, never 'dropped'."""
     data: dict[str, Any] = {
-        "state": "CLOSED",
+        "state": "closed",
+        "pr_url": _69BE_PR,
+        "history": _69BE_HISTORY,
+    }
+    assert _check_unexpected_terminal(data) is None
+    fields = _delivery_fields(data)
+    assert fields["delivered"] is True
+    assert fields["pr_url"] == _69BE_PR
+    assert fields["delivery_note"] == (
+        f"closed after delivery (retrospect): PR {_69BE_PR}"
+    )
+    assert fields["unexpected_terminal"] is None
+
+
+def test_unexpected_terminal_closed_with_pr_but_no_history_is_delivered() -> None:
+    """GET /tickets/{id} alone (no history) + pr_url → delivered, no flag."""
+    data: dict[str, Any] = {"state": "closed", "pr_url": _69BE_PR}
+    assert _check_unexpected_terminal(data) is None
+    assert _delivery_fields(data)["delivered"] is True
+
+
+def test_unexpected_terminal_done_with_merge_state_but_no_pr_url() -> None:
+    """A merge-path state in the history counts as delivery even without pr_url."""
+    data: dict[str, Any] = {
+        "state": "done",
+        "pr_url": None,
         "history": [
-            {"state": "DRAFT"},
-            {"state": "BLOCKED"},
-            {"state": "CLOSED"},
+            {"state": "ready"},
+            {"state": "implement_complete"},
+            {"state": "done"},
         ],
     }
     assert _check_unexpected_terminal(data) is None
+    fields = _delivery_fields(data)
+    assert fields["delivered"] is True
+    assert fields["pr_url"] is None
+    assert "awaiting retrospect" in str(fields["delivery_note"])
+
+
+def test_unexpected_terminal_null_with_history_blocked_state() -> None:
+    """Closed ticket that was previously blocked — an agent touched it."""
+    data: dict[str, Any] = {
+        "state": "closed",
+        "history": [{"state": "draft"}, {"state": "blocked"}, {"state": "closed"}],
+    }
+    assert _check_unexpected_terminal(data) is None
+    assert _delivery_fields(data)["delivered"] is False
 
 
 def test_unexpected_terminal_null_with_implement_events() -> None:
-    """CLOSED ticket with implement events — transition is normal."""
+    """Closed ticket with implement events — transition is normal."""
     data: dict[str, Any] = {
-        "state": "CLOSED",
-        "events": [
-            {"type": "implement_started"},
-            {"type": "implement_complete"},
-        ],
+        "state": "closed",
+        "events": [{"type": "implement_started"}, {"type": "implement_complete"}],
     }
     assert _check_unexpected_terminal(data) is None
 
 
 def test_unexpected_terminal_null_with_unblock_events() -> None:
-    """DONE ticket with unblock event — transition is normal."""
-    data: dict[str, Any] = {
-        "state": "DONE",
-        "events": [{"type": "unblock"}],
-    }
-    assert _check_unexpected_terminal(data) is None
+    """Done ticket with unblock event — transition is normal."""
+    assert (
+        _check_unexpected_terminal({"state": "done", "events": [{"type": "unblock"}]})
+        is None
+    )
 
 
 def test_unexpected_terminal_detects_draft_to_closed() -> None:
-    """CLOSED ticket with only DRAFT history — flag as unexpected."""
+    """Closed ticket with only draft history and no PR — flag as dropped."""
     data: dict[str, Any] = {
-        "state": "CLOSED",
-        "history": [
-            {"state": "DRAFT"},
-            {"state": "CLOSED"},
-        ],
+        "state": "closed",
+        "pr_url": None,
+        "history": [{"state": "draft"}, {"state": "closed"}],
     }
     result = _check_unexpected_terminal(data)
     assert result is not None
-    assert "CLOSED" in result
+    assert "closed" in result
+    assert "draft → closed" in result
     assert "active work" in result.lower()
+    fields = _delivery_fields(data)
+    assert fields["delivered"] is False
+    assert fields["delivery_note"] is None
 
 
-def test_unexpected_terminal_detects_no_history() -> None:
-    """CLOSED ticket with no history or events — flag as unexpected."""
-    data: dict[str, Any] = {"state": "CLOSED"}
-    result = _check_unexpected_terminal(data)
+def test_unexpected_terminal_detects_no_history_no_pr() -> None:
+    """Closed ticket with no history, events or PR — flag."""
+    result = _check_unexpected_terminal({"state": "closed"})
     assert result is not None
-    assert "CLOSED" in result
+    assert "closed" in result
 
 
 def test_unexpected_terminal_detects_ready_to_closed() -> None:
-    """CLOSED ticket that was READY but never entered active work — flag."""
+    """Closed ticket that was ready but never entered active work — flag."""
     data: dict[str, Any] = {
-        "state": "CLOSED",
+        "state": "closed",
+        "history": [{"state": "draft"}, {"state": "ready"}, {"state": "closed"}],
+    }
+    assert _check_unexpected_terminal(data) is not None
+
+
+def test_unexpected_terminal_human_issue_approval_to_closed_flagged() -> None:
+    """A ticket rejected at the approval gate was never worked on — flag."""
+    data: dict[str, Any] = {
+        "state": "closed",
         "history": [
-            {"state": "DRAFT"},
-            {"state": "READY"},
-            {"state": "CLOSED"},
+            {"state": "draft"},
+            {"state": "human_issue_approval"},
+            {"state": "closed"},
         ],
     }
-    result = _check_unexpected_terminal(data)
-    assert result is not None
+    assert _check_unexpected_terminal(data) is not None
 
 
-def test_unexpected_terminal_null_for_approved() -> None:
-    """CLOSED with APPROVED in history — APPROVED is an active-work state."""
+@pytest.mark.parametrize(
+    "work_state",
+    sorted(ACTIVE_WORK_STATES | MERGE_STATES),
+)
+def test_unexpected_terminal_null_for_every_real_work_state(work_state: str) -> None:
+    """Every real active-work / merge state in the history suppresses the flag."""
     data: dict[str, Any] = {
-        "state": "CLOSED",
+        "state": "closed",
+        "history": [{"state": "draft"}, {"state": work_state}, {"state": "closed"}],
+    }
+    assert _check_unexpected_terminal(data) is None
+
+
+def test_unexpected_terminal_fictional_states_do_not_count() -> None:
+    """The old invented names are not evidence of anything — flag stays."""
+    data: dict[str, Any] = {
+        "state": "closed",
         "history": [
             {"state": "DRAFT"},
             {"state": "APPROVED"},
+            {"state": "IN_PROGRESS"},
             {"state": "CLOSED"},
         ],
     }
-    assert _check_unexpected_terminal(data) is None
-
-
-def test_unexpected_terminal_null_with_implement_complete_history() -> None:
-    """CLOSED ticket that went through IMPLEMENT_COMPLETE — normal."""
-    data: dict[str, Any] = {
-        "state": "DONE",
-        "history": [
-            {"state": "DRAFT"},
-            {"state": "READY"},
-            {"state": "IN_PROGRESS"},
-            {"state": "IMPLEMENT_COMPLETE"},
-            {"state": "DONE"},
-        ],
-    }
-    assert _check_unexpected_terminal(data) is None
-
-
-def test_unexpected_terminal_null_with_waiting_auto_merge_history() -> None:
-    """DONE ticket that went through WAITING_AUTO_MERGE — normal."""
-    data: dict[str, Any] = {
-        "state": "DONE",
-        "history": [
-            {"state": "DRAFT"},
-            {"state": "IN_PROGRESS"},
-            {"state": "WAITING_AUTO_MERGE"},
-            {"state": "DONE"},
-        ],
-    }
-    assert _check_unexpected_terminal(data) is None
-
-
-def test_unexpected_terminal_null_with_review_history() -> None:
-    """DONE ticket that went through REVIEW — normal."""
-    data: dict[str, Any] = {
-        "state": "DONE",
-        "history": [
-            {"state": "IN_PROGRESS"},
-            {"state": "REVIEW"},
-            {"state": "DONE"},
-        ],
-    }
-    assert _check_unexpected_terminal(data) is None
+    assert _check_unexpected_terminal(data) is not None
 
 
 def test_unexpected_terminal_null_with_merge_event() -> None:
-    """DONE ticket with a merge event — normal."""
+    """Done ticket with a merge event — normal."""
     data: dict[str, Any] = {
-        "state": "DONE",
-        "history": [{"state": "DRAFT"}],
+        "state": "done",
+        "history": [{"state": "draft"}],
         "events": [{"type": "pr_merged"}],
     }
     assert _check_unexpected_terminal(data) is None
 
 
-def test_unexpected_terminal_null_with_approve_event() -> None:
-    """CLOSED ticket with an approve event — normal."""
+def test_unexpected_terminal_null_with_history_note_keyword() -> None:
+    """A mill history row whose note mentions a merge counts as activity."""
     data: dict[str, Any] = {
-        "state": "CLOSED",
-        "events": [{"type": "mr_approved"}],
-    }
-    assert _check_unexpected_terminal(data) is None
-
-
-def test_unexpected_terminal_null_with_complete_event() -> None:
-    """DONE ticket with a complete event — normal."""
-    data: dict[str, Any] = {
-        "state": "DONE",
-        "history": [{"state": "DRAFT"}],
-        "events": [{"type": "implementation_complete"}],
+        "state": "closed",
+        "history": [{"state": "closed", "note": "Clean delivery — PR merged"}],
     }
     assert _check_unexpected_terminal(data) is None
 
@@ -1260,43 +1285,178 @@ def test_unexpected_terminal_null_with_complete_event() -> None:
 def test_unexpected_terminal_case_insensitive_state() -> None:
     """State comparison is case-insensitive."""
     data: dict[str, Any] = {
-        "state": "closed",
-        "history": [{"state": "draft"}, {"state": "closed"}],
+        "state": "CLOSED",
+        "history": [{"state": "Draft"}, {"state": "CLOSED"}],
     }
-    result = _check_unexpected_terminal(data)
-    assert result is not None
+    assert _check_unexpected_terminal(data) is not None
+    data["history"].insert(1, {"state": "Implement_Complete"})
+    assert _check_unexpected_terminal(data) is None
 
 
 def test_unexpected_terminal_uses_to_field_in_history() -> None:
     """History entries may use 'to' instead of 'state'."""
     data: dict[str, Any] = {
-        "state": "CLOSED",
-        "history": [
-            {"to": "DRAFT"},
-            {"to": "IN_PROGRESS"},
-            {"to": "CLOSED"},
-        ],
+        "state": "closed",
+        "history": [{"to": "draft"}, {"to": "code_review"}, {"to": "closed"}],
     }
     assert _check_unexpected_terminal(data) is None
 
 
 def test_unexpected_terminal_uses_action_field_in_events() -> None:
     """Events may use 'action' instead of 'type'."""
-    data: dict[str, Any] = {
-        "state": "DONE",
-        "events": [{"action": "resume"}],
-    }
-    assert _check_unexpected_terminal(data) is None
+    assert (
+        _check_unexpected_terminal({"state": "done", "events": [{"action": "resume"}]})
+        is None
+    )
 
 
 def test_unexpected_terminal_skips_non_dict_entries() -> None:
     """Non-dict entries in history/events are safely skipped."""
     data: dict[str, Any] = {
-        "state": "CLOSED",
-        "history": ["not a dict", None, {"state": "BLOCKED"}],
+        "state": "closed",
+        "history": ["not a dict", None, {"state": "blocked"}],
         "events": [None, "also not a dict"],
     }
     assert _check_unexpected_terminal(data) is None
+
+
+# ---------------------------------------------------------------------------
+# ticket_poll output carries delivery evidence (history fetched for terminal)
+# ---------------------------------------------------------------------------
+
+_69BE_ID = "20260830T091612Z-add-chat-scoped-volume-file-write-endpoi-69be"
+
+
+@pytest.mark.asyncio
+async def test_ticket_poll_direct_closed_with_pr_reports_delivered(
+    respx_mock: respx.MockRouter,
+) -> None:
+    """Direct path: closed + pr_url + real history → delivered, no flag."""
+    respx_mock.get(f"http://board:8077/tickets/{_69BE_ID}").mock(
+        return_value=httpx.Response(
+            200,
+            text=json.dumps({"id": _69BE_ID, "state": "closed", "pr_url": _69BE_PR}),
+        )
+    )
+    history_route = respx_mock.get(
+        f"http://board:8077/tickets/{_69BE_ID}/history"
+    ).mock(
+        return_value=httpx.Response(
+            200,
+            text=json.dumps(
+                [{"state": row["state"], "note": None} for row in _69BE_HISTORY]
+            ),
+        )
+    )
+    tools = build_ticket_poll_tools(_settings())
+    ticket_poll = tools[0]
+    result = json.loads(await ticket_poll(_69BE_ID))
+    assert history_route.called
+    assert result["state"] == "closed"
+    assert result["pr_url"] == _69BE_PR
+    assert result["delivered"] is True
+    assert result["delivery_note"] == (
+        f"closed after delivery (retrospect): PR {_69BE_PR}"
+    )
+    assert result["unexpected_terminal"] is None
+    assert result["error"] == ""
+
+
+@pytest.mark.asyncio
+async def test_ticket_poll_direct_draft_to_closed_flags_dropped(
+    respx_mock: respx.MockRouter,
+) -> None:
+    """Direct path: closed with no PR and a draft-only history → flagged."""
+    respx_mock.get("http://board:8077/tickets/t-dropped").mock(
+        return_value=httpx.Response(
+            200, text=json.dumps({"id": "t-dropped", "state": "closed", "pr_url": None})
+        )
+    )
+    respx_mock.get("http://board:8077/tickets/t-dropped/history").mock(
+        return_value=httpx.Response(
+            200, text=json.dumps([{"state": "draft"}, {"state": "closed"}])
+        )
+    )
+    tools = build_ticket_poll_tools(_settings())
+    result = json.loads(await tools[0]("t-dropped"))
+    assert result["delivered"] is False
+    assert result["pr_url"] is None
+    assert result["unexpected_terminal"] is not None
+    assert "draft → closed" in result["unexpected_terminal"]
+
+
+@pytest.mark.asyncio
+async def test_ticket_poll_direct_active_state_skips_history_fetch(
+    respx_mock: respx.MockRouter,
+) -> None:
+    """Non-terminal tickets do not pay the history round-trip."""
+    respx_mock.get("http://board:8077/tickets/t-active").mock(
+        return_value=httpx.Response(
+            200, text=json.dumps({"id": "t-active", "state": "code_review"})
+        )
+    )
+    history_route = respx_mock.get("http://board:8077/tickets/t-active/history").mock(
+        return_value=httpx.Response(200, text="[]")
+    )
+    tools = build_ticket_poll_tools(_settings())
+    result = json.loads(await tools[0]("t-active"))
+    assert not history_route.called
+    assert result["state"] == "code_review"
+    assert result["delivered"] is False
+    assert result["unexpected_terminal"] is None
+
+
+@pytest.mark.asyncio
+async def test_ticket_poll_component_path_fetches_history_via_roster() -> None:
+    """Roster path: history comes from component_request GET /tickets/{id}/history."""
+    calls: list[str] = []
+
+    async def _req(component: str, method: str, path: str, **kwargs: Any) -> str:
+        calls.append(path)
+        if path.endswith("/history"):
+            return "HTTP 200 OK\n" + json.dumps(
+                [{"state": row["state"]} for row in _69BE_HISTORY]
+            )
+        if path == "/tickets":
+            return "HTTP 200 OK\n" + json.dumps([{"ticket_id": _69BE_ID}])
+        return "HTTP 200 OK\n" + json.dumps(
+            {"ticket_id": _69BE_ID, "state": "closed", "pr_url": _69BE_PR}
+        )
+
+    tools = build_ticket_poll_tools(_settings(), component_request=_req)
+    result = json.loads(await tools[0](_69BE_ID))
+    assert f"/tickets/{_69BE_ID}/history" in calls
+    assert result["delivered"] is True
+    assert result["pr_url"] == _69BE_PR
+    assert result["unexpected_terminal"] is None
+
+
+@pytest.mark.asyncio
+async def test_ticket_poll_batch_direct_carries_delivery_fields(
+    respx_mock: respx.MockRouter,
+) -> None:
+    """Batch path: each element carries pr_url / delivered / delivery_note."""
+    respx_mock.get("http://board:8077/tickets").mock(
+        return_value=httpx.Response(200, text=json.dumps([{"ticket_id": "t-b"}]))
+    )
+    respx_mock.get("http://board:8077/tickets/t-b").mock(
+        return_value=httpx.Response(
+            200, text=json.dumps({"id": "t-b", "state": "done", "pr_url": _69BE_PR})
+        )
+    )
+    respx_mock.get("http://board:8077/tickets/t-b/history").mock(
+        return_value=httpx.Response(
+            200,
+            text=json.dumps([{"state": "ready"}, {"state": "implement_complete"}]),
+        )
+    )
+    tools = build_ticket_poll_tools(_settings())
+    result = json.loads(await tools[1](["t-b"]))
+    entry = result["tickets"][0]
+    assert entry["delivered"] is True
+    assert entry["pr_url"] == _69BE_PR
+    assert entry["unexpected_terminal"] is None
+    assert entry["data"]["history"][1]["state"] == "implement_complete"
 
 
 # ============================================================================

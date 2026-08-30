@@ -524,6 +524,58 @@ async def test_factory_end_to_end_fetch_then_read(tmp_path: Path) -> None:
     assert "# Widget" in out
 
 
+@respx.mock
+@pytest.mark.asyncio
+async def test_factory_fetch_resolves_mill_repo_id(tmp_path: Path) -> None:
+    """A bare mill repo_id is mapped to owner/name via the mill GET /repos registry."""
+    tools = build_repo_study_tools(
+        RepoStudySettings(enabled=True, data_dir=str(tmp_path / "ws")),
+        DirectRepoSettings(board_api_base_url="http://board:8077"),
+    )
+    by_name = {t.__name__: t for t in tools}
+    respx.get("http://board:8077/repos").mock(
+        return_value=Response(
+            200,
+            json=[
+                {
+                    "repo_id": "widget",
+                    "board_id": "widget",
+                    "forge_remote_url": "https://github.com/acme/widget.git",
+                }
+            ],
+        )
+    )
+    respx.get(TARBALL_URL).mock(
+        return_value=Response(200, content=make_tarball(SAMPLE_FILES))
+    )
+    summary = await by_name["fetch_repo_for_study"]("widget")
+    assert "acme--widget--default" in summary
+    assert "acme/widget" in summary
+
+
+@respx.mock
+@pytest.mark.asyncio
+async def test_factory_fetch_unknown_bare_name_refuses_to_guess(
+    tmp_path: Path,
+) -> None:
+    """A bare name that is not a mill repo_id errors out — no tarball URL is guessed."""
+    store = DiagnosticStore(tmp_path / "diag.db")
+    tools = build_repo_study_tools(
+        RepoStudySettings(enabled=True, data_dir=str(tmp_path / "ws")),
+        DirectRepoSettings(board_api_base_url="http://board:8077"),
+        diagnostic_store=store,
+    )
+    by_name = {t.__name__: t for t in tools}
+    respx.get("http://board:8077/repos").mock(return_value=Response(200, json=[]))
+    tarball = respx.get(url__regex=r"https://api\.github\.com/repos/.*").mock(
+        return_value=Response(404)
+    )
+    result = await by_name["fetch_repo_for_study"]("central-deploy")
+    assert result.startswith("Error: 'central-deploy' is not an 'owner/name' full name")
+    assert "resolve_repo" in result
+    assert not tarball.called
+
+
 # ---------------------------------------------------------------------------
 # list_repo_files accepts `path` (sibling-tool parity)
 # ---------------------------------------------------------------------------
