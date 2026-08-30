@@ -74,7 +74,6 @@ import {
 
   // ---- DOM refs --------------------------------------------------------
   const chatEl       = document.getElementById("chat");
-  const summaryContainerEl = document.getElementById("summary-container");
   const msgInput     = document.getElementById("msg-input");
   const sendBtn      = document.getElementById("send-btn");
   const errorBanner  = document.getElementById("error-banner");
@@ -116,21 +115,6 @@ import {
   var activePostSessionId = null;  // session that POST belongs to (null = none)
   var reattachActive = false;      // rendering an in-flight turn via /events
   var reattachTurnId = null;       // turn_id currently being re-attached
-
-  // ---- Summary overlay: keep chat padding in sync with summary height ---
-  // Uses a ResizeObserver so the absolutely-positioned summary never
-  // participates in layout — the chat's scroll offset is stable regardless
-  // of summary visibility or size changes.
-  if (summaryContainerEl && chatEl) {
-    var summaryResizeObserver = new ResizeObserver(function (entries) {
-      var h = 0;
-      for (var i = 0; i < entries.length; i++) {
-        h = entries[i].contentRect.height;
-      }
-      chatEl.style.setProperty("--summary-height", h + "px");
-    });
-    summaryResizeObserver.observe(summaryContainerEl);
-  }
 
   // ---- Image attachments -----------------------------------------------
   var MAX_IMAGES = 8;
@@ -1156,7 +1140,6 @@ import {
     state = "idle";
     updateSendBusy();
     if (frame.timestamp) updateLastModelTimestamp(frame.timestamp);
-    refreshSummary();
     // The re-attached turn finished — now dispatch any messages the user
     // queued behind it.
     drainQueue();
@@ -2536,14 +2519,12 @@ import {
 
   // ---- Message bubbles -------------------------------------------------
   function clearChatBubbles() {
-    // Remove all bubble elements, typing indicator, summary banner,
-    // and inline notices from the chat container so no messages bleed
-    // across sessions.
+    // Remove all bubble elements, typing indicator, and inline notices
+    // from the chat container so no messages bleed across sessions.
     var children = chatEl.querySelectorAll(".bubble, #typing-indicator, .suggestion-chips");
     for (var i = 0; i < children.length; i++) {
       children[i].remove();
     }
-    clearSummary();
     currentAssistantBubble = null;
     rawAssistantText = "";
     typingIndicatorEl = null;
@@ -2689,96 +2670,6 @@ import {
     }
     currentAssistantBubble = null;
     rawAssistantText = "";
-  }
-
-  // ---- Conversation summary --------------------------------------------
-  var summaryBannerEl = null;
-  var summaryFetchController = null;  // AbortController for in-flight fetch
-
-  function clearSummary() {
-    if (summaryBannerEl) {
-      summaryBannerEl.remove();
-      summaryBannerEl = null;
-    }
-    if (summaryFetchController) {
-      summaryFetchController.abort();
-      summaryFetchController = null;
-    }
-  }
-
-  function refreshSummary() {
-    if (!activeSessionId) return;
-    // Abort any in-flight summary fetch for this session.
-    if (summaryFetchController) {
-      summaryFetchController.abort();
-      summaryFetchController = null;
-    }
-    // Don't fetch if there are no bubbles (empty session).
-    var bubbles = chatEl.querySelectorAll(".bubble.user, .bubble.assistant");
-    if (bubbles.length === 0) {
-      clearSummary();
-      return;
-    }
-
-    // Show loading state on existing banner or create a new one.
-    if (!summaryBannerEl) {
-      summaryBannerEl = document.createElement("div");
-      summaryBannerEl.className = "summary-banner";
-      summaryContainerEl.appendChild(summaryBannerEl);
-    }
-    var body = summaryBannerEl.querySelector(".summary-body");
-    if (!body) {
-      var header = document.createElement("div");
-      header.className = "summary-header";
-      header.textContent = "▾ Summary";
-      header.addEventListener("click", function () {
-        summaryBannerEl.classList.toggle("collapsed");
-      });
-      summaryBannerEl.appendChild(header);
-      body = document.createElement("div");
-      body.className = "summary-body";
-      summaryBannerEl.appendChild(body);
-    }
-    body.innerHTML = "<span class=\"summary-loading\">Updating…</span>";
-
-    var ctrl = new AbortController();
-    summaryFetchController = ctrl;
-
-    var url = apiBase() + "/summary";
-    fetch(url, {
-      method: "POST",
-      headers: { "Content-Type": "application/json" },
-      body: JSON.stringify({
-        session_id: activeSessionId,
-        owner_id: ownerFor(activeSessionId)
-      }),
-      signal: ctrl.signal
-    }).then(function (response) {
-      summaryFetchController = null;
-      if (!response.ok) return;
-      return response.json();
-    }).then(function (data) {
-      if (!data || !summaryBannerEl) return;
-      renderSummary(data);
-    }).catch(function (err) {
-      summaryFetchController = null;
-      if (err && err.name === "AbortError") return;
-      // Silently ignore — summary is best-effort.
-    });
-  }
-
-  function renderSummary(data) {
-    if (!summaryBannerEl) return;
-    var body = summaryBannerEl.querySelector(".summary-body");
-    if (!body) return;
-
-    var value = data.summary;
-    if (value && typeof value === "string" && value.trim()) {
-      body.innerHTML = "<div class=\"summary-text\">" +
-              renderMarkdown(value.trim()) + "</div>";
-    } else {
-      body.innerHTML = "<span class=\"summary-loading\">No summary available yet.</span>";
-    }
   }
 
   function escapeHtml(text) {
@@ -3029,8 +2920,6 @@ import {
         insertCompactedSummary(data.compacted_summary, compactedIndex, hiddenEls);
       }
       scheduleForceScrollToBottom();
-      // Refresh the conversation summary once history is loaded.
-      refreshSummary();
       // Restore any saved draft (queued messages / pending images).
       restoreDraft();
     }).catch(function () {
@@ -3283,13 +3172,11 @@ import {
           updateLastModelTimestamp(frame.timestamp);
           // The server may have rerouted this turn into a continuation
           // session (idle-timeout compaction) — adopt it before anything
-          // below reads activeSessionId, so the summary refresh and any
-          // queued messages target the session the turn actually landed in.
+          // below reads activeSessionId, so any queued messages target the
+          // session the turn actually landed in.
           if (frame.session_id && frame.session_id !== requestSessionId) {
             adoptSession(frame.session_id);
           }
-          // Refresh the conversation summary after each turn.
-          refreshSummary();
           // Automatically dispatch the next queued message (FIFO).
           drainQueue();
         } else if (frame.type === "error") {

@@ -1122,3 +1122,147 @@ def test_trim_state_survives_persist_roundtrip() -> None:
         assert store2.has_new_input_since_trim(sid) is False
     finally:
         persist_path.unlink(missing_ok=True)
+
+
+# ---------------------------------------------------------------------------
+# Per-turn actions log
+# ---------------------------------------------------------------------------
+
+
+def test_record_actions_round_trip_through_persistence(tmp_path: Path) -> None:
+    """Actions recorded with a turn survive a persist → load cycle, aligned."""
+    persist = tmp_path / "conv.json"
+    store = ConversationStore(persist_path=persist)
+    sid = cast(str, store.create_session(OPERATOR_OWNER)["session_id"])
+    store.record(
+        sid, OPERATOR_OWNER, "file it", "Filed.", actions=["create_ticket() -> T-1"]
+    )
+    store.record(sid, OPERATOR_OWNER, "thanks", "np")
+    store.record(
+        sid,
+        OPERATOR_OWNER,
+        "merge",
+        "Merged.",
+        actions=["merge_pr(812) -> merged", "x()"],
+    )
+
+    raw = json.loads(persist.read_text())
+    sess = raw[OPERATOR_OWNER]["sessions"][0]
+    assert sess["actions"] == [
+        ["create_ticket() -> T-1"],
+        [],
+        ["merge_pr(812) -> merged", "x()"],
+    ]
+
+    reloaded = ConversationStore(persist_path=persist)
+    assert reloaded.history(sid) == [
+        ("file it", "Filed."),
+        ("thanks", "np"),
+        ("merge", "Merged."),
+    ]
+    assert reloaded.history_actions(sid) == [
+        ["create_ticket() -> T-1"],
+        [],
+        ["merge_pr(812) -> merged", "x()"],
+    ]
+
+
+def test_persist_omits_actions_key_when_no_turn_logged_any(tmp_path: Path) -> None:
+    """A tool-free session keeps the pre-actions-log file shape."""
+    persist = tmp_path / "conv.json"
+    store = ConversationStore(persist_path=persist)
+    sid = cast(str, store.create_session(OPERATOR_OWNER)["session_id"])
+    store.record(sid, OPERATOR_OWNER, "hi", "hello")
+    raw = json.loads(persist.read_text())
+    assert "actions" not in raw[OPERATOR_OWNER]["sessions"][0]
+    assert store.history_actions(sid) == [[]]
+
+
+def test_load_old_format_without_actions_key(tmp_path: Path) -> None:
+    """Sessions persisted before the actions log load with empty per-turn logs."""
+    persist = tmp_path / "conv.json"
+    persist.write_text(
+        json.dumps(
+            {
+                OPERATOR_OWNER: {
+                    "active_session_id": "s-old",
+                    "sessions": [
+                        {
+                            "session_id": "s-old",
+                            "title": "Old",
+                            "last_active": 1.0,
+                            "turn_count": 2,
+                            "turns": [["q1", "a1"], ["q2", "a2"]],
+                        }
+                    ],
+                }
+            }
+        )
+    )
+    store = ConversationStore(persist_path=persist)
+    assert store.history("s-old") == [("q1", "a1"), ("q2", "a2")]
+    assert store.history_actions("s-old") == [[], []]
+    # Appending a turn with actions to an old session stays aligned.
+    store.record("s-old", OPERATOR_OWNER, "q3", "a3", actions=["tool() -> ok"])
+    assert store.history_actions("s-old") == [[], [], ["tool() -> ok"]]
+
+
+def test_load_misaligned_or_malformed_actions_degrade_gracefully(
+    tmp_path: Path,
+) -> None:
+    """A malformed or misaligned ``actions`` list never breaks loading."""
+    persist = tmp_path / "conv.json"
+    persist.write_text(
+        json.dumps(
+            {
+                OPERATOR_OWNER: {
+                    "active_session_id": "s",
+                    "sessions": [
+                        {
+                            "session_id": "s",
+                            "turns": [["q1", "a1"], ["q2", "a2"]],
+                            "actions": [["a"], "not-a-list", ["c"], [1, "d"]],
+                        },
+                        {
+                            "session_id": "s2",
+                            "turns": [["q1", "a1"]],
+                            "actions": "garbage",
+                        },
+                    ],
+                }
+            }
+        )
+    )
+    store = ConversationStore(persist_path=persist)
+    # Longer than turns: the trailing entries are kept (front-trim alignment).
+    assert store.history_actions("s") == [["c"], ["d"]]
+    assert store.history_actions("s2") == [[]]
+
+
+def test_agent_history_actions_aligned_with_compacted_view() -> None:
+    """The actions view mirrors ``agent_history``: summary slot empty, rest aligned."""
+    store = ConversationStore()
+    sid = cast(str, store.create_session(OPERATOR_OWNER)["session_id"])
+    store.record(sid, OPERATOR_OWNER, "q1", "a1", actions=["one()"])
+    store.record(sid, OPERATOR_OWNER, "q2", "a2", actions=["two()"])
+    store.record(sid, OPERATOR_OWNER, "q3", "a3", actions=["three()"])
+    assert store.agent_history_actions(sid) == [["one()"], ["two()"], ["three()"]]
+
+    store.compact_session(OPERATOR_OWNER, sid, "summary", keep_recent_turns=1)
+    history = store.agent_history(sid)
+    actions = store.agent_history_actions(sid)
+    assert len(history) == len(actions) == 2
+    assert history[0][0] == "" and actions[0] == []
+    assert history[1] == ("q3", "a3") and actions[1] == ["three()"]
+    assert store.agent_history_actions("unknown") == []
+
+
+def test_record_trims_actions_with_turns() -> None:
+    """History trimming drops the leading actions so alignment is preserved."""
+    store = ConversationStore(max_history_turns=2)
+    sid = cast(str, store.create_session(OPERATOR_OWNER)["session_id"])
+    store.record(sid, OPERATOR_OWNER, "q1", "a1", actions=["one()"])
+    store.record(sid, OPERATOR_OWNER, "q2", "a2", actions=["two()"])
+    store.record(sid, OPERATOR_OWNER, "q3", "a3", actions=["three()"])
+    assert store.history(sid) == [("q2", "a2"), ("q3", "a3")]
+    assert store.history_actions(sid) == [["two()"], ["three()"]]

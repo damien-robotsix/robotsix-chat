@@ -92,7 +92,6 @@ from .sessions import (
     sessions_create_endpoint,
     sessions_delete_endpoint,
     sessions_list_endpoint,
-    summary_endpoint,
 )
 from .subsessions import (
     _get_subsession_registry,
@@ -171,7 +170,6 @@ __all__ = [
     "subsessions_list_endpoint",
     "subsessions_message_endpoint",
     "subsessions_transcript_endpoint",
-    "summary_endpoint",
     "ui_endpoint",
     "unhandled_exception_handler",
 ]

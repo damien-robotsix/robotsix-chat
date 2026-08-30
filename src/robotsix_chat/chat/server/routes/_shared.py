@@ -8,12 +8,18 @@ from __future__ import annotations
 import json
 import logging
 import re
-from collections.abc import Iterable
 from typing import Any
 
 from starlette.exceptions import HTTPException
 from starlette.requests import Request
 from starlette.responses import HTMLResponse, JSONResponse
+
+# Re-exported: the transcript builder lives with the summariser so it can
+# render the per-turn actions log without a routes import cycle.
+from robotsix_chat.chat.summarize import build_transcript as build_transcript
+
+# Re-exported: the transcript builder lives with the summariser so it can
+# render the per-turn actions log without a routes import cycle.
 
 logger = logging.getLogger(__name__)
 
@@ -52,22 +58,6 @@ def _detect_truncation(text: str) -> str | None:
         if pat.search(tail):
             return _TRUNCATION_NOTE
     return None
-
-
-def build_transcript(turns: Iterable[tuple[str, str]], *, max_len: int = 2000) -> str:
-    """Build a compact conversation transcript from (user, assistant) pairs.
-
-    Assistant replies longer than *max_len* are truncated with an ellipsis.
-    """
-    parts: list[str] = []
-    for user_msg, asst_msg in turns:
-        parts.append(f"User: {user_msg}")
-        if asst_msg:
-            truncated = (
-                asst_msg[:max_len] + "\u2026" if len(asst_msg) > max_len else asst_msg
-            )
-            parts.append(f"Assistant: {truncated}")
-    return "\n".join(parts)
 
 
 def _sse_frame(payload: object) -> bytes:

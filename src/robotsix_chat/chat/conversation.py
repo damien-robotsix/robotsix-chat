@@ -100,6 +100,29 @@ def _parse_turns(turns_raw: object, max_history_turns: int) -> list[Turn]:
     return turns
 
 
+def _parse_actions(actions_raw: object, n_turns: int) -> list[list[str]]:
+    """Parse the persisted actions log and align it with *n_turns* turns.
+
+    Missing (pre-actions-log sessions), malformed, or misaligned data
+    degrades to empty per-turn lists — old persisted sessions always load.
+    When the log is longer than the turns (history was trimmed from the
+    front on save), the trailing entries are kept so they stay aligned with
+    the surviving turns.
+    """
+    parsed: list[list[str]] = []
+    if isinstance(actions_raw, list):
+        for entry in actions_raw:
+            if isinstance(entry, list):
+                parsed.append([str(a) for a in entry if isinstance(a, str)])
+            else:
+                parsed.append([])
+    if len(parsed) > n_turns:
+        parsed = parsed[-n_turns:]
+    while len(parsed) < n_turns:
+        parsed.append([])
+    return parsed
+
+
 @dataclass
 class Session:
     """One session: id, metadata, and turn history."""
@@ -108,6 +131,12 @@ class Session:
     title: str = _DEFAULT_TITLE
     wall_last_active: float = 0.0
     turns: list[Turn] = field(default_factory=list)
+    # Per-turn actions log, aligned with ``turns``: ``actions[i]`` lists the
+    # compact ``tool(args) -> result`` entries the assistant performed while
+    # producing ``turns[i]`` (see :mod:`robotsix_chat.chat.actions`).  Always
+    # kept the same length as ``turns``; empty lists for turns without tool
+    # calls and for sessions persisted before the log existed.
+    actions: list[list[str]] = field(default_factory=list)
     turn_count: int = 0
     closed: bool = False
     # Summary of the turns before ``compacted_turn_index`` — replayed to the
@@ -363,6 +392,7 @@ class ConversationStoreSerializer:
                     continue
                 turns_raw = sraw.get("turns")
                 turns = _parse_turns(turns_raw, max_history_turns)
+                actions = _parse_actions(sraw.get("actions"), len(turns))
 
                 title = str(sraw.get("title", _DEFAULT_TITLE))
                 last_active = sraw.get("last_active")
@@ -405,6 +435,7 @@ class ConversationStoreSerializer:
                     title=title,
                     wall_last_active=float(last_active),
                     turns=turns,
+                    actions=actions,
                     turn_count=int(sraw.get("turn_count", len(turns))),
                     closed=bool(sraw.get("closed", False)),
                     model_level=(
@@ -463,6 +494,10 @@ class ConversationStoreSerializer:
                 }
                 if session.model_level is not None:
                     session_dict["model_level"] = session.model_level
+                # Written only when at least one turn logged an action — a
+                # session without tool calls keeps the pre-actions-log shape.
+                if any(session.actions):
+                    session_dict["actions"] = [list(a) for a in session.actions]
                 if session.compacted_summary is not None:
                     session_dict["compacted_summary"] = session.compacted_summary
                 if session.compacted_turn_index:
@@ -610,14 +645,57 @@ class ConversationStore:
             return []
         return self._agent_view(session)
 
+    def agent_history_actions(self, session_id: str) -> list[list[str]]:
+        """Per-turn actions log aligned with :meth:`agent_history`.
+
+        Entry ``i`` lists the actions of turn ``i`` of the agent-facing
+        history; the synthetic leading summary turn (when present) gets an
+        empty list.  Returns ``[]`` for unknown sessions.
+        """
+        session = self._sessions.get(session_id)
+        if session is None:
+            return []
+        start = max(session.compacted_turn_index, session.trimmed_turn_index)
+        actions = [list(a) for a in self._aligned_actions(session)[start:]]
+        if session.compacted_summary:
+            actions.insert(0, [])
+        return actions
+
+    def history_actions(self, session_id: str) -> list[list[str]]:
+        """Per-turn actions log aligned with :meth:`history`.
+
+        Returns ``[]`` for unknown sessions.
+        """
+        session = self._sessions.get(session_id)
+        if session is None:
+            return []
+        return [list(a) for a in self._aligned_actions(session)]
+
+    @staticmethod
+    def _aligned_actions(session: Session) -> list[list[str]]:
+        """Return ``session.actions`` padded/trimmed to ``len(session.turns)``."""
+        n = len(session.turns)
+        actions = session.actions
+        if len(actions) == n:
+            return actions
+        if len(actions) > n:
+            return actions[-n:]
+        return [*actions, *([] for _ in range(n - len(actions)))]
+
     def record(
         self,
         session_id: str,
         owner_id: str | None,
         user_message: str,
         assistant_reply: str,
+        actions: list[str] | None = None,
     ) -> None:
         """Append a completed exchange to *session_id*.
+
+        *actions* is the turn's actions log — the compact ``tool(args) ->
+        result`` entries collected while the agent produced
+        *assistant_reply* (see :mod:`robotsix_chat.chat.actions`); ``None``
+        or ``[]`` records a turn without tool calls.
 
         Updates the session's title (on the first turn), ``wall_last_active``,
         ``turn_count``, and — when *owner_id* is provided — the owner's
@@ -634,10 +712,13 @@ class ConversationStore:
         if session.turn_count == 0 and user_message.strip():
             session.title = _derive_title(user_message)
 
+        session.actions = self._aligned_actions(session)
         session.turns.append((user_message, assistant_reply))
+        session.actions.append(list(actions) if actions else [])
         if len(session.turns) > self._max_history_turns:
             trimmed = len(session.turns) - self._max_history_turns
             del session.turns[: -self._max_history_turns]
+            del session.actions[: -self._max_history_turns]
             # Keep the compaction / trim markers aligned with the surviving
             # turns — both index into ``turns`` and must shift down when
             # leading turns are dropped.

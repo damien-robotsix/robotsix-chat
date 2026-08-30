@@ -17,7 +17,9 @@ from starlette.exceptions import HTTPException
 from starlette.requests import Request
 from starlette.responses import JSONResponse, StreamingResponse
 
+from robotsix_chat.chat.actions import collect_actions
 from robotsix_chat.chat.conversation import ConversationStore
+from robotsix_chat.chat.summarize import generate_idle_summary
 
 from ._shared import (
     _detect_truncation,
@@ -383,22 +385,26 @@ class MessageCoalescer:
 
             reply_parts: list[str] = []
             try:
-                async for token in agent.stream(
-                    concatenated,
-                    history=current_history,
-                    session_id=session_id,
-                    client_id=session_id,
-                    images=combined_images,
-                    trace_name="chat-turn",
-                    # A session the agent escalated runs at its pinned level;
-                    # None leaves the agent on its configured one.
-                    model_level=store.get_model_level(session_id),
-                ):
-                    reply_parts.append(token)
-                    for p in pending:
-                        await p.response_queue.put((SSE_TOKEN_TYPE, token))
-                    if publish_turn:
-                        event_bus.append_turn_token(session_id, turn_id, token)
+                # Collect the turn's tool calls (ticket filed, PR merged,
+                # subsession spawned, ...) so they are persisted next to the
+                # reply and visible to the compaction summariser later.
+                with collect_actions() as turn_actions:
+                    async for token in agent.stream(
+                        concatenated,
+                        history=current_history,
+                        session_id=session_id,
+                        client_id=session_id,
+                        images=combined_images,
+                        trace_name="chat-turn",
+                        # A session the agent escalated runs at its pinned
+                        # level; None leaves the agent on its configured one.
+                        model_level=store.get_model_level(session_id),
+                    ):
+                        reply_parts.append(token)
+                        for p in pending:
+                            await p.response_queue.put((SSE_TOKEN_TYPE, token))
+                        if publish_turn:
+                            event_bus.append_turn_token(session_id, turn_id, token)
 
                 full_reply = "".join(reply_parts)
 
@@ -416,7 +422,13 @@ class MessageCoalescer:
                         )
 
                 if session_id:
-                    store.record(session_id, owner_id, concatenated, full_reply)
+                    store.record(
+                        session_id,
+                        owner_id,
+                        concatenated,
+                        full_reply,
+                        actions=turn_actions,
+                    )
                     # Generate an LLM title after the first turn.
                     await self._maybe_generate_title(
                         session_id, summary_agent, concatenated, full_reply, store
@@ -615,39 +627,25 @@ async def _generate_title(
 async def _generate_idle_summary(
     summary_agent: ChatAgent,
     turns: list[tuple[str, str]],
+    actions: list[list[str]] | None = None,
 ) -> str:
-    """Generate a plain-text summary of *turns* using *summary_agent*.
+    """Generate the structured compaction summary of *turns*.
+
+    *actions* is the per-turn actions log aligned with *turns* (see
+    :meth:`ConversationStore.agent_history_actions`) so the summariser sees
+    the steps performed, not only the replies.  Long transcripts are
+    summarised map-reduce style — see
+    :func:`robotsix_chat.chat.summarize.generate_idle_summary`.
 
     Returns an empty string when there are no turns or on failure.
     """
-    if not turns:
-        return ""
 
-    transcript = build_transcript(turns)
+    async def _run(prompt: str) -> str:
+        return await _stream_summary(
+            summary_agent, prompt, "Idle-timeout summary generation failed"
+        )
 
-    prompt = (
-        "Summarize the conversation below for the assistant's future self. "
-        "The summary MUST explicitly carry:\n"
-        "1. Pending confirmations — proposals awaiting the user's approval, "
-        "and exactly what is being confirmed.\n"
-        "2. Exact identifiers — ticket ids, message uids, file paths, PR "
-        "URLs, subsession ids, and task ids. Reproduce them verbatim; never "
-        "paraphrase, abbreviate, or drop them.\n"
-        "3. Agreed next steps — the concrete actions the assistant said it "
-        "would take next.\n"
-        "4. Pending action plans — if the assistant laid out a multi-item "
-        "plan (especially one with per-item identifiers and decisions), "
-        "reproduce that plan as a verbatim block so it can be executed "
-        "without re-deriving anything. Do not collapse an itemized plan "
-        "into prose.\n\n"
-        "Keep the surrounding prose brief. Do not invent identifiers that "
-        "do not appear in the conversation.\n\nConversation:\n"
-        f"{transcript}\n\nSummary:"
-    )
-
-    return await _stream_summary(
-        summary_agent, prompt, "Idle-timeout summary generation failed"
-    )
+    return await generate_idle_summary(_run, turns, actions)
 
 
 async def _generate_carryover_summary(
@@ -801,6 +799,7 @@ async def chat_endpoint(
                 summary = await _generate_idle_summary(
                     request.app.state.summary_agent,
                     compaction_turns,
+                    store.agent_history_actions(session_id),
                 )
                 if summary:
                     store.compact_session(

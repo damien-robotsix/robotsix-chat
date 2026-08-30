@@ -3,7 +3,7 @@
 from __future__ import annotations
 
 import json
-from unittest.mock import AsyncMock, MagicMock, patch
+from unittest.mock import MagicMock
 
 import pytest
 from starlette.exceptions import HTTPException
@@ -25,7 +25,6 @@ from robotsix_chat.chat.server.routes.sessions import (
     sessions_create_endpoint,
     sessions_delete_endpoint,
     sessions_list_endpoint,
-    summary_endpoint,
 )
 from robotsix_chat.config.constants import (
     FRONTIER_MODEL_LEVEL,
@@ -750,116 +749,6 @@ async def test_sessions_close_endpoint_no_feedback_on_empty_history() -> None:
     response = await sessions_close_endpoint(request)
     assert response.status_code == 200
     mock_feedback.schedule.assert_not_called()
-
-
-# ---------------------------------------------------------------------------
-
-# ---------------------------------------------------------------------------
-# summary_endpoint
-# ---------------------------------------------------------------------------
-
-
-@pytest.mark.asyncio
-async def test_summary_endpoint_success() -> None:
-    """Generates a summary by streaming from the summary agent."""
-    mock_agent = MagicMock()
-    mock_agent.stream = AsyncMock(return_value=AsyncMock())
-
-    # Simulate streaming tokens.
-    async def _fake_stream(*args, **kwargs):
-        yield "Brief "
-        yield "summary."
-
-    mock_agent.stream = _fake_stream
-
-    mock_store = MagicMock()
-    mock_store.history.return_value = [("Hello", "Hi there")]
-
-    state = MagicMock(summary_agent=mock_agent, conversation_store=mock_store)
-    request = _make_json_request({"session_id": "sess-1"})
-    request.scope["app"] = type("FakeApp", (), {"state": state})()
-
-    with patch(
-        "robotsix_chat.chat.server.routes.sessions.build_transcript",
-        return_value="User: Hello\nAssistant: Hi there",
-    ):
-        response = await summary_endpoint(request)
-
-    assert response.status_code == 200
-    body = json.loads(response.body)  # type: ignore[arg-type]
-    assert body["summary"] == "Brief summary."
-
-
-@pytest.mark.asyncio
-async def test_summary_endpoint_empty_history() -> None:
-    """Returns an empty summary when the session has no turns."""
-    mock_store = MagicMock()
-    mock_store.history.return_value = []
-
-    state = MagicMock(summary_agent=MagicMock(), conversation_store=mock_store)
-    request = _make_json_request({"session_id": "sess-1"})
-    request.scope["app"] = type("FakeApp", (), {"state": state})()
-
-    response = await summary_endpoint(request)
-    assert response.status_code == 200
-    body = json.loads(response.body)  # type: ignore[arg-type]
-    assert body["summary"] == ""
-
-
-@pytest.mark.asyncio
-async def test_summary_endpoint_missing_session_id() -> None:
-    """Raises 400 when session_id is missing from the body."""
-    state = MagicMock(summary_agent=MagicMock(), conversation_store=MagicMock())
-    request = _make_json_request({})
-    request.scope["app"] = type("FakeApp", (), {"state": state})()
-
-    with pytest.raises(HTTPException) as exc_info:
-        await summary_endpoint(request)
-    assert exc_info.value.status_code == 400
-    assert exc_info.value.detail == "session_id is required"
-
-
-@pytest.mark.asyncio
-async def test_summary_endpoint_session_id_wrong_type() -> None:
-    """Raises 400 when session_id is not a string."""
-    state = MagicMock(summary_agent=MagicMock(), conversation_store=MagicMock())
-    request = _make_json_request({"session_id": 42})
-    request.scope["app"] = type("FakeApp", (), {"state": state})()
-
-    with pytest.raises(HTTPException) as exc_info:
-        await summary_endpoint(request)
-    assert exc_info.value.status_code == 400
-
-
-@pytest.mark.asyncio
-async def test_summary_endpoint_agent_error() -> None:
-    """Returns 500 when the summary agent raises an exception during streaming."""
-    mock_store = MagicMock()
-    mock_store.history.return_value = [("Q", "A")]
-
-    mock_agent = MagicMock()
-
-    async def _failing_stream(*args, **kwargs):
-        yield "start"
-        raise RuntimeError("LLM connection lost")
-
-    mock_agent.stream = _failing_stream
-
-    state = MagicMock(summary_agent=mock_agent, conversation_store=mock_store)
-    request = _make_json_request({"session_id": "sess-1"})
-    request.scope["app"] = type("FakeApp", (), {"state": state})()
-
-    with (
-        patch(
-            "robotsix_chat.chat.server.routes.sessions.build_transcript",
-            return_value="User: Q\nAssistant: A",
-        ),
-        pytest.raises(HTTPException) as exc_info,
-    ):
-        await summary_endpoint(request)
-
-    assert exc_info.value.status_code == 500
-    assert exc_info.value.detail == "summary generation failed"
 
 
 # ---------------------------------------------------------------------------

@@ -6,7 +6,7 @@ import asyncio
 import base64
 import json
 import os
-from collections.abc import Callable
+from collections.abc import AsyncIterator, Callable
 from pathlib import Path
 from typing import Any, cast
 from unittest.mock import MagicMock, patch
@@ -21,7 +21,6 @@ from robotsix_chat.chat.server import (
     SSE_ERROR_TYPE,
     SSE_TOKEN_TYPE,
     create_agent_from_settings,
-    create_app,
     run_server_from_config,
 )
 from robotsix_chat.chat.server.cli import _export_langfuse_env
@@ -41,7 +40,7 @@ from robotsix_chat.subsessions import (
     SubsessionStatus,
     spawn_subsession,
 )
-from tests.conftest import MockAgent, http_client, mock_app
+from tests.conftest import MockAgent, mock_app
 
 
 def _register_subsession(
@@ -275,143 +274,6 @@ async def test_history_read_is_non_mutating() -> None:
     # The session still has exactly 1 turn after the read.
     _, history_after = store.begin("s1")
     assert history_after == [("q", "a")]
-
-
-# ---------------------------------------------------------------------------
-# Summary endpoint — POST /summary
-# ---------------------------------------------------------------------------
-
-
-@pytest.mark.asyncio
-@pytest.mark.parametrize(
-    ("setup", "expected_summary"),
-    [
-        pytest.param(
-            "with_turns", "Just a friendly greeting so far.", id="valid_session"
-        ),
-        pytest.param("no_turns", "", id="empty_session"),
-        pytest.param("unknown", "", id="unknown_session"),
-    ],
-)
-async def test_summary_endpoint_returns_summary(
-    setup: str, expected_summary: str
-) -> None:
-    """POST /summary returns the expected summary.
-
-    Covers valid, empty, and unknown session cases.
-    """
-    if setup == "with_turns":
-        store = ConversationStore()
-        sid = cast(str, store.create_session("owner-a")["session_id"])
-        store.record(sid, "owner-a", "Hello", "Hi there!")
-        app_kwargs: dict[str, object] = {
-            "tokens": ["Just a friendly ", "greeting so far."],
-            "conversation_store": store,
-        }
-    elif setup == "no_turns":
-        store = ConversationStore()
-        sid = cast(str, store.create_session("owner-a")["session_id"])
-        app_kwargs = {"conversation_store": store}
-    else:
-        sid = "nonexistent"
-        app_kwargs = {}
-
-    async with mock_app(**app_kwargs) as f:
-        response = await f.client.post(
-            "/summary",
-            json={"session_id": sid, "owner_id": "owner-a"},
-        )
-
-    assert response.status_code == 200
-    assert response.json() == {"summary": expected_summary}
-
-
-@pytest.mark.asyncio
-@pytest.mark.parametrize(
-    ("payload", "expected_status", "mock_app_kwargs"),
-    [
-        pytest.param(
-            {"json": {"owner_id": "o"}},
-            400,
-            {},
-            id="missing_session_id",
-        ),
-        pytest.param(
-            None,  # computed below — needs store + turns
-            500,
-            {"error": ValueError("boom")},
-            id="agent_error",
-        ),
-    ],
-)
-async def test_summary_endpoint_error_cases(
-    payload: dict[str, object] | None,
-    expected_status: int,
-    mock_app_kwargs: dict[str, object],
-) -> None:
-    """POST /summary returns the expected error status for edge cases."""
-    if payload is not None:
-        request_kwargs = payload
-    else:
-        # Build a valid request that triggers an agent error.
-        store = ConversationStore()
-        sid = cast(str, store.create_session("owner-a")["session_id"])
-        store.record(sid, "owner-a", "Hello", "Hi there!")
-        request_kwargs = {
-            "json": {"session_id": sid, "owner_id": "owner-a"},
-        }
-        mock_app_kwargs = {**mock_app_kwargs, "conversation_store": store}
-
-    async with mock_app(**mock_app_kwargs) as f:
-        response = await f.client.post("/summary", **request_kwargs)
-
-    assert response.status_code == expected_status
-
-
-@pytest.mark.asyncio
-async def test_summary_endpoint_passes_prompt_to_agent() -> None:
-    """POST /summary sends a summarization prompt containing the conversation."""
-    store = ConversationStore()
-    sid = cast(str, store.create_session("owner-a")["session_id"])
-    store.record(sid, "owner-a", "Fix the bug", "I'll look into it.")
-
-    async with mock_app(
-        tokens=["Working on a bug fix."],
-        conversation_store=store,
-    ) as f:
-        await f.client.post(
-            "/summary",
-            json={"session_id": sid, "owner_id": "owner-a"},
-        )
-
-    assert f.agent.call_count == 1
-    assert f.agent.called_with is not None
-    assert "Fix the bug" in f.agent.called_with
-    assert "I'll look into it" in f.agent.called_with
-    assert "Summary:" in f.agent.called_with
-
-
-@pytest.mark.asyncio
-async def test_summary_endpoint_uses_dedicated_summary_agent() -> None:
-    """POST /summary calls the dedicated summary_agent, not the main agent."""
-    store = ConversationStore()
-    sid = cast(str, store.create_session("owner-a")["session_id"])
-    store.record(sid, "owner-a", "Hello", "Hi there!")
-
-    main_agent = MockAgent(tokens=["should not be called"])
-    summary_agent = MockAgent(tokens=["Just a friendly greeting so far."])
-    app = create_app(main_agent, summary_agent=summary_agent, conversation_store=store)
-
-    async with http_client(app) as client:
-        response = await client.post(
-            "/summary",
-            json={"session_id": sid, "owner_id": "owner-a"},
-        )
-
-    assert response.status_code == 200
-    assert response.json()["summary"] == "Just a friendly greeting so far."
-    assert summary_agent.call_count == 1
-    assert main_agent.call_count == 0
 
 
 # ---------------------------------------------------------------------------
@@ -2961,12 +2823,13 @@ async def test_idle_compaction_preserves_recent_action_plan_verbatim() -> None:
             json={"message": "go ahead", "session_id": sid, "owner_id": "owner-idle"},
         )
 
-    # The summary prompt asks for pending confirmations, exact identifiers,
-    # and agreed next steps.
+    # The summary prompt asks for the structured sections — pending
+    # confirmations, what was done, agreed next steps — and verbatim ids.
     assert summary_agent.called_with is not None
-    assert "Pending confirmations" in summary_agent.called_with
-    assert "Exact identifiers" in summary_agent.called_with
-    assert "Agreed next steps" in summary_agent.called_with
+    assert "## Pending confirmations" in summary_agent.called_with
+    assert "## What was done" in summary_agent.called_with
+    assert "## Agreed next steps / open questions" in summary_agent.called_with
+    assert "verbatim" in summary_agent.called_with
 
     # The plan turn is replayed verbatim, not folded into the (deliberately
     # lossy) summary, so every uid/ticket id is still available.
@@ -3033,3 +2896,73 @@ async def test_legacy_compacted_into_chain_still_reroutes() -> None:
     assert done["session_id"] == live_sid
     assert [u for u, _ in store.history(live_sid)] == ["hi"]
     assert store.history(old_sid) == []
+
+
+# ---------------------------------------------------------------------------
+# Per-turn actions log — route wiring
+# ---------------------------------------------------------------------------
+
+
+@pytest.mark.asyncio
+async def test_chat_turn_persists_actions_and_feeds_compaction_summary() -> None:
+    """Actions recorded during a turn are stored and rendered for the summariser."""
+    import time as time_mod
+
+    from robotsix_chat.chat.actions import record_action
+
+    class ActingAgent(MockAgent):
+        """A MockAgent that performs one tool call while replying."""
+
+        async def stream(self, message: str, **kwargs: Any) -> AsyncIterator[str]:  # type: ignore[override]
+            record_action("create_ticket", {"title": message}, {"ticket_id": "T-04d8"})
+            async for token in super().stream(message, **kwargs):
+                yield token
+
+    store = ConversationStore()
+    sid = cast(str, store.create_session("owner-act")["session_id"])
+    async with mock_app(
+        conversation_store=store,
+        idle_timeout_minutes=30,
+        compaction_min_turns=1,
+    ) as f:
+        f.app.state.agent = ActingAgent(tokens=["Filed."])
+        await f.client.post(
+            "/chat",
+            json={
+                "message": "file the ticket",
+                "session_id": sid,
+                "owner_id": "owner-act",
+            },
+        )
+        await f.client.post(
+            "/chat",
+            json={"message": "and again", "session_id": sid, "owner_id": "owner-act"},
+        )
+
+    actions = store.history_actions(sid)
+    assert len(actions) == 2
+    assert actions[0][0].startswith("create_ticket(")
+    assert "T-04d8" in actions[0][0]
+
+    # Idle compaction hands the summariser the [actions] blocks.
+    session = store.get_session(sid)
+    assert session is not None
+    session.wall_last_active = time_mod.time() - 3600
+    summary_agent = MockAgent(tokens=["## Goal / context\nstructured"])
+    async with mock_app(
+        tokens=["ok"],
+        summary_agent=summary_agent,
+        conversation_store=store,
+        idle_timeout_minutes=30,
+        compaction_min_turns=1,
+        compaction_keep_recent_turns=0,
+    ) as f:
+        await f.client.post(
+            "/chat",
+            json={"message": "back", "session_id": sid, "owner_id": "owner-act"},
+        )
+    assert summary_agent.called_with is not None
+    assert "[actions]" in summary_agent.called_with
+    assert "T-04d8" in summary_agent.called_with
+    assert "## What was done" in summary_agent.called_with
+    assert store.get_session(sid).compacted_summary == "## Goal / context\nstructured"  # type: ignore[union-attr]
