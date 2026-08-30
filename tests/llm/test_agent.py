@@ -11,6 +11,27 @@ import pytest
 
 from robotsix_chat.llm import LlmioChatAgent
 
+
+@pytest.fixture(autouse=True)
+def _reset_tier_cooldown() -> object:
+    """Isolate llmio's process-global tier-cooldown state between tests.
+
+    ``robotsix_llmio.core.tier_fallback`` records terminal failures (usage
+    exhaustion, auth) in a module-global ``ModelHealthTracker`` and, once a
+    model crosses the consecutive-failure threshold, skips it *without a call*.
+    Several tests here deliberately drive fallbacks to exhaustion, so without a
+    reset the accumulated failures leak across tests and later tests see a tier
+    skipped — shifting their ``create_model`` side-effect sequence and failing
+    spuriously. Reset the tracker around each test so every test starts with all
+    tiers healthy.
+    """
+    from robotsix_llmio.core.cooldown import reset_health_tracker
+
+    reset_health_tracker()
+    yield
+    reset_health_tracker()
+
+
 # The exact shape the Claude CLI accepts for ``--session-id``.
 _CANONICAL_UUID_RE = re.compile(
     r"^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$"
@@ -846,6 +867,72 @@ async def test_usage_exhausted_falls_back_to_another_tier() -> None:
     assert level3_provider.build_agent.call_args.kwargs["system_prompt"].startswith(
         "Be helpful."
     )
+
+
+@pytest.mark.asyncio
+async def test_usage_exhausted_fallback_keeps_conversation_context() -> None:
+    """A usage-exhausted Claude turn falls back WITH the prior turns intact.
+
+    Regression for the context-wipe bug: the keyed fallback tier (level 3)
+    does not share the Claude SDK resume session, so it must receive the
+    conversation as explicit ``message_history`` AND a system note telling it
+    it is mid-conversation, so it does not reply "I don't have full context on
+    what 'it' refers to" to a terse follow-up.
+    """
+    from robotsix_llmio.claude_sdk import ClaudeSDKUsageExhaustedError
+
+    # The keyless Claude tiers (4, 5) all draw on the one exhausted
+    # subscription, so the walk passes through them and lands on keyed level 3.
+    claude_handle = MagicMock()
+
+    async def exhausted(_message: str, *, message_history: object = None) -> None:
+        raise ClaudeSDKUsageExhaustedError("You're out of usage credits")
+
+    claude_handle.run = exhausted
+    claude_handle.close = MagicMock()
+    claude_provider = MagicMock()
+    claude_provider.build_agent.return_value = claude_handle
+
+    seen: dict[str, object] = {}
+    level3_handle = MagicMock()
+
+    async def recovered(_message: str, *, message_history: object = None) -> MagicMock:
+        seen["message_history"] = message_history
+        result = MagicMock()
+        result.output = "opus reply about the browser ticket"
+        return result
+
+    level3_handle.run = recovered
+    level3_handle.close = MagicMock()
+    level3_provider = MagicMock()
+    level3_provider.build_agent.return_value = level3_handle
+
+    create_model_patch = MagicMock(
+        side_effect=lambda *, level, **_kw: (
+            level3_provider if level == 3 else claude_provider
+        )
+    )
+
+    history = [
+        ("tell me about robotsix-browser", "It is a headless browser component."),
+        ("ok, file a ticket and watch", "Filed the ticket; watching it now."),
+    ]
+
+    with patch("robotsix_chat.llm.agent.create_model", create_model_patch):
+        agent = LlmioChatAgent(model_level=4, instruction="Be helpful.")
+        chunks = [c async for c in agent.stream("and?", history=history)]
+
+    assert chunks == ["opus reply about the browser ticket"]
+    # The keyed fallback tier received the prior turns explicitly (2 turns ->
+    # a ModelRequest/ModelResponse pair each).
+    message_history = seen["message_history"]
+    assert message_history is not None
+    assert len(message_history) == 4  # type: ignore[arg-type]
+    # And its system prompt carries the continuation note so it does not ask
+    # the user to restate the topic.
+    fallback_prompt = level3_provider.build_agent.call_args.kwargs["system_prompt"]
+    assert fallback_prompt.startswith("Be helpful.")
+    assert "continuing an ongoing conversation" in fallback_prompt.lower()
 
 
 @pytest.mark.asyncio
