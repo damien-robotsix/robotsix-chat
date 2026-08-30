@@ -114,7 +114,7 @@ def build_public_fetch_tools(
     # Pre-compute the basic-auth header value when fleet-auth is
     # configured — the agent never sees the credential; it is injected
 
-    async def fetch_public_url(url: str) -> str:
+    async def fetch_public_url(url: str, cookies: dict[str, str] | None = None) -> str:
         """Fetch a public URL and return raw text contents with metadata.
 
         Performs a single HTTP(S) GET to *url*, following redirects, and
@@ -131,6 +131,11 @@ def build_public_fetch_tools(
 
         Args:
             url: The fully-qualified http(s):// URL to fetch.
+            cookies: Optional dictionary of cookie name-value pairs to
+                inject into the request.  Cookies are forwarded through
+                redirects.  **WARNING**: cookies may contain session tokens
+                or other sensitive credentials — handle with care and never
+                log or expose cookie values.
 
         Returns:
             A JSON string with ``url``, ``final_url``, ``status_code``,
@@ -228,6 +233,14 @@ def build_public_fetch_tools(
                         return json.dumps(result, ensure_ascii=False)
 
                     request_headers: dict[str, str] = {}
+
+                    # Inject cookies into the request headers if provided.
+                    # Cookies are forwarded through redirects.
+                    if cookies:
+                        cookie_header = "; ".join(
+                            f"{name}={value}" for name, value in cookies.items()
+                        )
+                        request_headers["Cookie"] = cookie_header
 
                     async with client.stream(
                         "GET", current_url, headers=request_headers
