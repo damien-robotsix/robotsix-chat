@@ -10,7 +10,6 @@ from .auth_models import MobileAuthSettings
 from .autonomous_models import (
     AutonomousSessionDefinition,
     AutonomousSettings,
-    AutonomySettings,
 )
 from .claude_usage_models import ClaudeUsageSettings
 from .component_models import (
@@ -84,7 +83,6 @@ __all__ = [
     "PROJECT_MEMORY",
     "AutonomousSessionDefinition",
     "AutonomousSettings",
-    "AutonomySettings",
     "CentralDeploySettings",
     "ClaudeUsageSettings",
     "ComponentClientSettings",

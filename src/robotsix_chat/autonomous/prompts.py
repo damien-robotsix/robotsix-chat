@@ -23,16 +23,6 @@ def build_autonomous_instruction(settings: Settings) -> str:
     completion_marker = settings.autonomous.completion_marker
     stale_threshold = settings.autonomous.stale_monitor_runs_before_completion
     queue_tolerance = settings.autonomous.queue_tolerance_runs_before_escalation
-    auto_approve = settings.autonomy.auto_approve_self_authored
-    allowlist = settings.autonomy.auto_approve_repo_allowlist
-    routine_secret = settings.autonomy.auto_approve_routine_secret_provisioning
-    suppress_no_change = settings.autonomy.suppress_no_change_monitors
-    auto_self_restart = settings.autonomy.auto_self_restart
-    auto_escalate_secret_scan = settings.autonomy.auto_escalate_secret_scan_alerts
-    auto_approve_low_risk = settings.autonomy.auto_approve_well_scoped_low_risk
-    operator_review_hours = settings.autonomy.operator_review_escalation_hours
-
-    allowlist_str = ", ".join(allowlist) if allowlist else "(none)"
 
     return (
         "\n\n"  # nosec B608
