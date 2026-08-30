@@ -74,6 +74,9 @@ from .mail import (
 from .memory import (
     memory_ingestion_structure_endpoint,
 )
+from .metrics import (
+    metrics_endpoint,
+)
 from .mill_events import (
     mill_events_endpoint,
 )
@@ -154,6 +157,7 @@ __all__ = [
     "http_exception_handler",
     "mail_archive_root_check_endpoint",
     "memory_ingestion_structure_endpoint",
+    "metrics_endpoint",
     "mill_events_endpoint",
     "mobile_token_endpoint",
     "models_list_endpoint",

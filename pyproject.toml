@@ -22,6 +22,7 @@ dependencies = [
     "pydantic",
     "reportlab",
     "structlog>=24.0.0",
+    "prometheus-client>=0.20.0",
     "uvicorn",
     "starlette",
     # Shared robotsix-stack libraries, consumed via git (see [tool.uv.sources]):

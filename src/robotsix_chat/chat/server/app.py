@@ -132,6 +132,7 @@ from .routes import (
     http_exception_handler,
     mail_archive_root_check_endpoint,
     memory_ingestion_structure_endpoint,
+    metrics_endpoint,
     mill_events_endpoint,
     mobile_token_endpoint,
     models_list_endpoint,
@@ -496,6 +497,7 @@ def create_app(
     """
     routes: list[Route | Mount] = [
         Route("/health", health_endpoint, methods=["GET"]),
+        Route("/metrics", metrics_endpoint, methods=["GET"]),
         Route("/auth/login", auth_login_endpoint, methods=["GET"]),
         Route("/auth/callback", auth_callback_endpoint, methods=["GET"]),
         Route(
