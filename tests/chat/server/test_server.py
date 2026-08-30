@@ -2157,6 +2157,58 @@ def test_main_agent_costly_level_has_no_orchestration_directive() -> None:
     assert COSTLY_TIER_ORCHESTRATION_DIRECTIVE not in agent._instruction
 
 
+def test_main_agent_gets_suggestion_chip_contract() -> None:
+    """The main chat agent's instruction teaches the ```suggestions block.
+
+    The contract must be code-level (not sourced from the operator-editable
+    config document) so it holds for every session regardless of config edits.
+    """
+    from robotsix_chat.chat.server.app import _SUGGESTIONS_INSTRUCTION
+
+    settings = Settings(agent_instruction="You are terse.")
+
+    agent = create_agent_from_settings(settings=settings)
+
+    assert _SUGGESTIONS_INSTRUCTION in agent._instruction
+    assert "```suggestions" in agent._instruction
+
+
+def test_bare_agent_has_no_suggestion_chip_contract() -> None:
+    """A bare text-transformation agent never gets the suggestion contract."""
+    from robotsix_chat.chat.server.app import _SUGGESTIONS_INSTRUCTION
+
+    settings = Settings(agent_instruction="Be terse.")
+
+    agent = create_agent_from_settings(settings=settings, bare=True)
+
+    assert _SUGGESTIONS_INSTRUCTION not in agent._instruction
+
+
+def test_subsession_agent_has_no_main_suggestion_contract() -> None:
+    """Subsession children are excluded from the main-agent suggestion block.
+
+    They get their own directive via ``_USER_CHAT_FIRST_TURN_NOTE`` in the
+    worker instead.
+    """
+    from robotsix_chat.chat.server.app import _SUGGESTIONS_INSTRUCTION
+    from robotsix_chat.subsessions import CloseState, SubsessionContext
+    from tests.common.subsession_fakes import build_env
+
+    settings = Settings()
+    env = build_env()
+    ctx = SubsessionContext(owner_session_id="sess-1", subsession_id="sub-1", depth=1)
+
+    agent = create_agent_from_settings(
+        settings=settings,
+        subsession_env=env,
+        subsession_ctx=ctx,
+        subsession_close_state=CloseState(),
+        model_level=3,
+    )
+
+    assert _SUGGESTIONS_INSTRUCTION not in agent._instruction
+
+
 # ---------------------------------------------------------------------------
 # Chat endpoint — subsession tool scoping via client_id
 # ---------------------------------------------------------------------------

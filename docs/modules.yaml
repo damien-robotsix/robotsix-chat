@@ -517,11 +517,13 @@ modules:
       - src/robotsix_chat/ui/static/message-queue.js
       - src/robotsix_chat/ui/static/reconnect-guard.js
       - src/robotsix_chat/ui/static/sse-parser.js
+      - src/robotsix_chat/ui/static/suggestions.js
       - docs/user-guide/settings-ui.md
       - tests/js/memory-banner.test.js
       - tests/js/message-queue.test.js
       - tests/js/reconnect-guard.test.js
       - tests/js/sse-parser.test.js
+      - tests/js/suggestions.test.js
       - tests/ui/__init__.py
       - tests/ui/conftest.py
       - tests/ui/test_chat_integration.py

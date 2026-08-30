@@ -347,6 +347,18 @@ async def test_user_chat_waits_between_turns_and_closes_via_close_state() -> Non
     assert "[assistant] hi there" in reply
 
 
+def test_user_chat_first_turn_note_carries_suggestion_contract() -> None:
+    """The user_chat first-turn note carries the ```suggestions contract.
+
+    It tells the agent to emit the block for discrete multiple-choice
+    decisions, so subsession chips appear.
+    """
+    from robotsix_chat.subsessions.worker import _USER_CHAT_FIRST_TURN_NOTE
+
+    assert "```suggestions" in _USER_CHAT_FIRST_TURN_NOTE
+    assert "option per line" in _USER_CHAT_FIRST_TURN_NOTE.lower()
+
+
 @pytest.mark.asyncio
 async def test_user_chat_retry_redelivers_drained_operator_answer() -> None:
     """A failed turn re-delivers its drained operator answer on retry.
