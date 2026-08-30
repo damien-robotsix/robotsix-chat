@@ -6,6 +6,7 @@ re-exports them so ``from robotsix_chat.config.models import ...`` keeps
 working unchanged.
 """
 
+from .auth_models import MobileAuthSettings
 from .autonomous_models import (
     AutonomousSessionDefinition,
     AutonomousSettings,
