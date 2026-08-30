@@ -231,7 +231,7 @@ This means:
 ### Bearer tokens
 
 Bearer tokens are HMAC-signed with the following structure:
-```
+```text
 <subject>|<expiry_timestamp>|<hmac_signature>
 ```
 
