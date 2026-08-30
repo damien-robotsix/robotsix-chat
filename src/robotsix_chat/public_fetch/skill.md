@@ -25,9 +25,9 @@ fetch_public_url(url: str, cookies: dict[str, str] | None = None) -> str
 ### Parameters
 
 - `url` — the fully-qualified http(s):// URL to fetch.
-- `cookies` — optional dictionary of cookie name-value pairs to inject into the request.  Cookies
-  are forwarded through redirects.  **WARNING**: cookies may contain session tokens or other
-  sensitive credentials — handle with care and never log or expose cookie values.
+- `cookies` — optional dictionary of cookie name-value pairs to inject into the request. Cookies are
+  forwarded through redirects. **WARNING**: cookies may contain session tokens or other sensitive
+  credentials — handle with care and never log or expose cookie values.
 
 ## Return value
 
@@ -59,7 +59,7 @@ The tool accepts any public HTTP(S) URL, including:
   Fleet-auth hosts (operator-configured) carry Basic-Auth headers injected server-side — the
   credential is never exposed to you.
 - **Cookie injection** — when you supply a `cookies` dictionary, the cookies are injected into the
-  request and forwarded through redirects.  **WARNING**: cookies may contain session tokens or other
+  request and forwarded through redirects. **WARNING**: cookies may contain session tokens or other
   sensitive credentials — handle with care and never log or expose cookie values.
 - **SSRF protection** — internal/private IP ranges (127.0.0.0/8, 10.0.0.0/8, 172.16.0.0/12,
   192.168.0.0/16, 169.254.0.0/16, localhost, IPv6 unique-local/link-local) are blocked.
