@@ -36,8 +36,8 @@ authenticated user and redirects the browser back into the app.
 
 ### Query parameters
 
-| Parameter  | Required | Description                                                                                                      |
-| ---------- | -------- | ---------------------------------------------------------------------------------------------------------------- |
+| Parameter     | Required | Description                                                                                                      |
+| ------------- | -------- | ---------------------------------------------------------------------------------------------------------------- |
 | `redirect_to` | yes      | The app callback URI to redirect to with the minted token appended. Must satisfy the redirect allowlist (below). |
 
 **Redirect allowlist** — the `redirect_to` value is validated component-by-component and rejected
@@ -69,9 +69,9 @@ Location: robotsixchat://auth/callback?token=<subject-token>
 
 ### Error responses
 
-| Status | Condition                                                          |
-| ------ | ------------------------------------------------------------------ |
-| `401`  | Request is not authenticated at the tinyauth edge.                 |
+| Status | Condition                                                             |
+| ------ | --------------------------------------------------------------------- |
+| `401`  | Request is not authenticated at the tinyauth edge.                    |
 | `400`  | `redirect_to` is missing, malformed, or fails the redirect allowlist. |
 
 ## `POST /chat/auth/mobile-token`
