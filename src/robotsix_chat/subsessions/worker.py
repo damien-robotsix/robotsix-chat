@@ -1532,7 +1532,6 @@ async def _subsession_worker(
                     info,
                     previous_result,
                     steering,
-                    pre_authorized_patterns=env.settings.subsessions.pre_authorized_ticket_patterns,
                     auto_drive_promote_ready_drafts=bool(
                         getattr(
                             env.settings.subsessions,
@@ -1569,7 +1568,6 @@ async def _subsession_worker(
                     info,
                     previous_result,
                     steering,
-                    pre_authorized_patterns=env.settings.subsessions.pre_authorized_ticket_patterns,
                     sub_id=sub_id,
                     registry=registry,
                 )

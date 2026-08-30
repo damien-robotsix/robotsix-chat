@@ -9,7 +9,6 @@ module extracted from ``worker.py``.
 from __future__ import annotations
 
 import asyncio
-import fnmatch
 import logging
 from typing import TYPE_CHECKING
 
@@ -579,44 +578,7 @@ async def _check_resume_status(
 
     # Human-issue-approval → inject context and update checkpoint so the
     # periodic loop can detect the stuck state and auto-escalate.
-    #
-    # Pre-authorized fast-path: when the ticket matches a
-    # pre_authorized_ticket_patterns entry, escalate immediately instead
-    # of injecting stuck context.
     if current_state_str.lower() in _TICKET_STATE_HUMAN_APPROVAL:
-        patterns = getattr(
-            getattr(env.settings, "subsessions", None),
-            "pre_authorized_ticket_patterns",
-            [],
-        )
-        if (
-            patterns
-            and ticket_id
-            and any(fnmatch.fnmatch(ticket_id, p) for p in patterns)
-        ):
-            summary = (
-                f"Pre-authorized ticket {ticket_id} was in "
-                f"human_issue_approval on resume — auto-escalating "
-                f"immediately under standing operator directive."
-            )
-            closed = env.registry.mark_closed(
-                sub_id,
-                summary=summary,
-                reason="pre_authorized_approval",
-                closed_by="system",
-            )
-            if closed is not None:
-                await env.delivery.deliver_summary(
-                    closed, summary, "pre_authorized_approval"
-                )
-            logger.info(
-                "Subsession %s (ticket %s): pre-authorized — "
-                "escalating immediately from human_issue_approval on resume.",
-                sub_id,
-                ticket_id,
-            )
-            return (False, summary)
-
         context = (
             f"[System note: this ticket monitor was restarted after a "
             f"service restart.  Ticket {ticket_id} is currently "

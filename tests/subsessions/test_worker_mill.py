@@ -619,54 +619,6 @@ async def test_check_resume_status_human_issue_approval_injects_context():
 
 
 @pytest.mark.asyncio
-async def test_check_resume_status_pre_authorized_escalates_immediately():
-    """Pre-authorized ticket in human_issue_approval escalates on resume."""
-    env = _env_with_board()
-    # Set pre_authorized_ticket_patterns on the subsession settings.
-    env.settings.subsessions.pre_authorized_ticket_patterns = ["TICKET-*"]
-    info = _make_checkpoint_info(
-        env,
-        ticket_id="TICKET-1",
-        last_known_state="open",
-    )
-
-    mock = _mock_async_client(response_json={"state": "human_issue_approval"})
-    with patch("httpx.AsyncClient", mock):
-        should_continue, context_msg = await _check_resume_status(env, info, info.id)
-
-    assert should_continue is False
-    assert context_msg is not None
-    assert "pre-authorized" in (context_msg or "").lower()
-    assert "TICKET-1" in (context_msg or "")
-
-    # Subsessions should be closed.
-    closed_info = env.registry.get(info.id)
-    assert closed_info is not None
-    assert closed_info.status is SubsessionStatus.CLOSED
-    assert closed_info.close_reason == "pre_authorized_approval"
-
-
-@pytest.mark.asyncio
-async def test_check_resume_status_pre_authorized_no_match_injects_context():
-    """Non-matching pre-authorized pattern falls through to normal context injection."""
-    env = _env_with_board()
-    env.settings.subsessions.pre_authorized_ticket_patterns = ["OTHER-*"]
-    info = _make_checkpoint_info(
-        env,
-        ticket_id="TICKET-1",
-        last_known_state="open",
-    )
-
-    mock = _mock_async_client(response_json={"state": "human_issue_approval"})
-    with patch("httpx.AsyncClient", mock):
-        should_continue, context_msg = await _check_resume_status(env, info, info.id)
-
-    assert should_continue is True
-    assert context_msg is not None
-    assert "HUMAN_ISSUE_APPROVAL" in context_msg
-
-
-@pytest.mark.asyncio
 async def test_check_resume_status_open_injects_context():
     """An open/in_progress/pending ticket continues with a context note."""
     env = _env_with_board()

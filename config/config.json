@@ -119,7 +119,6 @@
     "max_idle_runs": 15,
     "max_no_change_pauses": 3,
     "human_approval_timeout_runs": 5,
-    "pre_authorized_ticket_patterns": [],
     "auto_drive_promote_ready_drafts": false,
     "run_timeout_seconds": 600.0,
     "store_path": "/data/subsessions.json",
@@ -285,15 +284,6 @@
       }
     ]
   },
-  "autonomy": {
-    "auto_approve_self_authored": false,
-    "auto_approve_repo_allowlist": [],
-    "auto_approve_routine_secret_provisioning": false,
-    "auto_approve_well_scoped_low_risk": false,
-    "suppress_no_change_monitors": false,
-    "auto_escalate_secret_scan_alerts": true,
-    "operator_review_escalation_hours": 48
-  },
   "continuation": {
     "enabled": false,
     "store_path": "/data/continuation.json",
@@ -311,6 +301,5 @@
     "image/jpeg",
     "image/gif",
     "image/webp"
-  ],
-  "low_risk_actions": []
+  ]
 }

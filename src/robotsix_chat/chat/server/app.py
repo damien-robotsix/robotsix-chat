@@ -912,67 +912,6 @@ def _inject_skills(
     if style:
         instruction = f"{instruction}\n\n{style}"
 
-    # Pre-authorized low-risk actions — injected early so they take
-    # precedence over the base instruction's default gating rules.
-    if settings.low_risk_actions:
-        actions_list = "\n".join(
-            f"    – {action}" for action in settings.low_risk_actions
-        )
-        instruction = (
-            f"{instruction}\n\n"
-            "Pre-authorized low-risk actions:\n"
-            "– The following actions are pre-authorized by the operator and "
-            "do NOT require confirmation — execute them without asking:\n"
-            f"{actions_list}\n"
-            "– For these pre-authorized actions, the default "
-            "ask-before-acting gate is lifted.  Act on them proactively."
-        )
-
-    # Autonomy tier — injected when the operator has opted into reduced
-    # interruptions.  Defaults are conservative (everything gated).
-    auto_approve = settings.autonomy.auto_approve_self_authored
-    allowlist = settings.autonomy.auto_approve_repo_allowlist
-    suppress_no_change = settings.autonomy.suppress_no_change_monitors
-    allowlist_str = ", ".join(allowlist) if allowlist else "(none)"
-    if auto_approve or suppress_no_change:
-        instruction = (
-            f"{instruction}\n\n"
-            "AUTONOMY TIER — the operator has configured an autonomy "
-            "setting that reduces interruptions for low-risk, mechanical "
-            "decisions.  Treat it as a standing directive.\n\n"
-            f"Current tier: "
-            f"auto_approve_self_authored={'ON' if auto_approve else 'OFF'}, "
-            f"allowlist=[{allowlist_str}], "
-            f"suppress_no_change_monitors={'ON' if suppress_no_change else 'OFF'}.\n"
-        )
-        if auto_approve:
-            instruction += (
-                "\n"
-                "AUTO-APPROVAL RULES:\n"
-                "  - You MAY auto-approve a human_issue_approval ticket "
-                "when ALL of: (1) you or a chat-agent feedback source "
-                "authored it, (2) the target repo is in the allowlist, "
-                "(3) the spec has verified acceptance criteria, and "
-                "(4) the change is non-destructive / reversible.\n"
-                "  - You MUST NOT auto-approve when ANY non-negotiable "
-                "gate is triggered: security-sensitive paths "
-                "(.github/workflows/**, secrets/**, .env*, credentials, "
-                "auth), file/directory deletions, priority/scope changes "
-                "with broad blast radius, unverifiable safety, non-agent "
-                "authorship, or target repo NOT in the allowlist.\n"
-                "  - When in doubt, gate — treat any ambiguous mutation "
-                "as requiring operator approval.\n"
-            )
-        if suppress_no_change:
-            instruction += (
-                "\n"
-                "MONITOR OUTCOME SUPPRESSION:\n"
-                "  - Do NOT surface monitor outcomes that carry no "
-                "actionable delta (NO_CHANGE, completed normally, "
-                "auto-paused).  Only escalate blockers, decisions "
-                "failing auto-approval, and terminal failures.\n"
-            )
-
     if bare:
         return instruction
 

@@ -149,7 +149,6 @@ def make_settings(
     max_no_change_pauses: int = 3,
     human_approval_timeout_runs: int = 3,
     human_approval_timeout_seconds: float = 300.0,
-    pre_authorized_ticket_patterns: list[str] | None = None,
     auto_drive_promote_ready_drafts: bool = False,
     run_timeout_seconds: float = 600.0,
     mill_recovery_initial_backoff_seconds: float = 0.01,
@@ -205,11 +204,6 @@ def make_settings(
             max_no_change_pauses=max_no_change_pauses,
             human_approval_timeout_runs=human_approval_timeout_runs,
             human_approval_timeout_seconds=human_approval_timeout_seconds,
-            pre_authorized_ticket_patterns=(
-                pre_authorized_ticket_patterns
-                if pre_authorized_ticket_patterns is not None
-                else []
-            ),
             auto_drive_promote_ready_drafts=auto_drive_promote_ready_drafts,
             run_timeout_seconds=run_timeout_seconds,
             mill_recovery_initial_backoff_seconds=mill_recovery_initial_backoff_seconds,

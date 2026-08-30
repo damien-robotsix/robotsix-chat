@@ -23,10 +23,8 @@ from .registry import SubsessionRegistry
 from .worker import (
     _NO_CHANGE_SENTINEL,
     _QUEUED_SENTINEL,
-    _format_duration,
     _is_duplicate_reply,
     _is_no_change,
-    _is_ticket_pre_authorized,
     _render_turn_input,
     _truncate,
 )
@@ -449,7 +447,6 @@ def _build_wait_for_event_input(
     info: SubsessionInfo,
     previous_result: str | None,
     steering: list[InboxMessage],
-    pre_authorized_patterns: list[str] | None = None,
     *,
     sub_id: str = "",
     registry: SubsessionRegistry | None = None,
@@ -542,10 +539,8 @@ def _build_wait_for_event_input(
         "when a transition occurred.\n\n"
     )
     # Resolve and repair the ticket_id from the checkpoint (or fall
-    # back to dedup_key).  This runs unconditionally — not only when
-    # pre_authorized_patterns are configured — so that the ticket_id
-    # survives agent set_checkpoint calls and restarts even for
-    # monitors without pre-authorization rules.
+    # back to dedup_key).  This runs unconditionally so that the ticket_id
+    # survives agent set_checkpoint calls and restarts.
     ticket_id_raw = info.checkpoint.get("ticket_id") if info.checkpoint else None
     ticket_id = ticket_id_raw if isinstance(ticket_id_raw, str) else ""
     # Fall back to dedup_key when the checkpoint has not yet recorded
@@ -555,28 +550,12 @@ def _build_wait_for_event_input(
         ticket_id = info.dedup_key
         # Repair the checkpoint so the ticket_id survives agent
         # set_checkpoint calls that may have cleared it and so later
-        # stages (_event_wait_loop, _run_periodic_turn) find it
-        # without needing their own fallback.
+        # stages find it without needing their own fallback.
         if sub_id and registry is not None:
             checkpoint = info.checkpoint or {}
             checkpoint["ticket_id"] = ticket_id
             registry.update_checkpoint(sub_id, checkpoint)
 
-    # Inject the PRE-AUTHORIZED instruction BEFORE the
-    # decision-blocked paragraph so it has priority — a monitor that
-    # sees both must follow the pre-authorized directive.
-    if (
-        pre_authorized_patterns
-        and ticket_id
-        and _is_ticket_pre_authorized(ticket_id, pre_authorized_patterns)
-    ):
-        parts.append(
-            "PRE-AUTHORIZED TICKET: this ticket has been pre-authorized "
-            "under a standing operator directive.  The "
-            "human_issue_approval gate does NOT apply — do not treat "
-            "this ticket as decision-blocked.  Continue monitoring "
-            "normally as if the approval were already granted.\n\n"
-        )
     parts.append(
         "Decision-blocked tickets: when the monitored ticket is awaiting an "
         "operator decision — stuck in human_issue_approval, waiting on an "
@@ -989,10 +968,6 @@ async def _run_wait_for_event_turn(
     # state changes — no auto-escalation closure needed.  The monitor
     # stays alive until it reaches a terminal state or the user
     # explicitly stops tracking.
-    #
-    # Pre-authorized fast-path: when the monitored ticket matches a
-    # pre_authorized_ticket_patterns entry, escalate immediately —
-    # pre-authorized tickets bypass the approval gate entirely.
     checkpoint = info.checkpoint or {}
     # Repair the checkpoint: if the agent called set_checkpoint without
     # including ticket_id (replacing the spawn-time entry), recover it
@@ -1008,37 +983,6 @@ async def _run_wait_for_event_turn(
         )
     last_known = checkpoint.get("last_known_state", "")
     if isinstance(last_known, str) and last_known.lower() == "human_issue_approval":
-        patterns = env.settings.subsessions.pre_authorized_ticket_patterns
-        ticket_id_raw = checkpoint.get("ticket_id")
-        ticket_id = ticket_id_raw if isinstance(ticket_id_raw, str) else ""
-        pre_authorized = _is_ticket_pre_authorized(ticket_id, patterns)
-
-        if pre_authorized and consecutive_no_change >= 1:
-            logger.info(
-                "Subsession %s: pre-authorized ticket %s in "
-                "human_issue_approval — auto-escalating immediately.",
-                sub_id,
-                ticket_id,
-            )
-            elapsed = _format_duration(registry.now() - info.created_at)
-            summary = (
-                f"Pre-authorized ticket {ticket_id} entered "
-                f"human_issue_approval — auto-escalating immediately "
-                f"under standing operator directive "
-                f"({elapsed} elapsed)."
-            )
-            closed = registry.mark_closed(
-                sub_id,
-                summary=summary,
-                reason="pre_authorized_approval",
-                closed_by="system",
-            )
-            if closed is not None:
-                await env.delivery.deliver_summary(
-                    closed, summary, "pre_authorized_approval"
-                )
-            return None
-
         # Track human_approval_since for informational purposes —
         # the monitor stays alive and event-driven; no timeout closure.
         now = registry.now()

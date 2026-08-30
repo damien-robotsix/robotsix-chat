@@ -696,7 +696,13 @@ async def test_wfe_safety_net_timeout_skips_agent_turn_when_ticket_unchanged() -
     env = build_env(agent=agent, settings=settings)
     query = AsyncMock(return_value="ready")
 
-    with patch.object(waits_mod, "_query_mill_ticket_state", query):
+    with (
+        patch.object(waits_mod, "_query_mill_ticket_state", query),
+        patch(
+            "robotsix_chat.subsessions.worker_mill._check_resume_status",
+            return_value=(True, None),
+        ),
+    ):
         sub_id = _spawn(
             env,
             kind=SubsessionKind.WAIT_FOR_EVENT,
@@ -733,7 +739,13 @@ async def test_wfe_safety_net_timeout_runs_agent_turn_when_ticket_changed() -> N
     env = build_env(agent=agent, settings=settings)
     query = AsyncMock(return_value="done")
 
-    with patch.object(waits_mod, "_query_mill_ticket_state", query):
+    with (
+        patch.object(waits_mod, "_query_mill_ticket_state", query),
+        patch(
+            "robotsix_chat.subsessions.worker_mill._check_resume_status",
+            return_value=(True, None),
+        ),
+    ):
         sub_id = _spawn(
             env,
             kind=SubsessionKind.WAIT_FOR_EVENT,
@@ -763,7 +775,13 @@ async def test_wfe_safety_net_cap_forces_agent_turn_after_silent_timeouts() -> N
     env = build_env(agent=agent, settings=settings)
     query = AsyncMock(return_value="ready")
 
-    with patch.object(waits_mod, "_query_mill_ticket_state", query):
+    with (
+        patch.object(waits_mod, "_query_mill_ticket_state", query),
+        patch(
+            "robotsix_chat.subsessions.worker_mill._check_resume_status",
+            return_value=(True, None),
+        ),
+    ):
         sub_id = _spawn(
             env,
             kind=SubsessionKind.WAIT_FOR_EVENT,
@@ -1425,10 +1443,8 @@ def test_build_periodic_input_promotable_draft_default_is_operator_decision() ->
     assert "NOT promotable" in result
 
 
-def test_build_periodic_input_promotable_draft_gate_on_pre_authorized_promotes() -> (
-    None
-):
-    """Gate ON + pre-authorized ticket: the prompt instructs auto-promotion."""
+def test_build_periodic_input_promotable_draft_gate_on_promotes() -> None:
+    """Gate ON: the prompt instructs auto-promotion for promotable drafts."""
     from robotsix_chat.subsessions.models import SubsessionInfo, SubsessionKind
 
     info = SubsessionInfo(
@@ -1452,7 +1468,6 @@ def test_build_periodic_input_promotable_draft_gate_on_pre_authorized_promotes()
         info,
         previous_result=None,
         steering=[],
-        pre_authorized_patterns=["TICKET-*"],
         auto_drive_promote_ready_drafts=True,
     )
 
@@ -1466,12 +1481,10 @@ def test_build_periodic_input_promotable_draft_gate_on_pre_authorized_promotes()
     assert "NOT promotable" in result
 
 
-def test_build_periodic_input_promotable_draft_gate_on_not_pre_authorized() -> None:
-    """Gate ON but ticket NOT pre-authorized: still the comment branch.
+def test_build_periodic_input_promotable_draft_gate_on() -> None:
+    """Gate ON: auto-promote branch is active.
 
-    The auto-promote branch requires BOTH the opt-in gate and a matching
-    pre_authorized_ticket_patterns entry — a gate without authorization
-    must not promote.
+    The auto-promote branch requires the opt-in gate.
     """
     from robotsix_chat.subsessions.models import SubsessionInfo, SubsessionKind
 
@@ -1496,13 +1509,11 @@ def test_build_periodic_input_promotable_draft_gate_on_not_pre_authorized() -> N
         info,
         previous_result=None,
         steering=[],
-        pre_authorized_patterns=["TICKET-*"],
         auto_drive_promote_ready_drafts=True,
     )
 
-    assert "DRAFT TICKETS — OPERATOR-DECISION BRANCH" in result
-    assert "AUTO-PROMOTE BRANCH" not in result
-    assert "[AUTO_DRIVE]" in result
+    assert "DRAFT TICKETS — AUTO-PROMOTE BRANCH" in result
+    assert "mark_ticket_ready" in result
 
 
 @pytest.mark.asyncio

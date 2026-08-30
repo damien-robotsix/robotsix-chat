@@ -17,7 +17,6 @@ from robotsix_chat.config.constants import level_needs_api_key
 from robotsix_chat.config.models import (
     PROJECT_MEMORY,
     AutonomousSettings,
-    AutonomySettings,
     CentralDeploySettings,
     ClaudeUsageSettings,
     ComponentClientSettings,
@@ -74,7 +73,7 @@ class ConfigValidationError(ValueError):
 # Version stamp for the agent_instruction default literal.
 # Bump on every change to Settings.agent_instruction and update
 # docs/system_prompt_changelog.md with a new entry + SHA256.
-SYSTEM_PROMPT_VERSION = 147
+SYSTEM_PROMPT_VERSION = 148
 
 # Valid model levels, derived from llmio's tier enum (import-time constant so
 # the set is built once and can never drift from the tiers llmio ships).
@@ -152,11 +151,6 @@ class Settings(BaseModel):
             image.  Default ``5_242_880`` (5 MiB).
         allowed_image_media_types: Media types accepted for image attachments.
             Default ``["image/png", "image/jpeg", "image/gif", "image/webp"]``.
-        low_risk_actions: Action names or descriptions that the agent may
-            perform without requesting human confirmation.  When non-empty,
-            the system prompt instructs the agent that these actions are
-            pre-authorized and any safety gates on them are lifted —
-            the agent should execute them without asking.  Default ``[]``.
         mobile_auth: Mobile SSO authentication via tinyauth reverse proxy.
             When enabled, exposes ``GET /auth/login`` and
             ``POST /chat/auth/mobile-token`` for the mobile app's
@@ -741,16 +735,12 @@ class Settings(BaseModel):
             "bulk archive') as authorization.  Execute a group only after the "
             "operator explicitly confirms that group (e.g. 'yes, archive group "
             "1 and group 2'), and leave any unconfirmed group untouched.\n"
-            "– Autonomy tier: the operator may configure an autonomy setting "
-            "(`autonomy.auto_approve_self_authored` with a repo allowlist) that "
-            "lets you auto-approve self-authored, low-risk "
-            "human_issue_approval tickets without asking.  When enabled, "
-            "the non-negotiable gate list (security-sensitive paths, "
-            "deletions, ambiguous actions, and non-allowlisted repos) "
-            "still applies.  When `autonomy.suppress_no_change_monitors` "
-            "is enabled, omit no-change monitor outcomes from "
-            "operator-facing turns entirely.  Default is conservative — "
-            "gate everything.\n"
+            "– Standing autonomy policy: act autonomously for anything safe "
+            "and reversible.  Require operator confirmation only for "
+            "destructive, irreversible, security-sensitive, or genuinely "
+            "ambiguous actions.  The non-negotiable hard gates "
+            "(secrets/credentials paths, .github/workflows/**, deletions, "
+            "non-agent authorship) always apply and are never weakened.\n"
             "– When a user gives an explicit, firm instruction (e.g. 'close the "
             "superseded ticket without asking', 'do X and don't ask for "
             "confirmation'), carry it out literally without requesting "
@@ -1736,9 +1726,6 @@ class Settings(BaseModel):
     autonomous: AutonomousSettings = Field(
         default_factory=AutonomousSettings, json_schema_extra={"advanced": True}
     )
-    autonomy: AutonomySettings = Field(
-        default_factory=AutonomySettings, json_schema_extra={"advanced": True}
-    )
     continuation: ContinuationSettings = Field(
         default_factory=ContinuationSettings, json_schema_extra={"advanced": True}
     )
@@ -1752,9 +1739,6 @@ class Settings(BaseModel):
     allowed_image_media_types: list[str] = Field(
         default_factory=lambda: ["image/png", "image/jpeg", "image/gif", "image/webp"],
         json_schema_extra={"advanced": True},
-    )
-    low_risk_actions: list[str] = Field(
-        default_factory=list, json_schema_extra={"advanced": True}
     )
     mobile_auth: MobileAuthSettings = Field(
         default_factory=MobileAuthSettings, json_schema_extra={"advanced": True}
@@ -1948,11 +1932,49 @@ class Settings(BaseModel):
         ``extra="forbid"`` validation on :class:`AutonomousSettings`
         doesn't permanently brick saves on configs written by older
         versions.
+
+        Also strips the removed ``autonomy`` block, ``low_risk_actions``,
+        and ``subsessions.pre_authorized_ticket_patterns`` — the standing
+        autonomy policy is now baked into the prompt layer.
         """
         if not isinstance(data, dict):
             return data
 
         from robotsix_chat.config.models import AutonomousSettings
+
+        # Strip the entire removed autonomy block.
+        if "autonomy" in data:
+            logger.info(
+                "Dropping removed config key 'autonomy' (standing policy "
+                "is now baked into the prompt layer)"
+            )
+            data = dict(data)
+            del data["autonomy"]
+
+        # Strip the removed low_risk_actions key.
+        if "low_risk_actions" in data:
+            logger.info(
+                "Dropping removed config key 'low_risk_actions' (standing "
+                "policy is now baked into the prompt layer)"
+            )
+            data = dict(data)
+            del data["low_risk_actions"]
+
+        # Strip pre_authorized_ticket_patterns from subsessions.
+        subsessions = data.get("subsessions")
+        if (
+            isinstance(subsessions, dict)
+            and "pre_authorized_ticket_patterns" in subsessions
+        ):
+            logger.info(
+                "Dropping removed config key "
+                "'subsessions.pre_authorized_ticket_patterns' "
+                "(standing policy is now baked into the prompt layer)"
+            )
+            subsessions = dict(subsessions)
+            del subsessions["pre_authorized_ticket_patterns"]
+            data = dict(data)
+            data["subsessions"] = subsessions
 
         autonomous = data.get("autonomous")
         if isinstance(autonomous, dict):
@@ -1998,7 +2020,29 @@ class Settings(BaseModel):
         function, which pops the legacy key, so running twice is a no-op.
         """
         migrated = _migrate_legacy_memory_api_key(data)
-        return migrated if isinstance(migrated, dict) else data
+        data = migrated if isinstance(migrated, dict) else data
+
+        # Strip removed autonomy/authorization keys.
+        if "autonomy" in data:
+            logger.info("migrate_legacy_config: dropping removed key 'autonomy'")
+            del data["autonomy"]
+        if "low_risk_actions" in data:
+            logger.info(
+                "migrate_legacy_config: dropping removed key 'low_risk_actions'"
+            )
+            del data["low_risk_actions"]
+        subsessions = data.get("subsessions")
+        if (
+            isinstance(subsessions, dict)
+            and "pre_authorized_ticket_patterns" in subsessions
+        ):
+            logger.info(
+                "migrate_legacy_config: dropping removed key "
+                "'subsessions.pre_authorized_ticket_patterns'"
+            )
+            del subsessions["pre_authorized_ticket_patterns"]
+
+        return data
 
     # ------------------------------------------------------------------
     # Legacy config normalisation

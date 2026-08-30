@@ -152,21 +152,13 @@ class SubsessionsSettings(BaseModel):
             has not yet reached ``human_approval_timeout_runs``.  Default
             ``300`` (5 minutes).
             Env override: ``SUBSESSIONS_HUMAN_APPROVAL_TIMEOUT_SECONDS``.
-        pre_authorized_ticket_patterns: Glob patterns (``fnmatch``) matching
-            ticket IDs that are pre-authorized under a standing operator
-            directive.  When a monitored ticket's ID matches any pattern,
-            the ``human_issue_approval`` gate is bypassed — the system
-            auto-escalates immediately (reason ``pre_authorized_approval``)
-            instead of waiting for ``human_approval_timeout_runs``.
-            Default ``[]``.
         auto_drive_promote_ready_drafts: Opt-in gate for the auto-drive
             monitor's promotable-draft branch.  When ``True`` and a
             monitored ticket is a promotable draft (state ``draft``,
-            refine-complete spec, no open blocking review thread) whose
-            ID matches ``pre_authorized_ticket_patterns``, the monitor
-            transitions it into the ready queue.  When ``False`` (the
-            default) the monitor never auto-promotes — it posts at most
-            one operator-decision comment and waits.
+            refine-complete spec, no open blocking review thread), the
+            monitor transitions it into the ready queue.  When ``False``
+            (the default) the monitor never auto-promotes — it posts at
+            most one operator-decision comment and waits.
             Default ``False``.
         run_timeout_seconds: Hard per-run timeout for a single subsession
             agent turn (recall + LLM call + delivery).  On expiry the run
@@ -302,28 +294,16 @@ class SubsessionsSettings(BaseModel):
     max_no_change_pauses: int = 3
     human_approval_timeout_runs: int = 5
     human_approval_timeout_seconds: float = 300.0
-    pre_authorized_ticket_patterns: list[str] = Field(
-        default_factory=list,
-        description=(
-            "Glob patterns (fnmatch) matching ticket IDs that are "
-            "pre-authorized under a standing operator directive.  When a "
-            "monitored ticket's ID matches any pattern, the "
-            "human_issue_approval gate is bypassed — the system "
-            "auto-escalates immediately (reason 'pre_authorized_approval') "
-            "instead of waiting for human_approval_timeout_runs."
-        ),
-    )
     auto_drive_promote_ready_drafts: bool = Field(
         default=False,
         description=(
             "Opt-in gate for the auto-drive monitor's promotable-draft "
             "branch.  When a monitored ticket is a promotable draft "
             "(state 'draft', refine-complete spec, no open blocking "
-            "review thread) and its ID matches a "
-            "pre_authorized_ticket_patterns entry, the monitor "
-            "transitions it into the ready queue instead of posting an "
-            "operator-decision comment.  Default False — drafts are "
-            "never auto-promoted without this opt-in."
+            "review thread), the monitor transitions it into the ready "
+            "queue instead of posting an operator-decision comment.  "
+            "Default False — drafts are never auto-promoted without "
+            "this opt-in."
         ),
     )
     run_timeout_seconds: float = 600.0
