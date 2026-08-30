@@ -11,7 +11,6 @@ from .autonomous_models import (
     AutonomousSessionDefinition,
     AutonomousSettings,
 )
-from .claude_usage_models import ClaudeUsageSettings
 from .component_models import (
     ComponentClientSettings,
     ComponentTarget,
@@ -84,7 +83,6 @@ __all__ = [
     "AutonomousSessionDefinition",
     "AutonomousSettings",
     "CentralDeploySettings",
-    "ClaudeUsageSettings",
     "ComponentClientSettings",
     "ComponentCredentials",
     "ComponentTarget",

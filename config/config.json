@@ -143,10 +143,22 @@
     "monitor_slot_budget": 8,
     "monitor_slot_queue_max": 32,
     "turn_budget": {
-      "task": { "soft_warn_turns": 25, "hard_stop_turns": 40 },
-      "periodic": { "soft_warn_turns": 0, "hard_stop_turns": 0 },
-      "user_chat": { "soft_warn_turns": 25, "hard_stop_turns": 40 },
-      "on_close": { "soft_warn_turns": 25, "hard_stop_turns": 40 }
+      "task": {
+        "soft_warn_turns": 25,
+        "hard_stop_turns": 40
+      },
+      "periodic": {
+        "soft_warn_turns": 0,
+        "hard_stop_turns": 0
+      },
+      "user_chat": {
+        "soft_warn_turns": 25,
+        "hard_stop_turns": 40
+      },
+      "on_close": {
+        "soft_warn_turns": 25,
+        "hard_stop_turns": 40
+      }
     }
   },
   "direct_repo": {
@@ -246,18 +258,6 @@
     "timeout": 30.0,
     "viewport_width": 1280,
     "viewport_height": 720
-  },
-  "claude_usage": {
-    "enabled": false,
-    "auth_mode": "magic_link",
-    "session_state_path": "",
-    "account_email": "chat@robotsix.net",
-    "login_url": "https://claude.ai/login",
-    "usage_url": "https://claude.ai/settings/usage",
-    "mail_account_id": "",
-    "mail_poll_attempts": 12,
-    "mail_poll_interval": 5.0,
-    "timeout": 30.0
   },
   "feedback": {
     "enabled": false,
