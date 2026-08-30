@@ -676,16 +676,25 @@ class LlmioChatAgent:
                 type(exc).__name__,
                 exc,
             )
-            result = await self._run_with_tier_fallback(
-                prompt,
-                message_history,
-                tools_arg,
-                session_id,
-                effective_trace_metadata,
-                level=level,
-                trace_name=trace_name,
-                credential_is_dead=isinstance(exc, ClaudeSDKAuthError),
-            )
+            try:
+                result = await self._run_with_tier_fallback(
+                    prompt,
+                    message_history,
+                    tools_arg,
+                    session_id,
+                    effective_trace_metadata,
+                    level=level,
+                    trace_name=trace_name,
+                    credential_is_dead=isinstance(exc, ClaudeSDKAuthError),
+                )
+            except Exception as fallback_exc:
+                # Keep the root cause on the chain via an explicit __cause__:
+                # llmio's is_claude_sdk_usage_exhausted() only follows
+                # __cause__ links, and the SSE error path uses it to show the
+                # actionable quota message (reset time) instead of the generic
+                # "internal error" when the fallback walk itself also failed
+                # (e.g. OpenRouter 404 on the backup model).
+                raise fallback_exc from exc
 
         # The loop above always either raises or breaks with `result` set.
         self._record_actions_from_result(result)
