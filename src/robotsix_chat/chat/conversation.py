@@ -1425,6 +1425,15 @@ class ConversationStore:
             if session_id in ostate.session_ids
         ]
 
+    def owner_ids_for(self, session_id: str) -> list[str]:
+        """Return every owner id whose registry still holds *session_id*.
+
+        Public accessor over :meth:`_owner_ids_for` so external code (e.g. the
+        delete endpoint) can find every scope a dual-owned session is
+        reachable from without reaching into private state.
+        """
+        return self._owner_ids_for(session_id)
+
     def owner_for_session(self, session_id: str) -> str | None:
         """Return the ``owner_id`` that owns *session_id*, or ``None``.
 

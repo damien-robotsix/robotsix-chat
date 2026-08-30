@@ -279,6 +279,25 @@ async def sessions_delete_endpoint(request: Request) -> JSONResponse:
     # can pick up pending work in a new session.
     await _persist_carryover(request, store, session_id, delete_owner_id)
 
+    # A session the operator chats with is dual-owned: ``record`` also adopts
+    # it under the autonomous scope that drives it, so the session lives in
+    # both the operator's and an ``autonomous[:<preset>]`` registry.  The
+    # browser's ``GET /sessions`` merges the operator's own scope with every
+    # autonomous scope into one list, so the primary delete above (scoped to
+    # the operator) leaves the autonomous copy behind — it resurfaces in the
+    # merged list on the next refresh and the discard looks like a no-op until
+    # a second delete (now routed to the autonomous scope) finally removes it.
+    # When a real operator discards the session, also purge it from any
+    # autonomous scope that still holds it so a single delete removes it for
+    # good.  Deletes routed to an autonomous owner are left untouched so an
+    # autonomous run's own retirement never destroys the operator's copy.
+    if runner is not None and not is_autonomous_owner:
+        for other_owner in store.owner_ids_for(session_id):
+            if other_owner != delete_owner_id and runner.is_autonomous_owner(
+                other_owner
+            ):
+                store.delete_session(other_owner, session_id, create_replacement=False)
+
     # Autonomous cleanup: forget the runner's record and auto-restart so the
     # operator always has one live autonomous run (auto-restart always).
     if is_autonomous and runner is not None:
