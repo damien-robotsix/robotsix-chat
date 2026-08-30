@@ -3,6 +3,24 @@
 Governed artifact: `Settings.agent_instruction` default literal in
 `src/robotsix_chat/config/settings.py`. Version stamp: `SYSTEM_PROMPT_VERSION` in the same module.
 
+## v151 — 2026-08-30 — 20260830T203403Z-add-retry-guidance-and-explicit-timeout-e7a0
+
+**Summary:** Add three behavioral guardrails to the Efficiency section: (1) TOOL CALL
+INTEGRITY — never claim a side effect (ticket filed, monitor running, PR merged) without
+a preceding tool call + result confirming it; (2) TIMEOUT REPORTING — report tool
+timeouts/failures once with actual retry status, never repeat the same claim across
+turns; (3) FAILED ACTION RE-ATTEMPT — ask the user before silently re-attempting a
+previously-failed file-creation, monitor-spawn, or other action.
+
+**Rationale:** A session (e0b0e00794f2498c901ffc2907c4ed47) exhibited the assistant
+stating actions like 'filed the ticket' or 'setting up the standard background monitor'
+without showing real tool calls, and repeating claims like 'The first attempt timed out'
+multiple times across the conversation. These hallucinated or unverified tool operations
+wasted tokens and confused the user. The three rules enforce observable tool-call
+evidence, single-report timeout discipline, and user-gated retries.
+
+**SHA256:** `5376b6b467951c9b7863786103673fe8163c563605db8628322baa5e467a570e`
+
 ## v150 — 2026-08-30 — 20260830T144336Z-correct-endpoint-paths-for-mobile-sso-ve-60b5
 
 **Summary:** Add an "Endpoint path verification" directive: before probing any
