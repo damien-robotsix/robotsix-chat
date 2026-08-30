@@ -371,6 +371,36 @@ async def _component_request_impl(
     return _format_body(status, body_str)
 
 
+def _coerce_json_object(
+    value: dict[str, Any] | str | None, param: str
+) -> tuple[dict[str, Any] | None, str | None]:
+    """Accept a JSON-encoded string where a JSON object is expected.
+
+    Weaker fallback-tier models (the keyed pydantic-ai path) sometimes pass
+    ``json_body``/``params`` as a *string* of JSON instead of an object.
+    pydantic-ai validates tool arguments against the schema BEFORE the tool
+    body runs, and two failed validations kill the whole turn with
+    ``UnexpectedModelBehavior: Tool 'component_request' exceeded max retries``.
+    Widening the annotation to accept ``str`` moves the problem into the tool,
+    where a bad payload becomes a plain error string the model can react to.
+
+    Returns ``(object, None)`` on success or ``(None, error_message)``.
+    """
+    if value is None or isinstance(value, dict):
+        return value, None
+    try:
+        decoded = json.loads(value)
+    except json.JSONDecodeError as exc:
+        return None, (
+            f"Error: {param} must be a JSON object (got an undecodable string: {exc})."
+        )
+    if not isinstance(decoded, dict):
+        return None, (
+            f"Error: {param} must be a JSON object, got {type(decoded).__name__}."
+        )
+    return decoded, None
+
+
 def build_component_access_tools(
     settings: CentralDeploySettings,
 ) -> list[Callable[..., Any]]:
@@ -404,8 +434,8 @@ def build_component_access_tools(
         component_id: str,
         method: str,
         path: str,
-        json_body: dict[str, Any] | None = None,
-        params: dict[str, str] | None = None,
+        json_body: dict[str, Any] | str | None = None,
+        params: dict[str, str] | str | None = None,
         max_response_chars: int | None = None,
     ) -> str:
         """Call an external component's API.
@@ -420,6 +450,7 @@ def build_component_access_tools(
             path: The API path relative to the component's base URL
                 (e.g. "/tickets", "/chat/skill").
             json_body: Optional JSON body for POST/PUT/PATCH requests.
+                A JSON-encoded string is also accepted and decoded.
             params: Optional query-string parameters as key/value pairs
                 (e.g. ``{"limit": "5", "state": "open"}``).
             max_response_chars: Optional per-call truncation limit for the
@@ -438,6 +469,17 @@ def build_component_access_tools(
         # any raised exception from a tool callable as a retryable failure,
         # burning agent-level retries until "exceeded max retries count".
         # A swallowed exception surfaces as a clear error string instead.
+        json_body, body_err = _coerce_json_object(json_body, "json_body")
+        if body_err:
+            return body_err
+        params_obj, params_err = _coerce_json_object(params, "params")
+        if params_err:
+            return params_err
+        params = (
+            {k: str(v) for k, v in params_obj.items()}
+            if params_obj is not None
+            else None
+        )
         try:
             # Refresh the roster on every call (TTL-gated internally).
             await _refresh()

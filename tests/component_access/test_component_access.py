@@ -22,6 +22,7 @@ from robotsix_chat.component_access.roster import (
     fetch_roster_sync,
 )
 from robotsix_chat.component_access.tools import (
+    _coerce_json_object,
     _component_request_impl,
     _health_probe,
     build_component_access_tools,
@@ -1465,3 +1466,33 @@ async def test_429_with_retry_after_post_retries(
     )
     assert "HTTP 429" in result
     assert route.call_count == 1
+
+
+# ---------------------------------------------------------------------------
+# _coerce_json_object — fallback-tier models pass stringified JSON
+# ---------------------------------------------------------------------------
+
+
+def test_coerce_json_object_passthrough() -> None:
+    assert _coerce_json_object(None, "json_body") == (None, None)
+    assert _coerce_json_object({"a": 1}, "json_body") == ({"a": 1}, None)
+
+
+def test_coerce_json_object_decodes_string() -> None:
+    obj, err = _coerce_json_object(
+        '{"message_id": "x", "action": "TO_DELETE"}', "json_body"
+    )
+    assert err is None
+    assert obj == {"message_id": "x", "action": "TO_DELETE"}
+
+
+def test_coerce_json_object_rejects_garbage() -> None:
+    obj, err = _coerce_json_object("{not json", "json_body")
+    assert obj is None
+    assert err is not None and "json_body" in err
+
+
+def test_coerce_json_object_rejects_non_object() -> None:
+    obj, err = _coerce_json_object("[1, 2]", "params")
+    assert obj is None
+    assert err is not None and "got list" in err
