@@ -471,3 +471,44 @@ def test_curated_stream_error_falls_back_to_turn_id() -> None:
         cid_ctx.reset(token)
 
     assert payload["correlation_id"] == "turn-9"
+
+
+# ---------------------------------------------------------------------------
+# Chained exhaustion — a failed fallback walk must still classify as
+# budget_exhausted (regression: mimo 404 after Claude exhaustion surfaced as
+# the generic "internal error").
+# ---------------------------------------------------------------------------
+
+
+def _chained(inner: BaseException, outer: BaseException) -> BaseException:
+    try:
+        raise inner
+    except BaseException:
+        try:
+            raise outer
+        except BaseException as caught:
+            return caught
+
+
+def test_stream_error_code_sees_exhaustion_through_context_chain() -> None:
+    from robotsix_llmio.claude_sdk import ClaudeSDKUsageExhaustedError
+
+    from robotsix_chat.chat.server.routes.errors import (
+        STREAM_ERROR_BUDGET_EXHAUSTED,
+        stream_error_code,
+    )
+
+    root = ClaudeSDKUsageExhaustedError("You've hit your limit · resets 10pm (UTC)")
+    exc = _chained(root, RuntimeError("fallback tier failed too"))
+    assert stream_error_code(exc) == STREAM_ERROR_BUDGET_EXHAUSTED
+
+
+def test_curated_stream_error_names_reset_time_through_chain() -> None:
+    from robotsix_llmio.claude_sdk import ClaudeSDKUsageExhaustedError
+
+    from robotsix_chat.chat.server.routes.errors import curated_stream_error
+
+    root = ClaudeSDKUsageExhaustedError("You've hit your limit · resets 10pm (UTC)")
+    exc = _chained(root, RuntimeError("boom"))
+    msg = curated_stream_error(exc)["message"]
+    assert "22:00 UTC" in msg

@@ -8,6 +8,7 @@ from __future__ import annotations
 
 import logging
 import re
+from collections.abc import Iterator
 from datetime import UTC, datetime, timedelta
 
 import httpx
@@ -62,6 +63,24 @@ _RESET_HINT_RE = re.compile(
 )
 
 
+def _iter_chain(exc: BaseException) -> Iterator[BaseException]:
+    """Yield ``exc`` and its bounded cause/context chain.
+
+    ``robotsix_llmio.is_claude_sdk_usage_exhausted`` only follows
+    ``__cause__`` links; an exception raised while *handling* the exhaustion
+    error (the tier-fallback walk failing too) carries the root only as
+    ``__context__``. Walk both so the SSE error frame classifies the turn as
+    ``budget_exhausted`` — with the reset-time message — rather than the
+    generic internal error.
+    """
+    seen: set[int] = set()
+    cur: BaseException | None = exc
+    while cur is not None and id(cur) not in seen and len(seen) < 32:
+        seen.add(id(cur))
+        yield cur
+        cur = cur.__cause__ or cur.__context__
+
+
 def _exception_chain_text(exc: BaseException) -> str:
     """Join the messages of ``exc`` and its bounded cause/context chain.
 
@@ -70,14 +89,7 @@ def _exception_chain_text(exc: BaseException) -> str:
     outermost exception — mirror ``is_claude_sdk_usage_exhausted``'s chain
     walk (bounded to avoid a pathological cycle).
     """
-    parts: list[str] = []
-    seen: set[int] = set()
-    cur: BaseException | None = exc
-    while cur is not None and id(cur) not in seen and len(seen) < 32:
-        seen.add(id(cur))
-        parts.append(str(cur))
-        cur = cur.__cause__ or cur.__context__
-    return " ".join(parts)
+    return " ".join(str(cur) for cur in _iter_chain(exc))
 
 
 def claude_usage_reset_at(
@@ -155,7 +167,7 @@ def stream_error_code(exc: BaseException) -> str:
     reporting exhausted usage credits maps to ``budget_exhausted``. Anything
     unrecognised degrades to ``server_error`` rather than guessing.
     """
-    if is_claude_sdk_usage_exhausted(exc):
+    if any(is_claude_sdk_usage_exhausted(cur) for cur in _iter_chain(exc)):
         return STREAM_ERROR_BUDGET_EXHAUSTED
     if isinstance(exc, TimeoutError | httpx.TimeoutException):
         return STREAM_ERROR_TIMEOUT
