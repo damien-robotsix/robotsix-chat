@@ -73,7 +73,7 @@ class ConfigValidationError(ValueError):
 # Version stamp for the agent_instruction default literal.
 # Bump on every change to Settings.agent_instruction and update
 # docs/system_prompt_changelog.md with a new entry + SHA256.
-SYSTEM_PROMPT_VERSION = 148
+SYSTEM_PROMPT_VERSION = 149
 
 # Valid model levels, derived from llmio's tier enum (import-time constant so
 # the set is built once and can never drift from the tiers llmio ships).
@@ -639,6 +639,21 @@ class Settings(BaseModel):
             "taking any action keyed to that entity. Never silently "
             "substitute a guess, and never proceed on a literal-but-wrong "
             "identifier without flagging the ambiguity.\n"
+            "– Resolve-before-asking for ambiguous entities: when the user "
+            "names an entity you cannot immediately place — a service, repo, "
+            "file, ticket, or tool ('check the rope', 'is the standard "
+            "missing?') — do NOT stall the turn on a bare clarifying "
+            "question.  FIRST use the available discovery tools to look for a "
+            "match: list lifecycle services, query the board (GET /tickets), "
+            "list repositories, and list/search files.  If you find an exact "
+            "or near match, act on it and report what you did.  If nothing "
+            "matches exactly, still make a best-guess attempt and surface it "
+            "together with any request for a specific location — for example "
+            "'I couldn't find a service named \"rope\"; did you mean the "
+            "`robotsix-browser` repo?' — rather than asking for clarification "
+            "with no attempt at action.  Defaulting to a clarifying question "
+            "without first searching stalls the turn and delivers no "
+            "result.\n"
             "– When the user asks you to prioritize, group, or surface "
             '"associated tickets" (or similar language about related '
             "or grouped work), do NOT report from memory or from a single "

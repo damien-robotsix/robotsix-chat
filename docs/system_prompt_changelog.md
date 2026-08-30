@@ -3,6 +3,26 @@
 Governed artifact: `Settings.agent_instruction` default literal in
 `src/robotsix_chat/config/settings.py`. Version stamp: `SYSTEM_PROMPT_VERSION` in the same module.
 
+## v149 — 2026-08-30 — core-agent-fails-to-handle-ambiguous-use
+
+**Summary:** Add a "resolve-before-asking" rule for ambiguous entity references: when
+the user names a service, repo, file, ticket, or tool the agent cannot immediately
+place, it must FIRST use the available discovery tools (list lifecycle services, query
+the board with `GET /tickets`, list repositories, list/search files) to look for a
+match, act on an exact/near match, and — when nothing matches exactly — still make a
+best-guess attempt and surface it (e.g. "I couldn't find a service named 'rope'; did
+you mean the `robotsix-browser` repo?") instead of stalling the turn on a bare
+clarifying question.
+
+**Rationale:** A session (392e6658f5c64a88ba31576d3d88121b) stalled and ended on the
+request "can you check the rope and see if the standard is actually mising?".  Rather
+than searching for an entity matching "rope" with the available tools, the assistant
+broke its autonomous flow and issued a clarifying question with no attempt at action —
+a usability failure that delivered no result.  The prompt now requires a tool-based
+resolution attempt (and a surfaced best guess) before any clarifying question.
+
+**SHA256:** `d29137760d39d426f9115bab0698abed4471145a3313a2dcb4f643003b2ce8ff`
+
 ## v148 — 2026-08-30 — 20260830T091957Z-remove-granular-autonomy-authorization-t-d424
 
 **Summary:** Replace the granular autonomy tier (`autonomy.*` toggles,
