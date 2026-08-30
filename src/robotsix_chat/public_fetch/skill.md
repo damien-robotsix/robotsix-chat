@@ -93,6 +93,6 @@ fetch_public_url("https://docs.python.org/3/library/ipaddress.html")
 # Fetch a URL with cookies (e.g., for authenticated endpoints)
 fetch_public_url(
     "https://example.com/api/data",
-    cookies={"session_id": "abc123", "user_token": "xyz789"}
+    cookies={"session_id": "abc123", "user_token": "xyz789"},
 )
 ```
