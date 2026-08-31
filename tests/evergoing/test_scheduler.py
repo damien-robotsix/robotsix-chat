@@ -81,7 +81,9 @@ def test_run_once_trims_ordinary_sessions_too() -> None:
     audit = _one(result)
     assert audit["session_id"] == sid
     assert audit["trimmed"] is True
-    assert len(store.history(sid)) == 2
+    # Agent context shrinks; the operator-visible transcript keeps everything.
+    assert len(store.agent_history(sid)) == 2
+    assert len(store.history(sid)) == 4
 
 
 def test_fresh_turns_gate_skips_without_watermark_advance() -> None:
@@ -134,8 +136,9 @@ def test_run_once_trims_on_new_input() -> None:
     assert result["trimmed"] is True
     assert result["turns_trimmed"] == 2
     assert result["decided_subject_change"] is True
-    # UI transcript now reflects the post-trim history.
-    assert len(store.history(sid)) == 2
+    # Agent context shrinks; the operator transcript keeps everything.
+    assert len(store.agent_history(sid)) == 2
+    assert len(store.history(sid)) == 4
     # Watermark advanced: the next no-input pass is skipped.
     assert store.has_new_input_since_trim(sid) is False
 
@@ -168,7 +171,8 @@ def test_in_flight_turn_never_trimmed() -> None:
     result = _one(result)
 
     assert result["turns_trimmed"] == 1  # 3 turns - keep_min_recent(2)
-    assert len(store.history(sid)) == 2
+    assert len(store.agent_history(sid)) == 2
+    assert len(store.history(sid)) == 3
 
 
 def test_create_app_activates_evergoing_on_boot() -> None:

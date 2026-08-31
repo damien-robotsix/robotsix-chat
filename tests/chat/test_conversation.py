@@ -1023,8 +1023,8 @@ def test_normal_session_is_not_evergoing() -> None:
     assert meta["evergoing"] is False
 
 
-def test_trim_session_removes_leading_turns_from_history_and_agent_view() -> None:
-    """Trimming drops leading turns from both the UI transcript and agent view."""
+def test_trim_session_removes_leading_turns_from_agent_view_only() -> None:
+    """Trimming shrinks the agent context; the UI transcript keeps everything."""
     store = _store()
     store.begin("s0")
     store.record("s0", None, "subject A q1", "a1")
@@ -1037,9 +1037,13 @@ def test_trim_session_removes_leading_turns_from_history_and_agent_view() -> Non
     assert result["trimmed"] is True
     assert result["turns_trimmed"] == 2
 
-    # UI transcript reflects post-trim history.
-    assert store.history("s0") == [("subject B q1", "b1")]
-    # Agent view also excludes the trimmed turns.
+    # The operator-visible transcript keeps every turn.
+    assert store.history("s0") == [
+        ("subject A q1", "a1"),
+        ("subject A q2", "a2"),
+        ("subject B q1", "b1"),
+    ]
+    # Only the agent view excludes the trimmed turns.
     assert store.agent_history("s0") == [("subject B q1", "b1")]
 
 
@@ -1053,7 +1057,8 @@ def test_trim_session_guards_in_flight_turn() -> None:
     # Ask to trim everything — clamped to keep the last turn.
     result = store.trim_session("s0", 2, keep_min_recent=1)
     assert result["trimmed_turn_index"] == 1
-    assert store.history("s0") == [("q2", "a2")]
+    assert store.agent_history("s0") == [("q2", "a2")]
+    assert len(store.history("s0")) == 2  # transcript untouched
 
 
 def test_trim_session_is_monotonic() -> None:
@@ -1067,7 +1072,8 @@ def test_trim_session_is_monotonic() -> None:
     # Request a smaller index — no-op, stays at 2.
     result = store.trim_session("s0", 1)
     assert result["trimmed_turn_index"] == 2
-    assert store.history("s0") == [("q2", "a2"), ("q3", "a3")]
+    assert store.agent_history("s0") == [("q2", "a2"), ("q3", "a3")]
+    assert len(store.history("s0")) == 4  # transcript untouched
 
 
 def test_has_new_input_since_trim_tracks_watermark() -> None:
@@ -1118,7 +1124,8 @@ def test_trim_state_survives_persist_roundtrip() -> None:
         assert reloaded.evergoing is True
         assert reloaded.trimmed_turn_index == 1
         assert reloaded.last_trim_turn_count == 2
-        assert store2.history(sid) == [("q2", "a2")]
+        assert store2.agent_history(sid) == [("q2", "a2")]
+        assert store2.history(sid) == [("q1", "a1"), ("q2", "a2")]
         assert store2.has_new_input_since_trim(sid) is False
     finally:
         persist_path.unlink(missing_ok=True)
