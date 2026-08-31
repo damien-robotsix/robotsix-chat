@@ -6,17 +6,25 @@ import pytest
 import respx
 from pydantic import SecretStr
 
-from robotsix_chat.config import DirectRepoSettings, GitHubActionsSettings
+from robotsix_chat.config import (
+    CentralDeploySettings,
+    DirectRepoSettings,
+    GitHubActionsSettings,
+)
 
 
 def _actions_settings(**kw: object) -> GitHubActionsSettings:
     base: dict[str, object] = {
         "enabled": True,
         "github_org": "damien-robotsix",
-        "deploy_api_key": "test-api-key",  # pragma: allowlist secret
     }
     base.update(kw)
     return GitHubActionsSettings(**base)  # type: ignore[arg-type]
+
+
+def _central_deploy(api_key: str = "test-api-key") -> CentralDeploySettings:
+    """Canonical deploy credential source the endpoints authenticate against."""
+    return CentralDeploySettings(deploy_api_key=api_key)  # pragma: allowlist secret
 
 
 def _direct_repo_settings(**kw: object) -> DirectRepoSettings:
@@ -64,6 +72,7 @@ async def test_secret_endpoint_503_when_disabled() -> None:
     async with mock_app(
         direct_repo_settings=dr,
         github_actions_settings=gh,
+        central_deploy_settings=_central_deploy(),
     ) as f:
         response = await f.client.put(
             "/chat/github/repos/damien-robotsix/my-repo/actions/secrets/MY_SECRET",
@@ -88,6 +97,7 @@ async def test_workflow_endpoint_503_when_disabled() -> None:
     async with mock_app(
         direct_repo_settings=dr,
         github_actions_settings=gh,
+        central_deploy_settings=_central_deploy(),
     ) as f:
         response = await f.client.post(
             "/chat/github/repos/damien-robotsix/my-repo/actions/workflows/deploy.yml/dispatches",
@@ -103,12 +113,13 @@ async def test_secret_endpoint_503_when_api_key_empty() -> None:
     """Empty deploy_api_key → 503."""
     from tests.conftest import mock_app
 
-    gh = _actions_settings(deploy_api_key="")
+    gh = _actions_settings()
     dr = _direct_repo_settings()
 
     async with mock_app(
         direct_repo_settings=dr,
         github_actions_settings=gh,
+        central_deploy_settings=_central_deploy(api_key=""),
     ) as f:
         response = await f.client.put(
             "/chat/github/repos/damien-robotsix/my-repo/actions/secrets/MY_SECRET",
@@ -134,6 +145,7 @@ async def test_secret_endpoint_403_when_bad_api_key() -> None:
     async with mock_app(
         direct_repo_settings=dr,
         github_actions_settings=gh,
+        central_deploy_settings=_central_deploy(),
     ) as f:
         response = await f.client.put(
             "/chat/github/repos/damien-robotsix/my-repo/actions/secrets/MY_SECRET",
@@ -154,6 +166,7 @@ async def test_workflow_endpoint_403_when_bad_api_key() -> None:
     async with mock_app(
         direct_repo_settings=dr,
         github_actions_settings=gh,
+        central_deploy_settings=_central_deploy(),
     ) as f:
         response = await f.client.post(
             "/chat/github/repos/damien-robotsix/my-repo/actions/workflows/deploy.yml/dispatches",
@@ -179,6 +192,7 @@ async def test_secret_endpoint_400_missing_secret_value() -> None:
     async with mock_app(
         direct_repo_settings=dr,
         github_actions_settings=gh,
+        central_deploy_settings=_central_deploy(),
     ) as f:
         response = await f.client.put(
             "/chat/github/repos/damien-robotsix/my-repo/actions/secrets/MY_SECRET",
@@ -199,6 +213,7 @@ async def test_workflow_endpoint_400_missing_ref() -> None:
     async with mock_app(
         direct_repo_settings=dr,
         github_actions_settings=gh,
+        central_deploy_settings=_central_deploy(),
     ) as f:
         response = await f.client.post(
             "/chat/github/repos/damien-robotsix/my-repo/actions/workflows/deploy.yml/dispatches",
@@ -230,6 +245,7 @@ async def test_secret_endpoint_404_repo_not_in_scope(
     async with mock_app(
         direct_repo_settings=dr,
         github_actions_settings=gh,
+        central_deploy_settings=_central_deploy(),
     ) as f:
         response = await f.client.put(
             "/chat/github/repos/damien-robotsix/other-repo/actions/secrets/MY_SECRET",

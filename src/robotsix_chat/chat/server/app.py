@@ -449,6 +449,10 @@ def create_app(
             installation id) used by the
             ``PATCH /chat/github/repos/{owner}/{repo}/settings`` endpoint.
             When ``None``, the endpoint returns 503.
+        central_deploy_settings: Canonical deploy-plane settings (URL and
+            API key) used by the GitHub security/actions endpoints for
+            inbound ``X-API-Key`` matching.  When ``None``, those
+            endpoints return 503.
         github_security_settings: GitHub security-feature toggle config
             (org, deploy API key) used by the
             ``PATCH /chat/github/repos/{owner}/{repo}/settings`` endpoint.

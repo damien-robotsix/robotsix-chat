@@ -13,7 +13,11 @@ import pytest
 import respx
 from pydantic import SecretStr
 
-from robotsix_chat.config import DirectRepoSettings, GitHubSecuritySettings
+from robotsix_chat.config import (
+    CentralDeploySettings,
+    DirectRepoSettings,
+    GitHubSecuritySettings,
+)
 from robotsix_chat.repo.direct.client import (
     _INSTALLATION_TOKEN_CACHE as _token_cache,
 )
@@ -23,10 +27,14 @@ def _gh_sec_settings(**kw: object) -> GitHubSecuritySettings:
     base: dict[str, Any] = {
         "enabled": True,
         "github_org": "damien-robotsix",
-        "deploy_api_key": "test-api-key",  # pragma: allowlist secret
     }
     base.update(kw)
     return GitHubSecuritySettings(**base)
+
+
+def _central_deploy(api_key: str = "test-api-key") -> CentralDeploySettings:
+    """Canonical deploy credential source the endpoints authenticate against."""
+    return CentralDeploySettings(deploy_api_key=api_key)  # pragma: allowlist secret
 
 
 def _direct_repo_settings(**kw: object) -> DirectRepoSettings:
@@ -60,6 +68,7 @@ async def test_job_log_503_when_github_security_disabled() -> None:
     async with mock_app(
         direct_repo_settings=dr,
         github_security_settings=gh,
+        central_deploy_settings=_central_deploy(),
     ) as f:
         response = await f.client.get(
             "/chat/github/repos/damien-robotsix/my-repo/actions/jobs/12345/logs",
@@ -74,12 +83,13 @@ async def test_job_log_503_when_deploy_api_key_empty() -> None:
     """Empty deploy_api_key → 503."""
     from tests.conftest import mock_app
 
-    gh = _gh_sec_settings(deploy_api_key="")
+    gh = _gh_sec_settings()
     dr = _direct_repo_settings()
 
     async with mock_app(
         direct_repo_settings=dr,
         github_security_settings=gh,
+        central_deploy_settings=_central_deploy(api_key=""),
     ) as f:
         response = await f.client.get(
             "/chat/github/repos/damien-robotsix/my-repo/actions/jobs/12345/logs",
@@ -104,6 +114,7 @@ async def test_job_log_403_when_api_key_missing() -> None:
     async with mock_app(
         direct_repo_settings=dr,
         github_security_settings=gh,
+        central_deploy_settings=_central_deploy(),
     ) as f:
         response = await f.client.get(
             "/chat/github/repos/damien-robotsix/my-repo/actions/jobs/12345/logs",
@@ -122,6 +133,7 @@ async def test_job_log_403_when_api_key_wrong() -> None:
     async with mock_app(
         direct_repo_settings=dr,
         github_security_settings=gh,
+        central_deploy_settings=_central_deploy(),
     ) as f:
         response = await f.client.get(
             "/chat/github/repos/damien-robotsix/my-repo/actions/jobs/12345/logs",
@@ -146,6 +158,7 @@ async def test_job_log_400_when_job_id_not_integer() -> None:
     async with mock_app(
         direct_repo_settings=dr,
         github_security_settings=gh,
+        central_deploy_settings=_central_deploy(),
     ) as f:
         response = await f.client.get(
             "/chat/github/repos/damien-robotsix/my-repo/actions/jobs/abc/logs",
@@ -166,6 +179,7 @@ async def test_job_log_400_when_path_params_blank() -> None:
     async with mock_app(
         direct_repo_settings=dr,
         github_security_settings=gh,
+        central_deploy_settings=_central_deploy(),
     ) as f:
         # job_id is just whitespace → blank after .strip()
         response = await f.client.get(
@@ -204,6 +218,7 @@ async def test_job_log_404_when_repo_not_in_scope(
     async with mock_app(
         direct_repo_settings=dr,
         github_security_settings=gh,
+        central_deploy_settings=_central_deploy(),
     ) as f:
         response = await f.client.get(
             "/chat/github/repos/damien-robotsix/my-repo/actions/jobs/12345/logs",
@@ -242,6 +257,7 @@ async def test_job_log_404_when_job_not_found(
     async with mock_app(
         direct_repo_settings=dr,
         github_security_settings=gh,
+        central_deploy_settings=_central_deploy(),
     ) as f:
         response = await f.client.get(
             "/chat/github/repos/damien-robotsix/my-repo/actions/jobs/99999/logs",
@@ -288,6 +304,7 @@ async def test_job_log_200_returns_log_text(
     async with mock_app(
         direct_repo_settings=dr,
         github_security_settings=gh,
+        central_deploy_settings=_central_deploy(),
     ) as f:
         response = await f.client.get(
             "/chat/github/repos/damien-robotsix/my-repo/actions/jobs/12345/logs",
@@ -330,6 +347,7 @@ async def test_job_log_200_different_org(
     async with mock_app(
         direct_repo_settings=dr,
         github_security_settings=gh,
+        central_deploy_settings=_central_deploy(),
     ) as f:
         response = await f.client.get(
             "/chat/github/repos/other-org/some-repo/actions/jobs/99999/logs",

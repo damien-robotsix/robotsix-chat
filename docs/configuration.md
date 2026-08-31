@@ -63,7 +63,7 @@ Secret fields include:
 - `llmio_api_key`
 - `langfuse.projects.<project>.public_key`, `langfuse.projects.<project>.secret_key`
 - `openrouter.keys.<alias>`, `memory.embedding.api_key`
-- `mail.api_token`
+- `central_deploy.deploy_api_key`
 - `direct_repo.github_app_private_key`, `direct_repo.board_api_token`
 - `feedback.board_api_token`
 
@@ -232,8 +232,9 @@ Component-access roster and skill loading from the central-deploy management pla
 
 | JSON key                                                        | Type              | Default  | Description                                                                                                                                                                                                                                                                                                                                                                                                                                                                  |
 | --------------------------------------------------------------- | ----------------- | -------- | ---------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- |
-| `central_deploy.url`                                            | `string`          | `""`     | Base URL of the central-deploy API (no trailing slash).                                                                                                                                                                                                                                                                                                                                                                                                                      |
-| `central_deploy.roster_cache_ttl`                               | `number`          | `300.0`  | Seconds to cache the component roster before re-fetching.                                                                                                                                                                                                                                                                                                                                                                                                                    |
+| `central_deploy.url`                                            | `string`          | `""`     | Canonical base URL of the central-deploy / deploy-lifecycle API (no trailing slash). Single source of truth for the deploy-plane address; the lifecycle client and feedback roster lookup both read it.                                                                                                                                                                                                                                                                      |
+| `central_deploy.deploy_api_key`                                 | `string` (secret) | `""`     | Canonical deploy-plane credential — the shared secret between this chat component and central-deploy. Sent as the ``X-API-Key`` header on outbound roster/lifecycle calls, and required (matched) on inbound central-deploy → chat endpoints.                                                                                                                                                                                                                                |
+| `central_deploy.roster_cache_ttl`                               | `number`          | `300.0`  | Seconds to cache the component roster before re-fetching.                                                                                                                                                                                                                                                                                                                                                                                                                  |
 | `central_deploy.component_response_max_chars`                   | `integer`         | `200000` | Default truncation limit for GET/HEAD component responses — write methods keep the 8,000-char limit. Raised from 8,000 so large ticket lists (e.g. mill board blocked tickets) enumerate fully. Each call can override this with `component_request`'s `max_response_chars` parameter (e.g. `max_response_chars=2000` for a compact summary of a ticket history).                                                                                                            |
 | `central_deploy.component_request_timeout`                      | `number`          | `60.0`   | Per-request HTTP timeout (seconds) for component API calls made via component_request. Also acts as the wall-clock deadline for all retry attempts so a failing component cannot block the agent indefinitely. Default 60s — raise this if upstream components are genuinely slow to respond.                                                                                                                                                                                |
 | `central_deploy.component_fallbacks`                            | `object`          | `{}`     | Baked-in fallback base URLs for components that may be missing from the central-deploy roster (e.g. after a redeploy). Keyed by component id (e.g. `"robotsix-mill"` → `"http://mill:8080"`). When the roster returned by central-deploy is missing a component, the fallback URL is used instead — keeps monitors and tool calls running through transient roster gaps. If a component is reported as unknown, the error message tells you exactly which config key to set. |
@@ -244,17 +245,6 @@ Component-access roster and skill loading from the central-deploy management pla
 Keys are component IDs matching the central-deploy roster (the `id` field in
 `GET /chat/components`). The roster entry's `auth.type` selects which credential fields are used —
 only the fields matching the declared auth scheme are consulted when authenticating.
-
-### Mail (board HTTP)
-
-Direct HTTP access to the mill's board API for listing, reading, and creating tickets.
-
-| JSON key            | Type              | Default                   | Description                                         |
-| ------------------- | ----------------- | ------------------------- | --------------------------------------------------- |
-| `mail.enabled`      | `boolean`         | `false`                   | Master switch.                                      |
-| `mail.api_base_url` | `string`          | `"http://127.0.0.1:8077"` | Base URL of the board HTTP API (no trailing slash). |
-| `mail.api_token`    | `string` (secret) | `""`                      | Optional bearer token for the board API.            |
-| `mail.timeout`      | `number`          | `30.0`                    | Per-request HTTP timeout (seconds).                 |
 
 ### Conversation
 
@@ -429,7 +419,6 @@ the feedback run never auto-approves. Disabled by default.
 | `feedback.model_level`          | `integer`         | `1`     | llmio capability level for the feedback-analysis agent (cheap extraction). |
 | `feedback.board_url`            | `string`          | `""`    | Base URL of the board HTTP API (no trailing slash). Required when enabled. |
 | `feedback.board_api_token`      | `string` (secret) | `""`    | Optional Bearer token for the board API.                                   |
-| `feedback.deploy_api_key`       | `string` (secret) | `""`    | Bearer / X-API-Key token for the central-deploy roster endpoint.           |
 | `feedback.timeout`              | `number`          | `60.0`  | Per-request HTTP timeout (seconds) for ingest calls.                       |
 | `feedback.max_tickets_per_run`  | `integer`         | `3`     | Ceiling on tickets filed by one feedback run. `0` disables filing.         |
 | `feedback.dedup_window_seconds` | `number`          | `60.0`  | Seconds to suppress duplicate runs (per session) and duplicate titles.     |
@@ -480,9 +469,9 @@ Feedback tickets are filed against a set of allowed target repos. The set is res
    is empty, the runner falls back to `["robotsix-chat"]` and logs a warning so the feedback
    pipeline continues to function in a degraded state.
 
-The `feedback.deploy_api_key` config field (see the table above) supplies the `X-API-Key` header for
-the central-deploy API; it is needed only when the deploy server requires authentication. There is
-no environment-variable equivalent — per the config standard's
+The `central_deploy.deploy_api_key` config field (see the Central Deploy table above) supplies the
+`X-API-Key` header for the central-deploy API; it is needed only when the deploy server requires
+authentication. There is no environment-variable equivalent — per the config standard's
 [`environment:` rule](https://damien-robotsix.github.io/robotsix-standards/config-standard/#5-what-environment-is-for),
 first-party credentials live in the config file and nowhere else.
 
@@ -510,7 +499,6 @@ Repository security-feature toggle via the GitHub App installation. Disabled by 
 | -------------------------------- | ----------------- | ------------------- | ------------------------------------------------------------------------ |
 | `github_security.enabled`        | `boolean`         | `false`             | Master switch.                                                           |
 | `github_security.github_org`     | `string`          | `"damien-robotsix"` | GitHub organisation name whose repos are in scope.                       |
-| `github_security.deploy_api_key` | `string` (secret) | `""`                | API key for the security-feature endpoint. Empty → endpoint returns 503. |
 
 ### GitHub Actions
 
@@ -520,7 +508,6 @@ GitHub Actions secrets and workflow dispatch via the GitHub App installation. Di
 | ------------------------------- | ----------------- | ------------------- | ------------------------------------------------------------ |
 | `github_actions.enabled`        | `boolean`         | `false`             | Master switch.                                               |
 | `github_actions.github_org`     | `string`          | `"damien-robotsix"` | GitHub organisation name whose repos are in scope.           |
-| `github_actions.deploy_api_key` | `string` (secret) | `""`                | API key for Actions endpoints. Empty → endpoint returns 503. |
 
 ### Repo Study
 
@@ -550,8 +537,7 @@ default.
 | JSON key                             | Type              | Default  | Description                                                                                                                                             |
 | ------------------------------------ | ----------------- | -------- | ------------------------------------------------------------------------------------------------------------------------------------------------------- |
 | `lifecycle.enabled`                  | `boolean`         | `false`  | Master switch.                                                                                                                                          |
-| `lifecycle.base_url`                 | `string`          | `""`     | Base URL of the deploy-lifecycle API (no trailing slash). If the URL has no scheme (e.g. `central-deploy:8100`), `default_protocol` is prepended.       |
-| `lifecycle.default_protocol`         | `string`          | `"http"` | Protocol scheme prepended when `base_url` lacks one (e.g. `"https"` for TLS). Ignored when `base_url` already has a recognised scheme (`http`/`https`). |
+| `lifecycle.default_protocol`         | `string`          | `"http"` | Protocol scheme prepended when `central_deploy.url` lacks one (e.g. `"https"` for TLS). Ignored when the URL already has a recognised scheme (`http`/`https`). |
 | `lifecycle.api_key`                  | `string` (secret) | `""`     | Optional API key for the deploy-lifecycle API.                                                                                                          |
 | `lifecycle.service_name`             | `string`          | `""`     | Name of this service as registered with the deploy server.                                                                                              |
 | `lifecycle.timeout`                  | `number`          | `30.0`   | Per-request HTTP timeout (seconds).                                                                                                                     |

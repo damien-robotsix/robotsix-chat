@@ -8,17 +8,25 @@ import httpx
 import pytest
 import respx
 
-from robotsix_chat.config import DirectRepoSettings, GitHubSecuritySettings
+from robotsix_chat.config import (
+    CentralDeploySettings,
+    DirectRepoSettings,
+    GitHubSecuritySettings,
+)
 
 
 def _gh_sec_settings(**kw: object) -> GitHubSecuritySettings:
     base: dict[str, object] = {
         "enabled": True,
         "github_org": "damien-robotsix",
-        "deploy_api_key": "test-api-key",  # pragma: allowlist secret
     }
     base.update(kw)
     return GitHubSecuritySettings(**base)
+
+
+def _central_deploy(api_key: str = "test-api-key") -> CentralDeploySettings:
+    """Canonical deploy credential source the endpoints authenticate against."""
+    return CentralDeploySettings(deploy_api_key=api_key)  # pragma: allowlist secret
 
 
 def _direct_repo_settings(**kw: object) -> DirectRepoSettings:
@@ -66,6 +74,7 @@ async def test_endpoint_503_when_github_security_disabled() -> None:
     async with mock_app(
         direct_repo_settings=dr,
         github_security_settings=gh,
+        central_deploy_settings=_central_deploy(),
     ) as f:
         response = await f.client.patch(
             "/chat/github/repos/damien-robotsix/my-repo/settings",
@@ -81,12 +90,13 @@ async def test_endpoint_503_when_deploy_api_key_empty() -> None:
     """Empty deploy_api_key → 503."""
     from tests.conftest import mock_app
 
-    gh = _gh_sec_settings(deploy_api_key="")
+    gh = _gh_sec_settings()
     dr = _direct_repo_settings()
 
     async with mock_app(
         direct_repo_settings=dr,
         github_security_settings=gh,
+        central_deploy_settings=_central_deploy(api_key=""),
     ) as f:
         response = await f.client.patch(
             "/chat/github/repos/damien-robotsix/my-repo/settings",
@@ -112,6 +122,7 @@ async def test_endpoint_403_when_api_key_missing() -> None:
     async with mock_app(
         direct_repo_settings=dr,
         github_security_settings=gh,
+        central_deploy_settings=_central_deploy(),
     ) as f:
         response = await f.client.patch(
             "/chat/github/repos/damien-robotsix/my-repo/settings",
@@ -131,6 +142,7 @@ async def test_endpoint_403_when_api_key_wrong() -> None:
     async with mock_app(
         direct_repo_settings=dr,
         github_security_settings=gh,
+        central_deploy_settings=_central_deploy(),
     ) as f:
         response = await f.client.patch(
             "/chat/github/repos/damien-robotsix/my-repo/settings",
@@ -156,6 +168,7 @@ async def test_endpoint_400_when_body_not_json() -> None:
     async with mock_app(
         direct_repo_settings=dr,
         github_security_settings=gh,
+        central_deploy_settings=_central_deploy(),
     ) as f:
         response = await f.client.patch(
             "/chat/github/repos/damien-robotsix/my-repo/settings",
@@ -179,6 +192,7 @@ async def test_endpoint_400_when_no_toggles() -> None:
     async with mock_app(
         direct_repo_settings=dr,
         github_security_settings=gh,
+        central_deploy_settings=_central_deploy(),
     ) as f:
         response = await f.client.patch(
             "/chat/github/repos/damien-robotsix/my-repo/settings",
@@ -200,6 +214,7 @@ async def test_endpoint_400_when_invalid_toggle_value() -> None:
     async with mock_app(
         direct_repo_settings=dr,
         github_security_settings=gh,
+        central_deploy_settings=_central_deploy(),
     ) as f:
         response = await f.client.patch(
             "/chat/github/repos/damien-robotsix/my-repo/settings",
@@ -239,6 +254,7 @@ async def test_endpoint_404_when_repo_not_in_scope(
     async with mock_app(
         direct_repo_settings=dr,
         github_security_settings=gh,
+        central_deploy_settings=_central_deploy(),
     ) as f:
         response = await f.client.patch(
             "/chat/github/repos/damien-robotsix/my-repo/settings",
@@ -288,6 +304,7 @@ async def test_endpoint_enables_dependency_graph(
     async with mock_app(
         direct_repo_settings=dr,
         github_security_settings=gh,
+        central_deploy_settings=_central_deploy(),
     ) as f:
         response = await f.client.patch(
             "/chat/github/repos/damien-robotsix/my-repo/settings",
@@ -329,6 +346,7 @@ async def test_endpoint_cross_org_repo(
     async with mock_app(
         direct_repo_settings=dr,
         github_security_settings=gh,
+        central_deploy_settings=_central_deploy(),
     ) as f:
         response = await f.client.patch(
             "/chat/github/repos/other-org/some-repo/settings",

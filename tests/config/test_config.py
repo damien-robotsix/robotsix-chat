@@ -16,7 +16,6 @@ from robotsix_chat.config import (
     FeedbackSettings,
     FileHubToolsSettings,
     KindTurnBudget,
-    MailSettings,
     MemoryEmbeddingSettings,
     MemorySettings,
     OpenRouterSettings,
@@ -489,24 +488,120 @@ def test_subsessions_min_interval_one_allowed() -> None:
 
 
 # ---------------------------------------------------------------------------
-# Mail (direct HTTP)
+# Legacy deploy-plane consolidation + mail-block removal (migration)
 # ---------------------------------------------------------------------------
 
 
-def test_mail_disabled_by_default() -> None:
-    """Mail integration is off by default, with direct-HTTP defaults present."""
-    settings = Settings()
+def test_legacy_mail_block_is_dropped() -> None:
+    """A deployed config still carrying the retired ``mail`` block loads."""
+    settings = Settings.model_validate(
+        {
+            "llmio_model_level": 4,
+            "mail": {
+                "enabled": False,
+                "api_base_url": "http://127.0.0.1:8077",
+                "api_token": "",
+                "timeout": 30.0,
+            },
+        }
+    )
+    # The block is gone from the model entirely.
+    assert not hasattr(settings, "mail")
 
-    assert settings.mail.enabled is False
-    assert settings.mail.api_base_url == "http://127.0.0.1:8077"
-    assert settings.mail.api_token.get_secret_value() == ""
-    assert settings.mail.timeout == 30.0
+
+def test_legacy_lifecycle_base_url_migrates_to_central_deploy_url() -> None:
+    """``lifecycle.base_url`` is folded into the canonical ``central_deploy.url``."""
+    settings = Settings.model_validate(
+        {
+            "llmio_model_level": 4,
+            "lifecycle": {"enabled": True, "base_url": "http://central-deploy:9000"},
+        }
+    )
+    assert settings.central_deploy.url == "http://central-deploy:9000"
 
 
-def test_mail_enabled_ok() -> None:
-    """Mail constructs with just enabled=True (no required broker fields)."""
-    settings = Settings(mail=MailSettings(enabled=True))
-    assert settings.mail.enabled is True
+def test_legacy_per_block_deploy_api_key_migrates() -> None:
+    """A per-block ``deploy_api_key`` folds into ``central_deploy.deploy_api_key``."""
+    settings = Settings.model_validate(
+        {
+            "llmio_model_level": 4,
+            "feedback": {"deploy_api_key": "legacy-secret"},  # pragma: allowlist secret
+        }
+    )
+    assert (
+        settings.central_deploy.deploy_api_key.get_secret_value() == "legacy-secret"
+    )
+
+
+def test_explicit_central_deploy_values_win_over_legacy() -> None:
+    """An explicitly-set canonical value is never clobbered by a legacy copy."""
+    settings = Settings.model_validate(
+        {
+            "llmio_model_level": 4,
+            "central_deploy": {
+                "url": "http://canonical:9000",
+                "deploy_api_key": "canonical-secret",  # pragma: allowlist secret
+            },
+            "lifecycle": {"base_url": "http://legacy:1"},
+            "feedback": {"deploy_api_key": "legacy-secret"},  # pragma: allowlist secret
+            "github_security": {
+                "deploy_api_key": "sec-secret"  # pragma: allowlist secret
+            },
+            "github_actions": {
+                "deploy_api_key": "act-secret"  # pragma: allowlist secret
+            },
+        }
+    )
+    assert settings.central_deploy.url == "http://canonical:9000"
+    assert (
+        settings.central_deploy.deploy_api_key.get_secret_value()
+        == "canonical-secret"
+    )
+
+
+def test_production_config_with_all_legacy_keys_loads_cleanly() -> None:
+    """A copy of a deployed production config loads cleanly after migration.
+
+    Exercises every retired path at once: the ``mail`` block, the legacy
+    ``lifecycle.base_url``, and the per-block ``deploy_api_key`` copies on
+    ``feedback``/``github_security``/``github_actions``. Under
+    ``extra="forbid"`` these would raise ``extra_forbidden`` without the
+    migration — so a clean load is the assertion.
+    """
+    raw = {
+        "llmio_model_level": 4,
+        "mail": {
+            "enabled": False,
+            "api_base_url": "http://127.0.0.1:8077",
+            "api_token": "",
+            "timeout": 30.0,
+        },
+        "lifecycle": {"enabled": True, "base_url": "http://central-deploy:9000"},
+        "feedback": {
+            "enabled": True,
+            "board_url": "http://mill:8077",
+            "deploy_api_key": "deploy-key",  # pragma: allowlist secret
+        },
+        "github_security": {
+            "enabled": True,
+            "deploy_api_key": "deploy-key",  # pragma: allowlist secret
+        },
+        "github_actions": {
+            "enabled": True,
+            "deploy_api_key": "deploy-key",  # pragma: allowlist secret
+        },
+    }
+
+    settings = Settings.model_validate(raw)
+
+    # Canonical sources are populated from the legacy copies.
+    assert settings.central_deploy.url == "http://central-deploy:9000"
+    assert settings.central_deploy.deploy_api_key.get_secret_value() == "deploy-key"
+    # Retired surfaces are gone / stripped.
+    assert not hasattr(settings, "mail")
+    assert not hasattr(settings.feedback, "deploy_api_key")
+    assert not hasattr(settings.github_security, "deploy_api_key")
+    assert not hasattr(settings.github_actions, "deploy_api_key")
 
 
 # ---------------------------------------------------------------------------

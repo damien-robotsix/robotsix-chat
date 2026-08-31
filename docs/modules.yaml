@@ -213,11 +213,9 @@ modules:
       - src/robotsix_chat/chat/server/routes/chat_skill.py
       - src/robotsix_chat/chat/server/routes/diagnostics.py
       - src/robotsix_chat/chat/server/routes/draft.py
-      - src/robotsix_chat/chat/server/routes/mail.py
       - docs/chat/server.md
       - docs/chat/server/mobile_sso_runbook.md
       - docs/chat/server/routes/admin.md
-      - docs/chat/server/routes/mail.md
       - tests/chat/__init__.py
       - tests/chat/test_cli.py
       - tests/chat/test_conversation.py
@@ -248,7 +246,6 @@ modules:
       - tests/chat/server/routes/test_sessions.py
       - tests/chat/server/routes/test_diagnostics.py
       - tests/chat/server/routes/test_subsessions.py
-      - tests/chat/server/routes/test_mail.py
       - tests/chat/server/test_autonomous_endpoints.py
       - tests/chat/server/test_prompt_style_governance.py
 
@@ -383,15 +380,6 @@ modules:
       - tests/memory/__init__.py
       - tests/memory/test_maintenance.py
       - tests/memory/test_memory.py
-
-  - id: mail
-    description: "Mail integration — consult robotsix-auto-mail's board manager via direct HTTP."
-    paths:
-      - src/robotsix_chat/mail/__init__.py
-      - src/robotsix_chat/mail/client.py
-      - src/robotsix_chat/mail/skill.md
-      - tests/mail/__init__.py
-      - tests/mail/test_build_mail_tools.py
 
   - id: subsessions
     description: "Unified subsession system — background agents (task / periodic / user_chat) spawned from chat sessions, with per-subsession model levels, depth-limited nesting, inbox steering, and parent summary delivery."
