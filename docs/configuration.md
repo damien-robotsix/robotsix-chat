@@ -89,27 +89,24 @@ ______________________________________________________________________
 
 ### Server
 
-| JSON key                       | Type            | Default          | Description                                                                                          |
-| ------------------------------ | --------------- | ---------------- | ---------------------------------------------------------------------------------------------------- |
-| `server_host`                  | `string`        | `"0.0.0.0"`      | Host the server binds to.                                                                            |
-| `server_port`                  | `integer`       | `8000`           | Port the server listens on.                                                                          |
-| `idle_timeout_minutes`         | `integer`       | `30`             | Minutes of inactivity before closing the connection.                                                 |
-| `compaction_min_turns`         | `integer`       | `3`              | Minimum fresh (not yet summarized) turns before compaction triggers.                                 |
-| `compaction_keep_recent_turns` | `integer`       | `2`              | Most recent turns left verbatim after compaction so pending proposals and exact identifiers survive. |
-| `log_level`                    | `string`        | `"INFO"`         | Python logging level.                                                                                |
-| `log_json_format`              | `boolean`       | `true`           | When `true`, log lines are structured JSON (structlog); `false` for human-readable console output.   |
-| `cors_allow_origins`           | `array[string]` | `[]`             | Origins allowed to call `/chat` cross-origin.                                                        |
-| `correlation_id_header`        | `string`        | `"X-Request-ID"` | Header name for request correlation ids.                                                             |
+| JSON key                       | Type            | Default          | Description                                                                                        |
+| ------------------------------ | --------------- | ---------------- | -------------------------------------------------------------------------------------------------- |
+| `server_host`                  | `string`        | `"0.0.0.0"`      | Host the server binds to.                                                                          |
+| `server_port`                  | `integer`       | `8000`           | Port the server listens on.                                                                        |
+| `idle_timeout_minutes`         | `integer`       | `30`             | Minutes of inactivity before closing the connection.                                               |
+| `compaction_min_turns`         | `integer`       | `3`              | DEPRECATED — unused. Idle compaction was removed; see `evergoing.min_fresh_turns`.                 |
+| `compaction_keep_recent_turns` | `integer`       | `2`              | DEPRECATED — unused. Idle compaction was removed; see `evergoing.keep_min_recent`.                 |
+| `log_level`                    | `string`        | `"INFO"`         | Python logging level.                                                                              |
+| `log_json_format`              | `boolean`       | `true`           | When `true`, log lines are structured JSON (structlog); `false` for human-readable console output. |
+| `cors_allow_origins`           | `array[string]` | `[]`             | Origins allowed to call `/chat` cross-origin.                                                      |
+| `correlation_id_header`        | `string`        | `"X-Request-ID"` | Header name for request correlation ids.                                                           |
 
-**Compaction strategy.** When a session has been idle past `idle_timeout_minutes`, the turns before
-the most recent `compaction_keep_recent_turns` turns are folded into a summary; the recent turns
-stay verbatim in the agent's replay. The keep window (default `2`) is deliberately small — just
-enough to preserve the tail of the conversation where a proposed-but-unexecuted plan (with its
-ticket/message uids, file paths, and per-item decisions) normally lives, without growing the
-replayed context. `compaction_min_turns` (default `3`) gates summarisation so tiny or freshly
-compacted conversations never churn the summary agent, and compaction only fires when there are
-strictly more fresh turns than the keep window, so a conversation that would be fully preserved
-verbatim anyway is never summarised.
+**Context reduction — one mechanism.** Idle-timeout compaction was removed. The subject-aware trim
+scheduler (see the Evergoing section) is the single way ANY session's context shrinks: every
+`evergoing.trim_interval_seconds` it inspects each session with new input, and only when a cheap
+decision model judges the subject clearly changed does it drop the finished leading turns.
+`evergoing.min_fresh_turns` gates the decision model so tiny or freshly-trimmed sessions are never
+summarised or churned.
 
 ### Langfuse (tracing)
 
@@ -359,11 +356,12 @@ summary/compaction card, which keeps the full transcript). The most-recent `keep
 are never trimmed, so the in-flight turn is always preserved. Disabled by default — set
 `evergoing.enabled` to `true` to activate.
 
-| JSON key                          | Type      | Default  | Description                                                                                            |
-| --------------------------------- | --------- | -------- | ------------------------------------------------------------------------------------------------------ |
-| `evergoing.enabled`               | `boolean` | `false`  | Master switch. When `false`, no evergoing session is created and the trim scheduler does not run.      |
-| `evergoing.trim_interval_seconds` | `number`  | `1800.0` | Seconds between scheduled subject-aware trim passes. Must be >0. Default 1800 (30 minutes).            |
-| `evergoing.keep_min_recent`       | `integer` | `2`      | Minimum most-recent turns the trim pass always keeps — guarantees the in-flight turn is never trimmed. |
+| JSON key                          | Type      | Default  | Description                                                                                                                                                                  |
+| --------------------------------- | --------- | -------- | ---------------------------------------------------------------------------------------------------------------------------------------------------------------------------- |
+| `evergoing.enabled`               | `boolean` | `false`  | Master switch for the evergoing session itself. The subject-aware trim scheduler always runs over all sessions.                                                              |
+| `evergoing.trim_interval_seconds` | `number`  | `1800.0` | Seconds between scheduled subject-aware trim passes. Must be >0. Default 1800 (30 minutes).                                                                                  |
+| `evergoing.keep_min_recent`       | `integer` | `2`      | Minimum most-recent turns the trim pass always keeps — guarantees the in-flight turn is never trimmed.                                                                       |
+| `evergoing.min_fresh_turns`       | `integer` | `3`      | Minimum fresh turns since the last trim before the decision model is consulted; the skip does not advance the watermark, so short exchanges accumulate until the gate opens. |
 
 ### Subsessions
 

@@ -1673,17 +1673,18 @@ class Settings(BaseModel):
         default=3,
         json_schema_extra={"advanced": True},
         description=(
-            "Minimum number of conversation turns before an idle-timeout "
-            "compaction summary is produced; shorter sessions are left "
-            "uncompacted."
+            "DEPRECATED — unused. Idle-timeout compaction was removed; the "
+            "subject-aware trim scheduler is the single context-reduction "
+            "mechanism (see evergoing.min_fresh_turns)."
         ),
     )
     compaction_keep_recent_turns: int = Field(
         default=2,
         json_schema_extra={"advanced": True},
         description=(
-            "Number of most-recent turns kept verbatim after compaction; "
-            "older turns are replaced by the summary."
+            "DEPRECATED — unused. Idle-timeout compaction was removed; the "
+            "subject-aware trim scheduler keeps evergoing.keep_min_recent "
+            "recent turns instead."
         ),
     )
     log_level: str = "INFO"

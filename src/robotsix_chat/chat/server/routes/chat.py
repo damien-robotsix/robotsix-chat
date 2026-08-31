@@ -19,7 +19,6 @@ from starlette.responses import JSONResponse, StreamingResponse
 
 from robotsix_chat.chat.actions import collect_actions
 from robotsix_chat.chat.conversation import ConversationStore
-from robotsix_chat.chat.summarize import generate_idle_summary
 
 from ._shared import (
     _detect_truncation,
@@ -624,30 +623,6 @@ async def _generate_title(
     return title
 
 
-async def _generate_idle_summary(
-    summary_agent: ChatAgent,
-    turns: list[tuple[str, str]],
-    actions: list[list[str]] | None = None,
-) -> str:
-    """Generate the structured compaction summary of *turns*.
-
-    *actions* is the per-turn actions log aligned with *turns* (see
-    :meth:`ConversationStore.agent_history_actions`) so the summariser sees
-    the steps performed, not only the replies.  Long transcripts are
-    summarised map-reduce style — see
-    :func:`robotsix_chat.chat.summarize.generate_idle_summary`.
-
-    Returns an empty string when there are no turns or on failure.
-    """
-
-    async def _run(prompt: str) -> str:
-        return await _stream_summary(
-            summary_agent, prompt, "Idle-timeout summary generation failed"
-        )
-
-    return await generate_idle_summary(_run, turns, actions)
-
-
 async def _generate_carryover_summary(
     summary_agent: ChatAgent,
     turns: list[tuple[str, str]],
@@ -775,63 +750,9 @@ async def chat_endpoint(
         )
         session_id = resolved_session_id
 
-    # -- idle-timeout compaction (in place) --------------------------------
-    # The session keeps its id: turns before this point are replaced by a
-    # summary in the agent's replay, the UI transcript and the subsession
-    # tree are untouched.  Skipped entirely for conversations with fewer
-    # than ``compaction_min_turns`` fresh (not-yet-summarized) turns, so an
-    # empty or tiny conversation never churns the summary agent.
-
-    idle_timeout_minutes: int = request.app.state.idle_timeout_minutes
-    compaction_min_turns: int = request.app.state.compaction_min_turns
-    compaction_keep_recent_turns: int = request.app.state.compaction_keep_recent_turns
-    if had_session and idle_timeout_minutes > 0:
-        idle_session = store.get_session(session_id)
-        # The evergoing session is exempt: its memory policy is the
-        # subject-aware trim scheduler (robotsix_chat.evergoing), which only
-        # drops turns when the subject clearly changed. Idle compaction here
-        # would fold the ONGOING subject into a summary after any >=idle-gap
-        # pause, defeating the session's whole point of verbatim continuity.
-        if idle_session is not None and not idle_session.evergoing:
-            idle_seconds = time.time() - idle_session.wall_last_active
-            fresh_turns = len(idle_session.turns) - idle_session.compacted_turn_index
-            if (
-                idle_seconds > idle_timeout_minutes * 60
-                and fresh_turns >= compaction_min_turns
-                and fresh_turns > compaction_keep_recent_turns
-            ):
-                compaction_turns = store.agent_history(session_id)
-                summary = await _generate_idle_summary(
-                    request.app.state.summary_agent,
-                    compaction_turns,
-                    store.agent_history_actions(session_id),
-                )
-                if summary:
-                    store.compact_session(
-                        owner_id or "",
-                        session_id,
-                        summary,
-                        keep_recent_turns=compaction_keep_recent_turns,
-                    )
-                    folded_turns = fresh_turns - compaction_keep_recent_turns
-                    logger.info(
-                        "Idle timeout (%d min): compacted session %s in place "
-                        "(%d turns folded into summary, %d kept verbatim)",
-                        idle_timeout_minutes,
-                        session_id,
-                        folded_turns,
-                        compaction_keep_recent_turns,
-                    )
-
-                # Schedule a feedback run for the compacted session.
-                feedback_runner = request.app.state.feedback_runner
-                if feedback_runner is not None:
-                    feedback_runner.schedule("compaction", session_id, compaction_turns)
-
-                # Save a carryover action-plan summary so the assistant
-                # can pick up pending work if the operator starts a new
-                # session instead of continuing this compacted one.
-                await _persist_carryover_for_compaction(request, store, session_id)
+    # Idle-timeout compaction was removed: the subject-aware trim scheduler
+    # (robotsix_chat.evergoing) is the single context-reduction mechanism for
+    # ALL sessions — it only drops turns when the subject clearly changed.
 
     lock_key = client_id or session_id
 
@@ -1029,49 +950,6 @@ def _load_carryover(request: Request) -> str:
         return ""
 
     return existing[0].content  # type: ignore[no-any-return]
-
-
-async def _persist_carryover_for_compaction(
-    request: Request,
-    store: ConversationStore,
-    session_id: str,
-) -> None:
-    """Generate and persist a carryover summary on idle compaction."""
-    knowledge_store = request.app.state.knowledge_store
-    if knowledge_store is None:
-        return
-
-    summary_agent: ChatAgent | None = request.app.state.summary_agent
-    if summary_agent is None:
-        return
-
-    turns = store.history(session_id)
-    if not turns:
-        return
-
-    try:
-        summary = await _generate_carryover_summary(summary_agent, turns)
-    except Exception:
-        logger.exception(
-            "Carryover summary generation failed for compacted session %s",
-            session_id,
-        )
-        return
-
-    if not summary:
-        return
-
-    try:
-        existing = knowledge_store.list(_CARRYOVER_TOPIC)
-        if existing:
-            knowledge_store.update(existing[0].id, summary)
-        else:
-            knowledge_store.add(_CARRYOVER_TOPIC, summary)
-    except Exception:
-        logger.exception(
-            "Failed to persist carryover note for compacted session %s",
-            session_id,
-        )
 
 
 # -- live subsession state injection for status queries ---------------------

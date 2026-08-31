@@ -1,11 +1,15 @@
-"""Periodic subject-aware trim scheduler for the evergoing session.
+"""Periodic subject-aware trim scheduler — the ONE way sessions shrink.
 
-Runs on a configurable interval (default 1800 s / 30 min).  Each pass:
+Runs on a configurable interval (default 1800 s / 30 min) over **every**
+session (idle-timeout compaction was removed; this scheduler is the single
+context-reduction mechanism).  Per session each pass:
 
-1. resolves the single evergoing session (skips if none exists);
-2. calls :meth:`ConversationStore.has_new_input_since_trim` **first** and
-   skips the whole pass — making **zero LLM calls** — when no new turns
+1. calls :meth:`ConversationStore.has_new_input_since_trim` **first** and
+   skips the session — making **zero LLM calls** — when no new turns
    arrived since the last trim;
+2. skips (without advancing the watermark, so turns keep accumulating)
+   while fewer than ``min_fresh_turns`` fresh turns arrived since the
+   last trim — a tiny conversation never churns the decision model;
 3. otherwise asks a cheap summary-tier agent whether the subject changed
    and how many finished leading turns to drop, then calls
    :meth:`ConversationStore.trim_session` with the decided index.
@@ -44,6 +48,7 @@ class EvergoingTrimScheduler:
         agent: ChatAgent,
         *,
         keep_min_recent: int = 2,
+        min_fresh_turns: int = 3,
     ) -> None:
         """Create a scheduler bound to *store* and a cheap *agent*.
 
@@ -53,12 +58,16 @@ class EvergoingTrimScheduler:
             agent: Cheap summary-tier agent used for the trim decision.
             keep_min_recent: Minimum recent turns never trimmed (in-flight
                 safety).
+            min_fresh_turns: Minimum fresh turns since the last trim before
+                the decision model is consulted; the skip does not advance
+                the watermark.
 
         """
         self.interval_seconds = interval_seconds
         self._store = store
         self._agent = agent
         self._keep_min_recent = keep_min_recent
+        self._min_fresh_turns = min_fresh_turns
         self._task: asyncio.Task[None] | None = None
 
     # ------------------------------------------------------------------
@@ -89,18 +98,36 @@ class EvergoingTrimScheduler:
     # ------------------------------------------------------------------
 
     async def run_once(self) -> dict[str, object]:
-        """Execute one trim pass and return an audit dict describing it.
+        """Execute one trim pass over every session; return an audit dict.
 
-        Skips entirely (no LLM call) when there is no evergoing session or
-        no new input since the last trim.
+        Per session the pass makes zero LLM calls unless new input arrived
+        since the last trim AND at least ``min_fresh_turns`` fresh turns
+        accumulated.  The fresh-turns skip does NOT advance the watermark,
+        so short exchanges keep accumulating until the gate opens.
         """
-        session_id = self._store.evergoing_session_id()
-        if session_id is None:
-            return {"trimmed": False, "reason": "no evergoing session"}
+        audits: list[dict[str, object]] = []
+        for session_id in self._store.all_session_ids():
+            audit = await self._run_once_session(session_id)
+            if audit is not None:
+                audit["session_id"] = session_id
+                audits.append(audit)
+        return {"sessions": audits}
 
+    async def _run_once_session(self, session_id: str) -> dict[str, object] | None:
+        """Trim pass for one session; ``None`` when skipped with no work."""
         # New-input gate — MUST run before any LLM call.
         if not self._store.has_new_input_since_trim(session_id):
-            return {"trimmed": False, "reason": "no new input since last trim"}
+            return None
+
+        session = self._store.get_session(session_id)
+        if session is None:
+            return None
+
+        # Fresh-turns gate: don't wake the decision model for a couple of
+        # turns.  Deliberately does NOT advance the watermark.
+        fresh_turns = session.turn_count - session.last_trim_turn_count
+        if fresh_turns < self._min_fresh_turns:
+            return {"trimmed": False, "reason": "below min_fresh_turns"}
 
         turns = self._store.history(session_id)
         visible_count = len(turns)
@@ -124,8 +151,7 @@ class EvergoingTrimScheduler:
             max_drop=max_drop,
         )
 
-        session = self._store.get_session(session_id)
-        current_trimmed = session.trimmed_turn_index if session is not None else 0
+        current_trimmed = session.trimmed_turn_index
         new_trimmed_index = current_trimmed + decision.drop_leading
 
         return self._store.trim_session(

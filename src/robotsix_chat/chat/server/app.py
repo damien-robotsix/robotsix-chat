@@ -746,14 +746,20 @@ def create_app(
     _eg = evergoing_settings or EvergoingSettings()
     if _eg.enabled:
         from robotsix_chat.chat.conversation import OPERATOR_OWNER
-        from robotsix_chat.evergoing import EvergoingTrimScheduler
 
         app.state.conversation_store.ensure_evergoing_session(OPERATOR_OWNER)
+    # The subject-aware trim scheduler is the single context-reduction
+    # mechanism for ALL sessions (idle compaction removed), so it runs
+    # regardless of whether the evergoing session itself is enabled.
+    if app.state.summary_agent is not None:
+        from robotsix_chat.evergoing import EvergoingTrimScheduler
+
         app.state.evergoing_scheduler = EvergoingTrimScheduler(
             interval_seconds=_eg.trim_interval_seconds,
             store=app.state.conversation_store,
             agent=app.state.summary_agent,
             keep_min_recent=_eg.keep_min_recent,
+            min_fresh_turns=_eg.min_fresh_turns,
         )
     else:
         app.state.evergoing_scheduler = None
