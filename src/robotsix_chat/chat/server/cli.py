@@ -242,6 +242,18 @@ def run_server_from_config(agent: ChatAgent | None = None) -> None:
     _export_langfuse_env(settings)
     _setup_observability()
 
+    # -- llmio health tracker cooldown configuration ----------------------
+    # Configure the model health tracker's cooldown duration from settings
+    # instead of relying on the LLMIO_COOLDOWN_DURATION_SECONDS env var.
+    from robotsix_llmio.core.cooldown import get_health_tracker
+
+    tracker = get_health_tracker()
+    tracker.cooldown_duration = settings.llmio_cooldown_seconds
+    logger.info(
+        "llmio health tracker cooldown configured: %.0f seconds",
+        settings.llmio_cooldown_seconds,
+    )
+
     # -- unified subsession system -----------------------------------------
     # One registry owns every subsession (task / periodic / user_chat, all
     # nesting depths).  Lifecycle frames go to the EventBus → GET /events →
