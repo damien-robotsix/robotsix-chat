@@ -2786,6 +2786,44 @@ async def test_idle_compaction_skipped_below_min_turns() -> None:
 
 
 @pytest.mark.asyncio
+async def test_idle_compaction_skips_evergoing_session() -> None:
+    """The evergoing session is never idle-compacted.
+
+    Its memory policy is the subject-aware trim scheduler; idle compaction
+    would fold the ONGOING subject into a summary after any idle gap
+    (user-reported: "even the ongoing chat is being summarized, not only
+    when we change subject").
+    """
+    import time as time_mod
+
+    store = ConversationStore()
+    sid = cast(str, store.create_session("owner-idle")["session_id"])
+    for i in range(5):
+        store.record(sid, "owner-idle", f"q{i}", f"a{i}")
+    assert store.mark_evergoing(sid)
+
+    session = store.get_session(sid)
+    assert session is not None
+    session.wall_last_active = time_mod.time() - 3600  # one hour idle
+
+    summary_agent = MockAgent(tokens=["should never run"])
+    async with mock_app(
+        tokens=["ok"],
+        summary_agent=summary_agent,
+        conversation_store=store,
+        idle_timeout_minutes=30,
+        compaction_min_turns=3,
+    ) as f:
+        await f.client.post(
+            "/chat",
+            json={"message": "back", "session_id": sid, "owner_id": "owner-idle"},
+        )
+
+    assert summary_agent.call_count == 0
+    assert store.get_session(sid).compacted_summary is None  # type: ignore[union-attr]
+
+
+@pytest.mark.asyncio
 async def test_idle_compaction_preserves_recent_action_plan_verbatim() -> None:
     """A proposed plan with itemized identifiers survives idle compaction.
 
