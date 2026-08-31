@@ -327,7 +327,7 @@ def test_curated_stream_error_budget_exhausted_names_reset_time() -> None:
     assert "01:00 UTC" in payload["message"]
     assert "quota exhausted" in payload["message"].lower()
     # Paid fallback disabled by default → hint to enable it.
-    assert "paid fallback" in payload["message"]
+    assert "paid backup model" in payload["message"]
     # Never the generic internal-error surface for this class.
     assert "internal error" not in payload["message"].lower()
     # The curated message never echoes the raw upstream exception text.
@@ -417,7 +417,7 @@ def test_budget_exhausted_message_names_wait_duration() -> None:
     )
     assert "resets at 01:00 UTC" in message
     assert "in 56 min" in message
-    assert "enable paid fallback" in message
+    assert "paid backup model" in message
 
 
 def test_budget_exhausted_message_without_reset_hint() -> None:
@@ -430,7 +430,7 @@ def test_budget_exhausted_message_without_reset_hint() -> None:
         ClaudeSDKUsageExhaustedError("You're out of usage credits")
     )
     assert "Claude quota exhausted" in message
-    assert "enable paid fallback" in message
+    assert "paid backup model" in message
     assert "UTC" not in message
 
 

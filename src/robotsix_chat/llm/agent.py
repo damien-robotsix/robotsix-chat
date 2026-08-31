@@ -278,6 +278,28 @@ _MEMORY_PROMPT_FOOTER = (
 )
 
 
+def _chained_claude_unavailability(
+    exc: BaseException,
+) -> ClaudeSDKUsageExhaustedError | ClaudeSDKAuthError | None:
+    """Return the exhaustion/auth root buried in *exc*'s cause/context chain.
+
+    The Claude CLI sometimes launders a usage-limit failure into a generic
+    ``Exception("Claude Code returned an error result: success")`` that only
+    carries the typed error as ``__context__`` — a bare ``except`` on the
+    typed pair misses it and the turn dies without ever trying the fallback
+    tiers (operator-reported). Walks both ``__cause__`` and ``__context__``,
+    bounded against cycles.
+    """
+    seen: set[int] = set()
+    cur: BaseException | None = exc
+    while cur is not None and id(cur) not in seen and len(seen) < 32:
+        if isinstance(cur, ClaudeSDKUsageExhaustedError | ClaudeSDKAuthError):
+            return cur
+        seen.add(id(cur))
+        cur = cur.__cause__ or cur.__context__
+    return None
+
+
 class LlmioChatAgent:
     """Stream LLM responses via robotsix-llmio, selected by capability level.
 
@@ -663,16 +685,22 @@ class LlmioChatAgent:
                 is_transient_fn=_is_chat_turn_transient,
                 what="chat turn",
             )
-        except (ClaudeSDKUsageExhaustedError, ClaudeSDKAuthError) as exc:
+        except Exception as exc:
             # Two different causes, one conclusion: this tier cannot serve the
             # turn, and no retry against it will change that — credits stay
             # exhausted until they reset, a dead credential stays dead until a
             # human re-authenticates. Falling back keeps the conversation alive
-            # through either.
+            # through either. The root may be buried in the cause/context
+            # chain (laundered CLI failures), so match the chain, not just
+            # the raised type.
+            root = _chained_claude_unavailability(exc)
+            if root is None:
+                raise
             logger.warning(
-                "model_level %d cannot serve this turn (%s: %s) — "
+                "model_level %d cannot serve this turn (%s via %s: %s) — "
                 "falling back to another tier",
                 level,
+                type(root).__name__,
                 type(exc).__name__,
                 exc,
             )
@@ -685,7 +713,7 @@ class LlmioChatAgent:
                     effective_trace_metadata,
                     level=level,
                     trace_name=trace_name,
-                    credential_is_dead=isinstance(exc, ClaudeSDKAuthError),
+                    credential_is_dead=isinstance(root, ClaudeSDKAuthError),
                 )
             except Exception as fallback_exc:
                 # Keep the root cause on the chain via an explicit __cause__:

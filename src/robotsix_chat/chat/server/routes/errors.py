@@ -156,7 +156,10 @@ def budget_exhausted_message(
         lead = "Claude quota exhausted. Retry later"
     if paid_fallback_enabled:
         return f"{lead}."
-    return f"{lead}, or enable paid fallback."
+    return (
+        f"{lead} — or just resend your message: the paid backup model "
+        "serves turns automatically while Claude is exhausted."
+    )
 
 
 def stream_error_code(exc: BaseException) -> str:
