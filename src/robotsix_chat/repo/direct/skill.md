@@ -459,7 +459,10 @@ ______________________________________________________________________
 The following tools are available for push/PR operations. They require the ticket to be in BLOCKED
 state and the repo to be in the installation scope:
 
-- **`push_direct_repo_branch`** — Push a new branch with file changes.
+- **`push_direct_repo_branch`** — Push a new branch with file changes. `files_json` accepts three
+  per-entry forms: `{path, content}` for text, `{path, content_b64}` for base64-encoded bytes, or
+  `{path, local_path}` to commit the bytes of a file downloaded into the file-hub work directory
+  (via `file_hub_get`). `local_path` must resolve inside that directory or the push is rejected.
 - **`open_direct_repo_pr`** — Open a PR from an existing branch (no auto-merge — human review
   required).
 - **`update_pr_branch`** — Rebase a PR branch onto the latest base branch.

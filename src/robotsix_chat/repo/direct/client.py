@@ -17,6 +17,7 @@ import asyncio
 import base64
 import json
 import logging
+from pathlib import Path
 from typing import TYPE_CHECKING, Any, cast
 from urllib.parse import quote
 
@@ -139,10 +140,23 @@ class DirectRepoClient:
     concerns have been extracted to dedicated modules.
     """
 
-    def __init__(self, settings: DirectRepoSettings) -> None:
-        """Store settings; tokens are fetched lazily."""
+    def __init__(
+        self,
+        settings: DirectRepoSettings,
+        *,
+        file_hub_work_dir: str | None = None,
+    ) -> None:
+        """Store settings; tokens are fetched lazily.
+
+        *file_hub_work_dir* is the file-hub download directory (from
+        ``file_hub_tools.working_dir``).  It is the ONLY directory from
+        which ``local_path`` file entries may be read when creating blobs —
+        see :meth:`_git_create_tree_items`.  When ``None``, ``local_path``
+        entries are rejected.
+        """
         self._s = settings
         self._base_url = settings.github_api_base_url.rstrip("/")
+        self._file_hub_work_dir = file_hub_work_dir
 
     # -- helpers -----------------------------------------------------------
 
@@ -308,6 +322,60 @@ class DirectRepoClient:
 
     # -- shared git helpers ------------------------------------------------
 
+    def _resolve_local_path(self, path: str, local_path: str) -> Path:
+        """Resolve *local_path* and confine it to the file-hub work dir.
+
+        The file-hub work directory is the only location the agent may
+        read bytes from — the chat container's ``/data`` also holds config
+        and secrets that must never be committable.  ``Path.resolve()``
+        collapses ``..`` segments and follows symlinks, so a traversal or
+        symlink escape resolves to a path that is not relative to the root
+        and is rejected.
+
+        Raises ValueError when no work dir is configured or the resolved
+        path lands outside it.
+        """
+        if not self._file_hub_work_dir:
+            raise ValueError(
+                f"local_path for '{path}' is not allowed: the file-hub work "
+                "directory (file_hub_tools.working_dir) is not configured."
+            )
+        root = Path(self._file_hub_work_dir).resolve()
+        resolved = Path(local_path).resolve()
+        if resolved != root and not resolved.is_relative_to(root):
+            raise ValueError(
+                f"local_path for '{path}' resolves outside the allowed "
+                f"file-hub work directory ({root}): {local_path}"
+            )
+        return resolved
+
+    def _blob_body_for_entry(self, path: str, f: dict[str, str]) -> dict[str, str]:
+        """Return the ``/git/blobs`` POST body for one file entry.
+
+        Selects the encoding from the entry's content source: ``local_path``
+        and ``content_b64`` produce base64 blobs; plain ``content`` (default)
+        produces a utf-8 blob.
+        """
+        if "local_path" in f:
+            resolved = self._resolve_local_path(path, f["local_path"])
+            try:
+                data = resolved.read_bytes()
+            except FileNotFoundError as exc:
+                raise ValueError(
+                    f"local_path for '{path}' does not exist: {f['local_path']}"
+                ) from exc
+            except OSError as exc:
+                raise ValueError(
+                    f"Could not read local_path for '{path}': {exc}"
+                ) from exc
+            return {
+                "content": base64.b64encode(data).decode("ascii"),
+                "encoding": "base64",
+            }
+        if "content_b64" in f:
+            return {"content": f["content_b64"], "encoding": "base64"}
+        return {"content": f.get("content", ""), "encoding": "utf-8"}
+
     async def _git_create_tree_items(
         self,
         repo_full_name: str,
@@ -315,16 +383,28 @@ class DirectRepoClient:
     ) -> list[dict[str, Any]]:
         """Create a blob for each entry in *files*; return create-tree items.
 
-        Normalizes changelog-fragment trailing newlines and validates that
-        every entry carries a ``path`` field (before any blob is uploaded).
+        Each entry MUST carry a ``path`` and exactly one content source:
 
-        Raises ValueError if any file entry is missing a ``path`` field.
+        - ``content`` — text, uploaded with ``encoding: utf-8``.
+        - ``content_b64`` — base64 bytes, uploaded with ``encoding: base64``.
+        - ``local_path`` — an absolute path INSIDE the file-hub work
+          directory; its bytes are read, base64-encoded, and uploaded with
+          ``encoding: base64``.
+
+        Normalizes changelog-fragment trailing newlines (text ``content``
+        entries only) and validates that every entry carries a ``path``
+        field (before any blob is uploaded).
+
+        Raises ValueError if any file entry is missing a ``path`` field,
+        carries a ``local_path`` that resolves outside the file-hub work
+        directory, or names a ``local_path`` that cannot be read.
         Raises RuntimeError on GitHub API failures.
         """
-        # Normalize changelog fragment trailing newlines
+        # Normalize changelog fragment trailing newlines (text content only)
         for f in files:
             if (
-                f.get("path", "").startswith("changelog.d/")
+                "content" in f
+                and f.get("path", "").startswith("changelog.d/")
                 and f["path"].endswith(".md")
                 and not f.get("content", "").endswith("\n")
             ):
@@ -333,15 +413,12 @@ class DirectRepoClient:
         tree_items: list[dict[str, Any]] = []
         for f in files:
             path = f.get("path", "")
-            content = f.get("content", "")
             if not path:
                 raise ValueError("Each file entry must have a 'path' field.")
+            blob_body = self._blob_body_for_entry(path, f)
             blob_data = await self._post_json(
                 f"/repos/{repo_full_name}/git/blobs",
-                {
-                    "content": content,
-                    "encoding": "utf-8",
-                },
+                blob_body,
             )
             tree_items.append(
                 {

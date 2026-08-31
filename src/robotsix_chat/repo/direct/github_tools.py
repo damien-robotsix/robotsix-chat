@@ -23,6 +23,40 @@ if TYPE_CHECKING:
 
 logger = logging.getLogger(__name__)
 
+# Accepted per-file entry forms for ``files_json``.  Each entry is an
+# object with a ``path`` plus exactly ONE content source:
+#   {"path": "...", "content": "..."}      — text, committed as-is
+#   {"path": "...", "content_b64": "..."}  — base64 bytes (binary files)
+#   {"path": "...", "local_path": "..."}   — read bytes from a file inside
+#                                            the file-hub work directory
+FILES_JSON_FORMS = (
+    "{path, content} (text), {path, content_b64} (base64 bytes), or "
+    "{path, local_path} (a file inside the file-hub work directory)"
+)
+
+
+def validate_file_entries(files: list[Any]) -> str | None:
+    """Return an error string if any ``files_json`` entry is malformed.
+
+    Each entry must be an object carrying a non-empty ``path`` and exactly
+    one content source (``content``, ``content_b64``, or ``local_path``).
+    Returns ``None`` when every entry is well-formed.
+    """
+    for f in files:
+        if not isinstance(f, dict):
+            return f"Error: files_json entries must be objects: {FILES_JSON_FORMS}."
+        if not f.get("path"):
+            return "Error: each files_json entry must have a non-empty 'path'."
+        sources = [k for k in ("content", "content_b64", "local_path") if k in f]
+        if len(sources) != 1:
+            found = ", ".join(sources) if sources else "none"
+            return (
+                f"Error: files_json entry for '{f.get('path')}' must carry "
+                f"exactly one content source — {FILES_JSON_FORMS} "
+                f"(found: {found})."
+            )
+    return None
+
 
 def build_github_tools(
     *,
@@ -75,9 +109,17 @@ def build_github_tools(
                 ``"robotsix/robotsix-chat"``).
             branch_name: Name for the new branch (e.g.
                 ``"fix/20250624T020652Z-my-ticket-a1b2"``).
-            files_json: JSON array of ``{"path": "...", "content": "..."}``
-                objects describing the files to create or overwrite.
-                Paths are relative to the repo root.
+            files_json: JSON array of file entries to create or overwrite.
+                Paths are relative to the repo root.  Each entry is an
+                object with a ``path`` and exactly one content source:
+                ``{"path": "...", "content": "..."}`` for text,
+                ``{"path": "...", "content_b64": "..."}`` for base64-encoded
+                bytes (binary files such as images), or
+                ``{"path": "...", "local_path": "..."}`` to read the bytes
+                from a file previously downloaded into the file-hub work
+                directory (e.g. via ``file_hub_get``).  ``local_path`` must
+                stay inside that directory — paths resolving outside it are
+                rejected.
             commit_message: Commit message.  Defaults to a message that
                 references the *ticket_id*.
 
@@ -90,20 +132,24 @@ def build_github_tools(
             files: list[dict[str, str]] = json.loads(files_json)
         except json.JSONDecodeError, TypeError:
             return (
-                "Error: files_json must be a valid JSON array "
-                "of {path, content} objects."
+                "Error: files_json must be a valid JSON array of file "
+                f"entries — {FILES_JSON_FORMS}."
             )
 
         if not isinstance(files, list):
             return "Error: files_json must be a JSON array."
 
+        if entry_error := validate_file_entries(files):
+            return entry_error
+
         if error := await assert_blocked_and_scoped(client, ticket_id, repo_full_name):
             return error
 
-        # --- ensure changelog fragments end with a newline ---
+        # --- ensure changelog fragments end with a newline (text entries) ---
         for f in files:
             if (
-                f.get("path", "").startswith("changelog.d/")
+                "content" in f
+                and f.get("path", "").startswith("changelog.d/")
                 and f["path"].endswith(".md")
                 and not f.get("content", "").endswith("\n")
             ):

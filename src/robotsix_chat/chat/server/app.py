@@ -1065,7 +1065,9 @@ def _build_static_tools(
             diagnostic_store=diagnostic_store,
         ),
         *build_direct_repo_tools(
-            settings.direct_repo, component_request=component_request
+            settings.direct_repo,
+            component_request=component_request,
+            file_hub_work_dir=settings.file_hub_tools.working_dir,
         ),
         *build_github_security_tools(settings.github_security, settings.direct_repo),
         *build_github_actions_tools(settings.github_actions, settings.direct_repo),
