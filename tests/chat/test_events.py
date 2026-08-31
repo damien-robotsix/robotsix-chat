@@ -316,6 +316,7 @@ def test_begin_turn_announces_and_buffers() -> None:
         "type": SSE_CHAT_TURN_STARTED_TYPE,
         "session_id": "s1",
         "turn_id": "turn-1",
+        "user_message": "",
     }
 
 
@@ -353,6 +354,7 @@ def test_subscribe_mid_turn_replays_accumulated_content() -> None:
         "session_id": "s1",
         "turn_id": "turn-1",
         "content": "Hello world",
+        "user_message": "",
     }
     # A subsequent live token reaches the late subscriber but is NOT duplicated
     # into the replay.
@@ -562,3 +564,25 @@ async def test_events_endpoint_unsubscribes_on_disconnect() -> None:
 
     # After cleanup, the subscriber set is gone
     assert "c1" not in f.app.state.event_bus._subscribers
+
+
+def test_turn_frames_carry_the_user_message() -> None:
+    """Started + resume frames deliver the operator message driving the turn.
+
+    Regression: a dispatched message lives only in the server-side coalescer
+    until the turn records; without this a client re-subscribing mid-turn had
+    no way to render it (it looked lost after a session switch).
+    """
+    bus = EventBus()
+    q1 = bus.subscribe("s1")
+    bus.begin_turn("s1", "turn-1", user_message="check the mailbox")
+    started = q1.get_nowait()
+    assert started["type"] == SSE_CHAT_TURN_STARTED_TYPE
+    assert started["user_message"] == "check the mailbox"
+
+    bus.append_turn_token("s1", "turn-1", "Look")
+    q2 = bus.subscribe("s1")
+    resume = q2.get_nowait()
+    assert resume["type"] == SSE_CHAT_TURN_RESUME_TYPE
+    assert resume["content"] == "Look"
+    assert resume["user_message"] == "check the mailbox"

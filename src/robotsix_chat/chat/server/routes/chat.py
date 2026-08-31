@@ -386,7 +386,7 @@ class MessageCoalescer:
             publish_turn = event_bus is not None and bool(session_id)
             turn_id = uuid.uuid4().hex if publish_turn else ""
             if publish_turn:
-                event_bus.begin_turn(session_id, turn_id)
+                event_bus.begin_turn(session_id, turn_id, user_message=concatenated)
 
             reply_parts: list[str] = []
             try:

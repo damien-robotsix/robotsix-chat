@@ -1,4 +1,5 @@
 import { processSSEStream } from "./sse-parser.js";
+import { drainSessionDraft } from "./drain-draft.js";
 import { renderMemoryBanner } from "./memory-banner.js";
 import {
   parseSuggestions,
@@ -1093,6 +1094,11 @@ import {
     if (reattachActive) return;
     reattachActive = true;
     reattachTurnId = frame.turn_id;
+    // Render the operator's own message: this turn was started outside our
+    // POST (drained queue, another tab) so no bubble exists for it yet.
+    if (typeof frame.user_message === "string" && frame.user_message.length > 0) {
+      addUserBubble(frame.user_message);
+    }
     state = "sending";
     updateSendBusy();
     showTypingIndicator();
@@ -1104,6 +1110,12 @@ import {
     if (!reattachApplies(frame)) return;
     reattachActive = true;
     reattachTurnId = frame.turn_id;
+    // The dispatched message is only in the server-side coalescer until the
+    // turn records — render its bubble so it doesn't look lost after
+    // switching away and back mid-turn.
+    if (typeof frame.user_message === "string" && frame.user_message.length > 0) {
+      addUserBubble(frame.user_message);
+    }
     currentAssistantBubble = null;
     rawAssistantText = "";
     if (typeof frame.content === "string" && frame.content.length > 0) {
@@ -1350,65 +1362,53 @@ import {
 
     closeBackgroundEventStream(sessionId);
 
-    fetch(apiBase() + "/sessions/" + encodeURIComponent(sessionId) + "/draft")
-      .then(function (r) {
-        if (!r.ok) return null;
-        return r.json();
-      })
-      .then(function (draft) {
-        if (!draft || !Array.isArray(draft.queue) || draft.queue.length === 0) return;
-
-        var queue = draft.queue;
-        // POST each queued message directly to the session's chat endpoint.
-        // We don't render bubbles (the user is on a different session); the
-        // replies will be in history when they return.
-        for (var i = 0; i < queue.length; i++) {
-          // IIFE captures each item by value — avoids the classic
-          // var-in-loop closure bug where every .then() sees only the
-          // last item.
-          (function (item) {
-            if (!item.text && (!item.images || item.images.length === 0)) return;
-
-            var imagesForSend = [];
-            if (Array.isArray(item.images)) {
-              for (var j = 0; j < item.images.length; j++) {
-                var pi = _base64ToPendingImage(
-                  item.images[j].data, item.images[j].media_type,
-                  item.images[j].filename || "image"
-                );
-                if (pi) imagesForSend.push(pi);
-              }
-            }
-
-            var encodePromise = imagesForSend.length > 0
-              ? encodeImagesFromList(imagesForSend)
-              : Promise.resolve([]);
-            encodePromise.then(function (encodedImages) {
-              var body = {
-                message: item.text || "",
-                session_id: sessionId,
-                owner_id: ownerFor(sessionId)
-              };
-              if (item.messageId) body.message_id = item.messageId;
-              if (encodedImages.length > 0) body.images = encodedImages;
-              fetch(serverUrl(), {
-                method: "POST",
-                headers: { "Content-Type": "application/json" },
-                body: JSON.stringify(body)
-              }).catch(function () { /* best-effort */ });
-            });
-          })(queue[i]);
+    drainSessionDraft({
+      fetchDraft: function () {
+        return fetch(apiBase() + "/sessions/" + encodeURIComponent(sessionId) + "/draft")
+          .then(function (r) { return r.ok ? r.json() : null; });
+      },
+      sendItem: function (item) {
+        var imagesForSend = [];
+        if (Array.isArray(item.images)) {
+          for (var j = 0; j < item.images.length; j++) {
+            var pi = _base64ToPendingImage(
+              item.images[j].data, item.images[j].media_type,
+              item.images[j].filename || "image"
+            );
+            if (pi) imagesForSend.push(pi);
+          }
         }
-
-        // Clear the draft so restoreDraft() on return finds an empty queue.
-        fetch(apiBase() + "/sessions/" + encodeURIComponent(sessionId) + "/draft", {
+        var encodePromise = imagesForSend.length > 0
+          ? encodeImagesFromList(imagesForSend)
+          : Promise.resolve([]);
+        return encodePromise.then(function (encodedImages) {
+          var body = {
+            message: item.text || "",
+            session_id: sessionId,
+            owner_id: ownerFor(sessionId)
+          };
+          if (item.messageId) body.message_id = item.messageId;
+          if (encodedImages.length > 0) body.images = encodedImages;
+          return fetch(serverUrl(), {
+            method: "POST",
+            headers: { "Content-Type": "application/json" },
+            body: JSON.stringify(body)
+          }).then(function (r) { return r.ok; });
+        });
+      },
+      putDraft: function (items) {
+        var queue = [];
+        for (var i = 0; i < items.length; i++) {
+          queue.push({ text: items[i].text, images: items[i].images || [], messageId: items[i].messageId });
+        }
+        return fetch(apiBase() + "/sessions/" + encodeURIComponent(sessionId) + "/draft", {
           method: "PUT",
           headers: { "Content-Type": "application/json" },
-          body: JSON.stringify({ pending_images: [], queue: [] }),
+          body: JSON.stringify({ pending_images: [], queue: queue }),
           keepalive: true
-        }).catch(function () { /* best-effort */ });
-      })
-      .catch(function () { /* best-effort */ });
+        });
+      }
+    }).catch(function () { /* best-effort */ });
   }
 
   // Schedule exactly one reconnect. Without the guard, stacked onDone/error
@@ -3141,8 +3141,14 @@ import {
           showError(frame.message || "Server error");
           state = "error";
           updateSendBusy();
-          // Leave queued messages in place — the user can trigger
-          // drainQueue() by submitting another message later.
+          // Dispatch the next queued message: after a failed turn the queued
+          // message IS the retry the operator already typed — parking it
+          // until they type something else left "(queued)" bubbles stuck
+          // after every error (operator-reported). Each drain sends one
+          // message, so a persistent failure empties the queue one visible
+          // error at a time instead of looping.
+          state = "idle";
+          drainQueue();
         }
       },
       error: function (err) {
