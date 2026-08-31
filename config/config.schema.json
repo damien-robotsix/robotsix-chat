@@ -128,7 +128,7 @@
     },
     "CentralDeploySettings": {
       "additionalProperties": false,
-      "description": "Central-deploy roster and component-access settings.\n\nProvides the base URL for the central-deploy management-plane API.\nAt session start the agent fetches the\n``GET /chat/components`` roster (a list of component agents the chat\nis allowed to call), caches it with a short TTL, and loads each\ncomponent's declared skill into the agent.\n\nAttributes:\n    url: Base URL of the central-deploy API (no trailing slash).\n    roster_cache_ttl: Seconds to cache the roster before re-fetching.\n        Default 300 (5 min).\n    component_credentials: Per-component credentials keyed by\n        component id.  Each entry carries credentials for all\n        supported auth schemes; the roster entry's ``auth.type``\n        selects which fields are used.",
+      "description": "Central-deploy roster and component-access settings.\n\nProvides the base URL for the central-deploy management-plane API.\nAt session start the agent fetches the\n``GET /chat/components`` roster (a list of component agents the chat\nis allowed to call), caches it with a short TTL, and loads each\ncomponent's declared skill into the agent.\n\nAttributes:\n    url: Base URL of the central-deploy API (no trailing slash).\n    roster_cache_ttl: Seconds to cache the roster before re-fetching.\n        Default 300 (5 min).\n    component_response_max_chars: Maximum characters of a component API\n        response returned to the agent; longer bodies are truncated.\n        Default 200000.\n    component_credentials: Per-component credentials keyed by\n        component id.  Each entry carries credentials for all\n        supported auth schemes; the roster entry's ``auth.type``\n        selects which fields are used.",
       "properties": {
         "url": {
           "default": "",
@@ -771,7 +771,7 @@
     },
     "LifecycleSettings": {
       "additionalProperties": false,
-      "description": "Deploy-lifecycle API access for the agent.\n\nWhen enabled, the chat agent gains tools to inspect the\ncentral-deploy lifecycle server: list services, check service status\nand health, read configuration and environment (with secrets\nalready masked as ``***`` server-side by ``_mask_secrets``), and\nrestart services.\n\nAttributes:\n    enabled: Master switch.  When ``False``, no lifecycle tools are\n        offered.\n    base_url: Base URL of the deploy-lifecycle API server (no trailing\n        slash), e.g. ``http://central-deploy:8100``.\n    api_key: API key sent as the ``X-API-Key`` header.\n    service_name: This service's own name as registered with the deploy\n        server (e.g. ``\"chat\"``).  Required for ``self_restart`` \u2014 the\n        deploy server has no bare ``/self/restart`` route, so a service\n        restarts itself by naming itself at\n        ``POST /chat/services/{service_name}/restart``.  When empty,\n        ``self_restart`` (and the cognee frozen-store auto-recovery that\n        depends on it) is unavailable.\n    timeout: Per-request HTTP timeout in seconds.",
+      "description": "Deploy-lifecycle API access for the agent.\n\nWhen enabled, the chat agent gains tools to inspect the\ncentral-deploy lifecycle server: list services, check service status\nand health, read configuration and environment (with secrets\nalready masked as ``***`` server-side by ``_mask_secrets``), and\nrestart services.\n\nAttributes:\n    enabled: Master switch.  When ``False``, no lifecycle tools are\n        offered.\n    base_url: Base URL of the deploy-lifecycle API server (no trailing\n        slash), e.g. ``http://central-deploy:8100``.\n    default_protocol: Scheme (``http`` or ``https``) assumed for lifecycle\n        URLs that omit one.\n    api_key: API key sent as the ``X-API-Key`` header.\n    service_name: This service's own name as registered with the deploy\n        server (e.g. ``\"chat\"``).  Required for ``self_restart`` \u2014 the\n        deploy server has no bare ``/self/restart`` route, so a service\n        restarts itself by naming itself at\n        ``POST /chat/services/{service_name}/restart``.  When empty,\n        ``self_restart`` (and the cognee frozen-store auto-recovery that\n        depends on it) is unavailable.\n    timeout: Per-request HTTP timeout in seconds.\n    self_restart_max_retries: How many times ``self_restart`` retries the\n        restart call before giving up.",
       "properties": {
         "enabled": {
           "default": false,
@@ -846,7 +846,7 @@
     },
     "MemoryEmbeddingSettings": {
       "additionalProperties": false,
-      "description": "Embedding config for cognee memory (remote OpenAI-compatible server).\n\nDefaults target a self-hosted Ollama ``bge-m3`` endpoint. ``provider`` must\nbe ``openai_compatible`` for that path (it tolerates a non-OpenAI model\nname); ``endpoint`` (e.g. ``http://host:11434/v1``) is required when memory\nis enabled. ``dimensions`` is sticky \u2014 changing it invalidates stored\nvectors.",
+      "description": "Embedding config for cognee memory (remote OpenAI-compatible server).\n\nDefaults target a self-hosted Ollama ``bge-m3`` endpoint. ``provider`` must\nbe ``openai_compatible`` for that path (it tolerates a non-OpenAI model\nname); ``endpoint`` (e.g. ``http://host:11434/v1``) is required when memory\nis enabled. ``dimensions`` is sticky \u2014 changing it invalidates stored\nvectors.\n\nAttributes:\n    provider: cognee embedding provider.  Must be ``openai_compatible``\n        for the self-hosted Ollama path.\n    model: Embedding model name served by the endpoint (e.g. ``bge-m3``).\n    endpoint: Base URL of the OpenAI-compatible embedding server\n        (e.g. ``http://host:11434/v1``).  Required when memory is enabled.\n    dimensions: Embedding vector dimensionality.  Sticky \u2014 changing it\n        invalidates every stored vector.\n    api_key: API key for the embedding server (``ollama`` for a keyless\n        local Ollama).\n    huggingface_tokenizer: HuggingFace tokenizer id used to count tokens\n        for the embedding model.",
       "properties": {
         "provider": {
           "default": "openai_compatible",
@@ -886,7 +886,7 @@
     },
     "MemoryLlmSettings": {
       "additionalProperties": false,
-      "description": "Extraction-LLM config for cognee memory (OpenRouter via litellm).\n\nDefaults match the validated robotsix setup: ``gpt-5-nano`` (cognee's\ncheapest model, reliable json_mode structured output) through\nOpenRouter's ``custom`` provider.  The extraction-LLM API key no longer\nlives here \u2014 it is read from the canonical top-level ``openrouter.keys``\nblock under ``memory.langfuse_project``'s alias.\n\nThe default is deliberately a **cheap** model: cognee runs an\nextraction/consolidation LLM call per message, so an expensive default\nsilently burns credits whenever the config is reset or clobbered. Do\nnot default this to a frontier/expensive model.",
+      "description": "Extraction-LLM config for cognee memory (OpenRouter via litellm).\n\nDefaults match the validated robotsix setup: ``gpt-5-nano`` (cognee's\ncheapest model, reliable json_mode structured output) through\nOpenRouter's ``custom`` provider.  The extraction-LLM API key no longer\nlives here \u2014 it is read from the canonical top-level ``openrouter.keys``\nblock under ``memory.langfuse_project``'s alias.\n\nThe default is deliberately a **cheap** model: cognee runs an\nextraction/consolidation LLM call per message, so an expensive default\nsilently burns credits whenever the config is reset or clobbered. Do\nnot default this to a frontier/expensive model.\n\nAttributes:\n    provider: litellm provider name for the extraction LLM.  ``custom``\n        routes cognee through an OpenAI-compatible endpoint (OpenRouter).\n    model: Fully-qualified litellm model id for the extraction LLM.\n        Keep it cheap \u2014 it runs once per message (see the default).\n    endpoint: Base URL of the OpenAI-compatible API the extraction LLM\n        calls (OpenRouter's ``/api/v1`` by default).\n    max_completion_tokens: Upper bound on tokens generated per extraction\n        call.",
       "properties": {
         "provider": {
           "default": "custom",
@@ -1735,12 +1735,14 @@
     "compaction_min_turns": {
       "advanced": true,
       "default": 3,
+      "description": "Minimum number of conversation turns before an idle-timeout compaction summary is produced; shorter sessions are left uncompacted.",
       "title": "Compaction Min Turns",
       "type": "integer"
     },
     "compaction_keep_recent_turns": {
       "advanced": true,
       "default": 2,
+      "description": "Number of most-recent turns kept verbatim after compaction; older turns are replaced by the summary.",
       "title": "Compaction Keep Recent Turns",
       "type": "integer"
     },

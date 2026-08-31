@@ -42,6 +42,9 @@ class CentralDeploySettings(BaseModel):
         url: Base URL of the central-deploy API (no trailing slash).
         roster_cache_ttl: Seconds to cache the roster before re-fetching.
             Default 300 (5 min).
+        component_response_max_chars: Maximum characters of a component API
+            response returned to the agent; longer bodies are truncated.
+            Default 200000.
         component_credentials: Per-component credentials keyed by
             component id.  Each entry carries credentials for all
             supported auth schemes; the roster entry's ``auth.type``
