@@ -39,7 +39,6 @@ from robotsix_chat.config.models import (
     LangfuseInspectSettings,
     LangfuseSettings,
     LifecycleSettings,
-    MailSettings,
     MemorySettings,
     MobileAuthSettings,
     NotificationSettings,
@@ -1727,9 +1726,6 @@ class Settings(BaseModel):
     central_deploy: CentralDeploySettings = Field(
         default_factory=CentralDeploySettings, json_schema_extra={"advanced": True}
     )
-    mail: MailSettings = Field(
-        default_factory=MailSettings, json_schema_extra={"advanced": True}
-    )
     conversation: ConversationSettings = Field(
         default_factory=ConversationSettings, json_schema_extra={"advanced": True}
     )
@@ -2121,7 +2117,21 @@ class Settings(BaseModel):
             )
             del subsessions["pre_authorized_ticket_patterns"]
 
+        migrated = _migrate_legacy_deploy_and_mail(data)
+        data = migrated if isinstance(migrated, dict) else data
+
         return data
+
+    @model_validator(mode="before")
+    @classmethod
+    def _migrate_legacy_deploy_plane(cls, data: Any) -> Any:
+        """Consolidate the deploy plane and drop the retired ``mail`` block.
+
+        Covers the paths that do not go through
+        ``robotsix_config.load_config`` — ``Settings.model_validate`` on a raw
+        dict, which the config routes and the tests use.
+        """
+        return _migrate_legacy_deploy_and_mail(data)
 
     # ------------------------------------------------------------------
     # Legacy config normalisation
@@ -2162,7 +2172,6 @@ class Settings(BaseModel):
             "langfuse_inspect",
             "memory",
             "central_deploy",
-            "mail",
             "conversation",
             "diagnostics",
             "refdocs",
@@ -2225,6 +2234,69 @@ class Settings(BaseModel):
     def load(cls) -> Settings:
         """Load from the JSON file located by ``ROBOTSIX_CONFIG_FILE``."""
         return load_config(cls)
+
+
+def _migrate_legacy_deploy_and_mail(data: Any) -> Any:
+    """Consolidate the deploy plane and drop the retired ``mail`` block.
+
+    Older deployed configs carry duplicated deploy-plane wiring — a base URL
+    at ``lifecycle.base_url`` (distinct from ``central_deploy.url``) and a
+    deploy credential copied across ``feedback.deploy_api_key``,
+    ``github_security.deploy_api_key`` and ``github_actions.deploy_api_key``.
+    They also carry a stale ``mail`` block superseded by the component roster.
+
+    With those fields removed from the schema, ``extra="forbid"`` would reject
+    the whole file and crash-loop the container on the first start after an
+    image upgrade. This copies any legacy value into the canonical
+    ``central_deploy.{url,deploy_api_key}`` (an explicitly-configured canonical
+    value always wins) and drops the ``mail`` block. The per-sub-model
+    ``mode="before"`` validators then strip the now-unknown legacy keys.
+    """
+    if not isinstance(data, dict):
+        return data
+
+    # Drop the retired ``mail`` block (superseded by the component roster).
+    if "mail" in data:
+        data = dict(data)
+        del data["mail"]
+        logger.info(
+            "Dropping removed config block 'mail' (superseded by the "
+            "component roster)"
+        )
+
+    central = data.get("central_deploy")
+    central = dict(central) if isinstance(central, dict) else {}
+    changed = False
+
+    # Canonical URL — fall back to the legacy ``lifecycle.base_url``.
+    if not central.get("url"):
+        lifecycle = data.get("lifecycle")
+        if isinstance(lifecycle, dict) and lifecycle.get("base_url"):
+            central["url"] = lifecycle["base_url"]
+            changed = True
+            logger.info(
+                "Migrating legacy 'lifecycle.base_url' → 'central_deploy.url'"
+            )
+
+    # Canonical credential — fall back to the first legacy per-block key.
+    if not central.get("deploy_api_key"):
+        for block in ("feedback", "github_security", "github_actions"):
+            sub = data.get(block)
+            if isinstance(sub, dict) and sub.get("deploy_api_key"):
+                central["deploy_api_key"] = sub["deploy_api_key"]
+                changed = True
+                logger.info(
+                    "Migrating legacy '%s.deploy_api_key' → "
+                    "'central_deploy.deploy_api_key'",
+                    block,
+                )
+                break
+
+    if changed:
+        data = dict(data)
+        data["central_deploy"] = central
+
+    return data
 
 
 def _migrate_legacy_memory_api_key(data: Any) -> Any:

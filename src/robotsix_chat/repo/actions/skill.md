@@ -12,7 +12,7 @@ conversation — the endpoint modifies live repository configuration.
 ### Request
 
 - **Method:** `PUT`
-- **Auth:** `X-API-Key` header (server-side `github_actions.deploy_api_key`)
+- **Auth:** `X-API-Key` header (server-side `central_deploy.deploy_api_key`)
 - **Content-Type:** `application/json`
 
 #### Path parameters
@@ -37,7 +37,7 @@ conversation — the endpoint modifies live repository configuration.
 | 400    | Invalid body (missing `secret_value`) or missing path params           |
 | 403    | Invalid or missing `X-API-Key` header                                  |
 | 404    | Repository not in the GitHub App installation scope                    |
-| 503    | `github_actions` not configured (disabled or missing `deploy_api_key`) |
+| 503    | `github_actions` not configured (disabled or missing `central_deploy.deploy_api_key`) |
 
 ## POST /chat/github/repos/{owner}/{repo}/actions/workflows/{workflow_id}/dispatches
 
@@ -49,7 +49,7 @@ and inputs with the user in-chat.
 ### Request
 
 - **Method:** `POST`
-- **Auth:** `X-API-Key` header (server-side `github_actions.deploy_api_key`)
+- **Auth:** `X-API-Key` header (server-side `central_deploy.deploy_api_key`)
 - **Content-Type:** `application/json`
 
 #### Path parameters
@@ -86,7 +86,7 @@ and inputs with the user in-chat.
 | 400    | Invalid body (missing `ref`) or missing path params                    |
 | 403    | Invalid or missing `X-API-Key` header                                  |
 | 404    | Repository not in the GitHub App installation scope                    |
-| 503    | `github_actions` not configured (disabled or missing `deploy_api_key`) |
+| 503    | `github_actions` not configured (disabled or missing `central_deploy.deploy_api_key`) |
 
 ## Agent tool: `check_workflow_run`
 

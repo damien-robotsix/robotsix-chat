@@ -2,7 +2,9 @@
 
 from __future__ import annotations
 
-from pydantic import BaseModel, ConfigDict, SecretStr
+from typing import Any
+
+from pydantic import BaseModel, ConfigDict, model_validator
 
 
 class GitHubSecuritySettings(BaseModel):
@@ -26,10 +28,12 @@ class GitHubSecuritySettings(BaseModel):
         github_org: GitHub organisation name whose repos are in scope
             (e.g. ``"damien-robotsix"``).  The tool only targets repos
             under this org.
-        deploy_api_key: API key that clients must present in the
-            ``X-API-Key`` header when calling the
-            ``PATCH /chat/github/repos/{owner}/{repo}/settings``
-            endpoint.  When empty, the endpoint returns 503 (unconfigured).
+
+    The inbound ``X-API-Key`` presented on the
+    ``PATCH /chat/github/repos/{owner}/{repo}/settings`` endpoint is matched
+    against the canonical ``central_deploy.deploy_api_key`` (the per-block
+    ``deploy_api_key`` was retired).  When that key is empty, the endpoint
+    returns 503 (unconfigured).
 
     Note: GitHub App authentication is delegated to
     :class:`DirectRepoSettings` — those credentials must also be configured
@@ -39,8 +43,20 @@ class GitHubSecuritySettings(BaseModel):
 
     enabled: bool = False
     github_org: str = "damien-robotsix"
-    deploy_api_key: SecretStr = SecretStr("")
     model_config = ConfigDict(extra="forbid")
+
+    @model_validator(mode="before")
+    @classmethod
+    def _strip_deploy_api_key(cls, data: Any) -> Any:
+        """Drop the retired ``deploy_api_key`` so old configs load.
+
+        The credential is now canonical at ``central_deploy.deploy_api_key``;
+        the Settings-level migration copies any legacy value across before it
+        reaches here.
+        """
+        if isinstance(data, dict):
+            data.pop("deploy_api_key", None)
+        return data
 
 
 class GitHubActionsSettings(BaseModel):
@@ -63,9 +79,11 @@ class GitHubActionsSettings(BaseModel):
         enabled: Master switch.  When ``False``, no Actions tools are offered.
         github_org: GitHub organisation name whose repos are in scope
             (e.g. ``"damien-robotsix"``).
-        deploy_api_key: API key that clients must present in the
-            ``X-API-Key`` header when calling the Actions endpoints.
-            When empty, the endpoints return 503 (unconfigured).
+
+    The inbound ``X-API-Key`` presented on the Actions endpoints is matched
+    against the canonical ``central_deploy.deploy_api_key`` (the per-block
+    ``deploy_api_key`` was retired).  When that key is empty, the endpoints
+    return 503 (unconfigured).
 
     Note: GitHub App authentication is delegated to
     :class:`DirectRepoSettings` — those credentials must also be configured
@@ -75,5 +93,17 @@ class GitHubActionsSettings(BaseModel):
 
     enabled: bool = False
     github_org: str = "damien-robotsix"
-    deploy_api_key: SecretStr = SecretStr("")
     model_config = ConfigDict(extra="forbid")
+
+    @model_validator(mode="before")
+    @classmethod
+    def _strip_deploy_api_key(cls, data: Any) -> Any:
+        """Drop the retired ``deploy_api_key`` so old configs load.
+
+        The credential is now canonical at ``central_deploy.deploy_api_key``;
+        the Settings-level migration copies any legacy value across before it
+        reaches here.
+        """
+        if isinstance(data, dict):
+            data.pop("deploy_api_key", None)
+        return data

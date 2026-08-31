@@ -61,6 +61,7 @@ def run_server(
     on_startup_async: Callable[[], Any] | None = None,
     on_shutdown: Callable[[], Any] | None = None,
     direct_repo_settings: Any = None,
+    central_deploy_settings: Any = None,
     github_security_settings: Any = None,
     github_actions_settings: Any = None,
     mobile_auth: Any = None,
@@ -101,6 +102,7 @@ def run_server(
         on_startup_async=on_startup_async,
         on_shutdown=on_shutdown,
         direct_repo_settings=direct_repo_settings,
+        central_deploy_settings=central_deploy_settings,
         github_security_settings=github_security_settings,
         github_actions_settings=github_actions_settings,
         mobile_auth=mobile_auth,
@@ -525,7 +527,8 @@ def run_server_from_config(agent: ChatAgent | None = None) -> None:
             settings.feedback,
             feedback_agent,
             subsession_registry=subsession_registry,
-            deploy_base_url=settings.lifecycle.base_url,
+            deploy_base_url=settings.central_deploy.url,
+            deploy_api_key=settings.central_deploy.deploy_api_key.get_secret_value(),
         )
         logger.info("Feedback runner enabled (model_level=%d)", feedback_model_level)
     else:
@@ -712,6 +715,7 @@ def run_server_from_config(agent: ChatAgent | None = None) -> None:
         on_startup_async=_resume_autonomous,
         on_shutdown=_flush_traces,
         direct_repo_settings=settings.direct_repo,
+        central_deploy_settings=settings.central_deploy,
         github_security_settings=settings.github_security,
         github_actions_settings=settings.github_actions,
         mobile_auth=settings.mobile_auth,

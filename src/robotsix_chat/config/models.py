@@ -50,7 +50,6 @@ from .notification_models import (
 from .openrouter_models import OpenRouterSettings
 from .ref_doc_models import (
     DiagnosticsSettings,
-    MailSettings,
     RefDocsSettings,
     VersionCheckSettings,
 )
@@ -105,7 +104,6 @@ __all__ = [
     "LangfuseProjectCreds",
     "LangfuseSettings",
     "LifecycleSettings",
-    "MailSettings",
     "MemoryEmbeddingSettings",
     "MemoryLlmSettings",
     "MemorySettings",

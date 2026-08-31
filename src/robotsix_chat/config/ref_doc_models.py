@@ -2,7 +2,7 @@
 
 from __future__ import annotations
 
-from pydantic import BaseModel, ConfigDict, Field, SecretStr
+from pydantic import BaseModel, ConfigDict, Field
 
 
 class RefDocsSettings(BaseModel):
@@ -65,32 +65,6 @@ class VersionCheckSettings(BaseModel):
     base_url: str = "https://api.github.com"
     timeout: float = 30.0
     cache_ttl: float = 300.0
-    model_config = ConfigDict(extra="forbid")
-
-
-class MailSettings(BaseModel):
-    """Direct HTTP access to the auto-mail board server. Disabled by default.
-
-    When enabled, the chat agent gains discrete tools that call the
-    auto-mail board HTTP API directly (no broker indirection, no NL
-    reinterpretation): get the board content, check email status, move
-    / delete / archive emails, and run triage.
-
-    Attributes:
-        enabled: Master switch.  When ``False``, no mail tools are offered.
-        api_base_url: Base URL of the auto-mail board HTTP server (no
-            trailing slash).  Default ``http://127.0.0.1:8077``.
-        api_token: Optional Bearer token; empty means no Authorization
-            header.
-        timeout: Per-request HTTP timeout in seconds.
-
-    """
-
-    enabled: bool = False
-    api_base_url: str = "http://127.0.0.1:8077"
-    api_token: SecretStr = SecretStr("")
-    timeout: float = 30.0
-
     model_config = ConfigDict(extra="forbid")
 
 

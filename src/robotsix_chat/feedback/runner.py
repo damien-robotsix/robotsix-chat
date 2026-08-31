@@ -57,12 +57,12 @@ _REPO_CACHE_TTL: float = 60.0  # seconds — short enough to pick up access chan
 _INGEST_RETRY_BACKOFF_BASE: float = 1.0
 
 
-#: Used when no ``lifecycle.base_url`` is configured. The ``central-deploy``
+#: Used when no ``central_deploy.url`` is configured. The ``central-deploy``
 #: hostname only resolves on the deploy stack's *internal* compose network;
 #: a component attached solely to ``central-deploy-proxy`` (which is how chat
 #: runs) cannot resolve it and gets "Name or service not known". Keeping it as
 #: the fallback preserves behaviour for deployments where it does resolve,
-#: but any real deployment should set ``lifecycle.base_url``.
+#: but any real deployment should set ``central_deploy.url``.
 _DEFAULT_DEPLOY_BASE_URL = "http://central-deploy:8100"
 
 
@@ -76,7 +76,7 @@ async def _resolve_allowed_repos(
     is cached briefly (``_REPO_CACHE_TTL``) to avoid hammering deploy on
     every feedback run.
 
-    *deploy_base_url* should be ``lifecycle.base_url`` — the address this
+    *deploy_base_url* should be ``central_deploy.url`` — the address this
     deployment already knows reaches the deploy server. Empty falls back to
     :data:`_DEFAULT_DEPLOY_BASE_URL`.
 
@@ -297,17 +297,21 @@ class FeedbackRunner:
         *,
         subsession_registry: SubsessionRegistry | None = None,
         deploy_base_url: str = "",
+        deploy_api_key: str = "",
     ) -> None:
         """*feedback_agent* is a bare ``LlmioChatAgent`` (no tools, no memory).
 
-        *deploy_base_url* should be ``lifecycle.base_url``: the address this
-        deployment already knows reaches the deploy server. Left empty, the
-        roster lookup falls back to :data:`_DEFAULT_DEPLOY_BASE_URL`.
+        *deploy_base_url* and *deploy_api_key* are the canonical
+        ``central_deploy.url`` and ``central_deploy.deploy_api_key`` — the
+        address and credential this deployment already knows reach the deploy
+        server. Left empty, the roster lookup falls back to
+        :data:`_DEFAULT_DEPLOY_BASE_URL` with no auth header.
         """
         self._settings = settings
         self._agent = feedback_agent
         self._registry = subsession_registry
         self._deploy_base_url = deploy_base_url
+        self._deploy_api_key = deploy_api_key
         self._board_url = settings.board_url.rstrip("/") if settings.board_url else ""
         self._board_token = settings.board_api_token.get_secret_value()
         self._timeout = settings.timeout
@@ -404,7 +408,7 @@ class FeedbackRunner:
 
                 # 2. Resolve allowed target repos dynamically.
                 allowed_repos = await _resolve_allowed_repos(
-                    self._settings.deploy_api_key.get_secret_value(),
+                    self._deploy_api_key,
                     self._deploy_base_url,
                 )
 

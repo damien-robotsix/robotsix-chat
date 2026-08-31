@@ -583,8 +583,6 @@ class LifecycleSettings(BaseModel):
     Attributes:
         enabled: Master switch.  When ``False``, no lifecycle tools are
             offered.
-        base_url: Base URL of the deploy-lifecycle API server (no trailing
-            slash), e.g. ``http://central-deploy:8100``.
         default_protocol: Scheme (``http`` or ``https``) assumed for lifecycle
             URLs that omit one.
         api_key: API key sent as the ``X-API-Key`` header.
@@ -602,7 +600,6 @@ class LifecycleSettings(BaseModel):
     """
 
     enabled: bool = False
-    base_url: str = ""
     default_protocol: str = "http"
     api_key: SecretStr = SecretStr("")
     service_name: str = ""
@@ -613,12 +610,16 @@ class LifecycleSettings(BaseModel):
     @model_validator(mode="before")
     @classmethod
     def _strip_removed_backoff_fields(cls, data: object) -> object:
-        """Strip ``self_restart_backoff_base`` and ``_cap``.
+        """Strip removed fields so old configs load.
 
-        These fields were removed in favour of robotsix_http RetryConfig
-        with hard-coded defaults.
+        ``self_restart_backoff_base``/``_cap`` were removed in favour of
+        robotsix_http RetryConfig with hard-coded defaults.  ``base_url`` was
+        retired in favour of the canonical ``central_deploy.url`` (the
+        Settings-level migration copies its value across before it reaches
+        here).
         """
         if isinstance(data, dict):
             data.pop("self_restart_backoff_base", None)
             data.pop("self_restart_backoff_cap", None)
+            data.pop("base_url", None)
         return data
