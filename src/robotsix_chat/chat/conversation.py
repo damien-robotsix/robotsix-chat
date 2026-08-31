@@ -1339,12 +1339,16 @@ class ConversationStore:
         turns_trimmed = target - session.trimmed_turn_index
 
         session.trimmed_turn_index = target
-        # Keep the compaction marker consistent: once turns are trimmed away a
-        # summary that only covered trimmed turns is redundant, but we never
-        # move the marker *backwards*.
-        session.compacted_turn_index = max(
-            session.compacted_turn_index, session.trimmed_turn_index
-        )
+        # Keep the compaction marker consistent — and RETIRE a legacy summary
+        # the trim has overtaken: once every turn the summary covered is
+        # trimmed away, keeping it only makes the UI show a stale "summary of
+        # the earlier exchanges" block that ratchets forward with each trim
+        # (operator-reported: "the evergoing session keeps being summarized,
+        # eating the whole conversation" — no new summary existed; the old
+        # one was being stretched).
+        if session.trimmed_turn_index >= session.compacted_turn_index:
+            session.compacted_summary = None
+            session.compacted_turn_index = session.trimmed_turn_index
         session.last_trim_turn_count = session.turn_count
         session.wall_last_active = self._wall_clock()
         self._persist()

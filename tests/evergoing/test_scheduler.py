@@ -198,3 +198,39 @@ def test_create_app_no_evergoing_session_by_default() -> None:
     # The trim scheduler wiring no longer depends on the evergoing flag —
     # it exists whenever a summary agent does.
     assert not isinstance(app.state.evergoing_scheduler, str)
+
+
+def test_trim_retires_overtaken_legacy_summary() -> None:
+    """A trim that passes the compacted range drops the stale summary.
+
+    Regression: legacy compacted summaries ratcheted forward with every trim
+    (compacted_turn_index = max(...)), so the UI showed an ever-growing
+    "summary of earlier exchanges" block with never-updated content.
+    """
+    store, sid = _store_with_evergoing(turns=6)
+    session = store.get_session(sid)
+    assert session is not None
+    session.compacted_summary = "stale summary"
+    session.compacted_turn_index = 2
+
+    store.trim_session(sid, 4, keep_min_recent=1)
+
+    session = store.get_session(sid)
+    assert session is not None
+    assert session.compacted_summary is None
+    assert session.compacted_turn_index == 4
+
+
+def test_trim_below_summary_keeps_it() -> None:
+    store, sid = _store_with_evergoing(turns=6)
+    session = store.get_session(sid)
+    assert session is not None
+    session.compacted_summary = "still-covering summary"
+    session.compacted_turn_index = 5
+
+    store.trim_session(sid, 2, keep_min_recent=1)
+
+    session = store.get_session(sid)
+    assert session is not None
+    assert session.compacted_summary == "still-covering summary"
+    assert session.compacted_turn_index == 5
