@@ -512,3 +512,48 @@ def test_curated_stream_error_names_reset_time_through_chain() -> None:
     exc = _chained(root, RuntimeError("boom"))
     msg = curated_stream_error(exc)["message"]
     assert "22:00 UTC" in msg
+
+
+def test_stream_error_code_maps_token_limit_to_invalid_request() -> None:
+    """An UnexpectedModelBehavior token-limit error maps to invalid_request_error."""
+    from pydantic_ai.exceptions import UnexpectedModelBehavior
+
+    from robotsix_chat.chat.server.routes.errors import (
+        STREAM_ERROR_INVALID_REQUEST,
+        stream_error_code,
+    )
+
+    exc = UnexpectedModelBehavior(
+        "Model token limit (65536) exceeded before any response was generated"
+    )
+    assert stream_error_code(exc) == STREAM_ERROR_INVALID_REQUEST
+
+
+def test_curated_stream_error_token_limit_has_clearer_banner() -> None:
+    """The curated message for a token-limit error is specific, not generic."""
+    from pydantic_ai.exceptions import UnexpectedModelBehavior
+
+    from robotsix_chat.chat.server.routes.errors import curated_stream_error
+
+    exc = UnexpectedModelBehavior(
+        "Model token limit (65536) exceeded before any response was generated"
+    )
+    msg = curated_stream_error(exc)["message"]
+    assert "too long" in msg.lower()
+    assert "backup model" in msg.lower()
+
+
+def test_stream_error_code_token_limit_through_chain() -> None:
+    """Token-limit detection walks the cause/context chain."""
+    from pydantic_ai.exceptions import UnexpectedModelBehavior
+
+    from robotsix_chat.chat.server.routes.errors import (
+        STREAM_ERROR_INVALID_REQUEST,
+        stream_error_code,
+    )
+
+    root = UnexpectedModelBehavior(
+        "Model token limit (65536) exceeded before any response was generated"
+    )
+    exc = _chained(root, RuntimeError("fallback also failed"))
+    assert stream_error_code(exc) == STREAM_ERROR_INVALID_REQUEST
