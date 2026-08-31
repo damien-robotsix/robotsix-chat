@@ -45,7 +45,11 @@ if TYPE_CHECKING:
 
 from robotsix_http import RetryConfig, acall_with_retry
 
-from .github_tools import build_github_tools
+from .github_tools import (
+    FILES_JSON_FORMS,
+    build_github_tools,
+    validate_file_entries,
+)
 
 __all__ = ["build_direct_repo_tools", "load_direct_repo_skill"]
 
@@ -74,6 +78,8 @@ logger = logging.getLogger(__name__)
 def build_direct_repo_tools(
     settings: DirectRepoSettings,
     component_request: Callable[..., Any] | None = None,
+    *,
+    file_hub_work_dir: str | None = None,
 ) -> list[Callable[..., Any]]:
     """Return direct-repo tool(s) for the agent, or ``[]`` when disabled.
 
@@ -82,6 +88,10 @@ def build_direct_repo_tools(
     of the direct ``board_api_base_url`` path.  This ensures push/PR
     operations succeed when the roster-based path works but the direct
     config path doesn't.
+
+    *file_hub_work_dir* is the file-hub download directory
+    (``file_hub_tools.working_dir``); it is the only directory from which
+    ``local_path`` file entries may be committed.
     """
     if not settings.enabled:
         return []
@@ -89,7 +99,7 @@ def build_direct_repo_tools(
     from .board_client import BoardClient
     from .client import DirectRepoClient, _count_cycles_from_data
 
-    client = DirectRepoClient(settings)
+    client = DirectRepoClient(settings, file_hub_work_dir=file_hub_work_dir)
     board = BoardClient(settings)
 
     class _ComponentTicketError(Exception):
@@ -481,9 +491,17 @@ def build_direct_repo_tools(
                 repo_full_name: GitHub ``owner/name`` (e.g.
                     ``"robotsix/robotsix-chat"``).
                 target_branch: Branch to push directly to (e.g. ``"main"``).
-                files_json: JSON array of ``{"path": "...", "content": "..."}``
-                    objects describing the files to create or overwrite.
-                    Paths are relative to the repo root.
+                files_json: JSON array of file entries to create or
+                    overwrite.  Paths are relative to the repo root.  Each
+                    entry is an object with a ``path`` and exactly one
+                    content source: ``{"path": "...", "content": "..."}`` for
+                    text, ``{"path": "...", "content_b64": "..."}`` for
+                    base64-encoded bytes (binary files such as images), or
+                    ``{"path": "...", "local_path": "..."}`` to read the
+                    bytes from a file previously downloaded into the file-hub
+                    work directory (e.g. via ``file_hub_get``).  ``local_path``
+                    must stay inside that directory — paths resolving outside
+                    it are rejected.
                 commit_message: Commit message.  Defaults to a message that
                     references the *ticket_id* and marks it as a direct fix.
 
@@ -499,17 +517,21 @@ def build_direct_repo_tools(
                 files: list[dict[str, str]] = json.loads(files_json)
             except json.JSONDecodeError, TypeError:
                 return (
-                    "Error: files_json must be a valid JSON array "
-                    "of {path, content} objects."
+                    "Error: files_json must be a valid JSON array of file "
+                    f"entries — {FILES_JSON_FORMS}."
                 )
 
             if not isinstance(files, list):
                 return "Error: files_json must be a JSON array."
 
-            # --- ensure changelog fragments end with a newline ---
+            if entry_error := validate_file_entries(files):
+                return entry_error
+
+            # --- ensure changelog fragments end with a newline (text entries) ---
             for f in files:
                 if (
-                    f.get("path", "").startswith("changelog.d/")
+                    "content" in f
+                    and f.get("path", "").startswith("changelog.d/")
                     and f["path"].endswith(".md")
                     and not f.get("content", "").endswith("\n")
                 ):

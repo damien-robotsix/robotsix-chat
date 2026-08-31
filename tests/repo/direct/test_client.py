@@ -6,6 +6,7 @@ Shared fixtures live in ``tests/repo/direct/conftest.py``.
 
 from __future__ import annotations
 
+import base64
 import json
 from typing import Any
 
@@ -38,6 +39,122 @@ def test_b64decode_missing_padding() -> None:
 
 def test_b64encode_no_padding() -> None:
     assert _b64encode(b"hello") == "aGVsbG8"
+
+
+# ============================================================================
+# _git_create_tree_items — text / content_b64 / local_path entry forms
+# ============================================================================
+
+
+async def _capture_tree_items(
+    client: DirectRepoClient,
+    files: list[dict[str, str]],
+) -> tuple[list[dict[str, Any]], list[dict[str, Any]]]:
+    """Run ``_git_create_tree_items`` with ``_post_json`` stubbed.
+
+    Returns ``(tree_items, posted_blob_bodies)``.
+    """
+    posted: list[dict[str, Any]] = []
+
+    async def _fake_post_json(path: str, body: dict[str, Any]) -> Any:
+        posted.append(body)
+        return {"sha": f"blobsha{len(posted)}"}
+
+    client._post_json = _fake_post_json  # type: ignore[method-assign]
+    items = await client._git_create_tree_items("org/repo", files)
+    return items, posted
+
+
+@pytest.mark.asyncio
+async def test_tree_items_text_content_uses_utf8() -> None:
+    """Regression: a plain text ``content`` entry uploads with utf-8 encoding."""
+    from tests.repo.direct.conftest import _settings
+
+    client = DirectRepoClient(_settings())
+    items, posted = await _capture_tree_items(
+        client, [{"path": "x.py", "content": "print(1)"}]
+    )
+    assert posted == [{"content": "print(1)", "encoding": "utf-8"}]
+    assert items[0]["path"] == "x.py"
+    assert items[0]["sha"] == "blobsha1"
+
+
+@pytest.mark.asyncio
+async def test_tree_items_content_b64_passthrough() -> None:
+    """A ``content_b64`` entry passes the base64 through with base64 encoding."""
+    from tests.repo.direct.conftest import _settings
+
+    client = DirectRepoClient(_settings())
+    b64 = base64.b64encode(b"\x89PNG binary").decode("ascii")
+    _items, posted = await _capture_tree_items(
+        client, [{"path": "img.png", "content_b64": b64}]
+    )
+    assert posted == [{"content": b64, "encoding": "base64"}]
+
+
+@pytest.mark.asyncio
+async def test_tree_items_local_path_happy(tmp_path: Any) -> None:
+    """A ``local_path`` inside the work dir is read and base64-encoded verbatim."""
+    from tests.repo.direct.conftest import _settings
+
+    raw = bytes(range(256))  # non-utf-8 binary payload
+    blob = tmp_path / "photo.jpg"
+    blob.write_bytes(raw)
+
+    client = DirectRepoClient(_settings(), file_hub_work_dir=str(tmp_path))
+    _items, posted = await _capture_tree_items(
+        client, [{"path": "assets/photo.jpg", "local_path": str(blob)}]
+    )
+    assert posted[0]["encoding"] == "base64"
+    # Byte-identical round-trip through the committed blob.
+    assert base64.b64decode(posted[0]["content"]) == raw
+
+
+@pytest.mark.asyncio
+async def test_tree_items_local_path_outside_root_rejected(tmp_path: Any) -> None:
+    """A ``local_path`` resolving outside the work dir is rejected."""
+    from tests.repo.direct.conftest import _settings
+
+    work_dir = tmp_path / "work"
+    work_dir.mkdir()
+    secret = tmp_path / "secret.txt"
+    secret.write_text("token")
+
+    client = DirectRepoClient(_settings(), file_hub_work_dir=str(work_dir))
+    # Both a direct outside path and a traversal escape must be rejected.
+    with pytest.raises(ValueError, match="outside the allowed"):
+        await _capture_tree_items(
+            client, [{"path": "s.txt", "local_path": str(secret)}]
+        )
+    with pytest.raises(ValueError, match="outside the allowed"):
+        await _capture_tree_items(
+            client,
+            [{"path": "s.txt", "local_path": str(work_dir / ".." / "secret.txt")}],
+        )
+
+
+@pytest.mark.asyncio
+async def test_tree_items_local_path_missing_file(tmp_path: Any) -> None:
+    """A ``local_path`` inside the work dir but non-existent errors clearly."""
+    from tests.repo.direct.conftest import _settings
+
+    client = DirectRepoClient(_settings(), file_hub_work_dir=str(tmp_path))
+    with pytest.raises(ValueError, match="does not exist"):
+        await _capture_tree_items(
+            client, [{"path": "m.bin", "local_path": str(tmp_path / "missing.bin")}]
+        )
+
+
+@pytest.mark.asyncio
+async def test_tree_items_local_path_without_work_dir_rejected(tmp_path: Any) -> None:
+    """When no work dir is configured, ``local_path`` entries are rejected."""
+    from tests.repo.direct.conftest import _settings
+
+    blob = tmp_path / "photo.jpg"
+    blob.write_bytes(b"x")
+    client = DirectRepoClient(_settings())  # file_hub_work_dir=None
+    with pytest.raises(ValueError, match="not configured"):
+        await _capture_tree_items(client, [{"path": "p.jpg", "local_path": str(blob)}])
 
 
 # ============================================================================

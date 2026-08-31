@@ -184,6 +184,29 @@ async def test_push_branch_rejects_invalid_files_json(
     assert "Error" in out2
     assert "JSON array" in out2
 
+    # Entry carrying two content sources → rejected, naming the accepted forms.
+    out3 = await push_fn(
+        ticket_id="t-1",
+        repo_full_name="org/repo",
+        branch_name="fix/t-1",
+        files_json=json.dumps(
+            [{"path": "x.py", "content": "a", "content_b64": "YQ=="}]
+        ),
+    )
+    assert "Error" in out3
+    assert "exactly one" in out3
+    assert "content_b64" in out3 and "local_path" in out3
+
+    # Entry with no content source → rejected.
+    out4 = await push_fn(
+        ticket_id="t-1",
+        repo_full_name="org/repo",
+        branch_name="fix/t-1",
+        files_json=json.dumps([{"path": "x.py"}]),
+    )
+    assert "Error" in out4
+    assert "exactly one" in out4
+
 
 # ---------------------------------------------------------------------------
 # Branch naming traceability
