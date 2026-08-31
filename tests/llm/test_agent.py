@@ -844,21 +844,29 @@ async def test_usage_exhausted_falls_back_to_another_tier() -> None:
     level3_provider.build_agent.return_value = level3_handle
 
     # acall_with_tier_fallback retries its starting level (4) once — it has
-    # no way to know this level was already just attempted outside it — and
-    # that retry fails identically before falling back to level 5.
+    # no way to know this level was already just attempted outside it. That
+    # retry fails identically, arming llmio's claudeSDK FAMILY latch (usage
+    # exhaustion cools every Claude tier at once), so the walk skips level 5
+    # without a call and lands directly on the keyed level 3.
     create_model_patch = MagicMock(
         side_effect=[level4_provider, level4_provider, level3_provider]
     )
 
-    with patch("robotsix_chat.llm.agent.create_model", create_model_patch):
-        agent = LlmioChatAgent(model_level=4, instruction="Be helpful.")
-        chunks = [c async for c in agent.stream("hi")]
+    from robotsix_llmio.core import reset_health_tracker
+
+    reset_health_tracker()
+    try:
+        with patch("robotsix_chat.llm.agent.create_model", create_model_patch):
+            agent = LlmioChatAgent(model_level=4, instruction="Be helpful.")
+            chunks = [c async for c in agent.stream("hi")]
+    finally:
+        reset_health_tracker()
 
     assert chunks == ["opus reply"]
     assert create_model_patch.call_args_list == [
         call(level=4),
         call(level=4),
-        call(level=5),
+        call(level=3),
     ]
     assert level4_handle.close.call_count == 2
     level3_handle.close.assert_called_once()
