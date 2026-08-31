@@ -13,7 +13,7 @@ import hashlib
 import hmac
 import logging
 import time
-from urllib.parse import urlencode, urlparse
+from urllib.parse import parse_qs, urlencode, urlparse, urlunparse
 
 from starlette.exceptions import HTTPException
 from starlette.requests import Request
@@ -190,30 +190,74 @@ async def auth_callback_endpoint(request: Request) -> RedirectResponse:
             detail="missing identity header — request must pass through tinyauth",
         )
 
+    secret = auth.token_secret.get_secret_value()
+    if not secret:
+        AUTH_CALLBACK_REQUESTS.labels(status="500").inc()
+        raise HTTPException(
+            status_code=500,
+            detail="token_secret is not configured",
+        )
+
+    token = _sign_token(subject, secret, auth.token_ttl_seconds)
+
+    # Append token to redirect_to, preserving any existing query string.
+    parsed = urlparse(redirect_to)
+    qs = parse_qs(parsed.query, keep_blank_values=True)
+    qs["token"] = [token]
+    new_query = urlencode(qs, doseq=True)
+    final_url = urlunparse(parsed._replace(query=new_query))
+
+    TOKEN_ISSUANCE_EVENTS.inc()
     AUTH_CALLBACK_REQUESTS.labels(status="302").inc()
     logger.info(
         "auth_callback: redirecting to app",
         extra={
             "subject": subject,
             "redirect_to": redirect_to,
+            "final_url": final_url,
+            "token_appended": True,
+            "token_length": len(token),
             "event": "auth_callback_redirect",
         },
     )
-    return RedirectResponse(url=redirect_to, status_code=302)
+    return RedirectResponse(url=final_url, status_code=302)
 
 
 async def mobile_token_endpoint(request: Request) -> JSONResponse:
-    """Exchange the tinyauth edge-header identity for a short-lived bearer token.
+    """Exchange identity for a short-lived bearer token.
 
-    The identity is **always** taken from the tinyauth edge header
-    (``subject_header``) — never from the request body.  This prevents
-    subject spoofing: only the trusted reverse proxy can set the header.
+    Identity is resolved in priority order:
+
+    1. **Edge header** (``subject_header``) — set by the tinyauth
+       reverse proxy; always trusted.
+    2. **Signed token in request body** — an HMAC-signed token
+       previously issued by this server.  Verification uses the same
+       ``token_secret``, so a caller cannot forge a subject without
+       the secret.
 
     Returns a JSON object with ``token``, ``subject``, and ``expires_in``.
     """
     auth = _get_mobile_auth(request)
 
-    subject = request.headers.get(auth.subject_header)
+    identity_source: str | None = None
+    subject: str | None = request.headers.get(auth.subject_header)
+    if subject:
+        identity_source = "edge_header"
+
+    if subject is None:
+        # Fallback: try a signed token from the JSON body.
+        try:
+            body = await request.json()
+        except Exception:
+            body = {}
+        body_token = body.get("token") if isinstance(body, dict) else None
+        if body_token:
+            secret = auth.token_secret.get_secret_value()
+            if secret:
+                subject = _verify_token(body_token, secret)
+                if subject:
+                    identity_source = "body_token"
+
     if not subject:
         MOBILE_TOKEN_EXCHANGE_REQUESTS.labels(status="401").inc()
         TOKEN_VERIFICATION_FAILURES.labels(reason="missing_header").inc()
@@ -243,6 +287,7 @@ async def mobile_token_endpoint(request: Request) -> JSONResponse:
         extra={
             "subject": subject,
             "ttl": auth.token_ttl_seconds,
+            "identity_source": identity_source,
             "event": "token_issuance",
         },
     )
