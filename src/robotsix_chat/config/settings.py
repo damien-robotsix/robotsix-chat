@@ -13,7 +13,10 @@ from pydantic import BaseModel, ConfigDict, Field, SecretStr, model_validator
 from robotsix_config import load_config
 from robotsix_llmio.config import TierLevel
 
-from robotsix_chat.config.constants import level_needs_api_key
+from robotsix_chat.config.constants import (
+    drop_blank_numeric_sentinels,
+    level_needs_api_key,
+)
 from robotsix_chat.config.models import (
     PROJECT_MEMORY,
     AutonomousSettings,
@@ -2185,6 +2188,12 @@ class Settings(BaseModel):
                 mv = data["memory"].get(key)
                 if mv == "" or (isinstance(mv, str) and mv in _bad):
                     data["memory"][key] = {}
+
+        # Top-level numeric fields — tolerate legacy "" sentinels so a cleared
+        # numeric input in the settings UI falls back to its default (or null
+        # for optional numerics) instead of failing validation and surfacing
+        # a raw "" placeholder in GET /config.
+        data = drop_blank_numeric_sentinels(cls, data)
 
         return data
 

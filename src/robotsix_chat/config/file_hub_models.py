@@ -2,7 +2,11 @@
 
 from __future__ import annotations
 
-from pydantic import BaseModel, ConfigDict, Field
+from typing import Any
+
+from pydantic import BaseModel, ConfigDict, Field, model_validator
+
+from robotsix_chat.config.constants import drop_blank_numeric_sentinels
 
 
 class FileHubToolsSettings(BaseModel):
@@ -44,3 +48,9 @@ class FileHubToolsSettings(BaseModel):
     working_dir: str = "/data/file_hub_work"
     max_download_bytes: int = Field(default=52_428_800, gt=0)  # 50 MB
     timeout: float = Field(default=60.0, gt=0)
+
+    @model_validator(mode="before")
+    @classmethod
+    def _strip_blank_numeric(cls, data: Any) -> Any:
+        """Drop legacy ``""`` sentinels for numeric fields so old configs load."""
+        return drop_blank_numeric_sentinels(cls, data)

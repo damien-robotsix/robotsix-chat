@@ -14,8 +14,9 @@ defaults, never a concrete provider class.
 
 from __future__ import annotations
 
-from typing import Any
+from typing import Any, get_args
 
+from pydantic import BaseModel
 from robotsix_llmio import default_tier_config
 from robotsix_llmio.config import (
     LEVEL1_DEFAULT,
@@ -27,9 +28,55 @@ from robotsix_llmio.config import (
 
 __all__ = [
     "FRONTIER_MODEL_LEVEL",
+    "drop_blank_numeric_sentinels",
     "level_display_name",
     "level_needs_api_key",
 ]
+
+# Numeric field annotations that must never carry a ``""`` sentinel.
+_NUMERIC_TYPES = (int, float)
+
+
+def _annotation_allows_number(annotation: Any) -> bool:
+    """Whether *annotation* accepts an ``int`` or ``float`` value.
+
+    Handles bare ``int``/``float`` as well as optional/union forms such as
+    ``int | None`` and ``float | None`` (unwrapped via
+    :func:`typing.get_args`). ``bool`` is intentionally excluded — although
+    it subclasses ``int``, a checkbox is never persisted as ``""``.
+    """
+    if annotation in _NUMERIC_TYPES:
+        return True
+    return any(arg in _NUMERIC_TYPES for arg in get_args(annotation))
+
+
+def drop_blank_numeric_sentinels(model_cls: type[BaseModel], data: Any) -> Any:
+    """Strip legacy empty-string sentinels for numeric fields at load time.
+
+    Older settings-UI form submissions serialized a *cleared* numeric input
+    as the empty string ``""`` and persisted it to the config file. Such a
+    value fails validation against an ``int``/``float`` field, which makes
+    ``GET /config`` fall back to its unvalidated merge and surface the raw
+    ``""`` in the settings UI as an ambiguous blank input. Dropping the key
+    lets the field fall back to its default — ``None`` for optional numerics
+    (serialized as JSON ``null``) or the documented numeric default
+    otherwise — so deployed configs written with ``""`` sentinels load
+    cleanly and never re-serialize a ``""`` placeholder.
+
+    Intended for use from a ``@model_validator(mode="before")`` on config
+    models that carry numeric/duration fields. Mutates and returns *data*
+    when it is a dict; passes any other input through untouched.
+    """
+    if not isinstance(data, dict):
+        return data
+    for name, field in model_cls.model_fields.items():
+        if not _annotation_allows_number(field.annotation):
+            continue
+        for key in (name, field.alias):
+            if key is not None and data.get(key) == "":
+                data.pop(key, None)
+    return data
+
 
 # robotsix-llmio now owns the level → provider-model mapping. The chat
 # just picks a capability *level*; the combined provider-model identifier for

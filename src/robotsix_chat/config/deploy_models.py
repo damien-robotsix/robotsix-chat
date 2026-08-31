@@ -6,6 +6,8 @@ from typing import Any
 
 from pydantic import BaseModel, ConfigDict, Field, SecretStr, model_validator
 
+from robotsix_chat.config.constants import drop_blank_numeric_sentinels
+
 
 class ComponentCredentials(BaseModel):
     """Stored credentials for a single roster component.
@@ -92,3 +94,9 @@ class CentralDeploySettings(BaseModel):
         if isinstance(data, dict):
             data.pop("api_token", None)
         return data
+
+    @model_validator(mode="before")
+    @classmethod
+    def _strip_blank_numeric(cls, data: Any) -> Any:
+        """Drop legacy ``""`` sentinels for numeric fields so old configs load."""
+        return drop_blank_numeric_sentinels(cls, data)

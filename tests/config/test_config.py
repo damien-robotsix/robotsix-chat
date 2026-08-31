@@ -9,9 +9,12 @@ import pytest
 from pydantic import SecretStr, ValidationError
 
 from robotsix_chat.config import (
+    CentralDeploySettings,
     ComponentClientSettings,
     ComponentTarget,
     DiagnosticsSettings,
+    FeedbackSettings,
+    FileHubToolsSettings,
     KindTurnBudget,
     MailSettings,
     MemoryEmbeddingSettings,
@@ -24,6 +27,7 @@ from robotsix_chat.config import (
     TurnBudgetSettings,
     VersionCheckSettings,
 )
+from robotsix_chat.config.models import EvergoingSettings
 
 # ---------------------------------------------------------------------------
 # Helpers
@@ -1105,14 +1109,14 @@ _PREEXISTING_ALLOWLIST: set[tuple[str, int, str]] = {
     ("src/robotsix_chat/memory/cognee.py", 471, "gpt-"),
     ("src/robotsix_chat/memory/cognee.py", 615, "gpt-"),
     # config/settings.py — opus / claude-fable-5 in Settings docstring
-    ("src/robotsix_chat/config/settings.py", 95, "-opus"),
-    ("src/robotsix_chat/config/settings.py", 95, "claude-fable"),
+    ("src/robotsix_chat/config/settings.py", 98, "-opus"),
+    ("src/robotsix_chat/config/settings.py", 98, "claude-fable"),
     # config/memory_models.py — gpt-5-nano / gpt-5-mini / deepseek-v4-flash
-    ("src/robotsix_chat/config/memory_models.py", 18, "gpt-"),
-    ("src/robotsix_chat/config/memory_models.py", 42, "gpt-"),
-    ("src/robotsix_chat/config/memory_models.py", 45, "gpt-"),
-    ("src/robotsix_chat/config/memory_models.py", 45, "deepseek/"),
-    ("src/robotsix_chat/config/memory_models.py", 48, "gpt-"),
+    ("src/robotsix_chat/config/memory_models.py", 19, "gpt-"),
+    ("src/robotsix_chat/config/memory_models.py", 43, "gpt-"),
+    ("src/robotsix_chat/config/memory_models.py", 46, "gpt-"),
+    ("src/robotsix_chat/config/memory_models.py", 46, "deepseek/"),
+    ("src/robotsix_chat/config/memory_models.py", 49, "gpt-"),
 }
 
 
@@ -1187,3 +1191,145 @@ def test_legacy_memory_api_key_survives_the_config_library_strip(
         again.openrouter.key("robotsix-chat-cognee").get_secret_value()
         == "sk-legacy-via-hook"  # pragma: allowlist secret
     )
+
+
+# ---------------------------------------------------------------------------
+# Legacy "" numeric sentinels — settings-UI hygiene
+# ---------------------------------------------------------------------------
+
+
+def test_central_deploy_blank_numeric_sentinel_falls_back_to_default() -> None:
+    """A legacy ``""`` on a numeric field loads and dumps its default, not ``""``."""
+    settings = CentralDeploySettings.model_validate(
+        {"component_request_timeout": "", "roster_cache_ttl": ""}
+    )
+
+    assert settings.component_request_timeout == 60.0
+    assert settings.roster_cache_ttl == 300.0
+    dumped = settings.model_dump(mode="json")
+    assert "" not in (dumped["component_request_timeout"], dumped["roster_cache_ttl"])
+
+
+def test_evergoing_blank_numeric_sentinel_loads_cleanly() -> None:
+    settings = EvergoingSettings.model_validate(
+        {"trim_interval_seconds": "", "keep_min_recent": ""}
+    )
+
+    assert settings.trim_interval_seconds == 1800.0
+    assert settings.keep_min_recent == 2
+
+
+def test_kind_turn_budget_blank_numeric_sentinel_loads_cleanly() -> None:
+    settings = KindTurnBudget.model_validate(
+        {"soft_warn_turns": "", "hard_stop_turns": ""}
+    )
+
+    assert settings.soft_warn_turns == 25
+    assert settings.hard_stop_turns == 40
+
+
+def test_memory_blank_numeric_sentinel_loads_cleanly() -> None:
+    settings = MemorySettings.model_validate(
+        {"maintenance_interval_seconds": "", "recall_max_concurrency": ""}
+    )
+
+    assert settings.maintenance_interval_seconds == 21600.0
+    assert settings.recall_max_concurrency == 4
+
+
+def test_feedback_blank_numeric_sentinel_loads_cleanly() -> None:
+    settings = FeedbackSettings.model_validate({"ingest_max_retries": ""})
+
+    assert settings.ingest_max_retries == 2
+
+
+def test_file_hub_tools_blank_numeric_sentinel_loads_cleanly() -> None:
+    settings = FileHubToolsSettings.model_validate(
+        {"max_download_bytes": "", "timeout": ""}
+    )
+
+    assert settings.max_download_bytes == 52_428_800
+    assert settings.timeout == 60.0
+
+
+def test_top_level_optional_numeric_blank_sentinel_becomes_null() -> None:
+    """A cleared optional numeric (``int | None``) round-trips to JSON ``null``."""
+    settings = Settings.model_validate(
+        {"chat_model_level": "", "llmio_task_budget_tokens": ""}
+    )
+
+    assert settings.chat_model_level is None
+    assert settings.llmio_task_budget_tokens is None
+    dumped = settings.model_dump(mode="json")
+    assert dumped["chat_model_level"] is None
+    assert dumped["llmio_task_budget_tokens"] is None
+
+
+def test_production_config_with_blank_numeric_sentinels_loads_cleanly() -> None:
+    """A production-shaped config peppered with ``""`` numeric sentinels loads.
+
+    Mirrors deployed config files whose optional numeric inputs were cleared
+    in the settings UI (persisted as ``""``). After migration the config must
+    validate and the model dump must carry no ``""`` for those numeric fields.
+    """
+    raw = {
+        "llmio_model_level": 4,
+        "chat_model_level": "",
+        "llmio_task_budget_tokens": "",
+        "idle_timeout_minutes": "",
+        "central_deploy": {
+            "component_request_timeout": "",
+            "roster_cache_ttl": "",
+            "component_response_max_chars": "",
+        },
+        "evergoing": {
+            "trim_interval_seconds": "",
+            "keep_min_recent": "",
+        },
+        "memory": {
+            "maintenance_interval_seconds": "",
+            "maintenance_version_retention_seconds": "",
+        },
+        "feedback": {"ingest_max_retries": "", "max_tickets_per_run": ""},
+        "file_hub_tools": {"max_download_bytes": "", "timeout": ""},
+        "subsessions": {
+            "turn_budget": {
+                "task": {"soft_warn_turns": "", "hard_stop_turns": ""},
+                "periodic": {"soft_warn_turns": "", "hard_stop_turns": ""},
+            }
+        },
+    }
+
+    settings = Settings.model_validate(raw)
+
+    # Optional numerics become null; required numerics fall back to defaults.
+    assert settings.chat_model_level is None
+    assert settings.central_deploy.component_request_timeout == 60.0
+    assert settings.evergoing.keep_min_recent == 2
+    assert settings.feedback.ingest_max_retries == 2
+    assert settings.file_hub_tools.timeout == 60.0
+    assert settings.subsessions.turn_budget.task.soft_warn_turns == 25
+
+    dumped = settings.model_dump(mode="json")
+    # No numeric field that carried a "" sentinel may re-serialize as "".
+    numeric_checks = [
+        dumped["chat_model_level"],
+        dumped["llmio_task_budget_tokens"],
+        dumped["idle_timeout_minutes"],
+        dumped["central_deploy"]["component_request_timeout"],
+        dumped["central_deploy"]["roster_cache_ttl"],
+        dumped["central_deploy"]["component_response_max_chars"],
+        dumped["evergoing"]["trim_interval_seconds"],
+        dumped["evergoing"]["keep_min_recent"],
+        dumped["memory"]["maintenance_interval_seconds"],
+        dumped["memory"]["maintenance_version_retention_seconds"],
+        dumped["feedback"]["ingest_max_retries"],
+        dumped["feedback"]["max_tickets_per_run"],
+        dumped["file_hub_tools"]["max_download_bytes"],
+        dumped["file_hub_tools"]["timeout"],
+        dumped["subsessions"]["turn_budget"]["task"]["soft_warn_turns"],
+        dumped["subsessions"]["turn_budget"]["task"]["hard_stop_turns"],
+        dumped["subsessions"]["turn_budget"]["periodic"]["soft_warn_turns"],
+        dumped["subsessions"]["turn_budget"]["periodic"]["hard_stop_turns"],
+    ]
+    assert all(v != "" for v in numeric_checks), numeric_checks

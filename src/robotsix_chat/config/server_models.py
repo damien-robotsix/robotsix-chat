@@ -2,7 +2,11 @@
 
 from __future__ import annotations
 
-from pydantic import BaseModel, ConfigDict, Field
+from typing import Any
+
+from pydantic import BaseModel, ConfigDict, Field, model_validator
+
+from robotsix_chat.config.constants import drop_blank_numeric_sentinels
 
 
 class VolumeToolsSettings(BaseModel):
@@ -108,3 +112,9 @@ class EvergoingSettings(BaseModel):
     trim_interval_seconds: float = Field(default=1800.0, gt=0)
     keep_min_recent: int = Field(default=2, ge=1)
     model_config = ConfigDict(extra="forbid")
+
+    @model_validator(mode="before")
+    @classmethod
+    def _strip_blank_numeric(cls, data: Any) -> Any:
+        """Drop legacy ``""`` sentinels for numeric fields so old configs load."""
+        return drop_blank_numeric_sentinels(cls, data)
