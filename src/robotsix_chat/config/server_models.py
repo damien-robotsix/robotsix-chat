@@ -86,11 +86,13 @@ class EvergoingSettings(BaseModel):
     When enabled, exactly one *evergoing* session is created on boot and
     kept alive across restarts: it is never auto-closed or auto-evicted and
     always appears in the operator's session list flagged ``evergoing``.  A
-    background scheduler runs every *trim_interval_seconds* and, **only when
-    new turns have arrived since the last pass**, asks a cheap summary-tier
-    model whether the conversation's subject has clearly changed and how
-    many finished leading turns can be dropped, then physically trims them
-    from the session.  A no-input interval performs zero LLM calls.
+    background scheduler runs every *trim_interval_seconds* over **every
+    session** (the single context-reduction mechanism — idle compaction was
+    removed) and, **only when new turns have arrived since the last pass**,
+    asks a cheap summary-tier model whether the conversation's subject has
+    clearly changed and how many finished leading turns can be dropped,
+    then physically trims them from the session.  A no-input interval
+    performs zero LLM calls.
 
     Attributes:
         enabled: Master switch.  When ``False`` (default) no evergoing
@@ -101,10 +103,15 @@ class EvergoingSettings(BaseModel):
         keep_min_recent: Minimum number of most-recent turns the trim pass
             must always keep — guarantees the in-flight turn is never
             trimmed away.  Default ``2``.
+        min_fresh_turns: Minimum fresh turns since the last trim before a
+            session is even shown to the decision model — the gate skips
+            without advancing the watermark, so short exchanges accumulate
+            until it opens.  Default ``3``.
 
     """
 
     enabled: bool = False
     trim_interval_seconds: float = Field(default=1800.0, gt=0)
     keep_min_recent: int = Field(default=2, ge=1)
+    min_fresh_turns: int = Field(default=3, ge=1)
     model_config = ConfigDict(extra="forbid")
