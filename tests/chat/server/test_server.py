@@ -2425,10 +2425,16 @@ async def test_chat_endpoint_persists_on_client_disconnect() -> None:
 
         # Simulate client disconnect.
         await body_iter.aclose()
-        await asyncio.sleep(0)
 
-        # The turn must be persisted despite the disconnect.
-        turns = f.app.state.conversation_store.history(session_id)
+        # The turn must be persisted despite the disconnect — by the
+        # background coalescer task, eventually (the stream no longer holds
+        # the request open until completion).
+        turns: list[tuple[str, str]] = []
+        for _ in range(500):
+            turns = f.app.state.conversation_store.history(session_id)
+            if turns:
+                break
+            await asyncio.sleep(0.01)
         assert len(turns) == 1
         assert turns[0] == ("hello", "Hello world!")
 
@@ -2697,6 +2703,41 @@ def test_create_app_and_run_server_shared_params() -> None:
             f"Default mismatch for '{name}': "
             f"create_app={ca_default!r}, run_server={rs_default!r}"
         )
+
+
+@pytest.mark.asyncio
+async def test_failed_turn_is_persisted_to_history() -> None:
+    """A turn that errors still lands in the transcript (message + error).
+
+    Operator-reported: messages were lost when the turn failed while they
+    were viewing another session — nothing was recorded on the error path.
+    """
+
+    class ExplodingAgent(MockAgent):
+        async def stream(self, message: str, **kwargs: Any) -> AsyncIterator[str]:  # type: ignore[override]
+            raise RuntimeError("deterministic boom")
+            yield ""  # pragma: no cover
+
+    store = ConversationStore()
+    sid = cast(str, store.create_session("owner-loss")["session_id"])
+    async with mock_app(conversation_store=store) as f:
+        f.app.state.agent = ExplodingAgent(tokens=[])
+        response = await f.client.post(
+            "/chat",
+            json={
+                "message": "important ask",
+                "session_id": sid,
+                "owner_id": "owner-loss",
+            },
+        )
+        frames = _parse_sse(response)
+
+    assert [fr for fr in frames if fr["type"] == SSE_ERROR_TYPE]
+    history = store.history(sid)
+    assert len(history) == 1
+    user_msg, reply = history[0][0], history[0][1]
+    assert "important ask" in user_msg
+    assert "turn failed" in reply
 
 
 @pytest.mark.asyncio
