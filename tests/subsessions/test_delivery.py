@@ -2198,7 +2198,9 @@ async def test_no_notification_when_no_event_sink() -> None:
 
 @pytest.mark.asyncio
 async def test_batch_autonomous_executing_no_double_notification() -> None:
-    """When autonomous session is executing, delegated outcomes get one notification each.
+    """When autonomous session is executing, delegated outcomes get one notification.
+
+    Each delegated outcome gets exactly one notification.
 
     _react_batched delegates to individual _react_in_main_chat calls (each
     emitting a notification in its own finally block).  The batched finally
