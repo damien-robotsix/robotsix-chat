@@ -1298,6 +1298,9 @@ def test_production_config_with_blank_numeric_sentinels_loads_cleanly() -> None:
                 "periodic": {"soft_warn_turns": "", "hard_stop_turns": ""},
             }
         },
+        # Nested submodels WITHOUT their own strip validator — covered only by
+        # the recursive walk from the top-level Settings validator.
+        "render_url": {"timeout": "", "viewport_width": "", "viewport_height": ""},
     }
 
     settings = Settings.model_validate(raw)
@@ -1309,6 +1312,9 @@ def test_production_config_with_blank_numeric_sentinels_loads_cleanly() -> None:
     assert settings.feedback.ingest_max_retries == 2
     assert settings.file_hub_tools.timeout == 60.0
     assert settings.subsessions.turn_budget.task.soft_warn_turns == 25
+    # Recursion reached a validator-less submodel too.
+    assert settings.render_url.timeout == 30.0
+    assert settings.render_url.viewport_width == 1280
 
     dumped = settings.model_dump(mode="json")
     # No numeric field that carried a "" sentinel may re-serialize as "".
@@ -1331,5 +1337,8 @@ def test_production_config_with_blank_numeric_sentinels_loads_cleanly() -> None:
         dumped["subsessions"]["turn_budget"]["task"]["hard_stop_turns"],
         dumped["subsessions"]["turn_budget"]["periodic"]["soft_warn_turns"],
         dumped["subsessions"]["turn_budget"]["periodic"]["hard_stop_turns"],
+        dumped["render_url"]["timeout"],
+        dumped["render_url"]["viewport_width"],
+        dumped["render_url"]["viewport_height"],
     ]
     assert all(v != "" for v in numeric_checks), numeric_checks

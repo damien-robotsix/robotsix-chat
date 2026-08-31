@@ -14,7 +14,8 @@ defaults, never a concrete provider class.
 
 from __future__ import annotations
 
-from typing import Any, get_args
+from types import UnionType
+from typing import Any, Union, get_args, get_origin
 
 from pydantic import BaseModel
 from robotsix_llmio import default_tier_config
@@ -50,7 +51,30 @@ def _annotation_allows_number(annotation: Any) -> bool:
     return any(arg in _NUMERIC_TYPES for arg in get_args(annotation))
 
 
-def drop_blank_numeric_sentinels(model_cls: type[BaseModel], data: Any) -> Any:
+def _nested_model(annotation: Any) -> type[BaseModel] | None:
+    """Extract a nested ``BaseModel`` subclass from *annotation*, if any.
+
+    Handles a bare model annotation (``Sub``) and optional/union forms
+    (``Sub | None``). Container annotations such as ``dict[str, Sub]`` or
+    ``list[Sub]`` return ``None`` — their raw values are keyed/indexed
+    collections, not a single model's field dict, so recursing into them
+    with the element model would be incorrect.
+    """
+    origin = get_origin(annotation)
+    if origin is None:
+        if isinstance(annotation, type) and issubclass(annotation, BaseModel):
+            return annotation
+        return None
+    if origin in (Union, UnionType):
+        for arg in get_args(annotation):
+            if isinstance(arg, type) and issubclass(arg, BaseModel):
+                return arg
+    return None
+
+
+def drop_blank_numeric_sentinels(
+    model_cls: type[BaseModel], data: Any, *, recursive: bool = False
+) -> Any:
     """Strip legacy empty-string sentinels for numeric fields at load time.
 
     Older settings-UI form submissions serialized a *cleared* numeric input
@@ -66,15 +90,34 @@ def drop_blank_numeric_sentinels(model_cls: type[BaseModel], data: Any) -> Any:
     Intended for use from a ``@model_validator(mode="before")`` on config
     models that carry numeric/duration fields. Mutates and returns *data*
     when it is a dict; passes any other input through untouched.
+
+    When *recursive* is true, the strip descends into nested ``BaseModel``
+    submodels (raw dicts) so a single call from the top-level ``Settings``
+    validator covers every numeric field in the whole config tree — no
+    per-submodel validator required for ``GET /config`` (which validates the
+    full ``Settings``). Per-model validators are still useful for validating
+    a submodel standalone.
     """
     if not isinstance(data, dict):
         return data
     for name, field in model_cls.model_fields.items():
-        if not _annotation_allows_number(field.annotation):
+        annotation = field.annotation
+        if _annotation_allows_number(annotation):
+            for key in (name, field.alias):
+                if key is not None and data.get(key) == "":
+                    data.pop(key, None)
+            continue
+        if not recursive:
+            continue
+        nested_cls = _nested_model(annotation)
+        if nested_cls is None:
             continue
         for key in (name, field.alias):
-            if key is not None and data.get(key) == "":
-                data.pop(key, None)
+            if key is None:
+                continue
+            nested = data.get(key)
+            if isinstance(nested, dict):
+                drop_blank_numeric_sentinels(nested_cls, nested, recursive=True)
     return data
 
 

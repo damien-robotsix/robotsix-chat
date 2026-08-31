@@ -2189,11 +2189,12 @@ class Settings(BaseModel):
                 if mv == "" or (isinstance(mv, str) and mv in _bad):
                     data["memory"][key] = {}
 
-        # Top-level numeric fields — tolerate legacy "" sentinels so a cleared
-        # numeric input in the settings UI falls back to its default (or null
-        # for optional numerics) instead of failing validation and surfacing
-        # a raw "" placeholder in GET /config.
-        data = drop_blank_numeric_sentinels(cls, data)
+        # Numeric fields across the whole config tree — tolerate legacy ""
+        # sentinels so a cleared numeric input in the settings UI falls back
+        # to its default (or null for optional numerics) instead of failing
+        # validation and surfacing a raw "" placeholder in GET /config. The
+        # recursive walk covers every nested submodel from this single call.
+        data = drop_blank_numeric_sentinels(cls, data, recursive=True)
 
         return data
 
