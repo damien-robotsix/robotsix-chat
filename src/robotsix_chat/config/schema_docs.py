@@ -82,8 +82,10 @@ def _referenced_def(prop: dict[str, Any]) -> str | None:
         return ref.rsplit("/", 1)[-1]
     for key in ("allOf", "anyOf", "oneOf"):
         for sub in prop.get(key, []):
-            if isinstance(sub, dict) and isinstance(sub.get("$ref"), str):
-                return sub["$ref"].rsplit("/", 1)[-1]
+            if isinstance(sub, dict):
+                sub_ref = sub.get("$ref")
+                if isinstance(sub_ref, str):
+                    return sub_ref.rsplit("/", 1)[-1]
     return None
 
 
