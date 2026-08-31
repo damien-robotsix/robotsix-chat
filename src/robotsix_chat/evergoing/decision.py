@@ -37,13 +37,22 @@ class TrimDecision:
 
 
 _DECISION_PROMPT = (
-    "You maintain a single never-ending chat session by trimming away only "
+    "You maintain a long-running chat session by trimming away only "
     "turns that belong to an EARLIER, clearly FINISHED, DIFFERENT subject "
     "from what the conversation is about now.\n\n"
     "Rules — be conservative:\n"
     "- If the current subject is unchanged, or you are unsure, drop 0.\n"
     "- Only drop leading turns that plainly belong to a completed topic "
     "distinct from the most recent turns.\n"
+    "- A topic is NOT finished while any of its next steps, follow-ups or "
+    "confirmations are still pending in the recent turns (e.g. an "
+    "implementation whose deploy/verification has not happened yet, a "
+    "question awaiting an answer, a plan awaiting approval). Same "
+    "workstream = same subject, even across many turns.\n"
+    "- Only drop turns whose useful outcomes are already restated in the "
+    "turns you keep — trimmed turns are gone from the context.\n"
+    "- Interleaved status/monitor updates about the SAME workstream do "
+    "not make it a different subject.\n"
     "- Never drop the most recent turns (work may be in flight).\n\n"
     "The transcript below has {n} turns, numbered 1 (oldest) to {n} "
     "(newest). You may drop at most {max_drop} leading turns.\n"
