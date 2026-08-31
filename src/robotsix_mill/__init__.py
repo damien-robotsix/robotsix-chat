@@ -938,3 +938,79 @@ def _request_implementation_changes_expanded(
 _TransitionMixin.request_implementation_changes = (
     _request_implementation_changes_expanded
 )
+
+# ---------------------------------------------------------------------------
+# 10.  Enforce human approval when triage flags a ticket as filed against
+#      the wrong repository.
+#
+#      The installed ``_resolve_next_state`` function checks whether the
+#      triage note contains any ``_TRIAGE_REJECTION_PATTERNS`` substring
+#      (including "wrong repo", "different repositor", etc.) and sets a
+#      ``suspicious`` flag.  For deterministic-auto-approve sources this
+#      blocks the shortcut, but the function still falls through to the
+#      LLM classifier (``triage_auto_approve``), which has a permissive
+#      bias ("when unsure, return APPROVE") and may approve the ticket
+#      anyway — defeating the triage signal.
+#
+#      The fix: when the triage note matches a *wrong-repository* pattern
+#      specifically, skip the LLM classifier entirely and return
+#      HUMAN_ISSUE_APPROVAL with a structured note.  Other rejection
+#      patterns (e.g. "no change needed", "does not exist") still fall
+#      through to the classifier, which can distinguish false positives
+#      from genuine rejections in those cases.
+# ---------------------------------------------------------------------------
+from robotsix_mill.core.states import State as _State  # noqa: E402
+
+_original_resolve_next_state = _refine_helpers._resolve_next_state
+
+# Patterns that unambiguously indicate the ticket was filed against the
+# wrong repository.  These are a strict subset of
+# ``_TRIAGE_REJECTION_PATTERNS`` — only the repo-misroute signals, not
+# the broader "no change needed" / "does not exist" family.
+_WRONG_REPO_PATTERNS: frozenset[str] = frozenset(
+    {
+        "different repositor",
+        "different repo",
+        "wrong repositor",
+        "wrong repo",
+        "belongs to a different",
+        "lives in a different",
+        "not present in this",
+    }
+)
+
+
+def _resolve_next_state_with_wrong_repo_guard(
+    ctx,
+    spec,
+    ticket_id,
+    source=None,
+    *,
+    triage_note=None,
+):
+    """Wrap ``_resolve_next_state`` to block auto-approve on wrong-repo triage.
+
+    When the triage note contains a wrong-repository pattern, return
+    HUMAN_ISSUE_APPROVAL immediately — the LLM classifier's permissive
+    bias would otherwise approve the ticket despite the triage signal.
+    All other cases delegate to the original function unchanged.
+
+    The guard respects ``require_approval``: when approval is not required
+    (e.g. internal pipelines), the guard is skipped and the original
+    function's fast-path (READY) is taken.
+    """
+    if getattr(ctx.settings, "require_approval", True) and triage_note:
+        triage_lower = triage_note.lower()
+        if any(p in triage_lower for p in _WRONG_REPO_PATTERNS):
+            return (
+                _State.HUMAN_ISSUE_APPROVAL,
+                "auto-approve: NEEDS_APPROVAL — triage flagged the ticket as "
+                "filed against the wrong repository; human review required "
+                "to confirm scope or re-file against the correct repo",
+            )
+    return _original_resolve_next_state(
+        ctx, spec, ticket_id, source=source, triage_note=triage_note
+    )
+
+
+_refine_helpers._resolve_next_state = _resolve_next_state_with_wrong_repo_guard
