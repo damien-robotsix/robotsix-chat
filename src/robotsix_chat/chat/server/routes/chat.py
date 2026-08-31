@@ -436,7 +436,7 @@ class MessageCoalescer:
                             or code not in _retryable_codes
                         ):
                             raise
-                        delay = 5.0 * (_turn_attempt + 1)
+                        delay = 2.0 if _turn_attempt == 0 else 6.0
                         logger.warning(
                             "chat turn failed pre-stream (code=%s, attempt "
                             "%d/3) — retrying in %.0fs",
@@ -503,6 +503,27 @@ class MessageCoalescer:
                     error["code"],
                     error["correlation_id"],
                 )
+                # Persist the failed exchange: without this the operator's
+                # message silently vanished from the transcript whenever the
+                # turn errored while they were looking at another session
+                # (operator-reported message loss during depletion windows).
+                if session_id:
+                    with contextlib.suppress(Exception):
+                        store.record(
+                            session_id,
+                            owner_id,
+                            concatenated,
+                            (
+                                f"⚠️ {error['message']} "
+                                f"(turn failed — resend to retry; "
+                                f"correlation {error['correlation_id']})"
+                            ),
+                        )
+                        for p in pending:
+                            if p.message_id:
+                                msg_id_store.mark_completed(
+                                    session_id, p.message_id, error["message"]
+                                )
                 await self._fan_out(pending, SSE_ERROR_TYPE, error)
                 if publish_turn:
                     event_bus.end_turn(session_id, turn_id, error=error["message"])
@@ -898,16 +919,14 @@ async def chat_endpoint(
         except asyncio.CancelledError:
             logger.debug("SSE stream cancelled (client disconnect)")
         finally:
-            # On client disconnect the DONE/ERROR frame hasn't been
-            # consumed yet — drain the response queue so the background
-            # coalescer task can complete and persist the reply (matches
-            # the old ``await producer`` guarantee).
+            # No disconnect drain: awaiting inside a cancelled generator
+            # re-raises CancelledError immediately, so the old drain never
+            # ran — and none is needed: the coalescer runs as an
+            # independent background task and the response queue is
+            # unbounded, so the turn completes and store.record() persists
+            # the reply regardless of this client's fate.
             if not finished_normally:
-                with contextlib.suppress(Exception):
-                    while True:
-                        kind, _ = await response_queue.get()
-                        if kind in (SSE_DONE_TYPE, SSE_ERROR_TYPE):
-                            break
+                logger.debug("SSE client left before DONE (session %s)", session_id)
 
     return StreamingResponse(
         sse_stream(),
