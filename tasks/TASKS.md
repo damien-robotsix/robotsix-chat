@@ -93,29 +93,34 @@ Tasks that are pending, in-progress, or blocked.
 ## T-0006 — Register the browser service in the callable component roster (form-fill API contract)
 
 - status: pending
+
 - created: 2026-08-31T13:18:34Z
+
 - updated: 2026-08-31T13:18:34Z
+
 - notes: Ticket 20260831T081117Z-wire-the-browser-service-s-chat-skill-en (session_end prompt,
   session a41f952923194ea0a89be06d0c061811). At session end robotsix-browser was fully deployed and
-  registered as a live managed component in central-deploy, but the chat assistant could not drive an
-  OVH billing-address form-fill because robotsix-browser is not in its callable component roster with
-  a documented API skill — a concrete capability gap that blocks any future use of deployed
+  registered as a live managed component in central-deploy, but the chat assistant could not drive
+  an OVH billing-address form-fill because robotsix-browser is not in its callable component roster
+  with a documented API skill — a concrete capability gap that blocks any future use of deployed
   automation components.
 
   **Architecture context (verified in this clone).** The chat agent has NO per-component tools; it
   reaches every deployed component through ONE generic `component_request` tool
   (`src/robotsix_chat/component_access/tools.py`) against the roster fetched at session start from
-  `GET {central_deploy.url}/chat/components` (`component_access/roster.py::fetch_roster`). Each roster
-  entry carries `{id, base_url, skill, auth?}`; the `skill` doc is loaded into the agent system
-  prompt so the LLM knows the component's API contract. Therefore "registering" robotsix-browser is
-  primarily a central-deploy + browser-repo change, NOT a robotsix-chat code change — once the
-  service appears in `/chat/components` with a non-empty `skill`, `component_request` can already
-  invoke it. This chat repo's only levers are: (a) `central_deploy.component_fallbacks`
-  (`config/deploy_models.py::CentralDeploySettings`) — a baked-in `{id: base_url}` fallback, but its
-  roster entries have an EMPTY skill (no documented API), so it does not by itself satisfy "documented
-  API skill"; and (b) `central_deploy.component_credentials` if the browser service requires auth.
+  `GET {central_deploy.url}/chat/components` (`component_access/roster.py::fetch_roster`). Each
+  roster entry carries `{id, base_url, skill, auth?}`; the `skill` doc is loaded into the agent
+  system prompt so the LLM knows the component's API contract. Therefore "registering"
+  robotsix-browser is primarily a central-deploy + browser-repo change, NOT a robotsix-chat code
+  change — once the service appears in `/chat/components` with a non-empty `skill`,
+  `component_request` can already invoke it. This chat repo's only levers are: (a)
+  `central_deploy.component_fallbacks` (`config/deploy_models.py::CentralDeploySettings`) — a
+  baked-in `{id: base_url}` fallback, but its roster entries have an EMPTY skill (no documented
+  API), so it does not by itself satisfy "documented API skill"; and (b)
+  `central_deploy.component_credentials` if the browser service requires auth.
 
   **Work items (dependency-ordered, mostly cross-repo).**
+
   1. robotsix-browser repo: expose a `GET /chat-skill` (or `/skill`) endpoint returning a SKILL.md
      that documents the form-fill job contract (see below). Mirror this repo's own
      `chat/server/routes/chat_skill.py`.
@@ -125,14 +130,15 @@ Tasks that are pending, in-progress, or blocked.
      `central_deploy.component_fallbacks` in the deployed config for roster resilience, and a
      `component_credentials` entry if auth is required. No new tool is needed — `component_request`
      already covers it.
-  1. Live-proof: from a chat session, call `component_request` with `component_id="robotsix-browser"`
-     to submit the OVH billing-address form-fill and confirm the result frame.
+  1. Live-proof: from a chat session, call `component_request` with
+     `component_id="robotsix-browser"` to submit the OVH billing-address form-fill and confirm the
+     result frame.
 
   **Proposed form-fill job API contract** (to be finalised in the browser service's chat-skill doc):
-  `POST /form-fill` with body `{url, fields: [{selector, value}], submit: {selector} | null,
-  wait_for?: selector, screenshot?: bool}` returning `{status, final_url, submitted, fields_filled,
-  errors?, screenshot?}`. 2FA / confirmation-gated submissions should pause and report a resumable
-  job id rather than blocking.
+  `POST /form-fill` with body
+  `{url, fields: [{selector, value}], submit: {selector} | null, wait_for?: selector, screenshot?: bool}`
+  returning `{status, final_url, submitted, fields_filled, errors?, screenshot?}`. 2FA /
+  confirmation-gated submissions should pause and report a resumable job id rather than blocking.
 
   **Preconditions / edge cases:** unknown selector → return per-field error, do not submit; target
   URL unreachable → status=failed with reason; submit gate pending (2FA) → status=paused + job id.
