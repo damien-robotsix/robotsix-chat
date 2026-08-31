@@ -40,7 +40,7 @@ from collections.abc import Sequence
 from typing import TYPE_CHECKING
 
 from robotsix_chat.autonomous.models import AutonomousState
-from robotsix_chat.chat.events import agent_message_frame
+from robotsix_chat.chat.events import SSE_NOTIFICATION_TYPE, agent_message_frame
 
 from .models import SubsessionInfo, SubsessionKind
 
@@ -333,6 +333,23 @@ _MAX_REACTION_DEPTH = 3
 # indefinitely; each new outcome resets the window, so a quiet period
 # still batches closely-arriving outcomes.
 _BATCH_WINDOW_SECONDS = 30.0
+
+# Reasons that trigger a proactive browser notification when the delivery
+# system completes a reaction turn.  Terminal reasons get "default" urgency;
+# blocker reasons get "high" urgency.  The notification is emitted
+# deterministically from infrastructure code — not dependent on LLM behaviour.
+_TERMINAL_NOTIFICATION_REASONS: frozenset[str] = frozenset(
+    {
+        "completed",
+        "ticket_terminal",
+    }
+)
+_BLOCKER_NOTIFICATION_REASONS: frozenset[str] = frozenset(
+    {
+        "repeated_blocked",
+        "needs_operator",
+    }
+)
 
 
 # -- patterns for sanitizing reaction replies --------------------------------
@@ -873,6 +890,7 @@ class ParentDelivery:
         Degrades to passive records when no agent is wired or the turn
         fails — each outcome is recorded individually so none are lost.
         """
+        delegated_to_individual = False
         try:
             if self._agent is None:
                 async with self._run_serializer.for_owner(session_id):
@@ -888,6 +906,7 @@ class ParentDelivery:
             if self._autonomous_runner is not None:
                 aq = self._autonomous_runner.get_session(session_id)
                 if aq is not None and aq.state is AutonomousState.executing:
+                    delegated_to_individual = True
                     for info, outcome, reason, label in outcomes:
                         await self._react_in_main_chat(info, outcome, reason, label)
                     return
@@ -962,6 +981,13 @@ class ParentDelivery:
                 self._reaction_depth.pop(session_id, None)
             else:
                 self._reaction_depth[session_id] = depth
+            # Proactive browser notification for terminal/blocked monitors.
+            # Skip when outcomes were delegated to individual
+            # _react_in_main_chat calls — each of those already emits its
+            # own notification in its own finally block.
+            if not delegated_to_individual:
+                for batch_info, _outcome, batch_reason, _label in outcomes:
+                    self._emit_monitor_notification(batch_info, batch_reason)
 
     async def _record_passive(self, session_id: str, label: str, outcome: str) -> None:
         """Record *outcome* as a passive, system-authored turn under the lock.
@@ -975,6 +1001,40 @@ class ParentDelivery:
             logger.exception(
                 "Failed to record passive outcome for session %s", session_id
             )
+
+    def _emit_monitor_notification(self, info: SubsessionInfo, reason: str) -> None:
+        """Push a proactive SSE notification for terminal/blocked monitors.
+
+        Emitted deterministically from infrastructure code — not dependent on
+        LLM behaviour.  Only fires for reasons in
+        ``_TERMINAL_NOTIFICATION_REASONS`` (``"default"`` urgency) or
+        ``_BLOCKER_NOTIFICATION_REASONS`` (``"high"`` urgency).
+        """
+        if self._event_sink is None:
+            return
+
+        ticket_id = _extract_ticket_id(info)
+        identifier = ticket_id or info.title
+
+        if reason in _TERMINAL_NOTIFICATION_REASONS:
+            title = f"Monitor completed: {identifier}"
+            body = f"Monitor '{info.title}' {_REASON_PHRASES.get(reason, reason)}."
+            urgency = "default"
+        elif reason in _BLOCKER_NOTIFICATION_REASONS:
+            title = f"Monitor blocked: {identifier}"
+            body = f"Monitor '{info.title}' {_REASON_PHRASES.get(reason, reason)}."
+            urgency = "high"
+        else:
+            return
+
+        frame: dict[str, object] = {
+            "type": SSE_NOTIFICATION_TYPE,
+            "title": title,
+            "body": body,
+            "urgency": urgency,
+            "link": ticket_id or "",
+        }
+        self._event_sink.publish(info.owner_session_id, frame)
 
     # ------------------------------------------------------------------
     # Reaction turn (runs inside a background task)
@@ -1063,3 +1123,5 @@ class ParentDelivery:
                 self._reaction_depth.pop(session_id, None)
             else:
                 self._reaction_depth[session_id] = depth
+            # Proactive browser notification for terminal/blocked monitors.
+            self._emit_monitor_notification(info, reason)
