@@ -2741,7 +2741,7 @@ async def test_turn_retries_transparently_on_pre_stream_quota_failure() -> None:
 
     assert FlakyAgent.attempts == 2
     assert not [fr for fr in frames if fr["type"] == SSE_ERROR_TYPE]
-    tokens = "".join(fr["data"] for fr in frames if fr["type"] == SSE_TOKEN_TYPE)
+    tokens = "".join(str(fr["content"]) for fr in frames if fr["type"] == SSE_TOKEN_TYPE)
     assert "recovered" in tokens
 
 
