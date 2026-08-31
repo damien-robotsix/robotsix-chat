@@ -185,7 +185,7 @@ class TestAuthCallback:
     """Tests for ``GET /auth/callback``."""
 
     def test_redirects_to_app(self) -> None:
-        """Valid callback redirects to the app."""
+        """Valid callback redirects to the app with a signed token."""
         auth = _enabled_auth()
         app = _make_app(auth)
         client = TestClient(app)
@@ -196,7 +196,46 @@ class TestAuthCallback:
             follow_redirects=False,
         )
         assert resp.status_code == 302
-        assert resp.headers["location"] == "https://app.example.com/done"
+        location = resp.headers["location"]
+        assert location.startswith("https://app.example.com/done")
+        # The redirect URL must carry a token query parameter.
+        from urllib.parse import parse_qs, urlparse
+
+        qs = parse_qs(urlparse(location).query)
+        assert "token" in qs
+        token = qs["token"][0]
+        assert _verify_token(token, "test-secret-key") == "alice"
+
+    def test_redirect_preserves_existing_query(self) -> None:
+        """Token is appended without clobbering existing query params."""
+        auth = _enabled_auth()
+        app = _make_app(auth)
+        client = TestClient(app)
+        resp = client.get(
+            "/auth/callback",
+            params={"redirect_to": "https://app.example.com/done?foo=bar"},
+            headers={"X-Forwarded-User": "alice"},
+            follow_redirects=False,
+        )
+        assert resp.status_code == 302
+        location = resp.headers["location"]
+        from urllib.parse import parse_qs, urlparse
+
+        qs = parse_qs(urlparse(location).query)
+        assert qs["foo"] == ["bar"]
+        assert "token" in qs
+        assert _verify_token(qs["token"][0], "test-secret-key") == "alice"
+
+    def test_empty_secret_returns_500(self) -> None:
+        """Empty token_secret returns 500 from callback."""
+        auth = _enabled_auth(token_secret=SecretStr(""))
+        client = TestClient(_make_app(auth))
+        resp = client.get(
+            "/auth/callback",
+            params={"redirect_to": "https://app.example.com/done"},
+            headers={"X-Forwarded-User": "alice"},
+        )
+        assert resp.status_code == 500
 
     def test_missing_header_returns_401(self) -> None:
         """Missing identity header returns 401."""
@@ -304,6 +343,54 @@ class TestMobileToken:
             headers={"X-Forwarded-User": "alice"},
         )
         assert resp.status_code == 500
+
+    def test_body_token_fallback(self) -> None:
+        """Valid signed token in body (no header) returns 200."""
+        auth = _enabled_auth()
+        client = TestClient(_make_app(auth))
+        # Pre-sign a token the way the callback endpoint would.
+        signed = _sign_token("alice", "test-secret-key", 3600)
+        resp = client.post(
+            "/chat/auth/mobile-token",
+            json={"token": signed},
+        )
+        assert resp.status_code == 200
+        body = resp.json()
+        assert body["subject"] == "alice"
+        assert _verify_token(body["token"], "test-secret-key") == "alice"
+
+    def test_body_token_invalid_returns_401(self) -> None:
+        """Invalid signed token in body + no header returns 401."""
+        auth = _enabled_auth()
+        client = TestClient(_make_app(auth))
+        resp = client.post(
+            "/chat/auth/mobile-token",
+            json={"token": "bad|token|value"},
+        )
+        assert resp.status_code == 401
+
+    def test_body_token_missing_returns_401(self) -> None:
+        """Empty body + no header returns 401."""
+        auth = _enabled_auth()
+        client = TestClient(_make_app(auth))
+        resp = client.post(
+            "/chat/auth/mobile-token",
+            json={},
+        )
+        assert resp.status_code == 401
+
+    def test_header_takes_precedence_over_body(self) -> None:
+        """Edge header identity takes precedence over body token."""
+        auth = _enabled_auth()
+        client = TestClient(_make_app(auth))
+        signed = _sign_token("bob", "test-secret-key", 3600)
+        resp = client.post(
+            "/chat/auth/mobile-token",
+            headers={"X-Forwarded-User": "alice"},
+            json={"token": signed},
+        )
+        assert resp.status_code == 200
+        assert resp.json()["subject"] == "alice"
 
 
 # ---------------------------------------------------------------------------

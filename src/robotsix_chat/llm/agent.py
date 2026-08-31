@@ -278,6 +278,25 @@ _MEMORY_PROMPT_FOOTER = (
 )
 
 
+def _primary_in_cooldown(level: int) -> bool:
+    """Return ``True`` when *level*'s Claude model is already cooling.
+
+    llmio's health tracker learns about exhaustion from the fallback walks;
+    consulting it before the PRIMARY attempt saves a doomed ~2s CLI probe on
+    every turn of every session while the subscription is depleted. Fails
+    open — any error means "not in cooldown".
+    """
+    try:
+        tlc = getattr(TierConfig(), f"level{level}")
+        if not str(tlc.model).startswith("claudeSDK"):
+            return False
+        from robotsix_llmio.core import get_health_tracker
+
+        return bool(get_health_tracker().is_in_cooldown(tlc.model))
+    except Exception:
+        return False
+
+
 def _chained_claude_unavailability(
     exc: BaseException,
 ) -> ClaudeSDKUsageExhaustedError | ClaudeSDKAuthError | None:
@@ -673,56 +692,72 @@ class LlmioChatAgent:
             finally:
                 handle.close()
 
-        try:
-            result = await acall_with_retry(
-                _attempt,
-                config=RetryConfig(
-                    backoff_base=0.5,
-                    backoff_cap=1.0,
-                    max_retries=2,
-                    jitter_factor=0.0,
-                ),
-                is_transient_fn=_is_chat_turn_transient,
-                what="chat turn",
-            )
-        except Exception as exc:
-            # Two different causes, one conclusion: this tier cannot serve the
-            # turn, and no retry against it will change that — credits stay
-            # exhausted until they reset, a dead credential stays dead until a
-            # human re-authenticates. Falling back keeps the conversation alive
-            # through either. The root may be buried in the cause/context
-            # chain (laundered CLI failures), so match the chain, not just
-            # the raised type.
-            root = _chained_claude_unavailability(exc)
-            if root is None:
-                raise
-            logger.warning(
-                "model_level %d cannot serve this turn (%s via %s: %s) — "
-                "falling back to another tier",
+        if _primary_in_cooldown(level):
+            logger.info(
+                "model_level %d is in cooldown — going straight to the fallback walk",
                 level,
-                type(root).__name__,
-                type(exc).__name__,
-                exc,
             )
+            result = await self._run_with_tier_fallback(
+                prompt,
+                message_history,
+                tools_arg,
+                session_id,
+                effective_trace_metadata,
+                level=level,
+                trace_name=trace_name,
+                credential_is_dead=False,
+            )
+        else:
             try:
-                result = await self._run_with_tier_fallback(
-                    prompt,
-                    message_history,
-                    tools_arg,
-                    session_id,
-                    effective_trace_metadata,
-                    level=level,
-                    trace_name=trace_name,
-                    credential_is_dead=isinstance(root, ClaudeSDKAuthError),
+                result = await acall_with_retry(
+                    _attempt,
+                    config=RetryConfig(
+                        backoff_base=0.5,
+                        backoff_cap=1.0,
+                        max_retries=2,
+                        jitter_factor=0.0,
+                    ),
+                    is_transient_fn=_is_chat_turn_transient,
+                    what="chat turn",
                 )
-            except Exception as fallback_exc:
-                # Keep the root cause on the chain via an explicit __cause__:
-                # llmio's is_claude_sdk_usage_exhausted() only follows
-                # __cause__ links, and the SSE error path uses it to show the
-                # actionable quota message (reset time) instead of the generic
-                # "internal error" when the fallback walk itself also failed
-                # (e.g. OpenRouter 404 on the backup model).
-                raise fallback_exc from exc
+            except Exception as exc:
+                # Two different causes, one conclusion: this tier cannot serve the
+                # turn, and no retry against it will change that — credits stay
+                # exhausted until they reset, a dead credential stays dead until a
+                # human re-authenticates. Falling back keeps the conversation alive
+                # through either. The root may be buried in the cause/context
+                # chain (laundered CLI failures), so match the chain, not just
+                # the raised type.
+                root = _chained_claude_unavailability(exc)
+                if root is None:
+                    raise
+                logger.warning(
+                    "model_level %d cannot serve this turn (%s via %s: %s) — "
+                    "falling back to another tier",
+                    level,
+                    type(root).__name__,
+                    type(exc).__name__,
+                    exc,
+                )
+                try:
+                    result = await self._run_with_tier_fallback(
+                        prompt,
+                        message_history,
+                        tools_arg,
+                        session_id,
+                        effective_trace_metadata,
+                        level=level,
+                        trace_name=trace_name,
+                        credential_is_dead=isinstance(root, ClaudeSDKAuthError),
+                    )
+                except Exception as fallback_exc:
+                    # Keep the root cause on the chain via an explicit __cause__:
+                    # llmio's is_claude_sdk_usage_exhausted() only follows
+                    # __cause__ links, and the SSE error path uses it to show the
+                    # actionable quota message (reset time) instead of the generic
+                    # "internal error" when the fallback walk itself also failed
+                    # (e.g. OpenRouter 404 on the backup model).
+                    raise fallback_exc from exc
 
         # The loop above always either raises or breaks with `result` set.
         self._record_actions_from_result(result)
