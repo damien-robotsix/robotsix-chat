@@ -787,7 +787,12 @@ async def chat_endpoint(
     compaction_keep_recent_turns: int = request.app.state.compaction_keep_recent_turns
     if had_session and idle_timeout_minutes > 0:
         idle_session = store.get_session(session_id)
-        if idle_session is not None:
+        # The evergoing session is exempt: its memory policy is the
+        # subject-aware trim scheduler (robotsix_chat.evergoing), which only
+        # drops turns when the subject clearly changed. Idle compaction here
+        # would fold the ONGOING subject into a summary after any >=idle-gap
+        # pause, defeating the session's whole point of verbatim continuity.
+        if idle_session is not None and not idle_session.evergoing:
             idle_seconds = time.time() - idle_session.wall_last_active
             fresh_turns = len(idle_session.turns) - idle_session.compacted_turn_index
             if (
