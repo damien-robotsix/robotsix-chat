@@ -1667,9 +1667,7 @@ async def test_keyed_fallback_caps_oversized_history() -> None:
     seen: dict[str, object] = {}
     level3_handle = MagicMock()
 
-    async def recovered(
-        _message: str, *, message_history: object = None
-    ) -> MagicMock:
+    async def recovered(_message: str, *, message_history: object = None) -> MagicMock:
         seen["message_history"] = message_history
         result = MagicMock()
         result.output = "capped reply"
