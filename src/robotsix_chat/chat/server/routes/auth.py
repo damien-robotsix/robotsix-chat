@@ -91,10 +91,11 @@ async def auth_login_endpoint(request: Request) -> RedirectResponse:
             back to after authentication.  Must match an allowed domain.
 
     Redirects the user's browser to the tinyauth login page with a
-    ``callback`` parameter pointing back to this server.  Tinyauth will
-    authenticate the user and redirect back to ``callback``, which
-    includes the original ``redirect_to`` so the server can forward the
-    user to the app.
+    ``redirect_uri`` parameter pointing back to this server's callback
+    and ``login_for=app`` so tinyauth's ``useLoginFor`` hook honours the
+    redirect target.  Tinyauth authenticates the user and redirects back
+    to ``redirect_uri``, which includes the original ``redirect_to`` so
+    the server can forward the user to the app.
     """
     auth = _get_mobile_auth(request)
 
@@ -132,7 +133,8 @@ async def auth_login_endpoint(request: Request) -> RedirectResponse:
 
     # Redirect to tinyauth's login page with the callback.
     tinyauth_login = (
-        f"{auth.tinyauth_url.rstrip('/')}/login?{urlencode({'callback': callback_url})}"
+        f"{auth.tinyauth_url.rstrip('/')}/login?"
+        f"{urlencode({'redirect_uri': callback_url, 'login_for': 'app'})}"
     )
 
     AUTH_LOGIN_REQUESTS.labels(status="302").inc()
