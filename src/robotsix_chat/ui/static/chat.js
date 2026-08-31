@@ -3141,8 +3141,14 @@ import {
           showError(frame.message || "Server error");
           state = "error";
           updateSendBusy();
-          // Leave queued messages in place — the user can trigger
-          // drainQueue() by submitting another message later.
+          // Dispatch the next queued message: after a failed turn the queued
+          // message IS the retry the operator already typed — parking it
+          // until they type something else left "(queued)" bubbles stuck
+          // after every error (operator-reported). Each drain sends one
+          // message, so a persistent failure empties the queue one visible
+          // error at a time instead of looping.
+          state = "idle";
+          drainQueue();
         }
       },
       error: function (err) {
