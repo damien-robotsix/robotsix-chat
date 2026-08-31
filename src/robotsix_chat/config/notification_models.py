@@ -2,7 +2,11 @@
 
 from __future__ import annotations
 
-from pydantic import BaseModel, ConfigDict, SecretStr
+from typing import Any
+
+from pydantic import BaseModel, ConfigDict, SecretStr, model_validator
+
+from robotsix_chat.config.constants import drop_blank_numeric_sentinels
 
 
 class NotificationSettings(BaseModel):
@@ -86,3 +90,9 @@ class FeedbackSettings(BaseModel):
     dedup_window_seconds: float = 60.0
     ingest_max_retries: int = 2
     model_config = ConfigDict(extra="forbid")
+
+    @model_validator(mode="before")
+    @classmethod
+    def _strip_blank_numeric(cls, data: Any) -> Any:
+        """Drop legacy ``""`` sentinels for numeric fields so old configs load."""
+        return drop_blank_numeric_sentinels(cls, data)
