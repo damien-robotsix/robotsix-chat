@@ -34,7 +34,13 @@ from .constants import (
     SSE_HEARTBEAT_INTERVAL,
     SSE_TOKEN_TYPE,
 )
-from .errors import curated_stream_error
+from .errors import (
+    STREAM_ERROR_BUDGET_EXHAUSTED,
+    STREAM_ERROR_RATE_LIMIT,
+    STREAM_ERROR_TIMEOUT,
+    curated_stream_error,
+    stream_error_code,
+)
 
 logger = logging.getLogger(__name__)
 
@@ -384,26 +390,61 @@ class MessageCoalescer:
 
             reply_parts: list[str] = []
             try:
-                # Collect the turn's tool calls (ticket filed, PR merged,
-                # subsession spawned, ...) so they are persisted next to the
-                # reply and visible to the compaction summariser later.
-                with collect_actions() as turn_actions:
-                    async for token in agent.stream(
-                        concatenated,
-                        history=current_history,
-                        session_id=session_id,
-                        client_id=session_id,
-                        images=combined_images,
-                        trace_name="chat-turn",
-                        # A session the agent escalated runs at its pinned
-                        # level; None leaves the agent on its configured one.
-                        model_level=store.get_model_level(session_id),
-                    ):
-                        reply_parts.append(token)
-                        for p in pending:
-                            await p.response_queue.put((SSE_TOKEN_TYPE, token))
-                        if publish_turn:
-                            event_bus.append_turn_token(session_id, turn_id, token)
+                # Retry the whole turn transparently when it fails BEFORE any
+                # token reached the client and the failure is retryable
+                # (quota/rate-limit/timeout): the operator should not have to
+                # resend a message because Claude was momentarily depleted and
+                # the backup tier hiccuped. Once tokens streamed, never retry
+                # (it would duplicate output) — surface the error instead.
+                _retryable_codes = {
+                    STREAM_ERROR_BUDGET_EXHAUSTED,
+                    STREAM_ERROR_RATE_LIMIT,
+                    STREAM_ERROR_TIMEOUT,
+                }
+                for _turn_attempt in range(3):
+                    try:
+                        # Collect the turn's tool calls (ticket filed, PR
+                        # merged, subsession spawned, ...) so they are
+                        # persisted next to the reply and visible to the
+                        # summariser later.
+                        with collect_actions() as turn_actions:
+                            async for token in agent.stream(
+                                concatenated,
+                                history=current_history,
+                                session_id=session_id,
+                                client_id=session_id,
+                                images=combined_images,
+                                trace_name="chat-turn",
+                                # A session the agent escalated runs at its
+                                # pinned level; None leaves the agent on its
+                                # configured one.
+                                model_level=store.get_model_level(session_id),
+                            ):
+                                reply_parts.append(token)
+                                for p in pending:
+                                    await p.response_queue.put((SSE_TOKEN_TYPE, token))
+                                if publish_turn:
+                                    event_bus.append_turn_token(
+                                        session_id, turn_id, token
+                                    )
+                        break
+                    except Exception as turn_exc:
+                        code = stream_error_code(turn_exc)
+                        if (
+                            reply_parts
+                            or _turn_attempt >= 2
+                            or code not in _retryable_codes
+                        ):
+                            raise
+                        delay = 5.0 * (_turn_attempt + 1)
+                        logger.warning(
+                            "chat turn failed pre-stream (code=%s, attempt "
+                            "%d/3) — retrying in %.0fs",
+                            code,
+                            _turn_attempt + 1,
+                            delay,
+                        )
+                        await asyncio.sleep(delay)
 
                 full_reply = "".join(reply_parts)
 

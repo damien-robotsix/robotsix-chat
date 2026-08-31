@@ -2700,6 +2700,54 @@ def test_create_app_and_run_server_shared_params() -> None:
 
 
 @pytest.mark.asyncio
+async def test_turn_retries_transparently_on_pre_stream_quota_failure() -> None:
+    """A retryable failure before any token streamed is retried in place.
+
+    Operator-reported: having to resend messages whenever Claude is depleted
+    and the backup tier hiccups. The turn loop retries (up to 3 attempts)
+    when nothing has streamed yet and the failure classifies as
+    budget_exhausted / rate-limit / timeout.
+    """
+    from robotsix_llmio.claude_sdk import ClaudeSDKUsageExhaustedError
+
+    class FlakyAgent(MockAgent):
+        """Fails the first stream call with a chained quota error."""
+
+        attempts = 0
+
+        async def stream(self, message: str, **kwargs: Any) -> AsyncIterator[str]:  # type: ignore[override]
+            type(self).attempts += 1
+            if type(self).attempts == 1:
+                try:
+                    raise ClaudeSDKUsageExhaustedError(
+                        "You've hit your limit · resets 1pm (UTC)"
+                    )
+                except ClaudeSDKUsageExhaustedError:
+                    raise RuntimeError(
+                        "Claude Code returned an error result: success"
+                    ) from None
+            async for token in super().stream(message, **kwargs):
+                yield token
+
+    store = ConversationStore()
+    sid = cast(str, store.create_session("owner-retry")["session_id"])
+    async with mock_app(conversation_store=store) as f:
+        f.app.state.agent = FlakyAgent(tokens=["recovered"])
+        response = await f.client.post(
+            "/chat",
+            json={"message": "hi", "session_id": sid, "owner_id": "owner-retry"},
+        )
+        frames = _parse_sse(response)
+
+    assert FlakyAgent.attempts == 2
+    assert not [fr for fr in frames if fr["type"] == SSE_ERROR_TYPE]
+    tokens = "".join(
+        str(fr["content"]) for fr in frames if fr["type"] == SSE_TOKEN_TYPE
+    )
+    assert "recovered" in tokens
+
+
+@pytest.mark.asyncio
 async def test_idle_gap_never_compacts_any_session() -> None:
     """Idle compaction is gone: the trim scheduler is the ONE reduction path.
 
