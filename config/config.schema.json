@@ -426,7 +426,7 @@
     },
     "EvergoingSettings": {
       "additionalProperties": false,
-      "description": "Evergoing-session settings \u2014 the single never-ending chat session.\n\nWhen enabled, exactly one *evergoing* session is created on boot and\nkept alive across restarts: it is never auto-closed or auto-evicted and\nalways appears in the operator's session list flagged ``evergoing``.  A\nbackground scheduler runs every *trim_interval_seconds* and, **only when\nnew turns have arrived since the last pass**, asks a cheap summary-tier\nmodel whether the conversation's subject has clearly changed and how\nmany finished leading turns can be dropped, then physically trims them\nfrom the session.  A no-input interval performs zero LLM calls.\n\nAttributes:\n    enabled: Master switch.  When ``False`` (default) no evergoing\n        session is created and the trim scheduler does not run.  Set to\n        ``true`` to activate the feature.\n    trim_interval_seconds: Seconds between scheduled trim passes.\n        Default ``1800`` (30 minutes).\n    keep_min_recent: Minimum number of most-recent turns the trim pass\n        must always keep \u2014 guarantees the in-flight turn is never\n        trimmed away.  Default ``2``.",
+      "description": "Evergoing-session settings \u2014 the single never-ending chat session.\n\nWhen enabled, exactly one *evergoing* session is created on boot and\nkept alive across restarts: it is never auto-closed or auto-evicted and\nalways appears in the operator's session list flagged ``evergoing``.  A\nbackground scheduler runs every *trim_interval_seconds* over **every\nsession** (the single context-reduction mechanism \u2014 idle compaction was\nremoved) and, **only when new turns have arrived since the last pass**,\nasks a cheap summary-tier model whether the conversation's subject has\nclearly changed and how many finished leading turns can be dropped,\nthen physically trims them from the session.  A no-input interval\nperforms zero LLM calls.\n\nAttributes:\n    enabled: Master switch.  When ``False`` (default) no evergoing\n        session is created and the trim scheduler does not run.  Set to\n        ``true`` to activate the feature.\n    trim_interval_seconds: Seconds between scheduled trim passes.\n        Default ``1800`` (30 minutes).\n    keep_min_recent: Minimum number of most-recent turns the trim pass\n        must always keep \u2014 guarantees the in-flight turn is never\n        trimmed away.  Default ``2``.\n    min_fresh_turns: Minimum fresh turns since the last trim before a\n        session is even shown to the decision model \u2014 the gate skips\n        without advancing the watermark, so short exchanges accumulate\n        until it opens.  Default ``3``.",
       "properties": {
         "enabled": {
           "default": false,
@@ -443,6 +443,12 @@
           "default": 2,
           "minimum": 1,
           "title": "Keep Min Recent",
+          "type": "integer"
+        },
+        "min_fresh_turns": {
+          "default": 3,
+          "minimum": 1,
+          "title": "Min Fresh Turns",
           "type": "integer"
         }
       },
@@ -1735,14 +1741,14 @@
     "compaction_min_turns": {
       "advanced": true,
       "default": 3,
-      "description": "Minimum number of conversation turns before an idle-timeout compaction summary is produced; shorter sessions are left uncompacted.",
+      "description": "DEPRECATED \u2014 unused. Idle-timeout compaction was removed; the subject-aware trim scheduler is the single context-reduction mechanism (see evergoing.min_fresh_turns).",
       "title": "Compaction Min Turns",
       "type": "integer"
     },
     "compaction_keep_recent_turns": {
       "advanced": true,
       "default": 2,
-      "description": "Number of most-recent turns kept verbatim after compaction; older turns are replaced by the summary.",
+      "description": "DEPRECATED \u2014 unused. Idle-timeout compaction was removed; the subject-aware trim scheduler keeps evergoing.keep_min_recent recent turns instead.",
       "title": "Compaction Keep Recent Turns",
       "type": "integer"
     },

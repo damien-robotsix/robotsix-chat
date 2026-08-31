@@ -2700,33 +2700,29 @@ def test_create_app_and_run_server_shared_params() -> None:
 
 
 @pytest.mark.asyncio
-async def test_idle_compaction_is_in_place_same_session() -> None:
-    """Idle compaction keeps the session id.
+async def test_idle_gap_never_compacts_any_session() -> None:
+    """Idle compaction is gone: the trim scheduler is the ONE reduction path.
 
-    No continuation session is minted, the UI transcript survives, and
-    subsessions never change owner.
-
-    Regression for the session-proliferation mess: the old design created a
-    new session per idle gap and dragged the subsession tree along.
+    A long-idle session with plenty of fresh turns must come back verbatim —
+    the summary agent is never invoked and no compacted_summary appears
+    (operator decision: one way to trim conversations across all sessions).
     """
     import time as time_mod
 
     store = ConversationStore()
     sid = cast(str, store.create_session("owner-idle")["session_id"])
-    for i in range(3):
+    for i in range(5):
         store.record(sid, "owner-idle", f"q{i}", f"a{i}")
-    registry = SubsessionRegistry(store_path=None)
-    sub = _register_subsession(registry, owner=sid)
 
     session = store.get_session(sid)
     assert session is not None
-    session.wall_last_active = time_mod.time() - 3600  # one hour idle
+    session.wall_last_active = time_mod.time() - 7200  # two hours idle
 
+    summary_agent = MockAgent(tokens=["should never run"])
     async with mock_app(
         tokens=["ok"],
-        summary_agent=MockAgent(tokens=["summary of prior chat"]),
+        summary_agent=summary_agent,
         conversation_store=store,
-        subsession_registry=registry,
         idle_timeout_minutes=30,
     ) as f:
         response = await f.client.post(
@@ -2736,176 +2732,13 @@ async def test_idle_compaction_is_in_place_same_session() -> None:
         frames = _parse_sse(response)
         done = [fr for fr in frames if fr["type"] == SSE_DONE_TYPE][-1]
 
-    assert done["session_id"] == sid  # same session — nothing minted
-    sessions, active = store.list_sessions("owner-idle")
-    assert [s["session_id"] for s in sessions] == [sid]
-    assert active == sid
-    # Subsession untouched.
-    assert sub.owner_session_id == sid
-    # Transcript intact (3 old turns + the new one); agent view compacted.
-    # The two most recent pre-compaction turns stay verbatim so a pending
-    # plan survives the summary.
-    assert len(store.history(sid)) == 4
-    agent_view = store.agent_history(sid)
-    assert "summary of prior chat" in agent_view[0][1]
-    assert [u for u, _ in agent_view[1:]] == ["q1", "q2", "back"]
-
-
-@pytest.mark.asyncio
-async def test_idle_compaction_skipped_below_min_turns() -> None:
-    """A tiny (or empty) idle conversation is never compacted.
-
-    The summary agent must not even be called (user-reported: compaction
-    churned on empty conversations).
-    """
-    import time as time_mod
-
-    store = ConversationStore()
-    sid = cast(str, store.create_session("owner-idle")["session_id"])
-    store.record(sid, "owner-idle", "only turn", "reply")
-
-    session = store.get_session(sid)
-    assert session is not None
-    session.wall_last_active = time_mod.time() - 3600
-
-    summary_agent = MockAgent(tokens=["should never run"])
-    async with mock_app(
-        tokens=["ok"],
-        summary_agent=summary_agent,
-        conversation_store=store,
-        idle_timeout_minutes=30,
-        compaction_min_turns=3,
-    ) as f:
-        await f.client.post(
-            "/chat",
-            json={"message": "back", "session_id": sid, "owner_id": "owner-idle"},
-        )
-
+    assert done["session_id"] == sid
     assert summary_agent.call_count == 0
     assert store.get_session(sid).compacted_summary is None  # type: ignore[union-attr]
-
-
-@pytest.mark.asyncio
-async def test_idle_compaction_skips_evergoing_session() -> None:
-    """The evergoing session is never idle-compacted.
-
-    Its memory policy is the subject-aware trim scheduler; idle compaction
-    would fold the ONGOING subject into a summary after any idle gap
-    (user-reported: "even the ongoing chat is being summarized, not only
-    when we change subject").
-    """
-    import time as time_mod
-
-    store = ConversationStore()
-    sid = cast(str, store.create_session("owner-idle")["session_id"])
-    for i in range(5):
-        store.record(sid, "owner-idle", f"q{i}", f"a{i}")
-    assert store.mark_evergoing(sid)
-
-    session = store.get_session(sid)
-    assert session is not None
-    session.wall_last_active = time_mod.time() - 3600  # one hour idle
-
-    summary_agent = MockAgent(tokens=["should never run"])
-    async with mock_app(
-        tokens=["ok"],
-        summary_agent=summary_agent,
-        conversation_store=store,
-        idle_timeout_minutes=30,
-        compaction_min_turns=3,
-    ) as f:
-        await f.client.post(
-            "/chat",
-            json={"message": "back", "session_id": sid, "owner_id": "owner-idle"},
-        )
-
-    assert summary_agent.call_count == 0
-    assert store.get_session(sid).compacted_summary is None  # type: ignore[union-attr]
-
-
-@pytest.mark.asyncio
-async def test_idle_compaction_preserves_recent_action_plan_verbatim() -> None:
-    """A proposed plan with itemized identifiers survives idle compaction.
-
-    The plan lives in the most recent pre-compaction turn and is kept out of
-    the summary so the agent can execute it without the operator re-pasting.
-    """
-    import time as time_mod
-
-    plan = (
-        "Plan (awaiting confirmation):\n"
-        "- uid 112233: archive\n"
-        "- uid 445566: reply\n"
-        "- ticket T-789: close as done"
-    )
-    store = ConversationStore()
-    sid = cast(str, store.create_session("owner-idle")["session_id"])
-    store.record(sid, "owner-idle", "old resolved question", "old resolved answer")
-    store.record(sid, "owner-idle", "what should I do", plan)
-
-    session = store.get_session(sid)
-    assert session is not None
-    session.wall_last_active = time_mod.time() - 3600
-
-    summary_agent = MockAgent(tokens=["lossy summary without identifiers"])
-    async with mock_app(
-        tokens=["ok"],
-        summary_agent=summary_agent,
-        conversation_store=store,
-        idle_timeout_minutes=30,
-        compaction_min_turns=1,
-        compaction_keep_recent_turns=1,
-    ) as f:
-        await f.client.post(
-            "/chat",
-            json={"message": "go ahead", "session_id": sid, "owner_id": "owner-idle"},
-        )
-
-    # The summary prompt asks for the structured sections — pending
-    # confirmations, what was done, agreed next steps — and verbatim ids.
-    assert summary_agent.called_with is not None
-    assert "## Pending confirmations" in summary_agent.called_with
-    assert "## What was done" in summary_agent.called_with
-    assert "## Agreed next steps / open questions" in summary_agent.called_with
-    assert "verbatim" in summary_agent.called_with
-
-    # The plan turn is replayed verbatim, not folded into the (deliberately
-    # lossy) summary, so every uid/ticket id is still available.
-    agent_view = store.agent_history(sid)
-    assert [u for u, _ in agent_view[1:]] == ["what should I do", "go ahead"]
-    assert plan in agent_view[1][1]
-
-
-@pytest.mark.asyncio
-async def test_idle_compaction_skipped_when_only_kept_turns_remain() -> None:
-    """Compaction is skipped when every fresh turn falls inside the keep window."""
-    import time as time_mod
-
-    store = ConversationStore()
-    sid = cast(str, store.create_session("owner-idle")["session_id"])
-    store.record(sid, "owner-idle", "q1", "a1")
-    store.record(sid, "owner-idle", "q2", "a2")
-
-    session = store.get_session(sid)
-    assert session is not None
-    session.wall_last_active = time_mod.time() - 3600
-
-    summary_agent = MockAgent(tokens=["should never run"])
-    async with mock_app(
-        tokens=["ok"],
-        summary_agent=summary_agent,
-        conversation_store=store,
-        idle_timeout_minutes=30,
-        compaction_min_turns=1,
-        compaction_keep_recent_turns=2,
-    ) as f:
-        await f.client.post(
-            "/chat",
-            json={"message": "back", "session_id": sid, "owner_id": "owner-idle"},
-        )
-
-    assert summary_agent.call_count == 0
-    assert store.get_session(sid).compacted_summary is None  # type: ignore[union-attr]
+    # Agent view is the full verbatim history (5 old turns + the new one).
+    assert [u for u, _ in store.agent_history(sid)] == [f"q{i}" for i in range(5)] + [
+        "back"
+    ]
 
 
 @pytest.mark.asyncio
@@ -2942,10 +2775,8 @@ async def test_legacy_compacted_into_chain_still_reroutes() -> None:
 
 
 @pytest.mark.asyncio
-async def test_chat_turn_persists_actions_and_feeds_compaction_summary() -> None:
-    """Actions recorded during a turn are stored and rendered for the summariser."""
-    import time as time_mod
-
+async def test_chat_turn_persists_actions() -> None:
+    """Actions recorded during a turn are stored on the session."""
     from robotsix_chat.chat.actions import record_action
 
     class ActingAgent(MockAgent):
@@ -2981,26 +2812,3 @@ async def test_chat_turn_persists_actions_and_feeds_compaction_summary() -> None
     assert len(actions) == 2
     assert actions[0][0].startswith("create_ticket(")
     assert "T-04d8" in actions[0][0]
-
-    # Idle compaction hands the summariser the [actions] blocks.
-    session = store.get_session(sid)
-    assert session is not None
-    session.wall_last_active = time_mod.time() - 3600
-    summary_agent = MockAgent(tokens=["## Goal / context\nstructured"])
-    async with mock_app(
-        tokens=["ok"],
-        summary_agent=summary_agent,
-        conversation_store=store,
-        idle_timeout_minutes=30,
-        compaction_min_turns=1,
-        compaction_keep_recent_turns=0,
-    ) as f:
-        await f.client.post(
-            "/chat",
-            json={"message": "back", "session_id": sid, "owner_id": "owner-act"},
-        )
-    assert summary_agent.called_with is not None
-    assert "[actions]" in summary_agent.called_with
-    assert "T-04d8" in summary_agent.called_with
-    assert "## What was done" in summary_agent.called_with
-    assert store.get_session(sid).compacted_summary == "## Goal / context\nstructured"  # type: ignore[union-attr]

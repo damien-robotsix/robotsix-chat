@@ -1281,6 +1281,10 @@ class ConversationStore:
         self._persist()
         return _session_metadata(session)
 
+    def all_session_ids(self) -> list[str]:
+        """Return every live session id (any owner), for the trim scheduler."""
+        return list(self._sessions.keys())
+
     def has_new_input_since_trim(self, session_id: str) -> bool:
         """Return ``True`` when new turns arrived since the last trim pass.
 
