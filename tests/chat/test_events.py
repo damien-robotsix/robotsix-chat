@@ -567,7 +567,7 @@ async def test_events_endpoint_unsubscribes_on_disconnect() -> None:
 
 
 def test_turn_frames_carry_the_user_message() -> None:
-    """started + resume frames deliver the operator message driving the turn.
+    """Started + resume frames deliver the operator message driving the turn.
 
     Regression: a dispatched message lives only in the server-side coalescer
     until the turn records; without this a client re-subscribing mid-turn had
