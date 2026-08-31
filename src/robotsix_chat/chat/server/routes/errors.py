@@ -162,16 +162,40 @@ def budget_exhausted_message(
     )
 
 
+def _is_token_limit_error(exc: BaseException) -> bool:
+    """Return True when *exc* is a token-limit overflow.
+
+    pydantic-ai raises ``UnexpectedModelBehavior`` when the combined prompt
+    (system + history + tools + user turn) exceeds the model's context
+    window before any response tokens are generated.  The message contains
+    ``"token limit"`` and ``"exceeded"`` — match the chain so wrapped
+    errors are caught too.
+    """
+    from pydantic_ai.exceptions import UnexpectedModelBehavior
+
+    for cur in _iter_chain(exc):
+        if isinstance(cur, UnexpectedModelBehavior) and (
+            "token limit" in str(cur).lower()
+        ):
+            return True
+    return False
+
+
 def stream_error_code(exc: BaseException) -> str:
     """Map ``exc`` to a stable, client-safe error code.
 
     Categories are derived from transport-level facts (timeout, HTTP status on
-    an attached response) plus one semantic classifier — a Claude SDK tier
-    reporting exhausted usage credits maps to ``budget_exhausted``. Anything
-    unrecognised degrades to ``server_error`` rather than guessing.
+    an attached response) plus two semantic classifiers — a Claude SDK tier
+    reporting exhausted usage credits maps to ``budget_exhausted``, and a
+    pydantic-ai ``UnexpectedModelBehavior`` whose message indicates a token
+    limit overflow maps to ``invalid_request_error`` (the prompt was too large
+    for the model).  Anything unrecognised degrades to ``server_error``
+    rather than guessing.
     """
     if any(is_claude_sdk_usage_exhausted(cur) for cur in _iter_chain(exc)):
         return STREAM_ERROR_BUDGET_EXHAUSTED
+    if _is_token_limit_error(exc):
+        return STREAM_ERROR_INVALID_REQUEST
     if isinstance(exc, TimeoutError | httpx.TimeoutException):
         return STREAM_ERROR_TIMEOUT
     status = getattr(getattr(exc, "response", None), "status_code", None)
@@ -208,6 +232,11 @@ def curated_stream_error(
     if code == STREAM_ERROR_BUDGET_EXHAUSTED:
         message = budget_exhausted_message(
             exc, paid_fallback_enabled=paid_fallback_enabled
+        )
+    elif code == STREAM_ERROR_INVALID_REQUEST and _is_token_limit_error(exc):
+        message = (
+            "The conversation history is too long for the backup model. "
+            "Start a new session or shorten the conversation to continue."
         )
     else:
         message = _STREAM_ERROR_MESSAGES[code]

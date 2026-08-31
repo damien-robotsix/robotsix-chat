@@ -142,6 +142,75 @@ def _build_message_history(history: list[Turn] | None) -> list[Any] | None:
     return messages
 
 
+# Fraction of a keyed tier's token window the history may consume.  The
+# remaining 30 % is reserved for the system prompt, tools, the current user
+# turn, and the model's response tokens.  Derived from the level-3 (mimo)
+# window of 65 536 tokens — a 20 k-token history + system prompt already
+# pushed past the limit (observed 2026-08-31, correlation d6ad6be).
+_HISTORY_TOKEN_BUDGET_FRACTION = 0.70
+
+# Note prepended to the first surviving user turn when older turns were
+# dropped to fit the fallback tier's context window.
+_HISTORY_OMISSION_NOTE = (
+    "[Older conversation turns were omitted to fit the model's context window.]"
+)
+
+
+def _estimate_tokens(text: str) -> int:
+    """Rough token estimate using a chars/4 heuristic.
+
+    Good enough for deciding how many turns to keep — the real tokenizer is
+    provider-specific and not worth pulling in as a dependency for a
+    best-effort cap.
+    """
+    return max(1, len(text) // 4)
+
+
+def _cap_history_for_keyed_tier(
+    history: list[Turn],
+    max_tokens: int,
+) -> list[Turn]:
+    """Drop the oldest turns from *history* until it fits *max_tokens*.
+
+    The budget is ``_HISTORY_TOKEN_BUDGET_FRACTION`` of *max_tokens* so the
+    system prompt, tools and current turn have room.  The most recent turn is
+    always kept (even if it alone exceeds the budget).  When turns are dropped,
+    the first surviving user message is prefixed with
+    :data:`_HISTORY_OMISSION_NOTE` so the fallback model knows context was
+    trimmed.
+    """
+    if not history or max_tokens <= 0:
+        return history
+
+    budget = int(max_tokens * _HISTORY_TOKEN_BUDGET_FRACTION)
+
+    # Walk from the newest turn backwards until we fit.
+    kept: list[Turn] = []
+    running = 0
+    for user_msg, asst_msg in reversed(history):
+        turn_tokens = _estimate_tokens(user_msg) + _estimate_tokens(asst_msg)
+        if kept and running + turn_tokens > budget:
+            break
+        kept.append((user_msg, asst_msg))
+        running += turn_tokens
+    kept.reverse()
+
+    if len(kept) < len(history):
+        first_user, first_asst = kept[0]
+        kept[0] = (f"{_HISTORY_OMISSION_NOTE}\n{first_user}", first_asst)
+        logger.info(
+            "Capped fallback history: kept %d/%d turns (%d est. tokens, "
+            "budget %d) to fit tier window of %d tokens",
+            len(kept),
+            len(history),
+            running,
+            budget,
+            max_tokens,
+        )
+
+    return kept
+
+
 @contextlib.contextmanager
 def _trace_session(
     session_id: str | None,
@@ -706,6 +775,7 @@ class LlmioChatAgent:
                 level=level,
                 trace_name=trace_name,
                 credential_is_dead=False,
+                raw_history=history,
             )
         else:
             try:
@@ -749,6 +819,7 @@ class LlmioChatAgent:
                         level=level,
                         trace_name=trace_name,
                         credential_is_dead=isinstance(root, ClaudeSDKAuthError),
+                        raw_history=history,
                     )
                 except Exception as fallback_exc:
                     # Keep the root cause on the chain via an explicit __cause__:
@@ -779,6 +850,7 @@ class LlmioChatAgent:
         level: int | None = None,
         trace_name: str | None = None,
         credential_is_dead: bool = False,
+        raw_history: list[Turn] | None = None,
     ) -> Any:
         """Retry the same turn at a different tier when this one cannot serve.
 
@@ -858,6 +930,16 @@ class LlmioChatAgent:
                     builtin_tools=False,
                     web_tools=True,  # see the primary handle above
                 )
+                # Cap the history for keyed (non-SDK) tiers so the prompt
+                # fits within the tier's token window.  Claude SDK tiers
+                # manage their own session context and must not be truncated.
+                effective_history = message_history
+                if raw_history and level_needs_api_key(level):
+                    tlc_cfg = getattr(tier_config, f"level{level}", None)
+                    tier_max = getattr(tlc_cfg, "max_tokens", None) if tlc_cfg else None
+                    if tier_max:
+                        capped = _cap_history_for_keyed_tier(raw_history, tier_max)
+                        effective_history = _build_message_history(capped)
                 try:
                     with (
                         _trace_session(
@@ -866,7 +948,7 @@ class LlmioChatAgent:
                         _activity_context(on_activity),
                     ):
                         return await fallback_handle.run(
-                            prompt, message_history=message_history
+                            prompt, message_history=effective_history
                         )
                 finally:
                     fallback_handle.close()

@@ -1632,3 +1632,73 @@ async def test_result_messages_fill_collector_when_no_events_fired() -> None:
         _ = [c async for c in agent.stream("go again", session_id="sess-1")]
 
     assert actions == ['spawn_subsession({"kind": "task"}) -> sub-42']
+
+
+@pytest.mark.asyncio
+async def test_keyed_fallback_caps_oversized_history() -> None:
+    """A keyed fallback tier caps the history to fit its token window.
+
+    When the conversation history is too large for the fallback tier's context
+    window (e.g. level-3 mimo at 65 536 tokens), the oldest turns are dropped
+    and the first surviving user message is prefixed with an omission note.
+    The most recent turns are always kept.
+    """
+    from robotsix_llmio.claude_sdk import ClaudeSDKUsageExhaustedError
+
+    # Build an oversized history: 60 turns, each ~4 000 chars (~1 000 tokens).
+    # Total ~60 000 tokens — exceeds level-3's 70 % budget of ~45 875 tokens.
+    big_turns: list[tuple[str, str]] = []
+    for i in range(60):
+        user = f"Turn {i}: " + "x" * 3960
+        asst = f"Reply {i}: " + "y" * 3960
+        big_turns.append((user, asst))
+
+    # The Claude tier (level 4) is exhausted; the walk lands on keyed level 3.
+    claude_handle = MagicMock()
+
+    async def exhausted(_message: str, *, message_history: object = None) -> None:
+        raise ClaudeSDKUsageExhaustedError("You're out of usage credits")
+
+    claude_handle.run = exhausted
+    claude_handle.close = MagicMock()
+    claude_provider = MagicMock()
+    claude_provider.build_agent.return_value = claude_handle
+
+    seen: dict[str, object] = {}
+    level3_handle = MagicMock()
+
+    async def recovered(_message: str, *, message_history: object = None) -> MagicMock:
+        seen["message_history"] = message_history
+        result = MagicMock()
+        result.output = "capped reply"
+        return result
+
+    level3_handle.run = recovered
+    level3_handle.close = MagicMock()
+    level3_provider = MagicMock()
+    level3_provider.build_agent.return_value = level3_handle
+
+    create_model_patch = MagicMock(
+        side_effect=lambda *, level, **_kw: (
+            level3_provider if level == 3 else claude_provider
+        )
+    )
+
+    with patch("robotsix_chat.llm.agent.create_model", create_model_patch):
+        agent = LlmioChatAgent(model_level=4, instruction="Be helpful.")
+        chunks = [c async for c in agent.stream("latest", history=big_turns)]
+
+    assert chunks == ["capped reply"]
+    # The fallback received a capped history — fewer messages than the
+    # original 60 turns (120 pydantic-ai messages).
+    message_history = seen["message_history"]
+    assert message_history is not None
+    assert len(message_history) < 120  # type: ignore[arg-type]
+    # The newest turns are preserved: the last turn's user message ("Turn 59")
+    # must survive.
+    last_user_part = message_history[-2]  # type: ignore[index]
+    assert "Turn 59" in str(last_user_part)
+    # The first surviving user message carries the omission note.
+    first_user_part = message_history[0]  # type: ignore[index]
+    first_text = str(first_user_part)
+    assert "Older conversation turns were omitted" in first_text
