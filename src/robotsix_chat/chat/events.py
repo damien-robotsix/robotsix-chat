@@ -405,7 +405,7 @@ class EventBus:
         # subscribes mid-turn replay what has been emitted and then follow the
         # live tokens.  Populated by begin_turn/append_turn_token and cleared
         # by end_turn — at most one entry per session, so memory stays bounded.
-        self._current_turn: dict[str, tuple[str, list[str]]] = {}
+        self._current_turn: dict[str, tuple[str, list[str], str]] = {}
 
     def subscribe(self, session_id: str) -> asyncio.Queue[dict[str, object]]:
         """Create a fresh queue, add to *session_id*'s subscribers, return it.
@@ -420,26 +420,38 @@ class EventBus:
         self._subscribers[session_id].add(queue)
         current = self._current_turn.get(session_id)
         if current is not None:
-            turn_id, parts = current
+            turn_id, parts, user_message = current
             queue.put_nowait(
                 {
                     "type": SSE_CHAT_TURN_RESUME_TYPE,
                     "session_id": session_id,
                     "turn_id": turn_id,
                     "content": "".join(parts),
+                    # Lets a re-attaching client render the operator's own
+                    # message: a dispatched message lives only in the
+                    # server-side coalescer until the turn records, so
+                    # without this it vanished from the UI when switching
+                    # away and back mid-turn (operator-reported).
+                    "user_message": user_message,
                 }
             )
         return queue
 
-    def begin_turn(self, session_id: str, turn_id: str) -> None:
-        """Start buffering a foreground turn and announce it to subscribers."""
-        self._current_turn[session_id] = (turn_id, [])
+    def begin_turn(self, session_id: str, turn_id: str, user_message: str = "") -> None:
+        """Start buffering a foreground turn and announce it to subscribers.
+
+        *user_message* is the operator text driving the turn; it rides the
+        started/resume frames so a client that (re)subscribes mid-turn can
+        render the bubble for a message that is not yet in history.
+        """
+        self._current_turn[session_id] = (turn_id, [], user_message)
         self.publish(
             session_id,
             {
                 "type": SSE_CHAT_TURN_STARTED_TYPE,
                 "session_id": session_id,
                 "turn_id": turn_id,
+                "user_message": user_message,
             },
         )
 
