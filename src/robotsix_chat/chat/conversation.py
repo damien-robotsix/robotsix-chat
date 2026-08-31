@@ -782,16 +782,17 @@ class ConversationStore:
         Read-only: does not update any metadata or LRU order.
         Returns an empty list for unknown sessions.
 
-        Turns physically removed by the auto-trim pass (before
-        ``trimmed_turn_index``) are excluded, so the UI transcript reflects
-        the current post-trim history.  For non-trimmed sessions
-        (``trimmed_turn_index == 0``) this returns the full turn list
-        unchanged.
+        The FULL transcript, including turns the auto-trim pass removed from
+        the agent's context: trimming exists to keep the model prompt lean,
+        not to hide conversation from the operator (operator-reported: "the
+        conversation looks not so long in my chat window but there is a
+        missing part of it"). Only :meth:`agent_history` applies
+        ``trimmed_turn_index``.
         """
         session = self._sessions.get(session_id)
         if session is None:
             return []
-        return list(session.turns[session.trimmed_turn_index :])
+        return list(session.turns)
 
     def get_session(self, session_id: str) -> Session | None:
         """Return the :class:`Session` object for *session_id*, or ``None``.
