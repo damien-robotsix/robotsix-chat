@@ -575,6 +575,8 @@ class LifecycleSettings(BaseModel):
             offered.
         base_url: Base URL of the deploy-lifecycle API server (no trailing
             slash), e.g. ``http://central-deploy:8100``.
+        default_protocol: Scheme (``http`` or ``https``) assumed for lifecycle
+            URLs that omit one.
         api_key: API key sent as the ``X-API-Key`` header.
         service_name: This service's own name as registered with the deploy
             server (e.g. ``"chat"``).  Required for ``self_restart`` — the
@@ -584,6 +586,8 @@ class LifecycleSettings(BaseModel):
             ``self_restart`` (and the cognee frozen-store auto-recovery that
             depends on it) is unavailable.
         timeout: Per-request HTTP timeout in seconds.
+        self_restart_max_retries: How many times ``self_restart`` retries the
+            restart call before giving up.
 
     """
 

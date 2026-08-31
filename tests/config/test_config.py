@@ -1109,10 +1109,10 @@ _PREEXISTING_ALLOWLIST: set[tuple[str, int, str]] = {
     ("src/robotsix_chat/config/settings.py", 95, "claude-fable"),
     # config/memory_models.py — gpt-5-nano / gpt-5-mini / deepseek-v4-flash
     ("src/robotsix_chat/config/memory_models.py", 18, "gpt-"),
-    ("src/robotsix_chat/config/memory_models.py", 31, "gpt-"),
-    ("src/robotsix_chat/config/memory_models.py", 34, "gpt-"),
-    ("src/robotsix_chat/config/memory_models.py", 34, "deepseek/"),
-    ("src/robotsix_chat/config/memory_models.py", 37, "gpt-"),
+    ("src/robotsix_chat/config/memory_models.py", 42, "gpt-"),
+    ("src/robotsix_chat/config/memory_models.py", 45, "gpt-"),
+    ("src/robotsix_chat/config/memory_models.py", 45, "deepseek/"),
+    ("src/robotsix_chat/config/memory_models.py", 48, "gpt-"),
 }
 
 

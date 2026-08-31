@@ -160,6 +160,7 @@ modules:
       - src/robotsix_chat/config/openrouter_models.py
       - src/robotsix_chat/config/ref_doc_models.py
       - src/robotsix_chat/config/render_url_models.py
+      - src/robotsix_chat/config/schema_docs.py
       - src/robotsix_chat/config/server_models.py
       - src/robotsix_chat/config/session_models.py
       - src/robotsix_chat/config/settings.py
@@ -167,6 +168,7 @@ modules:
       - docs/config/api.md
       - tests/config/__init__.py
       - tests/config/test_config.py
+      - tests/config/test_schema_descriptions.py
       - tests/config/test_system_prompt_governance.py
       - tests/config/test_config_hypothesis.py
 

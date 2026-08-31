@@ -25,6 +25,17 @@ class MemoryLlmSettings(BaseModel):
     extraction/consolidation LLM call per message, so an expensive default
     silently burns credits whenever the config is reset or clobbered. Do
     not default this to a frontier/expensive model.
+
+    Attributes:
+        provider: litellm provider name for the extraction LLM.  ``custom``
+            routes cognee through an OpenAI-compatible endpoint (OpenRouter).
+        model: Fully-qualified litellm model id for the extraction LLM.
+            Keep it cheap — it runs once per message (see the default).
+        endpoint: Base URL of the OpenAI-compatible API the extraction LLM
+            calls (OpenRouter's ``/api/v1`` by default).
+        max_completion_tokens: Upper bound on tokens generated per extraction
+            call.
+
     """
 
     provider: str = "custom"
@@ -48,6 +59,20 @@ class MemoryEmbeddingSettings(BaseModel):
     name); ``endpoint`` (e.g. ``http://host:11434/v1``) is required when memory
     is enabled. ``dimensions`` is sticky — changing it invalidates stored
     vectors.
+
+    Attributes:
+        provider: cognee embedding provider.  Must be ``openai_compatible``
+            for the self-hosted Ollama path.
+        model: Embedding model name served by the endpoint (e.g. ``bge-m3``).
+        endpoint: Base URL of the OpenAI-compatible embedding server
+            (e.g. ``http://host:11434/v1``).  Required when memory is enabled.
+        dimensions: Embedding vector dimensionality.  Sticky — changing it
+            invalidates every stored vector.
+        api_key: API key for the embedding server (``ollama`` for a keyless
+            local Ollama).
+        huggingface_tokenizer: HuggingFace tokenizer id used to count tokens
+            for the embedding model.
+
     """
 
     provider: str = "openai_compatible"

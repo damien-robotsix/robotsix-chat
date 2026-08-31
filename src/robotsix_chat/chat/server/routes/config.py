@@ -50,6 +50,7 @@ from starlette.requests import Request
 from starlette.responses import JSONResponse
 
 from robotsix_chat.config import Settings
+from robotsix_chat.config.schema_docs import apply_property_descriptions
 from robotsix_chat.config.settings import ConfigValidationError
 
 from ._shared import _parse_json_body
@@ -416,10 +417,15 @@ def _get_schema() -> dict[str, Any]:
     ``config/config.schema.json``.  They agree today, but a divergence would
     be invisible from here — the committed file is what CI checks, and the UI
     renders whatever this returns.
+
+    The raw schema only carries a property ``description`` for fields with an
+    explicit ``Field(description=...)``; :func:`apply_property_descriptions`
+    fills the rest from the models' ``Attributes:`` docstrings so the settings
+    UI can show a hover description for every setting.
     """
     global _settings_json_schema
     if _settings_json_schema is None:
-        _settings_json_schema = config_schema(Settings)
+        _settings_json_schema = apply_property_descriptions(config_schema(Settings))
     return _settings_json_schema
 
 

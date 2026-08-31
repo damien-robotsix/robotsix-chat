@@ -1669,9 +1669,22 @@ class Settings(BaseModel):
     server_host: str = Field(default="0.0.0.0", json_schema_extra={"advanced": True})  # noqa: S104  # nosec B104
     server_port: int = Field(default=8000, json_schema_extra={"advanced": True})
     idle_timeout_minutes: int = 30
-    compaction_min_turns: int = Field(default=3, json_schema_extra={"advanced": True})
+    compaction_min_turns: int = Field(
+        default=3,
+        json_schema_extra={"advanced": True},
+        description=(
+            "Minimum number of conversation turns before an idle-timeout "
+            "compaction summary is produced; shorter sessions are left "
+            "uncompacted."
+        ),
+    )
     compaction_keep_recent_turns: int = Field(
-        default=2, json_schema_extra={"advanced": True}
+        default=2,
+        json_schema_extra={"advanced": True},
+        description=(
+            "Number of most-recent turns kept verbatim after compaction; "
+            "older turns are replaced by the summary."
+        ),
     )
     log_level: str = "INFO"
     log_json_format: bool = True
