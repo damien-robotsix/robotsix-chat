@@ -118,6 +118,11 @@ class Settings(BaseModel):
             forwarded to the keyless Claude SDK tiers as ``task_budget`` so
             the model sees a live budget-remaining countdown. ``None``
             (default) sends no budget.
+        llmio_cooldown_seconds: Cooldown window (seconds) applied to models
+            that exhaust their provider quota or hit consecutive terminal
+            failures.  During cooldown the model is skipped in the fallback
+            chain.  ``0`` disables cooldown tracking.  Default ``900``
+            (15 minutes — the interim mitigation value from 2026-08-31).
         agent_instruction: System instruction handed to the LLM agent.
             Includes guidance on spawning subsessions for background work.
         server_host: Host address the chat SSE server binds to.
@@ -177,6 +182,19 @@ class Settings(BaseModel):
             "floor); values below it are ignored with a warning. Not "
             "forwarded to keyed OpenRouter tiers, which keep their own "
             "per-response ``max_tokens`` caps. ``None`` means no budget."
+        ),
+    )
+    llmio_cooldown_seconds: float = Field(
+        default=900.0,
+        ge=0,
+        json_schema_extra={"advanced": True},
+        description=(
+            "Cooldown window (seconds) applied to models that exhaust their "
+            "provider quota or hit consecutive terminal failures.  During "
+            "cooldown the model is skipped in the fallback chain so the "
+            "agent retries with an alternative tier instead of burning "
+            "retries on a known-dead endpoint.  ``0`` disables cooldown "
+            "tracking entirely."
         ),
     )
     agent_instruction: str = Field(
