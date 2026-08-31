@@ -144,7 +144,8 @@ class TestAuthLogin:
         assert resp.status_code == 302
         location = resp.headers["location"]
         assert "auth.example.com/login" in location
-        assert "callback=" in location
+        assert "redirect_uri=" in location
+        assert "login_for=app" in location
 
     def test_missing_redirect_to_returns_400(self) -> None:
         """Missing redirect_to parameter returns 400."""
