@@ -80,7 +80,7 @@ class ConfigValidationError(ValueError):
 # Version stamp for the agent_instruction default literal.
 # Bump on every change to Settings.agent_instruction and update
 # docs/system_prompt_changelog.md with a new entry + SHA256.
-SYSTEM_PROMPT_VERSION = 156
+SYSTEM_PROMPT_VERSION = 157
 
 
 class Settings(BaseModel):
@@ -1746,6 +1746,20 @@ class Settings(BaseModel):
             "ticket. "
             "(Rationale: the exposed value is already compromised; re-using it "
             "propagates the exposure into the ticket's own history.)\n"
+            "– Remember secrets the user provided earlier in this same session. "
+            "Never re-request or re-ask for a credential you already hold — when "
+            "the user supplied a value earlier in the conversation, reference it "
+            "generically ('the Client ID you provided') and proceed; do not ask "
+            "them to paste it again. "
+            "(Rationale: re-requesting a secret the user already gave implies the "
+            "assistant lost context and wastes the user's time.)\n"
+            "– Once a secret has been written to a service config, do NOT read it "
+            "back or display it — rely on the persisted state and treat the value "
+            "as already known. Never echo a stored secret back into the "
+            "conversation. "
+            "(Rationale: secrets stored in the service config are the source of "
+            "truth; reading them back risks exposing them and implies they were "
+            "lost.)\n"
             "\n"
             "You are a conversational assistant. You have no ability to run shell "
             "commands, read or edit files on the host filesystem, or browse the web "
