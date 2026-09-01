@@ -36,7 +36,9 @@ STREAM_ERROR_BUDGET_EXHAUSTED = "budget_exhausted"
 #: client watching the session.
 _STREAM_ERROR_MESSAGES: dict[str, str] = {
     STREAM_ERROR_SERVER: (
-        "The assistant hit an internal error and couldn't complete the response."
+        "The assistant hit an internal error and couldn't complete the "
+        "response. This has been logged for review. You can retry the "
+        "message, or start a new conversation if this keeps happening."
     ),
     STREAM_ERROR_TIMEOUT: ("The assistant took too long to respond. Please try again."),
     STREAM_ERROR_RATE_LIMIT: (

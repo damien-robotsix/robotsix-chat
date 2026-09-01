@@ -514,8 +514,9 @@ class MessageCoalescer:
                             concatenated,
                             (
                                 f"⚠️ {error['message']} "
-                                f"(turn failed — resend to retry; "
-                                f"correlation {error['correlation_id']})"
+                                f"(turn failed — you can retry or start a "
+                                f"new conversation; correlation "
+                                f"{error['correlation_id']})"
                             ),
                         )
                         for p in pending:
