@@ -1,8 +1,12 @@
+"""Tests for the component roster fetch helpers."""
+
+
 def test_fetch_roster_sync_works_inside_a_running_loop(monkeypatch) -> None:
-    """The periodic scheduler builds agents lazily on its async tick; the
-    sync roster fetch must not explode with 'asyncio.run() cannot be called
-    from a running event loop' (2026-09-01 incident: a junk session per
-    tick).
+    """fetch_roster_sync must work when an event loop is already running.
+
+    The periodic scheduler builds agents lazily on its async tick; a bare
+    asyncio.run() there died with 'cannot be called from a running event
+    loop' (2026-09-01 incident: a junk session per tick).
     """
     import asyncio
 
