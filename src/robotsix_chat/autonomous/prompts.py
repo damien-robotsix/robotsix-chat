@@ -10,7 +10,7 @@ if TYPE_CHECKING:
 # Version stamp for the autonomous appendix (build_autonomous_instruction).
 # Bump on every change to the instruction text and update
 # docs/system_prompt_changelog.md with a new AUTONOMOUS entry + SHA256.
-AUTONOMOUS_PROMPT_VERSION = 51
+AUTONOMOUS_PROMPT_VERSION = 52
 
 
 def build_autonomous_instruction(settings: Settings) -> str:
@@ -98,6 +98,23 @@ def build_autonomous_instruction(settings: Settings) -> str:
         "operator directly instead, cite the relevant file/symbol, and "
         "stop.  Filing a ticket for something that already exists wastes "
         "a monitor cycle and shows the user a misleading automated trip.\n"
+        "\n"
+        "PRE-FILING DUPLICATE CHECK — MANDATORY, STATE IT EXPLICITLY — before "
+        "you file ANY new ticket, you MUST first query the mill board for an "
+        "existing open ticket covering the same issue or root cause.  Use "
+        "component_request (GET /tickets with relevant filters — status open, "
+        "matching the subject/root-cause keywords) to search the live board.  "
+        "This check is especially critical for recurring or repeatedly-observed "
+        "issues (e.g. a peer-agent parse error seen across multiple meetings): "
+        "the same root cause is exactly what produces duplicate tickets.  If an "
+        "open ticket for the same root cause already exists, do NOT file a "
+        "second one — reference the existing ticket id to the operator instead "
+        "and stop.  When you DO file (no duplicate found), you MUST explicitly "
+        "state the check in your user-facing summary — name what you searched "
+        "for and the result, e.g. 'checked mill board — no open ticket for "
+        "peer-agent parse errors' — so the operator can see the duplicate guard "
+        "actually ran.  A ticket filed without a stated board-duplicate check "
+        "is an incomplete action.\n"
         "\n"
         "3. EXECUTION — Begin executing immediately.  Make the first tool "
         "call the task needs now and work autonomously through every "
