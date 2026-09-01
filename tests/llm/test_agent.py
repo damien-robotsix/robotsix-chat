@@ -1677,3 +1677,29 @@ async def test_keyed_fallback_caps_oversized_history() -> None:
     first_user_part = message_history[0]  # type: ignore[index]
     first_text = str(first_user_part)
     assert "Older conversation turns were omitted" in first_text
+
+
+def test_chat_overrides_fallback_workhorse_to_pro() -> None:
+    """Chat binds its fallback level 2 to the baked level-3 (pro) binding.
+
+    Operator override 2026-09-01: the fleet's baked fallback L2 stays flash
+    (mill keeps it); chat's long conversational contexts degenerated on
+    flash under xhigh reasoning.
+    """
+    from robotsix_llmio.config import load_tier_config
+
+    agent = LlmioChatAgent(model_level=2, instruction="Be helpful.")
+    assert (
+        agent._tier_config.fallback.level2.model_name == "deepseek/deepseek-v4-pro-0813"
+    )
+    # The override is chat-local: llmio's baked default stays flash.
+    assert (
+        load_tier_config({}).fallback.level2.model_name
+        == "deepseek/deepseek-v4-flash-20260731"
+    )
+    # Other bindings untouched.
+    assert (
+        agent._tier_config.fallback.level1.model_name
+        == "deepseek/deepseek-v4-flash-20260731"
+    )
+    assert agent._tier_config.default.level2.model == "claudeSDK-opus"
