@@ -599,9 +599,10 @@ async def test_keyed_level_runs_with_request_limit() -> None:
 
 @pytest.mark.asyncio
 async def test_keyless_level_runs_without_usage_limits() -> None:
-    """Claude SDK tiers get no usage_limits kwarg — the SDK tool path
-    warns-and-drops run kwargs it cannot honor, and the CLI runs the agent
-    loop internally so the cap never applies.
+    """Claude SDK tiers get no usage_limits kwarg.
+
+    The SDK tool path warns-and-drops run kwargs it cannot honor, and the
+    CLI runs the agent loop internally so the cap never applies.
     """
     create_model, handle = _patched_create_model("reply")
 
