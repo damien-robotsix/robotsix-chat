@@ -56,6 +56,10 @@ from robotsix_chat.chat.actions import (
 )
 from robotsix_chat.chat.events import EventSink, activity_frame
 from robotsix_chat.config import slot_needs_api_key
+from robotsix_chat.llm.capabilities import (
+    reset_model_supports_images,
+    set_model_supports_images,
+)
 from robotsix_chat.memory import ChatMemory, NullMemory
 
 logger = logging.getLogger(__name__)
@@ -812,6 +816,14 @@ class LlmioChatAgent:
                 # Stateless turn: history + one fresh memory block travel in
                 # the prompt; no CLI session is resumed (see the module note
                 # above).
+                # Stamp the slot's image capability for tools that run inside
+                # this attempt: keyed OpenRouter slots (DeepSeek/mimo) are
+                # text-only, so image-returning tools degrade to text instead
+                # of 404ing the whole turn ("No endpoints found that support
+                # image input"). The Claude transport reads images natively.
+                capability_token = set_model_supports_images(
+                    not slot_needs_api_key(tlc)
+                )
                 try:
                     with (
                         _trace_session(
@@ -832,6 +844,7 @@ class LlmioChatAgent:
                             prompt, message_history=effective_history
                         )
                 finally:
+                    reset_model_supports_images(capability_token)
                     handle.close()
 
             async def _run_slot() -> Any:

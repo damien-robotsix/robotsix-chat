@@ -29,6 +29,7 @@ from pathlib import Path
 from typing import Any
 
 from robotsix_chat.config.models import RenderUrlSettings
+from robotsix_chat.llm.capabilities import IMAGE_OMITTED_NOTE, model_supports_images
 
 logger = logging.getLogger(__name__)
 
@@ -198,6 +199,12 @@ def build_render_url_tools(
         metadata = json.dumps(result, ensure_ascii=False)
         if screenshot_bytes is None:
             return metadata
+
+        # A BinaryContent block in a tool result 404s the whole turn on
+        # text-only OpenRouter models — return the metadata (which already
+        # carries the accessibility tree) without the screenshot there.
+        if not model_supports_images():
+            return f"{metadata}\n{IMAGE_OMITTED_NOTE}"
 
         from pydantic_ai.messages import BinaryContent, TextContent
 

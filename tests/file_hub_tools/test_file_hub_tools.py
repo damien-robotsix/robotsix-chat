@@ -834,3 +834,40 @@ class TestFileHubClient:
         assert _guess_content_type("image.png") == "image/png"
         assert _guess_content_type("data.csv") == "text/csv"
         assert _guess_content_type("unknown.xyz") == "application/octet-stream"
+
+
+class TestRenderPdfPageTextOnlyModel:
+    """render_pdf_page degrades to text when the model cannot see images."""
+
+    @pytest.mark.asyncio
+    async def test_render_returns_text_only_for_text_only_model(
+        self, tmp_path: Path
+    ) -> None:
+        """No BinaryContent block when the serving model lacks vision.
+
+        Regression: a BinaryContent tool result 404'd the whole turn on
+        text-only OpenRouter models ("No endpoints found that support
+        image input", live incident 2026-09-01).
+        """
+        from robotsix_chat.llm.capabilities import (
+            IMAGE_OMITTED_NOTE,
+            reset_model_supports_images,
+            set_model_supports_images,
+        )
+
+        pdf_path = tmp_path / "flat.pdf"
+        _make_flat_pdf(pdf_path)
+
+        settings = _settings(working_dir=str(tmp_path))
+        tools = build_file_hub_tools(settings)
+        render_page = tools[3]
+
+        token = set_model_supports_images(False)
+        try:
+            result = await render_page(str(pdf_path))
+        finally:
+            reset_model_supports_images(token)
+
+        assert isinstance(result, str)
+        assert "Page dimensions" in result
+        assert IMAGE_OMITTED_NOTE in result
