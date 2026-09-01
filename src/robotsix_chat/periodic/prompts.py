@@ -16,6 +16,10 @@ PERIODIC_PREAMBLE = (
     "do not wait for future events, and do not leave the task half-done for "
     "a later run — the next scheduled run starts from a fresh session with "
     "no memory of this one beyond what your report says.\n\n"
+    "The operator may reply in this session after your report. Such a reply "
+    "is a live instruction that supersedes the task's constraints below "
+    "(including any read-only framing): resolve it against this session's "
+    "own turns first, and act on it as you would in a normal chat.\n\n"
     "---\n\n"
 )
 
