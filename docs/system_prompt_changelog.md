@@ -3,6 +3,24 @@
 Governed artifact: `Settings.agent_instruction` default literal in
 `src/robotsix_chat/config/settings.py`. Version stamp: `SYSTEM_PROMPT_VERSION` in the same module.
 
+## v156 — 2026-09-01 — 20260901T141916Z-add-an-oral-decision-style-guard-against-4653
+
+**Change:** Add a "Repeated-instruction handling" guardrail to the Autonomy
+section: when the user repeats an earlier instruction verbatim or restates a
+decision already made in the conversation, treat it as re-affirming the
+instruction — do not claim lack of context, do not ask a clarifying question
+whose answer is already in the conversation, re-read the recent turns to
+recover the exact targets, then execute the action and report the result.
+
+**Rationale:** A session (96d3795363484213b96adfff0c1b308b) ended with the
+user clearly instructing "Approve the 3 file-hub tickets and re-arm the
+monitor" (a verbatim repeat of an already-approved action), and the assistant
+instead replied that it lacked context and asked a series of clarifying
+questions already answered in the conversation. The misread derailed an
+approved action and wasted a turn.
+
+**SHA256:** `7ad978a3966df53bede400a041e0f22a6cf11a2a317c4d0a3da04e894d7b255b`
+
 ## v155 — 2026-09-01 — 20260901T144835Z-surface-internal-errors-to-the-user-with-3846
 
 **Summary:** Add an "INTERNAL TURN FAILURE" directive to the Efficiency section: when a tool call, step, or the whole turn fails with an internal/framework-level error (an "internal error" reply that carries only a correlation ID, a server exception, an unexpected crash mid-flow), the assistant must translate it into a user-facing diagnostic — naming the failed step and what it was trying to do, explaining the likely cause in plain language — plus a concrete recovery suggestion (retry automatically when safe and reasonable, otherwise offer to re-attempt and say exactly what will be redone). The user must always be left with a next action or a clear offer to continue, never a dead end.

@@ -80,7 +80,7 @@ class ConfigValidationError(ValueError):
 # Version stamp for the agent_instruction default literal.
 # Bump on every change to Settings.agent_instruction and update
 # docs/system_prompt_changelog.md with a new entry + SHA256.
-SYSTEM_PROMPT_VERSION = 155
+SYSTEM_PROMPT_VERSION = 156
 
 
 class Settings(BaseModel):
@@ -745,6 +745,17 @@ class Settings(BaseModel):
             "confirmation only when the action is genuinely ambiguous (unclear "
             "which item, which scope, or which target) or carries real risk the "
             "user has not already accepted.\n"
+            "– Repeated-instruction handling: when the user repeats an earlier "
+            "instruction verbatim, or restates a decision that was already "
+            "made in this conversation, treat that message as RE-AFFIRMING the "
+            "instruction — do NOT reply that you lack context, and do NOT ask "
+            "a clarifying question whose answer is already in the "
+            "conversation.  Re-read the recent turns to recover the exact "
+            "targets (which tickets, which monitor, which action) and any "
+            "already-answered details, then execute the action and report the "
+            "result.  Claiming you have no context and re-asking "
+            "already-answered questions when the user repeats an approved "
+            "instruction verbatim derails the action and wastes a turn.\n"
             "– Gate only genuinely risky, destructive, irreversible, or "
             "ambiguous actions behind human approval — when in doubt about "
             "safety or reversibility, ask before acting.  A requested ticket "
