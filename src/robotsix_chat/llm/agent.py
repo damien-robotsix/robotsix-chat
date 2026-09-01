@@ -99,6 +99,27 @@ def _keyed_usage_limits(tlc: TierLevelConfig) -> Any:
     return UsageLimits(request_limit=_KEYED_REQUEST_LIMIT)
 
 
+# Chat-only fallback-workhorse override (operator decision, 2026-09-01). The
+# FLEET baked fallback binds level 2 to deepseek flash (mill keeps that), but
+# chat turns replay long conversational histories, where flash under the
+# xhigh reasoning policy degenerated into token loops (live word-salad
+# incident). Chat pays for the pro snapshot at its workhorse level instead —
+# same binding as the baked fallback level 3.
+_CHAT_FALLBACK_L2_PRO: dict = {
+    "fallback": {
+        "level2": {
+            "model": "openrouter-deepseek/deepseek-v4-pro-0813",
+            "max_tokens": 131072,
+            "provider_kwargs": {
+                "preferred_provider": "StreamLake",
+                "max_price_prompt": 1.16,
+                "max_price_completion": 3.40,
+            },
+        }
+    }
+}
+
+
 # A prior conversation turn replayed to the agent: ``(user, assistant)``.
 Turn = tuple[str, str]
 
@@ -464,11 +485,12 @@ class LlmioChatAgent:
         self._task_budget_tokens = task_budget_tokens
         # The two-slot tier config every turn resolves against; its failover
         # section is adopted by llmio's process-wide tracker on each call.
-        self._tier_config = load_tier_config(
-            {"failover": {"window_seconds": failover_window_seconds}}
-            if failover_window_seconds is not None
-            else {}
-        )
+        # Chat overrides the fallback workhorse to pro (see
+        # _CHAT_FALLBACK_L2_PRO).
+        overrides: dict = dict(_CHAT_FALLBACK_L2_PRO)
+        if failover_window_seconds is not None:
+            overrides["failover"] = {"window_seconds": failover_window_seconds}
+        self._tier_config = load_tier_config(overrides)
         # Hold references to in-flight background writes so they aren't GC'd.
         self._write_tasks: set[asyncio.Task[None]] = set()
 
