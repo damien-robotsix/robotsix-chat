@@ -233,8 +233,8 @@ Component-access roster and skill loading from the central-deploy management pla
 | JSON key                                                        | Type              | Default  | Description                                                                                                                                                                                                                                                                                                                                                                                                                                                                  |
 | --------------------------------------------------------------- | ----------------- | -------- | ---------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- |
 | `central_deploy.url`                                            | `string`          | `""`     | Canonical base URL of the central-deploy / deploy-lifecycle API (no trailing slash). Single source of truth for the deploy-plane address; the lifecycle client and feedback roster lookup both read it.                                                                                                                                                                                                                                                                      |
-| `central_deploy.deploy_api_key`                                 | `string` (secret) | `""`     | Canonical deploy-plane credential — the shared secret between this chat component and central-deploy. Sent as the ``X-API-Key`` header on outbound roster/lifecycle calls, and required (matched) on inbound central-deploy → chat endpoints.                                                                                                                                                                                                                                |
-| `central_deploy.roster_cache_ttl`                               | `number`          | `300.0`  | Seconds to cache the component roster before re-fetching.                                                                                                                                                                                                                                                                                                                                                                                                                  |
+| `central_deploy.deploy_api_key`                                 | `string` (secret) | `""`     | Canonical deploy-plane credential — the shared secret between this chat component and central-deploy. Sent as the `X-API-Key` header on outbound roster/lifecycle calls, and required (matched) on inbound central-deploy → chat endpoints.                                                                                                                                                                                                                                  |
+| `central_deploy.roster_cache_ttl`                               | `number`          | `300.0`  | Seconds to cache the component roster before re-fetching.                                                                                                                                                                                                                                                                                                                                                                                                                    |
 | `central_deploy.component_response_max_chars`                   | `integer`         | `200000` | Default truncation limit for GET/HEAD component responses — write methods keep the 8,000-char limit. Raised from 8,000 so large ticket lists (e.g. mill board blocked tickets) enumerate fully. Each call can override this with `component_request`'s `max_response_chars` parameter (e.g. `max_response_chars=2000` for a compact summary of a ticket history).                                                                                                            |
 | `central_deploy.component_request_timeout`                      | `number`          | `60.0`   | Per-request HTTP timeout (seconds) for component API calls made via component_request. Also acts as the wall-clock deadline for all retry attempts so a failing component cannot block the agent indefinitely. Default 60s — raise this if upstream components are genuinely slow to respond.                                                                                                                                                                                |
 | `central_deploy.component_fallbacks`                            | `object`          | `{}`     | Baked-in fallback base URLs for components that may be missing from the central-deploy roster (e.g. after a redeploy). Keyed by component id (e.g. `"robotsix-mill"` → `"http://mill:8080"`). When the roster returned by central-deploy is missing a component, the fallback URL is used instead — keeps monitors and tool calls running through transient roster gaps. If a component is reported as unknown, the error message tells you exactly which config key to set. |
@@ -495,19 +495,19 @@ Push-branch and open-PR as the robotsix-mill GitHub App. Disabled by default.
 
 Repository security-feature toggle via the GitHub App installation. Disabled by default.
 
-| JSON key                         | Type              | Default             | Description                                                              |
-| -------------------------------- | ----------------- | ------------------- | ------------------------------------------------------------------------ |
-| `github_security.enabled`        | `boolean`         | `false`             | Master switch.                                                           |
-| `github_security.github_org`     | `string`          | `"damien-robotsix"` | GitHub organisation name whose repos are in scope.                       |
+| JSON key                     | Type      | Default             | Description                                        |
+| ---------------------------- | --------- | ------------------- | -------------------------------------------------- |
+| `github_security.enabled`    | `boolean` | `false`             | Master switch.                                     |
+| `github_security.github_org` | `string`  | `"damien-robotsix"` | GitHub organisation name whose repos are in scope. |
 
 ### GitHub Actions
 
 GitHub Actions secrets and workflow dispatch via the GitHub App installation. Disabled by default.
 
-| JSON key                        | Type              | Default             | Description                                                  |
-| ------------------------------- | ----------------- | ------------------- | ------------------------------------------------------------ |
-| `github_actions.enabled`        | `boolean`         | `false`             | Master switch.                                               |
-| `github_actions.github_org`     | `string`          | `"damien-robotsix"` | GitHub organisation name whose repos are in scope.           |
+| JSON key                    | Type      | Default             | Description                                        |
+| --------------------------- | --------- | ------------------- | -------------------------------------------------- |
+| `github_actions.enabled`    | `boolean` | `false`             | Master switch.                                     |
+| `github_actions.github_org` | `string`  | `"damien-robotsix"` | GitHub organisation name whose repos are in scope. |
 
 ### Repo Study
 
@@ -534,14 +534,14 @@ ______________________________________________________________________
 Deploy-lifecycle API client for inspecting and restarting the agent's own service. Disabled by
 default.
 
-| JSON key                             | Type              | Default  | Description                                                                                                                                             |
-| ------------------------------------ | ----------------- | -------- | ------------------------------------------------------------------------------------------------------------------------------------------------------- |
-| `lifecycle.enabled`                  | `boolean`         | `false`  | Master switch.                                                                                                                                          |
+| JSON key                             | Type              | Default  | Description                                                                                                                                                    |
+| ------------------------------------ | ----------------- | -------- | -------------------------------------------------------------------------------------------------------------------------------------------------------------- |
+| `lifecycle.enabled`                  | `boolean`         | `false`  | Master switch.                                                                                                                                                 |
 | `lifecycle.default_protocol`         | `string`          | `"http"` | Protocol scheme prepended when `central_deploy.url` lacks one (e.g. `"https"` for TLS). Ignored when the URL already has a recognised scheme (`http`/`https`). |
-| `lifecycle.api_key`                  | `string` (secret) | `""`     | Optional API key for the deploy-lifecycle API.                                                                                                          |
-| `lifecycle.service_name`             | `string`          | `""`     | Name of this service as registered with the deploy server.                                                                                              |
-| `lifecycle.timeout`                  | `number`          | `30.0`   | Per-request HTTP timeout (seconds).                                                                                                                     |
-| `lifecycle.self_restart_max_retries` | `integer`         | `3`      | Maximum number of retries for transient `self_restart` failures (5xx, timeouts, connection errors). 0 = no retries.                                     |
+| `lifecycle.api_key`                  | `string` (secret) | `""`     | Optional API key for the deploy-lifecycle API.                                                                                                                 |
+| `lifecycle.service_name`             | `string`          | `""`     | Name of this service as registered with the deploy server.                                                                                                     |
+| `lifecycle.timeout`                  | `number`          | `30.0`   | Per-request HTTP timeout (seconds).                                                                                                                            |
+| `lifecycle.self_restart_max_retries` | `integer`         | `3`      | Maximum number of retries for transient `self_restart` failures (5xx, timeouts, connection errors). 0 = no retries.                                            |
 
 ______________________________________________________________________
 

@@ -31,12 +31,12 @@ conversation — the endpoint modifies live repository configuration.
 
 ### Response
 
-| Status | Meaning                                                                |
-| ------ | ---------------------------------------------------------------------- |
-| 200    | Secret set successfully — body includes the repo and secret name       |
-| 400    | Invalid body (missing `secret_value`) or missing path params           |
-| 403    | Invalid or missing `X-API-Key` header                                  |
-| 404    | Repository not in the GitHub App installation scope                    |
+| Status | Meaning                                                                               |
+| ------ | ------------------------------------------------------------------------------------- |
+| 200    | Secret set successfully — body includes the repo and secret name                      |
+| 400    | Invalid body (missing `secret_value`) or missing path params                          |
+| 403    | Invalid or missing `X-API-Key` header                                                 |
+| 404    | Repository not in the GitHub App installation scope                                   |
 | 503    | `github_actions` not configured (disabled or missing `central_deploy.deploy_api_key`) |
 
 ## POST /chat/github/repos/{owner}/{repo}/actions/workflows/{workflow_id}/dispatches
@@ -80,12 +80,12 @@ and inputs with the user in-chat.
 
 ### Response
 
-| Status | Meaning                                                                |
-| ------ | ---------------------------------------------------------------------- |
-| 200    | Workflow dispatched successfully                                       |
-| 400    | Invalid body (missing `ref`) or missing path params                    |
-| 403    | Invalid or missing `X-API-Key` header                                  |
-| 404    | Repository not in the GitHub App installation scope                    |
+| Status | Meaning                                                                               |
+| ------ | ------------------------------------------------------------------------------------- |
+| 200    | Workflow dispatched successfully                                                      |
+| 400    | Invalid body (missing `ref`) or missing path params                                   |
+| 403    | Invalid or missing `X-API-Key` header                                                 |
+| 404    | Repository not in the GitHub App installation scope                                   |
 | 503    | `github_actions` not configured (disabled or missing `central_deploy.deploy_api_key`) |
 
 ## Agent tool: `check_workflow_run`
