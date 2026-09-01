@@ -605,6 +605,14 @@ def run_server_from_config(agent: ChatAgent | None = None) -> None:
                 await stop_maintenance()
             except Exception:
                 logger.exception("Memory maintenance stop failed — continuing")
+        # Checkpoint and close the ladybug graph store so an interrupted WAL
+        # write (a suspected corruption trigger across deploys) is avoided.
+        shutdown_memory = getattr(getattr(agent, "memory", None), "shutdown", None)
+        if shutdown_memory is not None:
+            try:
+                await shutdown_memory()
+            except Exception:
+                logger.exception("Memory graph-store shutdown failed — continuing")
         try:
             from robotsix_llmio.core.tracing import flush_tracing
         except ImportError:
