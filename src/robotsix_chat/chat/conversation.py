@@ -155,9 +155,9 @@ class Session:
     # compactions never set it.
     compacted_into: str | None = None
     # Marks the single "evergoing" session: a never-ending session whose
-    # context is kept bounded by subject-aware auto-trimming (see
-    # :meth:`ConversationStore.trim_session`) rather than by summarisation.
-    # Exactly one session should carry this flag at a time.
+    # context is kept bounded by periodic summarising compaction (see
+    # :meth:`ConversationStore.compact_session`).  Exactly one session
+    # should carry this flag at a time.
     evergoing: bool = False
     # Index into ``turns`` marking how many leading turns have been physically
     # trimmed out of the active context by the auto-trim pass.  Unlike
@@ -1112,6 +1112,8 @@ class ConversationStore:
         session_id: str,
         summary: str,
         keep_recent_turns: int = 0,
+        *,
+        cover_until_index: int | None = None,
     ) -> dict[str, object]:
         """Compact *session_id* **in place**: store *summary* over its turns.
 
@@ -1122,6 +1124,14 @@ class ConversationStore:
         are left verbatim in the replay so a pending proposal (and its exact
         identifiers) survives compaction.  No new session is created, so the
         session list stays stable and subsessions never change owner.
+
+        *cover_until_index*, when given, is the absolute index into ``turns``
+        the summary covers (exclusive) and overrides *keep_recent_turns* —
+        callers that summarise a snapshot while new turns may still arrive
+        pass the snapshot's own boundary so a turn recorded during the
+        summariser call is never silently folded under a summary that did
+        not see it.  The value is clamped to never move backwards and never
+        exceed the current turn count.
 
         (The previous design minted a continuation session per idle gap,
         which proliferated "New chat" husks, dragged subsession trees across
@@ -1141,9 +1151,17 @@ class ConversationStore:
                 "compacted_summary": summary,
             }
 
-        keep = max(0, min(keep_recent_turns, len(session.turns)))
+        if cover_until_index is not None:
+            new_index = min(max(0, cover_until_index), len(session.turns))
+        else:
+            keep = max(0, min(keep_recent_turns, len(session.turns)))
+            new_index = len(session.turns) - keep
         session.compacted_summary = summary
-        session.compacted_turn_index = len(session.turns) - keep
+        # Monotonic: a new summary never uncovers turns an earlier one hid.
+        session.compacted_turn_index = max(session.compacted_turn_index, new_index)
+        # Advance the new-input watermark so the periodic summary scheduler
+        # skips this session (zero LLM calls) until new turns arrive.
+        session.last_trim_turn_count = session.turn_count
         # Restart the idle clock: compaction consumes the idle gap, and
         # without this a keep>0 window would re-trigger summarisation on
         # every subsequent message instead of waiting for a fresh idle gap.

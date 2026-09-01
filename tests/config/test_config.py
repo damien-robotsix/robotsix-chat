@@ -1270,11 +1270,11 @@ def test_central_deploy_blank_numeric_sentinel_falls_back_to_default() -> None:
 
 def test_evergoing_blank_numeric_sentinel_loads_cleanly() -> None:
     settings = EvergoingSettings.model_validate(
-        {"trim_interval_seconds": "", "keep_min_recent": ""}
+        {"trim_interval_seconds": "", "keep_recent_runs": ""}
     )
 
     assert settings.trim_interval_seconds == 1800.0
-    assert settings.keep_min_recent == 2
+    assert settings.keep_recent_runs == 5
 
 
 def test_kind_turn_budget_blank_numeric_sentinel_loads_cleanly() -> None:
@@ -1342,7 +1342,7 @@ def test_production_config_with_blank_numeric_sentinels_loads_cleanly() -> None:
         },
         "evergoing": {
             "trim_interval_seconds": "",
-            "keep_min_recent": "",
+            "keep_recent_runs": "",
         },
         "memory": {
             "maintenance_interval_seconds": "",
@@ -1366,7 +1366,7 @@ def test_production_config_with_blank_numeric_sentinels_loads_cleanly() -> None:
     # Optional numerics become null; required numerics fall back to defaults.
     assert settings.chat_model_level is None
     assert settings.central_deploy.component_request_timeout == 60.0
-    assert settings.evergoing.keep_min_recent == 2
+    assert settings.evergoing.keep_recent_runs == 5
     assert settings.feedback.ingest_max_retries == 2
     assert settings.file_hub_tools.timeout == 60.0
     assert settings.subsessions.turn_budget.task.soft_warn_turns == 25
@@ -1384,7 +1384,7 @@ def test_production_config_with_blank_numeric_sentinels_loads_cleanly() -> None:
         dumped["central_deploy"]["roster_cache_ttl"],
         dumped["central_deploy"]["component_response_max_chars"],
         dumped["evergoing"]["trim_interval_seconds"],
-        dumped["evergoing"]["keep_min_recent"],
+        dumped["evergoing"]["keep_recent_runs"],
         dumped["memory"]["maintenance_interval_seconds"],
         dumped["memory"]["maintenance_version_retention_seconds"],
         dumped["feedback"]["ingest_max_retries"],
