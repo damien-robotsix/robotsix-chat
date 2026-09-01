@@ -788,15 +788,16 @@ def _build_model_options(
     from robotsix_llmio.config import load_tier_config
     from robotsix_llmio.core.failover import get_failover_status
 
-    from robotsix_chat.llm.agent import _chat_tier_overrides
+    from robotsix_chat.llm.agent import _merge_tier_overrides
 
     api_key_available = bool(
         getattr(request.app.state, "chat_api_key_available", False)
     )
     default_level = getattr(request.app.state, "chat_model_level", None)
-    # Chat's own tier config (incl. the fallback-L2-pro override), so the
-    # selector and badge show what actually serves the next turn.
-    tier_config = load_tier_config(_chat_tier_overrides(None))
+    # Chat's own tier config (incl. any llmio_tier_overrides from settings),
+    # so the selector and badge show what actually serves the next turn.
+    state_overrides = getattr(request.app.state, "llmio_tier_overrides", None)
+    tier_config = load_tier_config(_merge_tier_overrides(state_overrides, None))
     models: list[dict[str, object]] = []
     for level in range(1, FRONTIER_MODEL_LEVEL + 1):
         needs_key = level_needs_api_key(level)
