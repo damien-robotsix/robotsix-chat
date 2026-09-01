@@ -65,9 +65,15 @@ def _patched_create_model(output: str = "hi there") -> tuple[MagicMock, MagicMoc
     """Return patched create_model and handle wired for the given output."""
     handle = MagicMock()
 
-    async def fake_run(message: str, *, message_history: object = None) -> MagicMock:
+    async def fake_run(
+        message: str, *, message_history: object = None, **run_kwargs: object
+    ) -> MagicMock:
         handle.run_calls.append(
-            {"message": message, "message_history": message_history}
+            {
+                "message": message,
+                "message_history": message_history,
+                "run_kwargs": dict(run_kwargs),
+            }
         )
         result = MagicMock()
         result.output = output
@@ -187,7 +193,9 @@ async def test_handle_closed_on_error() -> None:
     """If the underlying run raises, the handle is still closed."""
     handle = MagicMock()
 
-    async def boom(message: str, *, message_history: object = None) -> None:
+    async def boom(
+        message: str, *, message_history: object = None, **run_kwargs: object
+    ) -> None:
         raise RuntimeError("backend exploded")
 
     handle.run = boom
@@ -343,7 +351,9 @@ def _patched_create_model_with_activity(
 
     handle = MagicMock()
 
-    async def fake_run(message: str, *, message_history: object = None) -> MagicMock:
+    async def fake_run(
+        message: str, *, message_history: object = None, **run_kwargs: object
+    ) -> MagicMock:
         on_event = _current_on_event.get()
         if on_event is not None:
             on_event(
@@ -566,6 +576,44 @@ async def test_history_passed_as_message_history() -> None:
 
 
 @pytest.mark.asyncio
+async def test_keyed_level_runs_with_request_limit() -> None:
+    """Keyed (OpenRouter) tiers raise pydantic-ai's default request_limit of 50.
+
+    Tool-heavy turns burn one request per tool round-trip and legitimately
+    exceed 50; without the override they die mid-stream with
+    UsageLimitExceeded (the 2026-09-01 'internal error' under the weekly
+    Claude cap).
+    """
+    from pydantic_ai.usage import UsageLimits
+
+    create_model, handle = _patched_create_model("reply")
+
+    with patch("robotsix_chat.llm.agent.create_model", create_model):
+        agent = LlmioChatAgent(model_level=3, instruction="Be helpful.")
+        _ = [c async for c in agent.stream("hi")]
+
+    limits = handle.run_calls[0]["run_kwargs"].get("usage_limits")
+    assert isinstance(limits, UsageLimits)
+    assert limits.request_limit == 200
+
+
+@pytest.mark.asyncio
+async def test_keyless_level_runs_without_usage_limits() -> None:
+    """Claude SDK tiers get no usage_limits kwarg.
+
+    The SDK tool path warns-and-drops run kwargs it cannot honor, and the
+    CLI runs the agent loop internally so the cap never applies.
+    """
+    create_model, handle = _patched_create_model("reply")
+
+    with patch("robotsix_chat.llm.agent.create_model", create_model):
+        agent = LlmioChatAgent(model_level=4, instruction="Be helpful.")
+        _ = [c async for c in agent.stream("hi")]
+
+    assert "usage_limits" not in handle.run_calls[0]["run_kwargs"]
+
+
+@pytest.mark.asyncio
 async def test_no_history_passes_none() -> None:
     """With no prior turns, message_history is None (a plain single query)."""
     create_model, handle = _patched_create_model("reply")
@@ -613,7 +661,7 @@ async def test_retry_on_transient_error() -> None:
     call_count = 0
 
     async def fail_then_pass(
-        _message: str, *, message_history: object = None
+        _message: str, *, message_history: object = None, **run_kwargs: object
     ) -> MagicMock:
         nonlocal call_count
         call_count += 1
@@ -690,7 +738,7 @@ async def test_retry_on_claude_sdk_transient_signature(
     call_count = 0
 
     async def fail_then_pass(
-        _message: str, *, message_history: object = None
+        _message: str, *, message_history: object = None, **run_kwargs: object
     ) -> MagicMock:
         nonlocal call_count
         call_count += 1
@@ -757,7 +805,9 @@ async def test_no_retry_on_non_transient_error() -> None:
     """Non-transient errors raise immediately with no retry."""
     handle = MagicMock()
 
-    async def boom(_message: str, *, message_history: object = None) -> None:
+    async def boom(
+        _message: str, *, message_history: object = None, **run_kwargs: object
+    ) -> None:
         raise RuntimeError("backend exploded")
 
     handle.run = boom
@@ -784,7 +834,9 @@ async def test_retries_exhausted_on_persistent_transient() -> None:
     """Persistent transient errors exhaust max attempts then re-raise."""
     handle = MagicMock()
 
-    async def always_boom(_message: str, *, message_history: object = None) -> None:
+    async def always_boom(
+        _message: str, *, message_history: object = None, **run_kwargs: object
+    ) -> None:
         raise ValueError("persistent transient")
 
     handle.run = always_boom
@@ -823,7 +875,9 @@ async def test_usage_exhausted_falls_back_to_another_tier() -> None:
 
     level4_handle = MagicMock()
 
-    async def exhausted(_message: str, *, message_history: object = None) -> None:
+    async def exhausted(
+        _message: str, *, message_history: object = None, **run_kwargs: object
+    ) -> None:
         raise ClaudeSDKUsageExhaustedError("You're out of usage credits")
 
     level4_handle.run = exhausted
@@ -833,7 +887,9 @@ async def test_usage_exhausted_falls_back_to_another_tier() -> None:
 
     level3_handle = MagicMock()
 
-    async def recovered(_message: str, *, message_history: object = None) -> MagicMock:
+    async def recovered(
+        _message: str, *, message_history: object = None, **run_kwargs: object
+    ) -> MagicMock:
         result = MagicMock()
         result.output = "opus reply"
         return result
@@ -893,7 +949,9 @@ async def test_usage_exhausted_fallback_keeps_conversation_context() -> None:
     # subscription, so the walk passes through them and lands on keyed level 3.
     claude_handle = MagicMock()
 
-    async def exhausted(_message: str, *, message_history: object = None) -> None:
+    async def exhausted(
+        _message: str, *, message_history: object = None, **run_kwargs: object
+    ) -> None:
         raise ClaudeSDKUsageExhaustedError("You're out of usage credits")
 
     claude_handle.run = exhausted
@@ -904,7 +962,9 @@ async def test_usage_exhausted_fallback_keeps_conversation_context() -> None:
     seen: dict[str, object] = {}
     level3_handle = MagicMock()
 
-    async def recovered(_message: str, *, message_history: object = None) -> MagicMock:
+    async def recovered(
+        _message: str, *, message_history: object = None, **run_kwargs: object
+    ) -> MagicMock:
         seen["message_history"] = message_history
         result = MagicMock()
         result.output = "opus reply about the browser ticket"
@@ -955,7 +1015,9 @@ async def test_usage_exhausted_fallback_also_failing_raises() -> None:
 
     level4_handle = MagicMock()
 
-    async def exhausted(_message: str, *, message_history: object = None) -> None:
+    async def exhausted(
+        _message: str, *, message_history: object = None, **run_kwargs: object
+    ) -> None:
         raise ClaudeSDKUsageExhaustedError("You're out of usage credits")
 
     level4_handle.run = exhausted
@@ -965,7 +1027,9 @@ async def test_usage_exhausted_fallback_also_failing_raises() -> None:
 
     level3_handle = MagicMock()
 
-    async def also_boom(_message: str, *, message_history: object = None) -> None:
+    async def also_boom(
+        _message: str, *, message_history: object = None, **run_kwargs: object
+    ) -> None:
         raise RuntimeError("opus is also down")
 
     level3_handle.run = also_boom
@@ -996,7 +1060,9 @@ async def test_non_usage_exhausted_error_not_affected_by_fallback() -> None:
     """
     handle = MagicMock()
 
-    async def boom(_message: str, *, message_history: object = None) -> None:
+    async def boom(
+        _message: str, *, message_history: object = None, **run_kwargs: object
+    ) -> None:
         raise RuntimeError("unrelated failure")
 
     handle.run = boom
@@ -1021,7 +1087,9 @@ async def test_retry_logs_warning(caplog: pytest.LogCaptureFixture) -> None:
     """Retries are handled by robotsix-http; no per-retry agent log lines."""
     call_count = 0
 
-    async def fail_twice(_message: str, *, message_history: object = None) -> MagicMock:
+    async def fail_twice(
+        _message: str, *, message_history: object = None, **run_kwargs: object
+    ) -> MagicMock:
         nonlocal call_count
         call_count += 1
         if call_count <= 2:
@@ -1056,7 +1124,9 @@ async def test_retry_sleeps_backoff() -> None:
     """Retry backoff is handled by robotsix-http RetryConfig; verify retry count."""
     call_count = 0
 
-    async def fail_twice(_message: str, *, message_history: object = None) -> MagicMock:
+    async def fail_twice(
+        _message: str, *, message_history: object = None, **run_kwargs: object
+    ) -> MagicMock:
         nonlocal call_count
         call_count += 1
         if call_count <= 2:
@@ -1195,7 +1265,9 @@ async def test_auth_failure_falls_back_past_every_claude_sdk_tier() -> None:
     def _dead_credential_provider() -> MagicMock:
         handle = MagicMock()
 
-        async def expired(_message: str, *, message_history: object = None) -> None:
+        async def expired(
+            _message: str, *, message_history: object = None, **run_kwargs: object
+        ) -> None:
             raise ClaudeSDKAuthError(
                 "Failed to authenticate. API Error: 401 OAuth access token has expired."
             )
@@ -1208,7 +1280,9 @@ async def test_auth_failure_falls_back_past_every_claude_sdk_tier() -> None:
 
     level2_handle = MagicMock()
 
-    async def recovered(_message: str, *, message_history: object = None) -> MagicMock:
+    async def recovered(
+        _message: str, *, message_history: object = None, **run_kwargs: object
+    ) -> MagicMock:
         result = MagicMock()
         result.output = "openrouter reply"
         return result
@@ -1260,7 +1334,9 @@ async def test_usage_exhausted_fallback_walks_every_remaining_tier() -> None:
     def _failing_provider(exc: Exception) -> MagicMock:
         handle = MagicMock()
 
-        async def boom(_message: str, *, message_history: object = None) -> None:
+        async def boom(
+            _message: str, *, message_history: object = None, **run_kwargs: object
+        ) -> None:
             raise exc
 
         handle.run = boom
@@ -1301,7 +1377,9 @@ async def test_keyless_primary_level_never_receives_the_api_key() -> None:
     """
     handle = MagicMock()
 
-    async def reply(_message: str, *, message_history: object = None) -> MagicMock:
+    async def reply(
+        _message: str, *, message_history: object = None, **run_kwargs: object
+    ) -> MagicMock:
         result = MagicMock()
         result.output = "sdk reply"
         return result
@@ -1329,7 +1407,9 @@ async def test_keyed_primary_level_still_receives_the_api_key() -> None:
     """The pre-existing behaviour for a keyed primary level is unchanged."""
     handle = MagicMock()
 
-    async def reply(_message: str, *, message_history: object = None) -> MagicMock:
+    async def reply(
+        _message: str, *, message_history: object = None, **run_kwargs: object
+    ) -> MagicMock:
         result = MagicMock()
         result.output = "openrouter reply"
         return result
@@ -1374,7 +1454,7 @@ async def test_turn_does_not_bind_a_cli_session_and_carries_history_in_prompt() 
     handle._build_options = sentinel_builder
     seen: dict[str, object] = {}
 
-    async def fake_run(prompt, *, message_history=None):
+    async def fake_run(prompt, *, message_history=None, **run_kwargs):
         seen["prompt"] = prompt
         seen["history"] = message_history
         result = MagicMock()
@@ -1412,7 +1492,7 @@ async def test_recalled_memory_is_prepended_once_to_the_current_turn_only() -> N
     create_model, handle = _patched_create_model("ok")
     seen: dict[str, object] = {}
 
-    async def fake_run(prompt, *, message_history=None):
+    async def fake_run(prompt, *, message_history=None, **run_kwargs):
         seen["prompt"] = prompt
         seen["history"] = message_history
         result = MagicMock()
@@ -1470,7 +1550,9 @@ async def test_usage_exhausted_walks_past_sibling_claude_tier_to_keyed_level() -
         handle = MagicMock()
         if level in (5, 4):
 
-            async def exhausted(_m: str, *, message_history: object = None) -> None:
+            async def exhausted(
+                _m: str, *, message_history: object = None, **run_kwargs: object
+            ) -> None:
                 raise ClaudeSDKUsageExhaustedError(
                     "You've hit your session limit · resets 1am (UTC)"
                 )
@@ -1479,7 +1561,7 @@ async def test_usage_exhausted_walks_past_sibling_claude_tier_to_keyed_level() -
         else:
 
             async def recovered(
-                _m: str, *, message_history: object = None
+                _m: str, *, message_history: object = None, **run_kwargs: object
             ) -> MagicMock:
                 result = MagicMock()
                 result.output = "mimo reply"
@@ -1524,7 +1606,9 @@ async def test_activity_events_feed_the_actions_collector() -> None:
 
     handle = MagicMock()
 
-    async def fake_run(message: str, *, message_history: object = None) -> MagicMock:
+    async def fake_run(
+        message: str, *, message_history: object = None, **run_kwargs: object
+    ) -> MagicMock:
         on_event = _current_on_event.get()
         assert on_event is not None
         on_event(
@@ -1590,7 +1674,9 @@ async def test_result_messages_fill_collector_when_no_events_fired() -> None:
 
     handle = MagicMock()
 
-    async def fake_run(message: str, *, message_history: object = None) -> MagicMock:
+    async def fake_run(
+        message: str, *, message_history: object = None, **run_kwargs: object
+    ) -> MagicMock:
         result = MagicMock()
         result.output = "done"
         result.all_messages = MagicMock(
@@ -1656,7 +1742,9 @@ async def test_keyed_fallback_caps_oversized_history() -> None:
     # The Claude tier (level 4) is exhausted; the walk lands on keyed level 3.
     claude_handle = MagicMock()
 
-    async def exhausted(_message: str, *, message_history: object = None) -> None:
+    async def exhausted(
+        _message: str, *, message_history: object = None, **run_kwargs: object
+    ) -> None:
         raise ClaudeSDKUsageExhaustedError("You're out of usage credits")
 
     claude_handle.run = exhausted
@@ -1667,7 +1755,9 @@ async def test_keyed_fallback_caps_oversized_history() -> None:
     seen: dict[str, object] = {}
     level3_handle = MagicMock()
 
-    async def recovered(_message: str, *, message_history: object = None) -> MagicMock:
+    async def recovered(
+        _message: str, *, message_history: object = None, **run_kwargs: object
+    ) -> MagicMock:
         seen["message_history"] = message_history
         result = MagicMock()
         result.output = "capped reply"
