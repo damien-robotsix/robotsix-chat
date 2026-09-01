@@ -2260,8 +2260,7 @@ def _migrate_legacy_deploy_and_mail(data: Any) -> Any:
         data = dict(data)
         del data["mail"]
         logger.info(
-            "Dropping removed config block 'mail' (superseded by the "
-            "component roster)"
+            "Dropping removed config block 'mail' (superseded by the component roster)"
         )
 
     central = data.get("central_deploy")
@@ -2274,9 +2273,7 @@ def _migrate_legacy_deploy_and_mail(data: Any) -> Any:
         if isinstance(lifecycle, dict) and lifecycle.get("base_url"):
             central["url"] = lifecycle["base_url"]
             changed = True
-            logger.info(
-                "Migrating legacy 'lifecycle.base_url' → 'central_deploy.url'"
-            )
+            logger.info("Migrating legacy 'lifecycle.base_url' → 'central_deploy.url'")
 
     # Canonical credential — fall back to the first legacy per-block key.
     if not central.get("deploy_api_key"):

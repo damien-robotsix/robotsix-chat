@@ -49,9 +49,7 @@ def _check_settings_and_auth(
     if not settings.enabled or not direct_repo.enabled:
         raise HTTPException(status_code=503, detail=f"{detail_prefix} is not enabled")
     central_deploy = getattr(request.app.state, "central_deploy_settings", None)
-    api_key = (
-        central_deploy.deploy_api_key.get_secret_value() if central_deploy else ""
-    )
+    api_key = central_deploy.deploy_api_key.get_secret_value() if central_deploy else ""
     if not api_key:
         raise HTTPException(
             status_code=503,

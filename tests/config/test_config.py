@@ -528,9 +528,7 @@ def test_legacy_per_block_deploy_api_key_migrates() -> None:
             "feedback": {"deploy_api_key": "legacy-secret"},  # pragma: allowlist secret
         }
     )
-    assert (
-        settings.central_deploy.deploy_api_key.get_secret_value() == "legacy-secret"
-    )
+    assert settings.central_deploy.deploy_api_key.get_secret_value() == "legacy-secret"
 
 
 def test_explicit_central_deploy_values_win_over_legacy() -> None:
@@ -554,8 +552,7 @@ def test_explicit_central_deploy_values_win_over_legacy() -> None:
     )
     assert settings.central_deploy.url == "http://canonical:9000"
     assert (
-        settings.central_deploy.deploy_api_key.get_secret_value()
-        == "canonical-secret"
+        settings.central_deploy.deploy_api_key.get_secret_value() == "canonical-secret"
     )
 
 
