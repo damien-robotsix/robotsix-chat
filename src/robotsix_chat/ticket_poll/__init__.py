@@ -302,10 +302,15 @@ async def _resolve_ticket_ids(
         )
         return {cid: None for cid in candidate_ids}
 
+    # The mill board returns tickets keyed ``id``; older/other boards used
+    # ``ticket_id``.  Accepting only the latter made every resolution fail
+    # with "(0 tickets listed)" against mill (live logs 2026-09-01).
     all_ids: list[str] = [
-        t["ticket_id"]
+        tid
         for t in ticket_objects
-        if isinstance(t, dict) and isinstance(t.get("ticket_id"), str)
+        if isinstance(t, dict)
+        for tid in (t.get("id") or t.get("ticket_id"),)
+        if isinstance(tid, str) and tid
     ]
 
     # Build a reverse index: hash-suffix → list of matching full IDs.

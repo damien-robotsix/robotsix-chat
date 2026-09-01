@@ -468,6 +468,44 @@ async def test_ticket_poll_resolves_paraphrased_id(
     assert result["error"] == ""
 
 
+@pytest.mark.asyncio
+async def test_ticket_poll_resolves_against_mill_id_field(
+    respx_mock: respx.MockRouter,
+) -> None:
+    """Mill's GET /tickets keys tickets ``id``, not ``ticket_id``.
+
+    Regression: extracting only ``ticket_id`` made every resolution fail
+    with "(0 tickets listed)" against the live mill board (2026-09-01).
+    """
+    real_id = "20260731T020731Z-batch-approval-should-resolve-ids-32be"
+
+    respx_mock.get("http://board:8077/tickets").mock(
+        return_value=httpx.Response(
+            200,
+            json=[
+                {"id": real_id, "status": "fixing_ci"},
+                {"id": "20260730T232905Z-other-ticket-761f", "status": "done"},
+            ],
+        )
+    )
+
+    route = respx_mock.get(f"http://board:8077/tickets/{real_id}").mock(
+        return_value=httpx.Response(
+            200,
+            json={"state": "BLOCKED", "title": "Batch approval"},
+        )
+    )
+
+    tools = build_ticket_poll_tools(_settings())
+    result = json.loads(await tools[0]("...-resolve-ids-32be"))
+
+    assert route.called
+    assert result
+    assert result["ticket_id"] == real_id
+    assert result["state"] == "BLOCKED"
+    assert result["error"] == ""
+
+
 # ---------------------------------------------------------------------------
 # ticket_poll_batch
 # ---------------------------------------------------------------------------
