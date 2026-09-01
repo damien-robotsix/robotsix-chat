@@ -38,6 +38,7 @@ modules:
       - docs/triage-boilerplate.md
       - docs/system_prompt_changelog.md
       - docs/prompt-style.md
+      - src/robotsix_chat/chat/server/prompt-style.md
       - docs/periodic-checks.md
       - docs/user-guide/deployment.md
       - docs/_snippets/nginx-reverse-proxy.md
