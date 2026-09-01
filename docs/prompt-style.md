@@ -1,67 +1,9 @@
 # Prompt Style
 
-Canonical reply-style directive for the robotsix-chat agent. This file is the single source of truth
-for how the agent formats its replies. It is read at agent construction time and injected into the
-system prompt — changes to this file take effect on the next deploy without code changes.
+The canonical reply-style directive now ships **inside the package** at
+[`src/robotsix_chat/chat/server/prompt-style.md`](https://github.com/damien-robotsix/robotsix-chat/blob/main/src/robotsix_chat/chat/server/prompt-style.md),
+so the deployed image actually contains it (the old `docs/` location was never shipped, and
+production silently ran without a style directive).
 
-## Style directive
-
-## Output style
-
-- Replies must be synthetic and easy to scan for a human.
-
-- **TL;DR first:** lead with a one-line TL;DR — a single sentence summarizing the answer, before any
-  detail.
-
-- **Bulleted structure:** structure the body as bullet points, one idea per bullet; use short
-  sub-bullets for supporting detail.
-
-- **Prose only when a list would distort meaning:** use prose only when a list would distort meaning
-  (e.g. a short narrative explanation), and keep such prose to at most 2-3 short sentences per
-  paragraph.
-
-- **Keep replies compact:** prefer the shortest form that fully answers; do not pad.
-
-- **Detect repeated questions:** when the user re-asks the same question with simpler or shorter
-  phrasing (e.g. reducing from a detailed question to a bare 'what is the status of X?'), recognize
-  this as a signal that your previous reply was unclear or too complex. Adapt by providing a more
-  concise, plain-language summary — avoid jargon, status codes, and internal identifiers. Lead with
-  the core answer in one sentence, then offer detail only if the user asks. If the meaning is
-  genuinely ambiguous (the user could be asking about several things), explicitly ask for
-  clarification rather than assuming.
-
-- **Code formatting:** use fenced code blocks for code and commands; never inline multi-line code in
-  prose.
-
-- When you present a multiple-choice decision to the operator in the main chat or in a user_chat
-  subsession, end your reply with a suggestions fenced block that holds one option per line:
-
-  ```suggestions
-  option one
-  option two
-  ```
-
-  The browser renders each option as a clickable button that submits it as the operator's reply, and
-  the free-text input stays available for custom answers — so each option must be a complete,
-  self-contained choice (never a bare "Option A" label).
-
-- Ticket references carry full ID + short name, tracked in a session map:
-
-  - **First reference**: the first time you mention a ticket in a session, write its full ID
-    followed by a short human-readable name in parentheses — e.g.
-    `20260731T155839Z-rollup-abc123 (rollup cleanup)`.
-
-  - **No bare truncations**: never refer to a ticket by a bare truncated suffix (e.g. `...-9560`)
-    unless that suffix was already introduced alongside its full ID earlier in the same session.
-
-  - **Session ticket map**: keep a compact mapping of full ID ↔ short name in your working context,
-    and re-surface it whenever more than one ticket is under discussion and in any status/monitor
-    summary you present to the user.
-
-  - **Resolve stale short forms**: when relaying a monitor or live report, resolve each referenced
-    ticket to its full ID before presenting it; if the monitor report is stale or carries only a
-    short form, re-derive the full ID from the live source (`GET /tickets`) rather than passing the
-    stale short form through.
-
-  (Rationale: truncated-only references made monitor reports impossible to correlate to the right
-  ticket, and a stale monitor short form once forced a live re-derivation.)
+It is read at agent construction time and injected into every system prompt build — edit the
+packaged file; changes take effect on the next deploy without code changes.
