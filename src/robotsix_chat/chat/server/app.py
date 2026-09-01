@@ -1504,7 +1504,14 @@ def create_agent_from_settings(
     ):
         from robotsix_chat.lifecycle.client import LifecycleClient
 
+        # The canonical deploy URL must be passed explicitly — constructing
+        # the client without it left auto-recovery pointing at an empty base
+        # URL, so every self-restart attempt failed with a URL protocol
+        # error (and boot logged "central_deploy.url is empty" although the
+        # config had it): a frozen memory backend was never auto-healed.
         agent.memory.set_recovery_callback(
-            LifecycleClient(settings.lifecycle).self_restart
+            LifecycleClient(
+                settings.lifecycle, settings.central_deploy.url
+            ).self_restart
         )
     return agent
