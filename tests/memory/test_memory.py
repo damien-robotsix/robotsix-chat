@@ -1834,6 +1834,170 @@ async def test_recall_success_resets_failure_streak(
     assert mem.status()["degraded"] is False
 
 
+# ---------------------------------------------------------------------------
+# Boot-time ladybug WAL auto-recovery (2026-09-01 second occurrence)
+# ---------------------------------------------------------------------------
+
+
+@pytest.mark.asyncio
+async def test_recall_auto_stashes_wal_sidecars_and_retries_once(
+    cognee_memory: tuple[CogneeMemory, Any],
+) -> None:
+    """A WAL-corruption abort stashes the two sidecars and retries the open once.
+
+    Regression (2026-09-01): a corrupt ladybug WAL left recall broken until a
+    human stashed ``.wal.checkpoint`` + ``.shadow`` and restarted. Auto-recovery
+    now moves exactly those two WAL-adjacent files aside — never the main graph
+    db or the ``.wal`` replay journal — and retries once.
+    """
+    import time
+
+    mem, fake = cognee_memory
+    calls = {"n": 0}
+    date = time.strftime("%Y%m%d")
+
+    async def _corrupt_then_ok(*args: Any, **kwargs: Any) -> list[str]:
+        calls["n"] += 1
+        if calls["n"] == 1:
+            raise RuntimeError(
+                'Assertion failed in file "/ladybug/src/storage/wal/wal_record.cpp" '
+                "on line 76: UNREACHABLE_CODE"
+            )
+        return ["recalled fact"]
+
+    fake.search = AsyncMock(side_effect=_corrupt_then_ok)
+
+    dbs = Path(mem._settings.data_dir) / "system" / "databases"
+    dbs.mkdir(parents=True, exist_ok=True)
+    main = dbs / "cognee_graph_ladybug"
+    wal = dbs / "cognee_graph_ladybug.wal"
+    checkpoint = dbs / "cognee_graph_ladybug.wal.checkpoint"
+    shadow = dbs / "cognee_graph_ladybug.shadow"
+    main.write_bytes(b"LBUG" + b"real graph")
+    wal.write_bytes(b"committed writes")
+    checkpoint.write_bytes(b"cp")
+    shadow.write_bytes(b"shadow")
+
+    result = await mem.recall("who?")
+
+    assert result == "recalled fact"
+    assert calls["n"] == 2, "should have retried the open exactly once"
+    # The two WAL-adjacent sidecars are stashed with a dated suffix...
+    assert not checkpoint.exists()
+    assert not shadow.exists()
+    assert (dbs / f"cognee_graph_ladybug.wal.checkpoint-corrupt-{date}").exists()
+    assert (dbs / f"cognee_graph_ladybug.shadow-stale-{date}").exists()
+    # ...while the main graph db and the replay journal are untouched.
+    assert main.exists() and main.read_bytes() == b"LBUGreal graph"
+    assert wal.exists() and wal.read_bytes() == b"committed writes"
+    # The successful retry leaves the backend healthy.
+    assert mem.status()["degraded"] is False
+
+
+@pytest.mark.asyncio
+async def test_recall_wal_recovery_does_not_loop_on_persistent_corruption(
+    cognee_memory: tuple[CogneeMemory, Any],
+) -> None:
+    """If the retry still aborts, recovery does NOT loop — it degrades."""
+    mem, fake = cognee_memory
+    fake.search = AsyncMock(
+        side_effect=RuntimeError(
+            'Assertion failed in file "/ladybug/src/storage/wal/wal_record.cpp" '
+            "on line 76: UNREACHABLE_CODE"
+        )
+    )
+    dbs = Path(mem._settings.data_dir) / "system" / "databases"
+    dbs.mkdir(parents=True, exist_ok=True)
+    (dbs / "cognee_graph_ladybug.wal.checkpoint").write_bytes(b"cp")
+    (dbs / "cognee_graph_ladybug.shadow").write_bytes(b"shadow")
+
+    result = await mem.recall("who?")
+
+    assert result == ""
+    # Stash happens once, retry once, then stop — no per-turn loop.
+    assert fake.search.await_count == 2
+    assert mem.status()["degraded"] is True
+
+
+@pytest.mark.asyncio
+async def test_recall_wal_recovery_respects_auto_recovery_flag(
+    cognee_memory: tuple[CogneeMemory, Any],
+) -> None:
+    """With auto_recovery disabled, the WAL abort propagates (no sidecar moves)."""
+    mem, fake = cognee_memory
+    mem._settings.auto_recovery_enabled = False
+    fake.search = AsyncMock(
+        side_effect=RuntimeError("wal_record abort: UNREACHABLE_CODE")
+    )
+    dbs = Path(mem._settings.data_dir) / "system" / "databases"
+    dbs.mkdir(parents=True, exist_ok=True)
+    checkpoint = dbs / "cognee_graph_ladybug.wal.checkpoint"
+    checkpoint.write_bytes(b"cp")
+
+    result = await mem.recall("who?")
+
+    assert result == ""
+    assert fake.search.await_count == 1, "no retry when auto-recovery is off"
+    assert checkpoint.exists(), "sidecars must not be moved when recovery is off"
+
+
+# ---------------------------------------------------------------------------
+# Clean shutdown: checkpoint + close the ladybug graph store
+# ---------------------------------------------------------------------------
+
+
+@pytest.mark.asyncio
+async def test_shutdown_checkpoints_and_closes_graph_store(
+    monkeypatch: pytest.MonkeyPatch, tmp_path: Any
+) -> None:
+    """shutdown() runs a checkpoint, then closes the ladybug graph engine."""
+    _install_fake_cognee(monkeypatch)
+    mem = CogneeMemory(_enabled_settings(str(tmp_path / "cognee")))
+    mem._setup_done = True
+
+    graph_mod = types.ModuleType("cognee.infrastructure.databases.graph")
+    engine = MagicMock()
+    engine.checkpoint = AsyncMock()
+    engine.close = AsyncMock()
+    graph_mod.get_graph_engine = AsyncMock(return_value=engine)
+    monkeypatch.setitem(sys.modules, "cognee.infrastructure.databases.graph", graph_mod)
+
+    await mem.shutdown()
+
+    graph_mod.get_graph_engine.assert_awaited_once()
+    engine.checkpoint.assert_awaited_once()
+    engine.close.assert_awaited_once()
+
+
+@pytest.mark.asyncio
+async def test_shutdown_noop_when_never_set_up(
+    cognee_memory: tuple[CogneeMemory, Any],
+) -> None:
+    """shutdown() is a harmless no-op when the store was never configured."""
+    mem, _ = cognee_memory  # _setup_done is False
+    await mem.shutdown()  # must not raise
+
+
+@pytest.mark.asyncio
+async def test_shutdown_never_raises_on_graph_failure(
+    monkeypatch: pytest.MonkeyPatch, tmp_path: Any
+) -> None:
+    """A missing/failing graph engine does not block process shutdown."""
+    _install_fake_cognee(monkeypatch)
+    mem = CogneeMemory(_enabled_settings(str(tmp_path / "cognee")))
+    mem._setup_done = True
+
+    graph_mod = types.ModuleType("cognee.infrastructure.databases.graph")
+
+    async def _boom() -> Any:
+        raise RuntimeError("corrupt store / missing engine")
+
+    graph_mod.get_graph_engine = _boom
+    monkeypatch.setitem(sys.modules, "cognee.infrastructure.databases.graph", graph_mod)
+
+    await mem.shutdown()  # must not raise
+
+
 @pytest.mark.asyncio
 async def test_auto_recovery_triggers_self_restart(
     cognee_memory: tuple[CogneeMemory, Any],

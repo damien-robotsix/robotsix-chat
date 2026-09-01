@@ -96,6 +96,22 @@ _STORE_FAULT_RE = re.compile(
 )
 
 
+# Signature of the ladybug graph-store WAL corruption that auto-recovery
+# acts on.  Observed twice (2026-08-26 and 2026-09-01) after interrupted deploys:
+#     Assertion failed in ".../src/storage/wal/wal_record.cpp" line 76:
+#     UNREACHABLE_CODE
+# during WAL replay at open.  Narrower than _STORE_FAULT_RE on purpose: this is
+# specifically the abort that warrants *moving the WAL sidecars aside* and
+# reopening, whereas broader store faults ("corrupt", "malformed", lock
+# errors) must NOT trigger the file-moving recovery without clear evidence.
+_WAL_CORRUPTION_RE = re.compile(r"UNREACHABLE_CODE|wal_record", re.IGNORECASE)
+
+
+def _is_wal_corruption_error(exc: BaseException) -> bool:
+    """Return True if *exc* is the ladybug WAL-corruption abort signature."""
+    return bool(_WAL_CORRUPTION_RE.search(str(exc)))
+
+
 def _is_store_fault_error(exc: BaseException) -> bool:
     """Return True if *exc* is a recognised store fault (lock freeze or worse).
 
@@ -235,6 +251,10 @@ class CogneeMemory:
         self._recovery_in_flight: bool = False
         # Hold a reference to the in-flight recovery task so it isn't GC'd.
         self._recovery_task: asyncio.Task[None] | None = None
+        # One-shot guard for the boot-time ladybug WAL auto-recovery.  Latched
+        # the first time a WAL-corruption abort triggers a sidecar stash so a
+        # store that stays broken cannot loop the stash+retry every turn.
+        self._wal_heal_attempted: bool = False
         # Periodic LanceDB compaction/pruning scheduler (lazily created in
         # :meth:`start_maintenance`); ``None`` when disabled or not started.
         self._maintenance: LanceDbMaintenanceScheduler | None = None
@@ -345,6 +365,37 @@ class CogneeMemory:
             )
             return
         logger.info("cognee memory warm-up complete in %.1fs", time.monotonic() - start)
+
+    # -- clean shutdown ---------------------------------------------------
+
+    async def shutdown(self) -> None:
+        """Checkpoint and close the ladybug graph store before process exit.
+
+        Deploys restart chat routinely; an interrupted WAL write is the
+        suspected trigger of the ``wal_record``/``UNREACHABLE_CODE`` corruption
+        :meth:`_stash_ladybug_wal_sidecars` auto-recovers from at boot.  A
+        clean ``CHECKPOINT`` flushes the WAL into the main graph file so the
+        next open replays nothing stale, then the adapter is closed.
+
+        Best-effort and never raises — a fully-closed, corrupt, or unreachable
+        store must not block process shutdown.  Only runs when setup actually
+        happened (a never-opened store has nothing to checkpoint).
+        """
+        if not self._setup_done:
+            return
+        try:
+            from cognee.infrastructure.databases.graph import get_graph_engine
+
+            engine = await get_graph_engine()
+            await engine.checkpoint()
+            logger.info("cognee ladybug graph store checkpointed")
+            await engine.close()
+            logger.info("cognee ladybug graph store closed")
+        except Exception:
+            logger.exception(
+                "cognee ladybug graph store shutdown failed — the next boot will "
+                "auto-recover if the WAL was left inconsistent"
+            )
 
     # -- periodic LanceDB maintenance -------------------------------------
 
@@ -743,7 +794,15 @@ class CogneeMemory:
         # degrades to "no memory" on schedule rather than stalling the turn
         # past the deadline the caller was promised.
         async with _recall_gate(self._recall_limit):
-            return await _search()
+            try:
+                return await _search()
+            except Exception as exc:
+                if self._try_ladybug_wal_recovery(exc):
+                    # Stashed the (corrupt) WAL sidecars — retry the graph-store
+                    # open exactly once.  A second failure propagates (degraded,
+                    # surfaced on /health) rather than looping.
+                    return await _search()
+                raise
 
     async def recall_deep(self, query: str) -> str:
         """Run the expensive, LLM-mediated graph search on demand.
@@ -1059,6 +1118,106 @@ class CogneeMemory:
             # If the restart did not actually take down the process, allow a
             # future attempt after the cooldown.
             self._recovery_in_flight = False
+
+    # -- boot-time ladybug WAL auto-recovery ------------------------------
+
+    def _ladybug_databases_dir(self) -> Path:
+        """Directory holding the ladybug graph-store files.
+
+        The graph engine's on-disk layout (ladybug, cognee-pinned) is a main
+        database file ``cognee_graph_ladybug`` plus three WAL-adjacent
+        sidecars next to it: ``<base>.wal`` (the crash-recovery journal), and
+        ``<base>.wal.checkpoint`` / ``<base>.shadow`` (checkpoint bookkeeping).
+        """
+        return (
+            Path(self._settings.data_dir).expanduser().resolve()
+            / "system"
+            / "databases"
+        )
+
+    def _try_ladybug_wal_recovery(self, exc: BaseException) -> bool:
+        """Return True if the WAL-corruption sidecars were stashed (caller retries).
+
+        Only the ladybug WAL-during-replay abort triggers the file-moving
+        recovery; any other exception, or a store that already attempted
+        healing this process, returns False so the original error propagates.
+        """
+        if not _is_wal_corruption_error(exc):
+            return False
+        if not self._settings.auto_recovery_enabled:
+            return False
+        return self._stash_ladybug_wal_sidecars()
+
+    def _stash_ladybug_wal_sidecars(self) -> bool:
+        """Move the corrupt ladybug WAL sidecars aside with a dated suffix.
+
+        On a WAL-replay abort the graph engine cannot open its store because
+        the checkpoint marker / shadow pre-image are inconsistent.  Stashing
+        ``<base>.wal.checkpoint`` and ``<base>.shadow`` next to the database
+        (renamed ``.corrupt-YYYYMMDD`` / ``.stale-YYYYMMDD``) lets the main
+        graph file reopen on the retry, exactly as the manual recovery does.
+
+        Scope is deliberately *exactly* those two WAL-adjacent files: the main
+        database file and the ``.wal`` replay journal are never touched or
+        deleted — over-eager healing of those once wiped the live knowledge
+        graph (the kuzu-era self-heal, 2026-08-01).  One-shot per process
+        (``_wal_heal_attempted``) so a store that stays broken cannot loop.
+
+        Returns True if at least one sidecar was stashed (a retry is worth
+        attempting); False otherwise (nothing to heal — propagate the error).
+        """
+        if self._wal_heal_attempted:
+            return False
+        self._wal_heal_attempted = True
+        date_suffix = time.strftime("%Y%m%d")
+        dbs = self._ladybug_databases_dir()
+        if not dbs.is_dir():
+            return False
+        # Derive the graph base names from whatever ladybug sidecars exist so
+        # the recovery stays in lock-step with the engine's actual layout.
+        try:
+            bases: set[str] = set()
+            for entry in dbs.iterdir():
+                name = entry.name
+                if name.endswith(".wal.checkpoint"):
+                    bases.add(name[: -len(".wal.checkpoint")])
+                elif name.endswith(".shadow"):
+                    bases.add(name[: -len(".shadow")])
+        except OSError:
+            logger.exception("Failed to scan %s for ladybug WAL sidecars", dbs)
+            return False
+
+        stashed: list[Path] = []
+        try:
+            for base in sorted(bases):
+                checkpoint = dbs / f"{base}.wal.checkpoint"
+                shadow = dbs / f"{base}.shadow"
+                # `.corrupt-YYYYMMDD` for the checkpoint marker, `.stale-YYYYMMDD`
+                # for the shadow pre-image, matching the manual recovery naming.
+                for src, tag in (
+                    (checkpoint, "corrupt"),
+                    (shadow, "stale"),
+                ):
+                    if src.is_file():
+                        dst = dbs / f"{src.name}-{tag}-{date_suffix}"
+                        src.rename(dst)
+                        stashed.append(dst)
+        except OSError:
+            logger.exception(
+                "Failed to stash ladybug WAL sidecars in %s — manual recovery "
+                "may be required",
+                dbs,
+            )
+            return bool(stashed)
+        if stashed:
+            logger.warning(
+                "Ladybug graph-store WAL corruption detected — stashed corrupt "
+                "WAL sidecars: %s. Retrying the graph store open once; the main "
+                "graph database file was NOT touched.",
+                ", ".join(str(p) for p in sorted(stashed, key=str)),
+            )
+            return True
+        return False
 
     # -- durable backlog --------------------------------------------------
 
