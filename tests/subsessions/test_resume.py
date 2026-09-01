@@ -19,6 +19,7 @@ from robotsix_chat.subsessions import (
 from robotsix_chat.subsessions.resume import (
     _entry_last_assistant_text,
     _entry_recent_user_texts,
+    _entry_to_common_kwargs,
 )
 from robotsix_chat.subsessions.worker import (
     _build_ancestor_context,
@@ -159,6 +160,31 @@ async def test_resume_subsessions_full_scenario(tmp_path: Path) -> None:
     if task_worker is not None:
         with contextlib.suppress(asyncio.CancelledError):
             await asyncio.wait_for(task_worker, 2.0)
+
+
+def test_resume_entry_clamps_stale_persisted_model_level(caplog) -> None:
+    """A persisted subsession model_level=5 is clamped to 3 at the load boundary.
+
+    Regression for the 5->3 capability collapse (PR #1762): a subsession
+    whose record predates the rework can carry a level-5 pin.  Rather than
+    crash the resumed worker with llmio's ``level must be 1, 2, or 3``
+    ValueError, the load boundary runs it at the clamped level and logs.
+    """
+    import logging
+
+    common = _entry_to_common_kwargs(
+        {
+            "subsession_id": "sub-9",
+            "kind": "task",
+            "model_level": 5,
+            "prompt": "do it",
+            "depth": 1,
+            "title": "stale pin",
+        }
+    )
+    assert common["model_level"] == 3
+    warnings = [rec.message for rec in caplog.records if rec.levelno >= logging.WARNING]
+    assert any("model_level=5" in str(w) and "sub-9" in str(w) for w in warnings)
 
 
 @pytest.mark.asyncio

@@ -18,9 +18,9 @@ from pydantic import (
     model_validator,
 )
 from robotsix_config import load_config
-from robotsix_llmio.config import TierLevel
 
 from robotsix_chat.config.constants import (
+    VALID_MODEL_LEVELS,
     drop_blank_numeric_sentinels,
 )
 from robotsix_chat.config.models import (
@@ -81,12 +81,6 @@ class ConfigValidationError(ValueError):
 # Bump on every change to Settings.agent_instruction and update
 # docs/system_prompt_changelog.md with a new entry + SHA256.
 SYSTEM_PROMPT_VERSION = 154
-
-# Valid model levels, derived from llmio's tier enum (import-time constant so
-# the set is built once and can never drift from the tiers llmio ships).
-VALID_MODEL_LEVELS = frozenset(
-    int(level.value.removeprefix("level")) for level in TierLevel
-)
 
 
 class Settings(BaseModel):

@@ -12,6 +12,8 @@ import logging
 from collections.abc import Mapping
 from typing import TYPE_CHECKING, TypedDict
 
+from robotsix_chat.config.constants import clamp_persisted_model_level
+
 from .models import (
     ACTIVE_STATUSES,
     InboxMessage,
@@ -183,12 +185,17 @@ class _ResumeFate(TypedDict):
 
 def _entry_to_common_kwargs(entry: Mapping[str, object]) -> _CommonEntryKwargs:
     """Extract common SubsessionInfo/spawn_subsession fields from a persisted entry."""
+    sub_id = _entry_str(entry, "subsession_id")
+    model_level = clamp_persisted_model_level(
+        _entry_int(entry, "model_level", 2),
+        f"subsession {sub_id or '<unknown>'}",
+    )
     return {
         "parent_id": _entry_opt_str(entry, "parent_id"),
         "depth": _entry_int(entry, "depth", 1),
         "title": _entry_str(entry, "title"),
         "prompt": _entry_str(entry, "prompt"),
-        "model_level": _entry_int(entry, "model_level", 2),
+        "model_level": model_level,
         "interval_seconds": _entry_opt_float(entry, "interval_seconds"),
         "include_previous_result": bool(entry.get("include_previous_result")),
         "depends_on_ticket_id": _entry_opt_str(entry, "depends_on_ticket_id"),

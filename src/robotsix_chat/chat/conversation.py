@@ -39,6 +39,8 @@ from dataclasses import dataclass, field
 from pathlib import Path
 from typing import Any
 
+from robotsix_chat.config.constants import clamp_persisted_model_level
+
 logger = logging.getLogger(__name__)
 
 # A single exchanged turn: ``(user_message, assistant_reply)``.
@@ -437,7 +439,9 @@ class ConversationStoreSerializer:
                     turn_count=int(sraw.get("turn_count", len(turns))),
                     closed=bool(sraw.get("closed", False)),
                     model_level=(
-                        int(model_level_raw)
+                        clamp_persisted_model_level(
+                            int(model_level_raw), f"session {sid}"
+                        )
                         if isinstance(model_level_raw := sraw.get("model_level"), int)
                         else None
                     ),
