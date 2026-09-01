@@ -1950,7 +1950,7 @@ async def test_recall_wal_recovery_respects_auto_recovery_flag(
 async def test_shutdown_checkpoints_and_closes_graph_store(
     monkeypatch: pytest.MonkeyPatch, tmp_path: Any
 ) -> None:
-    """shutdown() CHECKPOINTs then closes the ladybug graph engine."""
+    """shutdown() runs a checkpoint, then closes the ladybug graph engine."""
     _install_fake_cognee(monkeypatch)
     mem = CogneeMemory(_enabled_settings(str(tmp_path / "cognee")))
     mem._setup_done = True
