@@ -15,7 +15,6 @@ from robotsix_llmio.config import TierLevel
 
 from robotsix_chat.config.constants import (
     drop_blank_numeric_sentinels,
-    level_needs_api_key,
 )
 from robotsix_chat.config.models import (
     PROJECT_MEMORY,
@@ -74,7 +73,7 @@ class ConfigValidationError(ValueError):
 # Version stamp for the agent_instruction default literal.
 # Bump on every change to Settings.agent_instruction and update
 # docs/system_prompt_changelog.md with a new entry + SHA256.
-SYSTEM_PROMPT_VERSION = 151
+SYSTEM_PROMPT_VERSION = 152
 
 # Valid model levels, derived from llmio's tier enum (import-time constant so
 # the set is built once and can never drift from the tiers llmio ships).
@@ -91,37 +90,35 @@ class Settings(BaseModel):
     (from its baked default :class:`~robotsix_llmio.config.TierLevelConfig`).
 
     Attributes:
-        llmio_model_level: Capability level — ``1`` (cheapest/fastest) to
-            ``5`` (frontier). The level encodes the provider + model: by
-            default level 1 and level 3 use ``openrouter`` (flash / mimo),
-            level 2 ``claudeSDK``/``haiku``, level 4 ``claudeSDK``/``opus``,
-            level 5 ``claudeSDK`` frontier.
-        llmio_api_key: Provider API key, forwarded to llmio when the chosen
-            level's provider needs one (e.g. ``openrouter``); unused
-            by keyless providers like ``claudeSDK``.
+        llmio_model_level: Capability level — ``1`` (cheap/frequent), ``2``
+            (workhorse, the default) or ``3`` (frontier). Levels are a pure
+            capability axis; which provider serves them is llmio's failover
+            axis — the keyless Claude SDK default slot (haiku / opus /
+            fable) in normal operation, the keyed OpenRouter fallback slot
+            (DeepSeek) while failover is active.
+        llmio_api_key: OpenRouter API key, forwarded to llmio only for
+            keyed (OpenRouter) slot attempts; unused while the keyless
+            ``claudeSDK`` default slot serves calls. Without it, provider
+            failover is unavailable.
         chat_model_level: Optional override of ``llmio_model_level`` for the
             main interactive chat agent.  When ``None`` (default), the chat
             agent uses ``llmio_model_level``.  Set to a specific level to
-            route chat turns to a different tier (e.g. ``4`` for fable-5)
-            while other consumers (subsessions, autonomous, summary) still
-            use ``llmio_model_level`` or their own overrides.
+            route chat turns to a different level (e.g. ``3`` for the
+            frontier tier) while other consumers (subsessions, autonomous,
+            summary) still use ``llmio_model_level`` or their own overrides.
         summary_model_level: Capability level of the dedicated summariser
             agent — the idle-timeout compaction summary, the carryover
-            summary and conversation titles. Defaults to ``2`` (the
-            keyless subscription tier the fleet prefers): the compaction
-            summary must faithfully reconstruct a long session's steps and
-            identifiers, which the cheapest keyed tier proved too weak for
-            (it echoed the last reply). A summary runs once per idle gap,
-            not per turn, so the stronger tier costs little.
+            summary and conversation titles. Defaults to ``1`` (cheap,
+            frequent — Claude haiku on the default slot): a summary is a
+            bounded text transformation that runs once per idle gap.
         llmio_task_budget_tokens: Optional advisory per-task token budget
             forwarded to the keyless Claude SDK tiers as ``task_budget`` so
             the model sees a live budget-remaining countdown. ``None``
             (default) sends no budget.
-        llmio_cooldown_seconds: Cooldown window (seconds) applied to models
-            that exhaust their provider quota or hit consecutive terminal
-            failures.  During cooldown the model is skipped in the fallback
-            chain.  ``0`` disables cooldown tracking.  Default ``900``
-            (15 minutes — the interim mitigation value from 2026-08-31).
+        llmio_failover_window_seconds: How long llmio routes calls straight
+            to the fallback (OpenRouter) provider slot after the default
+            (Claude) slot fails repeatedly, before automatically returning
+            to the default.  Default ``900`` (15 minutes).
         agent_instruction: System instruction handed to the LLM agent.
             Includes guidance on spawning subsessions for background work.
         server_host: Host address the chat SSE server binds to.
@@ -164,12 +161,12 @@ class Settings(BaseModel):
 
     """
 
-    llmio_model_level: int = 4
+    llmio_model_level: int = 2
     llmio_api_key: SecretStr = SecretStr("")
     chat_model_level: int | None = Field(
         default=None, json_schema_extra={"advanced": True}
     )
-    summary_model_level: int = Field(default=2, json_schema_extra={"advanced": True})
+    summary_model_level: int = Field(default=1, json_schema_extra={"advanced": True})
     llmio_task_budget_tokens: int | None = Field(
         default=None,
         json_schema_extra={"advanced": True},
@@ -183,17 +180,15 @@ class Settings(BaseModel):
             "per-response ``max_tokens`` caps. ``None`` means no budget."
         ),
     )
-    llmio_cooldown_seconds: float = Field(
+    llmio_failover_window_seconds: float = Field(
         default=900.0,
-        ge=0,
+        ge=1,
         json_schema_extra={"advanced": True},
         description=(
-            "Cooldown window (seconds) applied to models that exhaust their "
-            "provider quota or hit consecutive terminal failures.  During "
-            "cooldown the model is skipped in the fallback chain so the "
-            "agent retries with an alternative tier instead of burning "
-            "retries on a known-dead endpoint.  ``0`` disables cooldown "
-            "tracking entirely."
+            "How long llmio routes calls straight to the fallback "
+            "(OpenRouter) provider slot after the default (Claude) slot "
+            "fails repeatedly or exhausts its quota, before automatically "
+            "returning to the default. Default 900 (15 minutes)."
         ),
     )
     agent_instruction: str = Field(
@@ -247,26 +242,15 @@ class Settings(BaseModel):
             "arises, spawn a separate subsession for it rather than folding "
             "it into an in-flight one. Each subsession should have a single, "
             "coherent goal and close when that goal is reached.\n"
-            "– Pick model_level by difficulty and cost (see Model Policy "
-            "below for named tier labels): 1 (cheap-high-perf) is the cheapest "
-            "OpenRouter tier for trivial polling or extraction, 2 (flat-rate-"
-            "cheap) is keyless Claude haiku for monitors and routine checks, "
-            "3 (default) is the default choice for general work — prefer it "
-            "unless the task needs stronger reasoning, 4 (strong-reasoning) "
-            "is a stronger keyless tier reserved for reasoning 3 struggles "
-            "with, 5 (primary-frontier) is the frontier tier — only for "
-            "genuinely hard reasoning. Levels 1 and 3 need an OpenRouter API "
-            "key; the server "
-            "checks only its own JSON config file (`llmio.api_key`), not "
-            "environment variables or external secret stores — so a spawn "
-            "may report a missing key even when the operator believes one "
-            "is set.  If a spawn errors with an API key message, retry at "
-            "level 4 (keyless) and tell the user the key could not be found "
-            "*by the server's config file* — do NOT claim the key is missing "
-            "outright, because you cannot inspect the environment or secrets "
-            "to confirm.  Recommend the operator verify the `llmio.api_key` "
-            "field in the server's JSON config file.  Never spawn "
-            "at level 5 for routine checks.\n"
+            "– Pick model_level by difficulty (see Model Policy below for "
+            "named tier labels): 1 (cheap-frequent) for trivial polling, "
+            "extraction, monitors and routine checks; 2 (workhorse) is the "
+            "default choice for general work — prefer it unless the task "
+            "needs frontier reasoning; 3 (frontier) only for genuinely hard "
+            "reasoning. Never spawn at level 3 for routine checks. Which "
+            "PROVIDER serves a level is not your concern: the system runs "
+            "on a flat-rate default provider and fails over to a paid "
+            "backup provider automatically when the default is degraded.\n"
             "– Write instructions that are complete and self-contained: the "
             "subsession starts with NO conversation history, so include every "
             "id, URL, constraint, and expected outcome it needs.\n"
@@ -524,36 +508,36 @@ class Settings(BaseModel):
             "list_subsessions to check what is already running.\n"
             "\n"
             "Model Policy:\n"
-            "– Model tiers (in order of capability):\n"
-            "  1 = 'cheap-high-perf' — fast, inexpensive OpenRouter tier "
-            "for trivial polling, extraction, or high-volume work.\n"
-            "  2 = 'flat-rate-cheap' — keyless Claude haiku on the "
-            "subscription; monitors, routine checks, classification.\n"
-            "  3 = 'default' — the general-work tier; prefer it unless a "
-            "task needs stronger reasoning.\n"
-            "  4 = 'strong-reasoning' — keyless tier reserved for tasks "
-            "where level 3 struggles; no API key required.\n"
-            "  5 = 'primary-frontier' — the frontier tier; only for "
-            "genuinely hard reasoning. Never use for routine checks.\n"
-            "– Your own conversation runs at the configured chat tier "
-            "(level 4, 'strong-reasoning') — NOT the frontier tier. If you "
+            "– Model levels (in order of capability):\n"
+            "  1 = 'cheap-frequent' — monitors, classification, polling, "
+            "extraction, high-volume routine work.\n"
+            "  2 = 'workhorse' — the general-work level; prefer it unless "
+            "a task needs frontier reasoning.\n"
+            "  3 = 'frontier' — only for genuinely hard reasoning. Never "
+            "use for routine checks.\n"
+            "– Levels are capability only. Every level is served by the "
+            "flat-rate default provider; when it is degraded or exhausted "
+            "the system automatically fails over to a paid backup provider "
+            "for the same level, then returns to the default on its own.\n"
+            "– Your own conversation runs at the configured chat level "
+            "(level 2, 'workhorse') — NOT the frontier level. If you "
             "have genuinely tried and cannot solve the user's problem at "
             "that capability, call escalate_model(reason) to pin THIS "
-            "conversation to the frontier tier for the rest of its life. "
+            "conversation to the frontier level for the rest of its life. "
             "Escalate only after a real attempt has failed: a reasoning "
             "step you cannot complete, an analysis you keep getting wrong, "
             "a task you already tried. Do NOT escalate because a request "
             "sounds hard, is long or tedious, or could be answered by a "
-            "tool call — try first. The stronger tier costs substantially "
-            "more and the switch is permanent for the conversation. It "
+            "tool call — try first. The frontier level is a scarcer "
+            "resource and the switch is permanent for the conversation. It "
             "takes effect on the user's NEXT message, so after escalating, "
             "finish the current turn as well as you can and tell the user "
             "plainly that you switched and why.\n"
             "– When filing tickets that specify model requirements "
             "(agent configurations, tool defaults, deployment specs, "
-            "subsession spawning defaults), use these tier LABELS "
-            "(e.g. 'primary-frontier') rather than hardcoded model "
-            "names. The resolver at deploy-time maps tier labels to "
+            "subsession spawning defaults), use these level LABELS "
+            "(e.g. 'workhorse', 'frontier') rather than hardcoded model "
+            "names. The resolver at deploy-time maps level labels to "
             "concrete models based on the current central policy, "
             "so configurations stay evergreen without rework.\n"
             "\n"
@@ -1842,18 +1826,11 @@ class Settings(BaseModel):
                 f"llmio.model_level must be one of {sorted(VALID_MODEL_LEVELS)}, "
                 f"got {self.llmio_model_level!r}"
             )
-        # The keyless Claude SDK provider (level 3) needs no API key;
-        # key-bearing providers (e.g. openrouter, levels 1 and 3) require one.
-        if (
-            level_needs_api_key(self.llmio_model_level)
-            and not self.llmio_api_key.get_secret_value()
-        ):
-            failures.append(
-                f"llmio.api_key must be set for model_level "
-                f"{self.llmio_model_level} (its provider needs a key) — provide "
-                "it via the `llmio.api_key` field of your config file "
-                "(or use model_level 4, which is keyless)"
-            )
+        # No level requires a key up front any more: every level is served
+        # by the keyless Claude SDK default slot, and ``llmio.api_key`` only
+        # matters when provider failover routes a call to the keyed
+        # OpenRouter slot. A missing key therefore degrades failover
+        # instead of failing config load — cli.py logs a warning at startup.
         if (
             self.chat_model_level is not None
             and self.chat_model_level not in VALID_MODEL_LEVELS

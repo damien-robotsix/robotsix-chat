@@ -326,27 +326,12 @@ def test_curated_stream_error_budget_exhausted_names_reset_time() -> None:
     # Names the parsed reset clock time in UTC (deterministic regardless of now).
     assert "01:00 UTC" in payload["message"]
     assert "quota exhausted" in payload["message"].lower()
-    # Paid fallback disabled by default → hint to enable it.
-    assert "paid backup model" in payload["message"]
+    # Reaching this message means the automatic failover also failed.
+    assert "OpenRouter failover" in payload["message"]
     # Never the generic internal-error surface for this class.
     assert "internal error" not in payload["message"].lower()
     # The curated message never echoes the raw upstream exception text.
     assert "hit your limit" not in payload["message"]
-
-
-def test_curated_stream_error_budget_exhausted_paid_fallback_enabled() -> None:
-    """With paid fallback enabled the message drops the enable-it hint."""
-    from robotsix_llmio.claude_sdk import ClaudeSDKUsageExhaustedError
-
-    from robotsix_chat.chat.server.routes.errors import curated_stream_error
-
-    payload = curated_stream_error(
-        ClaudeSDKUsageExhaustedError("You've hit your limit · resets 1am (UTC)"),
-        fallback_id="turn-1",
-        paid_fallback_enabled=True,
-    )
-    assert "01:00 UTC" in payload["message"]
-    assert "paid fallback" not in payload["message"]
 
 
 def test_claude_usage_reset_at_parses_reset_hint() -> None:
@@ -417,7 +402,7 @@ def test_budget_exhausted_message_names_wait_duration() -> None:
     )
     assert "resets at 01:00 UTC" in message
     assert "in 56 min" in message
-    assert "paid backup model" in message
+    assert "OpenRouter failover" in message
 
 
 def test_budget_exhausted_message_without_reset_hint() -> None:
@@ -430,7 +415,7 @@ def test_budget_exhausted_message_without_reset_hint() -> None:
         ClaudeSDKUsageExhaustedError("You're out of usage credits")
     )
     assert "Claude quota exhausted" in message
-    assert "paid backup model" in message
+    assert "OpenRouter failover" in message
     assert "UTC" not in message
 
 

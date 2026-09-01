@@ -187,17 +187,17 @@ def _build_spawn_and_control_tools(
         root task and each ancestor's title/prompt summary) so a nested
         child does not start from scratch — useful when spawning from a
         subsession that itself runs a focused sub-task. model_level picks
-        capability 1 (cheapest) to 5 (frontier, most expensive) — match
-        it to difficulty: 1 for trivial polling/extraction, 2 (keyless
-        Claude haiku) for monitors and routine checks, 3 for general
-        work, 4 for reasoning, 5 only for genuinely hard reasoning.
-        Levels 1 and 3 need an OpenRouter API key; levels 2, 4 and 5
-        are keyless Claude SDK. IMPORTANT — periodic and wait_for_event
+        capability 1 (cheap/frequent) to 3 (frontier) — match it to
+        difficulty: 1 for trivial polling/extraction, monitors and
+        routine checks, 2 (the workhorse) for general work, 3 only for
+        genuinely hard reasoning. Which provider serves a level is
+        automatic (flat-rate default with paid failover) — never a
+        spawn-time concern. IMPORTANT — periodic and wait_for_event
         monitors are capped at the server's monitor_max_model_level
-        (default 2). Requesting a higher level for a monitor will be
-        silently clamped down; use levels 1-2 for all routine monitoring.
+        (default 1). Requesting a higher level for a monitor will be
+        silently clamped down; use level 1 for all routine monitoring.
         For hard tasks use kind="task" (one-shot, uncapped) instead.
-        If a spawn errors with an API key message, retry at level 4
+        If a spawn errors with an API key message, retry at level 2
         (keyless) and tell the user the key could not be found by the
         server's config file — do NOT claim the key is missing outright:
         you cannot inspect the environment or secrets to confirm, and the

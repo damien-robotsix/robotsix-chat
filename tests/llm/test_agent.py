@@ -3,9 +3,8 @@
 from __future__ import annotations
 
 import asyncio
-import re
 from collections.abc import Callable
-from unittest.mock import AsyncMock, MagicMock, call, patch
+from unittest.mock import AsyncMock, MagicMock, patch
 
 import pytest
 
@@ -13,29 +12,19 @@ from robotsix_chat.llm import LlmioChatAgent
 
 
 @pytest.fixture(autouse=True)
-def _reset_tier_cooldown() -> object:
-    """Isolate llmio's process-global tier-cooldown state between tests.
+def _reset_failover_tracker() -> object:
+    """Isolate each test from llmio's process-wide provider-failover tracker.
 
-    ``robotsix_llmio.core.tier_fallback`` records terminal failures (usage
-    exhaustion, auth) in a module-global ``ModelHealthTracker`` and, once a
-    model crosses the consecutive-failure threshold, skips it *without a call*.
-    Several tests here deliberately drive fallbacks to exhaustion, so without a
-    reset the accumulated failures leak across tests and later tests see a tier
-    skipped — shifting their ``create_model`` side-effect sequence and failing
-    spuriously. Reset the tracker around each test so every test starts with all
-    tiers healthy.
+    Several tests here deliberately drive default-slot failures to arm the
+    failover window; without a reset the armed window leaks across tests and
+    later tests resolve the fallback slot — shifting their provider-factory
+    side-effect sequence and failing spuriously.
     """
-    from robotsix_llmio.core.cooldown import reset_health_tracker
+    from robotsix_llmio.core.failover import reset_failover_tracker
 
-    reset_health_tracker()
+    reset_failover_tracker()
     yield
-    reset_health_tracker()
-
-
-# The exact shape the Claude CLI accepts for ``--session-id``.
-_CANONICAL_UUID_RE = re.compile(
-    r"^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$"
-)
+    reset_failover_tracker()
 
 
 class _RecordingMemory:
@@ -95,7 +84,7 @@ async def test_stream_yields_block_response() -> None:
     """``stream`` yields the agent's full reply as a single block."""
     create_model, handle = _patched_create_model("Hello world!")
 
-    with patch("robotsix_chat.llm.agent.create_model", create_model):
+    with patch("robotsix_chat.llm.agent.get_provider_for_identifier", create_model):
         agent = LlmioChatAgent(model_level=3, instruction="Be helpful.")
         chunks = [c async for c in agent.stream("hi")]
 
@@ -104,24 +93,36 @@ async def test_stream_yields_block_response() -> None:
 
 
 @pytest.mark.asyncio
-async def test_keyless_level_forwards_no_api_key() -> None:
-    """With no api_key (keyless level), ``create_model`` gets only the level."""
-    create_model, _ = _patched_create_model()
+async def test_default_slot_gets_no_api_key() -> None:
+    """The keyless default (claudeSDK) slot never receives an api_key."""
+    get_provider, _ = _patched_create_model()
 
-    with patch("robotsix_chat.llm.agent.create_model", create_model):
-        agent = LlmioChatAgent(model_level=3, instruction="Be helpful.")
+    with patch("robotsix_chat.llm.agent.get_provider_for_identifier", get_provider):
+        agent = LlmioChatAgent(
+            model_level=3, instruction="Be helpful.", api_key="sk-or-test"
+        )
         _ = [c async for c in agent.stream("hi")]
 
-    create_model.assert_called_once_with(level=3)
+    get_provider.assert_called_once_with("claudeSDK-claude-fable-5")
 
 
 @pytest.mark.asyncio
-async def test_key_bearing_level_forwards_api_key() -> None:
-    """An api_key is forwarded to ``create_model``; ``build_agent`` gets the level."""
-    create_model, _ = _patched_create_model()
-    provider = create_model.return_value
+async def test_keyed_slot_forwards_api_key() -> None:
+    """With failover armed, the keyed (OpenRouter) slot gets the api_key.
 
-    with patch("robotsix_chat.llm.agent.create_model", create_model):
+    Plus the slot's own routing kwargs and per-response max_tokens.
+    """
+    from robotsix_llmio.config.tier import FALLBACK_LEVEL1
+    from robotsix_llmio.core.failover import get_failover_tracker
+    from robotsix_llmio.exceptions import ProviderExhaustedError
+
+    get_failover_tracker().record_failure(
+        "default", ProviderExhaustedError("weekly cap")
+    )
+    get_provider, _ = _patched_create_model()
+    provider = get_provider.return_value
+
+    with patch("robotsix_chat.llm.agent.get_provider_for_identifier", get_provider):
         agent = LlmioChatAgent(
             model_level=1,
             instruction="Be helpful.",
@@ -129,12 +130,15 @@ async def test_key_bearing_level_forwards_api_key() -> None:
         )
         _ = [c async for c in agent.stream("hi")]
 
-    create_model.assert_called_once_with(
-        level=1,
+    get_provider.assert_called_once_with(
+        FALLBACK_LEVEL1.model,
+        **FALLBACK_LEVEL1.provider_kwargs,
+        max_tokens=FALLBACK_LEVEL1.max_tokens,
         api_key="sk-or-test",  # pragma: allowlist secret
     )
     kwargs = provider.build_agent.call_args.kwargs
     assert kwargs["level"] == 1
+    assert kwargs["model"] == FALLBACK_LEVEL1.model_name
     assert kwargs["tools"] is None
     # The chat must never expose the SDK's built-in tools.
     assert kwargs["builtin_tools"] is False
@@ -143,27 +147,37 @@ async def test_key_bearing_level_forwards_api_key() -> None:
 
 
 @pytest.mark.asyncio
-async def test_task_budget_forwarded_to_keyless_level() -> None:
-    """``task_budget_tokens`` is forwarded as ``max_tokens`` to a keyless tier."""
-    create_model, _ = _patched_create_model()
+async def test_task_budget_forwarded_to_keyless_slot() -> None:
+    """``task_budget_tokens`` becomes ``max_tokens`` on the keyless slot.
 
-    with patch("robotsix_chat.llm.agent.create_model", create_model):
+    llmio maps it onto the SDK's advisory task_budget.
+    """
+    get_provider, _ = _patched_create_model()
+
+    with patch("robotsix_chat.llm.agent.get_provider_for_identifier", get_provider):
         agent = LlmioChatAgent(
-            model_level=4,
+            model_level=2,
             instruction="Be helpful.",
             task_budget_tokens=30_000,
         )
         _ = [c async for c in agent.stream("hi")]
 
-    create_model.assert_called_once_with(level=4, max_tokens=30_000)
+    get_provider.assert_called_once_with("claudeSDK-opus", max_tokens=30_000)
 
 
 @pytest.mark.asyncio
-async def test_task_budget_not_forwarded_to_keyed_level() -> None:
-    """``task_budget_tokens`` must not clobber a keyed tier's own max_tokens."""
-    create_model, _ = _patched_create_model()
+async def test_task_budget_not_forwarded_to_keyed_slot() -> None:
+    """``task_budget_tokens`` must not clobber a keyed slot's own max_tokens."""
+    from robotsix_llmio.config.tier import FALLBACK_LEVEL1
+    from robotsix_llmio.core.failover import get_failover_tracker
+    from robotsix_llmio.exceptions import ProviderExhaustedError
 
-    with patch("robotsix_chat.llm.agent.create_model", create_model):
+    get_failover_tracker().record_failure(
+        "default", ProviderExhaustedError("weekly cap")
+    )
+    get_provider, _ = _patched_create_model()
+
+    with patch("robotsix_chat.llm.agent.get_provider_for_identifier", get_provider):
         agent = LlmioChatAgent(
             model_level=1,
             instruction="Be helpful.",
@@ -172,7 +186,12 @@ async def test_task_budget_not_forwarded_to_keyed_level() -> None:
         )
         _ = [c async for c in agent.stream("hi")]
 
-    create_model.assert_called_once_with(level=1, api_key="k")
+    get_provider.assert_called_once_with(
+        FALLBACK_LEVEL1.model,
+        **FALLBACK_LEVEL1.provider_kwargs,
+        max_tokens=FALLBACK_LEVEL1.max_tokens,
+        api_key="k",
+    )
 
 
 @pytest.mark.asyncio
@@ -180,7 +199,7 @@ async def test_empty_output_yields_nothing() -> None:
     """An empty reply yields no chunks (and still closes the handle)."""
     create_model, handle = _patched_create_model("")
 
-    with patch("robotsix_chat.llm.agent.create_model", create_model):
+    with patch("robotsix_chat.llm.agent.get_provider_for_identifier", create_model):
         agent = LlmioChatAgent(model_level=1, instruction="Be helpful.", api_key="k")
         chunks = [c async for c in agent.stream("hi")]
 
@@ -204,7 +223,7 @@ async def test_handle_closed_on_error() -> None:
     provider.build_agent.return_value = handle
     create_model = MagicMock(return_value=provider)
 
-    with patch("robotsix_chat.llm.agent.create_model", create_model):
+    with patch("robotsix_chat.llm.agent.get_provider_for_identifier", create_model):
         agent = LlmioChatAgent(model_level=3, instruction="Be helpful.")
         with pytest.raises(RuntimeError, match="backend exploded"):
             _ = [c async for c in agent.stream("hi")]
@@ -230,7 +249,7 @@ async def _agent_with_memory(
     provider = create_model.return_value
     memory = _RecordingMemory(recall=recall)
 
-    with patch("robotsix_chat.llm.agent.create_model", create_model):
+    with patch("robotsix_chat.llm.agent.get_provider_for_identifier", create_model):
         agent = LlmioChatAgent(model_level=3, instruction="Be helpful.", memory=memory)
         chunks = [c async for c in agent.stream(message)]
 
@@ -314,7 +333,7 @@ async def test_session_id_forwarded_to_memory() -> None:
     create_model, _ = _patched_create_model("ok")
     memory = _RecordingMemory(recall="some recall")
 
-    with patch("robotsix_chat.llm.agent.create_model", create_model):
+    with patch("robotsix_chat.llm.agent.get_provider_for_identifier", create_model):
         agent = LlmioChatAgent(model_level=3, instruction="Be helpful.", memory=memory)
         _ = [c async for c in agent.stream("hi", session_id="sess-abc")]
 
@@ -384,7 +403,7 @@ async def test_event_sink_receives_activity_frame() -> None:
     create_model, _ = _patched_create_model_with_activity()
     sink = _RecordingEventSink()
 
-    with patch("robotsix_chat.llm.agent.create_model", create_model):
+    with patch("robotsix_chat.llm.agent.get_provider_for_identifier", create_model):
         agent = LlmioChatAgent(
             model_level=3, instruction="Be helpful.", event_sink=sink
         )
@@ -441,7 +460,7 @@ async def test_no_event_sink_configured_is_silent() -> None:
     """
     create_model, _ = _patched_create_model_with_activity()
 
-    with patch("robotsix_chat.llm.agent.create_model", create_model):
+    with patch("robotsix_chat.llm.agent.get_provider_for_identifier", create_model):
         agent = LlmioChatAgent(model_level=3, instruction="Be helpful.")
         chunks = [c async for c in agent.stream("hi", session_id="sess-abc")]
 
@@ -458,7 +477,7 @@ async def test_event_sink_configured_but_no_session_id_is_silent() -> None:
     create_model, _ = _patched_create_model_with_activity()
     sink = _RecordingEventSink()
 
-    with patch("robotsix_chat.llm.agent.create_model", create_model):
+    with patch("robotsix_chat.llm.agent.get_provider_for_identifier", create_model):
         agent = LlmioChatAgent(
             model_level=3, instruction="Be helpful.", event_sink=sink
         )
@@ -479,7 +498,7 @@ async def test_recall_activity_frames_no_context_found() -> None:
     sink = _RecordingEventSink()
     memory = _RecordingMemory(recall="")
 
-    with patch("robotsix_chat.llm.agent.create_model", create_model):
+    with patch("robotsix_chat.llm.agent.get_provider_for_identifier", create_model):
         agent = LlmioChatAgent(
             model_level=3, instruction="Be helpful.", event_sink=sink, memory=memory
         )
@@ -520,7 +539,7 @@ async def test_recall_activity_frames_context_found() -> None:
     sink = _RecordingEventSink()
     memory = _RecordingMemory(recall="prior fact")
 
-    with patch("robotsix_chat.llm.agent.create_model", create_model):
+    with patch("robotsix_chat.llm.agent.get_provider_for_identifier", create_model):
         agent = LlmioChatAgent(
             model_level=3, instruction="Be helpful.", event_sink=sink, memory=memory
         )
@@ -537,7 +556,7 @@ async def test_recall_activity_frames_no_event_sink_is_silent() -> None:
     create_model, _ = _patched_create_model("hi there")
     memory = _RecordingMemory(recall="prior fact")
 
-    with patch("robotsix_chat.llm.agent.create_model", create_model):
+    with patch("robotsix_chat.llm.agent.get_provider_for_identifier", create_model):
         agent = LlmioChatAgent(model_level=3, instruction="Be helpful.", memory=memory)
         chunks = [c async for c in agent.stream("hi", session_id="sess-abc")]
 
@@ -556,7 +575,7 @@ async def test_history_passed_as_message_history() -> None:
 
     create_model, handle = _patched_create_model("next reply")
 
-    with patch("robotsix_chat.llm.agent.create_model", create_model):
+    with patch("robotsix_chat.llm.agent.get_provider_for_identifier", create_model):
         agent = LlmioChatAgent(model_level=3, instruction="Be helpful.")
         _ = [
             c
@@ -576,8 +595,8 @@ async def test_history_passed_as_message_history() -> None:
 
 
 @pytest.mark.asyncio
-async def test_keyed_level_runs_with_request_limit() -> None:
-    """Keyed (OpenRouter) tiers raise pydantic-ai's default request_limit of 50.
+async def test_keyed_slot_runs_with_request_limit() -> None:
+    """Keyed (OpenRouter) slots raise pydantic-ai's default request_limit of 50.
 
     Tool-heavy turns burn one request per tool round-trip and legitimately
     exceed 50; without the override they die mid-stream with
@@ -585,11 +604,16 @@ async def test_keyed_level_runs_with_request_limit() -> None:
     Claude cap).
     """
     from pydantic_ai.usage import UsageLimits
+    from robotsix_llmio.core.failover import get_failover_tracker
+    from robotsix_llmio.exceptions import ProviderExhaustedError
 
-    create_model, handle = _patched_create_model("reply")
+    get_failover_tracker().record_failure(
+        "default", ProviderExhaustedError("weekly cap")
+    )
+    get_provider, handle = _patched_create_model("reply")
 
-    with patch("robotsix_chat.llm.agent.create_model", create_model):
-        agent = LlmioChatAgent(model_level=3, instruction="Be helpful.")
+    with patch("robotsix_chat.llm.agent.get_provider_for_identifier", get_provider):
+        agent = LlmioChatAgent(model_level=2, instruction="Be helpful.", api_key="k")
         _ = [c async for c in agent.stream("hi")]
 
     limits = handle.run_calls[0]["run_kwargs"].get("usage_limits")
@@ -598,16 +622,16 @@ async def test_keyed_level_runs_with_request_limit() -> None:
 
 
 @pytest.mark.asyncio
-async def test_keyless_level_runs_without_usage_limits() -> None:
-    """Claude SDK tiers get no usage_limits kwarg.
+async def test_keyless_slot_runs_without_usage_limits() -> None:
+    """The Claude SDK default slot gets no usage_limits kwarg.
 
     The SDK tool path warns-and-drops run kwargs it cannot honor, and the
     CLI runs the agent loop internally so the cap never applies.
     """
-    create_model, handle = _patched_create_model("reply")
+    get_provider, handle = _patched_create_model("reply")
 
-    with patch("robotsix_chat.llm.agent.create_model", create_model):
-        agent = LlmioChatAgent(model_level=4, instruction="Be helpful.")
+    with patch("robotsix_chat.llm.agent.get_provider_for_identifier", get_provider):
+        agent = LlmioChatAgent(model_level=2, instruction="Be helpful.")
         _ = [c async for c in agent.stream("hi")]
 
     assert "usage_limits" not in handle.run_calls[0]["run_kwargs"]
@@ -618,7 +642,7 @@ async def test_no_history_passes_none() -> None:
     """With no prior turns, message_history is None (a plain single query)."""
     create_model, handle = _patched_create_model("reply")
 
-    with patch("robotsix_chat.llm.agent.create_model", create_model):
+    with patch("robotsix_chat.llm.agent.get_provider_for_identifier", create_model):
         agent = LlmioChatAgent(model_level=3, instruction="Be helpful.")
         _ = [c async for c in agent.stream("hi")]
 
@@ -639,7 +663,7 @@ async def test_session_id_wraps_run_in_langfuse_session() -> None:
         yield
 
     with (
-        patch("robotsix_chat.llm.agent.create_model", create_model),
+        patch("robotsix_chat.llm.agent.get_provider_for_identifier", create_model),
         patch(
             "robotsix_llmio.core.tracing.langfuse_session", fake_session, create=True
         ),
@@ -683,7 +707,9 @@ async def test_retry_on_transient_error() -> None:
     create_model_patch = MagicMock(return_value=provider)
 
     with (
-        patch("robotsix_chat.llm.agent.create_model", create_model_patch),
+        patch(
+            "robotsix_chat.llm.agent.get_provider_for_identifier", create_model_patch
+        ),
         patch("robotsix_chat.llm.agent.is_openrouter_transient", return_value=True),
         patch("robotsix_http.retry.asyncio.sleep", new=AsyncMock()),
     ):
@@ -757,7 +783,9 @@ async def test_retry_on_claude_sdk_transient_signature(
     create_model_patch = MagicMock(return_value=provider)
 
     with (
-        patch("robotsix_chat.llm.agent.create_model", create_model_patch),
+        patch(
+            "robotsix_chat.llm.agent.get_provider_for_identifier", create_model_patch
+        ),
         patch("robotsix_http.retry.asyncio.sleep", new=AsyncMock()),
     ):
         agent = LlmioChatAgent(model_level=3, instruction="Be helpful.")
@@ -818,7 +846,9 @@ async def test_no_retry_on_non_transient_error() -> None:
     create_model_patch = MagicMock(return_value=provider)
 
     with (
-        patch("robotsix_chat.llm.agent.create_model", create_model_patch),
+        patch(
+            "robotsix_chat.llm.agent.get_provider_for_identifier", create_model_patch
+        ),
         patch("robotsix_chat.llm.agent.is_openrouter_transient", return_value=False),
     ):
         agent = LlmioChatAgent(model_level=3, instruction="Be helpful.")
@@ -847,7 +877,9 @@ async def test_retries_exhausted_on_persistent_transient() -> None:
     create_model_patch = MagicMock(return_value=provider)
 
     with (
-        patch("robotsix_chat.llm.agent.create_model", create_model_patch),
+        patch(
+            "robotsix_chat.llm.agent.get_provider_for_identifier", create_model_patch
+        ),
         patch("robotsix_chat.llm.agent.is_openrouter_transient", return_value=True),
         patch("robotsix_http.retry.asyncio.sleep", new=AsyncMock()),
     ):
@@ -865,191 +897,162 @@ async def test_retries_exhausted_on_persistent_transient() -> None:
 # ---------------------------------------------------------------------------
 
 
-@pytest.mark.asyncio
-async def test_usage_exhausted_falls_back_to_another_tier() -> None:
-    """ClaudeSDKUsageExhaustedError at level 4 falls back to level 3 (opus).
+def _slot_handles(
+    default_run: object, fallback_run: object
+) -> tuple[MagicMock, MagicMock, MagicMock]:
+    """Build a provider factory routed by slot (claudeSDK-* vs openrouter-*).
 
-    Falls back for the SAME turn instead of surfacing the raw error text.
+    Returns ``(get_provider_patch, default_provider, fallback_provider)``;
+    each provider mock's ``build_agent`` returns a handle whose ``run`` is
+    the given coroutine function, and the handle is also exposed as
+    ``provider.handle`` for close/call assertions.
+    """
+    default_handle = MagicMock()
+    default_handle.run = default_run
+    default_handle.close = MagicMock()
+    default_provider = MagicMock()
+    default_provider.build_agent.return_value = default_handle
+    default_provider.handle = default_handle
+
+    fallback_handle = MagicMock()
+    fallback_handle.run = fallback_run
+    fallback_handle.close = MagicMock()
+    fallback_provider = MagicMock()
+    fallback_provider.build_agent.return_value = fallback_handle
+    fallback_provider.handle = fallback_handle
+
+    def _route(identifier: str, **_kw: object) -> MagicMock:
+        if str(identifier).startswith("claudeSDK"):
+            return default_provider
+        return fallback_provider
+
+    return MagicMock(side_effect=_route), default_provider, fallback_provider
+
+
+@pytest.mark.asyncio
+async def test_usage_exhausted_fails_over_to_openrouter_same_level() -> None:
+    """Claude exhaustion fails the turn over to the OpenRouter slot.
+
+    The SAME capability level is retried on the fallback slot for the same
+    turn — levels never change — instead of surfacing the raw error text.
     """
     from robotsix_llmio.claude_sdk import ClaudeSDKUsageExhaustedError
-
-    level4_handle = MagicMock()
 
     async def exhausted(
         _message: str, *, message_history: object = None, **run_kwargs: object
     ) -> None:
         raise ClaudeSDKUsageExhaustedError("You're out of usage credits")
-
-    level4_handle.run = exhausted
-    level4_handle.close = MagicMock()
-    level4_provider = MagicMock()
-    level4_provider.build_agent.return_value = level4_handle
-
-    level3_handle = MagicMock()
 
     async def recovered(
         _message: str, *, message_history: object = None, **run_kwargs: object
     ) -> MagicMock:
         result = MagicMock()
-        result.output = "opus reply"
+        result.output = "deepseek reply"
         return result
 
-    level3_handle.run = recovered
-    level3_handle.close = MagicMock()
-    level3_provider = MagicMock()
-    level3_provider.build_agent.return_value = level3_handle
-
-    # acall_with_tier_fallback retries its starting level (4) once — it has
-    # no way to know this level was already just attempted outside it. That
-    # retry fails identically, arming llmio's claudeSDK FAMILY latch (usage
-    # exhaustion cools every Claude tier at once), so the walk skips level 5
-    # without a call and lands directly on the keyed level 3.
-    create_model_patch = MagicMock(
-        side_effect=[level4_provider, level4_provider, level3_provider]
+    get_provider, default_provider, fallback_provider = _slot_handles(
+        exhausted, recovered
     )
 
-    from robotsix_llmio.core import reset_health_tracker
+    with patch("robotsix_chat.llm.agent.get_provider_for_identifier", get_provider):
+        agent = LlmioChatAgent(model_level=2, instruction="Be helpful.", api_key="k")
+        chunks = [c async for c in agent.stream("hi")]
 
-    reset_health_tracker()
-    try:
-        with patch("robotsix_chat.llm.agent.create_model", create_model_patch):
-            agent = LlmioChatAgent(model_level=4, instruction="Be helpful.")
-            chunks = [c async for c in agent.stream("hi")]
-    finally:
-        reset_health_tracker()
+        assert chunks == ["deepseek reply"]
+        default_provider.handle.close.assert_called_once()
+        fallback_provider.handle.close.assert_called_once()
+        # Both attempts ran at the SAME level.
+        identifiers = [c.args[0] for c in get_provider.call_args_list]
+        assert identifiers[0].startswith("claudeSDK")
+        assert identifiers[1].startswith("openrouter")
 
-    assert chunks == ["opus reply"]
-    assert create_model_patch.call_args_list == [
-        call(level=4),
-        call(level=4),
-        call(level=3),
-    ]
-    assert level4_handle.close.call_count == 2
-    level3_handle.close.assert_called_once()
-    # The fallback attempt reuses the exact same prompt/instruction — the
-    # user should get a real answer, not have to re-ask.
-    assert level3_provider.build_agent.call_args.kwargs["system_prompt"].startswith(
-        "Be helpful."
-    )
+        # The next turn goes straight to the fallback slot: exhaustion armed
+        # the failover window, so the doomed default attempt is skipped.
+        get_provider.reset_mock()
+        chunks = [c async for c in agent.stream("hi again")]
+        assert chunks == ["deepseek reply"]
+        assert len(get_provider.call_args_list) == 1
+        assert get_provider.call_args_list[0].args[0].startswith("openrouter")
 
 
 @pytest.mark.asyncio
-async def test_usage_exhausted_fallback_keeps_conversation_context() -> None:
-    """A usage-exhausted Claude turn falls back WITH the prior turns intact.
+async def test_failover_keeps_conversation_context() -> None:
+    """A failed-over turn reaches the keyed slot WITH the prior turns intact.
 
-    Regression for the context-wipe bug: the keyed fallback tier (level 3)
-    does not share the Claude SDK resume session, so it must receive the
-    conversation as explicit ``message_history`` AND a system note telling it
-    it is mid-conversation, so it does not reply "I don't have full context on
-    what 'it' refers to" to a terse follow-up.
+    Regression for the context-wipe bug: the keyed (OpenRouter) slot does not
+    share the Claude SDK resume session, so it must receive the conversation
+    as explicit ``message_history`` AND a system note telling it it is
+    mid-conversation, so it does not reply "I don't have full context on what
+    'it' refers to" to a terse follow-up.
     """
     from robotsix_llmio.claude_sdk import ClaudeSDKUsageExhaustedError
-
-    # The keyless Claude tiers (4, 5) all draw on the one exhausted
-    # subscription, so the walk passes through them and lands on keyed level 3.
-    claude_handle = MagicMock()
 
     async def exhausted(
         _message: str, *, message_history: object = None, **run_kwargs: object
     ) -> None:
         raise ClaudeSDKUsageExhaustedError("You're out of usage credits")
 
-    claude_handle.run = exhausted
-    claude_handle.close = MagicMock()
-    claude_provider = MagicMock()
-    claude_provider.build_agent.return_value = claude_handle
-
     seen: dict[str, object] = {}
-    level3_handle = MagicMock()
 
     async def recovered(
         _message: str, *, message_history: object = None, **run_kwargs: object
     ) -> MagicMock:
         seen["message_history"] = message_history
         result = MagicMock()
-        result.output = "opus reply about the browser ticket"
+        result.output = "reply about the browser ticket"
         return result
 
-    level3_handle.run = recovered
-    level3_handle.close = MagicMock()
-    level3_provider = MagicMock()
-    level3_provider.build_agent.return_value = level3_handle
-
-    create_model_patch = MagicMock(
-        side_effect=lambda *, level, **_kw: (
-            level3_provider if level == 3 else claude_provider
-        )
-    )
+    get_provider, _, fallback_provider = _slot_handles(exhausted, recovered)
 
     history = [
         ("tell me about robotsix-browser", "It is a headless browser component."),
         ("ok, file a ticket and watch", "Filed the ticket; watching it now."),
     ]
 
-    with patch("robotsix_chat.llm.agent.create_model", create_model_patch):
-        agent = LlmioChatAgent(model_level=4, instruction="Be helpful.")
+    with patch("robotsix_chat.llm.agent.get_provider_for_identifier", get_provider):
+        agent = LlmioChatAgent(model_level=2, instruction="Be helpful.", api_key="k")
         chunks = [c async for c in agent.stream("and?", history=history)]
 
-    assert chunks == ["opus reply about the browser ticket"]
-    # The keyed fallback tier received the prior turns explicitly (2 turns ->
-    # a ModelRequest/ModelResponse pair each).
+    assert chunks == ["reply about the browser ticket"]
+    # The keyed slot received the prior turns explicitly (2 turns -> a
+    # ModelRequest/ModelResponse pair each).
     message_history = seen["message_history"]
     assert message_history is not None
     assert len(message_history) == 4  # type: ignore[arg-type]
     # And its system prompt carries the continuation note so it does not ask
-    # the user to restate the topic.
-    fallback_prompt = level3_provider.build_agent.call_args.kwargs["system_prompt"]
+    # the user to restate the topic. (The handle's build_agent mock parent
+    # holds the call.)
+    fallback_prompt = fallback_provider.build_agent.call_args.kwargs["system_prompt"]
     assert fallback_prompt.startswith("Be helpful.")
     assert "continuing an ongoing conversation" in fallback_prompt.lower()
 
 
 @pytest.mark.asyncio
-async def test_usage_exhausted_fallback_also_failing_raises() -> None:
-    """If every fallback tier ALSO fails, the failure propagates.
-
-    The walk may visit every other tier (the subscription cap takes all
-    Claude tiers down together, so it must be able to reach a keyed one);
-    when they all fail, the last failure surfaces.
-    """
+async def test_both_slots_failing_raises() -> None:
+    """If the fallback slot ALSO fails, the failure propagates."""
     from robotsix_llmio.claude_sdk import ClaudeSDKUsageExhaustedError
-
-    level4_handle = MagicMock()
 
     async def exhausted(
         _message: str, *, message_history: object = None, **run_kwargs: object
     ) -> None:
         raise ClaudeSDKUsageExhaustedError("You're out of usage credits")
 
-    level4_handle.run = exhausted
-    level4_handle.close = MagicMock()
-    level4_provider = MagicMock()
-    level4_provider.build_agent.return_value = level4_handle
-
-    level3_handle = MagicMock()
-
     async def also_boom(
         _message: str, *, message_history: object = None, **run_kwargs: object
     ) -> None:
-        raise RuntimeError("opus is also down")
+        raise RuntimeError("deepseek is also down")
 
-    level3_handle.run = also_boom
-    level3_handle.close = MagicMock()
-    level3_provider = MagicMock()
-    level3_provider.build_agent.return_value = level3_handle
+    get_provider, _, _ = _slot_handles(exhausted, also_boom)
 
-    create_model_patch = MagicMock(
-        side_effect=lambda *, level, **_kw: (
-            level4_provider if level == 4 else level3_provider
-        )
-    )
-
-    with patch("robotsix_chat.llm.agent.create_model", create_model_patch):
-        agent = LlmioChatAgent(model_level=4, instruction="Be helpful.")
-        with pytest.raises(RuntimeError, match="opus is also down"):
+    with patch("robotsix_chat.llm.agent.get_provider_for_identifier", get_provider):
+        agent = LlmioChatAgent(model_level=2, instruction="Be helpful.", api_key="k")
+        with pytest.raises(RuntimeError, match="deepseek is also down"):
             _ = [c async for c in agent.stream("hi")]
 
-    # 4 (retry), then every other tier — all failing — before the error surfaces.
-    assert create_model_patch.call_count >= 3
+    # Exactly both slots were attempted before the error surfaced.
+    identifiers = [c.args[0] for c in get_provider.call_args_list]
+    assert identifiers[0].startswith("claudeSDK")
+    assert identifiers[-1].startswith("openrouter")
 
 
 @pytest.mark.asyncio
@@ -1072,10 +1075,12 @@ async def test_non_usage_exhausted_error_not_affected_by_fallback() -> None:
     create_model_patch = MagicMock(return_value=provider)
 
     with (
-        patch("robotsix_chat.llm.agent.create_model", create_model_patch),
+        patch(
+            "robotsix_chat.llm.agent.get_provider_for_identifier", create_model_patch
+        ),
         patch("robotsix_chat.llm.agent.is_openrouter_transient", return_value=False),
     ):
-        agent = LlmioChatAgent(model_level=4, instruction="Be helpful.")
+        agent = LlmioChatAgent(model_level=2, instruction="Be helpful.")
         with pytest.raises(RuntimeError, match="unrelated failure"):
             _ = [c async for c in agent.stream("hi")]
 
@@ -1107,7 +1112,9 @@ async def test_retry_logs_warning(caplog: pytest.LogCaptureFixture) -> None:
     create_model_patch = MagicMock(return_value=provider)
 
     with (
-        patch("robotsix_chat.llm.agent.create_model", create_model_patch),
+        patch(
+            "robotsix_chat.llm.agent.get_provider_for_identifier", create_model_patch
+        ),
         patch("robotsix_chat.llm.agent.is_openrouter_transient", return_value=True),
         patch("robotsix_http.retry.asyncio.sleep", new=AsyncMock()),
     ):
@@ -1146,7 +1153,9 @@ async def test_retry_sleeps_backoff() -> None:
     sleep_mock = AsyncMock()
 
     with (
-        patch("robotsix_chat.llm.agent.create_model", create_model_patch),
+        patch(
+            "robotsix_chat.llm.agent.get_provider_for_identifier", create_model_patch
+        ),
         patch("robotsix_chat.llm.agent.is_openrouter_transient", return_value=True),
         patch("robotsix_http.retry.asyncio.sleep", new=sleep_mock),
     ):
@@ -1170,7 +1179,7 @@ async def test_stream_with_images_builds_multimodal_prompt() -> None:
 
     create_model, handle = _patched_create_model("I see an image!")
 
-    with patch("robotsix_chat.llm.agent.create_model", create_model):
+    with patch("robotsix_chat.llm.agent.get_provider_for_identifier", create_model):
         agent = LlmioChatAgent(model_level=1, instruction="Be helpful.", api_key="k")
         chunks = [
             c
@@ -1196,7 +1205,7 @@ async def test_stream_with_images_only_no_text() -> None:
 
     create_model, handle = _patched_create_model("nice pic")
 
-    with patch("robotsix_chat.llm.agent.create_model", create_model):
+    with patch("robotsix_chat.llm.agent.get_provider_for_identifier", create_model):
         agent = LlmioChatAgent(model_level=1, instruction="Be helpful.", api_key="k")
         chunks = [
             c async for c in agent.stream("", images=[("image/jpeg", b"jpeg-data")])
@@ -1216,7 +1225,7 @@ async def test_stream_without_images_still_passes_plain_string() -> None:
     """With no images, handle.run receives a plain str (behaviour unchanged)."""
     create_model, handle = _patched_create_model("text-only reply")
 
-    with patch("robotsix_chat.llm.agent.create_model", create_model):
+    with patch("robotsix_chat.llm.agent.get_provider_for_identifier", create_model):
         agent = LlmioChatAgent(model_level=3, instruction="Be helpful.")
         chunks = [c async for c in agent.stream("hello")]
 
@@ -1237,11 +1246,11 @@ async def test_model_level_passed_to_build_agent() -> None:
     create_model, _ = _patched_create_model("ok")
     provider = create_model.return_value
 
-    with patch("robotsix_chat.llm.agent.create_model", create_model):
+    with patch("robotsix_chat.llm.agent.get_provider_for_identifier", create_model):
         agent = LlmioChatAgent(model_level=3, instruction="Be helpful.")
         _ = [c async for c in agent.stream("hi")]
 
-    assert create_model.call_args.kwargs["level"] == 3
+    assert create_model.return_value.build_agent.call_args.kwargs["level"] == 3
     assert provider.build_agent.call_args.kwargs["level"] == 3
 
 
@@ -1251,34 +1260,22 @@ async def test_model_level_passed_to_build_agent() -> None:
 
 
 @pytest.mark.asyncio
-async def test_auth_failure_falls_back_past_every_claude_sdk_tier() -> None:
-    """An expired Claude credential is shared by every claudeSDK tier.
+async def test_auth_failure_fails_over_to_keyed_slot() -> None:
+    """An expired Claude credential takes the whole default slot down.
 
-    The live outage: levels 4 and 3 both drive the same `claude` CLI against
-    the same `.credentials.json`, so a one-step fallback lands on level 3 and
-    fails identically. The walk must reach a keyed provider (level 2) for the
-    turn to be rescued — and the key must be forwarded there even though the
-    primary level is keyless.
+    The agent wraps the chained ``ClaudeSDKAuthError`` as a provider-wide
+    exhaustion so llmio's failover retries the SAME level on the keyed
+    OpenRouter slot — and the key is forwarded there even though the
+    default slot is keyless.
     """
     from robotsix_llmio.claude_sdk import ClaudeSDKAuthError
 
-    def _dead_credential_provider() -> MagicMock:
-        handle = MagicMock()
-
-        async def expired(
-            _message: str, *, message_history: object = None, **run_kwargs: object
-        ) -> None:
-            raise ClaudeSDKAuthError(
-                "Failed to authenticate. API Error: 401 OAuth access token has expired."
-            )
-
-        handle.run = expired
-        handle.close = MagicMock()
-        provider = MagicMock()
-        provider.build_agent.return_value = handle
-        return provider
-
-    level2_handle = MagicMock()
+    async def expired(
+        _message: str, *, message_history: object = None, **run_kwargs: object
+    ) -> None:
+        raise ClaudeSDKAuthError(
+            "Failed to authenticate. API Error: 401 OAuth access token has expired."
+        )
 
     async def recovered(
         _message: str, *, message_history: object = None, **run_kwargs: object
@@ -1287,84 +1284,26 @@ async def test_auth_failure_falls_back_past_every_claude_sdk_tier() -> None:
         result.output = "openrouter reply"
         return result
 
-    level2_handle.run = recovered
-    level2_handle.close = MagicMock()
-    level2_provider = MagicMock()
-    level2_provider.build_agent.return_value = level2_handle
+    get_provider, _, _ = _slot_handles(expired, recovered)
 
-    # level 4 (primary), level 4 again (the loop's own starting-level retry),
-    # level 5 (same dead credential), then level 3 (keyed, works).
-    create_model_patch = MagicMock(
-        side_effect=[
-            _dead_credential_provider(),
-            _dead_credential_provider(),
-            _dead_credential_provider(),
-            level2_provider,
-        ]
-    )
-
-    with patch("robotsix_chat.llm.agent.create_model", create_model_patch):
+    with patch("robotsix_chat.llm.agent.get_provider_for_identifier", get_provider):
         agent = LlmioChatAgent(
-            model_level=4,
+            model_level=2,
             instruction="Be helpful.",
-            api_key="or-key",  # pragma: allowlist secret
+            api_key="sk-or-live",  # pragma: allowlist secret
         )
         chunks = [c async for c in agent.stream("hi")]
 
-    assert chunks == ["openrouter reply"]
-    assert create_model_patch.call_args_list == [
-        # Keyless claudeSDK tiers must never receive an api_key.
-        call(level=4),
-        call(level=4),
-        call(level=5),
-        # The keyed tier must, or the fallback cannot actually serve.
-        call(level=3, api_key="or-key"),  # pragma: allowlist secret
-    ]
+        assert chunks == ["openrouter reply"]
+        keyed_call = get_provider.call_args_list[-1]
+        assert keyed_call.args[0].startswith("openrouter")
+        assert keyed_call.kwargs["api_key"] == "sk-or-live"  # pragma: allowlist secret
 
-
-@pytest.mark.asyncio
-async def test_usage_exhausted_fallback_walks_every_remaining_tier() -> None:
-    """Every remaining tier is walked before the last failure surfaces.
-
-    Exhaustion is per-subscription under the five-tier map, so the walk may
-    reach every other tier (it must be able to land on keyed level 3).
-    """
-    from robotsix_llmio.claude_sdk import ClaudeSDKUsageExhaustedError
-
-    def _failing_provider(exc: Exception) -> MagicMock:
-        handle = MagicMock()
-
-        async def boom(
-            _message: str, *, message_history: object = None, **run_kwargs: object
-        ) -> None:
-            raise exc
-
-        handle.run = boom
-        handle.close = MagicMock()
-        provider = MagicMock()
-        provider.build_agent.return_value = handle
-        return provider
-
-    create_model_patch = MagicMock(
-        side_effect=lambda *, level, **_kw: (
-            _failing_provider(ClaudeSDKUsageExhaustedError("out of usage credits"))
-            if level == 4
-            else _failing_provider(RuntimeError("opus is also down"))
-        )
-    )
-
-    with patch("robotsix_chat.llm.agent.create_model", create_model_patch):
-        agent = LlmioChatAgent(
-            model_level=4,
-            instruction="Be helpful.",
-            api_key="or-key",  # pragma: allowlist secret
-        )
-        with pytest.raises(RuntimeError, match="opus is also down"):
-            _ = [c async for c in agent.stream("hi")]
-
-    # Walks past the sibling Claude tier down to the keyed ones.
-    assert create_model_patch.call_count >= 3
-    assert 3 in [c.kwargs["level"] for c in create_model_patch.call_args_list]
+        # The dead credential armed the failover window immediately — the
+        # next turn skips the doomed default attempt.
+        get_provider.reset_mock()
+        _ = [c async for c in agent.stream("again")]
+        assert get_provider.call_args_list[0].args[0].startswith("openrouter")
 
 
 @pytest.mark.asyncio
@@ -1390,49 +1329,18 @@ async def test_keyless_primary_level_never_receives_the_api_key() -> None:
     provider.build_agent.return_value = handle
     create_model_patch = MagicMock(return_value=provider)
 
-    with patch("robotsix_chat.llm.agent.create_model", create_model_patch):
+    with patch(
+        "robotsix_chat.llm.agent.get_provider_for_identifier", create_model_patch
+    ):
         agent = LlmioChatAgent(
-            model_level=4,
+            model_level=2,
             instruction="Be helpful.",
             api_key="or-key",  # pragma: allowlist secret
         )
         chunks = [c async for c in agent.stream("hi")]
 
     assert chunks == ["sdk reply"]
-    create_model_patch.assert_called_once_with(level=4)
-
-
-@pytest.mark.asyncio
-async def test_keyed_primary_level_still_receives_the_api_key() -> None:
-    """The pre-existing behaviour for a keyed primary level is unchanged."""
-    handle = MagicMock()
-
-    async def reply(
-        _message: str, *, message_history: object = None, **run_kwargs: object
-    ) -> MagicMock:
-        result = MagicMock()
-        result.output = "openrouter reply"
-        return result
-
-    handle.run = reply
-    handle.close = MagicMock()
-    provider = MagicMock()
-    provider.build_agent.return_value = handle
-    create_model_patch = MagicMock(return_value=provider)
-
-    with patch("robotsix_chat.llm.agent.create_model", create_model_patch):
-        agent = LlmioChatAgent(
-            model_level=3,
-            instruction="Be helpful.",
-            api_key="or-key",  # pragma: allowlist secret
-        )
-        chunks = [c async for c in agent.stream("hi")]
-
-    assert chunks == ["openrouter reply"]
-    create_model_patch.assert_called_once_with(
-        level=3,
-        api_key="or-key",  # pragma: allowlist secret
-    )
+    create_model_patch.assert_called_once_with("claudeSDK-opus")
 
 
 # ---------------------------------------------------------------------------
@@ -1463,8 +1371,8 @@ async def test_turn_does_not_bind_a_cli_session_and_carries_history_in_prompt() 
 
     handle.run = fake_run
 
-    with patch("robotsix_chat.llm.agent.create_model", create_model):
-        agent = LlmioChatAgent(model_level=4, instruction="Be helpful.")
+    with patch("robotsix_chat.llm.agent.get_provider_for_identifier", create_model):
+        agent = LlmioChatAgent(model_level=2, instruction="Be helpful.")
         _ = [
             c
             async for c in agent.stream(
@@ -1512,8 +1420,8 @@ async def test_recalled_memory_is_prepended_once_to_the_current_turn_only() -> N
 
     memory.remember = fake_remember
 
-    with patch("robotsix_chat.llm.agent.create_model", create_model):
-        agent = LlmioChatAgent(model_level=4, instruction="Be helpful.", memory=memory)
+    with patch("robotsix_chat.llm.agent.get_provider_for_identifier", create_model):
+        agent = LlmioChatAgent(model_level=2, instruction="Be helpful.", memory=memory)
         _ = [
             c
             async for c in agent.stream(
@@ -1532,64 +1440,6 @@ async def test_recalled_memory_is_prepended_once_to_the_current_turn_only() -> N
     hist = seen["history"]
     assert isinstance(hist, list)
     assert all("recalled" not in str(getattr(m, "parts", "")) for m in hist)
-
-
-@pytest.mark.asyncio
-async def test_usage_exhausted_walks_past_sibling_claude_tier_to_keyed_level() -> None:
-    """An exhausted level 5 walks past level 4 down to keyed level 3 (mimo).
-
-    Under the five-tier map levels 5 (fable) and 4 (opus) share the subscription
-    cap, so the walk must not stop at 4 with "fallback depth exhausted" (the
-    2026-08-29 'internal error').
-    """
-    from robotsix_llmio.claude_sdk import ClaudeSDKUsageExhaustedError
-
-    seen: list[int] = []
-
-    def _provider(level: int) -> MagicMock:
-        handle = MagicMock()
-        if level in (5, 4):
-
-            async def exhausted(
-                _m: str, *, message_history: object = None, **run_kwargs: object
-            ) -> None:
-                raise ClaudeSDKUsageExhaustedError(
-                    "You've hit your session limit · resets 1am (UTC)"
-                )
-
-            handle.run = exhausted
-        else:
-
-            async def recovered(
-                _m: str, *, message_history: object = None, **run_kwargs: object
-            ) -> MagicMock:
-                result = MagicMock()
-                result.output = "mimo reply"
-                result.all_messages.return_value = []
-                result.usage.return_value = None
-                return result
-
-            handle.run = recovered
-        handle.close = MagicMock()
-        provider = MagicMock()
-        provider.build_agent.return_value = handle
-        return provider
-
-    def _create_model(*, level: int, **_kw: object) -> MagicMock:
-        seen.append(level)
-        return _provider(level)
-
-    with patch("robotsix_chat.llm.agent.create_model", side_effect=_create_model):
-        agent = LlmioChatAgent(model_level=5, instruction="Be helpful.")
-        chunks = [c async for c in agent.stream("hi")]
-
-    assert chunks == ["mimo reply"]
-    assert seen[-1] == 3, seen
-
-
-# ---------------------------------------------------------------------------
-# Per-turn actions log collection
-# ---------------------------------------------------------------------------
 
 
 @pytest.mark.asyncio
@@ -1645,7 +1495,8 @@ async def test_activity_events_feed_the_actions_collector() -> None:
     provider.build_agent.return_value = handle
 
     with patch(
-        "robotsix_chat.llm.agent.create_model", MagicMock(return_value=provider)
+        "robotsix_chat.llm.agent.get_provider_for_identifier",
+        MagicMock(return_value=provider),
     ):
         agent = LlmioChatAgent(model_level=3, instruction="Be helpful.")
         with collect_actions() as actions:
@@ -1709,7 +1560,8 @@ async def test_result_messages_fill_collector_when_no_events_fired() -> None:
     provider.build_agent.return_value = handle
 
     with patch(
-        "robotsix_chat.llm.agent.create_model", MagicMock(return_value=provider)
+        "robotsix_chat.llm.agent.get_provider_for_identifier",
+        MagicMock(return_value=provider),
     ):
         agent = LlmioChatAgent(model_level=1, api_key="k", instruction="Be helpful.")
         with collect_actions() as actions:
@@ -1722,10 +1574,10 @@ async def test_result_messages_fill_collector_when_no_events_fired() -> None:
 
 @pytest.mark.asyncio
 async def test_keyed_fallback_caps_oversized_history() -> None:
-    """A keyed fallback tier caps the history to fit its token window.
+    """A keyed fallback slot caps the history to fit its token window.
 
-    When the conversation history is too large for the fallback tier's context
-    window (e.g. level-3 mimo at 65 536 tokens), the oldest turns are dropped
+    When the conversation history is too large for the fallback slot's output
+    window (level-2 flash: 65 536 max_tokens), the oldest turns are dropped
     and the first surviving user message is prefixed with an omission note.
     The most recent turns are always kept.
     """
@@ -1739,21 +1591,13 @@ async def test_keyed_fallback_caps_oversized_history() -> None:
         asst = f"Reply {i}: " + "y" * 3960
         big_turns.append((user, asst))
 
-    # The Claude tier (level 4) is exhausted; the walk lands on keyed level 3.
-    claude_handle = MagicMock()
-
+    # The Claude default slot is exhausted; failover lands on the keyed slot.
     async def exhausted(
         _message: str, *, message_history: object = None, **run_kwargs: object
     ) -> None:
         raise ClaudeSDKUsageExhaustedError("You're out of usage credits")
 
-    claude_handle.run = exhausted
-    claude_handle.close = MagicMock()
-    claude_provider = MagicMock()
-    claude_provider.build_agent.return_value = claude_handle
-
     seen: dict[str, object] = {}
-    level3_handle = MagicMock()
 
     async def recovered(
         _message: str, *, message_history: object = None, **run_kwargs: object
@@ -1763,19 +1607,10 @@ async def test_keyed_fallback_caps_oversized_history() -> None:
         result.output = "capped reply"
         return result
 
-    level3_handle.run = recovered
-    level3_handle.close = MagicMock()
-    level3_provider = MagicMock()
-    level3_provider.build_agent.return_value = level3_handle
+    get_provider, _, _ = _slot_handles(exhausted, recovered)
 
-    create_model_patch = MagicMock(
-        side_effect=lambda *, level, **_kw: (
-            level3_provider if level == 3 else claude_provider
-        )
-    )
-
-    with patch("robotsix_chat.llm.agent.create_model", create_model_patch):
-        agent = LlmioChatAgent(model_level=4, instruction="Be helpful.")
+    with patch("robotsix_chat.llm.agent.get_provider_for_identifier", get_provider):
+        agent = LlmioChatAgent(model_level=2, instruction="Be helpful.", api_key="k")
         chunks = [c async for c in agent.stream("latest", history=big_turns)]
 
     assert chunks == ["capped reply"]

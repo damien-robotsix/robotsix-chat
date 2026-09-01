@@ -36,7 +36,7 @@ from robotsix_chat.config.models import EvergoingSettings
 def _write_config_json(tmp_path: Path, overrides: dict | None = None) -> Path:
     """Write a minimal valid config.json to *tmp_path* and return its path."""
     data: dict = {
-        "llmio_model_level": 4,
+        "llmio_model_level": 2,
     }
     if overrides:
         data.update(overrides)
@@ -54,7 +54,7 @@ def test_defaults() -> None:
     """Optional fields fall back to their documented defaults."""
     settings = Settings()
 
-    assert settings.llmio_model_level == 4
+    assert settings.llmio_model_level == 2
     assert settings.llmio_api_key.get_secret_value() == ""
     assert settings.server_host == "0.0.0.0"
     assert settings.server_port == 8000
@@ -73,20 +73,26 @@ def test_log_level_default() -> None:
 
 
 def test_default_level_is_keyless() -> None:
-    """The default level (4) is keyless — constructs with no key."""
+    """The default level (2, workhorse) is keyless — constructs with no key."""
     settings = Settings()
-    assert settings.llmio_model_level == 4
+    assert settings.llmio_model_level == 2
     assert settings.llmio_api_key.get_secret_value() == ""
 
 
-def test_key_bearing_level_requires_api_key() -> None:
-    """A key-bearing level (1 → openrouter) without a key raises ``ValueError``."""
-    with pytest.raises(ValueError, match="api_key"):
-        Settings(llmio_model_level=1)
+def test_no_level_requires_api_key() -> None:
+    """No level needs a key at config load.
+
+    Every level is served by the keyless Claude SDK default slot; the
+    OpenRouter key only matters when provider failover routes calls to the
+    keyed fallback slot.
+    """
+    for level in (1, 2, 3):
+        settings = Settings(llmio_model_level=level)
+        assert settings.llmio_model_level == level
 
 
-def test_key_bearing_level_with_key_ok() -> None:
-    """Level 1 constructs fine with a key."""
+def test_key_bearing_config_with_key_ok() -> None:
+    """A configured key is kept for the failover slot."""
     settings = Settings(llmio_model_level=1, llmio_api_key=SecretStr("sk-x"))
     assert settings.llmio_model_level == 1
     # pragma: allowlist secret
@@ -94,21 +100,11 @@ def test_key_bearing_level_with_key_ok() -> None:
 
 
 def test_invalid_model_level_raises() -> None:
-    """A model_level outside llmio's tiers (1-5) is rejected."""
+    """A model_level outside llmio's levels (1-3) is rejected."""
     with pytest.raises(ValueError, match="model_level"):
         Settings(llmio_model_level=6)
-
-
-def test_level_2_is_keyless() -> None:
-    """Level 2 (Claude haiku) constructs with no key."""
-    settings = Settings(llmio_model_level=2)
-    assert settings.llmio_model_level == 2
-
-
-def test_level_4_is_keyless() -> None:
-    """Level 4 (frontier, claudeSDK) constructs with no key."""
-    settings = Settings(llmio_model_level=4)
-    assert settings.llmio_model_level == 4
+    with pytest.raises(ValueError, match="model_level"):
+        Settings(llmio_model_level=4)
 
 
 # ---------------------------------------------------------------------------
@@ -364,7 +360,7 @@ def test_subsessions_defaults() -> None:
     assert settings.subsessions == SubsessionsSettings()
     assert settings.subsessions.max_concurrent == 8
     assert settings.subsessions.max_depth == 3
-    assert settings.subsessions.default_model_level == 4
+    assert settings.subsessions.default_model_level == 2
     assert settings.subsessions.min_interval_seconds == 60.0
     assert settings.subsessions.auto_stop_no_change_runs == 3
     assert settings.subsessions.max_idle_runs == 15
@@ -496,7 +492,7 @@ def test_legacy_mail_block_is_dropped() -> None:
     """A deployed config still carrying the retired ``mail`` block loads."""
     settings = Settings.model_validate(
         {
-            "llmio_model_level": 4,
+            "llmio_model_level": 2,
             "mail": {
                 "enabled": False,
                 "api_base_url": "http://127.0.0.1:8077",
@@ -513,7 +509,7 @@ def test_legacy_lifecycle_base_url_migrates_to_central_deploy_url() -> None:
     """``lifecycle.base_url`` is folded into the canonical ``central_deploy.url``."""
     settings = Settings.model_validate(
         {
-            "llmio_model_level": 4,
+            "llmio_model_level": 2,
             "lifecycle": {"enabled": True, "base_url": "http://central-deploy:9000"},
         }
     )
@@ -524,7 +520,7 @@ def test_legacy_per_block_deploy_api_key_migrates() -> None:
     """A per-block ``deploy_api_key`` folds into ``central_deploy.deploy_api_key``."""
     settings = Settings.model_validate(
         {
-            "llmio_model_level": 4,
+            "llmio_model_level": 2,
             "feedback": {"deploy_api_key": "legacy-secret"},  # pragma: allowlist secret
         }
     )
@@ -535,7 +531,7 @@ def test_explicit_central_deploy_values_win_over_legacy() -> None:
     """An explicitly-set canonical value is never clobbered by a legacy copy."""
     settings = Settings.model_validate(
         {
-            "llmio_model_level": 4,
+            "llmio_model_level": 2,
             "central_deploy": {
                 "url": "http://canonical:9000",
                 "deploy_api_key": "canonical-secret",  # pragma: allowlist secret
@@ -566,7 +562,7 @@ def test_production_config_with_all_legacy_keys_loads_cleanly() -> None:
     migration — so a clean load is the assertion.
     """
     raw = {
-        "llmio_model_level": 4,
+        "llmio_model_level": 2,
         "mail": {
             "enabled": False,
             "api_base_url": "http://127.0.0.1:8077",
@@ -1365,7 +1361,7 @@ def test_production_config_with_blank_numeric_sentinels_loads_cleanly() -> None:
     validate and the model dump must carry no ``""`` for those numeric fields.
     """
     raw = {
-        "llmio_model_level": 4,
+        "llmio_model_level": 2,
         "chat_model_level": "",
         "llmio_task_budget_tokens": "",
         "idle_timeout_minutes": "",

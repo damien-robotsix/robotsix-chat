@@ -196,6 +196,6 @@ async def test_generate_idle_summary_partial_failures_are_marked() -> None:
     assert await generate_idle_summary(dead, []) == ""
 
 
-def test_summary_model_level_defaults_to_level_two() -> None:
-    """The summariser runs on the subscription tier by default, not the cheapest."""
-    assert Settings().summary_model_level == 2
+def test_summary_model_level_defaults_to_level_one() -> None:
+    """The summariser runs on the cheap/frequent level by default."""
+    assert Settings().summary_model_level == 1

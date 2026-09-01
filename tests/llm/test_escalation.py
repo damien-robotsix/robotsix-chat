@@ -33,7 +33,7 @@ class TestToolExposure:
         """A session on the configured tier can still escalate."""
         store, sid = _store_with_session()
         tools = build_escalation_tools(
-            conversation_store=store, session_id=sid, configured_level=3
+            conversation_store=store, session_id=sid, configured_level=2
         )
         assert [t.__name__ for t in tools] == ["escalate_model"]
 
@@ -52,7 +52,7 @@ class TestToolExposure:
         store, sid = _store_with_session()
         store.set_model_level(sid, FRONTIER_MODEL_LEVEL)
         tools = build_escalation_tools(
-            conversation_store=store, session_id=sid, configured_level=3
+            conversation_store=store, session_id=sid, configured_level=2
         )
         assert tools == []
 
@@ -60,7 +60,7 @@ class TestToolExposure:
         """No store means the pin cannot be persisted."""
         assert (
             build_escalation_tools(
-                conversation_store=None, session_id="s", configured_level=3
+                conversation_store=None, session_id="s", configured_level=2
             )
             == []
         )
@@ -74,7 +74,7 @@ class TestEscalation:
         """The level is stored, so the next turn picks it up."""
         store, sid = _store_with_session()
         (escalate,) = build_escalation_tools(
-            conversation_store=store, session_id=sid, configured_level=3
+            conversation_store=store, session_id=sid, configured_level=2
         )
 
         assert store.get_model_level(sid) is None
@@ -93,7 +93,7 @@ class TestEscalation:
         (escalate,) = build_escalation_tools(
             conversation_store=store,
             session_id=sid,
-            configured_level=3,
+            configured_level=2,
             event_sink=sink,
         )
 
@@ -113,7 +113,7 @@ class TestEscalation:
         """A deleted session degrades to a message, not an exception."""
         store, sid = _store_with_session()
         (escalate,) = build_escalation_tools(
-            conversation_store=store, session_id=sid, configured_level=3
+            conversation_store=store, session_id=sid, configured_level=2
         )
         store._sessions.pop(sid, None)
 

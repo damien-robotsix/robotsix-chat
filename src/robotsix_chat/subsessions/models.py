@@ -17,11 +17,14 @@ from __future__ import annotations
 from dataclasses import dataclass, field
 from enum import StrEnum
 
-#: llmio capability level at or above which a subsession runs on a "costly
-#: tier" (keyless claudeSDK opus/fable) whose Claude weekly-cap headroom is
-#: the scarce resource.  Agents built at this level are told to orchestrate —
-#: delegate bulk reading/extraction to cheaper child subsessions — rather than
-#: burn frontier-model turns on it (see ``create_agent_from_settings``).
+#: llmio capability level at or above which a subsession runs on the costly
+#: frontier level (level 3 — fable on the default slot). Every level rides
+#: the flat-rate subscription in normal operation, but frontier headroom
+#: against the Claude weekly cap is the scarce resource (and under provider
+#: failover it bills real tokens).  Agents built at this level are told to
+#: orchestrate — delegate bulk reading/extraction to cheaper child
+#: subsessions — rather than burn frontier-model turns on it (see
+#: ``create_agent_from_settings``).
 COSTLY_TIER_MIN_LEVEL = 3
 
 #: System-prompt directive appended to a subsession agent built at
@@ -183,7 +186,7 @@ class SubsessionInfo:
     depth: int  # 1..max_depth (the main chat session is depth 0)
     title: str
     prompt: str  # initial, self-contained instructions
-    model_level: int  # llmio capability level (1 = cheapest .. 4 = frontier)
+    model_level: int  # llmio capability level (1 cheap .. 3 frontier)
     status: SubsessionStatus
     created_at: float
     last_activity_at: float

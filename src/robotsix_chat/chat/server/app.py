@@ -1318,11 +1318,11 @@ def create_agent_from_settings(
     effective_level = (
         model_level if model_level is not None else settings.llmio_model_level
     )
-    # Costly-tier subsessions (level >=3, keyless claudeSDK opus/fable) get an
-    # orchestration directive so they delegate bulk reading/extraction to
-    # cheaper child subsessions by default instead of burning frontier-model
-    # turns on it themselves.  Only subsession agents receive it — the main
-    # chat agent is operator-attended and already interactive.
+    # Frontier subsessions (level 3) get an orchestration directive so they
+    # delegate bulk reading/extraction to cheaper child subsessions by
+    # default instead of burning frontier-model turns on it themselves.
+    # Only subsession agents receive it — the main chat agent is
+    # operator-attended and already interactive.
     if subsession_ctx is not None:
         from robotsix_chat.subsessions.models import (
             COSTLY_TIER_MIN_LEVEL,
@@ -1331,11 +1331,11 @@ def create_agent_from_settings(
 
         if effective_level >= COSTLY_TIER_MIN_LEVEL:
             instruction = instruction + COSTLY_TIER_ORCHESTRATION_DIRECTIVE
-    # Always hand over the configured key, even for a keyless (claudeSDK)
-    # level. LlmioChatAgent forwards it only to levels whose provider takes
-    # one, and it needs to be holding it for the tier fallback to reach a
-    # keyed provider when the shared Claude credential expires — the failure
-    # mode that takes every claudeSDK tier down at once.
+    # Always hand over the configured key. LlmioChatAgent forwards it only
+    # to keyed (OpenRouter) slot attempts, and it needs to be holding it for
+    # llmio's provider failover to reach the keyed fallback slot when the
+    # shared Claude credential or quota is what failed — the mode that takes
+    # the whole default slot down at once.
     api_key = settings.llmio_api_key.get_secret_value()
 
     tools = _build_static_tools(
@@ -1426,6 +1426,7 @@ def create_agent_from_settings(
         request_tools_factory=request_tools_factory,
         event_sink=event_sink,
         task_budget_tokens=settings.llmio_task_budget_tokens,
+        failover_window_seconds=settings.llmio_failover_window_seconds,
     )
     # Wire guarded auto-recovery (self-restart) for the top-level chat agent's
     # memory only — never for bare summary agents, subsession children, or any
