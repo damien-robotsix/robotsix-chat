@@ -29,6 +29,7 @@ STREAM_ERROR_RATE_LIMIT = "rate_limit_exceeded"
 STREAM_ERROR_AUTH = "authentication_error"
 STREAM_ERROR_INVALID_REQUEST = "invalid_request_error"
 STREAM_ERROR_BUDGET_EXHAUSTED = "budget_exhausted"
+STREAM_ERROR_NO_IMAGE_SUPPORT = "no_image_support"
 
 #: Curated, client-safe wording per code. Deliberately free of exception
 #: detail: ``str(exc)`` routinely embeds filesystem paths, upstream URLs and
@@ -51,6 +52,11 @@ _STREAM_ERROR_MESSAGES: dict[str, str] = {
     STREAM_ERROR_BUDGET_EXHAUSTED: (
         "The assistant's model budget is exhausted. Resume with a new message "
         "to continue, or switch to a different model level."
+    ),
+    STREAM_ERROR_NO_IMAGE_SUPPORT: (
+        "The current provider/model can't read images. Resend your message "
+        "as plain text instead, or retry after the provider failover window "
+        "ends."
     ),
 }
 
@@ -166,6 +172,32 @@ def budget_exhausted_message(
     )
 
 
+def no_image_support_message() -> str:
+    """Build the user-facing message for a no-image-support turn.
+
+    The resolved provider/model cannot read images, so the turn 404'd
+    upstream (OpenRouter: *"No endpoints found that support image input"*).
+    The user should resend as text or wait out the failover window; when a
+    window is open, name ``failover_until`` from the live failover status so
+    the retry time is concrete.
+    """
+    from robotsix_llmio.core.failover import get_failover_status
+
+    failover = get_failover_status()
+    until = failover.failover_until
+    if failover.failover_active and until is not None:
+        retry = (
+            "after the provider failover window ends "
+            f"(back to the default provider at {until:%H:%M} UTC)"
+        )
+    else:
+        retry = "in a moment"
+    return (
+        "The current provider/model can't read images. Resend your message "
+        f"as plain text instead, or retry {retry}."
+    )
+
+
 def _is_token_limit_error(exc: BaseException) -> bool:
     """Return True when *exc* is a token-limit overflow.
 
@@ -185,21 +217,68 @@ def _is_token_limit_error(exc: BaseException) -> bool:
     return False
 
 
+#: Provider-side rejections of a turn that contains an image.  The observed
+#: production shape is an OpenRouter 404 whose body/message reads "No
+#: endpoints found that support image input" (2026-09-01, live incident); the
+#: remaining entries cover the equivalent no-image-support shapes other
+#: providers/models use.  Matched on the whole chain — the 404 body can live
+#: on a wrapped ``HTTPStatusError`` rather than the outermost exception.
+_NO_IMAGE_SUPPORT_PHRASES: tuple[str, ...] = (
+    "no endpoints found that support image input",
+    "does not support image input",
+    "image input is not supported",
+    "does not support images",
+)
+
+
+def _response_text(cur: BaseException) -> str:
+    """Return the textual body of an exception's attached response, if any."""
+    response = getattr(cur, "response", None)
+    if response is None:
+        return ""
+    text = getattr(response, "text", None)
+    if isinstance(text, str):
+        return text
+    content = getattr(response, "content", None)
+    if isinstance(content, bytes):
+        return content.decode("utf-8", errors="replace")
+    return ""
+
+
+def _is_no_image_support_error(exc: BaseException) -> bool:
+    """Return True when any exception in the chain is a no-image-support reply.
+
+    OpenRouter rejects image-bearing turns on text-only models with an HTTP
+    404 whose body names the missing capability; the rejection can surface
+    in ``str(exc)`` or on an attached ``response`` at any depth of the
+    cause/context chain.  The phrase is specific enough that matching it
+    anywhere in the chain cannot be confused with the generic 4xx handling.
+    """
+    for cur in _iter_chain(exc):
+        text = f"{cur!s} {_response_text(cur)}".lower()
+        if any(phrase in text for phrase in _NO_IMAGE_SUPPORT_PHRASES):
+            return True
+    return False
+
+
 def stream_error_code(exc: BaseException) -> str:
     """Map ``exc`` to a stable, client-safe error code.
 
     Categories are derived from transport-level facts (timeout, HTTP status on
-    an attached response) plus two semantic classifiers — a Claude SDK tier
-    reporting exhausted usage credits maps to ``budget_exhausted``, and a
+    an attached response) plus three semantic classifiers — a Claude SDK tier
+    reporting exhausted usage credits maps to ``budget_exhausted``, a
     pydantic-ai ``UnexpectedModelBehavior`` whose message indicates a token
     limit overflow maps to ``invalid_request_error`` (the prompt was too large
-    for the model).  Anything unrecognised degrades to ``server_error``
-    rather than guessing.
+    for the model), and a provider rejection naming missing image support
+    maps to ``no_image_support``.  Anything unrecognised degrades to
+    ``server_error`` rather than guessing.
     """
     if any(is_claude_sdk_usage_exhausted(cur) for cur in _iter_chain(exc)):
         return STREAM_ERROR_BUDGET_EXHAUSTED
     if _is_token_limit_error(exc):
         return STREAM_ERROR_INVALID_REQUEST
+    if _is_no_image_support_error(exc):
+        return STREAM_ERROR_NO_IMAGE_SUPPORT
     if isinstance(exc, TimeoutError | httpx.TimeoutException):
         return STREAM_ERROR_TIMEOUT
     status = getattr(getattr(exc, "response", None), "status_code", None)
@@ -234,6 +313,8 @@ def curated_stream_error(
     code = stream_error_code(exc)
     if code == STREAM_ERROR_BUDGET_EXHAUSTED:
         message = budget_exhausted_message(exc)
+    elif code == STREAM_ERROR_NO_IMAGE_SUPPORT:
+        message = no_image_support_message()
     elif code == STREAM_ERROR_INVALID_REQUEST and _is_token_limit_error(exc):
         message = (
             "The conversation history is too long for the backup model. "
