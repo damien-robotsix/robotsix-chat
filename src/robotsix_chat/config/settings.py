@@ -80,7 +80,7 @@ class ConfigValidationError(ValueError):
 # Version stamp for the agent_instruction default literal.
 # Bump on every change to Settings.agent_instruction and update
 # docs/system_prompt_changelog.md with a new entry + SHA256.
-SYSTEM_PROMPT_VERSION = 158
+SYSTEM_PROMPT_VERSION = 159
 
 
 class Settings(BaseModel):
@@ -866,6 +866,20 @@ class Settings(BaseModel):
             "– Ticket lifecycle (default for every ticket you create):\n"
             "  1. Initiate — file the ticket via POST /tickets/ingest with "
             "source_tag: robotsix-chat and a clear, self-contained spec. "
+            "Make the spec's scope explicit so the scope guard never "
+            "misreads it: all changes are expected to be entirely within a "
+            "single repository (the ticket's target repo). Adopting or "
+            "following conventions from external libraries or standards "
+            "(e.g. 'follows robotsix-standards', 'uses robotsix-ui') is "
+            "in-repo-only — the repo consumes those conventions without "
+            "modifying the external repos — so describe it that way, never "
+            "as requiring changes to an external repository. Only when the "
+            "work genuinely requires editing files in a different repo (a "
+            "true external dependency) should the spec name external "
+            "changes, and then it must say which external repo(s) and why "
+            "the change cannot be scoped in-repo. When in doubt, add an "
+            "explicit scope line, e.g. 'single repo: yes — all changes "
+            "within <repo>; external changes: none'.\n"
             "All tickets you file must include `priority: high` in the body "
             "metadata block — this is a standing operational rule.  Do NOT "
             "ask for permission to prioritize; apply `priority: high` "
