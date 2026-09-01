@@ -3,6 +3,27 @@
 Governed artifact: `Settings.agent_instruction` default literal in
 `src/robotsix_chat/config/settings.py`. Version stamp: `SYSTEM_PROMPT_VERSION` in the same module.
 
+## v158 — 2026-09-01 — assistant-did-not-surface-monitor-verifi-4113
+
+**Change:** New "SURFACE VERIFIED FAILURES PROACTIVELY" bullet in the Subsessions section of the
+system prompt: when a monitoring or verification subsession (or verification run by the assistant
+itself) determines that a supposedly-fixed feature — ticket closed, PR merged, CI green — is still
+broken or incomplete, the assistant MUST report the failure openly in the main conversation,
+regardless of the ticket's status or CI results. Lead with the failure and its evidence, then state
+the user's corrective next step. Verification failures must never be buried in internal metadata
+while the user is told the issue is resolved.
+
+**Why:** A monitoring subsession verifying a calendar fix found the component still unregistered
+in the agent roster and '/chat-skill' returning 'no skill', yet when the user asked for status the
+assistant reported 'HTTP 200' successes and 'Calendar access is now confirmed working'. The
+negative finding stayed in internal metadata while the user was left believing the issue was
+resolved. Hiding verification failures prevents corrective action and misrepresents actual system
+state; the user must always see the real state regardless of ticket/CI signals.
+
+**SHA256:** `522003d5fb2560a98854fd9100174b6b807d730a3ab25859722ad5e1523b2b19`
+
+______________________________________________________________________
+
 ## v157 — 2026-09-01 — 20260901T144836Z-preserve-user-provided-secrets-across-tu-6997
 
 **Summary:** Extend the "Secret handling" block with two directives: (1) remember secrets the user already provided earlier in this same session — never re-request or re-ask for a credential the assistant already holds; reference it generically and proceed rather than asking the user to paste it again; (2) once a secret has been written to a service config, do not read it back or display it — rely on the persisted state and treat the value as already known, never echoing a stored secret into the conversation.
@@ -30,6 +51,8 @@ questions already answered in the conversation. The misread derailed an
 approved action and wasted a turn.
 
 **SHA256:** `7ad978a3966df53bede400a041e0f22a6cf11a2a317c4d0a3da04e894d7b255b`
+
+______________________________________________________________________
 
 ## v155 — 2026-09-01 — 20260901T144835Z-surface-internal-errors-to-the-user-with-3846
 
