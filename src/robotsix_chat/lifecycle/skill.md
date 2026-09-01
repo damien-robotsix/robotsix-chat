@@ -52,9 +52,9 @@ early will run several steps and only stall at the first mutation. **Warn the us
 requirement up front, before starting the workflow:**
 
 1. The moment the user asks to register or deploy a component (or perform any chat-agent mutation),
-   state the precondition: "Registering/deploying a component requires the
-   `allow_chat_access` / `chat_agent_mutatable` toggle to be enabled for this repo in the
-   central-deploy dashboard. If it is off, deployment operations will be blocked with 403."
+   state the precondition: "Registering/deploying a component requires the `allow_chat_access` /
+   `chat_agent_mutatable` toggle to be enabled for this repo in the central-deploy dashboard. If it
+   is off, deployment operations will be blocked with 403."
 1. If the user has not confirmed the toggle is already on, ask them to enable it in the
    central-deploy dashboard **before** you proceed, and wait for confirmation.
 1. Only once the toggle is confirmed enabled should you run the registration/deployment steps.
