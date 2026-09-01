@@ -53,7 +53,7 @@ def _register(env: Any, *, owner: str = OWNER, **overrides: object) -> Any:
         "depth": 1,
         "title": "job",
         "prompt": "p",
-        "model_level": 4,
+        "model_level": 2,
     }
     defaults.update(overrides)
     return env.registry.create(**defaults)
@@ -313,15 +313,18 @@ async def test_spawn_tool_invalid_level_refusal() -> None:
 
 
 @pytest.mark.asyncio
-async def test_spawn_tool_keyless_level_refusal() -> None:
-    """Level 1 without an API key is refused with a level-3/4 hint."""
+async def test_spawn_tool_needs_no_api_key() -> None:
+    """A spawn with no OpenRouter key succeeds.
+
+    Every level is served by the keyless default slot; the key only matters
+    under provider failover.
+    """
     env = build_env(settings=make_settings(llmio_api_key=""))
     spawn = _by_name(build_subsession_tools(env, ctx=_ctx()), "spawn_subsession")
 
     result = await spawn("task", "t", "do it", model_level=1)
 
-    assert result.startswith("Could not start the subsession:")
-    assert "API key" in result
+    assert result.startswith("Started task subsession ")
 
 
 @pytest.mark.asyncio
@@ -338,7 +341,7 @@ async def test_spawn_tool_periodic_parent_periodic_child_refusal() -> None:
         "child periodic",
         "do monitoring",
         interval_seconds=5.0,
-        model_level=4,
+        model_level=2,
     )
 
     assert "cannot spawn periodic" in result
@@ -357,7 +360,7 @@ async def test_spawn_tool_periodic_parent_task_child_allowed() -> None:
         "task",
         "remediation task",
         "fix the issue",
-        model_level=4,
+        model_level=2,
     )
 
     assert result.startswith("Started task subsession ")
@@ -384,7 +387,7 @@ async def test_spawn_tool_user_chat_parent_user_chat_child_refusal() -> None:
         "user_chat",
         "child user_chat",
         "ask more questions",
-        model_level=4,
+        model_level=2,
     )
 
     assert result.startswith("Could not start the subsession:")
@@ -418,7 +421,7 @@ async def test_spawn_tool_allowed_after_session_reopened() -> None:
     ctx = SubsessionContext(owner_session_id=sid, subsession_id=None, depth=0)
     spawn = _by_name(build_subsession_tools(env, ctx=ctx), "spawn_subsession")
 
-    result = await spawn("task", "t", "do it", model_level=4)
+    result = await spawn("task", "t", "do it", model_level=2)
 
     assert result.startswith("Started task subsession ")
     assert len(env.registry.list_for_owner(sid)) == 1
@@ -453,7 +456,7 @@ async def test_spawn_tool_starts_a_worker() -> None:
     env = build_env(agent=agent)
     spawn = _by_name(build_subsession_tools(env, ctx=_ctx()), "spawn_subsession")
 
-    result = await spawn("task", "quick job", "do it", model_level=4)
+    result = await spawn("task", "quick job", "do it", model_level=2)
 
     assert result.startswith("Started task subsession ")
     assert "'quick job'" in result
@@ -465,9 +468,9 @@ async def test_spawn_tool_starts_a_worker() -> None:
 
 @pytest.mark.asyncio
 async def test_costly_tier_parent_defaults_children_to_cheap_level() -> None:
-    """A level>=3 parent's unspecified-level children default to the cheap tier."""
+    """A frontier (level 3) parent's unspecified-level children default cheap."""
     env = build_env(agent=FakeAgent(["done"]))
-    parent = _register(env, model_level=4, title="parent")
+    parent = _register(env, model_level=3, title="parent")
     tools = build_subsession_tools(env, ctx=_ctx(subsession_id=parent.id, depth=1))
     spawn = _by_name(tools, "spawn_subsession")
 
@@ -478,7 +481,7 @@ async def test_costly_tier_parent_defaults_children_to_cheap_level() -> None:
         i for i in env.registry.list_for_owner(OWNER) if i.parent_id == parent.id
     )
     assert child.model_level == env.settings.subsessions.delegated_read_model_level
-    assert child.model_level == 2
+    assert child.model_level == 1
     await wait_until(lambda: not child.is_active)
 
 
@@ -497,7 +500,7 @@ async def test_cheap_tier_parent_uses_default_model_level_for_children() -> None
         i for i in env.registry.list_for_owner(OWNER) if i.parent_id == parent.id
     )
     assert child.model_level == env.settings.subsessions.default_model_level
-    assert child.model_level == 3
+    assert child.model_level == 2
     await wait_until(lambda: not child.is_active)
 
 
@@ -505,17 +508,17 @@ async def test_cheap_tier_parent_uses_default_model_level_for_children() -> None
 async def test_explicit_model_level_overrides_cheap_default_for_costly_parent() -> None:
     """An explicit model_level wins over the cheap delegated default."""
     env = build_env(agent=FakeAgent(["done"]))
-    parent = _register(env, model_level=4, title="parent")
+    parent = _register(env, model_level=3, title="parent")
     tools = build_subsession_tools(env, ctx=_ctx(subsession_id=parent.id, depth=1))
     spawn = _by_name(tools, "spawn_subsession")
 
-    result = await spawn("task", "hard reasoning", "think hard", model_level=4)
+    result = await spawn("task", "hard reasoning", "think hard", model_level=3)
 
     assert result.startswith("Started task subsession ")
     child = next(
         i for i in env.registry.list_for_owner(OWNER) if i.parent_id == parent.id
     )
-    assert child.model_level == 4
+    assert child.model_level == 3
     await wait_until(lambda: not child.is_active)
 
 
@@ -543,7 +546,7 @@ async def test_spawn_tool_forwards_auto_stop_no_change_runs_override() -> None:
         "periodic",
         "watch ticket",
         "monitor ticket state",
-        model_level=4,
+        model_level=2,
         interval_seconds=60.0,
         dedup_key="ticket-123",
         auto_stop_no_change_runs=7,
@@ -668,7 +671,7 @@ async def test_close_tool_cancels_worker_and_delivers_summary() -> None:
     spawn = _by_name(build_subsession_tools(env, ctx=_ctx()), "spawn_subsession")
     close = _by_name(build_subsession_tools(env, ctx=_ctx()), "close_subsession")
 
-    await spawn("task", "long job", "work forever", model_level=4)
+    await spawn("task", "long job", "work forever", model_level=2)
     await wait_until(lambda: len(agent.calls) == 1)
     info = env.registry.list_for_owner(OWNER)[0]
     worker = env.registry._running[info.id]
@@ -769,7 +772,7 @@ async def test_list_subsessions_formats_entries() -> None:
     assert "'fetch data'" in lines[0]
     assert periodic.id[:8] in lines[1]
     assert "[periodic]" in lines[1]
-    assert "L4" in lines[1]
+    assert "L2" in lines[1]
     assert "every 60s" in lines[1]
 
 
@@ -1113,7 +1116,7 @@ async def test_spawn_tool_dedup_key_fresh_spawn_returns_started_message() -> Non
         "crash investigation",
         "investigate the asyncio.run crash",
         dedup_key="asyncio.run-crash",
-        model_level=4,
+        model_level=2,
     )
 
     assert result.startswith("Started user_chat subsession ")
@@ -1133,7 +1136,7 @@ async def test_spawn_tool_dedup_key_duplicate_returns_deduplicated_message() -> 
         "crash investigation",
         "investigate the asyncio.run crash",
         dedup_key="asyncio.run-crash",
-        model_level=4,
+        model_level=2,
     )
     assert first_result.startswith("Started user_chat subsession ")
 
@@ -1143,7 +1146,7 @@ async def test_spawn_tool_dedup_key_duplicate_returns_deduplicated_message() -> 
         "crash investigation (retry)",
         "investigate again",
         dedup_key="asyncio.run-crash",
-        model_level=4,
+        model_level=2,
     )
     assert second_result.startswith("Deduplicated:")
     assert "asyncio.run-crash" in second_result
@@ -1159,7 +1162,7 @@ async def test_spawn_tool_dedup_key_without_key_returns_normal_started() -> None
         "user_chat",
         "some question",
         "ask user about deploy",
-        model_level=4,
+        model_level=2,
     )
 
     assert result.startswith("Started user_chat subsession ")
@@ -1176,7 +1179,7 @@ async def test_spawn_tool_dedup_key_non_user_chat_deduplicated() -> None:
         "task 1",
         "do work",
         dedup_key="some-key",
-        model_level=4,
+        model_level=2,
     )
     assert first.startswith("Started task subsession ")
 
@@ -1185,7 +1188,7 @@ async def test_spawn_tool_dedup_key_non_user_chat_deduplicated() -> None:
         "task 2",
         "do more work",
         dedup_key="some-key",
-        model_level=4,
+        model_level=2,
     )
     assert second.startswith("Deduplicated: ")
 
@@ -1205,7 +1208,7 @@ async def test_spawn_wait_for_event_without_dedup_key_rejected() -> None:
         "wait_for_event",
         "ticket monitor",
         "monitor ticket foo",
-        model_level=4,
+        model_level=2,
     )
 
     assert "require a dedup_key" in result
@@ -1223,7 +1226,7 @@ async def test_spawn_wait_for_event_with_dedup_key_populates_checkpoint() -> Non
         "ticket monitor",
         "monitor ticket abc",
         dedup_key="abc-123",
-        model_level=4,
+        model_level=2,
     )
 
     assert result.startswith("Started wait_for_event subsession ")
@@ -1246,7 +1249,7 @@ async def test_spawn_wait_for_event_empty_dedup_key_rejected() -> None:
         "ticket monitor",
         "monitor ticket bar",
         dedup_key="",
-        model_level=4,
+        model_level=2,
     )
 
     assert "require a dedup_key" in result
@@ -1293,7 +1296,7 @@ async def test_spawn_tool_refuses_monitor_on_ticket_404() -> None:
             "monitor ticket that does not exist",
             interval_seconds=60.0,
             dedup_key="nonexistent-ticket",
-            model_level=4,
+            model_level=2,
         )
 
     assert "Cannot spawn monitor" in result
@@ -1334,7 +1337,7 @@ async def test_spawn_tool_allows_monitor_when_board_unreachable() -> None:
             "monitor ticket",
             interval_seconds=60.0,
             dedup_key="ticket-maybe",
-            model_level=4,
+            model_level=2,
         )
 
     # Spawn should succeed — the board-unreachable path logs a warning
@@ -1377,7 +1380,7 @@ async def test_spawn_tool_allows_monitor_on_non_404_http_error() -> None:
             "event monitor",
             "monitor ticket",
             dedup_key="ticket-maybe",
-            model_level=4,
+            model_level=2,
         )
 
     # Should succeed — only 404 blocks the spawn.
@@ -1414,7 +1417,7 @@ async def test_spawn_tool_refuses_monitor_for_terminal_ticket() -> None:
             "monitor ticket that is done",
             interval_seconds=60.0,
             dedup_key="20250101T000000Z-ticket-done",
-            model_level=4,
+            model_level=2,
         )
 
     assert "Cannot spawn monitor" in result
@@ -1560,7 +1563,7 @@ async def test_spawn_tool_refuses_monitor_for_closed_ticket() -> None:
             "monitor ticket already closed",
             interval_seconds=60.0,
             dedup_key="20250101T000000Z-ticket-closed",
-            model_level=4,
+            model_level=2,
         )
 
     assert "Cannot spawn monitor" in result
@@ -1611,7 +1614,7 @@ async def test_spawn_tool_terminal_report_does_not_block_active_ticket() -> None
             "redundant monitor",
             interval_seconds=60.0,
             dedup_key="20250101T000000Z-ticket-aaaa",
-            model_level=4,
+            model_level=2,
         )
 
     assert "Cannot spawn" not in result
@@ -1654,7 +1657,7 @@ async def test_spawn_tool_allows_monitor_when_ticket_is_in_progress() -> None:
             "monitor active ticket",
             interval_seconds=60.0,
             dedup_key="20250101T000000Z-ticket-ok",
-            model_level=4,
+            model_level=2,
         )
 
     assert result.startswith("Started periodic subsession ")
@@ -1677,7 +1680,7 @@ async def test_spawn_tool_periodic_on_close_refusal() -> None:
         "on_close",
         "cleanup",
         "clean up later",
-        model_level=4,
+        model_level=2,
     )
 
     assert "cannot spawn on_close" in result
@@ -1706,7 +1709,7 @@ async def test_spawn_tool_periodic_user_chat_sibling() -> None:
         "user_chat",
         "escalation",
         "operator decision needed",
-        model_level=4,
+        model_level=2,
     )
 
     assert result.startswith("Started user_chat subsession ")
@@ -1741,7 +1744,7 @@ async def test_spawn_tool_periodic_task_sibling_depth() -> None:
         "task",
         "remediation",
         "fix the issue",
-        model_level=4,
+        model_level=2,
     )
 
     assert result.startswith("Started task subsession ")

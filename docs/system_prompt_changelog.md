@@ -3,6 +3,22 @@
 Governed artifact: `Settings.agent_instruction` default literal in
 `src/robotsix_chat/config/settings.py`. Version stamp: `SYSTEM_PROMPT_VERSION` in the same module.
 
+## v152 — 2026-09-01 — llmio-provider-failover-rework
+
+**Change:** Rewrote the spawn-guidance and Model Policy blocks for the three-level provider-failover
+model: levels collapse to 1 (cheap-frequent), 2 (workhorse, the chat default) and 3 (frontier);
+level labels renamed accordingly; all API-key/keyless steering removed (which provider serves a
+level is llmio's automatic failover concern — flat-rate default slot with a paid OpenRouter backup);
+escalation copy now names level 2 as the chat level and level 3 as the frontier.
+
+**Why:** llmio rev 3f9127ad replaced the five-level ladder (where provider redundancy masqueraded as
+extra levels) with three capability levels across two provider slots and automatic failover. The old
+prompt steered the model around provider/key mechanics that no longer exist.
+
+**SHA256:** `1c25e1da47b25c933ce7611641a2f37f831e58fedecb75591e6f789654c6bc27`
+
+______________________________________________________________________
+
 ## v151 — 2026-08-30 — 20260830T203403Z-add-retry-guidance-and-explicit-timeout-e7a0
 
 **Summary:** Add three behavioral guardrails to the Efficiency section: (1) TOOL CALL

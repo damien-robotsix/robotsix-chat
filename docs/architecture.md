@@ -27,7 +27,7 @@ single-page browser UI.
 Some tools (`board_reader`, `knowledge`) are self-contained and operate locally.
 
 The LLM itself is driven through `robotsix-llmio`, which abstracts the provider behind a
-`model_level` (1–4). The agent never calls a provider directly. Background work runs in
+`model_level` (1–3). The agent never calls a provider directly. Background work runs in
 **subsessions** — sub-agents spawned by the main agent (one-shot tasks, periodic monitors, or
 user-facing side-chats), each at a model level picked by task difficulty.
 
@@ -278,10 +278,12 @@ pydantic field defaults  ←filled by←  the one JSON config file
 - **The file**: located by the `ROBOTSIX_CONFIG_FILE` env var (default `config/config.json`) — the
   only source of values. No env-var overlay, no CLI merge.
 
-The LLM provider is selected indirectly: `model_level` (1–4) is passed to `robotsix-llmio`, which
-resolves it to a concrete provider (levels 3–4 → claudeSDK, levels 1–2 → OpenRouter DeepSeek). Level
-4 (`claude-fable-5`) is the frontier tier and the default for the main chat agent; subsessions
-default to level 3 unless the spawning agent picks otherwise.
+The LLM provider is selected indirectly: `model_level` (1–3) is passed to `robotsix-llmio`, which
+resolves it against the provider slot its failover tracker designates as active — the keyless
+claudeSDK default slot (haiku/opus/fable) in normal operation, the keyed OpenRouter fallback slot
+(DeepSeek) while provider failover is armed. Level 2 (`opus` on the default slot) is the workhorse
+and the default for the main chat agent; subsessions default to level 2 and monitors are capped at
+level 1 unless configured otherwise.
 
 ______________________________________________________________________
 

@@ -28,7 +28,7 @@ directly. The root `docker-compose.yml` remains the local-dev stack.
   deployment first if needed.
 - **Claude credentials**: the `robotsix.deploy.claude-mount: "true"` label makes central-deploy
   mount its managed `claude-auth` named volume at `/home/app/.claude`, enabling the keyless
-  level-3/4 claude-sdk transport. Authenticate once through central-deploy's dashboard login flow
+  claude-sdk transport (the default provider slot serving every level). Authenticate once through central-deploy's dashboard login flow
   (which runs `claude login` into that volume) — no host `~/.claude` is involved.
 
 ## Onboarding

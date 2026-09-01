@@ -109,25 +109,24 @@ class SubsessionsSettings(BaseModel):
             0; its subsessions are depth 1.  Agents at ``max_depth`` get
             no spawn tools.  Env override: ``SUBSESSIONS_MAX_DEPTH``.
         default_model_level: llmio capability level used when the
-            spawning agent does not pick one explicitly (1 cheapest … 5
-            frontier).  Env override: ``SUBSESSIONS_DEFAULT_MODEL_LEVEL``.
+            spawning agent does not pick one explicitly (1 cheap/frequent,
+            2 workhorse, 3 frontier).
+            Env override: ``SUBSESSIONS_DEFAULT_MODEL_LEVEL``.
         delegated_read_model_level: llmio capability level used as the
             default for children spawned (without an explicit
-            ``model_level``) by a costly-tier parent subsession (level
-            ``>=4``).  The costly-tier orchestration directive tells such
+            ``model_level``) by a frontier parent subsession (level
+            ``3``).  The costly-tier orchestration directive tells such
             parents to fan bulk reading/extraction out to cheap children;
-            this makes that fan-out land on a cheap tier by default while
-            still letting the parent override ``model_level`` when a
-            subtask genuinely needs reasoning.  Default ``2``.
+            this makes that fan-out land on the cheap level by default
+            while still letting the parent override ``model_level`` when a
+            subtask genuinely needs reasoning.  Default ``1``.
             Env override: ``SUBSESSIONS_DELEGATED_READ_MODEL_LEVEL``.
         monitor_max_model_level: Maximum model level for periodic and
             wait_for_event monitor subsessions.  Routine monitors
             (ticket polling, periodic checks) are capped at this level
-            to prevent them from burning expensive keyless Claude
-            subscription tiers.  Level 1 and 3 use OpenRouter (cheap real
-            $); levels 2, 4 and 5 use the keyless Claude SDK (level 2 =
-            haiku, the cheap flat-rate tier meant for monitors).
-            Default ``2``.  Set to ``5`` to remove the cap.
+            so they never burn workhorse or frontier capacity.
+            Default ``1`` (cheap/frequent — haiku on the default slot).
+            Set to ``3`` to remove the cap.
             Env override: ``SUBSESSIONS_MONITOR_MAX_MODEL_LEVEL``.
         min_interval_seconds: Minimum interval for ``periodic``
             subsessions.  Env override: ``SUBSESSIONS_MIN_INTERVAL_SECONDS``.
@@ -295,9 +294,9 @@ class SubsessionsSettings(BaseModel):
         ),
     )
     max_depth: int = 3
-    default_model_level: int = 4
-    delegated_read_model_level: int = 2
-    monitor_max_model_level: int = 2
+    default_model_level: int = 2
+    delegated_read_model_level: int = 1
+    monitor_max_model_level: int = 1
     min_interval_seconds: float = 60.0
     auto_stop_no_change_runs: int = 3
     max_idle_runs: int = 15

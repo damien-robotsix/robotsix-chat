@@ -143,7 +143,7 @@ All fields are documented in [`config/config.json`](config/config.json) and
 ### Model level
 
 The LLM is configured the [`robotsix-llmio`](https://github.com/damien-robotsix/robotsix-llmio) way
-— you pick a capability **level** (1–4) and llmio resolves the provider + model for it (via
+— you pick a capability **level** (1–3) and llmio resolves the provider + model for it (via
 `robotsix_llmio.config.create_model`). robotsix-chat never names a concrete provider or model. The
 default level → provider-model mapping:
 
@@ -172,8 +172,8 @@ place.
 The browser UI provides a dropdown model selector in the header, so operators can switch the active
 session to a different capability level without restarting. The selected model applies to all
 subsequent turns in that session only — other sessions retain their own configured level or
-selection. The selector shows only models that are available: keyless (claudeSDK) tiers are always
-available, while keyed (OpenRouter) tiers appear only when `llmio_api_key` is configured.
+selection. Every level is served by the keyless claudeSDK default slot; llmio fails over to the
+keyed OpenRouter slot automatically (the header badge flags it), which requires `llmio_api_key`.
 
 ### Authentication
 

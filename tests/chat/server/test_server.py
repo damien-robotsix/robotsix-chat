@@ -1022,13 +1022,13 @@ def test_create_agent_from_settings_explicit() -> None:
 
 
 def test_create_agent_from_settings_keyless_level_drops_key() -> None:
-    """A keyless level (3 → claude-sdk, the default) never forwards an api_key."""
-    settings = Settings()  # model_level 4, keyless
+    """The default level constructs with no api_key (keyless default slot)."""
+    settings = Settings()  # model_level 2, keyless default slot
 
     agent = create_agent_from_settings("Be helpful.", settings=settings)
 
     assert isinstance(agent, LlmioChatAgent)
-    assert agent._model_level == 4
+    assert agent._model_level == 2
     assert agent._api_key == ""
 
 
@@ -1182,7 +1182,7 @@ async def test_run_server_from_config_creates_agent_from_settings(
         patch(
             "robotsix_chat.config.settings.load_config",
             return_value=Settings(
-                llmio_model_level=4,
+                llmio_model_level=2,
                 server_host="127.0.0.1",
                 server_port=8080,
             ),
@@ -1194,7 +1194,7 @@ async def test_run_server_from_config_creates_agent_from_settings(
         call_args = mock_run_server.call_args
         passed_agent = call_args[0][0]
         assert isinstance(passed_agent, LlmioChatAgent)
-        assert passed_agent._model_level == 4
+        assert passed_agent._model_level == 2
         assert passed_agent._instruction.startswith("You are a helpful assistant.")
         # A conversation store is built from settings and forwarded; assert the
         # rest of the server options explicitly.
@@ -1902,7 +1902,7 @@ async def test_subsessions_close_cancels_worker_and_delivers_summary() -> None:
 
 def test_create_agent_model_level_override() -> None:
     """``model_level`` overrides ``settings.llmio_model_level``."""
-    settings = Settings(llmio_model_level=4, llmio_api_key="sk-key")
+    settings = Settings(llmio_model_level=2, llmio_api_key="sk-key")
 
     agent = create_agent_from_settings("Be terse.", settings=settings, model_level=2)
 

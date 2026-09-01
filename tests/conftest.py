@@ -15,8 +15,26 @@ _local_pkgs = Path(__file__).resolve().parent.parent / "local-deps"
 if str(_local_pkgs) not in sys.path and _local_pkgs.is_dir():
     sys.path.insert(0, str(_local_pkgs))
 
+import pytest  # noqa: E402
 from httpx import ASGITransport, AsyncClient  # noqa: E402
 from starlette.applications import Starlette  # noqa: E402
+
+
+@pytest.fixture(autouse=True)
+def _reset_llmio_failover_tracker() -> Any:
+    """Isolate every test from llmio's process-wide provider-failover state.
+
+    Tests that arm the failover window (or drive default-slot failures)
+    would otherwise leak an armed window into unrelated tests, silently
+    flipping slot resolution — including ``level_needs_api_key`` and the
+    ``/models`` payload.
+    """
+    from robotsix_llmio.core.failover import reset_failover_tracker
+
+    reset_failover_tracker()
+    yield
+    reset_failover_tracker()
+
 
 from robotsix_chat.chat.server import create_app  # noqa: E402
 

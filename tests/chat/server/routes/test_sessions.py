@@ -1405,6 +1405,32 @@ async def test_models_list_endpoint_all_available_with_key() -> None:
 
 
 @pytest.mark.asyncio
+async def test_models_list_endpoint_reports_failover_state() -> None:
+    """``/models`` carries provider + llmio failover status for the UI badge."""
+    from robotsix_llmio.core.failover import get_failover_tracker
+    from robotsix_llmio.exceptions import ProviderExhaustedError
+
+    state = MagicMock(chat_api_key_available=True, chat_model_level=2)
+    request = _make_request(app_state=state)
+
+    body = json.loads((await models_list_endpoint(request)).body)  # type: ignore[arg-type]
+    assert body["failover"]["failover_active"] is False
+    assert body["failover"]["active_slot"] == "default"
+    assert all(m["provider"] == "claudeSDK" for m in body["models"])
+
+    get_failover_tracker().record_failure(
+        "default", ProviderExhaustedError("weekly cap")
+    )
+    body = json.loads((await models_list_endpoint(request)).body)  # type: ignore[arg-type]
+    assert body["failover"]["failover_active"] is True
+    assert body["failover"]["active_slot"] == "fallback"
+    assert body["failover"]["failover_until"] is not None
+    # The slot-resolved names now come from the OpenRouter fallback slot.
+    assert all(m["provider"] == "openrouter" for m in body["models"])
+    assert all(m["needs_api_key"] for m in body["models"])
+
+
+@pytest.mark.asyncio
 async def test_models_list_endpoint_keyed_unavailable_without_key() -> None:
     """Keyed levels are marked unavailable when no API key is configured."""
     state = MagicMock(chat_api_key_available=False, chat_model_level=2)
@@ -1470,7 +1496,13 @@ async def test_session_model_set_endpoint_rejects_non_integer() -> None:
 
 @pytest.mark.asyncio
 async def test_session_model_set_endpoint_requires_api_key() -> None:
-    """A keyed level is rejected with 409 when no API key is configured."""
+    """While failover routes to the keyed slot, a keyless server rejects with 409."""
+    from robotsix_llmio.core.failover import get_failover_tracker
+    from robotsix_llmio.exceptions import ProviderExhaustedError
+
+    get_failover_tracker().record_failure(
+        "default", ProviderExhaustedError("weekly cap")
+    )
     level = _first_level_needing_key()
     state = MagicMock(chat_api_key_available=False, chat_model_level=2)
     request = _make_json_request({"level": level})

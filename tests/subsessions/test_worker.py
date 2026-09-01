@@ -1970,13 +1970,16 @@ def test_spawn_depth_error_beyond_max_depth() -> None:
 
 
 def test_spawn_level_errors() -> None:
-    """Invalid levels and keyless key-bearing levels raise level errors."""
+    """An out-of-range level raises; a missing key never blocks a spawn.
+
+    Every level is served by the keyless default slot.
+    """
     env = build_env(settings=make_settings(llmio_api_key=""))
 
     with pytest.raises(SubsessionLevelError):
         _spawn(env, model_level=6)
     with pytest.raises(SubsessionLevelError):
-        _spawn(env, model_level=1)  # level 1 needs an API key
+        _spawn(env, model_level=4)
 
     assert env.registry.list_for_owner(OWNER) == []
 
@@ -1992,11 +1995,11 @@ async def test_spawn_monitor_model_level_clamped() -> None:
         )
     )
 
-    # Periodic at model_level=4 gets clamped to 2.
+    # Periodic at model_level=3 gets clamped to 2.
     sub_id = _spawn(
         env,
         kind=SubsessionKind.PERIODIC,
-        model_level=4,
+        model_level=3,
         interval_seconds=10.0,
     )
     info = env.registry.get(sub_id)
@@ -2014,15 +2017,15 @@ async def test_spawn_monitor_model_level_clamped() -> None:
     assert info2 is not None
     assert info2.model_level == 2
 
-    # Task at model_level=4 is NOT clamped (task is uncapped).
+    # Task at model_level=3 is NOT clamped (task is uncapped).
     sub_id3 = _spawn(
         env,
         kind=SubsessionKind.TASK,
-        model_level=4,
+        model_level=3,
     )
     info3 = env.registry.get(sub_id3)
     assert info3 is not None
-    assert info3.model_level == 4
+    assert info3.model_level == 3
 
     # Periodic at model_level=2 (within cap) is not clamped.
     sub_id4 = _spawn(

@@ -633,8 +633,15 @@ import {
   // ---- Active-session model badge --------------------------------------
   // Rendered in the header from whichever session-list entry is active, and
   // updated live by the `session_model` SSE frame so an escalation shows up
-  // without waiting for the next session-list refetch.
+  // without waiting for the next session-list refetch.  While llmio's
+  // provider failover is active (GET /models .failover), the badge switches
+  // to a distinct state: every level is served by the fallback (OpenRouter)
+  // provider until the window expires.
+  var failoverState = null;   // GET /models .failover snapshot
+  var lastModelBadge = null;  // {name, escalated} to re-render on state flips
+
   function renderActiveModel(name, escalated) {
+    lastModelBadge = { name: name, escalated: escalated };
     var el = document.getElementById("active-model");
     if (!el) return;
     if (!name) {
@@ -642,11 +649,25 @@ import {
       el.className = "";
       return;
     }
-    el.textContent = escalated ? name + " \u23eb" : name;
-    el.className = escalated ? "model-badge model-badge-escalated" : "model-badge";
-    el.title = escalated
-      ? "Escalated to a stronger model for this session"
-      : "Model serving the active session";
+    var failover = !!(failoverState && failoverState.failover_active);
+    var text = escalated ? name + " \u23eb" : name;
+    if (failover) text += " \u26a0";
+    el.textContent = text;
+    var cls = escalated ? "model-badge model-badge-escalated" : "model-badge";
+    if (failover) cls += " model-badge-failover";
+    el.className = cls;
+    if (failover) {
+      var until = failoverState.failover_until
+        ? new Date(failoverState.failover_until).toLocaleTimeString()
+        : "soon";
+      el.title =
+        "Provider failover active — turns run on the backup provider " +
+        "(OpenRouter); back to the default provider at " + until;
+    } else {
+      el.title = escalated
+        ? "Escalated to a stronger model for this session"
+        : "Model serving the active session";
+    }
   }
 
   // ---- Per-session model selector --------------------------------------
@@ -654,7 +675,7 @@ import {
   // never a hard-coded list). Selecting one pins the active session to that
   // level from its next turn via POST /sessions/{id}/model; the choice is
   // per-session and never leaks to other sessions.
-  var modelOptions = [];        // [{level, name, needs_api_key, available}]
+  var modelOptions = [];        // [{level, name, provider, needs_api_key, available}]
   var defaultModelLevel = null; // server's configured chat level
   var pendingModelLevel = null; // active session's level, applied once options load
 
@@ -665,7 +686,15 @@ import {
         if (!data || !Array.isArray(data.models)) return;
         modelOptions = data.models;
         defaultModelLevel = data.default_level;
+        var wasActive = !!(failoverState && failoverState.failover_active);
+        failoverState = data.failover || null;
+        var isActive = !!(failoverState && failoverState.failover_active);
         populateModelSelector();
+        // Re-render the badge when the failover state flips (the model
+        // names themselves also change: the fallback slot serves them).
+        if (wasActive !== isActive && lastModelBadge && lastModelBadge.name) {
+          renderActiveModel(lastModelBadge.name, lastModelBadge.escalated);
+        }
       })
       .catch(function () { /* selector stays empty; badge still works */ });
   }
@@ -3558,7 +3587,10 @@ import {
   renderSubsessionsList();    // show the empty state until the snapshot lands
 
   // Populate the per-session model selector and wire its change handler.
+  // Re-polled every 60s so the header badge tracks llmio's provider
+  // failover state (and the slot-resolved model names) near-live.
   loadModelOptions();
+  setInterval(loadModelOptions, 60000);
   (function () {
     var modelSel = document.getElementById("model-selector");
     if (modelSel) modelSel.addEventListener("change", onModelSelectorChange);

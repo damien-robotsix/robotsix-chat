@@ -390,6 +390,10 @@ body {
 #appshell-header .model-badge-escalated {
   color: #f59e0b; border-color: #f59e0b;
 }
+/* llmio provider failover active: turns run on the backup provider. */
+#appshell-header .model-badge-failover {
+  color: #f87171; border-color: #f87171;
+}
 .model-selector {
   font-size: 0.72rem; color: #cbd5e1;
   background: rgba(255,255,255,0.06);

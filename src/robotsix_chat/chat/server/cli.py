@@ -19,7 +19,6 @@ from robotsix_chat.chat.conversation import ConversationStore
 from robotsix_chat.chat.events import EventBus
 from robotsix_chat.chat.summarize import SUMMARY_SYSTEM_PROMPT
 from robotsix_chat.config import PROJECT_MAIN, Settings
-from robotsix_chat.config.constants import level_needs_api_key
 from robotsix_chat.continuation.store import ContinuationStore
 from robotsix_chat.diagnostics import DiagnosticStore
 from robotsix_chat.knowledge.store import KnowledgeStore
@@ -244,17 +243,26 @@ def run_server_from_config(agent: ChatAgent | None = None) -> None:
     _export_langfuse_env(settings)
     _setup_observability()
 
-    # -- llmio health tracker cooldown configuration ----------------------
-    # Configure the model health tracker's cooldown duration from settings
-    # instead of relying on the LLMIO_COOLDOWN_DURATION_SECONDS env var.
-    from robotsix_llmio.core.cooldown import get_health_tracker
+    # -- llmio provider-failover configuration ----------------------------
+    # Adopt the configured failover window up front so status reads show the
+    # right policy before the first turn (each agent's tier config re-adopts
+    # it per call as well).
+    from robotsix_llmio.config.tier import FailoverConfig
+    from robotsix_llmio.core.failover import get_failover_tracker
 
-    tracker = get_health_tracker()
-    tracker.cooldown_duration = settings.llmio_cooldown_seconds
-    logger.info(
-        "llmio health tracker cooldown configured: %.0f seconds",
-        settings.llmio_cooldown_seconds,
+    get_failover_tracker().configure(
+        FailoverConfig(window_seconds=settings.llmio_failover_window_seconds)
     )
+    logger.info(
+        "llmio provider-failover window configured: %.0f seconds",
+        settings.llmio_failover_window_seconds,
+    )
+    if not settings.llmio_api_key.get_secret_value():
+        logger.warning(
+            "no llmio.api_key configured — provider failover to the keyed "
+            "OpenRouter slot is unavailable; turns fail if the Claude "
+            "subscription is exhausted or degraded"
+        )
 
     # -- unified subsession system -----------------------------------------
     # One registry owns every subsession (task / periodic / user_chat, all
@@ -464,24 +472,13 @@ def run_server_from_config(agent: ChatAgent | None = None) -> None:
     # capability level and — crucially — its OWN system prompt: handed the
     # chat agent's prompt it behaved as the assistant and "continued" the
     # conversation (the 2026-08-30 compaction run echoed the last reply
-    # verbatim: 65k chars in, 142 tokens out).  Unlike llmio_model_level, a
-    # missing key for this level is not fatal: fall back to a keyless tier
-    # so a deployment without an OpenRouter key still starts.  bare=True:
+    # verbatim: 65k chars in, 142 tokens out).  Every level is served by
+    # the keyless default slot, so no key check is needed here.  bare=True:
     # a summary is a single bounded call over an explicit transcript — it
     # has no business paying for cross-session memory recall or agentic
     # tool access (ChatMemory.recall() alone was observed taking 90+
     # seconds in production, dwarfing the actual model call).
     summary_model_level = settings.summary_model_level
-    if (
-        level_needs_api_key(summary_model_level)
-        and not settings.llmio_api_key.get_secret_value()
-    ):
-        logger.warning(
-            "summary_model_level=%d needs an OpenRouter API key which is not "
-            "configured — falling back to level 3 for the summariser agent",
-            summary_model_level,
-        )
-        summary_model_level = 3
     summary_agent = create_agent_from_settings(
         instruction=SUMMARY_SYSTEM_PROMPT,
         settings=settings,
@@ -501,16 +498,6 @@ def run_server_from_config(agent: ChatAgent | None = None) -> None:
                 "all feedback runs will be skipped until a board URL is configured"
             )
         feedback_model_level = settings.feedback.model_level
-        if (
-            level_needs_api_key(feedback_model_level)
-            and not settings.llmio_api_key.get_secret_value()
-        ):
-            logger.warning(
-                "feedback.model_level=%d needs an OpenRouter API key which is "
-                "not configured — falling back to level 3 for feedback runner",
-                feedback_model_level,
-            )
-            feedback_model_level = 3
         from robotsix_chat.feedback import FEEDBACK_SYSTEM_PROMPT, FeedbackRunner
 
         feedback_agent = create_agent_from_settings(

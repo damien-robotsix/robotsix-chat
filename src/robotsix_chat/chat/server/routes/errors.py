@@ -135,14 +135,17 @@ def _format_wait(reset_at: datetime, now: datetime) -> str:
 def budget_exhausted_message(
     exc: BaseException,
     *,
-    paid_fallback_enabled: bool = False,
     now: datetime | None = None,
 ) -> str:
     """Build the user-facing message for a Claude quota-exhaustion error.
 
-    Names the UTC reset time and approximate wait when the error carries a
-    reset hint, and — when paid fallback is disabled — appends a hint that it
-    can be enabled. *now* is injectable for deterministic tests.
+    Seen only when BOTH provider slots failed the turn: llmio's provider
+    failover retries an exhausted Claude turn on the OpenRouter fallback
+    slot automatically, so reaching this message means the fallback could
+    not serve it either (missing/invalid OpenRouter key, no credits, or an
+    OpenRouter outage). Names the UTC reset time and approximate wait when
+    the error carries a reset hint. *now* is injectable for deterministic
+    tests.
     """
     reference = now or datetime.now(UTC)
     if reference.tzinfo is None:
@@ -151,14 +154,13 @@ def budget_exhausted_message(
     if reset_at is not None:
         when = reset_at.strftime("%H:%M")
         wait = _format_wait(reset_at, reference)
-        lead = f"Claude quota exhausted — resets at {when} UTC ({wait}). Retry then"
+        lead = f"Claude quota exhausted — resets at {when} UTC ({wait})"
     else:
-        lead = "Claude quota exhausted. Retry later"
-    if paid_fallback_enabled:
-        return f"{lead}."
+        lead = "Claude quota exhausted"
     return (
-        f"{lead} — or just resend your message: the paid backup model "
-        "serves turns automatically while Claude is exhausted."
+        f"{lead}, and the automatic OpenRouter failover could not serve "
+        "this turn either. Check the OpenRouter key and credits "
+        "(`llmio.api_key`), or retry after the reset."
     )
 
 
@@ -213,7 +215,6 @@ def curated_stream_error(
     exc: BaseException,
     *,
     fallback_id: str = "",
-    paid_fallback_enabled: bool = False,
 ) -> dict[str, str]:
     """Build the client-facing payload for a mid-stream failure.
 
@@ -224,15 +225,13 @@ def curated_stream_error(
     the request that spawned it.
 
     Quota exhaustion is a known, time-bounded condition, so instead of the
-    generic static wording it gets an actionable message naming the UTC reset
-    time and approximate wait (and, when *paid_fallback_enabled* is false, a
-    hint that paid fallback can be turned on).
+    generic static wording it gets an actionable message naming the UTC
+    reset time and approximate wait (reaching it at all means the automatic
+    provider failover also failed — see :func:`budget_exhausted_message`).
     """
     code = stream_error_code(exc)
     if code == STREAM_ERROR_BUDGET_EXHAUSTED:
-        message = budget_exhausted_message(
-            exc, paid_fallback_enabled=paid_fallback_enabled
-        )
+        message = budget_exhausted_message(exc)
     elif code == STREAM_ERROR_INVALID_REQUEST and _is_token_limit_error(exc):
         message = (
             "The conversation history is too long for the backup model. "

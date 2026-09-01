@@ -82,15 +82,6 @@ _USAGE_EXHAUSTED_SIGNATURE = "out of usage credits"
 # — falling back to a different tier usually resolves it.
 _MODEL_TIER_NOT_FOUND_STATUS = 404
 
-#: Minimum model level a periodic monitor can fall back to before the
-#: subsession is failed permanently.  Decrementing by 1 each time, a
-#: monitor starting at level 5 will try 5→4→3→2→1 before giving up.
-_MODEL_LEVEL_FALLBACK_FLOOR = 1
-
-#: Maximum number of tier-fallback steps before the subsession is failed.
-#: Caps the chain 4→3→2→1 (max 3 steps).
-_MODEL_LEVEL_FALLBACK_MAX = 3
-
 
 def _is_model_tier_not_found(exc: BaseException) -> bool:
     """Return ``True`` when *exc* indicates the requested model tier is not available.
@@ -138,15 +129,16 @@ def _format_worker_error(exc: BaseException) -> str:
             "reset. " + msg
         )
 
-    # Model-tier not found — the model is unavailable at the configured
-    # tier (e.g. OpenRouter 404 when no provider serves it at the max
-    # price).  Periodic monitors automatically fall back to a lower level.
+    # Model not routable — e.g. OpenRouter 404 when no provider serves the
+    # model at the configured price ceiling. llmio's provider failover
+    # already retried the turn on the other provider slot before this
+    # surfaced.
     if _is_model_tier_not_found(exc):
         return (
-            "The requested model tier is not available "
-            "(HTTP 404 — the model could not be routed at the configured "
-            "price ceiling). Periodic monitors will automatically fall "
-            "back to a lower model level. " + msg
+            "The requested model is not available "
+            "(HTTP 404 — it could not be routed at the configured "
+            "price ceiling), and the automatic provider failover could "
+            "not serve the turn either. " + msg
         )
 
     # ProcessError from claude_agent_sdk carries exit_code and stderr —
@@ -651,7 +643,7 @@ def spawn_subsession(
         raise SubsessionDepthError(
             f"maximum subsession nesting depth is {cfg.max_depth}"
         )
-    _validate_model_level(env.settings, model_level)
+    _validate_model_level(model_level)
     # -- cap monitor model levels to prevent routine monitors from
     #    burning expensive keyless Claude subscription tiers ---------
     if kind in (SubsessionKind.PERIODIC, SubsessionKind.WAIT_FOR_EVENT):
@@ -667,7 +659,7 @@ def spawn_subsession(
             model_level = cap
             # Re-validate: the clamped level may require an API key that
             # the original level did not.
-            _validate_model_level(env.settings, model_level)
+            _validate_model_level(model_level)
     if parent_id is not None:
         parent = env.registry.get(parent_id)
         if parent is not None and parent.kind in (
@@ -856,27 +848,19 @@ def _drain_slot_budget_queue(env: SubsessionEnv, owner_session_id: str) -> None:
         )
 
 
-def _validate_model_level(settings: Settings, model_level: int) -> None:
-    """Reject invalid levels and key-bearing levels without a key."""
-    from robotsix_chat.config import VALID_MODEL_LEVELS, level_needs_api_key
+def _validate_model_level(model_level: int) -> None:
+    """Reject invalid levels; key availability is not a spawn concern.
+
+    Every level is served by the keyless Claude SDK default slot; the
+    OpenRouter key only matters when llmio's provider failover routes a
+    call to the keyed fallback slot, and a missing key there surfaces as
+    a normal run failure, not a spawn error.
+    """
+    from robotsix_chat.config import VALID_MODEL_LEVELS
 
     if model_level not in VALID_MODEL_LEVELS:
         raise SubsessionLevelError(
             f"model_level must be one of {sorted(VALID_MODEL_LEVELS)}"
-        )
-    if (
-        level_needs_api_key(model_level)
-        and not settings.llmio_api_key.get_secret_value()
-    ):
-        raise SubsessionLevelError(
-            f"model level {model_level} requires an OpenRouter API key "
-            "but the server could not find one in its configuration. "
-            "The key may not be set in the config file, or may be set "
-            "but stored in a location the server does not read — "
-            "the server only reads the `llmio.api_key` field in its "
-            "JSON config file, not environment variables or external "
-            "secret stores.  Retry at level 4 (keyless) or have the "
-            "operator verify the API key is set in the config file."
         )
 
 
@@ -1874,62 +1858,6 @@ async def _subsession_worker(
                     retry_input=in_flight_inbox or None,
                 )
                 return
-
-        # -- model-tier fallback for periodic monitors ------------------
-        # When the model is unavailable at the current tier (HTTP 404),
-        # try the next lower level instead of failing the monitor.
-        # Recovery from a spent Claude subscription tier is handled
-        # separately by the usage-exhausted path.
-        if (
-            info is not None
-            and info.kind
-            in (
-                SubsessionKind.PERIODIC,
-                SubsessionKind.WAIT_FOR_EVENT,
-            )
-            and _is_model_tier_not_found(exc)
-            and info.model_level > _MODEL_LEVEL_FALLBACK_FLOOR
-        ):
-            fallback_count_raw = (
-                (info.checkpoint or {}).get("_tier_fallback_count")
-                if info.checkpoint
-                else 0
-            )
-            fallback_count = (
-                fallback_count_raw if isinstance(fallback_count_raw, int) else 0
-            )
-            if fallback_count < _MODEL_LEVEL_FALLBACK_MAX:
-                new_level = info.model_level - 1
-                logger.warning(
-                    "Subsession %s: model tier %d not found (HTTP 404); "
-                    "falling back to level %d (tier-fallback %d/%d).",
-                    sub_id,
-                    info.model_level,
-                    new_level,
-                    fallback_count + 1,
-                    _MODEL_LEVEL_FALLBACK_MAX,
-                )
-                cp = dict(info.checkpoint or {})
-                cp["_tier_fallback_count"] = fallback_count + 1
-                cp["_fallback_model_level"] = new_level
-                info.model_level = new_level
-                info.checkpoint = cp
-                # Persist so the fallback survives a restart.
-                registry.update_checkpoint(sub_id, cp)
-                registry.persist()
-                await _subsession_worker(
-                    env,
-                    sub_id,
-                    retry_input=in_flight_inbox or None,
-                )
-                return
-
-            logger.error(
-                "Subsession %s: model-tier fallback exhausted "
-                "(tried %d level(s) from original tier).",
-                sub_id,
-                fallback_count,
-            )
 
         # -- retry for periodic / wait_for_event monitors -------------
         # When a monitor fails with a non-transient error (e.g. tool

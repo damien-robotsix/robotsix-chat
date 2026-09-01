@@ -19,19 +19,14 @@ from typing import Any, Union, get_args, get_origin
 
 from pydantic import BaseModel
 from robotsix_llmio import default_tier_config
-from robotsix_llmio.config import (
-    LEVEL1_DEFAULT,
-    LEVEL2_DEFAULT,
-    LEVEL3_DEFAULT,
-    LEVEL4_DEFAULT,
-    LEVEL5_DEFAULT,
-)
+from robotsix_llmio.config.tier import TierLevelConfig
 
 __all__ = [
     "FRONTIER_MODEL_LEVEL",
     "drop_blank_numeric_sentinels",
     "level_display_name",
     "level_needs_api_key",
+    "slot_needs_api_key",
 ]
 
 # Numeric field annotations that must never carry a ``""`` sentinel.
@@ -121,38 +116,43 @@ def drop_blank_numeric_sentinels(
     return data
 
 
-# robotsix-llmio now owns the level → provider-model mapping. The chat
-# just picks a capability *level*; the combined provider-model identifier for
-# that level comes from llmio's baked default TierLevelConfig (single source
-# of truth) — see ``robotsix_llmio.config.tier``.
-_LEVEL_DEFAULTS: dict[int, Any] = {
-    1: LEVEL1_DEFAULT,
-    2: LEVEL2_DEFAULT,
-    3: LEVEL3_DEFAULT,
-    4: LEVEL4_DEFAULT,
-    5: LEVEL5_DEFAULT,
-}
-
-# Provider prefix for the keyless Claude SDK tier (auth via logged-in
+# Provider prefix for the keyless Claude SDK transport (auth via logged-in
 # `claude` CLI — no API key needed).
 _KEYLESS_PROVIDER = "claudeSDK"
 
 
-def level_needs_api_key(level: int) -> bool:
-    """Whether *level*'s default provider requires an ``api_key``.
+def slot_needs_api_key(tlc: TierLevelConfig) -> bool:
+    """Whether the resolved slot binding *tlc* requires an ``api_key``.
 
     True for key-bearing providers (e.g. ``openrouter``), False for the
-    keyless ``claudeSDK`` provider. Unknown levels are treated as needing a
-    key (model_level is validated separately before this matters).
+    keyless ``claudeSDK`` transport. Key need is a property of the provider
+    SLOT serving the call, not of the capability level: the same level is
+    keyless on the default (Claude) slot and keyed on the OpenRouter
+    fallback slot.
     """
-    tlc = _LEVEL_DEFAULTS.get(level)
-    return tlc is None or tlc.provider != _KEYLESS_PROVIDER
+    return tlc.provider != _KEYLESS_PROVIDER
 
 
-#: The strongest capability level a session can escalate to (currently 5).
-#: Named rather than hard-coded at call sites so the frontier is a
-#: one-line change here.
-FRONTIER_MODEL_LEVEL = 5
+def level_needs_api_key(level: int) -> bool:
+    """Whether *level*, as currently served, requires an ``api_key``.
+
+    Resolves against the provider slot the llmio failover tracker currently
+    designates as active — keyless while the default (Claude SDK) slot
+    serves calls, keyed while failover routes to OpenRouter. Unknown levels
+    are treated as needing a key (model_level is validated separately
+    before this matters).
+    """
+    try:
+        tlc = default_tier_config().for_level(level)
+    except ValueError:
+        return True
+    return slot_needs_api_key(tlc)
+
+
+#: The strongest capability level a session can escalate to (level 3, the
+#: frontier tier).  Named rather than hard-coded at call sites so the
+#: frontier is a one-line change here.
+FRONTIER_MODEL_LEVEL = 3
 
 
 def level_display_name(level: int) -> str:

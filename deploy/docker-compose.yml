@@ -19,7 +19,8 @@ services:
   robotsix-chat:
     image: ghcr.io/damien-robotsix/robotsix-chat:main
     labels:
-      # Subscription auth for the claude-sdk transports (levels 3-4):
+      # Subscription auth for the claude-sdk transport (the default
+      # provider slot serving every level):
       # central-deploy mounts its managed `claude-auth` named volume at
       # /home/app/.claude (injected at deploy time — not listed under
       # volumes:). Authentication happens through central-deploy's

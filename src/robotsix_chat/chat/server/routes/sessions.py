@@ -773,30 +773,48 @@ async def autonomous_refinements_reset_endpoint(request: Request) -> JSONRespons
 
 def _build_model_options(
     request: Request,
-) -> tuple[list[dict[str, object]], int | None]:
-    """Return the selectable model levels and the configured default level.
+) -> tuple[list[dict[str, object]], int | None, dict[str, object]]:
+    """Return the selectable model levels, default level, and failover state.
 
-    The list is sourced from robotsix-llmio's baked tier config (levels 1..
-    :data:`FRONTIER_MODEL_LEVEL`) via :func:`level_display_name`, never a
-    hard-coded roster.  A level is ``available`` when it needs no API key
-    (keyless claudeSDK tiers) or when one is configured.
+    The list is sourced from robotsix-llmio's tier config (levels 1..
+    :data:`FRONTIER_MODEL_LEVEL`), resolved against the provider slot the
+    failover tracker currently designates as active — so ``name`` and
+    ``provider`` reflect what would actually serve the next turn.  A level
+    is ``available`` when its active slot needs no API key (the keyless
+    claudeSDK default) or when one is configured.  The ``failover`` dict is
+    llmio's :func:`~robotsix_llmio.core.failover.get_failover_status`
+    snapshot — the UI's source for the failover badge.
     """
+    from robotsix_llmio import default_tier_config
+    from robotsix_llmio.core.failover import get_failover_status
+
     api_key_available = bool(
         getattr(request.app.state, "chat_api_key_available", False)
     )
     default_level = getattr(request.app.state, "chat_model_level", None)
+    tier_config = default_tier_config()
     models: list[dict[str, object]] = []
     for level in range(1, FRONTIER_MODEL_LEVEL + 1):
         needs_key = level_needs_api_key(level)
+        try:
+            provider = tier_config.for_level(level).provider
+        except ValueError:  # pragma: no cover - levels are enum-bounded
+            provider = ""
         models.append(
             {
                 "level": level,
                 "name": level_display_name(level),
+                "provider": provider,
                 "needs_api_key": needs_key,
                 "available": (not needs_key) or api_key_available,
             }
         )
-    return models, default_level if isinstance(default_level, int) else None
+    failover = get_failover_status().model_dump(mode="json")
+    return (
+        models,
+        default_level if isinstance(default_level, int) else None,
+        failover,
+    )
 
 
 async def models_list_endpoint(request: Request) -> JSONResponse:
@@ -806,17 +824,25 @@ async def models_list_endpoint(request: Request) -> JSONResponse:
 
         {
           "models": [
-            {"level": 1, "name": "...", "needs_api_key": true, "available": false},
+            {"level": 1, "name": "...", "provider": "claudeSDK",
+             "needs_api_key": false, "available": true},
             ...
           ],
-          "default_level": 3
+          "default_level": 2,
+          "failover": {"active_slot": "default", "failover_active": false,
+                       "failover_until": null, ...}
         }
 
     ``default_level`` is the server's configured chat level — the level a
     session runs at until the operator (or the agent) pins a different one.
+    ``failover`` is llmio's provider-failover snapshot; while
+    ``failover_active`` is true every level is served by the fallback
+    (OpenRouter) slot until ``failover_until``.
     """
-    models, default_level = _build_model_options(request)
-    return JSONResponse({"models": models, "default_level": default_level})
+    models, default_level, failover = _build_model_options(request)
+    return JSONResponse(
+        {"models": models, "default_level": default_level, "failover": failover}
+    )
 
 
 async def session_model_set_endpoint(request: Request) -> JSONResponse:
