@@ -137,6 +137,7 @@ modules:
       - src/robotsix_chat/component_access/tools.py
       - tests/component_access/__init__.py
       - tests/component_access/test_component_access.py
+      - tests/component_access/test_roster.py
 
   - id: config
     description: "Typed configuration — pydantic Settings model loaded from the one JSON config file via robotsix-config."
