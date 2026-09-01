@@ -4,7 +4,6 @@ from __future__ import annotations
 
 import pytest
 import respx
-from pydantic import SecretStr
 
 from robotsix_chat.config import (
     CentralDeploySettings,
@@ -65,7 +64,6 @@ async def test_secret_endpoint_503_when_disabled() -> None:
 
     gh = GitHubActionsSettings(
         enabled=False,
-        deploy_api_key=SecretStr("test-key"),  # pragma: allowlist secret
     )
     dr = _direct_repo_settings()
 
@@ -90,7 +88,6 @@ async def test_workflow_endpoint_503_when_disabled() -> None:
 
     gh = GitHubActionsSettings(
         enabled=False,
-        deploy_api_key=SecretStr("test-key"),  # pragma: allowlist secret
     )
     dr = _direct_repo_settings()
 
