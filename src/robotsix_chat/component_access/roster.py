@@ -192,16 +192,28 @@ async def fetch_roster(
 
 
 def fetch_roster_sync(settings: CentralDeploySettings) -> list[dict[str, Any]]:
-    """Fetch the component roster synchronously, for startup-time use.
+    """Fetch the component roster synchronously.
 
     Used by ``create_agent_from_settings`` to prime the roster cache and
-    build the initial skill prompt before the async event loop is running.
-
-    Delegates to :func:`fetch_roster` via :func:`asyncio.run`.
+    build the initial skill prompt. At startup no event loop is running and
+    this delegates straight to :func:`asyncio.run`; when called from INSIDE
+    a running loop (the periodic scheduler builds agents lazily on its async
+    tick — live incident 2026-09-01: every periodic initial turn died with
+    "asyncio.run() cannot be called from a running event loop", spawning a
+    junk session per tick), the coroutine runs on a short-lived worker
+    thread with its own loop instead.
     """
     import asyncio
 
-    return asyncio.run(fetch_roster(settings))
+    try:
+        asyncio.get_running_loop()
+    except RuntimeError:
+        return asyncio.run(fetch_roster(settings))
+
+    import concurrent.futures
+
+    with concurrent.futures.ThreadPoolExecutor(max_workers=1) as pool:
+        return pool.submit(asyncio.run, fetch_roster(settings)).result()
 
 
 def build_skill_prompt(entries: list[dict[str, Any]]) -> str:
