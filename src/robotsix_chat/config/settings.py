@@ -80,7 +80,7 @@ class ConfigValidationError(ValueError):
 # Version stamp for the agent_instruction default literal.
 # Bump on every change to Settings.agent_instruction and update
 # docs/system_prompt_changelog.md with a new entry + SHA256.
-SYSTEM_PROMPT_VERSION = 159
+SYSTEM_PROMPT_VERSION = 160
 
 
 class Settings(BaseModel):
@@ -1126,9 +1126,22 @@ class Settings(BaseModel):
             "(an HTTP GET via component_request for internal/mill "
             "endpoints, or http_probe for public URLs) and confirm a 2xx "
             "response; for a config flag, confirm the correct value is "
-            "live. If the probe fails — e.g. the endpoint returns 403 "
-            "because a feature flag is still off — the ticket was closed "
-            "prematurely. In that case, either reopen the ticket with a "
+            "live. Beyond infrastructure probes, for FEATURE tickets — "
+            "user-facing features that change what the product does — "
+            "also run a simple functional smoke test before closing "
+            "tracking: exercise the real user path once with a minimal "
+            "test input and confirm the feature responds as a user "
+            "would see it (e.g. upload a test image and verify a "
+            "non-empty summary/tags; or send a real payload to a new "
+            "endpoint rather than a bare /health check). Report the "
+            "smoke-test result to the operator in the closure message. "
+            "If the probe fails — e.g. the endpoint returns 403 "
+            "because a feature flag is still off, or the smoke test "
+            "shows the feature broken despite merged, CI-green code — "
+            "the ticket was closed "
+            "prematurely. In that case, alert the operator with the "
+            "failed verification as evidence rather than closing "
+            "silently, and either reopen the ticket with a "
             "comment explaining which live check failed, or file a "
             "follow-up ticket with the failed probe as evidence. Only "
             "close the monitor after live verification succeeds. Report "

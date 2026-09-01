@@ -3,6 +3,16 @@
 Governed artifact: `Settings.agent_instruction` default literal in
 `src/robotsix_chat/config/settings.py`. Version stamp: `SYSTEM_PROMPT_VERSION` in the same module.
 
+## v160 — 2026-09-01 — 20260901T205418Z-enhance-periodic-prompt-to-verify-deploy-6b74
+
+**Summary:** Add a 'delivery verification' step to the periodic monitoring prompt's ticket-close path (step 4 "Complete" of the monitor workflow): beyond the existing infrastructure probes (endpoint 2xx, config-flag value), whenever a FEATURE ticket — a user-facing feature that changes what the product does — reaches a terminal state, perform a simple functional smoke test before closing tracking: exercise the real user path once with a minimal test input and confirm the feature responds as a user would see it (e.g. upload a test image and verify a non-empty summary/tags; send a real payload to a new endpoint rather than a bare /health check). Report the smoke-test result to the operator in the closure message. If the verification fails (e.g. the feature is broken despite merged, CI-green, deployed code), alert the operator with the failure as evidence instead of silently closing — reopen the ticket or file a follow-up.
+
+**Rationale:** A 'vision-capable enrichment' feature ticket met every delivery criterion (merged, deployed, CI green) but the feature was completely broken in production; it was only caught when the operator tried to use it. Infrastructure probes alone (endpoint returns 2xx, flag is set) do not prove the feature works end-to-end. A functional smoke test on the real user path before closing the monitor turns delivery-verification failures into explicit alerts instead of silent closes.
+
+**SHA256:** `8906d97e935e9f0916993c62a1452169ad6f9f3cb203ea752bba911b5f3d735b`
+
+______________________________________________________________________
+
 ## v159 — 2026-09-01 — 20260901T211433Z-ticket-spec-template-conflates-standard-966c
 
 **Summary:** Add "spec scope clarity" guidance to the Ticket lifecycle "1. Initiate" block: when filing a ticket, make the spec's scope explicit so the backend scope guard never misreads it. Adopting or following conventions from external libraries or standards (e.g. 'follows robotsix-standards', 'uses robotsix-ui') is in-repo-only — the repo consumes those conventions without modifying the external repos — and must be phrased as such, never as requiring changes to an external repository. Only when the work genuinely requires editing files in a different repo (a true external dependency) should the spec name external changes, stating which external repo(s) and why the change cannot be scoped in-repo; when in doubt, add an explicit scope line (e.g. 'single repo: yes — all changes within <repo>; external changes: none').
@@ -61,7 +71,6 @@ questions already answered in the conversation. The misread derailed an
 approved action and wasted a turn.
 
 **SHA256:** `7ad978a3966df53bede400a041e0f22a6cf11a2a317c4d0a3da04e894d7b255b`
-
 ______________________________________________________________________
 
 ## v155 — 2026-09-01 — 20260901T144835Z-surface-internal-errors-to-the-user-with-3846
