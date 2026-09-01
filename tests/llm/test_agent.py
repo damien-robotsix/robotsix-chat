@@ -284,9 +284,10 @@ async def test_recalled_memory_prepended_to_user_turn() -> None:
 
 @pytest.mark.asyncio
 async def test_periodic_preamble_stripped_from_recall_query() -> None:
-    """Memory recall for a periodic first turn queries the task, not the
-    fixed scheduler scaffolding (which retrieved chunks about "scheduled
-    periodic session" instead of the preset's subject).
+    """Memory recall for a periodic first turn queries the task itself.
+
+    Recalling on the fixed scheduler scaffolding retrieved chunks about
+    "scheduled periodic session" instead of the preset's subject.
     """
     from robotsix_chat.periodic.prompts import PERIODIC_PREAMBLE
 
