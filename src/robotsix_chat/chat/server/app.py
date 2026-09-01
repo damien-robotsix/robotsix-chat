@@ -822,8 +822,12 @@ def create_app(
 
 # Canonical path to the reply-style directive — the single source of truth
 # for how the agent formats replies.  The file is read at agent construction
-# time and appended to the system prompt on every build.
-_PROMPT_STYLE_PATH = Path("docs/prompt-style.md")
+# time and appended to the system prompt on every build.  It lives INSIDE
+# the package (like the per-component skill.md files) so the deployed image
+# actually contains it: the old CWD-relative ``docs/prompt-style.md`` did
+# not ship, and production silently ran without a style directive from the
+# feature's introduction until 2026-09-01.
+_PROMPT_STYLE_PATH = Path(__file__).parent / "prompt-style.md"
 
 # Delimiter line that separates the header/description from the actual
 # directive in the style file.  Everything after this line (exclusive)
@@ -835,7 +839,7 @@ def _load_prompt_style() -> str:
     """Read the canonical reply-style directive from disk.
 
     Returns the directive text (the content following the
-    ``## Style directive`` header in ``docs/prompt-style.md``), or
+    ``## Style directive`` header in the packaged ``prompt-style.md``), or
     an empty string if the file is missing — a missing file logs
     a warning but is not fatal (the agent runs without a style
     directive).
