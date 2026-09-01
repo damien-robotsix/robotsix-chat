@@ -14,20 +14,39 @@ defaults, never a concrete provider class.
 
 from __future__ import annotations
 
+import logging
 from types import UnionType
 from typing import Any, Union, get_args, get_origin
 
 from pydantic import BaseModel
 from robotsix_llmio import default_tier_config
-from robotsix_llmio.config.tier import TierLevelConfig
+from robotsix_llmio.config.tier import TierLevel, TierLevelConfig
 
 __all__ = [
     "FRONTIER_MODEL_LEVEL",
+    "VALID_MODEL_LEVELS",
+    "clamp_persisted_model_level",
     "drop_blank_numeric_sentinels",
     "level_display_name",
     "level_needs_api_key",
     "slot_needs_api_key",
 ]
+
+logger = logging.getLogger(__name__)
+
+# Valid model levels, derived from llmio's tier enum (import-time constant so
+# the set is built once and can never drift from the tiers llmio ships).
+VALID_MODEL_LEVELS = frozenset(
+    int(level.value.removeprefix("level")) for level in TierLevel
+)
+
+# Pre-rework levels of the old 5-level capability ladder.  The 5->3 level
+# collapse renumbered the tiers (PR #1762); a session/subsession persisted
+# before that deploy may still carry 4 or 5 in its per-session pin.  The
+# rework folded level 4 into 2 (workhorse) and level 5 into 3 (frontier),
+# so records predating the collapse are remapped accordingly instead of
+# generic-clamped.
+_LEGACY_MODEL_LEVEL_MAP: dict[int, int] = {4: 2, 5: 3}
 
 # Numeric field annotations that must never carry a ``""`` sentinel.
 _NUMERIC_TYPES = (int, float)
@@ -153,6 +172,39 @@ def level_needs_api_key(level: int) -> bool:
 #: frontier tier).  Named rather than hard-coded at call sites so the
 #: frontier is a one-line change here.
 FRONTIER_MODEL_LEVEL = 3
+
+
+def clamp_persisted_model_level(level: int, record: str) -> int:
+    """Return *level* clamped into the current valid range, logging a warning.
+
+    Called at every load boundary that reads a persisted ``model_level``
+    back (session store, subsession records, resume/continuation state):
+    a pin persisted under an older capability ladder can be out of range
+    after a level rework (e.g. the 5->3 collapse left level 4/5 pins in
+    older records).  Such a value must never crash a turn downstream
+    (llmio rejects unknown levels) — the failure mode for bad persisted
+    data is "run at the clamped level and log".
+
+    Legacy values are remapped through their rework equivalent (4 -> 2,
+    5 -> 3); anything else out of range is clamped to the current maximum
+    level.  In-range values pass through untouched (no log).
+
+    *record* names the persisted record (e.g. ``"session <id>"`` or
+    ``"subsession <sub_id>"``) for the warning.
+    """
+    if level in VALID_MODEL_LEVELS:
+        return level
+    clamped = _LEGACY_MODEL_LEVEL_MAP.get(level, max(VALID_MODEL_LEVELS))
+    logger.warning(
+        "Persisted model_level=%d for %s is outside the current valid range "
+        "%s — clamping to %d (legacy level pins predate the 5->3 capability "
+        "collapse)",
+        level,
+        record,
+        sorted(VALID_MODEL_LEVELS),
+        clamped,
+    )
+    return clamped
 
 
 def level_display_name(level: int, tier_config: Any | None = None) -> str:

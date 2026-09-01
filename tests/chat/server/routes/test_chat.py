@@ -4,10 +4,13 @@ from __future__ import annotations
 
 import base64
 import json
+import logging
+from pathlib import Path
 from unittest.mock import AsyncMock
 
 import pytest
 
+from robotsix_chat.chat.conversation import ConversationStore
 from robotsix_chat.chat.server import (
     SSE_CONTENT_TYPE,
     SSE_DONE_TYPE,
@@ -38,6 +41,44 @@ def _png_pixel() -> bytes:
         "iVBORw0KGgoAAAANSUhEUgAAAAEAAAABCAYAAAAfFcSJAAAADUlEQVR42mP8/5"
         "+hHgAHggJ/PchI7wAAAABJRU5ErkJggg=="
     )
+
+
+def _write_persisted_sessions(
+    persist_path: Path, sessions: list[dict[str, object]]
+) -> None:
+    """Write a current-format conversations file with the given sessions."""
+    persist_path.write_text(
+        json.dumps(
+            {
+                "operator": {
+                    "active_session_id": sessions[0]["session_id"],
+                    "sessions": sessions,
+                }
+            }
+        ),
+        encoding="utf-8",
+    )
+
+
+def _seed_session_with_model_level(
+    tmp_path: Path, session_id: str, model_level: int
+) -> ConversationStore:
+    """Build a conversation store whose persisted session carries *model_level*."""
+    persist_path = tmp_path / "conversations.json"
+    _write_persisted_sessions(
+        persist_path,
+        [
+            {
+                "session_id": session_id,
+                "title": "stale pin",
+                "last_active": 1.0,
+                "turn_count": 0,
+                "turns": [],
+                "model_level": model_level,
+            }
+        ],
+    )
+    return ConversationStore(persist_path=persist_path)
 
 
 # ---------------------------------------------------------------------------
@@ -112,6 +153,46 @@ async def test_chat_endpoint_flushes_pending_subsession_outcomes_before_turn() -
 
     assert response.status_code == 200
     delivery.flush_pending_reactions.assert_awaited_once_with("sess-1")
+
+
+# ---------------------------------------------------------------------------
+# Stale persisted per-session model_level (5->3 level collapse)
+# ---------------------------------------------------------------------------
+
+
+@pytest.mark.asyncio
+async def test_chat_turn_clamps_stale_persisted_model_level(
+    tmp_path: Path, caplog
+) -> None:
+    """A per-session model_level=5 persisted before the 5->3 collapse runs at 3.
+
+    Regression for the provider-failover deploy (PR #1762): the config
+    rework renumbered the levels, but sessions whose pin was persisted with
+    the old 5-level ladder kept 4/5 — and llmio rejects those with
+    ``ValueError: level must be 1, 2, or 3``, killing the turn.  The load
+    boundary must clamp the pin (old->new mapping 5 -> 3) with a warning,
+    never crash the turn.
+    """
+    store = _seed_session_with_model_level(tmp_path, "sess-stale-5", model_level=5)
+
+    with caplog.at_level(logging.WARNING, logger="robotsix_chat"):
+        async with mock_app(tokens=["ok"], conversation_store=store) as f:
+            response = await f.client.post(
+                "/chat", json={"message": "hello", "session_id": "sess-stale-5"}
+            )
+
+    # The turn completes (200 + done frame), and the agent ran at the
+    # clamped level 3 — not the stale 5 and certainly not a crashed turn.
+    assert response.status_code == 200
+    frames = _parse_sse(response.text)
+    done_frames = [fr for fr in frames if fr.get("type") == SSE_DONE_TYPE]
+    assert len(done_frames) == 1
+    assert f.agent.model_level == 3
+
+    # The clamp was applied at the load boundary and logged, naming the record.
+    assert store.get_model_level("sess-stale-5") == 3
+    warnings = [rec.message for rec in caplog.records if rec.levelno >= logging.WARNING]
+    assert any("model_level=5" in str(w) and "sess-stale-5" in str(w) for w in warnings)
 
 
 # ---------------------------------------------------------------------------

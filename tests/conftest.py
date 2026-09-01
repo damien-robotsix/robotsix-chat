@@ -57,6 +57,7 @@ class MockAgent:
         self.history: list[tuple[str, str]] | None = None
         self.session_id: str | None = None
         self.client_id: str | None = None
+        self.model_level: int | None = None
 
     async def stream(
         self,
@@ -77,6 +78,7 @@ class MockAgent:
         self.session_id = session_id
         self.client_id = client_id
         self.images = images
+        self.model_level = model_level
         if self.error is not None:
             raise self.error
         for token in self.tokens:
