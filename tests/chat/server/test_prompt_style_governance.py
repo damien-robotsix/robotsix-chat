@@ -16,9 +16,7 @@ from robotsix_chat.chat.server.app import (
 )
 from robotsix_chat.config import Settings
 
-_STYLE_PATH = (
-    Path("src/robotsix_chat/chat/server/prompt-style.md")
-)
+_STYLE_PATH = Path("src/robotsix_chat/chat/server/prompt-style.md")
 
 
 def test_style_file_exists() -> None:
