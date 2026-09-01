@@ -4,7 +4,6 @@ from __future__ import annotations
 
 import pytest
 import respx
-from pydantic import SecretStr
 
 from robotsix_chat.config import (
     CentralDeploySettings,

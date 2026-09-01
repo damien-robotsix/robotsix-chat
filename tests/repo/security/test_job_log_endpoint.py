@@ -11,7 +11,6 @@ from typing import Any
 import httpx
 import pytest
 import respx
-from pydantic import SecretStr
 
 from robotsix_chat.config import (
     CentralDeploySettings,
