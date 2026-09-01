@@ -1,22 +1,28 @@
-"""Periodic subject-aware trim scheduler — the ONE way sessions shrink.
+"""Periodic summarising compaction scheduler — the ONE way sessions shrink.
 
 Runs on a configurable interval (default 1800 s / 30 min) over **every**
-session (idle-timeout compaction was removed; this scheduler is the single
-context-reduction mechanism).  Per session each pass:
+session.  The gate is fully deterministic — no LLM is consulted to decide
+*whether* to compact (the previous subject-change decision needed an LLM
+pass of its own and proved too aggressive).  Per session each pass:
 
 1. calls :meth:`ConversationStore.has_new_input_since_trim` **first** and
    skips the session — making **zero LLM calls** — when no new turns
-   arrived since the last trim;
-2. skips (without advancing the watermark, so turns keep accumulating)
-   while fewer than ``min_fresh_turns`` fresh turns arrived since the
-   last trim — a tiny conversation never churns the decision model;
-3. otherwise asks a cheap summary-tier agent whether the subject changed
-   and how many finished leading turns to drop, then calls
-   :meth:`ConversationStore.trim_session` with the decided index.
+   arrived since the last compaction;
+2. skips while at most ``keep_recent_runs`` fresh (not-yet-summarised)
+   runs exist — a run is one completed (operator message, assistant final
+   answer) pair — so short conversations never churn the summariser;
+3. otherwise summarises everything **before** the last ``keep_recent_runs``
+   runs into the session's compacted summary.  The recent runs are NOT
+   shown to the summariser and stay in the replay verbatim.
 
-The in-flight turn is never trimmed (``keep_min_recent``).  Attached to
-``app.state.evergoing_scheduler`` during startup — call ``start()`` to
-begin the background loop and ``stop()`` to cancel it.
+Combined with the pass interval this yields the intended trigger: a
+session is compacted at most once per interval (30 min by default) and
+only when more than ``keep_recent_runs`` runs accumulated beyond the
+previous summary.  Nothing is ever physically dropped — the UI transcript
+is untouched and the agent replay keeps summary + recent runs.
+
+Attached to ``app.state.evergoing_scheduler`` during startup — call
+``start()`` to begin the background loop and ``stop()`` to cancel it.
 """
 
 from __future__ import annotations
@@ -26,18 +32,17 @@ import contextlib
 import logging
 
 from robotsix_chat.chat.conversation import ConversationStore
-from robotsix_chat.chat.server.routes._shared import build_transcript
 from robotsix_chat.chat.server.routes.chat import ChatAgent
-from robotsix_chat.evergoing.decision import decide_trim
+from robotsix_chat.chat.summarize import generate_idle_summary
 
 logger = logging.getLogger(__name__)
 
 
-class EvergoingTrimScheduler:
-    """Runs subject-aware trim passes on the evergoing session periodically.
+class EvergoingSummaryScheduler:
+    """Runs summarising compaction passes over all sessions periodically.
 
     Attributes:
-        interval_seconds: Seconds between scheduled trim passes.
+        interval_seconds: Seconds between scheduled compaction passes.
 
     """
 
@@ -47,27 +52,24 @@ class EvergoingTrimScheduler:
         store: ConversationStore,
         agent: ChatAgent,
         *,
-        keep_min_recent: int = 2,
-        min_fresh_turns: int = 3,
+        keep_recent_runs: int = 5,
     ) -> None:
         """Create a scheduler bound to *store* and a cheap *agent*.
 
         Args:
-            interval_seconds: Seconds between scheduled trim passes.
-            store: The conversation store owning the evergoing session.
-            agent: Cheap summary-tier agent used for the trim decision.
-            keep_min_recent: Minimum recent turns never trimmed (in-flight
-                safety).
-            min_fresh_turns: Minimum fresh turns since the last trim before
-                the decision model is consulted; the skip does not advance
-                the watermark.
+            interval_seconds: Seconds between scheduled compaction passes.
+            store: The conversation store owning the sessions.
+            agent: Cheap summary-tier agent used to write the summary.
+            keep_recent_runs: Number of most-recent completed runs kept
+                verbatim in the replay and excluded from the summariser
+                input.  A session is only compacted when MORE than this
+                many fresh runs exist beyond the previous summary.
 
         """
         self.interval_seconds = interval_seconds
         self._store = store
         self._agent = agent
-        self._keep_min_recent = keep_min_recent
-        self._min_fresh_turns = min_fresh_turns
+        self._keep_recent_runs = max(1, keep_recent_runs)
         self._task: asyncio.Task[None] | None = None
 
     # ------------------------------------------------------------------
@@ -80,7 +82,9 @@ class EvergoingTrimScheduler:
             return
         self._task = asyncio.create_task(self._loop())
         logger.info(
-            "evergoing trim scheduler started (interval=%ss)", self.interval_seconds
+            "evergoing summary scheduler started (interval=%ss, keep_recent_runs=%d)",
+            self.interval_seconds,
+            self._keep_recent_runs,
         )
 
     async def stop(self) -> None:
@@ -91,19 +95,20 @@ class EvergoingTrimScheduler:
         with contextlib.suppress(asyncio.CancelledError):
             await self._task
         self._task = None
-        logger.info("evergoing trim scheduler stopped")
+        logger.info("evergoing summary scheduler stopped")
 
     # ------------------------------------------------------------------
     # run-once
     # ------------------------------------------------------------------
 
     async def run_once(self) -> dict[str, object]:
-        """Execute one trim pass over every session; return an audit dict.
+        """Execute one compaction pass over every session; return an audit dict.
 
         Per session the pass makes zero LLM calls unless new input arrived
-        since the last trim AND at least ``min_fresh_turns`` fresh turns
-        accumulated.  The fresh-turns skip does NOT advance the watermark,
-        so short exchanges keep accumulating until the gate opens.
+        since the last compaction AND more than ``keep_recent_runs`` fresh
+        runs accumulated.  The below-gate skip does NOT advance the
+        watermark, so short exchanges keep accumulating until the gate
+        opens.
         """
         audits: list[dict[str, object]] = []
         for session_id in self._store.all_session_ids():
@@ -114,7 +119,7 @@ class EvergoingTrimScheduler:
         return {"sessions": audits}
 
     async def _run_once_session(self, session_id: str) -> dict[str, object] | None:
-        """Trim pass for one session; ``None`` when skipped with no work."""
+        """Compaction pass for one session; ``None`` when skipped with no work."""
         # New-input gate — MUST run before any LLM call.
         if not self._store.has_new_input_since_trim(session_id):
             return None
@@ -123,51 +128,81 @@ class EvergoingTrimScheduler:
         if session is None:
             return None
 
-        # Fresh-turns gate: don't wake the decision model for a couple of
-        # turns.  Deliberately does NOT advance the watermark.
-        fresh_turns = session.turn_count - session.last_trim_turn_count
-        if fresh_turns < self._min_fresh_turns:
-            return {"trimmed": False, "reason": "below min_fresh_turns"}
+        keep = self._keep_recent_runs
+        start = max(session.compacted_turn_index, session.trimmed_turn_index)
+        fresh_runs = len(session.turns) - start
 
-        turns = self._store.history(session_id)
-        visible_count = len(turns)
-        max_drop = max(0, visible_count - self._keep_min_recent)
-        if max_drop <= 0:
-            # Too few turns to drop anything; advance the watermark (no LLM)
-            # so the next no-input interval is correctly skipped.
-            return self._store.trim_session(
+        # Deterministic gate: only compact when MORE than `keep` completed
+        # runs accumulated beyond the previous summary.  Deliberately does
+        # NOT advance the watermark, so runs keep accumulating.
+        if fresh_runs <= keep:
+            return {"compacted": False, "reason": "at most keep_recent_runs fresh"}
+
+        # Snapshot the fold window BEFORE the (slow) summariser call so
+        # turns recorded while it runs are never covered by a summary that
+        # did not see them.  The agent-facing history starts at `start` and
+        # is prefixed with the previous summary as a synthetic turn, so the
+        # old summary is folded into the new one naturally.
+        history = self._store.agent_history(session_id)
+        actions = self._store.agent_history_actions(session_id)
+        fold_turns = history[:-keep]
+        fold_actions = actions[:-keep]
+        cover_until = len(session.turns) - keep
+
+        summary = await generate_idle_summary(
+            self._run_summary, fold_turns, fold_actions
+        )
+        if not summary:
+            logger.warning(
+                "summary generation failed for session %s — will retry next pass",
                 session_id,
-                0,
-                reason="too few turns to trim",
-                decided_subject_change=None,
-                keep_min_recent=self._keep_min_recent,
             )
+            return {"compacted": False, "reason": "summary generation failed"}
 
-        transcript = build_transcript(turns)
-        decision = await decide_trim(
-            self._agent,
-            transcript,
-            visible_count=visible_count,
-            max_drop=max_drop,
-        )
-
-        current_trimmed = session.trimmed_turn_index
-        new_trimmed_index = current_trimmed + decision.drop_leading
-
-        return self._store.trim_session(
+        self._store.compact_session(
+            "",
             session_id,
-            new_trimmed_index,
-            reason=decision.reason,
-            decided_subject_change=decision.subject_changed,
-            keep_min_recent=self._keep_min_recent,
+            summary,
+            cover_until_index=cover_until,
         )
+        folded = len(fold_turns)
+        logger.info(
+            "compacted session %s: %d turn(s) folded into summary, "
+            "last %d run(s) kept verbatim",
+            session_id,
+            folded,
+            keep,
+        )
+        return {
+            "compacted": True,
+            "turns_folded": folded,
+            "kept_recent_runs": keep,
+            "reason": "over keep_recent_runs fresh runs",
+        }
+
+    async def _run_summary(self, prompt: str) -> str:
+        """One summariser call: prompt → text (``""`` on failure)."""
+        parts: list[str] = []
+        try:
+            async for token in self._agent.stream(
+                prompt,
+                history=None,
+                session_id=None,
+                client_id=None,
+                trace_name="evergoing-compaction-summary",
+            ):
+                parts.append(token)
+        except Exception:
+            logger.exception("Compaction summary call failed")
+            return ""
+        return "".join(parts)
 
     # ------------------------------------------------------------------
     # internal
     # ------------------------------------------------------------------
 
     async def _loop(self) -> None:
-        """Run trim passes forever, sleeping on the configured interval."""
+        """Run compaction passes forever, sleeping on the configured interval."""
         while True:
             try:
                 await self.run_once()
@@ -176,5 +211,5 @@ class EvergoingTrimScheduler:
                 raise
             except Exception:
                 logger.debug(
-                    "evergoing trim scheduler loop iteration raised", exc_info=True
+                    "evergoing summary scheduler loop iteration raised", exc_info=True
                 )

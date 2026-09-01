@@ -811,9 +811,10 @@ async def chat_endpoint(
         )
         session_id = resolved_session_id
 
-    # Idle-timeout compaction was removed: the subject-aware trim scheduler
+    # Idle-timeout compaction was removed: the periodic summary scheduler
     # (robotsix_chat.evergoing) is the single context-reduction mechanism for
-    # ALL sessions — it only drops turns when the subject clearly changed.
+    # ALL sessions — every 30 min (configurable) it folds everything before
+    # the last few runs into the session summary; nothing is dropped.
 
     lock_key = client_id or session_id
 

@@ -1278,7 +1278,7 @@ async def test_run_server_from_config_creates_agent_from_settings(
                 enabled=True, check_interval_seconds=300.0
             ),
             "evergoing_settings": EvergoingSettings(
-                enabled=False, trim_interval_seconds=1800.0, keep_min_recent=2
+                enabled=False, trim_interval_seconds=1800.0, keep_recent_runs=5
             ),
         }
 
