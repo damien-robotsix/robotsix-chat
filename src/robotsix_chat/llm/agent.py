@@ -100,24 +100,21 @@ def _keyed_usage_limits(tlc: TierLevelConfig) -> Any:
 
 
 # Chat-only fallback-workhorse override (operator decision, 2026-09-01). The
-# FLEET baked fallback binds level 2 to deepseek flash (mill keeps that), but
-# chat turns replay long conversational histories, where flash under the
-# xhigh reasoning policy degenerated into token loops (live word-salad
-# incident). Chat pays for the pro snapshot at its workhorse level instead —
-# same binding as the baked fallback level 3.
-_CHAT_FALLBACK_L2_PRO: dict = {
-    "fallback": {
-        "level2": {
-            "model": "openrouter-deepseek/deepseek-v4-pro-0813",
-            "max_tokens": 131072,
-            "provider_kwargs": {
-                "preferred_provider": "StreamLake",
-                "max_price_prompt": 1.16,
-                "max_price_completion": 3.40,
-            },
-        }
-    }
-}
+# FLEET baked fallback binds level 2 to the cheap flash snapshot (mill keeps
+# that), but chat turns replay long conversational histories, where flash
+# under the xhigh reasoning policy degenerated into token loops (live
+# word-salad incident). Chat binds its fallback level 2 to the SAME binding
+# as the baked fallback level 3 (the pro snapshot) — expressed by reference
+# so no concrete model name lives in chat source and llmio remains the
+# single owner of the binding details.
+def _chat_tier_overrides(failover_window_seconds: float | None) -> dict:
+    """Chat's tier-config override dict for :func:`load_tier_config`."""
+    from robotsix_llmio.config import FALLBACK_LEVEL3
+
+    overrides: dict = {"fallback": {"level2": FALLBACK_LEVEL3.model_dump()}}
+    if failover_window_seconds is not None:
+        overrides["failover"] = {"window_seconds": failover_window_seconds}
+    return overrides
 
 
 # A prior conversation turn replayed to the agent: ``(user, assistant)``.
@@ -485,12 +482,11 @@ class LlmioChatAgent:
         self._task_budget_tokens = task_budget_tokens
         # The two-slot tier config every turn resolves against; its failover
         # section is adopted by llmio's process-wide tracker on each call.
-        # Chat overrides the fallback workhorse to pro (see
-        # _CHAT_FALLBACK_L2_PRO).
-        overrides: dict = dict(_CHAT_FALLBACK_L2_PRO)
-        if failover_window_seconds is not None:
-            overrides["failover"] = {"window_seconds": failover_window_seconds}
-        self._tier_config = load_tier_config(overrides)
+        # Chat overrides the fallback workhorse to the pro binding (see
+        # _chat_tier_overrides).
+        self._tier_config = load_tier_config(
+            _chat_tier_overrides(failover_window_seconds)
+        )
         # Hold references to in-flight background writes so they aren't GC'd.
         self._write_tasks: set[asyncio.Task[None]] = set()
 
