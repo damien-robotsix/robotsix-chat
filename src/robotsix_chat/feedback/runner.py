@@ -143,8 +143,16 @@ async def _do_resolve_allowed_repos(
         logger.warning("Mill repos response is not valid JSON — falling back")
         return ["robotsix-chat"]
 
+    # Mill's GET /repos returns entries keyed ``repo_id`` (with ``board_id``
+    # and ``forge_remote_url``) — NOT ``id``. Reading only ``id`` made this
+    # set permanently empty, so the deploy∩mill intersection always fell back
+    # to [robotsix-chat] and every cross-repo feedback ticket was silently
+    # dropped (observed 2026-09-01: file-hub tickets skipped on every run).
+    # Tolerate both keys in case the mill API ever renames it back.
     mill_ids: set[str] = {
-        r["id"] for r in mill_repos if isinstance(r, dict) and "id" in r
+        r.get("repo_id") or r["id"]
+        for r in mill_repos
+        if isinstance(r, dict) and ("repo_id" in r or "id" in r)
     }
 
     # 3. Intersect — only repos that are both in the deploy roster AND
