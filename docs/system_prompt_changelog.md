@@ -2809,6 +2809,26 @@ autonomous settings at their pydantic field defaults
 (`completion_marker="---AUTONOMOUS COMPLETE---"`, `stale_monitor_runs_before_completion=3`,
 `queue_tolerance_runs_before_escalation=3`).
 
+## AUTONOMOUS v52 — 2026-09-01 — 20260901T071041Z-verify-no-duplicate-tickets-for-recurrin-f466
+
+**Summary:** Add a "PRE-FILING DUPLICATE CHECK" section to
+`build_autonomous_instruction()`, placed immediately after the PRE-FILING
+CODEBASE CHECK block.  It makes the mill-board duplicate check mandatory
+before filing ANY ticket (query `GET /tickets` for an open ticket covering the
+same root cause; reference the existing ticket instead of filing a second one),
+and requires the assistant to explicitly state the check in its user-facing
+summary when it does file — e.g. 'checked mill board — no open ticket for
+peer-agent parse errors'.
+
+**Rationale:** During a weekly invest review (session
+aca33d1558d74464b43341f697f7a197) the assistant filed a bug ticket for a
+recurring peer-agent 'not enough values to unpack' error without the transcript
+showing it first queried the board for an existing open ticket, risking
+duplicate tickets for the same root cause.  Making the duplicate-check step
+prominent and requiring an explicit stated result closes that gap.
+
+**SHA256:** `d9ce4f1f96bfafd76453612bd58bb8ac4ba78ae6feaca37cec9a2a4b0a8c1278`
+
 ## AUTONOMOUS v51 — 2026-08-30 — 20260830T091957Z-remove-granular-autonomy-authorization-t-d424
 
 **Summary:** Remove the eight `autonomy.*` variable bindings
