@@ -3,6 +3,16 @@
 Governed artifact: `Settings.agent_instruction` default literal in
 `src/robotsix_chat/config/settings.py`. Version stamp: `SYSTEM_PROMPT_VERSION` in the same module.
 
+## v157 — 2026-09-01 — 20260901T144836Z-preserve-user-provided-secrets-across-tu-6997
+
+**Summary:** Extend the "Secret handling" block with two directives: (1) remember secrets the user already provided earlier in this same session — never re-request or re-ask for a credential the assistant already holds; reference it generically and proceed rather than asking the user to paste it again; (2) once a secret has been written to a service config, do not read it back or display it — rely on the persisted state and treat the value as already known, never echoing a stored secret into the conversation.
+
+**Rationale:** A session (d5e4793bc6bc45e6a3b3e34afa8f18d3) had the user provide the LinkedIn Client ID and Client Secret early, then the assistant later asked them to 'paste the Client ID and Client Secret' again as if it had never seen them — the model lost context about previously-provided secrets, likely across a manual tool-call turn. Re-requesting wastes the user's time and implies lost context; reading stored secrets back out of a service config risks exposing them. The new rules require the assistant to carry secrets across turns and to rely on persisted state rather than re-reading/displaying them.
+
+**SHA256:** `0dc1c58dbfd6964639efb442c5ef2c0ab3cde7172540bcd71bb866cbf3a60f84`
+
+______________________________________________________________________
+
 ## v156 — 2026-09-01 — 20260901T141916Z-add-an-oral-decision-style-guard-against-4653
 
 **Change:** Add a "Repeated-instruction handling" guardrail to the Autonomy
