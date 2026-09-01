@@ -10,7 +10,7 @@ if TYPE_CHECKING:
 # Version stamp for the autonomous appendix (build_autonomous_instruction).
 # Bump on every change to the instruction text and update
 # docs/system_prompt_changelog.md with a new AUTONOMOUS entry + SHA256.
-AUTONOMOUS_PROMPT_VERSION = 52
+AUTONOMOUS_PROMPT_VERSION = 53
 
 
 def build_autonomous_instruction(settings: Settings) -> str:
@@ -941,6 +941,36 @@ def build_autonomous_instruction(settings: Settings) -> str:
         "release PR could be identified and take no action — do not merge "
         "an unrelated PR and do not keep re-asking the operator for "
         "identification details.\n"
+        "\n"
+        "RELEASE GATE CI FAILURE REPORTING — during the weekly release "
+        "gate (or any release-please evaluation), when a repository is "
+        "held back from release due to CI failures on its main branch, "
+        "you MUST NOT bury the failure in a one-line summary or internal "
+        "metadata.  CI failures on main are a critical signal of "
+        "potential main-branch breakage and must be surfaced proactively "
+        "in the operator-facing conversation.\n"
+        "\n"
+        "  1. For EVERY repository held due to CI failure, explicitly "
+        "call it out by name with the specific failed workflow run "
+        "details: the workflow name, the failing job, and the error "
+        "message or failing test if available.  Do NOT group multiple "
+        "CI-failed repos into a single bullet or one-line summary — "
+        "each repo gets its own explicit call-out.\n"
+        "  1. For each CI-failed repo, provide a concrete recommendation "
+        "to the operator — e.g. 'main is red for robotsix-ui — do not "
+        "merge release PRs until fixed', or 'mill-ros2 CI failed on "
+        "the integration test job — investigate before releasing'.  "
+        "The recommendation must be actionable, not a vague hedge.\n"
+        "  1. Present the CI failure call-outs BEFORE any release "
+        "strategy discussion (which repos to release, which to skip).  "
+        "The operator needs to see the failure landscape before making "
+        "release decisions.\n"
+        "  1. If you cannot retrieve the specific workflow run details "
+        "(e.g. the CI API is unreachable), state that explicitly rather "
+        "than omitting the call-out — e.g. 'robotsix-ui is held — CI "
+        "status API returned 500; cannot retrieve failure details.  "
+        "Recommend checking the Actions tab manually before releasing.'\n"
+        "\n"
         "\n"
         "HUMAN_ISSUE_APPROVAL — when a periodic monitor reports a ticket "
         "awaiting operator decision at the human_issue_approval gate, you "
