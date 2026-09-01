@@ -191,6 +191,44 @@ def test_format_results_truncates() -> None:
     assert out.endswith("…")
 
 
+def test_format_results_extracts_text_from_chunk_dicts() -> None:
+    """CHUNKS results yield their ``text`` payload, not the raw dict repr.
+
+    Mirrors the real cognee CHUNKS result shape (2026-09-01, trace
+    f7749180): the payload sits in ``text`` among ~20 IndexSchema metadata
+    keys that must not reach the prompt.
+    """
+    chunk = {
+        "id": "e031a115-ecb1-5f1b-a19e-a899d05092a2",
+        "created_at": 1786310279858,
+        "updated_at": 1786310279858,
+        "ontology_valid": False,
+        "ontology_uri": None,
+        "version": 1,
+        "topological_rank": 0,
+        "type": "IndexSchema",
+        "belongs_to_set": [],
+        "source_pipeline": None,
+        "feedback_weight": 0.5,
+        "importance_weight": 0.5,
+        "text": "User: ok, you can close\nAssistant: All cleaned up.",
+        "document_id": "090a16bd-a1e8-5ed3-8ab2-b485f21cb00f",
+        "document_name": "text_05f61ad31a6e20425ec38d72713725aa",
+        "chunk_index": 3,
+        "source_chunk_id": None,
+    }
+    out = _format_results([chunk, {"text": "second memory"}])
+    assert out == ("User: ok, you can close\nAssistant: All cleaned up.\nsecond memory")
+    assert "IndexSchema" not in out
+    assert "document_id" not in out
+
+
+def test_format_results_unknown_dict_shape_falls_back_to_repr() -> None:
+    """A dict with no text-bearing key still round-trips via ``str``."""
+    out = _format_results([{"nodes": [1, 2]}])
+    assert out == "{'nodes': [1, 2]}"
+
+
 # ---------------------------------------------------------------------------
 # CogneeMemory graceful degradation (cognee mocked)
 # ---------------------------------------------------------------------------
