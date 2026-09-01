@@ -24,5 +24,17 @@ def test_preamble_sets_the_single_turn_contract():
     assert "wait for future events" in lowered
 
 
+def test_preamble_lets_operator_replies_supersede_task_constraints():
+    """A live operator reply outranks the scheduled task's constraints.
+
+    2026-09-01 (periodic session 28d98c21): after a READ-ONLY inbox review,
+    the operator's "delete both" was refused partly because the agent kept
+    applying the task's read-only framing to the live follow-up.
+    """
+    lowered = PERIODIC_PREAMBLE.lower()
+    assert "operator may reply" in lowered
+    assert "supersedes the task's constraints" in lowered
+
+
 def test_initial_prompt_is_trimmed():
     assert build_initial_message("  task  \n").endswith("task")
