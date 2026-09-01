@@ -2825,6 +2825,27 @@ autonomous settings at their pydantic field defaults
 (`completion_marker="---AUTONOMOUS COMPLETE---"`, `stale_monitor_runs_before_completion=3`,
 `queue_tolerance_runs_before_escalation=3`).
 
+## AUTONOMOUS v53 — 2026-09-01 — 20260901T074407Z-surface-ci-failures-proactively-in-the-m-1147
+
+**Summary:** Add a "RELEASE GATE CI FAILURE REPORTING" section to
+`build_autonomous_instruction()`, placed immediately after the RELEASE-PLEASE
+PR IDENTIFICATION block.  It requires the assistant to explicitly call out
+every repository held due to CI failure during the release gate — with the
+specific failed workflow run details (workflow name, failing job, error), a
+concrete recommendation (e.g. 'do not merge release PRs until fixed'), and
+to present these call-outs BEFORE any release strategy discussion.  It also
+covers the case where CI details are unavailable.
+
+**Rationale:** During a weekly release gate, the assistant reported that
+mill-ros2, modules, standards, and ui were held due to CI failures but only
+gave a one-line summary without surfacing the CI failure details in the main
+conversation.  The operator's goal is to keep main green — burying CI failure
+reasons inside a held-list defeats that.  The new section ensures CI-failed
+repos are prominently surfaced with actionable details.
+
+**SHA256:** `379620ce012bc8cfa15791675f7313f458915b9cef25d533e8da38e968aab27c`
+
+
 ## AUTONOMOUS v52 — 2026-09-01 — 20260901T071041Z-verify-no-duplicate-tickets-for-recurrin-f466
 
 **Summary:** Add a "PRE-FILING DUPLICATE CHECK" section to
