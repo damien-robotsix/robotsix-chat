@@ -3,7 +3,7 @@
 from __future__ import annotations
 
 import logging
-from typing import TYPE_CHECKING
+from typing import TYPE_CHECKING, Any
 
 from starlette.exceptions import HTTPException
 from starlette.requests import Request
@@ -26,6 +26,27 @@ logger = logging.getLogger(__name__)
 
 if TYPE_CHECKING:
     from robotsix_chat.subsessions import SubsessionRegistry
+
+
+def _app_tier_config(request: Request) -> Any:
+    """Chat's own llmio tier config (incl. ``llmio_tier_overrides``).
+
+    Every place that renders a model NAME for a level must resolve it
+    against this config, not llmio's baked defaults — an operator override
+    (e.g. binding fallback level 2 to a different snapshot) otherwise shows
+    one model in the session badge while another actually serves the turn.
+    Returns ``None`` when tier resolution is unavailable (test doubles) so
+    ``level_display_name`` falls back to the defaults.
+    """
+    try:
+        from robotsix_llmio.config import load_tier_config
+
+        from robotsix_chat.llm.agent import _merge_tier_overrides
+
+        overrides = getattr(request.app.state, "llmio_tier_overrides", None)
+        return load_tier_config(_merge_tier_overrides(overrides, None))
+    except Exception:  # pragma: no cover - display-only resolution
+        return None
 
 
 def _cleanup_session(session_id: str, request: Request) -> int:
@@ -119,13 +140,14 @@ async def sessions_list_endpoint(request: Request) -> JSONResponse:
     # is None until the agent escalates the session, so fall back to the
     # server's configured chat level and mark only real escalations.
     configured = getattr(request.app.state, "chat_model_level", None)
+    tier_config = _app_tier_config(request)
     for s in sessions:
         raw = s.get("model_level")
         escalated = isinstance(raw, int)
         level = raw if escalated else configured
         if isinstance(level, int):
             s["model_level"] = level
-            s["model_name"] = level_display_name(level)
+            s["model_name"] = level_display_name(level, tier_config)
             s["model_escalated"] = escalated
         else:
             # No agent on this app (test doubles) — omit rather than guess.
@@ -566,7 +588,7 @@ async def session_model_set_endpoint(request: Request) -> JSONResponse:
     if not store.set_model_level(session_id, level):
         raise HTTPException(status_code=404, detail="session not found")
 
-    name = level_display_name(level)
+    name = level_display_name(level, _app_tier_config(request))
     default_level = getattr(request.app.state, "chat_model_level", None)
     # "escalated" drives the UI badge that flags a session running off the
     # server default; an explicit selection back to the default is not one.

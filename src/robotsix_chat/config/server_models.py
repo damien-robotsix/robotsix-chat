@@ -92,36 +92,47 @@ class EvergoingSettings(BaseModel):
     always appears in the operator's session list flagged ``evergoing``.  A
     background scheduler runs every *trim_interval_seconds* over **every
     session** (the single context-reduction mechanism — idle compaction was
-    removed) and, **only when new turns have arrived since the last pass**,
-    asks a cheap summary-tier model whether the conversation's subject has
-    clearly changed and how many finished leading turns can be dropped,
-    then physically trims them from the session.  A no-input interval
-    performs zero LLM calls.
+    removed).  The gate is deterministic (no decision LLM): a session is
+    compacted only when new turns arrived since the last pass AND more
+    than *keep_recent_runs* completed runs accumulated beyond the previous
+    summary.  Everything before the last *keep_recent_runs* runs is folded
+    into the session's summary; the recent runs stay verbatim and are not
+    shown to the summariser.  A no-input interval performs zero LLM calls.
 
     Attributes:
         enabled: Master switch.  When ``False`` (default) no evergoing
-            session is created and the trim scheduler does not run.  Set to
-            ``true`` to activate the feature.
-        trim_interval_seconds: Seconds between scheduled trim passes.
-            Default ``1800`` (30 minutes).
-        keep_min_recent: Minimum number of most-recent turns the trim pass
-            must always keep — guarantees the in-flight turn is never
-            trimmed away.  Default ``2``.
-        min_fresh_turns: Minimum fresh turns since the last trim before a
-            session is even shown to the decision model — the gate skips
-            without advancing the watermark, so short exchanges accumulate
-            until it opens.  Default ``3``.
+            session is created and the summary scheduler does not run.  Set
+            to ``true`` to activate the feature.
+        trim_interval_seconds: Seconds between scheduled compaction passes.
+            Default ``1800`` (30 minutes) — a session is summarised at most
+            once per interval.
+        keep_recent_runs: Number of most-recent completed runs (operator
+            message + assistant final answer) kept verbatim in the replay
+            and excluded from the summariser input.  A session is only
+            compacted when MORE than this many fresh runs exist beyond the
+            previous summary.  Default ``5``.
 
     """
 
     enabled: bool = False
     trim_interval_seconds: float = Field(default=1800.0, gt=0)
-    keep_min_recent: int = Field(default=2, ge=1)
-    min_fresh_turns: int = Field(default=3, ge=1)
+    keep_recent_runs: int = Field(default=5, ge=1)
     model_config = ConfigDict(extra="forbid")
 
     @model_validator(mode="before")
     @classmethod
     def _strip_blank_numeric(cls, data: Any) -> Any:
-        """Drop legacy ``""`` sentinels for numeric fields so old configs load."""
+        """Drop legacy sentinels and removed fields so old configs load.
+
+        Blank ``""`` numeric sentinels are stripped as everywhere else.
+        ``keep_min_recent`` and ``min_fresh_turns`` belonged to the removed
+        subject-aware trim design; deployed configs that still pin them
+        must not crash the boot (``extra="forbid"``), so they are dropped.
+        """
+        if isinstance(data, dict):
+            data = {
+                k: v
+                for k, v in data.items()
+                if k not in ("keep_min_recent", "min_fresh_turns")
+            }
         return drop_blank_numeric_sentinels(cls, data)

@@ -1732,8 +1732,8 @@ class Settings(BaseModel):
         json_schema_extra={"advanced": True},
         description=(
             "DEPRECATED — unused. Idle-timeout compaction was removed; the "
-            "subject-aware trim scheduler is the single context-reduction "
-            "mechanism (see evergoing.min_fresh_turns)."
+            "periodic summary scheduler is the single context-reduction "
+            "mechanism (see evergoing.keep_recent_runs)."
         ),
     )
     compaction_keep_recent_turns: int = Field(
@@ -1741,8 +1741,8 @@ class Settings(BaseModel):
         json_schema_extra={"advanced": True},
         description=(
             "DEPRECATED — unused. Idle-timeout compaction was removed; the "
-            "subject-aware trim scheduler keeps evergoing.keep_min_recent "
-            "recent turns instead."
+            "periodic summary scheduler keeps evergoing.keep_recent_runs "
+            "recent runs verbatim instead."
         ),
     )
     log_level: str = "INFO"

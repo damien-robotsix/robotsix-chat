@@ -307,7 +307,7 @@
     },
     "EvergoingSettings": {
       "additionalProperties": false,
-      "description": "Evergoing-session settings \u2014 the single never-ending chat session.\n\nWhen enabled, exactly one *evergoing* session is created on boot and\nkept alive across restarts: it is never auto-closed or auto-evicted and\nalways appears in the operator's session list flagged ``evergoing``.  A\nbackground scheduler runs every *trim_interval_seconds* over **every\nsession** (the single context-reduction mechanism \u2014 idle compaction was\nremoved) and, **only when new turns have arrived since the last pass**,\nasks a cheap summary-tier model whether the conversation's subject has\nclearly changed and how many finished leading turns can be dropped,\nthen physically trims them from the session.  A no-input interval\nperforms zero LLM calls.\n\nAttributes:\n    enabled: Master switch.  When ``False`` (default) no evergoing\n        session is created and the trim scheduler does not run.  Set to\n        ``true`` to activate the feature.\n    trim_interval_seconds: Seconds between scheduled trim passes.\n        Default ``1800`` (30 minutes).\n    keep_min_recent: Minimum number of most-recent turns the trim pass\n        must always keep \u2014 guarantees the in-flight turn is never\n        trimmed away.  Default ``2``.\n    min_fresh_turns: Minimum fresh turns since the last trim before a\n        session is even shown to the decision model \u2014 the gate skips\n        without advancing the watermark, so short exchanges accumulate\n        until it opens.  Default ``3``.",
+      "description": "Evergoing-session settings \u2014 the single never-ending chat session.\n\nWhen enabled, exactly one *evergoing* session is created on boot and\nkept alive across restarts: it is never auto-closed or auto-evicted and\nalways appears in the operator's session list flagged ``evergoing``.  A\nbackground scheduler runs every *trim_interval_seconds* over **every\nsession** (the single context-reduction mechanism \u2014 idle compaction was\nremoved).  The gate is deterministic (no decision LLM): a session is\ncompacted only when new turns arrived since the last pass AND more\nthan *keep_recent_runs* completed runs accumulated beyond the previous\nsummary.  Everything before the last *keep_recent_runs* runs is folded\ninto the session's summary; the recent runs stay verbatim and are not\nshown to the summariser.  A no-input interval performs zero LLM calls.\n\nAttributes:\n    enabled: Master switch.  When ``False`` (default) no evergoing\n        session is created and the summary scheduler does not run.  Set\n        to ``true`` to activate the feature.\n    trim_interval_seconds: Seconds between scheduled compaction passes.\n        Default ``1800`` (30 minutes) \u2014 a session is summarised at most\n        once per interval.\n    keep_recent_runs: Number of most-recent completed runs (operator\n        message + assistant final answer) kept verbatim in the replay\n        and excluded from the summariser input.  A session is only\n        compacted when MORE than this many fresh runs exist beyond the\n        previous summary.  Default ``5``.",
       "properties": {
         "enabled": {
           "default": false,
@@ -320,16 +320,10 @@
           "title": "Trim Interval Seconds",
           "type": "number"
         },
-        "keep_min_recent": {
-          "default": 2,
+        "keep_recent_runs": {
+          "default": 5,
           "minimum": 1,
-          "title": "Keep Min Recent",
-          "type": "integer"
-        },
-        "min_fresh_turns": {
-          "default": 3,
-          "minimum": 1,
-          "title": "Min Fresh Turns",
+          "title": "Keep Recent Runs",
           "type": "integer"
         }
       },
@@ -1657,14 +1651,14 @@
     "compaction_min_turns": {
       "advanced": true,
       "default": 3,
-      "description": "DEPRECATED \u2014 unused. Idle-timeout compaction was removed; the subject-aware trim scheduler is the single context-reduction mechanism (see evergoing.min_fresh_turns).",
+      "description": "DEPRECATED \u2014 unused. Idle-timeout compaction was removed; the periodic summary scheduler is the single context-reduction mechanism (see evergoing.keep_recent_runs).",
       "title": "Compaction Min Turns",
       "type": "integer"
     },
     "compaction_keep_recent_turns": {
       "advanced": true,
       "default": 2,
-      "description": "DEPRECATED \u2014 unused. Idle-timeout compaction was removed; the subject-aware trim scheduler keeps evergoing.keep_min_recent recent turns instead.",
+      "description": "DEPRECATED \u2014 unused. Idle-timeout compaction was removed; the periodic summary scheduler keeps evergoing.keep_recent_runs recent runs verbatim instead.",
       "title": "Compaction Keep Recent Turns",
       "type": "integer"
     },
