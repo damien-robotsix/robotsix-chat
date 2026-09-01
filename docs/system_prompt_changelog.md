@@ -3,6 +3,16 @@
 Governed artifact: `Settings.agent_instruction` default literal in
 `src/robotsix_chat/config/settings.py`. Version stamp: `SYSTEM_PROMPT_VERSION` in the same module.
 
+## v155 — 2026-09-01 — 20260901T144835Z-surface-internal-errors-to-the-user-with-3846
+
+**Summary:** Add an "INTERNAL TURN FAILURE" directive to the Efficiency section: when a tool call, step, or the whole turn fails with an internal/framework-level error (an "internal error" reply that carries only a correlation ID, a server exception, an unexpected crash mid-flow), the assistant must translate it into a user-facing diagnostic — naming the failed step and what it was trying to do, explaining the likely cause in plain language — plus a concrete recovery suggestion (retry automatically when safe and reasonable, otherwise offer to re-attempt and say exactly what will be redone). The user must always be left with a next action or a clear offer to continue, never a dead end.
+
+**Rationale:** A session reported "failure at step 1" of the LinkedIn OAuth flow and the assistant responded with two "internal error" messages carrying a correlation ID but no debugging information or next step. Opaque internal-error output gives the user no recovery path and prevents the session from resuming; the new directive forces every internal failure into a user-facing diagnostic message and a concrete recovery suggestion.
+
+**SHA256:** `b06ed29f9b8ee2c5e6023a05e42bf465a8b07974e6d09057763d0394352260ad`
+
+______________________________________________________________________
+
 ## v154 — 2026-09-01 — config.json lowercase-config-names
 
 **Change:** New "Service configuration standard (robotsix-standards)" block in the Mill & Deploy

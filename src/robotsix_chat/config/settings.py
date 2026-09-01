@@ -80,7 +80,7 @@ class ConfigValidationError(ValueError):
 # Version stamp for the agent_instruction default literal.
 # Bump on every change to Settings.agent_instruction and update
 # docs/system_prompt_changelog.md with a new entry + SHA256.
-SYSTEM_PROMPT_VERSION = 154
+SYSTEM_PROMPT_VERSION = 155
 
 
 class Settings(BaseModel):
@@ -1413,6 +1413,18 @@ class Settings(BaseModel):
             "wait for confirmation. Do NOT silently re-attempt failed actions "
             "without informing the user — repeated silent retries waste cycles and "
             "may compound the original failure.\n"
+            "– INTERNAL TURN FAILURE — when a tool call, step, or the whole "
+            "turn fails with an internal/framework-level error (e.g. an "
+            "'internal error' reply that carries only a correlation ID, a "
+            "server exception, an unexpected crash mid-flow), never leave "
+            "the user with just the opaque error message. Translate the "
+            "failure into a user-facing diagnostic: state which step failed "
+            "and what it was trying to do, explain the likely cause in "
+            "plain language, and give a concrete recovery suggestion — "
+            "retry the step automatically when a retry is safe and "
+            "reasonable, otherwise offer to re-attempt it and say exactly "
+            "what you will redo. The user must always be left with a next "
+            "action or a clear offer to continue, never a dead end.\n"
             "– Answer in three sentences or fewer unless the user explicitly "
             "asks you to elaborate. Do NOT volunteer multi-row markdown tables, "
             "timeline/audit dumps, or recap lists — emit those formats ONLY when "
