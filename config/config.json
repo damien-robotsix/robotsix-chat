@@ -269,7 +269,7 @@
   "evergoing": {
     "enabled": false,
     "trim_interval_seconds": 1800.0,
-    "keep_min_recent": 2
+    "keep_recent_runs": 5
   },
   "max_images_per_message": 8,
   "max_image_bytes": 5242880,
