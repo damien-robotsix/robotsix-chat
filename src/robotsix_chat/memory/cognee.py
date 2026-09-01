@@ -1193,6 +1193,26 @@ class CogneeMemory:
                 snapshot.unlink(missing_ok=True)
 
 
+def _result_text(item: Any) -> str:
+    """Extract the recallable text from one cognee search result.
+
+    CHUNKS-type searches return dicts whose payload is the ``text`` field
+    wrapped in ~20 IndexSchema metadata keys (ids, timestamps, weights,
+    document names). Dumping the raw dict repr into the recall block buries
+    the memory under metadata noise and surfaces stale identifiers the
+    prompt fencing then has to argue against (2026-09-01, trace f7749180:
+    a 5-chunk recall weighed ~6KB, ~85% of it metadata, and the stale ids
+    helped derail the turn). Unknown shapes still fall back to ``str`` so
+    other search types lose nothing.
+    """
+    if isinstance(item, dict):
+        for key in ("text", "content", "answer"):
+            value = item.get(key)
+            if isinstance(value, str) and value.strip():
+                return value.strip()
+    return str(item).strip()
+
+
 def _format_results(results: Any) -> str:
     """Flatten cognee search results into a single bounded context string."""
     if not results:
@@ -1200,9 +1220,9 @@ def _format_results(results: Any) -> str:
     if isinstance(results, str):
         text = results
     elif isinstance(results, list | tuple):
-        text = "\n".join(str(item) for item in results if item)
+        text = "\n".join(_result_text(item) for item in results if item)
     else:
-        text = str(results)
+        text = _result_text(results)
     text = text.strip()
     if len(text) > _MAX_RECALL_CHARS:
         text = text[:_MAX_RECALL_CHARS].rstrip() + "…"
