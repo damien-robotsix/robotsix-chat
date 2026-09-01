@@ -4,7 +4,11 @@ Re-exports every public symbol at the package top level so existing
 ``from robotsix_chat.config import <X>`` imports keep working unchanged.
 """
 
-from robotsix_chat.config.constants import level_needs_api_key, slot_needs_api_key
+from robotsix_chat.config.constants import (
+    VALID_MODEL_LEVELS,
+    level_needs_api_key,
+    slot_needs_api_key,
+)
 from robotsix_chat.config.models import (
     PROJECT_MAIN,
     PROJECT_MEMORY,
@@ -46,7 +50,6 @@ from robotsix_chat.config.models import (
 )
 from robotsix_chat.config.settings import (
     SYSTEM_PROMPT_VERSION,
-    VALID_MODEL_LEVELS,
     Settings,
 )
 
