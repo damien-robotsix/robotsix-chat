@@ -43,6 +43,29 @@ variable. See the
 [deployment guide](../user-guide/deployment.md#4-chat-agent-mutation-access-allow_chat_access) for
 step-by-step instructions.
 
+## Deploy registration — check the toggle up front
+
+Registering a component in the deploy plane (`POST /chat/services`) and every other chat-agent
+mutation below is gated by the same per-repo `allow_chat_access` / `chat_agent_mutatable` toggle.
+When it is off, all of these calls return `403`, so a deploy-registration flow that does not warn
+early will run several steps and only stall at the first mutation. **Warn the user about this
+requirement up front, before starting the workflow:**
+
+1. The moment the user asks to register or deploy a component (or perform any chat-agent mutation),
+   state the precondition: "Registering/deploying a component requires the
+   `allow_chat_access` / `chat_agent_mutatable` toggle to be enabled for this repo in the
+   central-deploy dashboard. If it is off, deployment operations will be blocked with 403."
+1. If the user has not confirmed the toggle is already on, ask them to enable it in the
+   central-deploy dashboard **before** you proceed, and wait for confirmation.
+1. Only once the toggle is confirmed enabled should you run the registration/deployment steps.
+
+**There is no API to read the toggle's current state** — the read-only tools
+(`list_lifecycle_services`, `get_lifecycle_service_status`, `get_lifecycle_service_env`) never
+report it, and the agent learns it only via a 403 on a mutation call. Because you cannot verify it
+yourself, treat the toggle as possibly-off and get explicit early confirmation rather than assuming
+the operation will succeed. This avoids the stalled turns and back-and-forth caused by discovering
+the 403 mid-flow.
+
 ## Self-restart
 
 `self_restart` restarts the agent's **own** service via `POST /chat/services/{name}/restart`, where
