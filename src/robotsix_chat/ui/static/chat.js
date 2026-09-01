@@ -436,26 +436,21 @@ import {
   var activeSessionId = null;
   var sessionsList = [];        // cached session list from server
 
-  // Autonomous sessions are owned by a fixed pseudo-owner ("autonomous"),
+  // Periodic sessions are owned by a fixed pseudo-owner ("periodic"),
   // not by this browser's clientId. They are surfaced in the list (see
   // fetchSessions) and every per-session request must be scoped to their
   // real owner so history, replies, and the event stream reach them.
-  var AUTONOMOUS_OWNER = "autonomous";
-  // Keep in sync with DEFAULT_TRIGGER_INTERVAL_SECONDS in
-  // config/autonomous_models.py. Every preset is periodic.
-  var DEFAULT_TRIGGER_INTERVAL_SECONDS = 3600;
+  var PERIODIC_OWNER = "periodic";
+  // Keep in sync with DEFAULT_SCHEDULE_INTERVAL_SECONDS in
+  // config/periodic_models.py.
+  var DEFAULT_SCHEDULE_INTERVAL_SECONDS = 86400;
   function ownerFor(sid) {
     for (var oi = 0; oi < sessionsList.length; oi++) {
       var s = sessionsList[oi];
       if (s && s.session_id === sid) {
-        // Prefer the owner the session was actually fetched under (tagged in
-        // fetchSessions). Resolving from the `autonomous` flag alone is
-        // fragile: a session owned by the "autonomous" pseudo-owner but not
-        // flagged (e.g. a completed/closed run the runner no longer tracks)
-        // would otherwise be attributed to this browser's clientId, so every
-        // delete/close would 404 and the session would be un-closable.
+        // The owner the session was actually fetched under (tagged in
+        // fetchSessions) routes per-session requests correctly.
         if (s._owner) return s._owner;
-        if (s.autonomous) return AUTONOMOUS_OWNER;
         return clientId;
       }
     }
@@ -578,11 +573,11 @@ import {
       if (!r.ok) throw new Error("Failed to fetch sessions");
       return r.json();
     });
-    // Autonomous sessions live under the "autonomous" owner, not this
+    // Periodic sessions live under the "periodic" owner, not this
     // client — fetch them too so the operator can see and reply to them.
     // Best-effort: never let their absence break the normal session list.
     var auto = fetch(
-      base + "/sessions?owner_id=" + encodeURIComponent(AUTONOMOUS_OWNER),
+      base + "/sessions?owner_id=" + encodeURIComponent(PERIODIC_OWNER),
       { method: "GET" }
     ).then(function (r) {
       return r.ok ? r.json() : { sessions: [] };
@@ -592,10 +587,10 @@ import {
       var seen = {}, merged = [];
       // Tag each list with the owner it was fetched under so ownerFor(sid)
       // can route per-session requests (history, events, delete, ...) to the
-      // correct owner regardless of the `autonomous` annotation.
+      // correct owner.
       var lists = [
         { owner: clientId, sessions: a.sessions || [] },
-        { owner: AUTONOMOUS_OWNER, sessions: b.sessions || [] }
+        { owner: PERIODIC_OWNER, sessions: b.sessions || [] }
       ];
       for (var li = 0; li < lists.length; li++) {
         var ownerId = lists[li].owner;
@@ -612,7 +607,7 @@ import {
       merged.sort(function (x, y) {
         return (y.last_active || 0) - (x.last_active || 0);
       });
-      // active_session_id stays the client's own — an autonomous session
+      // active_session_id stays the client's own — a periodic session
       // must never silently become the default active view.
       return { sessions: merged, active_session_id: a.active_session_id };
     });
@@ -782,13 +777,9 @@ import {
 
       var titleDiv = document.createElement("div");
       titleDiv.className = "session-title";
-      if (s.autonomous) {
-        row.classList.add("session-autonomous");
-        titleDiv.textContent = "[AUTONOMOUS] " + (s.title || "Untitled");
-        // Apply session_color as a left-border accent when set.
-        if (s.autonomous_session_color) {
-          row.style.borderLeft = "3px solid " + s.autonomous_session_color;
-        }
+      if (s._owner === PERIODIC_OWNER) {
+        row.classList.add("session-periodic");
+        titleDiv.textContent = "[PERIODIC] " + (s.title || "Untitled");
       } else if (s.evergoing) {
         // The single never-ending session: leading turns from finished,
         // off-subject topics are physically trimmed (they disappear from the
@@ -803,22 +794,6 @@ import {
       var metaDiv = document.createElement("div");
       metaDiv.className = "session-meta";
       var parts = [];
-
-      // Per-state autonomous feedback (Fix 2).
-      if (s.autonomous) {
-        var aState = s.autonomous_state || "";
-        if (aState === "executing") {
-          var turn = s.autonomous_turn_count || 0;
-          var max = s.autonomous_max_turns || 0;
-          if (max > 0) {
-            parts.push("Executing (turn " + turn + " / " + max + ")");
-          } else {
-            parts.push("Executing (turn " + turn + ")");
-          }
-        } else if (aState === "completed") {
-          parts.push("Completed");
-        }
-      }
 
       if (s.turn_count !== undefined) {
         parts.push(s.turn_count + " turn" + (s.turn_count !== 1 ? "s" : ""));
@@ -888,26 +863,6 @@ import {
     listEl.scrollTop = scrollTop;
   }
 
-  // ---- Autonomous state frame handler (SSE push) -----------------------
-  function handleAutonomousStateFrame(frame) {
-    // Update the in-memory session list entry so the next renderSessionList
-    // (triggered by refreshSessions) picks up the new state.  Also update
-    // the DOM row in-place for immediate feedback.
-    if (!sessionsList) return;
-    for (var i = 0; i < sessionsList.length; i++) {
-      if (sessionsList[i].session_id === frame.session_id) {
-        sessionsList[i].autonomous_state = frame.state;
-        sessionsList[i].autonomous_turn_count = frame.auto_turn_count || 0;
-        sessionsList[i].autonomous_max_turns = frame.max_auto_turns || 0;
-        sessionsList[i].autonomous_session_color = frame.session_color || "";
-        break;
-      }
-    }
-    // Re-render the list so the row shows the new state text / buttons.
-    // The server-side state is authoritative — this is just a client-side
-    // cache update to avoid a network round-trip.
-    renderSessionList({ sessions: sessionsList });
-  }
 
   function deleteSession(sid) {
     // Tear down any background event stream for this session.
@@ -1101,7 +1056,6 @@ import {
     refreshSessions();
     updateActiveHighlight();
   }
-
   // ---- Live re-attach handlers (foreground turn over /events) ----------
   // These render an in-flight turn for the *currently viewed* session when
   // this tab does NOT own its POST (a second tab, or this tab after switching
@@ -2317,7 +2271,7 @@ import {
       renderSubsessionsList();
       // If the loaded session has active (non-terminal) subsessions,
       // open the panel so the operator can see them — this matters
-      // especially for autonomous sessions whose subsessions ran
+      // especially for periodic sessions whose subsessions ran
       // in the background before the operator selected the session.
       if (subsOrder.length > 0) {
         var hasActive = false;
@@ -2737,11 +2691,6 @@ import {
         } else if (frame.type === "activity") {
           // Live claudeSDK tool/thinking activity for the in-flight turn.
           handleActivityFrame(frame);
-        } else if (frame.type === "autonomous_token") {
-          // Streaming token from an autonomous background turn — append
-          // to the current assistant bubble the same way the /chat SSE
-          // path handles "token" frames.
-          if (frame.token) streamAssistantBubble(frame.token);
         } else if (frame.type === "agent_message") {
           // A background-triggered agent reply (e.g. reacting to a
           // subsession closing) — not a live /chat response, so it arrives
@@ -2774,10 +2723,6 @@ import {
               body: frame.body || "",
             });
           }
-        } else if (frame.type === "autonomous_state") {
-          // Live state transition for an autonomous session — update the
-          // corresponding session-list row in-place without a full re-fetch.
-          handleAutonomousStateFrame(frame);
         } else if (frame.type === "chat_turn_started") {
           handleReattachStart(frame);
         } else if (frame.type === "chat_turn_resume") {
@@ -3817,7 +3762,7 @@ import {
     return key.replace(/_/g, " ");
   }
 
-  // ---- Presets editor (autonomous.sessions) ----------------------------
+  // ---- Presets editor (periodic.sessions) ------------------------------
 
   function renderPresetsEditor(path, presets) {
     var container = document.createElement("div");
@@ -3884,15 +3829,12 @@ import {
 
     var detail = document.createElement("span");
     detail.className = "preset-detail";
-    var interval = preset.trigger_interval_seconds != null
-      ? preset.trigger_interval_seconds
-      : DEFAULT_TRIGGER_INTERVAL_SECONDS;
+    var interval = preset.schedule_interval_seconds != null
+      ? preset.schedule_interval_seconds
+      : DEFAULT_SCHEDULE_INTERVAL_SECONDS;
     var parts = ["every " + interval + "s"];
     if (preset.model_level != null) {
       parts.push("L" + preset.model_level);
-    }
-    if (preset.max_runs > 0) {
-      parts.push("max " + preset.max_runs + " runs");
     }
     if (preset.enabled === false) {
       parts.push("disabled");
@@ -3953,24 +3895,24 @@ import {
     nameRow.appendChild(nameInput);
     form.appendChild(nameRow);
 
-    // Prompt
-    var promptRow = makeFormRow("Prompt");
+    // Initial prompt — the one message the scheduler posts into the fresh
+    // session. Write it as a complete task brief.
+    var promptRow = makeFormRow("Initial prompt");
     var promptInput = document.createElement("textarea");
-    promptInput.rows = 3;
-    promptInput.value = preset.prompt || "";
+    promptInput.rows = 5;
+    promptInput.value = preset.initial_prompt || "";
     promptRow.appendChild(promptInput);
     form.appendChild(promptRow);
 
-    // Interval — the whole scheduling contract. Every preset is periodic;
-    // a "continuous" preset is just a short interval.
+    // Interval — the whole scheduling contract.
     var intervalRow = makeFormRow("Interval (s)");
     var intervalInput = document.createElement("input");
     intervalInput.type = "number";
     intervalInput.step = "any";
-    intervalInput.min = "0";
-    intervalInput.value = preset.trigger_interval_seconds != null
-      ? preset.trigger_interval_seconds
-      : DEFAULT_TRIGGER_INTERVAL_SECONDS;
+    intervalInput.min = "300";
+    intervalInput.value = preset.schedule_interval_seconds != null
+      ? preset.schedule_interval_seconds
+      : DEFAULT_SCHEDULE_INTERVAL_SECONDS;
     intervalRow.appendChild(intervalInput);
     form.appendChild(intervalRow);
 
@@ -3979,21 +3921,11 @@ import {
     var modelInput = document.createElement("input");
     modelInput.type = "number";
     modelInput.min = "1";
-    modelInput.max = "4";
+    modelInput.max = "3";
     modelInput.placeholder = "global default";
     modelInput.value = preset.model_level != null ? preset.model_level : "";
     modelRow.appendChild(modelInput);
     form.appendChild(modelRow);
-
-    // Max runs (0 = unlimited)
-    var maxRunsRow = makeFormRow("Max Runs");
-    var maxRunsInput = document.createElement("input");
-    maxRunsInput.type = "number";
-    maxRunsInput.min = "0";
-    maxRunsInput.placeholder = "0 = unlimited";
-    maxRunsInput.value = preset.max_runs > 0 ? preset.max_runs : "";
-    maxRunsRow.appendChild(maxRunsInput);
-    form.appendChild(maxRunsRow);
 
     // Enabled
     var enabledRow = makeFormRow("");
@@ -4017,14 +3949,12 @@ import {
     saveBtn.textContent = index < 0 ? "Add" : "Save";
     saveBtn.addEventListener("click", function () {
       var ml = modelInput.value.trim();
-      var mr = maxRunsInput.value.trim();
       var newPreset = {
         name: nameInput.value.trim(),
-        prompt: promptInput.value,
-        trigger_interval_seconds:
-          Number(intervalInput.value) || DEFAULT_TRIGGER_INTERVAL_SECONDS,
+        initial_prompt: promptInput.value,
+        schedule_interval_seconds:
+          Number(intervalInput.value) || DEFAULT_SCHEDULE_INTERVAL_SECONDS,
         model_level: ml !== "" ? Number(ml) : null,
-        max_runs: mr !== "" ? Number(mr) : 0,
         enabled: enabledCheck.checked
       };
       savePresetForm(row, path, index, newPreset);
@@ -4124,8 +4054,8 @@ import {
 
     var emptyPreset = {
       name: "",
-      prompt: "",
-      trigger_interval_seconds: DEFAULT_TRIGGER_INTERVAL_SECONDS,
+      initial_prompt: "",
+      schedule_interval_seconds: DEFAULT_SCHEDULE_INTERVAL_SECONDS,
       enabled: true
     };
     showPresetForm(row, emptyPreset, -1, path);

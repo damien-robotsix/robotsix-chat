@@ -458,7 +458,7 @@ def _effective_config(data: dict[str, Any]) -> dict[str, Any]:
 
     The on-disk data is overlaid onto the full :class:`Settings` model
     defaults — every schema key (including newly-added fields like
-    ``autonomous.sessions``) appears even when absent from the persisted
+    ``periodic.sessions``) appears even when absent from the persisted
     config file.  Validating through :class:`Settings` also strips legacy
     keys (e.g. ``approval_marker`` / ``proposal_marker``); on failure the
     unvalidated merge is returned so the UI can still render what we have

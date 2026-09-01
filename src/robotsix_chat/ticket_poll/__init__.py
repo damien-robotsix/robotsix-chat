@@ -80,6 +80,7 @@ __all__ = [
     "build_prioritize_all_open_tickets_tool",
     "build_resolve_repo_tool",
     "build_ticket_poll_tools",
+    "build_transition_ticket_tool",
     "load_ticket_poll_skill",
 ]
 
@@ -818,6 +819,140 @@ def build_mark_ticket_ready_tool(
     return [mark_ticket_ready]
 
 
+def build_transition_ticket_tool(
+    settings: Settings,
+    *,
+    component_request: Callable[..., Any] | None = None,
+) -> list[Callable[..., Any]]:
+    """Return the ``transition_ticket`` tool.
+
+    The tool calls the mill board's ``POST /tickets/{id}/transition``
+    endpoint with an explicit target state and a mandatory rationale note.
+    It exists for the master agent's approval duty on ``human_issue_approval``
+    tickets (operator directive: no human in the approval loop): approve a
+    sound spec to ``ready``, send a thin spec back to ``draft`` for
+    re-refinement, or retire a duplicate/obsolete ticket via ``draft`` →
+    ``closed`` (the state machine forbids ``human_issue_approval`` →
+    ``closed`` directly).
+
+    Args:
+        settings: Full application settings.
+        component_request: The roster-based request callable, or ``None``
+            when the component roster is unavailable.
+
+    Returns:
+        A one-element list containing the ``transition_ticket`` async
+        callable, or ``[]`` when neither *component_request* nor
+        ``board_api_base_url`` are available.
+
+    """
+    conn = _board_connection(settings, component_request)
+    if conn is None:
+        return []
+    board_url, board_token, timeout = conn
+
+    allowed_states = ("ready", "draft", "closed")
+
+    async def transition_ticket(
+        ticket_id: str,
+        state: str,
+        note: str,
+    ) -> str:
+        """Transition a mill ticket to an explicit state, with a rationale.
+
+        This is the approval-duty state mutation: when a ticket sits at
+        ``human_issue_approval`` you review it yourself and act — never
+        wait for a human and never spawn a subsession that merely waits.
+
+        - ``state="ready"`` — the spec is actionable and consistent with
+          robotsix-standards: this IS the approval.
+        - ``state="draft"`` — the spec is thin, empty, or ambiguous: the
+          note must say what is missing; classify/refine re-run and the
+          healthy pipeline's auto-approve applies.
+        - ``state="closed"`` — duplicate or obsolete. The state machine
+          forbids ``human_issue_approval`` → ``closed`` directly: call
+          this tool twice, first with ``state="draft"``, then with
+          ``state="closed"``.
+
+        Args:
+            ticket_id: The ticket ID to transition. Paraphrased /
+                abbreviated IDs are resolved against the live board.
+            state: Target state — one of ``ready``, ``draft``, ``closed``.
+            note: MANDATORY rationale recorded on the ticket (why it was
+                approved / sent back / retired). Never empty.
+
+        Returns:
+            A status message from the mill API — success confirmation or
+            an error describing why the transition failed.
+
+        """
+        if state not in allowed_states:
+            return (
+                f"Refusing transition: state {state!r} is not one of "
+                f"{allowed_states} (other lifecycle moves have dedicated "
+                "tools, e.g. mark_ticket_ready / merge-now)."
+            )
+        if not note.strip():
+            return (
+                "Refusing transition: a non-empty rationale note is "
+                "required — record WHY the ticket is being approved, sent "
+                "back to draft, or retired."
+            )
+
+        resolved_map = await _resolve_ticket_ids(
+            board_url, board_token, timeout, [ticket_id]
+        )
+        effective_id = resolved_map.get(ticket_id) or ticket_id
+
+        path = f"/tickets/{effective_id}/transition"
+        json_body = {"state": state, "note": note}
+
+        if component_request is not None:
+            resp = await component_request(
+                "mill",
+                "POST",
+                path,
+                json_body=json_body,
+            )
+            if not _component_response_is_error(resp):
+                return str(resp)
+            logger.info(
+                "transition_ticket: roster path failed for %s; "
+                "falling back to direct board API",
+                effective_id,
+            )
+
+        url = f"{board_url}{path}"
+        headers: dict[str, str] = {"Accept": "application/json"}
+        if board_token:
+            headers["Authorization"] = f"Bearer {board_token}"
+
+        try:
+            async with httpx.AsyncClient(timeout=timeout) as client:
+                retry_client = RetryClient(client, config=_TICKET_POLL_RETRY_CONFIG)
+                response = await retry_client.post(url, headers=headers, json=json_body)
+                try:
+                    body = response.json()
+                    body_str = json.dumps(body)
+                except Exception:
+                    body_str = response.text
+                return f"HTTP {response.status_code}\n{body_str}"
+        except httpx.ConnectError, httpx.ConnectTimeout, httpx.TimeoutException:
+            return (
+                f"Error transitioning ticket {effective_id}: "
+                f"board API request timed out after {timeout}s"
+            )
+        except Exception as exc:
+            logger.warning(
+                "transition_ticket direct path failed for %s: %s",
+                effective_id,
+                exc,
+            )
+            return f"Error transitioning ticket {effective_id}: {exc}"
+
+    return [transition_ticket]
+
+
 def build_mark_ticket_done_tool(
     settings: Settings,
     *,
@@ -1284,7 +1419,7 @@ def build_list_stale_ready_tickets_tool(
 
     The tool fetches all tickets from the mill board and returns those
     in ``ready`` state whose last-update timestamp exceeds the configured
-    staleness threshold (``autonomous.ready_staleness_minutes``).  It routes
+    staleness threshold (``periodic.ready_staleness_minutes``).  It routes
     through *component_request* (roster-based connectivity) when available,
     falling back to the direct ``board_api_base_url`` otherwise.
 
@@ -1310,9 +1445,9 @@ def build_list_stale_ready_tickets_tool(
     if conn is None:
         return []
     board_url, board_token, timeout = conn
-    threshold_seconds = settings.autonomous.ready_staleness_minutes * 60.0
+    threshold_seconds = settings.periodic.ready_staleness_minutes * 60.0
     priority_threshold_seconds = (
-        settings.autonomous.priority_ready_staleness_minutes * 60.0
+        settings.periodic.priority_ready_staleness_minutes * 60.0
     )
 
     async def _fetch_ticket_list() -> tuple[list[dict[str, Any]] | None, str]:
@@ -1461,9 +1596,9 @@ def build_list_stale_ready_tickets_tool(
                     "error": list_error,
                     "stale_ready_count": 0,
                     "total_ready": 0,
-                    "threshold_minutes": settings.autonomous.ready_staleness_minutes,
+                    "threshold_minutes": settings.periodic.ready_staleness_minutes,
                     "priority_threshold_minutes": (
-                        settings.autonomous.priority_ready_staleness_minutes
+                        settings.periodic.priority_ready_staleness_minutes
                     ),
                     "stale_tickets": [],
                 },
@@ -1531,9 +1666,9 @@ def build_list_stale_ready_tickets_tool(
             {
                 "stale_ready_count": len(stale),
                 "total_ready": total_ready,
-                "threshold_minutes": settings.autonomous.ready_staleness_minutes,
+                "threshold_minutes": settings.periodic.ready_staleness_minutes,
                 "priority_threshold_minutes": (
-                    settings.autonomous.priority_ready_staleness_minutes
+                    settings.periodic.priority_ready_staleness_minutes
                 ),
                 "stale_tickets": stale,
             },

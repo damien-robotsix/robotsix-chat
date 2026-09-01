@@ -210,7 +210,7 @@ the user about the regression in the main conversation, file a ``prompt`` \
 ticket.  The operator's goal is to keep main green — CI regressions that \
 are silently buried in internal metadata defeat that goal.  The ticket \
 should describe the specific failure, note that the assistant only \
-reported it internally, and recommend that the autonomous prompt \
+reported it internally, and recommend that the periodic prompt \
 instruct the assistant to surface CI failures proactively in the \
 main conversation."""
 

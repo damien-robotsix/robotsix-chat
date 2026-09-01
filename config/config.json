@@ -261,20 +261,6 @@
     "dedup_window_seconds": 60.0,
     "ingest_max_retries": 2
   },
-  "autonomous": {
-    "completion_marker": "---AUTONOMOUS COMPLETE---",
-    "max_idle_auto_turns": 5,
-    "continue_interval_seconds": 45.0,
-    "stale_monitor_runs_before_completion": 3,
-    "queue_tolerance_runs_before_escalation": 3,
-    "ready_staleness_minutes": 10,
-    "priority_ready_staleness_minutes": 60,
-    "sessions": [
-      {
-        "name": "default"
-      }
-    ]
-  },
   "continuation": {
     "enabled": false,
     "store_path": "/data/continuation.json",
@@ -299,7 +285,14 @@
     "subject_header": "X-Forwarded-User",
     "session_header": "X-Forwarded-Session",
     "token_ttl_seconds": 3600,
-    "allowed_redirect_domains": ["auth"],
+    "allowed_redirect_domains": [
+      "auth"
+    ],
     "callback_base_url": ""
+  },
+  "periodic": {
+    "ready_staleness_minutes": 10,
+    "priority_ready_staleness_minutes": 60,
+    "sessions": []
   }
 }

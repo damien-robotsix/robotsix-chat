@@ -171,7 +171,7 @@ def _build_spawn_and_control_tools(
         or "on_close" (like a one-shot task, but the subsession waits
         until this parent session is closed before executing — use it
         to schedule work that should fire when the conversation ends,
-        such as proposing the next autonomous job).
+        such as proposing the next scheduled job).
 
         instructions must be complete and self-contained — the subsession
         agent starts with NO conversation history. For user_chat decision

@@ -10,14 +10,14 @@ from __future__ import annotations
 from unittest.mock import patch
 
 # Pre-existing import cycle: ``subsessions/__init__`` -> ``delivery`` ->
-# ``autonomous`` -> ``runner`` -> ``subsessions.worker`` -> ``delivery`` (still
+# ``periodic`` -> ``scheduler`` -> ``subsessions.worker`` -> ``delivery`` (still
 # initialising). It only bites when ``_skill_registry`` is the first thing in
 # the process to enter that ring, which happens here but not in the running app
 # — and it reproduces identically on main, so it is not part of this change.
-# Entering from ``autonomous`` completes the ring cleanly.
+# Entering from ``periodic`` completes the ring cleanly.
 import pytest
 
-import robotsix_chat.autonomous  # noqa: F401
+import robotsix_chat.periodic  # noqa: F401
 from robotsix_chat.chat.server.app import (
     _inject_skills,
     _skill_registry,
@@ -46,7 +46,7 @@ class TestSystemPromptSize:
 
         The prompt travels as one ``--system-prompt`` argv element, so crossing
         MAX_ARG_STRLEN makes ``execve`` fail with E2BIG and the turn never
-        starts. Half the ceiling leaves room for the autonomous preamble, which
+        starts. Half the ceiling leaves room for the periodic preamble, which
         is what tipped it over on 2026-08-13.
         """
         prompt = _inject_skills(_settings(), "Base instruction.")

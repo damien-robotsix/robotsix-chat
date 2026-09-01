@@ -398,11 +398,10 @@ def test_get_config_includes_schema(tmp_path: Path) -> None:
 # ---------------------------------------------------------------------------
 
 
-def test_get_config_includes_autonomous_sessions_when_absent(tmp_path: Path) -> None:
-    """``autonomous.sessions`` appears in GET /config when absent from file.
+def test_get_config_includes_periodic_when_absent(tmp_path: Path) -> None:
+    """Absent ``periodic`` still appears in GET /config via schema defaults.
 
-    The default preset (``{"name": "default"}``) is overlaid from the
-    Settings model defaults.
+    The presets editor always has a section to render.
     """
     config_path = tmp_path / "config.json"
     _write_config(config_path, {"llmio_model_level": 2, "server_port": 8080})
@@ -412,17 +411,10 @@ def test_get_config_includes_autonomous_sessions_when_absent(tmp_path: Path) -> 
     assert resp.status_code == 200
     data = resp.json()
 
-    assert "autonomous" in data["config"]
-    autonomous = data["config"]["autonomous"]
-    assert "sessions" in autonomous
-    sessions = autonomous["sessions"]
-    assert isinstance(sessions, list)
-    assert len(sessions) == 1
-    assert sessions[0]["name"] == "default"
-    assert sessions[0]["enabled"] is True
-    # Other autonomous defaults should also be present.
-    assert "completion_marker" in autonomous
-    assert autonomous["completion_marker"] == "---AUTONOMOUS COMPLETE---"
+    assert "periodic" in data["config"]
+    periodic = data["config"]["periodic"]
+    assert periodic["sessions"] == []
+    assert periodic["ready_staleness_minutes"] == 10
 
 
 def test_get_config_overlay_preserves_file_values(tmp_path: Path) -> None:
@@ -432,8 +424,14 @@ def test_get_config_overlay_preserves_file_values(tmp_path: Path) -> None:
         config_path,
         {
             "llmio_model_level": 2,
-            "autonomous": {
-                "completion_marker": "---CUSTOM MARKER---",
+            "periodic": {
+                "sessions": [
+                    {
+                        "name": "mail-triage",
+                        "initial_prompt": "Review the queue. READ-ONLY.",
+                        "schedule_interval_seconds": 86400,
+                    }
+                ],
             },
         },
     )
@@ -443,33 +441,29 @@ def test_get_config_overlay_preserves_file_values(tmp_path: Path) -> None:
     assert resp.status_code == 200
     data = resp.json()
 
-    # File value wins.
-    assert data["config"]["autonomous"]["completion_marker"] == "---CUSTOM MARKER---"
-    # Defaults fill in missing keys — sessions receives the built-in default preset.
-    sessions = data["config"]["autonomous"]["sessions"]
-    assert isinstance(sessions, list)
-    assert len(sessions) == 1
-    assert sessions[0]["name"] == "default"
+    sessions = data["config"]["periodic"]["sessions"]
+    assert [p["name"] for p in sessions] == ["mail-triage"]
+    # Defaults fill in missing keys.
+    assert data["config"]["periodic"]["ready_staleness_minutes"] == 10
 
 
 # ---------------------------------------------------------------------------
-# Legacy key stripping (approval_marker / proposal_marker)
+# Retired-block stripping (the pre-rework ``autonomous`` block)
 # ---------------------------------------------------------------------------
 
 
-def test_get_config_drops_legacy_proposal_marker(tmp_path: Path) -> None:
-    """A config file containing the legacy ``autonomous.proposal_marker`` key.
+def test_get_config_drops_retired_autonomous_block(tmp_path: Path) -> None:
+    """A file still carrying the retired ``autonomous`` block loads fine.
 
-    Returns without the removed key (the proposal handshake is gone).
+    The block is stripped rather than bricking validation (stored templates
+    are known to re-inject removed keys).
     """
     config_path = tmp_path / "config.json"
     _write_config(
         config_path,
         {
             "llmio_model_level": 2,
-            "autonomous": {
-                "proposal_marker": "---CUSTOM MARKER---",
-            },
+            "autonomous": {"completion_marker": "---AUTONOMOUS COMPLETE---"},
         },
     )
     client = _make_app(config_path)
@@ -478,25 +472,23 @@ def test_get_config_drops_legacy_proposal_marker(tmp_path: Path) -> None:
     assert resp.status_code == 200
     data = resp.json()
 
-    autonomous = data["config"]["autonomous"]
-    assert "proposal_marker" not in autonomous
-    assert "completion_marker" in autonomous
+    assert "autonomous" not in data["config"]
+    assert "periodic" in data["config"]
 
 
-def test_put_succeeds_when_file_has_legacy_markers(tmp_path: Path) -> None:
-    """PUT /config succeeds when file has legacy approval/proposal markers.
+def test_put_succeeds_when_file_has_retired_autonomous_block(
+    tmp_path: Path,
+) -> None:
+    """PUT /config succeeds despite a retired on-disk ``autonomous`` block.
 
-    The persisted file is cleaned of the legacy keys after save.
+    The save drops the block.
     """
     config_path = tmp_path / "config.json"
     _write_config(
         config_path,
         {
             "llmio_model_level": 2,
-            "autonomous": {
-                "approval_marker": "---CUSTOM-APPROVAL---",
-                "proposal_marker": "---CUSTOM-PROPOSAL---",
-            },
+            "autonomous": {"sessions": [{"name": "default"}]},
         },
     )
     client = _make_app(config_path)
@@ -505,36 +497,7 @@ def test_put_succeeds_when_file_has_legacy_markers(tmp_path: Path) -> None:
     assert resp.status_code == 200, resp.text
 
     on_disk = _read_config_json(config_path)
-    assert "autonomous" in on_disk
-    assert "approval_marker" not in on_disk["autonomous"]
-    assert "proposal_marker" not in on_disk["autonomous"]
     assert on_disk["idle_timeout_minutes"] == 45
-
-
-def test_put_drops_unknown_autonomous_keys(tmp_path: Path) -> None:
-    """Unknown keys inside the ``autonomous`` sub-dict are dropped.
-
-    Validation runs ``extra="forbid"`` so unknown keys would brick the save
-    without this migration step.
-    """
-    config_path = tmp_path / "config.json"
-    _write_config(
-        config_path,
-        {
-            "llmio_model_level": 2,
-            "autonomous": {
-                "ghost_key": "should be removed",
-            },
-        },
-    )
-    client = _make_app(config_path)
-
-    resp = client.put("/config", json={"server_port": 9000})
-    assert resp.status_code == 200, resp.text
-
-    on_disk = _read_config_json(config_path)
-    assert "autonomous" in on_disk
-    assert "ghost_key" not in on_disk["autonomous"]
 
 
 # ---------------------------------------------------------------------------

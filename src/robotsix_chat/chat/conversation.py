@@ -11,7 +11,7 @@ This deployment is **single-user**: there is no login, no account, and no
 per-browser identity.  Every human-facing owner id collapses to
 :data:`OPERATOR_OWNER` (see :func:`canonical_owner_id`), so the same session
 list is served to every browser, device, and private window.  The only owner
-ids that keep their own pool are the autonomous runner's reserved ones — those
+id that keeps its own pool is the periodic scheduler's reserved one — that
 sessions are machine-owned and the UI fetches them as a separate list.
 
 Sessions are **persistent**: history is never wiped on idle timeout —
@@ -54,25 +54,23 @@ _MAX_TITLE_CHARS = 60
 # same person, so every non-reserved owner id normalises to this.
 OPERATOR_OWNER = "operator"
 
-# Reserved owner ids belonging to the autonomous runner: the bootstrap owner
-# and the ``autonomous:<definition>`` per-definition owners.  These keep their
-# own pools — the runner manages their lifecycle and the UI lists them
-# separately.  MUST match ``BOOTSTRAP_OWNER`` / ``_OWNER_ID_PREFIX`` in
-# ``robotsix_chat/autonomous/runner.py`` (duplicated rather than imported to
-# keep this module free of an autonomous → conversation import cycle).
-_AUTONOMOUS_OWNER = "autonomous"
-_AUTONOMOUS_OWNER_PREFIX = "autonomous:"
+# Reserved owner id for scheduler-created periodic sessions. It keeps its own
+# pool — the scheduler creates its sessions, the UI lists them separately.
+# MUST match ``PERIODIC_OWNER`` in ``robotsix_chat/periodic/scheduler.py``
+# (duplicated rather than imported to keep this module free of a
+# periodic → conversation import cycle).
+_PERIODIC_OWNER = "periodic"
 
 
 def canonical_owner_id(owner_id: str) -> str:
     """Return the owner pool *owner_id* belongs to.
 
-    Reserved autonomous owners are returned unchanged; everything else — any
+    The reserved periodic owner is returned unchanged; everything else — any
     client-supplied id, however it was minted — collapses to
     :data:`OPERATOR_OWNER`.  This is what makes the session list identical
     from every access point.
     """
-    if owner_id == _AUTONOMOUS_OWNER or owner_id.startswith(_AUTONOMOUS_OWNER_PREFIX):
+    if owner_id == _PERIODIC_OWNER:
         return owner_id
     return OPERATOR_OWNER
 
@@ -852,20 +850,13 @@ class ConversationStore:
         default active session).  This side effect is idempotent.
 
         Pass ``create_default=False`` for pseudo-owners that must never get a
-        lazily-created browser session (e.g. the autonomous runner's fixed
+        lazily-created browser session (e.g. the periodic scheduler's fixed
         owner) — an empty ``([], "")`` is returned instead.  Otherwise the
         husk would surface in the operator's merged session list as an empty,
         un-closable "New chat" (it is owned by the pseudo-owner, not the
         browser client).
         """
         owner_id = canonical_owner_id(owner_id)
-
-        # When querying the bootstrap autonomous owner, also surface
-        # sessions from every per-preset sub-scope (autonomous:mail-check,
-        # autonomous:cost-review, ...) so the UI session list shows them
-        # all inline instead of only the default preset.
-        if owner_id == _AUTONOMOUS_OWNER:
-            return self._list_autonomous_sessions(create_default=create_default)
 
         owner = self._owners.get(owner_id)
         if owner is None:
@@ -898,55 +889,6 @@ class ConversationStore:
         result.sort(key=lambda s: s["last_active"], reverse=True)  # type: ignore[arg-type,return-value]
         return result, owner.active_session_id
 
-    def _list_autonomous_sessions(
-        self, *, create_default: bool
-    ) -> tuple[list[dict[str, object]], str]:
-        """Merge sessions from all autonomous owner scopes into a single sorted list.
-
-        Only the bootstrap owner is eligible for lazy default creation;
-        per-preset sub-scopes are managed by the runner and are never
-        lazily created here.
-        """
-        result: list[dict[str, object]] = []
-        active_id = ""
-
-        # Bootstrap autonomous owner.
-        owner = self._owners.get(_AUTONOMOUS_OWNER)
-        if owner is not None:
-            active_id = owner.active_session_id
-            for sid in owner.session_ids:
-                sess = self._sessions.get(sid)
-                if sess is not None:
-                    result.append(_session_metadata(sess))
-        elif create_default:
-            sid = self._session_factory()
-            new_session = Session(
-                session_id=sid,
-                wall_last_active=self._wall_clock(),
-            )
-            self._sessions[sid] = new_session
-            self._owners[_AUTONOMOUS_OWNER] = _OwnerState(
-                active_session_id=sid,
-                session_ids={sid},
-            )
-            self._evict_overflow()
-            self._persist()
-            result.append(_session_metadata(new_session))
-            active_id = sid
-
-        # Per-preset sub-scopes (autonomous:mail-check, etc.).
-        # Never create defaults for these — they are owned by the runner.
-        for owner_key, owner_state in self._owners.items():
-            if not owner_key.startswith(_AUTONOMOUS_OWNER_PREFIX):
-                continue
-            for sid in owner_state.session_ids:
-                sess = self._sessions.get(sid)
-                if sess is not None:
-                    result.append(_session_metadata(sess))
-
-        result.sort(key=lambda s: s["last_active"], reverse=True)  # type: ignore[arg-type,return-value]
-        return result, active_id
-
     def register_session(
         self,
         owner_id: str,
@@ -964,7 +906,7 @@ class ConversationStore:
         Unlike :meth:`begin`, which only ensures the session exists in the
         global registry, this also establishes the owner→session link that
         :meth:`list_sessions` and persistence rely on.  It exists for
-        out-of-band session drivers (the autonomous runner) that record turns
+        out-of-band session drivers (the periodic scheduler) that record turns
         without ever going through the normal ``owner_id``-carrying
         ``record`` path against an already-registered owner — without an
         explicit registration such sessions never appear in
@@ -1044,7 +986,7 @@ class ConversationStore:
         most-recently-active remaining session becomes active; if none remain
         and *create_replacement* is ``True`` (the default) a fresh empty
         session is created so the owner always has an active session.  Pass
-        ``create_replacement=False`` for pseudo-owners (e.g. the autonomous
+        ``create_replacement=False`` for pseudo-owners (e.g. the periodic
         runner's fixed owner) so no empty "New chat" husk is spawned — the
         active pointer is cleared to ``""`` instead.  Returns
         ``{"deleted": bool, "active_session_id": str}`` — ``deleted`` is
@@ -1065,7 +1007,7 @@ class ConversationStore:
         owner.session_ids.discard(session_id)
         # Only destroy the conversation itself once no owner references it.
         # A session can be dual-owned: ``record`` registers it under whoever
-        # sends a turn, so an autonomous session the operator chats with ends
+        # sends a turn, so a periodic session the operator chats with ends
         # up in both owners' registries.  Popping it unconditionally left the
         # other owner holding a dangling id, which ``begin`` then silently
         # re-created as a blank session — the operator kept typing into what
@@ -1143,7 +1085,7 @@ class ConversationStore:
         An operator turn reopens a closed session — the conversation is
         still live as long as the operator keeps messaging it, so
         subsession spawning and steering must work again.  Background
-        drivers (the autonomous runner) never call this; only the chat
+        drivers (the periodic scheduler) never call this; only the chat
         endpoint does, on operator-initiated turns.
         """
         session = self._sessions.get(session_id)
@@ -1157,7 +1099,7 @@ class ConversationStore:
         """Return *session_id*'s wall-clock last-activity timestamp.
 
         ``None`` when the session is unknown (never created, or evicted).
-        Public accessor so external code — the autonomous runner's retire
+        Public accessor so external code — e.g. a cleanup sweep
         sweep — can tell a session the operator is actively chatting with
         from an abandoned one without reaching into ``_sessions``.
         """
@@ -1425,7 +1367,7 @@ class ConversationStore:
         """Return every owner id whose registry still holds *session_id*.
 
         A session is normally owned once, but ``record`` adds it to whichever
-        owner sends a turn, so an autonomous session the operator chats with
+        owner sends a turn, so a periodic session the operator chats with
         is genuinely dual-owned.
         """
         return [
@@ -1446,7 +1388,7 @@ class ConversationStore:
     def owner_for_session(self, session_id: str) -> str | None:
         """Return the ``owner_id`` that owns *session_id*, or ``None``.
 
-        Public accessor so external code (e.g. the autonomous runner) can
+        Public accessor so external code (e.g. the periodic scheduler) can
         resolve session ownership without reaching into private state.
         """
         for oid, ostate in self._owners.items():

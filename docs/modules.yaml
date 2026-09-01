@@ -110,20 +110,16 @@ modules:
       - vulture_whitelist.py
       - deploy/.env.example
 
-  - id: autonomous
-    description: "Autonomous chat sessions — single-prompt self-directed agent runs with operator approval gates."
+  - id: periodic
+    description: "Periodic chat sessions — a scheduler that starts ordinary sessions on an interval with one initial prompt."
     paths:
-      - src/robotsix_chat/autonomous/__init__.py
-      - src/robotsix_chat/autonomous/models.py
-      - src/robotsix_chat/autonomous/prompts.py
-      - src/robotsix_chat/autonomous/refinement.py
-      - src/robotsix_chat/autonomous/runner.py
-      - tests/autonomous/__init__.py
-      - tests/autonomous/test_models.py
-      - tests/autonomous/test_prompts.py
-      - tests/autonomous/test_refinement.py
-      - tests/autonomous/test_runner.py
-      - docs/user-guide/autonomous-sessions.md
+      - src/robotsix_chat/periodic/__init__.py
+      - src/robotsix_chat/periodic/prompts.py
+      - src/robotsix_chat/periodic/scheduler.py
+      - tests/periodic/__init__.py
+      - tests/periodic/test_prompts.py
+      - tests/periodic/test_scheduler.py
+      - docs/user-guide/periodic-sessions.md
 
   - id: component-client
     description: "Component agent client tools for the chat LLM — exposes build_component_tools(), a factory returning LLM tools that let the chat agent enumerate, inspect, and configure remote component agents via direct HTTP."
@@ -147,7 +143,7 @@ modules:
     paths:
       - src/robotsix_chat/config/__init__.py
       - src/robotsix_chat/config/auth_models.py
-      - src/robotsix_chat/config/autonomous_models.py
+      - src/robotsix_chat/config/periodic_models.py
       - src/robotsix_chat/config/component_models.py
       - src/robotsix_chat/config/constants.py
       - src/robotsix_chat/config/deploy_models.py
@@ -246,7 +242,6 @@ modules:
       - tests/chat/server/routes/test_sessions.py
       - tests/chat/server/routes/test_diagnostics.py
       - tests/chat/server/routes/test_subsessions.py
-      - tests/chat/server/test_autonomous_endpoints.py
       - tests/chat/server/test_prompt_style_governance.py
 
   - id: common

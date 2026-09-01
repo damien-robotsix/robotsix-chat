@@ -14,7 +14,7 @@ import httpx
 import pytest
 import respx
 
-from robotsix_chat.config import AutonomousSettings, DirectRepoSettings, Settings
+from robotsix_chat.config import DirectRepoSettings, PeriodicSettings, Settings
 from robotsix_chat.ticket_poll import (
     _check_unexpected_terminal,
     _delivery_fields,
@@ -111,7 +111,7 @@ def _stale_settings(
     priority_ready_staleness_minutes: int = 60,
     **kw: Any,
 ) -> Settings:
-    """Return Settings with autonomous.ready_staleness_minutes configured."""
+    """Return Settings with periodic.ready_staleness_minutes configured."""
     base: dict[str, Any] = {
         "board_api_base_url": "http://board:8077",
         "board_api_token": "",
@@ -120,7 +120,7 @@ def _stale_settings(
     base.update(kw)
     return Settings(
         direct_repo=DirectRepoSettings(**base),
-        autonomous=AutonomousSettings(
+        periodic=PeriodicSettings(
             ready_staleness_minutes=ready_staleness_minutes,
             priority_ready_staleness_minutes=priority_ready_staleness_minutes,
         ),
@@ -2047,7 +2047,7 @@ def test_list_stale_ready_empty_config_returns_empty_list() -> None:
     """Neither component_request nor board_api_base_url → empty list."""
     settings = Settings(
         direct_repo=DirectRepoSettings(board_api_base_url=""),
-        autonomous=AutonomousSettings(ready_staleness_minutes=10),
+        periodic=PeriodicSettings(ready_staleness_minutes=10),
     )
     tools = build_list_stale_ready_tickets_tool(
         settings,
@@ -3189,3 +3189,86 @@ async def test_file_ticket_repo_validation_roster_falls_back_to_direct(
     assert result["ticket_id"] == ""
     assert "mobile-app" in result["error"]
     assert "not registered" in result["error"]
+
+
+# ---------------------------------------------------------------------------
+# transition_ticket — the master-agent approval tool
+# ---------------------------------------------------------------------------
+
+
+def _transition_tool(monkeypatch, captured):
+    """Build transition_ticket over a fake roster component_request."""
+    import robotsix_chat.ticket_poll as tp
+
+    async def fake_component_request(component, method, path, json_body=None, **kw):
+        captured.append((component, method, path, json_body))
+        return f'HTTP 200 {{"state": "{(json_body or {}).get("state")}"}}'
+
+    async def fake_resolve(board_url, token, timeout, ids):
+        return {i: i for i in ids}
+
+    monkeypatch.setattr(tp, "_resolve_ticket_ids", fake_resolve)
+    settings = _settings()
+    tools = tp.build_transition_ticket_tool(
+        settings, component_request=fake_component_request
+    )
+    assert len(tools) == 1
+    return tools[0]
+
+
+@pytest.mark.asyncio
+async def test_transition_ticket_approves_to_ready_with_note(monkeypatch):
+    """The approve path posts /transition with state=ready and the rationale."""
+    captured: list = []
+    tool = _transition_tool(monkeypatch, captured)
+
+    out = await tool("t-1", "ready", "spec actionable, consistent with standards")
+    assert "ready" in out
+    component, method, path, body = captured[0]
+    assert (component, method) == ("mill", "POST")
+    assert path == "/tickets/t-1/transition"
+    assert body == {
+        "state": "ready",
+        "note": "spec actionable, consistent with standards",
+    }
+
+
+@pytest.mark.asyncio
+async def test_transition_ticket_thin_spec_goes_to_draft(monkeypatch):
+    """The thin-spec path posts state=draft with the what-is-missing note."""
+    captured: list = []
+    tool = _transition_tool(monkeypatch, captured)
+
+    await tool("t-2", "draft", "spec body is empty — needs goal and scope")
+    assert captured[0][2] == "/tickets/t-2/transition"
+    assert captured[0][3]["state"] == "draft"
+
+
+@pytest.mark.asyncio
+async def test_transition_ticket_requires_a_note(monkeypatch):
+    captured: list = []
+    tool = _transition_tool(monkeypatch, captured)
+
+    out = await tool("t-3", "ready", "   ")
+    assert "Refusing" in out
+    assert captured == []
+
+
+@pytest.mark.asyncio
+async def test_transition_ticket_rejects_unlisted_states(monkeypatch):
+    captured: list = []
+    tool = _transition_tool(monkeypatch, captured)
+
+    out = await tool("t-4", "done", "should not pass")
+    assert "Refusing" in out
+    assert captured == []
+
+
+def test_agent_instruction_carries_the_approval_gate_policy():
+    """Governed prompt: the master agent is the approver — no human loop."""
+    instruction = Settings().agent_instruction
+    assert "Mill approval gate" in instruction
+    assert "transition_ticket" in instruction
+    assert "human_issue_approval" in instruction
+    assert "draft then closed" in instruction
+    assert "Never spawn a subsession that merely waits for a human" in instruction

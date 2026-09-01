@@ -7,7 +7,7 @@ CLI as a subprocess and passes the system prompt as a single ``--system-prompt``
 argv element, it also ran into a hard kernel ceiling: ``MAX_ARG_STRLEN``
 (``PAGE_SIZE * 32`` = 128 KiB on x86-64) caps one argument, and ``execve``
 answers ``E2BIG`` above it. On 2026-08-13 the bundled skills reached 85 KB and
-autonomous sessions — which add their own preamble on top — crossed the line
+periodic sessions — which add their own preamble on top — crossed the line
 and failed to start at every restart.
 
 This module replaces that with an index: each skill contributes its title and

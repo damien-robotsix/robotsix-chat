@@ -55,7 +55,9 @@ def run_server(
     subsession_registry: Any = None,
     subsession_delivery: Any = None,
     feedback_runner: Any = None,
-    autonomous_runner: Any = None,
+    periodic_definitions: Any = None,
+    periodic_agent_factory: Any = None,
+    periodic_state_path: str | None = None,
     on_startup: Callable[[], None] | None = None,
     on_startup_async: Callable[[], Any] | None = None,
     on_shutdown: Callable[[], Any] | None = None,
@@ -96,7 +98,9 @@ def run_server(
         subsession_registry=subsession_registry,
         subsession_delivery=subsession_delivery,
         feedback_runner=feedback_runner,
-        autonomous_runner=autonomous_runner,
+        periodic_definitions=periodic_definitions,
+        periodic_agent_factory=periodic_agent_factory,
+        periodic_state_path=periodic_state_path,
         on_startup=on_startup,
         on_startup_async=on_startup_async,
         on_shutdown=on_shutdown,
@@ -270,7 +274,6 @@ def run_server_from_config(agent: ChatAgent | None = None) -> None:
     # browser; terminal summaries go through ParentDelivery → either the
     # owning chat session's history (parent = main chat) or the parent
     # subsession's inbox (nested).
-    from robotsix_chat.autonomous import AutonomousRunner, build_autonomous_instruction
     from robotsix_chat.subsessions import (
         CloseState,
         ParentDelivery,
@@ -361,93 +364,35 @@ def run_server_from_config(agent: ChatAgent | None = None) -> None:
     # disabled by config (monitor_slot_budget <= 0).
     attach_slot_budget(env)
 
-    # -- autonomous agent factory ------------------------------------------
-    # Creates an agent with the autonomous protocol supplement injected into
-    # its system prompt.  The runner calls this factory once per autonomous
-    # session to build the agent for its single prompt.
-    def _autonomous_agent_factory(
-        model_level: int | None = None,
-    ) -> LlmioChatAgent:
-        instruction = settings.agent_instruction + build_autonomous_instruction(
-            settings
-        )
-        return create_agent_from_settings(
-            instruction=instruction,
-            settings=settings,
-            conversation_store=conversation_store,
-            model_level=model_level
-            if model_level is not None
-            else settings.llmio_model_level,
-            subsession_env=env,
-            event_sink=event_bus,
-            # Autonomous runs are unattended; long-term cognee memory is
-            # gated off by default (memory.autonomous_enabled) so they don't
-            # cognify every turn around the clock.
-            memory_enabled=settings.memory.autonomous_enabled,
-            diagnostic_store=diagnostic_store,
-            knowledge_store=knowledge_store,
-        )
+    # -- periodic session agents -------------------------------------------
+    # Periodic sessions run the exact same instruction and code path as an
+    # operator session; the only per-preset knob is the model level. Agents
+    # are cached per level so repeated firings reuse them. Long-term cognee
+    # memory stays gated (memory.periodic_enabled) — these turns are
+    # unattended and would otherwise cognify around the clock.
+    _periodic_agents: dict[int | None, LlmioChatAgent] = {}
 
-    # -- autonomous runner -------------------------------------------------
-    autonomous_runner: AutonomousRunner | None = None
-    # The runner is always initialised — session presets in
-    # ``autonomous.sessions`` are the sole enablement model.  An empty
-    # sessions list means no autonomous sessions run.
-    from robotsix_chat.autonomous import AUTONOMOUS_PERSIST_PATH
-    from robotsix_chat.autonomous.refinement import RefinementStore
+    def _periodic_agent_factory(model_level: int | None = None) -> LlmioChatAgent:
+        if model_level not in _periodic_agents:
+            _periodic_agents[model_level] = create_agent_from_settings(
+                settings=settings,
+                conversation_store=conversation_store,
+                model_level=model_level
+                if model_level is not None
+                else settings.chat_model_level,
+                subsession_env=env,
+                event_sink=event_bus,
+                memory_enabled=settings.memory.periodic_enabled,
+                diagnostic_store=diagnostic_store,
+                knowledge_store=knowledge_store,
+            )
+        return _periodic_agents[model_level]
 
-    refinement_agent_factory: Callable[[], LlmioChatAgent] | None = None
-    refinement_store: RefinementStore | None = None
-    try:
-        refinement_agent = create_agent_from_settings(
-            settings=settings,
-            conversation_store=conversation_store,
-            model_level=settings.llmio_model_level,
-            bare=True,
-            diagnostic_store=diagnostic_store,
-            knowledge_store=knowledge_store,
-        )
-
-        def _refinement_agent_factory() -> LlmioChatAgent:
-            return refinement_agent
-
-        refinement_agent_factory = _refinement_agent_factory
-        refinement_persist_path = str(
-            Path(AUTONOMOUS_PERSIST_PATH).parent / "autonomous_refinements.json"
-        )
-        refinement_store = RefinementStore(
-            persist_path=refinement_persist_path,
-            agent_factory=refinement_agent_factory,
-        )
-    except Exception:
-        logger.warning(
-            "Failed to create refinement agent — self-refinement "
-            "will be unavailable for autonomous presets",
-            exc_info=True,
-        )
-
-    autonomous_runner = AutonomousRunner(
-        settings=settings,
-        conversation_store=conversation_store,
-        agent_factory=_autonomous_agent_factory,
-        run_serializer=run_serializer,
-        event_sink=event_bus,
-        refinement_store=refinement_store,
+    periodic_definitions = [d for d in settings.periodic.sessions if d.enabled]
+    logger.info(
+        "Periodic scheduler configured (%d enabled preset(s))",
+        len(periodic_definitions),
     )
-    if autonomous_runner.definition_count > 0:
-        logger.info(
-            "Autonomous runner initialised (%d session preset(s))",
-            autonomous_runner.definition_count,
-        )
-    else:
-        logger.info("Autonomous runner initialised (no session presets configured)")
-
-    # Wire the autonomous runner into ParentDelivery now that both exist
-    # (see ParentDelivery.set_autonomous_runner for why this can't happen
-    # at construction time) — reaction prompts then become plan-aware when
-    # the main session has an active autonomous plan.
-    if autonomous_runner is not None:
-        delivery.set_autonomous_runner(autonomous_runner)
 
     if agent is None:
         agent = create_agent_from_settings(
@@ -566,13 +511,11 @@ def run_server_from_config(agent: ChatAgent | None = None) -> None:
             except Exception:
                 logger.exception("Memory maintenance start failed — continuing")
 
-    # -- resume autonomous sessions on restart -----------------------------
-    async def _resume_autonomous() -> None:
-        """Auto-close completed autonomous sessions and resume executing ones."""
+    # -- async startup ------------------------------------------------------
+    async def _startup_async() -> None:
+        """Run the connectivity check, memory warm-up, watcher, continuation."""
         await check_component_connectivity(settings.central_deploy)
         _start_memory_warmup()
-        if autonomous_runner is not None:
-            await autonomous_runner.resume_sessions()
         # Start the paused-monitor watcher.
         await _start_watcher()
         # Fire any pending post-restart continuation.
@@ -697,9 +640,10 @@ def run_server_from_config(agent: ChatAgent | None = None) -> None:
         subsession_registry=subsession_registry,
         subsession_delivery=delivery,
         feedback_runner=feedback_runner,
-        autonomous_runner=autonomous_runner,
+        periodic_definitions=periodic_definitions,
+        periodic_agent_factory=_periodic_agent_factory,
         on_startup=_resume,
-        on_startup_async=_resume_autonomous,
+        on_startup_async=_startup_async,
         on_shutdown=_flush_traces,
         direct_repo_settings=settings.direct_repo,
         central_deploy_settings=settings.central_deploy,

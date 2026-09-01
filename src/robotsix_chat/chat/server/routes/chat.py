@@ -163,6 +163,10 @@ class MessageCoalescer:
         """*debounce_seconds* — window to wait for additional messages."""
         self._debounce_seconds = debounce_seconds
         self._batches: dict[str, list[_PendingMessage]] = {}
+        # Sessions whose processor task is currently running. ``_batches``
+        # only holds messages waiting out the debounce window (the processor
+        # pops its batch on start), so busy-ness needs its own tracking.
+        self._processing: set[str] = set()
         # Guard protects the _batches dict — not the individual lists,
         # which are only accessed by their dedicated processor task after
         # the guard releases.
@@ -191,7 +195,6 @@ class MessageCoalescer:
         owner_id: str,
         had_session: bool,
         summary_agent: ChatAgent | None = None,
-        autonomous_runner: Any = None,
         event_bus: Any = None,  # EventBus | None (lazy typing to avoid cycle)
     ) -> asyncio.Queue[SSEQueueFrame]:
         """Submit a message for batching; return a queue of SSE frames.
@@ -228,14 +231,29 @@ class MessageCoalescer:
                         owner_id,
                         had_session,
                         summary_agent,
-                        autonomous_runner,
                         event_bus,
                     )
                 )
                 self._background_tasks.add(task)
+                self._processing.add(session_id)
                 task.add_done_callback(self._background_tasks.discard)
 
+                def _clear_processing(
+                    _finished: asyncio.Task[None], sid: str = session_id
+                ) -> None:
+                    self._processing.discard(sid)
+
+                task.add_done_callback(_clear_processing)
+
         return response_queue
+
+    def is_busy(self, session_id: str) -> bool:
+        """Return True while *session_id* has a queued message or running turn.
+
+        Used by the periodic scheduler to skip a firing whose previous
+        session is still mid-turn.
+        """
+        return session_id in self._batches or session_id in self._processing
 
     async def cancel_message(
         self,
@@ -315,7 +333,6 @@ class MessageCoalescer:
         owner_id: str,
         had_session: bool,
         summary_agent: ChatAgent | None = None,
-        autonomous_runner: Any = None,
         event_bus: Any = None,
     ) -> None:
         """Wait for the debounce window, drain, lock, run agent, fan out."""
@@ -352,22 +369,11 @@ class MessageCoalescer:
                 store.begin(session_id) if had_session else (None, None)
             )
 
-            # An operator turn reopens a previously closed session: the
-            # conversation is live again, so the agent may spawn/steer
-            # subsessions regardless of any earlier operator close.  Only
-            # the operator-driven chat path reopens — background drivers
-            # (e.g. the autonomous runner) record turns without it, so a
-            # closed session that nobody messages stays closed.
+            # A turn reopens a previously closed session: the conversation
+            # is live again, so the agent may spawn/steer subsessions
+            # regardless of any earlier operator close.
             if had_session:
                 store.reopen_session(session_id)
-                # The same turn reopens an autonomous session.  Its run
-                # completes within minutes but the card stays on screen for
-                # the rest of the trigger interval, so the session the
-                # operator opens and talks to is usually one the runner has
-                # already marked completed — i.e. one its next restart fire
-                # would retire and replace mid-conversation.
-                if autonomous_runner is not None:
-                    autonomous_runner.note_operator_turn(session_id)
 
             # Idempotency check on the first pending message's message_id.
             first_msg = pending[0]
@@ -478,13 +484,6 @@ class MessageCoalescer:
                             msg_id_store.mark_completed(
                                 session_id, p.message_id, full_reply
                             )
-
-                    # Scan autonomous session replies for lifecycle markers.
-                    if autonomous_runner is not None:
-                        autonomous_runner.check_reply_for_markers(
-                            session_id,
-                            full_reply,
-                        )
 
                 await self._fan_out(pending, SSE_DONE_TYPE)
                 if publish_turn:
@@ -829,7 +828,6 @@ async def chat_endpoint(
 
     # -- Submit to the message coalescer ----------------------------------
 
-    autonomous_runner = request.app.state.autonomous_runner
     coalescer: MessageCoalescer = request.app.state.message_coalescer
     # Only use summary_agent for title generation when it's a dedicated
     # (cheaper) agent — not when it's the fallback-to-main-agent default.
@@ -871,7 +869,6 @@ async def chat_endpoint(
         owner_id=owner_id or "",
         had_session=had_session,
         summary_agent=title_agent,
-        autonomous_runner=autonomous_runner,
         event_bus=request.app.state.event_bus,
     )
 

@@ -474,25 +474,25 @@ def test_list_sessions_no_default_for_unknown_owner() -> None:
 def test_delete_session_keeps_a_conversation_another_owner_still_holds() -> None:
     """Deleting for one owner must not destroy a dual-owned conversation.
 
-    ``record`` registers a session under whoever sends a turn, so an
-    autonomous session the operator chats with genuinely belongs to both
-    owners.  The autonomous runner's retire sweep used to pop it outright,
-    leaving the operator holding a dangling id that ``begin`` then silently
-    re-created as a blank session — they kept typing into what looked like
-    the same chat while its history was gone.
+    ``record`` registers a session under whoever sends a turn, so a
+    periodic session the operator chats with genuinely belongs to both
+    owners.  A cleanup that pops it outright would leave the operator
+    holding a dangling id that ``begin`` then silently re-created as a
+    blank session — they kept typing into what looked like the same chat
+    while its history was gone.
     """
     store = _store()
     store.create_session("operator")
-    shared = str(store.create_session("autonomous")["session_id"])
+    shared = str(store.create_session("periodic")["session_id"])
     # The operator speaks to it, which adopts it into their own registry.
     store.record(shared, "operator", "hello", "hi there")
 
-    result = store.delete_session("autonomous", shared, create_replacement=False)
+    result = store.delete_session("periodic", shared, create_replacement=False)
 
     assert result["deleted"] is True
-    # Gone from the autonomous list...
-    auto_sessions, _ = store.list_sessions("autonomous", create_default=False)
-    assert [s["session_id"] for s in auto_sessions] == []
+    # Gone from the periodic list...
+    per_sessions, _ = store.list_sessions("periodic", create_default=False)
+    assert [s["session_id"] for s in per_sessions] == []
     # ...but the operator still has the conversation, history intact.
     op_sessions, _ = store.list_sessions("operator")
     assert shared in [s["session_id"] for s in op_sessions]
@@ -811,10 +811,13 @@ def test_canonical_owner_id_collapses_client_ids() -> None:
     assert canonical_owner_id(OPERATOR_OWNER) == OPERATOR_OWNER
 
 
-def test_canonical_owner_id_preserves_autonomous_owners() -> None:
-    """The autonomous runner's reserved owners keep their own pools."""
-    assert canonical_owner_id("autonomous") == "autonomous"
-    assert canonical_owner_id("autonomous:nightly") == "autonomous:nightly"
+def test_canonical_owner_id_preserves_the_periodic_owner() -> None:
+    """The reserved ``periodic`` owner keeps its own session pool.
+
+    The old autonomous owners collapse to the operator like any client id.
+    """
+    assert canonical_owner_id("periodic") == "periodic"
+    assert canonical_owner_id("autonomous") == "operator"
 
 
 def test_two_browsers_see_the_same_sessions() -> None:
@@ -835,90 +838,17 @@ def test_two_browsers_see_the_same_sessions() -> None:
     assert len(sessions) == 1
 
 
-def test_autonomous_owner_stays_separate_from_the_operator() -> None:
-    """Autonomous sessions are not folded into the operator's own list."""
+def test_periodic_owner_stays_separate_from_the_operator() -> None:
+    """Periodic sessions are not folded into the operator's own list."""
     store = _store()
-    store.register_session("autonomous", "auto-1", make_active=True)
+    store.register_session("periodic", "per-1", make_active=True)
     mine = cast(str, store.create_session("browser-a")["session_id"])
 
     operator_sessions, _ = store.list_sessions("browser-b")
-    auto_sessions, _ = store.list_sessions("autonomous", create_default=False)
+    per_sessions, _ = store.list_sessions("periodic", create_default=False)
 
     assert [s["session_id"] for s in operator_sessions] == [mine]
-    assert [s["session_id"] for s in auto_sessions] == ["auto-1"]
-
-
-def test_list_autonomous_sessions_merges_per_preset_subscopes() -> None:
-    """The bootstrap autonomous query surfaces every ``autonomous:*`` owner.
-
-    Named presets store sessions under ``autonomous:<name>`` while the UI
-    only ever queries ``owner_id=autonomous``.  ``list_sessions`` must expand
-    the bootstrap owner into all per-preset sub-scopes, merged and sorted by
-    recency, or periodic preset sessions run but never appear in the list.
-    """
-    clock = _FakeWallClock()
-    store = _store(wall_clock=clock)
-
-    store.register_session("autonomous", "auto-default", make_active=True)
-    clock.advance(1.0)
-    store.register_session("autonomous:mail-check", "auto-mail", make_active=True)
-    clock.advance(1.0)
-    store.register_session("autonomous:cost-review", "auto-cost", make_active=True)
-    clock.advance(1.0)
-    store.register_session("operator", "human", make_active=True)
-
-    sessions, active = store.list_sessions("autonomous", create_default=False)
-
-    assert [s["session_id"] for s in sessions] == [
-        "auto-cost",
-        "auto-mail",
-        "auto-default",
-    ]
-    assert active == "auto-default"
-
-    # The operator's own session never leaks into the merged pool.
-    operator_sessions, _ = store.list_sessions("operator")
-    assert [s["session_id"] for s in operator_sessions] == ["human"]
-
-    # A direct sub-scope query still returns only that preset's pool.
-    mail_sessions, _ = store.list_sessions(
-        "autonomous:mail-check", create_default=False
-    )
-    assert [s["session_id"] for s in mail_sessions] == ["auto-mail"]
-
-
-def test_list_autonomous_sessions_default_creates_only_bootstrap() -> None:
-    """The UI's default query lazily creates the bootstrap owner only.
-
-    ``list_sessions("autonomous")`` defaults to ``create_default=True`` (the
-    real UI query).  Only the bootstrap ``autonomous`` owner is eligible for
-    lazy default creation; per-preset ``autonomous:*`` sub-scopes are owned by
-    the runner and must never be fabricated on read.  This guards against a
-    regression where a merged-list query materialises an empty, un-closable
-    "New chat" husk for every preset that has not actually run.
-    """
-    clock = _FakeWallClock()
-    store = _store(wall_clock=clock)
-
-    store.register_session("autonomous:mail-check", "auto-mail", make_active=True)
-    clock.advance(1.0)
-
-    sessions, active = store.list_sessions("autonomous")  # create_default=True
-
-    # The bootstrap owner was lazily created and reported active ...
-    assert active not in ("", "auto-mail")
-    # ... and the merged list is exactly the lazily-created bootstrap session
-    # plus the pre-existing sub-scope session — no per-preset husk appears.
-    assert [s["session_id"] for s in sessions] == [active, "auto-mail"]
-
-    # The sub-scope that already existed is untouched (still exactly one
-    # session), and a sub-scope that has never run is not created by the read.
-    mail_sessions, _ = store.list_sessions(
-        "autonomous:mail-check", create_default=False
-    )
-    assert [s["session_id"] for s in mail_sessions] == ["auto-mail"]
-    never_ran, _ = store.list_sessions("autonomous:never-ran", create_default=False)
-    assert never_ran == []
+    assert [s["session_id"] for s in per_sessions] == ["per-1"]
 
 
 def test_load_folds_legacy_per_browser_owners_into_one_pool() -> None:
@@ -953,12 +883,12 @@ def test_load_folds_legacy_per_browser_owners_into_one_pool() -> None:
                 }
             ],
         },
-        "autonomous": {
-            "active_session_id": "s-auto",
+        "periodic": {
+            "active_session_id": "s-per",
             "sessions": [
                 {
-                    "session_id": "s-auto",
-                    "title": "auto",
+                    "session_id": "s-per",
+                    "title": "per",
                     "last_active": 500.0,
                     "turn_count": 0,
                     "turns": [],
@@ -980,9 +910,9 @@ def test_load_folds_legacy_per_browser_owners_into_one_pool() -> None:
         # History from both former owners is intact.
         assert store.history("s-old") == [("q1", "a1")]
         assert store.history("s-new") == [("q2", "a2")]
-        # The autonomous pool is untouched by the merge.
-        auto_sessions, _ = store.list_sessions("autonomous", create_default=False)
-        assert [s["session_id"] for s in auto_sessions] == ["s-auto"]
+        # The periodic pool is untouched by the merge.
+        per_sessions, _ = store.list_sessions("periodic", create_default=False)
+        assert [s["session_id"] for s in per_sessions] == ["s-per"]
     finally:
         persist_path.unlink(missing_ok=True)
 

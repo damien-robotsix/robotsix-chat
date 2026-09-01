@@ -76,7 +76,7 @@ context explaining what happened and what to expect next.
 1. **Depth bounding** — if reaction turns chain-react (a close spawns a new subsession that closes
    and triggers another reaction, etc.), the recursion is capped at 3 nested turns. Beyond that,
    outcomes are recorded passively without further LLM calls.
-1. **Plan-aware prompts** — if the main conversation has an active autonomous plan (awaiting
+1. **Plan-aware prompts** — if the main conversation has an active plan (awaiting
    approval or mid-execution), the reaction prompt includes the current plan and instructs the agent
    to acknowledge the subsession outcome as a note and continue without re-requesting approval or
    restarting planning. This prevents subsession notifications from derailing approved work.
@@ -259,7 +259,7 @@ busy-wait). If the mill endpoint is unreachable during a poll tick, the watcher 
 and tries again on the next tick — no paused monitor is resumed until the mill responds.
 
 The watcher is started automatically during the server's `startup` phase (in `cli.py`'s
-`_resume_autonomous` lifespan hook). If `board_api_base_url` is not configured, the watcher returns
+`_startup_async` lifespan hook). If `board_api_base_url` is not configured, the watcher returns
 immediately with a debug log line and does not loop.
 
 The `reopen()` method on `SubsessionRegistry` transitions records that are `PAUSED`, or `CLOSED`
@@ -289,8 +289,8 @@ completes the subsession with a summary that:
    in the alternative fix.
 
 This prevents the monitor from burning its run budget on a ticket whose purpose is already
-fulfilled, and surfaces a clear recommendation to the operator. See the autonomous-session prompt
-changelog for the companion behaviour: when an **autonomous session** receives a redundant-ticket
+fulfilled, and surfaces a clear recommendation to the operator. See the periodic-session prompt
+changelog for the companion behaviour: when a **periodic session** receives a redundant-ticket
 report from a periodic monitor, it may close the ticket directly (if authorized), file a cleanup
 task, or notify the operator — rather than letting the ticket linger.
 
@@ -586,27 +586,24 @@ run once and a transient failure would silently lose the work.
 1. Concurrency is bounded by `subsessions.max_concurrent` (default 8, across all subsession kinds);
    exceeding it returns a friendly refusal rather than raising.
 
-## Autonomous-session interaction
+## Scheduled-session interaction
 
-In **autonomous sessions**, periodic monitors do not block session completion. The agent is
-instructed to emit the completion marker while periodic monitors are still running, under either of
-the following paths:
+In scheduled (periodic) sessions, monitors do not block the session finishing its turn — the
+session completes with its report while monitors keep running in the background; their terminal
+summaries are delivered later like any subsession outcome.
 
 ### Stale-monitor completion (automatic)
 
-The agent may declare the session complete when all active periodic monitors have been reporting
-`NO_CHANGE` for at least `autonomous.stale_monitor_runs_before_completion` (default 3) consecutive
-cycles and no other pending actions remain (no in-flight task or user_chat subsessions, no
-unaddressed operator decisions). Monitors continue running in the background after closure; their
-terminal summaries are delivered to the next session.
+The agent may treat a monitor as stale when it has reported `NO_CHANGE` for several consecutive
+cycles and no other pending actions remain. Monitors continue running in the background; their
+terminal summaries are delivered later.
 
 ### Serial-board queue tolerance (before escalating a stall)
 
 The board processes tickets serially (one at a time), so a monitored ticket with zero activity is
 not necessarily stalled — it may simply be queued behind earlier items in the wave. Before
-auto-stopping a monitor or reporting a stall, the agent accepts up to
-`autonomous.queue_tolerance_runs_before_escalation` (default 3) consecutive `NO_CHANGE` cycles as
-queue wait. During that window it checks the board's queue and verifies whether earlier-queued
+auto-stopping a monitor or reporting a stall, the agent accepts a few consecutive `NO_CHANGE`
+cycles as queue wait. During that window it checks the board's queue and verifies whether earlier-queued
 tickets are actively being worked; if they are, the monitor stays alive and the inactivity is
 treated as queue wait. It escalates only when the queue ahead of the ticket is empty or idle and the
 ticket has still made no progress after the tolerance window.
@@ -620,9 +617,4 @@ short, non-substantive messages several times in a row. This lets the operator c
 promptly when they are satisfied and all actionable work is done but periodic monitors have not yet
 accumulated enough `NO_CHANGE` cycles to auto-close.
 
-| Config key                                          | Default | Description                                                                      |
-| --------------------------------------------------- | ------- | -------------------------------------------------------------------------------- |
-| `autonomous.stale_monitor_runs_before_completion`   | `3`     | Consecutive `NO_CHANGE` cycles before a periodic monitor is considered stale.    |
-| `autonomous.queue_tolerance_runs_before_escalation` | `3`     | Consecutive `NO_CHANGE` cycles accepted as queue wait before escalating a stall. |
-
-See [Configuration](configuration.md#autonomous) for the full autonomous settings reference.
+See [Configuration](configuration.md#periodic-sessions) for the periodic settings reference.

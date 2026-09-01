@@ -39,13 +39,11 @@ import time
 from collections.abc import Sequence
 from typing import TYPE_CHECKING
 
-from robotsix_chat.autonomous.models import AutonomousState
 from robotsix_chat.chat.events import SSE_NOTIFICATION_TYPE, agent_message_frame
 
 from .models import SubsessionInfo, SubsessionKind
 
 if TYPE_CHECKING:
-    from robotsix_chat.autonomous.runner import AutonomousRunner
     from robotsix_chat.chat.conversation import ConversationStore
     from robotsix_chat.chat.events import EventSink
     from robotsix_chat.chat.server.routes import ChatAgent, RunSerializer
@@ -301,7 +299,11 @@ _REASON_PHRASES: dict[str, str] = {
     "completed": "completed",
     "max_runs": "reached its run limit",
     "max_runs_escalated": "reached its run limit and auto-escalated",
-    "human_approval_timeout": "timed out waiting for operator approval",
+    "human_approval_timeout": (
+        "escalated — ticket stuck in human_issue_approval; review the spec "
+        "and approve (ready), send back (draft), or retire it via "
+        "transition_ticket"
+    ),
     "paused": "auto-paused after consecutive no-change runs",
     "no_change_pause_limit": "auto-closed after repeated no-change pauses",
     "no_change_auto_stop": "auto-stopped after consecutive no-change runs",
@@ -329,7 +331,7 @@ _MAX_REACTION_DEPTH = 3
 # so outcomes that arrive while the user is away are consolidated into a
 # single summary instead of producing N separate reaction turns that each
 # emit a near-identical "no change" reply.  This timeout is only a
-# fallback so outcomes for an idle or autonomous session are never held
+# fallback so outcomes for an idle or periodic session are never held
 # indefinitely; each new outcome resets the window, so a quiet period
 # still batches closely-arriving outcomes.
 _BATCH_WINDOW_SECONDS = 30.0
@@ -492,7 +494,6 @@ class ParentDelivery:
         registry: SubsessionRegistry,
         run_serializer: RunSerializer,
         event_sink: EventSink | None = None,
-        autonomous_runner: AutonomousRunner | None = None,
         batch_window_seconds: float = _BATCH_WINDOW_SECONDS,
     ) -> None:
         """Wire the store, registry, per-owner run serializer, and event sink.
@@ -502,18 +503,12 @@ class ParentDelivery:
         produces a reply, so a connected browser can show it live instead of
         only picking it up on the next ``GET /history``.
 
-        *autonomous_runner*, when given, is consulted before each reaction
-        turn: if the main session has an active autonomous plan (proposal
-        or executing state), the reaction prompt reminds the agent to
-        acknowledge the outcome as a note and stay on its plan, preventing
-        the agent from dropping its work and re-requesting approval.
-
         *batch_window_seconds* is the maximum time pending subsession
         outcomes are held before a safety flush fires.  The primary flush
         happens at a natural breakpoint — the next user turn (see
         :meth:`flush_pending_reactions`) — so outcomes that arrive while
         the user is away are consolidated into a single summary.  The
-        safety flush keeps outcomes for idle or autonomous sessions from
+        safety flush keeps outcomes for idle or periodic sessions from
         being held indefinitely.  Set to 0 to disable holding (every
         outcome fires its own reaction turn immediately).
         """
@@ -521,7 +516,6 @@ class ParentDelivery:
         self._registry = registry
         self._run_serializer = run_serializer
         self._event_sink = event_sink
-        self._autonomous_runner = autonomous_runner
         self._batch_window_seconds = batch_window_seconds
         # Set after construction via set_agent(): the main ChatAgent is built
         # from a SubsessionEnv that itself needs this ParentDelivery, so the
@@ -566,19 +560,6 @@ class ParentDelivery:
         record instead of a live reaction turn.
         """
         self._agent = agent
-
-    def set_autonomous_runner(self, runner: AutonomousRunner) -> None:
-        """Wire the autonomous runner for plan-aware reaction prompts.
-
-        Call once, after both ``ParentDelivery`` and the
-        ``AutonomousRunner`` exist — the runner depends on an agent
-        factory that itself depends on the ``SubsessionEnv`` which
-        embeds this ``ParentDelivery``, so the two can't be constructed
-        in runner-first order (see :meth:`set_agent` for the same
-        pattern).  Until this is called, reaction prompts use the
-        default template regardless of autonomous state.
-        """
-        self._autonomous_runner = runner
 
     async def deliver_summary(
         self, info: SubsessionInfo, summary: str, reason: str
@@ -890,26 +871,12 @@ class ParentDelivery:
         Degrades to passive records when no agent is wired or the turn
         fails — each outcome is recorded individually so none are lost.
         """
-        delegated_to_individual = False
         try:
             if self._agent is None:
                 async with self._run_serializer.for_owner(session_id):
                     for _info, outcome, _reason, label in outcomes:
                         self._store.record_for_session(session_id, label, outcome)
                 return
-
-            # When the main session is an actively running autonomous
-            # session, degrade to individual _react_in_main_chat calls
-            # rather than using the batch template.  The batching window is
-            # an optimisation, not a correctness requirement — individual
-            # turns are safe and correct here.
-            if self._autonomous_runner is not None:
-                aq = self._autonomous_runner.get_session(session_id)
-                if aq is not None and aq.state is AutonomousState.executing:
-                    delegated_to_individual = True
-                    for info, outcome, reason, label in outcomes:
-                        await self._react_in_main_chat(info, outcome, reason, label)
-                    return
 
             # Build the numbered outcome list.
             parts: list[str] = []
@@ -982,12 +949,8 @@ class ParentDelivery:
             else:
                 self._reaction_depth[session_id] = depth
             # Proactive browser notification for terminal/blocked monitors.
-            # Skip when outcomes were delegated to individual
-            # _react_in_main_chat calls — each of those already emits its
-            # own notification in its own finally block.
-            if not delegated_to_individual:
-                for batch_info, _outcome, batch_reason, _label in outcomes:
-                    self._emit_monitor_notification(batch_info, batch_reason)
+            for batch_info, _outcome, batch_reason, _label in outcomes:
+                self._emit_monitor_notification(batch_info, batch_reason)
 
     async def _record_passive(self, session_id: str, label: str, outcome: str) -> None:
         """Record *outcome* as a passive, system-authored turn under the lock.

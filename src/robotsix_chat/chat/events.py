@@ -34,13 +34,6 @@ SSE_ACTIVITY_TYPE = "activity"
 # connected browser as soon as it's ready — see ``agent_message_frame``.
 SSE_AGENT_MESSAGE_TYPE = "agent_message"
 
-# Autonomous session state transitions pushed over the persistent /events
-# channel so the session-list row updates live without polling.
-SSE_AUTONOMOUS_STATE_TYPE = "autonomous_state"
-
-# Streaming token from an autonomous background turn (live progress).
-SSE_AUTONOMOUS_TOKEN_TYPE = "autonomous_token"
-
 # Foreground ``POST /chat`` turn lifecycle, mirrored onto the /events channel
 # so a browser that is NOT the originating request — a second tab, or the same
 # tab after it switched away from the session and came back — can see the
@@ -309,23 +302,6 @@ def activity_frame(
     }
 
 
-def autonomous_token_frame(token: str) -> dict[str, object]:
-    """Build an ``autonomous_token`` frame for a single streamed token.
-
-    Published during an autonomous background turn so a connected browser
-    can render live progress — the same way the normal ``/chat`` SSE path
-    fans out ``token`` frames.
-
-    Returns a dict with shape::
-
-        {
-            "type": "autonomous_token",
-            "token": <str>,
-        }
-    """
-    return {"type": SSE_AUTONOMOUS_TOKEN_TYPE, "token": token}
-
-
 def agent_message_frame(text: str, timestamp: float) -> dict[str, object]:
     """Build an ``agent_message`` frame for a background-triggered reply.
 
@@ -344,43 +320,6 @@ def agent_message_frame(text: str, timestamp: float) -> dict[str, object]:
         }
     """
     return {"type": SSE_AGENT_MESSAGE_TYPE, "text": text, "timestamp": timestamp}
-
-
-def autonomous_state_frame(
-    session_id: str,
-    state: str,
-    *,
-    auto_turn_count: int = 0,
-    max_auto_turns: int = 0,
-) -> dict[str, object]:
-    """Build an ``autonomous_state`` frame for live session-list updates.
-
-    Published by :class:`~robotsix_chat.autonomous.runner.AutonomousRunner`
-    whenever an autonomous session transitions state, so the browser can
-    update the session-row status and plan preview without polling.
-
-    Returns a dict with shape::
-
-        {
-            "type": "autonomous_state",
-            "session_id": <str>,
-            "state": <"executing|completed">,
-            "auto_turn_count": <int>,
-            "max_auto_turns": <int>,
-        }
-    """
-    return {
-        "type": SSE_AUTONOMOUS_STATE_TYPE,
-        "session_id": session_id,
-        "state": state,
-        "auto_turn_count": auto_turn_count,
-        "max_auto_turns": max_auto_turns,
-    }
-
-
-# ---------------------------------------------------------------------------
-# EventBus — per-client asyncio.Queue registry
-# ---------------------------------------------------------------------------
 
 
 class EventBus:

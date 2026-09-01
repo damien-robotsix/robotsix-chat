@@ -107,7 +107,7 @@ class ReadOnlyMemory:
     multi-minute LLM extraction pipeline and contends with every concurrent
     recall for the same stores.
 
-    Background agents — subsessions and the autonomous auto-continue loop —
+    Background agents — subsessions and periodic session turns —
     run unattended around the clock, so letting them cognify every turn is
     what produced the ~$22/day cognee bill and the write contention that
     slows interactive chat. But there is no reason to deny them *reading*
