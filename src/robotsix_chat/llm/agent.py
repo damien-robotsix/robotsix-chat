@@ -87,6 +87,30 @@ _FALLBACK_CONTINUATION_NOTE = (
     "what a pronoun refers to — read the prior turns for that context."
 )
 
+# Per-run model-request cap for KEYED (OpenRouter) tiers. pydantic-ai's
+# default UsageLimits(request_limit=50) counts every tool-call round-trip as
+# a request; a tool-heavy chat turn legitimately needs far more than 50 of
+# them. The Claude SDK tiers never hit the cap (the CLI runs the agent loop
+# internally, so pydantic-ai sees ~one request per turn) — which is why this
+# only surfaced during subscription exhaustion, when turns degrade to the
+# keyed tier: complex turns died mid-stream with "UsageLimitExceeded: The
+# next request would exceed the request_limit of 50", shown to the user as
+# a raw internal error (observed 2026-09-01 under the weekly Claude cap).
+# 200 keeps a runaway loop bounded while clearing every legitimate turn
+# seen in the incident logs. The SDK tool path warns-and-drops run kwargs
+# it cannot honor, so the limits are passed only to keyed tiers.
+_KEYED_REQUEST_LIMIT = 200
+
+
+def _keyed_usage_limits(level: int) -> Any:
+    """``usage_limits`` for ``handle.run`` — set only on keyed tiers."""
+    if not level_needs_api_key(level):
+        return None
+    from pydantic_ai.usage import UsageLimits
+
+    return UsageLimits(request_limit=_KEYED_REQUEST_LIMIT)
+
+
 # A prior conversation turn replayed to the agent: ``(user, assistant)``.
 Turn = tuple[str, str]
 
@@ -757,6 +781,13 @@ class LlmioChatAgent:
                     ),
                     _activity_context(on_activity),
                 ):
+                    limits = _keyed_usage_limits(level)
+                    if limits is not None:
+                        return await handle.run(
+                            prompt,
+                            message_history=message_history,
+                            usage_limits=limits,
+                        )
                     return await handle.run(prompt, message_history=message_history)
             finally:
                 handle.close()
@@ -947,6 +978,13 @@ class LlmioChatAgent:
                         ),
                         _activity_context(on_activity),
                     ):
+                        limits = _keyed_usage_limits(level)
+                        if limits is not None:
+                            return await fallback_handle.run(
+                                prompt,
+                                message_history=effective_history,
+                                usage_limits=limits,
+                            )
                         return await fallback_handle.run(
                             prompt, message_history=effective_history
                         )
