@@ -1239,10 +1239,18 @@ def _build_request_tools_factory(
         req_factories.append(_make_cross_session_tools)
 
     if conversation_store is not None and configured_level is not None:
+        from robotsix_llmio.config import load_tier_config
+
+        from robotsix_chat.llm.agent import _merge_tier_overrides
         from robotsix_chat.llm.escalation import build_escalation_tools
 
         store = conversation_store
         level = configured_level
+        # Chat's own tier config (incl. llmio_tier_overrides) so the
+        # escalation event names the model that actually serves the level.
+        escalation_tier_config = load_tier_config(
+            _merge_tier_overrides(settings.llmio_tier_overrides, None)
+        )
 
         def _make_escalation_tools(session_id: str) -> list[Any]:
             return build_escalation_tools(
@@ -1250,6 +1258,7 @@ def _build_request_tools_factory(
                 session_id=session_id,
                 configured_level=level,
                 event_sink=event_sink,
+                tier_config=escalation_tier_config,
             )
 
         req_factories.append(_make_escalation_tools)

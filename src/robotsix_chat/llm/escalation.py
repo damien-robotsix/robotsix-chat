@@ -35,6 +35,7 @@ def build_escalation_tools(
     session_id: str,
     configured_level: int,
     event_sink: EventSink | None = None,
+    tier_config: Any | None = None,
 ) -> list[Callable[..., Any]]:
     """Return the ``escalate_model`` tool for *session_id*.
 
@@ -85,7 +86,7 @@ def build_escalation_tools(
                 "server. Continue at the current model."
             )
 
-        name = level_display_name(FRONTIER_MODEL_LEVEL)
+        name = level_display_name(FRONTIER_MODEL_LEVEL, tier_config)
         if event_sink is not None:
             event_sink.publish(
                 session_id,
