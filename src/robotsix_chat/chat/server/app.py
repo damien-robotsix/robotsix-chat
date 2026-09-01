@@ -697,6 +697,7 @@ def create_app(
     # Configured chat level — the baseline a session runs at until the agent
     # escalates it. Read from the agent so create_app needs no new parameter.
     app.state.chat_model_level = getattr(agent, "model_level", None)
+    app.state.llmio_tier_overrides = getattr(agent, "tier_overrides", None)
     # Whether keyed (OpenRouter) model levels are usable — surfaced to the UI
     # model selector so it can mark levels that need an absent API key as
     # unavailable. Read from the agent so create_app needs no new parameter.
@@ -1427,6 +1428,7 @@ def create_agent_from_settings(
         event_sink=event_sink,
         task_budget_tokens=settings.llmio_task_budget_tokens,
         failover_window_seconds=settings.llmio_failover_window_seconds,
+        tier_overrides=settings.llmio_tier_overrides,
     )
     # Wire guarded auto-recovery (self-restart) for the top-level chat agent's
     # memory only — never for bare summary agents, subsession children, or any

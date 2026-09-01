@@ -9,7 +9,14 @@ from __future__ import annotations
 import logging
 from typing import Any
 
-from pydantic import BaseModel, ConfigDict, Field, SecretStr, model_validator
+from pydantic import (
+    BaseModel,
+    ConfigDict,
+    Field,
+    SecretStr,
+    field_validator,
+    model_validator,
+)
 from robotsix_config import load_config
 from robotsix_llmio.config import TierLevel
 
@@ -191,6 +198,34 @@ class Settings(BaseModel):
             "returning to the default. Default 900 (15 minutes)."
         ),
     )
+    llmio_tier_overrides: dict[str, Any] = Field(
+        default_factory=dict,
+        json_schema_extra={"advanced": True},
+        description=(
+            "Overrides merged over llmio's baked tier config, in "
+            "load_tier_config's nested shape — e.g. "
+            '{"fallback": {"level2": {"model": "openrouter-<model>"}}} '
+            "to change which model serves a capability level on a provider "
+            "slot. Per-level dicts merge field-by-field over the baked "
+            "binding; unknown keys are rejected. The failover window from "
+            "llmio_failover_window_seconds is layered on top."
+        ),
+    )
+
+    @field_validator("llmio_tier_overrides")
+    @classmethod
+    def _validate_llmio_tier_overrides(cls, v: dict[str, Any]) -> dict[str, Any]:
+        """Reject override shapes llmio would refuse at call time."""
+        if v:
+            from robotsix_llmio.config import load_tier_config
+            from robotsix_llmio.config.loader import TierConfigLoadError
+
+            try:
+                load_tier_config(v)
+            except TierConfigLoadError as exc:
+                raise ValueError(f"llmio_tier_overrides invalid: {exc}") from exc
+        return v
+
     agent_instruction: str = Field(
         default=(
             "You are a helpful assistant. "

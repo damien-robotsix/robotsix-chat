@@ -1679,27 +1679,29 @@ async def test_keyed_fallback_caps_oversized_history() -> None:
     assert "Older conversation turns were omitted" in first_text
 
 
-def test_chat_overrides_fallback_workhorse_to_pro() -> None:
-    """Chat binds its fallback level 2 to the baked level-3 (pro) binding.
+def test_tier_overrides_setting_flows_into_agent_config() -> None:
+    """The llmio_tier_overrides SETTING (not code) rebinds slot levels.
 
-    Operator override 2026-09-01: the fleet's baked fallback L2 stays flash
-    (mill keeps it); chat's long conversational contexts degenerated on
-    flash under xhigh reasoning.
+    Operator decision 2026-09-01: chat's prod config binds fallback level 2
+    to the pro snapshot; the fleet's baked default stays flash.
     """
-    from robotsix_llmio.config import load_tier_config
+    from robotsix_llmio.config import FALLBACK_LEVEL3, load_tier_config
 
-    agent = LlmioChatAgent(model_level=2, instruction="Be helpful.")
-    assert (
-        agent._tier_config.fallback.level2.model_name == "deepseek/deepseek-v4-pro-0813"
+    overrides = {"fallback": {"level2": FALLBACK_LEVEL3.model_dump()}}
+    agent = LlmioChatAgent(
+        model_level=2, instruction="Be helpful.", tier_overrides=overrides
     )
-    # The override is chat-local: llmio's baked default stays flash.
+    assert agent._tier_config.fallback.level2.model_name == FALLBACK_LEVEL3.model_name
+    # No overrides -> the baked defaults, unchanged by code.
+    bare = LlmioChatAgent(model_level=2, instruction="Be helpful.")
     assert (
-        load_tier_config({}).fallback.level2.model_name
-        == "deepseek/deepseek-v4-flash-20260731"
+        bare._tier_config.fallback.level2.model_name
+        == load_tier_config({}).fallback.level2.model_name
     )
-    # Other bindings untouched.
-    assert (
-        agent._tier_config.fallback.level1.model_name
-        == "deepseek/deepseek-v4-flash-20260731"
-    )
-    assert agent._tier_config.default.level2.model == "claudeSDK-opus"
+
+
+def test_merge_tier_overrides_layers_window_over_setting() -> None:
+    from robotsix_chat.llm.agent import _merge_tier_overrides
+
+    merged = _merge_tier_overrides({"failover": {"failure_threshold": 5}}, 600.0)
+    assert merged["failover"] == {"failure_threshold": 5, "window_seconds": 600.0}

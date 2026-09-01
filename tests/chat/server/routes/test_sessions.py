@@ -1533,3 +1533,30 @@ async def test_session_model_set_endpoint_unknown_session() -> None:
     with pytest.raises(HTTPException) as exc_info:
         await session_model_set_endpoint(request)
     assert exc_info.value.status_code == 404
+
+
+@pytest.mark.asyncio
+async def test_models_endpoint_reflects_chat_tier_overrides() -> None:
+    """``/models`` shows chat's OWN tier config, not llmio's baked defaults.
+
+    With the fallback-L2-pro override, the L2 row must display the pro
+    snapshot during failover while L1 stays flash.
+    """
+    from robotsix_llmio.config import FALLBACK_LEVEL3
+    from robotsix_llmio.core.failover import get_failover_tracker
+    from robotsix_llmio.exceptions import ProviderExhaustedError
+
+    state = MagicMock(
+        chat_api_key_available=True,
+        chat_model_level=2,
+        llmio_tier_overrides={"fallback": {"level2": FALLBACK_LEVEL3.model_dump()}},
+    )
+    request = _make_request(app_state=state)
+
+    get_failover_tracker().record_failure(
+        "default", ProviderExhaustedError("weekly cap")
+    )
+    body = json.loads((await models_list_endpoint(request)).body)  # type: ignore[arg-type]
+    rows = {m["level"]: m for m in body["models"]}
+    assert rows[2]["name"] == "deepseek/deepseek-v4-pro-0813"
+    assert rows[1]["name"] == "deepseek/deepseek-v4-flash-20260731"

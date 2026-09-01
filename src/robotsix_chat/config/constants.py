@@ -155,16 +155,18 @@ def level_needs_api_key(level: int) -> bool:
 FRONTIER_MODEL_LEVEL = 3
 
 
-def level_display_name(level: int) -> str:
+def level_display_name(level: int, tier_config: Any | None = None) -> str:
     """Return the human-facing model name for *level*.
 
-    Resolved from llmio's baked default tier config so the display always
-    matches what actually served the turn. Unknown levels render as
-    ``"level N"`` rather than raising — this is display text, never a
-    control-flow input.
+    Resolved from *tier_config* when given (chat passes its overridden
+    config so the display matches what actually serves the turn — see
+    ``_chat_tier_overrides``), else llmio's baked defaults. Unknown levels
+    render as ``"level N"`` rather than raising — this is display text,
+    never a control-flow input.
     """
     try:
-        tlc = default_tier_config().for_level(level)
+        cfg = tier_config if tier_config is not None else default_tier_config()
+        tlc = cfg.for_level(level)
     except ValueError:
         return f"level {level}"
     return str(tlc.model_name)
