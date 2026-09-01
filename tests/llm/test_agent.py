@@ -1680,10 +1680,11 @@ async def test_keyed_fallback_caps_oversized_history() -> None:
 
 
 def test_chat_overrides_fallback_workhorse_to_pro() -> None:
-    """Chat-only operator override: the fleet's baked fallback L2 is flash,
-    but chat's long conversational contexts degenerated on flash under xhigh
-    reasoning — chat binds its fallback level 2 to the pro snapshot (mill
-    keeps the baked flash).
+    """Chat binds its fallback level 2 to the baked level-3 (pro) binding.
+
+    Operator override 2026-09-01: the fleet's baked fallback L2 stays flash
+    (mill keeps it); chat's long conversational contexts degenerated on
+    flash under xhigh reasoning.
     """
     from robotsix_llmio.config import load_tier_config
 

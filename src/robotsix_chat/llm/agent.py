@@ -107,11 +107,11 @@ def _keyed_usage_limits(tlc: TierLevelConfig) -> Any:
 # as the baked fallback level 3 (the pro snapshot) — expressed by reference
 # so no concrete model name lives in chat source and llmio remains the
 # single owner of the binding details.
-def _chat_tier_overrides(failover_window_seconds: float | None) -> dict:
+def _chat_tier_overrides(failover_window_seconds: float | None) -> dict[str, Any]:
     """Chat's tier-config override dict for :func:`load_tier_config`."""
     from robotsix_llmio.config import FALLBACK_LEVEL3
 
-    overrides: dict = {"fallback": {"level2": FALLBACK_LEVEL3.model_dump()}}
+    overrides: dict[str, Any] = {"fallback": {"level2": FALLBACK_LEVEL3.model_dump()}}
     if failover_window_seconds is not None:
         overrides["failover"] = {"window_seconds": failover_window_seconds}
     return overrides
