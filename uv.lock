@@ -11,7 +11,7 @@ constraints = [
     { name = "anyio", specifier = ">=4.14.2" },
     { name = "pypdf", specifier = ">=6.15.0" },
 ]
-overrides = [{ name = "robotsix-http", git = "https://github.com/damien-robotsix/robotsix-http.git?rev=cdfd4d1c42679fef73081439562872792e202dc4" }]
+overrides = [{ name = "robotsix-http", git = "https://github.com/damien-robotsix/robotsix-http.git?rev=c57947232685f4e4798a61e2bc53d747d3dbc75d" }]
 
 [[package]]
 name = "aiofiles"
@@ -3125,7 +3125,7 @@ requires-dist = [
     { name = "reportlab" },
     { name = "robotsix-config", git = "https://github.com/damien-robotsix/robotsix-config.git?rev=884a452062a04f569fb63a9d103c29eafbf3c056" },
     { name = "robotsix-github-auth", git = "https://github.com/damien-robotsix/robotsix-github-auth.git?rev=e6214c41fd743120aa987bacb4e9b2bc88e73943" },
-    { name = "robotsix-http", git = "https://github.com/damien-robotsix/robotsix-http.git?rev=cdfd4d1c42679fef73081439562872792e202dc4" },
+    { name = "robotsix-http", git = "https://github.com/damien-robotsix/robotsix-http.git?rev=c57947232685f4e4798a61e2bc53d747d3dbc75d" },
     { name = "robotsix-llmio", git = "https://github.com/damien-robotsix/robotsix-llmio.git?rev=61ca95d6bebd95cc740aebf8b6fd9c775d77c7dd" },
     { name = "robotsix-llmio", extras = ["claude-sdk"], marker = "extra == 'claude-sdk'", git = "https://github.com/damien-robotsix/robotsix-llmio.git?rev=61ca95d6bebd95cc740aebf8b6fd9c775d77c7dd" },
     { name = "robotsix-llmio", extras = ["openrouter"], marker = "extra == 'openrouter'", git = "https://github.com/damien-robotsix/robotsix-llmio.git?rev=61ca95d6bebd95cc740aebf8b6fd9c775d77c7dd" },
@@ -3180,8 +3180,8 @@ dependencies = [
 
 [[package]]
 name = "robotsix-http"
-version = "0.3.2"
-source = { git = "https://github.com/damien-robotsix/robotsix-http.git?rev=cdfd4d1c42679fef73081439562872792e202dc4#cdfd4d1c42679fef73081439562872792e202dc4" }
+version = "0.3.3"
+source = { git = "https://github.com/damien-robotsix/robotsix-http.git?rev=c57947232685f4e4798a61e2bc53d747d3dbc75d#c57947232685f4e4798a61e2bc53d747d3dbc75d" }
 dependencies = [
     { name = "httpx" },
 ]
