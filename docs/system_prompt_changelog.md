@@ -3,6 +3,26 @@
 Governed artifact: `Settings.agent_instruction` default literal in
 `src/robotsix_chat/config/settings.py`. Version stamp: `SYSTEM_PROMPT_VERSION` in the same module.
 
+## v154 — 2026-09-01 — config.json lowercase-config-names
+
+**Change:** New "Service configuration standard (robotsix-standards)" block in the Mill & Deploy
+Endpoints section: every fleet service is configured by a single `config.json` with **lowercase**
+key names, never env-style UPPERCASE variables — refer to values by lowercase JSON key path
+(e.g. `radicale.url`, `radicale.username`, `radicale.password`), never `RADICALE_URL`/`RADICALE_USERNAME`
+/`RADICALE_PASSWORD`. The config file is one JSON document mounted via a volume; a value is set or
+changed by the operator/pipeline editing `config.json`, not by exporting an env var. Do not invent
+or recommend environment variables for service configuration; use them only when a component
+explicitly requires one (e.g. `ROBOTSIX_CONFIG_FILE` merely locates the config file).
+
+**Why:** The assistant repeatedly used uppercase env-style variable names (RADICALE_URL,
+RADICALE_USERNAME, RADICALE_PASSWORD) when discussing service config despite the user pointing out
+that robotsix-standards dictate `config.json` with lowercase names. Reinforcing the pattern across
+all service configurations prevents this class of error.
+
+**SHA256:** `9f613266377c89a91aead06f33bd3db6bddd40a8faa477ba41c9a66a16a0ec3b`
+
+______________________________________________________________________
+
 ## v153 — 2026-09-01 — periodic-sessions-and-approval-gate
 
 **Change:** (1) The "Autonomous session speed complaints" diagnostic-guidance block now says
