@@ -138,6 +138,14 @@ def _build_message_history(history: list[Turn] | None) -> list[Any] | None:
     pydantic-ai message types are imported lazily — llmio is built on
     pydantic-ai and ``handle.run`` already returns its result objects, but
     importing them here keeps the dependency off the module import path.
+
+    INVARIANT: replayed history is text-only — turns are ``(str, str)`` and
+    every part built here is ``UserPromptPart(str)`` / ``TextPart(str)``.
+    Never let a binary part (an image from an earlier turn) into this list:
+    a single ``BinaryContent`` in history 404s the whole turn on text-only
+    OpenRouter models ("No endpoints found that support image input"), so an
+    old attachment would poison every later turn of the session. Attachments
+    are per-turn only, via ``build_agent(images=...)``.
     """
     if not history:
         return None
@@ -633,8 +641,13 @@ class LlmioChatAgent:
         owning browser — it is forwarded to the per-request tools factory so
         delegation tools can tag spawned tasks correctly.  *images* is an
         optional list of ``(media_type, raw_bytes)`` pairs (e.g.
-        ``[("image/png", b"...")]``) — when non-empty the prompt is built as a
-        multimodal sequence so a vision-capable LLM can see the attachments.
+        ``[("image/png", b"...")]``) — attachments are handed to llmio's
+        ``build_agent(images=...)`` seam: the Claude transport reads them
+        natively, while text-only OpenRouter models get an ``ask_image``
+        tool (answered by the tier config's vision binding) instead. Images
+        belong to the turn they arrive with only — replayed history is
+        text-only by construction, so an old attachment can never poison a
+        later turn.
         *trace_name* is an optional human-readable label for the Langfuse
         trace (e.g. ``"chat-turn"``, ``"subsession-turn"``) so cost can be
         attributed by function.  When ``None`` the trace inherits whatever
@@ -704,26 +717,15 @@ class LlmioChatAgent:
             effective_tools.extend(self._request_tools_factory(client_id))
         tools_arg = effective_tools or None
 
-        # Build the user-prompt once: plain str (no images) or a multimodal
-        # list (text + BinaryContent parts). NOTE: the default slot routes to
-        # robotsix_llmio's claude_sdk model, whose internal
-        # _content_to_text() flattens non-text content to str(...) — images
-        # are silently dropped on that path. To have the assistant actually
-        # *see* images, configure a vision-capable OpenRouter model in the
-        # tier config. Full claude_sdk image support requires an external
-        # change to robotsix_llmio's claude_sdk model to map image parts
-        # into the Claude SDK request format.
-        if images:
-            from pydantic_ai.messages import BinaryContent
-
-            user_prompt: list[str | BinaryContent] = []
-            if llm_message:
-                user_prompt.append(llm_message)
-            for mt, data in images:
-                user_prompt.append(BinaryContent(data=data, media_type=mt))
-            prompt: object = user_prompt
-        else:
-            prompt = llm_message
+        # The prompt is ALWAYS plain text. Attachments travel through
+        # llmio's ``build_agent(images=...)`` seam instead of being embedded
+        # as ``BinaryContent`` parts: the claude_sdk transport passes them as
+        # native SDK image blocks (Claude models read images directly), and
+        # text-only OpenRouter models get an injected ``ask_image`` tool
+        # answered by the tier config's vision binding. Embedding binary
+        # parts here 404'd every DeepSeek-served turn ("No endpoints found
+        # that support image input", live incident 2026-09-01).
+        prompt = llm_message
 
         on_activity = self._activity_callback(session_id)
 
@@ -764,8 +766,15 @@ class LlmioChatAgent:
                 handle = provider.build_agent(
                     level=level,
                     model=tlc.model_name,
+                    # Only the images/vision path reads tier_config here —
+                    # the explicit ``model=`` override bypasses level
+                    # resolution — so passing it wires the configured vision
+                    # binding without touching slot routing.
+                    tier_config=self._tier_config,
                     system_prompt=slot_system_prompt,
                     tools=tools_arg,
+                    images=images or None,
+                    vision_api_key=self._api_key or None,
                     builtin_tools=False,
                     # Read-only web access. The filesystem and shell stay
                     # denied; these two only fetch. Without them a research
