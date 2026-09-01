@@ -61,7 +61,6 @@ async def test_job_log_503_when_github_security_disabled() -> None:
 
     gh = GitHubSecuritySettings(
         enabled=False,
-        deploy_api_key=SecretStr("test-key"),  # pragma: allowlist secret
     )
     dr = _direct_repo_settings()
 

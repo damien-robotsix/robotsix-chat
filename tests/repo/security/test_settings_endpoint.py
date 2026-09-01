@@ -67,7 +67,6 @@ async def test_endpoint_503_when_github_security_disabled() -> None:
 
     gh = GitHubSecuritySettings(
         enabled=False,
-        deploy_api_key="test-key",  # pragma: allowlist secret
     )
     dr = _direct_repo_settings()
 
