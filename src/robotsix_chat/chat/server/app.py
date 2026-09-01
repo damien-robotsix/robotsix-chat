@@ -502,9 +502,10 @@ def create_app(
             the default settings are used (enabled, 300 s interval).
         evergoing_settings: Optional
             :class:`~robotsix_chat.config.models.EvergoingSettings` controlling
-            the single never-ending session and its periodic subject-aware
-            trim scheduler.  When ``None`` (default), the default settings are
-            used (disabled), so no evergoing session is created on boot.
+            the single never-ending session and its periodic summarising
+            compaction scheduler.  When ``None`` (default), the default
+            settings are used (disabled), so no evergoing session is created
+            on boot.
         continuation_store: Shared
             :class:`~robotsix_chat.continuation.store.ContinuationStore`
             instance for pending post-restart continuations.  When
@@ -797,18 +798,17 @@ def create_app(
         from robotsix_chat.chat.conversation import OPERATOR_OWNER
 
         app.state.conversation_store.ensure_evergoing_session(OPERATOR_OWNER)
-    # The subject-aware trim scheduler is the single context-reduction
+    # The periodic summary scheduler is the single context-reduction
     # mechanism for ALL sessions (idle compaction removed), so it runs
     # regardless of whether the evergoing session itself is enabled.
     if app.state.summary_agent is not None:
-        from robotsix_chat.evergoing import EvergoingTrimScheduler
+        from robotsix_chat.evergoing import EvergoingSummaryScheduler
 
-        app.state.evergoing_scheduler = EvergoingTrimScheduler(
+        app.state.evergoing_scheduler = EvergoingSummaryScheduler(
             interval_seconds=_eg.trim_interval_seconds,
             store=app.state.conversation_store,
             agent=app.state.summary_agent,
-            keep_min_recent=_eg.keep_min_recent,
-            min_fresh_turns=_eg.min_fresh_turns,
+            keep_recent_runs=_eg.keep_recent_runs,
         )
     else:
         app.state.evergoing_scheduler = None
