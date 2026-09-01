@@ -1,6 +1,6 @@
 """Governance tests for the canonical prompt-style directive.
 
-Ensures ``docs/prompt-style.md`` exists, is well-formed, and is
+Ensures the packaged ``prompt-style.md`` exists, is well-formed, and is
 actually referenced by prompt assembly — so the reply-style directive
 cannot silently disappear from the system prompt.
 """
@@ -16,14 +16,16 @@ from robotsix_chat.chat.server.app import (
 )
 from robotsix_chat.config import Settings
 
-_STYLE_PATH = Path("docs/prompt-style.md")
+_STYLE_PATH = (
+    Path("src/robotsix_chat/chat/server/prompt-style.md")
+)
 
 
 def test_style_file_exists() -> None:
     """The canonical style file must exist in the repo."""
     assert _STYLE_PATH.exists(), (
         f"Style file {_STYLE_PATH} does not exist. "
-        "Create docs/prompt-style.md with a '## Style directive' section."
+        "Create the packaged prompt-style.md with a '## Style directive' section."
     )
 
 
