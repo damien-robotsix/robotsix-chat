@@ -479,16 +479,14 @@ modules:
       - tests/health/test_scheduler.py
 
   - id: evergoing
-    description: "Evergoing session — activation (create-on-boot behind a config flag) plus a periodic subject-aware trim scheduler that drops finished, off-subject leading turns via a cheap summary-tier model."
+    description: "Evergoing session — activation (create-on-boot behind a config flag) plus a periodic summary scheduler that folds everything before the last few runs into the compacted summary on a deterministic gate."
     paths:
       - src/robotsix_chat/evergoing/__init__.py
       - src/robotsix_chat/evergoing/cross_session_tools.py
-      - src/robotsix_chat/evergoing/decision.py
       - src/robotsix_chat/evergoing/scheduler.py
       - src/robotsix_chat/evergoing/skill.md
       - tests/evergoing/__init__.py
       - tests/evergoing/test_cross_session_tools.py
-      - tests/evergoing/test_decision.py
       - tests/evergoing/test_scheduler.py
 
   - id: ui
