@@ -76,9 +76,9 @@ context explaining what happened and what to expect next.
 1. **Depth bounding** — if reaction turns chain-react (a close spawns a new subsession that closes
    and triggers another reaction, etc.), the recursion is capped at 3 nested turns. Beyond that,
    outcomes are recorded passively without further LLM calls.
-1. **Plan-aware prompts** — if the main conversation has an active plan (awaiting
-   approval or mid-execution), the reaction prompt includes the current plan and instructs the agent
-   to acknowledge the subsession outcome as a note and continue without re-requesting approval or
+1. **Plan-aware prompts** — if the main conversation has an active plan (awaiting approval or
+   mid-execution), the reaction prompt includes the current plan and instructs the agent to
+   acknowledge the subsession outcome as a note and continue without re-requesting approval or
    restarting planning. This prevents subsession notifications from derailing approved work.
 
 Internal reason codes (e.g. `"no_change_auto_stop"`, `"paused"`, `"failed"`, `"ticket_terminal"`)
@@ -588,9 +588,9 @@ run once and a transient failure would silently lose the work.
 
 ## Scheduled-session interaction
 
-In scheduled (periodic) sessions, monitors do not block the session finishing its turn — the
-session completes with its report while monitors keep running in the background; their terminal
-summaries are delivered later like any subsession outcome.
+In scheduled (periodic) sessions, monitors do not block the session finishing its turn — the session
+completes with its report while monitors keep running in the background; their terminal summaries
+are delivered later like any subsession outcome.
 
 ### Stale-monitor completion (automatic)
 
@@ -602,8 +602,8 @@ terminal summaries are delivered later.
 
 The board processes tickets serially (one at a time), so a monitored ticket with zero activity is
 not necessarily stalled — it may simply be queued behind earlier items in the wave. Before
-auto-stopping a monitor or reporting a stall, the agent accepts a few consecutive `NO_CHANGE`
-cycles as queue wait. During that window it checks the board's queue and verifies whether earlier-queued
+auto-stopping a monitor or reporting a stall, the agent accepts a few consecutive `NO_CHANGE` cycles
+as queue wait. During that window it checks the board's queue and verifies whether earlier-queued
 tickets are actively being worked; if they are, the monitor stays alive and the inactivity is
 treated as queue wait. It escalates only when the queue ahead of the ticket is empty or idle and the
 ticket has still made no progress after the tolerance window.

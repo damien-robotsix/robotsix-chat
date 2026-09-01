@@ -1137,7 +1137,10 @@ class TestPeriodicSessionDefinition:
         from robotsix_chat.config.periodic_models import PeriodicSessionDefinition
 
         with pytest.raises(pydantic.ValidationError):
-            PeriodicSessionDefinition(name="p", trigger_interval_seconds=45.0)
+            PeriodicSessionDefinition(
+                name="p",
+                trigger_interval_seconds=45.0,  # pyright: ignore[reportCallIssue]
+            )
 
 
 # ---------------------------------------------------------------------------

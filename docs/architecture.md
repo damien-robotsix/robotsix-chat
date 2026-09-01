@@ -140,28 +140,27 @@ On `"done"` the client knows the reply is complete and can re-enable the input.
 The deployment is single-user: there is no login and no per-browser identity. `owner_id` is still
 accepted on the wire (and still required, for backwards compatibility), but the server canonicalises
 every client-supplied value to one operator pool — so the same session list is served to every
-computer, browser, and private window. The only exception is the periodic scheduler's reserved
-owner (`periodic`), which keeps its own pool and is fetched by the UI as a separate list. The
-periodic owner is never eligible for lazy default creation — its sessions exist only when a preset
-fires.
+computer, browser, and private window. The only exception is the periodic scheduler's reserved owner
+(`periodic`), which keeps its own pool and is fetched by the UI as a separate list. The periodic
+owner is never eligible for lazy default creation — its sessions exist only when a preset fires.
 
 ______________________________________________________________________
 
 ## Periodic Sessions
 
 Periodic sessions are ordinary chat sessions started on a schedule. The `PeriodicScheduler`
-(`robotsix_chat/periodic/scheduler.py`) ticks every 30 seconds; when a preset in
-`periodic.sessions` is due it creates a fresh session under the `periodic` owner, titles it
-`<preset> — <date>`, and posts the preset's `initial_prompt` (behind a short shared preamble
-stating the single-turn contract) through the **same `MessageCoalescer.submit` path an operator
-message takes**. Everything after that is ordinary session behaviour: same agent instruction, same
-turn processing, same persistence, same UI.
+(`robotsix_chat/periodic/scheduler.py`) ticks every 30 seconds; when a preset in `periodic.sessions`
+is due it creates a fresh session under the `periodic` owner, titles it `<preset> — <date>`, and
+posts the preset's `initial_prompt` (behind a short shared preamble stating the single-turn
+contract) through the **same `MessageCoalescer.submit` path an operator message takes**. Everything
+after that is ordinary session behaviour: same agent instruction, same turn processing, same
+persistence, same UI.
 
 There is deliberately no execution state machine, no self-scheduled continuation, and no
 restart-resume. A restart mid-turn fails that turn the way it would fail an operator's; the next
-firing starts a fresh session. A firing that comes due while the preset's previous session is
-still processing a turn is skipped with a log line. Firing state (`last_fired_at`,
-`last_session_id`, `runs`) persists in `/data/periodic_scheduler_state.json`.
+firing starts a fresh session. A firing that comes due while the preset's previous session is still
+processing a turn is skipped with a log line. Firing state (`last_fired_at`, `last_session_id`,
+`runs`) persists in `/data/periodic_scheduler_state.json`.
 
 Per-preset `model_level` overrides build a dedicated agent through the same
 `create_agent_from_settings` factory (cached per level); long-term cognee memory for these
@@ -255,12 +254,12 @@ ______________________________________________________________________
 
 State that survives restarts when `/data/` is bind-mounted:
 
-| File                             | Content                                                                                                                                                                                                                                                           |
-| -------------------------------- | ----------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- |
-| `/data/conversations.json`       | Multi-session conversation history (auto-migrated from legacy format)                                                                                                                                                                                             |
-| `/data/subsessions.json`         | Subsession state (periodic subsessions resumed on startup; auto-closed monitors are re-spawned so the worker can re-verify ticket state — see `docs/periodic-checks.md`); retry counts for user_chat/task subsessions persisted so retry budget survives restarts |
-| `/data/cognee/`                  | Long-term memory storage (cognee)                                                                                                                                                                                                                                 |
-| `/data/periodic_scheduler_state.json` | Periodic scheduler firing state (see [Periodic Sessions](#periodic-sessions))                                                                                                                                                                   |
+| File                                  | Content                                                                                                                                                                                                                                                           |
+| ------------------------------------- | ----------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- |
+| `/data/conversations.json`            | Multi-session conversation history (auto-migrated from legacy format)                                                                                                                                                                                             |
+| `/data/subsessions.json`              | Subsession state (periodic subsessions resumed on startup; auto-closed monitors are re-spawned so the worker can re-verify ticket state — see `docs/periodic-checks.md`); retry counts for user_chat/task subsessions persisted so retry budget survives restarts |
+| `/data/cognee/`                       | Long-term memory storage (cognee)                                                                                                                                                                                                                                 |
+| `/data/periodic_scheduler_state.json` | Periodic scheduler firing state (see [Periodic Sessions](#periodic-sessions))                                                                                                                                                                                     |
 
 ______________________________________________________________________
 

@@ -112,9 +112,9 @@ data no longer validates.
    - **Number fields** — numeric input (step "1" for integers, "any" for floats).
    - **Boolean fields** — checkbox.
    - **Array fields** — text area containing JSON; edit the JSON directly.
-   - **Periodic session presets** — the `periodic.sessions` array renders as a dedicated
-     presets editor (see [Editing periodic-session presets](#editing-periodic-session-presets))
-     instead of a raw JSON text area.
+   - **Periodic session presets** — the `periodic.sessions` array renders as a dedicated presets
+     editor (see [Editing periodic-session presets](#editing-periodic-session-presets)) instead of a
+     raw JSON text area.
    - **Secret fields** — password input; value shows as `"**********"`; leave unchanged to keep the
      current secret.
 1. Click **Save**.
@@ -133,16 +133,16 @@ The `periodic.sessions` array — the named periodic-session presets — is rend
 **presets editor** rather than a raw JSON text area. It lets operators view, create, edit, and
 delete presets without hand-editing JSON.
 
-Each preset is shown as a row summarizing its **name**, its **interval** (seconds between runs),
-its **model level** (when set), and whether it is **disabled**.
+Each preset is shown as a row summarizing its **name**, its **interval** (seconds between runs), its
+**model level** (when set), and whether it is **disabled**.
 
-- **Edit** — click **Edit** on a row to open an inline form. You can change the preset **name**,
-  its **initial prompt** (the one message the scheduler posts into each fresh session — write it
-  as a complete task brief), the **interval (s)**, and the **model level** (1–3, or blank for the
-  global default). The **Enabled** checkbox toggles whether the preset fires. Click **Save** to
-  commit the change.
-- **Add** — click **+ Add Preset** to insert a new preset (defaults: daily interval, enabled).
-  Fill in the fields and click **Add**.
+- **Edit** — click **Edit** on a row to open an inline form. You can change the preset **name**, its
+  **initial prompt** (the one message the scheduler posts into each fresh session — write it as a
+  complete task brief), the **interval (s)**, and the **model level** (1–3, or blank for the global
+  default). The **Enabled** checkbox toggles whether the preset fires. Click **Save** to commit the
+  change.
+- **Add** — click **+ Add Preset** to insert a new preset (defaults: daily interval, enabled). Fill
+  in the fields and click **Add**.
 - **Delete** — click **Del** on a row to remove that preset.
 
 Like the rest of the settings form, the presets edits are only persisted when the panel's **Save**
