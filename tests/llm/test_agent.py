@@ -32,12 +32,14 @@ class _RecordingMemory:
 
     def __init__(self, recall: str = "") -> None:
         self._recall = recall
+        self.recall_queries: list[str] = []
         self.remembered: list[tuple[str, str, str | None]] = []
 
     async def setup(self) -> None:
         return None
 
     async def recall(self, query: str, *, session_id: str | None = None) -> str:
+        self.recall_queries.append(query)
         return self._recall
 
     async def remember(
@@ -278,6 +280,24 @@ async def test_recalled_memory_prepended_to_user_turn() -> None:
     # cacheable prefix must never carry per-message recall text).
     system_prompt = provider.build_agent.call_args.kwargs["system_prompt"]
     assert system_prompt == "Be helpful."
+
+
+@pytest.mark.asyncio
+async def test_periodic_preamble_stripped_from_recall_query() -> None:
+    """Memory recall for a periodic first turn queries the task itself.
+
+    Recalling on the fixed scheduler scaffolding retrieved chunks about
+    "scheduled periodic session" instead of the preset's subject.
+    """
+    from robotsix_chat.periodic.prompts import PERIODIC_PREAMBLE
+
+    _, _, _, memory = await _agent_with_memory(
+        output="ok",
+        recall="",
+        message=PERIODIC_PREAMBLE + "Review today's unread inbox.",
+    )
+
+    assert memory.recall_queries == ["Review today's unread inbox."]
 
 
 @pytest.mark.asyncio
