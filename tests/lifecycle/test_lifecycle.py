@@ -24,11 +24,12 @@ from robotsix_chat.lifecycle.client import (
     _validate_http_url,
 )
 
+_LIFECYCLE_BASE_URL = "http://lifecycle:9000"
+
 
 def _settings(**kw: Any) -> LifecycleSettings:
     base: dict[str, Any] = {
         "enabled": True,
-        "base_url": "http://lifecycle:9000",
         "api_key": "test-api-key",  # pragma: allowlist secret
         "service_name": "chat",
     }
@@ -48,7 +49,7 @@ def test_build_lifecycle_tools_disabled() -> None:
 
 def test_build_lifecycle_tools_returns_eight_tools_including_verify() -> None:
     """Enabled lifecycle returns eight tools including verify_deployment."""
-    tools = build_lifecycle_tools(_settings())
+    tools = build_lifecycle_tools(_settings(), _LIFECYCLE_BASE_URL)
     names = {t.__name__ for t in tools}
     assert names == {
         "list_lifecycle_services",
@@ -93,7 +94,7 @@ async def test_client_sends_x_api_key_header(
         return_value=httpx.Response(200, json={"services": []})
     )
 
-    client = LifecycleClient(_settings(api_key="secret-key"))
+    client = LifecycleClient(_settings(api_key="secret-key"), _LIFECYCLE_BASE_URL)
     await client.list_services()
 
     assert route.calls.last.request.headers["x-api-key"] == "secret-key"
@@ -108,7 +109,7 @@ async def test_client_no_x_api_key_when_empty(
         return_value=httpx.Response(200, json={"services": []})
     )
 
-    client = LifecycleClient(_settings(api_key=""))
+    client = LifecycleClient(_settings(api_key=""), _LIFECYCLE_BASE_URL)
     await client.list_services()
 
     assert "x-api-key" not in route.calls.last.request.headers
@@ -136,7 +137,7 @@ async def test_list_services_returns_json(
         )
     )
 
-    client = LifecycleClient(_settings())
+    client = LifecycleClient(_settings(), _LIFECYCLE_BASE_URL)
     out = await client.list_services()
     assert "robotsix-chat" in out
     assert "robotsix-mill" in out
@@ -159,7 +160,7 @@ async def test_service_status_returns_json(
         )
     )
 
-    client = LifecycleClient(_settings())
+    client = LifecycleClient(_settings(), _LIFECYCLE_BASE_URL)
     out = await client.service_status("chat")
     assert "running" in out
     assert "health_checks" in out
@@ -180,7 +181,7 @@ async def test_service_env_returns_masked_secrets(
         )
     )
 
-    client = LifecycleClient(_settings())
+    client = LifecycleClient(_settings(), _LIFECYCLE_BASE_URL)
     out = await client.service_env("chat")
     assert "***" in out
     assert "LOG_LEVEL" in out
@@ -200,7 +201,7 @@ async def test_list_services_http_error_returns_string(
         return_value=httpx.Response(500, json={"error": "internal"})
     )
 
-    client = LifecycleClient(_settings())
+    client = LifecycleClient(_settings(), _LIFECYCLE_BASE_URL)
     out = await client.list_services()
     assert "Lifecycle" in out
     assert "500" in out
@@ -215,7 +216,7 @@ async def test_service_status_network_error_returns_string(
         side_effect=ConnectionError("connection refused")
     )
 
-    client = LifecycleClient(_settings())
+    client = LifecycleClient(_settings(), _LIFECYCLE_BASE_URL)
     out = await client.service_status("chat")
     assert "Lifecycle" in out
     assert "connection refused" in out.lower()
@@ -230,7 +231,7 @@ async def test_non_json_response_returns_raw_text(
         return_value=httpx.Response(200, text="plain text response")
     )
 
-    client = LifecycleClient(_settings())
+    client = LifecycleClient(_settings(), _LIFECYCLE_BASE_URL)
     out = await client.list_services()
     assert "plain text response" in out
 
@@ -249,7 +250,7 @@ async def test_restart_service_success(
         return_value=httpx.Response(200, json={"status": "restarting"})
     )
 
-    client = LifecycleClient(_settings())
+    client = LifecycleClient(_settings(), _LIFECYCLE_BASE_URL)
     out = await client.restart_service("chat")
     assert '"status": "restarting"' in out
     assert route.calls.last.request.headers["x-api-key"] == "test-api-key"
@@ -267,7 +268,7 @@ async def test_restart_service_403_returns_error_string(
         )
     )
 
-    client = LifecycleClient(_settings())
+    client = LifecycleClient(_settings(), _LIFECYCLE_BASE_URL)
     out = await client.restart_service("chat")
     assert "Lifecycle" in out
     assert "403" in out
@@ -287,7 +288,7 @@ async def test_redeploy_service_success(
         return_value=httpx.Response(200, json={"status": "redeploying"})
     )
 
-    client = LifecycleClient(_settings())
+    client = LifecycleClient(_settings(), _LIFECYCLE_BASE_URL)
     out = await client.redeploy_service("chat")
     assert '"status": "redeploying"' in out
     assert route.calls.last.request.headers["x-api-key"] == "test-api-key"
@@ -305,7 +306,7 @@ async def test_redeploy_service_403_returns_error_string(
         )
     )
 
-    client = LifecycleClient(_settings())
+    client = LifecycleClient(_settings(), _LIFECYCLE_BASE_URL)
     out = await client.redeploy_service("chat")
     assert "Lifecycle" in out
     assert "403" in out
@@ -314,7 +315,7 @@ async def test_redeploy_service_403_returns_error_string(
 @pytest.mark.asyncio
 async def test_redeploy_lifecycle_service_tool_is_registered() -> None:
     """The redeploy_lifecycle_service tool is returned by build_lifecycle_tools."""
-    tools = build_lifecycle_tools(_settings())
+    tools = build_lifecycle_tools(_settings(), _LIFECYCLE_BASE_URL)
     names = {t.__name__ for t in tools}
     assert "redeploy_lifecycle_service" in names
 
@@ -328,7 +329,7 @@ async def test_redeploy_lifecycle_service_tool_calls_client(
         return_value=httpx.Response(200, json={"status": "redeploying"})
     )
 
-    tools = build_lifecycle_tools(_settings())
+    tools = build_lifecycle_tools(_settings(), _LIFECYCLE_BASE_URL)
     redeploy_tool = next(t for t in tools if t.__name__ == "redeploy_lifecycle_service")
     out = await redeploy_tool("chat")
     assert '"status": "redeploying"' in out
@@ -349,7 +350,7 @@ async def test_self_restart_success(
         return_value=httpx.Response(200, json={"status": "restarting"})
     )
 
-    client = LifecycleClient(_settings())
+    client = LifecycleClient(_settings(), _LIFECYCLE_BASE_URL)
     out = await client.self_restart()
     assert '"status": "restarting"' in out
     assert "## self_restart failure diagnostic" not in out
@@ -368,7 +369,7 @@ async def test_self_restart_error_returns_string(
         )
     )
 
-    client = LifecycleClient(_settings())
+    client = LifecycleClient(_settings(), _LIFECYCLE_BASE_URL)
     out = await client.self_restart()
     # 500 is transient — with 3 retries it exhausts and returns a diagnostic.
     assert "## self_restart failure diagnostic" in out
@@ -382,7 +383,7 @@ async def test_self_restart_error_returns_string(
 @pytest.mark.asyncio
 async def test_self_restart_unconfigured_service_name_returns_message() -> None:
     """With no service_name, self_restart returns a clear message (no call)."""
-    client = LifecycleClient(_settings(service_name=""))
+    client = LifecycleClient(_settings(service_name=""), _LIFECYCLE_BASE_URL)
     out = await client.self_restart()
     assert "service_name" in out
     assert "not" in out.lower()
@@ -391,7 +392,7 @@ async def test_self_restart_unconfigured_service_name_returns_message() -> None:
 @pytest.mark.asyncio
 async def test_self_restart_tool_is_registered() -> None:
     """The self_restart tool is returned by build_lifecycle_tools."""
-    tools = build_lifecycle_tools(_settings())
+    tools = build_lifecycle_tools(_settings(), _LIFECYCLE_BASE_URL)
     names = {t.__name__ for t in tools}
     assert "self_restart" in names
 
@@ -405,7 +406,7 @@ async def test_self_restart_tool_calls_client_self_restart(
         return_value=httpx.Response(200, json={"status": "restarting"})
     )
 
-    tools = build_lifecycle_tools(_settings())
+    tools = build_lifecycle_tools(_settings(), _LIFECYCLE_BASE_URL)
     self_restart_tool = next(t for t in tools if t.__name__ == "self_restart")
     out = await self_restart_tool()
     assert '"status": "restarting"' in out
@@ -422,7 +423,7 @@ async def test_update_service_env_success(
         return_value=httpx.Response(200, json={"updated": ["MY_VAR"]})
     )
 
-    client = LifecycleClient(_settings())
+    client = LifecycleClient(_settings(), _LIFECYCLE_BASE_URL)
     out = await client.update_service_env("chat", {"MY_VAR": "new_value"})
     assert "MY_VAR" in out
     assert "updated" in out
@@ -523,7 +524,7 @@ async def test_self_restart_succeeds_on_first_attempt(
         return_value=httpx.Response(200, json={"status": "restarting"})
     )
 
-    client = LifecycleClient(_settings())
+    client = LifecycleClient(_settings(), _LIFECYCLE_BASE_URL)
     out = await client.self_restart()
     assert '"status": "restarting"' in out
     assert "## self_restart failure diagnostic" not in out
@@ -546,7 +547,7 @@ async def test_self_restart_retries_on_503_then_succeeds(
         side_effect=handler
     )
 
-    client = LifecycleClient(_settings(self_restart_max_retries=2))
+    client = LifecycleClient(_settings(self_restart_max_retries=2), _LIFECYCLE_BASE_URL)
     out = await client.self_restart()
     assert '"status": "restarting"' in out
     assert "## self_restart failure diagnostic" not in out
@@ -570,7 +571,7 @@ async def test_self_restart_retries_on_timeout_then_succeeds(
         side_effect=handler
     )
 
-    client = LifecycleClient(_settings(self_restart_max_retries=2))
+    client = LifecycleClient(_settings(self_restart_max_retries=2), _LIFECYCLE_BASE_URL)
     out = await client.self_restart()
     assert '"status": "restarting"' in out
     assert "## self_restart failure diagnostic" not in out
@@ -586,7 +587,7 @@ async def test_self_restart_all_retries_exhausted(
         return_value=httpx.Response(503, json={"error": "still down"})
     )
 
-    client = LifecycleClient(_settings(self_restart_max_retries=1))
+    client = LifecycleClient(_settings(self_restart_max_retries=1), _LIFECYCLE_BASE_URL)
     out = await client.self_restart()
     assert "## self_restart failure diagnostic" in out
     assert "attempted **2** time(s)" in out
@@ -608,7 +609,7 @@ async def test_self_restart_does_not_retry_4xx(
         side_effect=handler
     )
 
-    client = LifecycleClient(_settings(self_restart_max_retries=3))
+    client = LifecycleClient(_settings(self_restart_max_retries=3), _LIFECYCLE_BASE_URL)
     out = await client.self_restart()
     assert "## self_restart failure diagnostic" in out
     assert "403" in out
@@ -623,9 +624,9 @@ async def test_self_restart_does_not_retry_4xx(
 @pytest.mark.asyncio
 async def test_self_restart_empty_base_url_returns_clear_message() -> None:
     """When base_url is empty, self_restart returns a clear error message."""
-    client = LifecycleClient(_settings(base_url="", default_protocol="http"))
+    client = LifecycleClient(_settings(default_protocol="http"), "")
     out = await client.self_restart()
-    assert "base_url is empty" in out
+    assert "central_deploy.url is empty" in out
     assert "http://central-deploy:8100" in out
 
 
@@ -644,7 +645,8 @@ async def test_client_no_scheme_base_url_prepends_protocol(
     ).mock(return_value=httpx.Response(200, json={"status": "restarting"}))
 
     client = LifecycleClient(
-        _settings(base_url="central-deploy:8100", default_protocol="http")
+        _settings(default_protocol="http"),
+        "central-deploy:8100",
     )
     out = await client.self_restart()
     assert '"status": "restarting"' in out
@@ -665,7 +667,8 @@ async def test_client_no_scheme_uses_https_default(
     ).mock(return_value=httpx.Response(200, json={"status": "restarting"}))
 
     client = LifecycleClient(
-        _settings(base_url="secure-deploy:8443", default_protocol="https")
+        _settings(default_protocol="https"),
+        "secure-deploy:8443",
     )
     out = await client.self_restart()
     assert '"status": "restarting"' in out
@@ -736,8 +739,7 @@ def test_diagnose_timeout_error() -> None:
     out = _diagnose_self_restart_failure(result, attempts=3, max_retries=2)
     assert "did not respond in time" in out.lower()
     assert "firewall" in out.lower()
-    assert "base_url" in out
-    # Multi-attempt wording.
+    assert "central_deploy.url" in out
     assert "attempted **3** time(s)" in out
 
 
@@ -769,7 +771,7 @@ def test_diagnose_unclassified_error_fallback() -> None:
     )
     out = _diagnose_self_restart_failure(result, attempts=1, max_retries=3)
     assert "unexpected error" in out.lower()
-    assert "base_url" in out.lower()
+    assert "central_deploy.url" in out.lower()
 
 
 # ---------------------------------------------------------------------------
@@ -830,7 +832,7 @@ def test_validate_http_url_malformed() -> None:
 @pytest.mark.asyncio
 async def test_list_services_empty_base_url_returns_clear_message() -> None:
     """When base_url is empty, list_services returns a clear error message."""
-    client = LifecycleClient(_settings(base_url="", default_protocol="http"))
+    client = LifecycleClient(_settings(default_protocol="http"), "")
     out = await client.list_services()
     assert "base url" in out.lower()
     assert "http://central-deploy:8100" in out
@@ -839,7 +841,7 @@ async def test_list_services_empty_base_url_returns_clear_message() -> None:
 @pytest.mark.asyncio
 async def test_list_services_malformed_base_url_returns_clear_message() -> None:
     """Base_url is malformed (e.g. protocol-only) → clear error message."""
-    client = LifecycleClient(_settings(base_url="http://", default_protocol="http"))
+    client = LifecycleClient(_settings(default_protocol="http"), "http://")
     out = await client.list_services()
     assert "base url" in out.lower()
     assert "http://central-deploy:8100" in out
@@ -848,7 +850,7 @@ async def test_list_services_malformed_base_url_returns_clear_message() -> None:
 @pytest.mark.asyncio
 async def test_service_status_empty_base_url_returns_clear_message() -> None:
     """When base_url is empty, service_status returns a clear error message."""
-    client = LifecycleClient(_settings(base_url="", default_protocol="http"))
+    client = LifecycleClient(_settings(default_protocol="http"), "")
     out = await client.service_status("chat")
     assert "base url" in out.lower()
     assert "http://central-deploy:8100" in out
@@ -857,7 +859,7 @@ async def test_service_status_empty_base_url_returns_clear_message() -> None:
 @pytest.mark.asyncio
 async def test_service_env_empty_base_url_returns_clear_message() -> None:
     """When base_url is empty, service_env returns a clear error message."""
-    client = LifecycleClient(_settings(base_url="", default_protocol="http"))
+    client = LifecycleClient(_settings(default_protocol="http"), "")
     out = await client.service_env("chat")
     assert "base url" in out.lower()
     assert "http://central-deploy:8100" in out
@@ -866,7 +868,7 @@ async def test_service_env_empty_base_url_returns_clear_message() -> None:
 @pytest.mark.asyncio
 async def test_restart_service_empty_base_url_returns_clear_message() -> None:
     """When base_url is empty, restart_service returns a clear error message."""
-    client = LifecycleClient(_settings(base_url="", default_protocol="http"))
+    client = LifecycleClient(_settings(default_protocol="http"), "")
     out = await client.restart_service("chat")
     assert "base url" in out.lower()
     assert "http://central-deploy:8100" in out
@@ -875,7 +877,7 @@ async def test_restart_service_empty_base_url_returns_clear_message() -> None:
 @pytest.mark.asyncio
 async def test_update_service_env_empty_base_url_returns_clear_message() -> None:
     """When base_url is empty, update_service_env returns a clear error message."""
-    client = LifecycleClient(_settings(base_url="", default_protocol="http"))
+    client = LifecycleClient(_settings(default_protocol="http"), "")
     out = await client.update_service_env("chat", {"MY_VAR": "val"})
     assert "base url" in out.lower()
     assert "http://central-deploy:8100" in out
@@ -888,9 +890,9 @@ async def test_self_restart_empty_base_url_still_uses_dedicated_guard() -> None:
     The existing dedicated guard (which mentions service_name) still fires
     before the generic _request guard.
     """
-    client = LifecycleClient(_settings(base_url="", default_protocol="http"))
+    client = LifecycleClient(_settings(default_protocol="http"), "")
     out = await client.self_restart()
-    assert "base_url is empty" in out
+    assert "central_deploy.url is empty" in out
     assert "http://central-deploy:8100" in out
 
 
@@ -902,7 +904,7 @@ async def test_malformed_base_url_is_treated_as_empty_for_all_methods(
 
     No HTTP request is ever made (respx has no matching route).
     """
-    client = LifecycleClient(_settings(base_url="http://", default_protocol="http"))
+    client = LifecycleClient(_settings(default_protocol="http"), "http://")
     out = await client.list_services()
     assert "base url" in out.lower()
 
@@ -1076,7 +1078,7 @@ async def test_verify_deployment_healthy_no_image_ref(
         )
     )
 
-    client = LifecycleClient(_settings())
+    client = LifecycleClient(_settings(), _LIFECYCLE_BASE_URL)
     result = await client.verify_deployment("chat")
     assert '"verified": true' in result.lower()
 
@@ -1097,7 +1099,7 @@ async def test_verify_deployment_image_match(
         )
     )
 
-    client = LifecycleClient(_settings())
+    client = LifecycleClient(_settings(), _LIFECYCLE_BASE_URL)
     result = await client.verify_deployment(
         "chat",
         expected_image_ref="robotsix-chat:main",
@@ -1138,7 +1140,7 @@ async def test_verify_deployment_image_mismatch_polls(
         side_effect=side_effect
     )
 
-    client = LifecycleClient(_settings())
+    client = LifecycleClient(_settings(), _LIFECYCLE_BASE_URL)
     result = await client.verify_deployment(
         "chat",
         expected_image_ref="repo:new",
@@ -1160,7 +1162,7 @@ async def test_verify_deployment_timeout(
         )
     )
 
-    client = LifecycleClient(_settings())
+    client = LifecycleClient(_settings(), _LIFECYCLE_BASE_URL)
     result = await client.verify_deployment(
         "chat",
         poll_timeout_seconds=0.05,
@@ -1178,7 +1180,7 @@ async def test_verify_deployment_api_error(
         return_value=httpx.Response(500, json={"error": "internal"})
     )
 
-    client = LifecycleClient(_settings())
+    client = LifecycleClient(_settings(), _LIFECYCLE_BASE_URL)
     result = await client.verify_deployment("chat", poll_timeout_seconds=5.0)
     assert '"verified": false' in result.lower()
     assert "lifecycle api error" in result.lower()

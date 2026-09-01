@@ -41,12 +41,22 @@ class CentralDeploySettings(BaseModel):
     component's declared skill into the agent.
 
     Attributes:
-        url: Base URL of the central-deploy API (no trailing slash).
+        url: Canonical base URL of the central-deploy / deploy-lifecycle API
+            (no trailing slash).  Single source of truth for the deploy-plane
+            address; the lifecycle client and feedback roster lookup both read
+            it (the former ``lifecycle.base_url`` was retired in favour of it).
         roster_cache_ttl: Seconds to cache the roster before re-fetching.
             Default 300 (5 min).
         component_response_max_chars: Maximum characters of a component API
             response returned to the agent; longer bodies are truncated.
             Default 200000.
+        deploy_api_key: Canonical deploy-plane credential — the shared
+            secret between this chat component and central-deploy.  Sent as
+            the ``X-API-Key`` header on outbound roster/lifecycle calls, and
+            required (matched) on inbound central-deploy → chat endpoints
+            (``/chat/github/*`` and the feedback roster lookup).  This is the
+            single source of truth; the per-block ``deploy_api_key`` fields
+            were retired in favour of it.
         component_credentials: Per-component credentials keyed by
             component id.  Each entry carries credentials for all
             supported auth schemes; the roster entry's ``auth.type``
@@ -57,6 +67,7 @@ class CentralDeploySettings(BaseModel):
     model_config = ConfigDict(extra="forbid")
 
     url: str = ""
+    deploy_api_key: SecretStr = SecretStr("")
     roster_cache_ttl: float = 300.0
     component_response_max_chars: int = 200_000
     component_request_timeout: float = Field(

@@ -55,7 +55,6 @@ from robotsix_chat.langfuse import (
 )
 from robotsix_chat.lifecycle import build_lifecycle_tools, load_lifecycle_skill
 from robotsix_chat.llm import LlmioChatAgent
-from robotsix_chat.mail import build_mail_tools, load_mail_skill
 from robotsix_chat.memory import ChatMemory, NullMemory, ReadOnlyMemory, build_memory
 from robotsix_chat.notification import build_notification_tools, load_notification_skill
 from robotsix_chat.public_fetch import build_public_fetch_tools, load_public_fetch_skill
@@ -126,7 +125,6 @@ from .routes import (
     health_endpoint,
     history_endpoint,
     http_exception_handler,
-    mail_archive_root_check_endpoint,
     memory_ingestion_structure_endpoint,
     metrics_endpoint,
     mill_events_endpoint,
@@ -152,6 +150,7 @@ from .routes import (
 if TYPE_CHECKING:
     from robotsix_chat.autonomous import AutonomousRunner
     from robotsix_chat.config.models import (
+        CentralDeploySettings,
         DirectRepoSettings,
         GitHubActionsSettings,
         GitHubSecuritySettings,
@@ -307,6 +306,7 @@ SHARED_PARAMS: frozenset[str] = frozenset(
         "on_startup_async",
         "on_shutdown",
         "direct_repo_settings",
+        "central_deploy_settings",
         "github_security_settings",
         "github_actions_settings",
         "config_path",
@@ -346,6 +346,7 @@ def create_app(
     on_startup_async: Callable[[], Any] | None = None,
     on_shutdown: Callable[[], Any] | None = None,
     direct_repo_settings: DirectRepoSettings | None = None,
+    central_deploy_settings: CentralDeploySettings | None = None,
     github_security_settings: GitHubSecuritySettings | None = None,
     github_actions_settings: GitHubActionsSettings | None = None,
     mobile_auth: MobileAuthSettings | None = None,
@@ -448,6 +449,10 @@ def create_app(
             installation id) used by the
             ``PATCH /chat/github/repos/{owner}/{repo}/settings`` endpoint.
             When ``None``, the endpoint returns 503.
+        central_deploy_settings: Canonical deploy-plane settings (URL and
+            API key) used by the GitHub security/actions endpoints for
+            inbound ``X-API-Key`` matching.  When ``None``, those
+            endpoints return 503.
         github_security_settings: GitHub security-feature toggle config
             (org, deploy API key) used by the
             ``PATCH /chat/github/repos/{owner}/{repo}/settings`` endpoint.
@@ -630,11 +635,6 @@ def create_app(
         ),
         Route("/config/rollback", config_rollback_endpoint, methods=["POST"]),
         Route(
-            "/mail/archive-root-check",
-            mail_archive_root_check_endpoint,
-            methods=["GET"],
-        ),
-        Route(
             "/diagnostics/events",
             diagnostics_create_endpoint,
             methods=["POST"],
@@ -720,6 +720,7 @@ def create_app(
     app.state.subsession_registry = subsession_registry  # may be None
     app.state.subsession_delivery = subsession_delivery  # may be None
     app.state.direct_repo_settings = direct_repo_settings
+    app.state.central_deploy_settings = central_deploy_settings
     app.state.github_security_settings = github_security_settings
     app.state.github_actions_settings = github_actions_settings
     app.state.mobile_auth = mobile_auth
@@ -877,7 +878,6 @@ def _skill_registry(
         (settings.direct_repo.enabled, "direct_repo", load_direct_repo_skill),
         (settings.volume_tools.enabled, "volume_tools", load_volume_tools_skill),
         (settings.file_hub_tools.enabled, "file_hub_tools", load_file_hub_skill),
-        (settings.mail.enabled, "mail", load_mail_skill),
         (
             bool(settings.direct_repo.board_api_base_url.strip())
             or bool(settings.central_deploy.url.strip()),
@@ -1056,7 +1056,6 @@ def _build_static_tools(
     raw_tools = [
         *build_skill_tools(settings),
         *component_access_tools,
-        *build_mail_tools(settings.mail),
         *build_component_tools(settings.component_client),
         *build_refdocs_tools(settings.refdocs, settings.direct_repo),
         *build_repo_study_tools(
@@ -1078,7 +1077,7 @@ def _build_static_tools(
         *build_diagnostics_tools(settings.diagnostics, store=diagnostic_store),
         *build_recent_activity_tools(settings.self_review, conversation_store),
         *build_version_check_tools(settings.version_check, settings.direct_repo),
-        *build_lifecycle_tools(settings.lifecycle),
+        *build_lifecycle_tools(settings.lifecycle, settings.central_deploy.url),
         *build_render_url_tools(settings.render_url),
         *build_http_probe_tools(settings.http_probe, settings.central_deploy),
         *build_docker_digest_tools(settings.docker_digest),

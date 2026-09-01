@@ -57,10 +57,10 @@ This tool cannot restart other managed services — for those, use `restart_life
 
 ### URL protocol handling
 
-If `lifecycle.base_url` lacks a URL scheme (e.g. `central-deploy:8100`), the client prepends the
+If `central_deploy.url` lacks a URL scheme (e.g. `central-deploy:8100`), the client prepends the
 configured `lifecycle.default_protocol` (default `"http"`). URLs with recognised schemes (`http`,
 `https`) are left unchanged. An empty `base_url` produces a clear error message from `self_restart`
-instead of a cryptic protocol error — configure `lifecycle.base_url` to the deploy-lifecycle API
+instead of a cryptic protocol error — configure `central_deploy.url` to the deploy-lifecycle API
 address (e.g. `http://central-deploy:8100`) to enable the feature.
 
 ### Retry behaviour

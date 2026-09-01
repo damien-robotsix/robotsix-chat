@@ -36,6 +36,18 @@ def _mock_direct_repo_settings(*, enabled: bool = True) -> Mock:
     return settings
 
 
+def _mock_central_deploy(*, api_key: str = "secret-key") -> Mock:
+    """Build a mock ``CentralDeploySettings`` carrying the canonical key.
+
+    The endpoints authenticate the inbound ``X-API-Key`` against
+    ``central_deploy.deploy_api_key`` (the per-block key was retired).
+    """
+    settings = Mock()
+    settings.deploy_api_key = Mock()
+    settings.deploy_api_key.get_secret_value.return_value = api_key
+    return settings
+
+
 def _make_patch_request(
     *,
     owner: str = "test-org",
@@ -44,6 +56,7 @@ def _make_patch_request(
     api_key: str | None = "secret-key",
     github_settings: Mock | None = None,
     direct_repo_settings: Mock | None = None,
+    central_deploy_settings: Mock | None = None,
 ) -> Request:
     """Build a minimal Starlette ``Request`` for a PATCH with path params.
 
@@ -58,6 +71,11 @@ def _make_patch_request(
         direct_repo_settings
         if direct_repo_settings is not None
         else _mock_direct_repo_settings()
+    )
+    app.state.central_deploy_settings = (
+        central_deploy_settings
+        if central_deploy_settings is not None
+        else _mock_central_deploy()
     )
 
     scope: dict[str, object] = {
@@ -121,12 +139,12 @@ async def test_503_when_api_key_empty() -> None:
     """Returns 503 when ``deploy_api_key`` is an empty secret."""
     request = _make_patch_request(
         api_key="",
-        github_settings=_mock_settings(api_key=""),
+        central_deploy_settings=_mock_central_deploy(api_key=""),
     )
     with pytest.raises(HTTPException) as exc_info:
         await github_settings_endpoint(request)
     assert exc_info.value.status_code == 503
-    assert exc_info.value.detail == ("github_security.deploy_api_key is not configured")
+    assert exc_info.value.detail == ("central_deploy.deploy_api_key is not configured")
 
 
 # ---------------------------------------------------------------------------
@@ -208,6 +226,7 @@ async def test_400_malformed_json() -> None:
     app = Mock()
     app.state.github_security_settings = _mock_settings()
     app.state.direct_repo_settings = _mock_direct_repo_settings()
+    app.state.central_deploy_settings = _mock_central_deploy()
 
     scope: dict[str, object] = {
         "type": "http",
@@ -508,6 +527,7 @@ def _make_post_request(
     api_key: str | None = "secret-key",
     github_settings: Mock | None = None,
     direct_repo_settings: Mock | None = None,
+    central_deploy_settings: Mock | None = None,
 ) -> Request:
     """Build a minimal Starlette ``Request`` for a POST with no path params.
 
@@ -522,6 +542,11 @@ def _make_post_request(
         direct_repo_settings
         if direct_repo_settings is not None
         else _mock_direct_repo_settings()
+    )
+    app.state.central_deploy_settings = (
+        central_deploy_settings
+        if central_deploy_settings is not None
+        else _mock_central_deploy()
     )
 
     scope: dict[str, object] = {
@@ -585,12 +610,12 @@ async def test_create_repo_503_when_api_key_empty() -> None:
     """Returns 503 when ``deploy_api_key`` is an empty secret."""
     request = _make_post_request(
         api_key="",
-        github_settings=_mock_settings(api_key=""),
+        central_deploy_settings=_mock_central_deploy(api_key=""),
     )
     with pytest.raises(HTTPException) as exc_info:
         await github_repo_create_endpoint(request)
     assert exc_info.value.status_code == 503
-    assert exc_info.value.detail == ("github_security.deploy_api_key is not configured")
+    assert exc_info.value.detail == ("central_deploy.deploy_api_key is not configured")
 
 
 # ============================================================================
@@ -631,6 +656,7 @@ async def test_create_repo_400_malformed_json() -> None:
     app = Mock()
     app.state.github_security_settings = _mock_settings()
     app.state.direct_repo_settings = _mock_direct_repo_settings()
+    app.state.central_deploy_settings = _mock_central_deploy()
 
     scope: dict[str, object] = {
         "type": "http",

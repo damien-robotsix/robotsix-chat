@@ -49,7 +49,7 @@ def _ensure_url_scheme(raw: str, default_protocol: str) -> str:
     # No scheme — apply the default protocol.
     fixed = f"{default_protocol}://{raw}"
     logger.warning(
-        "lifecycle.base_url has no URL scheme; prepending %s:// → %s",
+        "central_deploy.url has no URL scheme; prepending %s:// → %s",
         default_protocol,
         fixed,
     )
@@ -142,7 +142,7 @@ _SELF_RESTART_DIAGNOSTICS: list[tuple[str, str, str]] = [
         "a network or firewall issue may be blocking the request.",
         (
             "Verify that the deploy server is reachable from this "
-            "host (check lifecycle.base_url) and that no firewall "
+            "host (check central_deploy.url) and that no firewall "
             "rules are blocking outbound HTTP to the deploy server's "
             "port."
         ),
@@ -153,7 +153,7 @@ _SELF_RESTART_DIAGNOSTICS: list[tuple[str, str, str]] = [
         "this may be a network error, DNS failure, or a URL protocol "
         "configuration problem.",
         (
-            "Check that lifecycle.base_url is a valid HTTP URL "
+            "Check that central_deploy.url is a valid HTTP URL "
             "(e.g. http://central-deploy:8100) and that the deploy "
             "server hostname resolves from this container.  If the "
             "base_url has an unrecognised scheme, fix it to http "
@@ -190,7 +190,7 @@ def _diagnose_self_restart_failure(
             "The deploy server returned an unexpected error during the restart request."
         )
         next_steps = (
-            "Inspect the raw error below.  Check that lifecycle.base_url "
+            "Inspect the raw error below.  Check that central_deploy.url "
             "points to the correct deploy-lifecycle API address and that "
             "the deploy server is reachable and healthy."
         )
@@ -306,27 +306,29 @@ class LifecycleClient:
     endpoints.
     """
 
-    def __init__(self, settings: LifecycleSettings) -> None:
-        """Initialise with lifecycle settings."""
+    def __init__(self, settings: LifecycleSettings, base_url: str = "") -> None:
+        """Initialise with lifecycle settings and the canonical deploy URL.
+
+        *base_url* is the canonical ``central_deploy.url`` (the former
+        ``central_deploy.url`` was retired).
+        """
         self._s = settings
-        base_url = _ensure_url_scheme(
-            settings.base_url, settings.default_protocol
-        ).rstrip("/")
-        if not base_url:
+        resolved = _ensure_url_scheme(base_url, settings.default_protocol).rstrip("/")
+        if not resolved:
             logger.warning(
-                "lifecycle.base_url is empty — all lifecycle API calls "
+                "central_deploy.url is empty — all lifecycle API calls "
                 "will fail with a URL protocol error."
             )
-        elif not _validate_http_url(base_url):
+        elif not _validate_http_url(resolved):
             logger.warning(
-                "lifecycle.base_url %r is malformed — all lifecycle API "
-                "calls will fail.  Set lifecycle.base_url to a valid "
+                "central_deploy.url %r is malformed — all lifecycle API "
+                "calls will fail.  Set central_deploy.url to a valid "
                 "HTTP URL (e.g. http://central-deploy:8100) and restart "
                 "the chat server.",
-                base_url,
+                resolved,
             )
-            base_url = ""
-        self._base_url = base_url
+            resolved = ""
+        self._base_url = resolved
 
     # -- public methods ---------------------------------------------------
 
@@ -398,8 +400,8 @@ class LifecycleClient:
             )
         if not self._base_url:
             return (
-                "self_restart is unavailable: lifecycle.base_url is empty. "
-                "Set lifecycle.base_url to the deploy-lifecycle API address "
+                "self_restart is unavailable: central_deploy.url is empty. "
+                "Set central_deploy.url to the deploy-lifecycle API address "
                 "(e.g. http://central-deploy:8100) and restart the chat server."
             )
 
@@ -576,7 +578,7 @@ class LifecycleClient:
                 if raw
                 else (
                     "Lifecycle base URL is not configured or is malformed. "
-                    "Set lifecycle.base_url to a valid HTTP URL "
+                    "Set central_deploy.url to a valid HTTP URL "
                     "(e.g. http://central-deploy:8100) and restart the "
                     "chat server."
                 )

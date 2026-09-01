@@ -1224,6 +1224,10 @@ async def test_run_server_from_config_creates_agent_from_settings(
         assert isinstance(github_security_settings, GitHubSecuritySettings)
         github_actions_settings = call_args[1].pop("github_actions_settings")
         assert isinstance(github_actions_settings, GitHubActionsSettings)
+        central_deploy_settings = call_args[1].pop("central_deploy_settings")
+        from robotsix_chat.config.models import CentralDeploySettings
+
+        assert isinstance(central_deploy_settings, CentralDeploySettings)
         feedback_runner = call_args[1].pop("feedback_runner")
         assert feedback_runner is None
         autonomous_runner = call_args[1].pop("autonomous_runner")

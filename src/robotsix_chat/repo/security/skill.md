@@ -12,7 +12,7 @@ user approval in the conversation — the endpoint modifies live repository conf
 ### Request
 
 - **Method:** `PATCH`
-- **Auth:** `X-API-Key` header (server-side `github_security.deploy_api_key`)
+- **Auth:** `X-API-Key` header (server-side `central_deploy.deploy_api_key`)
 - **Content-Type:** `application/json`
 
 #### Path parameters
@@ -52,7 +52,7 @@ At least one field must be specified.
 | 400    | Invalid body (missing required field, invalid value) or missing path params |
 | 403    | Invalid or missing `X-API-Key` header                                       |
 | 404    | Repository not in the GitHub App installation scope                         |
-| 503    | `github_security` not configured (disabled or missing `deploy_api_key`)     |
+| 503    | `github_security` not configured (disabled or missing `central_deploy.deploy_api_key`)     |
 
 ______________________________________________________________________
 
@@ -65,7 +65,7 @@ the agent can inspect deploy pipeline output (e.g., lftp commands) to diagnose d
 ### Request
 
 - **Method:** `GET`
-- **Auth:** `X-API-Key` header (server-side `github_security.deploy_api_key`)
+- **Auth:** `X-API-Key` header (server-side `central_deploy.deploy_api_key`)
 
 #### Path parameters
 
@@ -84,4 +84,4 @@ the agent can inspect deploy pipeline output (e.g., lftp commands) to diagnose d
 | 403    | Invalid or missing `X-API-Key` header                                   |
 | 404    | Repository not in the GitHub App installation scope, or job not found   |
 | 502    | Upstream GitHub API error                                               |
-| 503    | `github_security` not configured (disabled or missing `deploy_api_key`) |
+| 503    | `github_security` not configured (disabled or missing `central_deploy.deploy_api_key`) |

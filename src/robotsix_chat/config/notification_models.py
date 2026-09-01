@@ -46,10 +46,6 @@ class FeedbackSettings(BaseModel):
             Required when *enabled* — the runner POSTs to
             ``{board_url}/tickets/ingest``.
         board_api_token: Optional Bearer token for the board API.
-        deploy_api_key: Bearer / X-API-Key token for the central-deploy
-            roster endpoint (``GET /chat/components``). Required when
-            the feedback runner needs to resolve allowed repos via the
-            deploy roster.
         timeout: Per-request HTTP timeout in seconds for ingest calls.
             The set of allowed target repos is resolved dynamically at
             run-time from the deploy server's chat-component roster
@@ -78,13 +74,16 @@ class FeedbackSettings(BaseModel):
             never files a duplicate.  ``0`` disables retrying (a single
             attempt).  Default ``2`` (up to three attempts total).
 
+    The deploy-roster lookup uses the canonical ``central_deploy.url`` and
+    ``central_deploy.deploy_api_key`` (the per-block ``deploy_api_key`` was
+    retired).
+
     """
 
     enabled: bool = False
     model_level: int = 1
     board_url: str = ""
     board_api_token: SecretStr = SecretStr("")
-    deploy_api_key: SecretStr = SecretStr("")
     timeout: float = 60.0
     max_tickets_per_run: int = 3
     dedup_window_seconds: float = 60.0
@@ -94,5 +93,12 @@ class FeedbackSettings(BaseModel):
     @model_validator(mode="before")
     @classmethod
     def _strip_blank_numeric(cls, data: Any) -> Any:
-        """Drop legacy ``""`` sentinels for numeric fields so old configs load."""
+        """Drop legacy ``""`` sentinels and the retired ``deploy_api_key``.
+
+        The deploy credential is now canonical at
+        ``central_deploy.deploy_api_key``; the Settings-level migration copies
+        any legacy value across before it reaches here.
+        """
+        if isinstance(data, dict):
+            data.pop("deploy_api_key", None)
         return drop_blank_numeric_sentinels(cls, data)

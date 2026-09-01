@@ -48,11 +48,12 @@ def _check_settings_and_auth(
     # -- 503: unconfigured -------------------------------------------------
     if not settings.enabled or not direct_repo.enabled:
         raise HTTPException(status_code=503, detail=f"{detail_prefix} is not enabled")
-    api_key = settings.deploy_api_key.get_secret_value()
+    central_deploy = getattr(request.app.state, "central_deploy_settings", None)
+    api_key = central_deploy.deploy_api_key.get_secret_value() if central_deploy else ""
     if not api_key:
         raise HTTPException(
             status_code=503,
-            detail=f"{detail_prefix}.deploy_api_key is not configured",
+            detail="central_deploy.deploy_api_key is not configured",
         )
 
     # -- 403: auth ---------------------------------------------------------
@@ -154,7 +155,7 @@ async def github_settings_endpoint(request: Request) -> JSONResponse:
     """Handle ``PATCH /chat/github/repos/{owner}/{repo}/settings``.
 
     Toggle repository security-and-analysis features.  Requires an
-    ``X-API-Key`` header matching the configured ``deploy_api_key``.
+    ``X-API-Key`` header matching the configured ``central_deploy.deploy_api_key``.
 
     Path parameters:
         owner: GitHub organisation or user name.
@@ -226,7 +227,7 @@ async def github_repo_create_endpoint(request: Request) -> JSONResponse:
 
     Create a new repository under the configured GitHub organisation.
     Requires an ``X-API-Key`` header matching the configured
-    ``deploy_api_key``.
+    ``central_deploy.deploy_api_key``.
 
     JSON body:
         name: string — repository name (required).
@@ -293,7 +294,7 @@ async def github_actions_secret_endpoint(request: Request) -> JSONResponse:
     """Handle ``PUT /chat/github/repos/{owner}/{repo}/actions/secrets/{secret_name}``.
 
     Create or update a repository Actions secret.  Requires an
-    ``X-API-Key`` header matching the configured ``deploy_api_key``.
+    ``X-API-Key`` header matching the configured ``central_deploy.deploy_api_key``.
 
     Path parameters:
         owner: GitHub organisation or user name.
@@ -349,7 +350,7 @@ async def github_actions_workflow_endpoint(request: Request) -> JSONResponse:
     """Handle ``POST .../actions/workflows/{workflow_id}/dispatches``.
 
     Trigger a workflow_dispatch event.  Requires an ``X-API-Key`` header
-    matching the configured ``deploy_api_key``.
+    matching the configured ``central_deploy.deploy_api_key``.
 
     Path parameters:
         owner: GitHub organisation or user name.
@@ -422,7 +423,7 @@ async def github_job_log_endpoint(request: Request) -> PlainTextResponse:
         job_id: GitHub Actions job ID (integer).
 
     Requires an ``X-API-Key`` header matching the configured
-    ``deploy_api_key``.
+    ``central_deploy.deploy_api_key``.
 
     Returns:
         200 — plain-text job log.

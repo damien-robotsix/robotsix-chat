@@ -51,14 +51,19 @@ def load_lifecycle_skill() -> str:
 
 def build_lifecycle_tools(
     settings: LifecycleSettings,
+    base_url: str = "",
 ) -> list[Callable[..., Any]]:
-    """Return the lifecycle tool(s) for the agent, or ``[]`` when disabled."""
+    """Return the lifecycle tool(s) for the agent, or ``[]`` when disabled.
+
+    *base_url* is the canonical ``central_deploy.url`` (the former
+    ``lifecycle.base_url`` was retired).
+    """
     if not settings.enabled:
         return []
 
     from .client import LifecycleClient
 
-    client = LifecycleClient(settings)
+    client = LifecycleClient(settings, base_url)
 
     async def list_lifecycle_services() -> str:
         """List all services managed by the deploy lifecycle server.

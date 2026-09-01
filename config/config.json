@@ -53,16 +53,11 @@
   },
   "central_deploy": {
     "url": "",
+    "deploy_api_key": "",
     "roster_cache_ttl": 300.0,
     "component_response_max_chars": 200000,
     "component_credentials": {},
     "component_fallbacks": {}
-  },
-  "mail": {
-    "enabled": false,
-    "api_base_url": "http://127.0.0.1:8077",
-    "api_token": "",
-    "timeout": 30.0
   },
   "conversation": {
     "max_history_turns": 50,
@@ -174,13 +169,11 @@
   },
   "github_security": {
     "enabled": false,
-    "github_org": "damien-robotsix",
-    "deploy_api_key": ""
+    "github_org": "damien-robotsix"
   },
   "github_actions": {
     "enabled": false,
-    "github_org": "damien-robotsix",
-    "deploy_api_key": ""
+    "github_org": "damien-robotsix"
   },
   "repo_study": {
     "enabled": false,
@@ -193,7 +186,6 @@
   },
   "lifecycle": {
     "enabled": false,
-    "base_url": "",
     "default_protocol": "http",
     "api_key": "",
     "service_name": "",
@@ -264,7 +256,6 @@
     "model_level": 1,
     "board_url": "",
     "board_api_token": "",
-    "deploy_api_key": "",
     "timeout": 60.0,
     "max_tickets_per_run": 3,
     "dedup_window_seconds": 60.0,
