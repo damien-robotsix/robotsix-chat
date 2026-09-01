@@ -1168,15 +1168,17 @@ async def test_retry_sleeps_backoff() -> None:
 
 
 # ---------------------------------------------------------------------------
-# Image attachments — multimodal prompt
+# Image attachments — llmio images= seam (never BinaryContent in the prompt)
 # ---------------------------------------------------------------------------
 
 
 @pytest.mark.asyncio
-async def test_stream_with_images_builds_multimodal_prompt() -> None:
-    """With images, handle.run receives a list with text + BinaryContent parts."""
-    from pydantic_ai.messages import BinaryContent
+async def test_stream_with_images_passes_images_to_build_agent() -> None:
+    """Attachments go to llmio's ``build_agent(images=...)`` seam.
 
+    The prompt stays a plain string: the claude transport reads images
+    natively; text-only OpenRouter models get the injected ask_image tool.
+    """
     create_model, handle = _patched_create_model("I see an image!")
 
     with patch("robotsix_chat.llm.agent.get_provider_for_identifier", create_model):
@@ -1190,19 +1192,20 @@ async def test_stream_with_images_builds_multimodal_prompt() -> None:
 
     assert chunks == ["I see an image!"]
     run_arg = handle.run_calls[0]["message"]
-    assert isinstance(run_arg, list)
-    assert len(run_arg) == 2
-    assert run_arg[0] == "describe this"
-    assert isinstance(run_arg[1], BinaryContent)
-    assert run_arg[1].data == b"fake-png-data"
-    assert run_arg[1].media_type == "image/png"
+    assert isinstance(run_arg, str)
+    assert run_arg == "describe this"
+    provider = create_model.return_value
+    kwargs = provider.build_agent.call_args.kwargs
+    assert kwargs["images"] == [("image/png", b"fake-png-data")]
+    assert kwargs["vision_api_key"] == "k"
 
 
 @pytest.mark.asyncio
 async def test_stream_with_images_only_no_text() -> None:
-    """Images-only (empty message) builds a list of just BinaryContent parts."""
-    from pydantic_ai.messages import BinaryContent
+    """Images-only (empty message) still runs with a plain-text prompt.
 
+    The attachment travels via ``images=`` only.
+    """
     create_model, handle = _patched_create_model("nice pic")
 
     with patch("robotsix_chat.llm.agent.get_provider_for_identifier", create_model):
@@ -1213,16 +1216,18 @@ async def test_stream_with_images_only_no_text() -> None:
 
     assert chunks == ["nice pic"]
     run_arg = handle.run_calls[0]["message"]
-    assert isinstance(run_arg, list)
-    assert len(run_arg) == 1
-    assert isinstance(run_arg[0], BinaryContent)
-    assert run_arg[0].data == b"jpeg-data"
-    assert run_arg[0].media_type == "image/jpeg"
+    assert isinstance(run_arg, str)
+    provider = create_model.return_value
+    kwargs = provider.build_agent.call_args.kwargs
+    assert kwargs["images"] == [("image/jpeg", b"jpeg-data")]
 
 
 @pytest.mark.asyncio
 async def test_stream_without_images_still_passes_plain_string() -> None:
-    """With no images, handle.run receives a plain str (behaviour unchanged)."""
+    """With no images, ``build_agent`` gets ``images=None``.
+
+    handle.run receives a plain str; no tool injection, no native attachments.
+    """
     create_model, handle = _patched_create_model("text-only reply")
 
     with patch("robotsix_chat.llm.agent.get_provider_for_identifier", create_model):
@@ -1233,6 +1238,51 @@ async def test_stream_without_images_still_passes_plain_string() -> None:
     run_arg = handle.run_calls[0]["message"]
     assert isinstance(run_arg, str)
     assert run_arg == "hello"
+    provider = create_model.return_value
+    assert provider.build_agent.call_args.kwargs["images"] is None
+
+
+@pytest.mark.asyncio
+async def test_replayed_history_is_text_only_even_with_images() -> None:
+    """History replay must NEVER carry binary parts.
+
+    A single BinaryContent in history 404s every text turn of the session on
+    text-only OpenRouter models ('No endpoints found that support image
+    input', live incident 2026-09-01). Attachments are per-turn via
+    ``images=``; prior turns replay as pure text.
+    """
+    from pydantic_ai.messages import ModelRequest, ModelResponse
+
+    create_model, handle = _patched_create_model("ok")
+
+    with patch("robotsix_chat.llm.agent.get_provider_for_identifier", create_model):
+        agent = LlmioChatAgent(model_level=1, instruction="Be helpful.", api_key="k")
+        _ = [
+            c
+            async for c in agent.stream(
+                "and now?",
+                history=[("look at this", "I described the image")],
+                images=[("image/png", b"new-turn-image")],
+            )
+        ]
+
+    message_history = handle.run_calls[0]["message_history"]
+    assert message_history is not None
+    for msg in message_history:
+        assert isinstance(msg, (ModelRequest, ModelResponse))
+        for part in msg.parts:
+            assert isinstance(part.content, str)
+
+
+def test_build_message_history_yields_only_text_parts() -> None:
+    """The history builder's text-only invariant, asserted directly."""
+    from robotsix_chat.llm.agent import _build_message_history
+
+    messages = _build_message_history([("u1", "a1"), ("u2", "a2")])
+    assert messages is not None
+    for msg in messages:
+        for part in msg.parts:
+            assert isinstance(part.content, str)
 
 
 # ---------------------------------------------------------------------------

@@ -113,6 +113,12 @@ HTTP POST /chat  {"message": "...", "session_id": "...", "images": [...]}
 ```
 
 The SSE stream delivers tokens as they arrive from the LLM. The browser renders them incrementally.
+
+Image attachments (`images: [...]`) are handed to llmio's `build_agent(images=...)` seam rather than
+embedded in the prompt: the Claude transport passes them to the model as native image blocks, while
+text-only OpenRouter models (the failover slot's DeepSeek bindings) receive an injected `ask_image`
+tool answered by the tier config's vision binding. Attachments belong only to the turn they arrive
+with — replayed history is text-only by construction, so an old image can never fail a later turn.
 On `"done"` the client knows the reply is complete and can re-enable the input.
 
 ### Other Endpoints
