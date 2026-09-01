@@ -57,6 +57,7 @@ from robotsix_chat.chat.actions import (
 from robotsix_chat.chat.events import EventSink, activity_frame
 from robotsix_chat.config import slot_needs_api_key
 from robotsix_chat.memory import ChatMemory, NullMemory
+from robotsix_chat.periodic.prompts import PERIODIC_PREAMBLE
 
 logger = logging.getLogger(__name__)
 
@@ -709,7 +710,13 @@ class LlmioChatAgent:
         self._publish_synthetic_activity(
             session_id, "tool_call", tool_name="recall_memory"
         )
-        recalled = await self._memory.recall(message, session_id=session_id)
+        # A periodic session's first message starts with fixed scheduler
+        # scaffolding; recalling on it retrieves chunks about "scheduled
+        # periodic session" instead of the preset's actual task, so strip
+        # the known preamble from the recall query (the agent still gets
+        # the full message).
+        recall_query = message.removeprefix(PERIODIC_PREAMBLE)
+        recalled = await self._memory.recall(recall_query, session_id=session_id)
         self._publish_synthetic_activity(
             session_id,
             "tool_result",
