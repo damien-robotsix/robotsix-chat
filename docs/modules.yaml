@@ -366,7 +366,6 @@ modules:
       - tests/llm/test_escalation.py
       - tests/llm/test_tool_utils.py
       - tests/llm/test_agent_fallback_chain.py
-      - tests/llm/test_primary_cooldown.py
 
   - id: memory
     description: "Long-term memory backend — Cognee-based persistent storage for cross-conversation continuity."
