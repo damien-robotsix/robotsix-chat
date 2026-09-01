@@ -586,8 +586,8 @@ async def _check_resume_status(
             f"Update the checkpoint via set_checkpoint with "
             f"last_known_state='human_issue_approval' so the system can "
             f"auto-escalate after a configurable number of consecutive "
-            f"NO_CHANGE runs while the ticket is stuck awaiting human "
-            f"approval.]"
+            f"NO_CHANGE runs — the main assistant (not a human) then "
+            f"reviews and approves/redirects the ticket.]"
         )
         checkpoint["last_known_state"] = current_state_str
         checkpoint.setdefault("human_approval_since", env.registry.now())

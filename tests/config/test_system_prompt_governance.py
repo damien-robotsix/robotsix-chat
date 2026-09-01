@@ -1,8 +1,8 @@
-"""Governance tests for the system prompt and autonomous appendix.
+"""Governance tests for the system prompt.
 
-Ensures every edit to ``Settings.agent_instruction`` and
-``build_autonomous_instruction()`` is accompanied by a corresponding
-changelog entry, version bump, and SHA256 update — no silent drift.
+Ensures every edit to ``Settings.agent_instruction`` is accompanied by a
+corresponding changelog entry, version bump, and SHA256 update — no silent
+drift.
 """
 
 from __future__ import annotations
@@ -12,10 +12,6 @@ import hashlib
 import re
 from pathlib import Path
 
-from robotsix_chat.autonomous import (
-    AUTONOMOUS_PROMPT_VERSION,
-    build_autonomous_instruction,
-)
 from robotsix_chat.config import SYSTEM_PROMPT_VERSION, Settings
 
 
@@ -294,78 +290,6 @@ def test_docs_configuration_md_mirrors_agent_instruction_default() -> None:
         f"reflect any changes to the default literal.\n\n"
         f"Docs length: {len(docs_default)}, Code length: {len(code_default)}"
     )
-
-
-# ---------------------------------------------------------------------------
-# Autonomous appendix governance
-# ---------------------------------------------------------------------------
-
-
-def _parse_latest_autonomous_version_entry(text: str) -> tuple[int, str]:
-    """Parse the first autonomous version entry from *text*.
-
-    Returns ``(version_number, recorded_sha256)``.  Expects entries of the
-    form::
-
-        ## AUTONOMOUS v<N> — <date> — <ticket-id>
-
-        ... body containing **SHA256:** ``<hex>`` ...
-
-    Raises ``ValueError`` if no entry or malformed data is found.
-    """
-    header_pat = re.compile(r"^## AUTONOMOUS v(\d+) ", re.MULTILINE)
-    header_match = header_pat.search(text)
-    if not header_match:
-        raise ValueError("No AUTONOMOUS version entry header found in changelog")
-    version = int(header_match.group(1))
-
-    start = header_match.start()
-    next_header = re.compile(r"^## AUTONOMOUS v\d+ ", re.MULTILINE)
-    next_match = next_header.search(text, start + 1)
-    section = text[start : next_match.start()] if next_match else text[start:]
-
-    sha_pat = re.compile(r"\*\*SHA256:\*\*\s*`([0-9a-f]{64})`", re.IGNORECASE)
-    sha_match = sha_pat.search(section)
-    if not sha_match:
-        raise ValueError(f"SHA256 not found in AUTONOMOUS v{version} entry section")
-    return version, sha_match.group(1)
-
-
-def test_autonomous_version_stamp_matches_changelog_latest() -> None:
-    """``AUTONOMOUS_PROMPT_VERSION`` matches the latest AUTONOMOUS changelog entry."""
-    changelog = _read_changelog()
-    latest_version, _ = _parse_latest_autonomous_version_entry(changelog)
-    assert latest_version == AUTONOMOUS_PROMPT_VERSION, (
-        f"AUTONOMOUS_PROMPT_VERSION ({AUTONOMOUS_PROMPT_VERSION}) != latest "
-        f"autonomous changelog version ({latest_version}).  Bump the constant "
-        f"AND add a new AUTONOMOUS changelog entry together."
-    )
-
-
-def test_autonomous_sha256_matches_live_output() -> None:
-    """The recorded SHA256 matches the live ``build_autonomous_instruction()`` output.
-
-    Uses ``Settings()`` with all pydantic field defaults — so the test is
-    immune to env-var overrides on autonomous settings.
-    """
-    output = build_autonomous_instruction(Settings())
-    computed = hashlib.sha256(output.encode()).hexdigest()
-
-    changelog = _read_changelog()
-    _, recorded = _parse_latest_autonomous_version_entry(changelog)
-
-    assert recorded == computed, (
-        f"Recorded autonomous SHA256 ({recorded}) != computed SHA256 "
-        f"({computed}).  The build_autonomous_instruction() output has "
-        f"changed without a corresponding changelog update.  Bump "
-        f"AUTONOMOUS_PROMPT_VERSION, add a new AUTONOMOUS entry to "
-        f"docs/system_prompt_changelog.md, and record the new hash."
-    )
-
-
-# ---------------------------------------------------------------------------
-# Version-number integrity: no duplicate versions, no unexpected gaps
-# ---------------------------------------------------------------------------
 
 
 def _parse_all_version_headers(text: str) -> list[str]:

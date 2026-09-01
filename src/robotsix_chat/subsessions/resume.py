@@ -812,7 +812,7 @@ def resume_subsessions(env: SubsessionEnv) -> None:
     for entry in env.registry.load_persisted():
         try:
             fate = _resume_entry(env, entry)
-            # Periodic monitors resume silently — they are autonomous
+            # Periodic monitors resume silently — they are unattended
             # and report results via their normal delivery channels.
             # Including them in the restart notice would cause the
             # parent agent to take unnecessary action on every

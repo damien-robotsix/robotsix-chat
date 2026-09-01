@@ -92,7 +92,7 @@ class MemorySettings(BaseModel):
         enabled: When ``True``, the agent recalls before and persists after each
             reply. Requires the ``memory`` extra (cognee) installed.
         background_recall_enabled: When ``True`` (default), background agents
-            (subsessions and the autonomous loop) may READ memory even when
+            (subsessions and periodic sessions) may READ memory even when
             their write gate is off — they get recall plus the
             ``search_memory`` tool, but ``remember`` is a no-op.  This is the
             setting that makes the read/write asymmetry usable: recall is a
@@ -109,11 +109,11 @@ class MemorySettings(BaseModel):
             present) and each turn otherwise pays a recall + a full cognify
             extraction pipeline, so cognee cost accrues 24/7.  Turn this on
             only if background agents genuinely need cross-run memory.
-        autonomous_enabled: When ``False`` (default), the autonomous
-            auto-continue agent gets a ``NullMemory`` for the same reason —
-            auto-continue turns run unattended and would otherwise cognify
-            every turn.  Independent of ``subsession_enabled`` so the two
-            background classes can be gated separately.
+        periodic_enabled: When ``False`` (default), periodic session
+            agents get a ``NullMemory`` for the same reason — scheduled
+            turns run unattended and would otherwise cognify every run.
+            Independent of ``subsession_enabled`` so the two background
+            classes can be gated separately.
         data_dir: Directory for cognee's stores (relative to the working dir).
             Put it under the persistent ``.data`` mount so memory survives
             container redeploys.
@@ -227,7 +227,7 @@ class MemorySettings(BaseModel):
     enabled: bool = False
     background_recall_enabled: bool = True
     subsession_enabled: bool = False
-    autonomous_enabled: bool = False
+    periodic_enabled: bool = False
     data_dir: str = "/data/cognee"
     recall_search_type: str = "CHUNKS"
     recall_timeout_seconds: float = 60.0

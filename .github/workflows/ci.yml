@@ -175,25 +175,6 @@ jobs:
       - name: Run SubsessionStatus check
         run: python scripts/check_subsession_statuses.py
 
-  check-autonomous-states:
-    name: AutonomousState audit
-    runs-on: ubuntu-latest
-    permissions:
-      contents: read  # checkout the repo
-    steps:
-      - name: Harden Runner
-        uses: step-security/harden-runner@b09bb98e06d4d774595224525879c09bc6e98c40  # v2.20.1
-        with:
-          egress-policy: audit
-      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1  # v7.0.1
-        with:
-          persist-credentials: false
-      - name: Run AutonomousState check
-        run: python scripts/check_autonomous_states.py
-
-  # docs/modules.yaml drift is gated by the shared baseline-check workflow
-  # (has-board: true → robotsix-modules validate / check-registration /
-  # validate-paths) — see .github/workflows/baseline-check.yml.
 
   image-scan:
     name: Container image scan (Trivy)
@@ -444,7 +425,7 @@ jobs:
 
   check:
     name: All CI checks passed
-    needs: [lockfile, ci, security, pre-commit, check-sse-types, check-subsession-kinds, check-activity-kinds, check-subsession-statuses, check-autonomous-states, image-scan, check-config-schema, deptry, frontend-js, pyright, mypy]
+    needs: [lockfile, ci, security, pre-commit, check-sse-types, check-subsession-kinds, check-activity-kinds, check-subsession-statuses, image-scan, check-config-schema, deptry, frontend-js, pyright, mypy]
     # Use !cancelled() so the job still runs when a reusable-workflow call
     # (ci, security) is misreported as "skipped" due to a known GitHub
     # Actions edge case: when a reusable workflow has conditionally-skipped
@@ -468,7 +449,6 @@ jobs:
           CHECK_SUBSESSION_KINDS_RESULT: ${{ needs.check-subsession-kinds.result }}
           CHECK_ACTIVITY_KINDS_RESULT: ${{ needs.check-activity-kinds.result }}
           CHECK_SUBSESSION_STATUSES_RESULT: ${{ needs.check-subsession-statuses.result }}
-          CHECK_AUTONOMOUS_STATES_RESULT: ${{ needs.check-autonomous-states.result }}
           IMAGE_SCAN_RESULT: ${{ needs.image-scan.result }}
           CHECK_CONFIG_SCHEMA_RESULT: ${{ needs.check-config-schema.result }}
           DEPTRY_RESULT: ${{ needs.deptry.result }}
@@ -505,7 +485,6 @@ jobs:
           check "$CHECK_SUBSESSION_KINDS_RESULT"      check-subsession-kinds
           check "$CHECK_ACTIVITY_KINDS_RESULT"        check-activity-kinds
           check "$CHECK_SUBSESSION_STATUSES_RESULT"   check-subsession-statuses
-          check "$CHECK_AUTONOMOUS_STATES_RESULT"     check-autonomous-states
           check "$IMAGE_SCAN_RESULT"                  image-scan
           check "$CHECK_CONFIG_SCHEMA_RESULT"         check-config-schema
           check "$DEPTRY_RESULT"                      deptry

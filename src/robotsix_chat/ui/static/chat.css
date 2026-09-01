@@ -354,7 +354,7 @@ body {
   border-color: #f59e0b;
   background: rgba(245, 158, 11, 0.10);
 }
-.session-row.session-autonomous {
+.session-row.session-periodic {
   border-left: 3px solid #10b981;
   background: rgba(16, 185, 129, 0.08);
 }

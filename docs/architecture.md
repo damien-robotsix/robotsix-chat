@@ -66,12 +66,11 @@ uv run robotsix-chat
          ├─ Registers routes + middleware
          └─ Stores singletons in app.state
 
-      _resume_autonomous()     (async lifespan hook, runs after the app starts)
+      _startup_async()         (async lifespan hook, runs after the app starts)
          ├─ check_component_connectivity()     probes GET /health on every rostered
          │                                      component; logs WARNING per unreachable
          │                                      entry (non-fatal — startup continues)
          ├─ _start_memory_warmup()             background cognee cold start
-         ├─ autonomous_runner.resume_sessions() restore persisted autonomous sessions
          └─ _start_watcher()                   background paused-monitor watcher
 ```
 
@@ -141,98 +140,31 @@ On `"done"` the client knows the reply is complete and can re-enable the input.
 The deployment is single-user: there is no login and no per-browser identity. `owner_id` is still
 accepted on the wire (and still required, for backwards compatibility), but the server canonicalises
 every client-supplied value to one operator pool — so the same session list is served to every
-computer, browser, and private window. The only exception is the autonomous runner's reserved owners
-(`autonomous` and `autonomous:<definition>`), which keep their own pool and are fetched by the UI as
-a separate list.
-
-Reserved autonomous owners use a namespaced prefix. The bootstrap owner is the literal `autonomous`;
-each named preset is stored under `autonomous:<definition>`. When the session-list handler is asked
-for `owner_id=autonomous`, it treats that as a query over the whole autonomous namespace: sessions
-from `autonomous` itself and from every `autonomous:*` sub-scope are merged into one list, sorted by
-recency. Only the bootstrap owner is eligible for lazy default creation — per-preset sub-scopes are
-owned by the runner and are never created on read. Any new scoped owner id must be covered by this
-prefix expansion, or its sessions will run but never appear in the list.
+computer, browser, and private window. The only exception is the periodic scheduler's reserved owner
+(`periodic`), which keeps its own pool and is fetched by the UI as a separate list. The periodic
+owner is never eligible for lazy default creation — its sessions exist only when a preset fires.
 
 ______________________________________________________________________
 
-## Autonomous Sessions
+## Periodic Sessions
 
-The autonomous subsystem runs each configured session definition as a normal agent session that
-starts automatically, works through the configured prompt (or the standard "Begin a new autonomous
-session and work it to completion." prompt) to the completion marker, then closes and restarts on
-the next trigger. There is no plan-drafting/proposal pause and no operator approval gate.
+Periodic sessions are ordinary chat sessions started on a schedule. The `PeriodicScheduler`
+(`robotsix_chat/periodic/scheduler.py`) ticks every 30 seconds; when a preset in `periodic.sessions`
+is due it creates a fresh session under the `periodic` owner, titles it `<preset> — <date>`, and
+posts the preset's `initial_prompt` (behind a short shared preamble stating the single-turn
+contract) through the **same `MessageCoalescer.submit` path an operator message takes**. Everything
+after that is ordinary session behaviour: same agent instruction, same turn processing, same
+persistence, same UI.
 
-### Single-session model
+There is deliberately no execution state machine, no self-scheduled continuation, and no
+restart-resume. A restart mid-turn fails that turn the way it would fail an operator's; the next
+firing starts a fresh session. A firing that comes due while the preset's previous session is still
+processing a turn is skipped with a log line. Firing state (`last_fired_at`, `last_session_id`,
+`runs`) persists in `/data/periodic_scheduler_state.json`.
 
-When autonomous sessions are configured (`autonomous.sessions` is non-empty), there is **at most one
-open** autonomous session per owner at any instant. "Open" means the `executing` state; the only
-terminal state is `completed`.
-
-- `create_session()` enforces this invariant: if the owner already has an open session, the existing
-  session is returned unchanged and no new session is created.
-
-### Lifecycle (executing → completed → auto-restart)
-
-A run begins with the definition's single kickoff prompt and closes when the agent emits the
-completion marker. There is no `Continue.` loop and no turn/idle caps — the agent works through the
-prompt in one turn, using its tools, subsessions, and the continuation-scheduling mechanism as
-needed, then emits the marker. Completion is automatic: the runner marks the session `completed`,
-then schedules a fresh run via `_auto_restart()` after `trigger_interval_seconds`. Every preset is
-periodic, and the next-fire time is persisted, so a restart resumes the schedule rather than
-re-running every preset. The operator never closes sessions manually.
-
-### Non-blocking startup (never blocks chat)
-
-All autonomous lifecycle work is moved off the startup/lifespan critical path:
-
-| Operation                   | Where it runs                              | Blocking? |
-| --------------------------- | ------------------------------------------ | --------- |
-| Resume completed sessions   | Skipped; retired + replaced by bootstrap   | Never     |
-| Resume executing sessions   | Left as-is; agent schedules continuations  | Never     |
-| Single-prompt run (kickoff) | Background task via `_schedule_background` | Never     |
-
-`resume_sessions()` (called from the lifespan) iterates persisted autonomous sessions, leaves each
-executing session as-is (no synthetic re-prompt), then calls `ensure_all_active_sessions()` to
-guarantee every enabled definition has one open session, then returns immediately. Chat becomes
-available regardless of whether the background tasks have finished or errored. Errors in background
-tasks are caught and logged via `logger.exception`; they never propagate into the lifespan/startup
-path.
-
-### Session lifecycle
-
-```text
-  create_session() / ensure_active_session()
-        │
-        ▼
-     executing ── _auto_continue() (single prompt) ──► completion_marker detected
-        │                                                      │
-        │                                                      ▼
-        │                                              completed ──► _auto_restart() → new session
-        │
-        └── (no Continue. loop)
-```
-
-### Configuration
-
-All autonomous behaviour is driven by the `autonomous.sessions` presets list (one or more enabled
-entries). An empty list means no autonomous sessions run. See `docs/configuration.md` for the full
-autonomous settings reference.
-
-### UI changes
-
-The "🤖 New autonomous" button previously shown in the sessions sidebar has been **removed**. With
-the presets model, manual creation is redundant and can violate the single-session invariant. The
-code path that checked `GET /config` to conditionally show the button has also been removed from
-`chat.js`.
-
-The Approve / Reject buttons that appeared when a session was awaiting approval have been removed —
-autonomous sessions no longer pause for operator approval.
-
-**Consent propagation.** When the operator authorises a complete operation (e.g. "use this password
-and deploy this config change"), that consent carries forward automatically to all sub-operations in
-the chain — ticket approval, MR approval, and merge — without the agent re-asking at intermediate
-gates. Only genuinely new, unconsented actions that were not reasonably encompassed by the original
-authorisation trigger a fresh approval request.
+Per-preset `model_level` overrides build a dedicated agent through the same
+`create_agent_from_settings` factory (cached per level); long-term cognee memory for these
+unattended turns is gated by `memory.periodic_enabled`.
 
 ______________________________________________________________________
 
@@ -322,12 +254,12 @@ ______________________________________________________________________
 
 State that survives restarts when `/data/` is bind-mounted:
 
-| File                             | Content                                                                                                                                                                                                                                                           |
-| -------------------------------- | ----------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- |
-| `/data/conversations.json`       | Multi-session conversation history (auto-migrated from legacy format)                                                                                                                                                                                             |
-| `/data/subsessions.json`         | Subsession state (periodic subsessions resumed on startup; auto-closed monitors are re-spawned so the worker can re-verify ticket state — see `docs/periodic-checks.md`); retry counts for user_chat/task subsessions persisted so retry budget survives restarts |
-| `/data/cognee/`                  | Long-term memory storage (cognee)                                                                                                                                                                                                                                 |
-| `/data/autonomous_sessions.json` | Autonomous session state (resumed on restart — see [Autonomous Sessions](#autonomous-sessions))                                                                                                                                                                   |
+| File                                  | Content                                                                                                                                                                                                                                                           |
+| ------------------------------------- | ----------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- |
+| `/data/conversations.json`            | Multi-session conversation history (auto-migrated from legacy format)                                                                                                                                                                                             |
+| `/data/subsessions.json`              | Subsession state (periodic subsessions resumed on startup; auto-closed monitors are re-spawned so the worker can re-verify ticket state — see `docs/periodic-checks.md`); retry counts for user_chat/task subsessions persisted so retry budget survives restarts |
+| `/data/cognee/`                       | Long-term memory storage (cognee)                                                                                                                                                                                                                                 |
+| `/data/periodic_scheduler_state.json` | Periodic scheduler firing state (see [Periodic Sessions](#periodic-sessions))                                                                                                                                                                                     |
 
 ______________________________________________________________________
 

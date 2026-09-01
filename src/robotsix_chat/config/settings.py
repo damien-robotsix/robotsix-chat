@@ -25,7 +25,6 @@ from robotsix_chat.config.constants import (
 )
 from robotsix_chat.config.models import (
     PROJECT_MEMORY,
-    AutonomousSettings,
     CentralDeploySettings,
     ComponentClientSettings,
     ContinuationSettings,
@@ -49,6 +48,7 @@ from robotsix_chat.config.models import (
     MobileAuthSettings,
     NotificationSettings,
     OpenRouterSettings,
+    PeriodicSettings,
     PublicFetchSettings,
     RefDocsSettings,
     RenderUrlSettings,
@@ -80,7 +80,7 @@ class ConfigValidationError(ValueError):
 # Version stamp for the agent_instruction default literal.
 # Bump on every change to Settings.agent_instruction and update
 # docs/system_prompt_changelog.md with a new entry + SHA256.
-SYSTEM_PROMPT_VERSION = 152
+SYSTEM_PROMPT_VERSION = 153
 
 # Valid model levels, derived from llmio's tier enum (import-time constant so
 # the set is built once and can never drift from the tiers llmio ships).
@@ -111,7 +111,7 @@ class Settings(BaseModel):
             main interactive chat agent.  When ``None`` (default), the chat
             agent uses ``llmio_model_level``.  Set to a specific level to
             route chat turns to a different level (e.g. ``3`` for the
-            frontier tier) while other consumers (subsessions, autonomous,
+            frontier tier) while other consumers (subsessions, periodic,
             summary) still use ``llmio_model_level`` or their own overrides.
         summary_model_level: Capability level of the dedicated summariser
             agent — the idle-timeout compaction summary, the carryover
@@ -956,6 +956,25 @@ class Settings(BaseModel):
             "gate advancement.  This applies only to the ticket that "
             "directly implements the just-approved proposal; unrelated "
             "tickets still follow the normal gating rules.\n"
+            "– Mill approval gate (operator directive: no human in the "
+            "approval loop): whenever you encounter a ticket sitting at "
+            "human_issue_approval — via a poll, a monitor, a periodic "
+            "review, or a user mention — YOU are the approver. Review it "
+            "immediately yourself: check the spec is actionable (concrete "
+            "goal, clear scope, testable outcome) and consistent with "
+            "robotsix-standards. Then act with transition_ticket, always "
+            "with a rationale note:\n"
+            "  • Sound spec → transition to ready (this IS the approval).\n"
+            "  • Thin, empty, or ambiguous spec → transition to draft with "
+            "a note naming what is missing, so classify/refine re-run and "
+            "the pipeline's auto-approve applies on the improved spec.\n"
+            "  • Duplicate or obsolete → retire it via draft then closed "
+            "(two transition_ticket calls — the state machine forbids "
+            "human_issue_approval → closed directly), noting the duplicate "
+            "ticket id or the reason it is moot.\n"
+            "  Never spawn a subsession that merely waits for a human to "
+            "approve a ticket, and never report 'waiting for approval' as "
+            "a status — evaluate and act in the same turn you see it.\n"
             "  2. Monitor — immediately after filing, spawn a periodic subsession "
             "to track the ticket: 1-hour interval, max 600 runs, terminate after "
             "2 consecutive mill-unreachable failures. Set dedup_key to the ticket "
@@ -1444,9 +1463,9 @@ class Settings(BaseModel):
             "to the SHA that declares it. Do not spend turns checking SHAs, "
             "listing files, or re-reading caller/callee declarations when "
             "this one diff answers it.\n"
-            "– Autonomous session speed complaints: when a user reports that "
-            "the autonomous agent closes itself too fast, stops too early, "
-            "or produces short-lived sessions, and references specific "
+            "– Periodic session speed complaints: when a user reports that "
+            "a scheduled periodic session finishes too fast, stops too "
+            "early, or produces short-lived sessions, and references specific "
             "Langfuse trace IDs or session IDs, use inspect_langfuse_trace "
             "to query those traces directly in your FIRST response. Query "
             "the provided trace IDs plus a wider time window (the 24–48 "
@@ -1817,8 +1836,8 @@ class Settings(BaseModel):
     health: HealthSettings = Field(
         default_factory=HealthSettings, json_schema_extra={"advanced": True}
     )
-    autonomous: AutonomousSettings = Field(
-        default_factory=AutonomousSettings, json_schema_extra={"advanced": True}
+    periodic: PeriodicSettings = Field(
+        default_factory=PeriodicSettings, json_schema_extra={"advanced": True}
     )
     continuation: ContinuationSettings = Field(
         default_factory=ContinuationSettings, json_schema_extra={"advanced": True}
@@ -2013,21 +2032,23 @@ class Settings(BaseModel):
     def _migrate_legacy_keys(cls, data: Any) -> Any:
         """Strip legacy config keys that no longer exist in the schema.
 
-        Removes ``autonomous.approval_marker`` and
-        ``autonomous.proposal_marker`` (the proposal handshake was removed)
-        and any other unknown keys from the ``autonomous`` sub-dict so
-        ``extra="forbid"`` validation on :class:`AutonomousSettings`
-        doesn't permanently brick saves on configs written by older
-        versions.
-
-        Also strips the removed ``autonomy`` block, ``low_risk_actions``,
+        Strips the removed ``autonomy`` block, ``low_risk_actions``,
         and ``subsessions.pre_authorized_ticket_patterns`` — the standing
         autonomy policy is now baked into the prompt layer.
         """
         if not isinstance(data, dict):
             return data
 
-        from robotsix_chat.config.models import AutonomousSettings
+        # Strip the entire retired autonomous block (replaced by 'periodic';
+        # stored templates are known to re-inject removed keys, which would
+        # otherwise brick every save via extra="forbid").
+        if "autonomous" in data:
+            logger.info(
+                "Dropping retired config block 'autonomous' (replaced by "
+                "'periodic' — see the periodic-sessions rework)"
+            )
+            data = dict(data)
+            del data["autonomous"]
 
         # Strip the entire removed autonomy block.
         if "autonomy" in data:
@@ -2062,17 +2083,6 @@ class Settings(BaseModel):
             del subsessions["pre_authorized_ticket_patterns"]
             data = dict(data)
             data["subsessions"] = subsessions
-
-        autonomous = data.get("autonomous")
-        if isinstance(autonomous, dict):
-            # Strip unknown keys so extra="forbid" passes.
-            known_auto = set(AutonomousSettings.model_fields.keys())
-            for key in sorted(set(autonomous.keys()) - known_auto):
-                logger.info(
-                    "Dropping unknown key autonomous.%s (not in current schema)",
-                    key,
-                )
-                del autonomous[key]
 
         return data
 
@@ -2203,7 +2213,7 @@ class Settings(BaseModel):
             "http_probe",
             "public_fetch",
             "feedback",
-            "autonomous",
+            "periodic",
             "continuation",
             "docker_digest",
         )

@@ -73,7 +73,7 @@ Secret values come back as `"**********"` when set and `""` when unset.
 
 ```
 PUT /config
-{"autonomous": {"sessions": [{"name": "nightly", "max_auto_turns": 40}]}}
+{"periodic": {"sessions": [{"name": "nightly", "schedule_interval_seconds": 86400}]}}
 ```
 
 Semantics worth knowing before you call it:

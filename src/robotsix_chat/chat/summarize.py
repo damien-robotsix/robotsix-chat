@@ -53,7 +53,7 @@ MAX_CHUNKS = 8
 #: tool, role or workflow instruction: the model's only job is to condense a
 #: transcript it is *shown*, never to act on it or continue it.
 SUMMARY_SYSTEM_PROMPT = (
-    "You are a conversation summarizer for an autonomous engineering "
+    "You are a conversation summarizer for an agentic engineering "
     "assistant that operates a software fleet (tickets, pull requests, "
     "deployments, background subsessions).\n"
     "\n"

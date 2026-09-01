@@ -83,6 +83,7 @@ from robotsix_chat.ticket_poll import (
     build_prioritize_all_open_tickets_tool,
     build_resolve_repo_tool,
     build_ticket_poll_tools,
+    build_transition_ticket_tool,
     load_ticket_poll_skill,
 )
 from robotsix_chat.version_check import build_version_check_tools
@@ -95,12 +96,6 @@ from .routes import (
     RunSerializer,
     auth_callback_endpoint,
     auth_login_endpoint,
-    autonomous_definitions_list_endpoint,
-    autonomous_definitions_run_endpoint,
-    autonomous_refinements_accept_endpoint,
-    autonomous_refinements_list_endpoint,
-    autonomous_refinements_reject_endpoint,
-    autonomous_refinements_reset_endpoint,
     cancel_queued_endpoint,
     chat_endpoint,
     chat_skill_endpoint,
@@ -131,6 +126,8 @@ from .routes import (
     mobile_token_endpoint,
     models_list_endpoint,
     not_found_handler,
+    periodic_definitions_list_endpoint,
+    periodic_definitions_run_endpoint,
     prune_endpoint,
     server_error_handler,
     session_model_set_endpoint,
@@ -148,7 +145,6 @@ from .routes import (
 )
 
 if TYPE_CHECKING:
-    from robotsix_chat.autonomous import AutonomousRunner
     from robotsix_chat.config.models import (
         CentralDeploySettings,
         DirectRepoSettings,
@@ -251,6 +247,12 @@ async def _make_lifespan(
                 evergoing_scheduler.start()
             except Exception:
                 logger.exception("Evergoing scheduler start failed — continuing")
+        periodic_scheduler = getattr(app.state, "periodic_scheduler", None)
+        if periodic_scheduler is not None:
+            try:
+                periodic_scheduler.start()
+            except Exception:
+                logger.exception("Periodic scheduler start failed — continuing")
     try:
         yield
     finally:
@@ -267,6 +269,12 @@ async def _make_lifespan(
                     await evergoing_scheduler.stop()
                 except Exception:
                     logger.exception("Evergoing scheduler stop failed")
+            periodic_scheduler = getattr(app.state, "periodic_scheduler", None)
+            if periodic_scheduler is not None:
+                try:
+                    await periodic_scheduler.close()
+                except Exception:
+                    logger.exception("Periodic scheduler stop failed")
             coalescer = getattr(app.state, "message_coalescer", None)
             if coalescer is not None:
                 try:
@@ -301,7 +309,9 @@ SHARED_PARAMS: frozenset[str] = frozenset(
         "subsession_registry",
         "subsession_delivery",
         "feedback_runner",
-        "autonomous_runner",
+        "periodic_definitions",
+        "periodic_agent_factory",
+        "periodic_state_path",
         "on_startup",
         "on_startup_async",
         "on_shutdown",
@@ -341,7 +351,9 @@ def create_app(
     subsession_registry: SubsessionRegistry | None = None,
     subsession_delivery: ParentDelivery | None = None,
     feedback_runner: Any = None,
-    autonomous_runner: AutonomousRunner | None = None,
+    periodic_definitions: list[Any] | None = None,
+    periodic_agent_factory: Callable[[int | None], ChatAgent] | None = None,
+    periodic_state_path: str | None = None,
     on_startup: Callable[[], None] | None = None,
     on_startup_async: Callable[[], Any] | None = None,
     on_shutdown: Callable[[], Any] | None = None,
@@ -432,10 +444,14 @@ def create_app(
             :class:`~robotsix_chat.feedback.FeedbackRunner` that schedules
             feedback analysis runs at compaction and session-end boundaries.
             When ``None`` (default), feedback runs are disabled.
-        autonomous_runner: Optional
-            :class:`~robotsix_chat.autonomous.AutonomousRunner` that drives
-            the autonomous-session state machine and auto-continue loops.
-            When ``None`` (default), autonomous sessions are disabled.
+        periodic_definitions: Enabled
+            :class:`~robotsix_chat.config.periodic_models.PeriodicSessionDefinition`
+            presets. When ``None``/empty, no periodic scheduler is created.
+        periodic_agent_factory: Callable mapping a preset's ``model_level``
+            (``None`` for the global default) to the agent that runs its
+            turns. When ``None``, the main *agent* runs every periodic turn.
+        periodic_state_path: Override for the scheduler's firing-state file
+            (tests); defaults to the standard /data location.
         on_startup: Optional callable invoked during application startup
             (the Starlette lifespan ``startup`` phase).  Pass a closure
             that e.g. resumes persisted subsessions.
@@ -537,33 +553,13 @@ def create_app(
             methods=["POST"],
         ),
         Route(
-            "/autonomous/definitions",
-            autonomous_definitions_list_endpoint,
+            "/periodic/definitions",
+            periodic_definitions_list_endpoint,
             methods=["GET"],
         ),
         Route(
-            "/autonomous/definitions/{name}/run",
-            autonomous_definitions_run_endpoint,
-            methods=["POST"],
-        ),
-        Route(
-            "/autonomous/definitions/{name}/refinements",
-            autonomous_refinements_list_endpoint,
-            methods=["GET"],
-        ),
-        Route(
-            "/autonomous/definitions/{name}/refinements/{refinement_id}/accept",
-            autonomous_refinements_accept_endpoint,
-            methods=["POST"],
-        ),
-        Route(
-            "/autonomous/definitions/{name}/refinements/{refinement_id}/reject",
-            autonomous_refinements_reject_endpoint,
-            methods=["POST"],
-        ),
-        Route(
-            "/autonomous/definitions/{name}/refinements/reset",
-            autonomous_refinements_reset_endpoint,
+            "/periodic/definitions/{name}/run",
+            periodic_definitions_run_endpoint,
             methods=["POST"],
         ),
         Route(
@@ -726,7 +722,58 @@ def create_app(
     app.state.github_actions_settings = github_actions_settings
     app.state.mobile_auth = mobile_auth
     app.state.feedback_runner = feedback_runner  # may be None
-    app.state.autonomous_runner = autonomous_runner  # may be None
+    if periodic_definitions:
+        from robotsix_chat.periodic import (
+            PERIODIC_OWNER,
+            PERIODIC_SCHEDULER_PERSIST_PATH,
+            PeriodicScheduler,
+        )
+
+        _p_coalescer = app.state.message_coalescer
+        _p_store = app.state.conversation_store
+
+        async def _periodic_submit_turn(
+            session_id: str, message: str, model_level: int | None
+        ) -> None:
+            """Run one periodic turn through the normal chat submit path."""
+            turn_agent = (
+                periodic_agent_factory(model_level)
+                if periodic_agent_factory is not None
+                else app.state.agent
+            )
+            queue = await _p_coalescer.submit(
+                session_id,
+                message,
+                None,
+                None,
+                agent=turn_agent,
+                store=_p_store,
+                run_serializer=app.state.run_serializer,
+                msg_id_store=app.state.msg_id_store,
+                lock_key=session_id,
+                owner_id=PERIODIC_OWNER,
+                had_session=True,
+                summary_agent=app.state.summary_agent,
+                event_bus=app.state.event_bus,
+            )
+            # Drain to completion so the scheduler's task tracks the whole
+            # turn (there is no SSE client on a scheduled firing).
+            from .routes.constants import SSE_DONE_TYPE, SSE_ERROR_TYPE
+
+            while True:
+                frame_type, _payload = await queue.get()
+                if frame_type in (SSE_DONE_TYPE, SSE_ERROR_TYPE):
+                    break
+
+        app.state.periodic_scheduler = PeriodicScheduler(
+            definitions=periodic_definitions,
+            conversation_store=_p_store,
+            submit_turn=_periodic_submit_turn,
+            is_busy=_p_coalescer.is_busy,
+            persist_path=periodic_state_path or PERIODIC_SCHEDULER_PERSIST_PATH,
+        )
+    else:
+        app.state.periodic_scheduler = None
     app.state.diagnostic_store = diagnostic_store  # may be None
     app.state.knowledge_store = knowledge_store  # may be None
     # Health-check scheduler — created here so it has access to the fully
@@ -1092,6 +1139,7 @@ def _build_static_tools(
         *build_merge_pull_request_tool(settings, component_request=component_request),
         *build_file_ticket_tool(settings, component_request=component_request),
         *build_mark_ticket_ready_tool(settings, component_request=component_request),
+        *build_transition_ticket_tool(settings, component_request=component_request),
         *build_mark_ticket_done_tool(settings, component_request=component_request),
         *build_find_ticket_by_pr_tool(settings, component_request=component_request),
         *build_resolve_repo_tool(settings, component_request=component_request),
@@ -1280,7 +1328,7 @@ def create_agent_from_settings(
 
     *memory_enabled* (default ``True``) gates only long-term (cognee) memory
     while leaving tools and subsession wiring intact.  Set ``False`` for
-    unattended background agents (subsession workers, autonomous
+    unattended background agents (subsession workers, periodic
     auto-continue) that would otherwise recall + cognify every turn around
     the clock; they get a ``NullMemory``.  The interactive main-chat agent
     keeps the default.  ``bare`` already implies no memory regardless.
@@ -1385,7 +1433,7 @@ def create_agent_from_settings(
             subsession_env if subsession_ctx is None else None,
             event_sink,
             # Escalation is a main-chat affordance only: subsessions already
-            # choose their own level when spawned, and an autonomous/bare
+            # choose their own level when spawned, and a periodic/bare
             # agent has no operator watching the badge change.
             conversation_store if subsession_ctx is None and not bare else None,
             (

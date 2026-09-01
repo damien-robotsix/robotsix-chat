@@ -7,10 +7,6 @@ working unchanged.
 """
 
 from .auth_models import MobileAuthSettings
-from .autonomous_models import (
-    AutonomousSessionDefinition,
-    AutonomousSettings,
-)
 from .component_models import (
     ComponentClientSettings,
     ComponentTarget,
@@ -48,6 +44,10 @@ from .notification_models import (
     NotificationSettings,
 )
 from .openrouter_models import OpenRouterSettings
+from .periodic_models import (
+    PeriodicSessionDefinition,
+    PeriodicSettings,
+)
 from .ref_doc_models import (
     DiagnosticsSettings,
     RefDocsSettings,
@@ -79,8 +79,6 @@ from .storage_models import (
 __all__ = [
     "PROJECT_MAIN",
     "PROJECT_MEMORY",
-    "AutonomousSessionDefinition",
-    "AutonomousSettings",
     "CentralDeploySettings",
     "ComponentClientSettings",
     "ComponentCredentials",
@@ -110,6 +108,8 @@ __all__ = [
     "MobileAuthSettings",
     "NotificationSettings",
     "OpenRouterSettings",
+    "PeriodicSessionDefinition",
+    "PeriodicSettings",
     "PublicFetchSettings",
     "RefDocsSettings",
     "RenderUrlSettings",

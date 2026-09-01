@@ -918,10 +918,13 @@ def test_coerce_memory_nested_empty_string_to_dict() -> None:
     assert settings.memory.embedding.model == "bge-m3"
 
 
-def test_migrate_empty_autonomous_sessions_to_default_preset() -> None:
-    """An explicit ``autonomous.sessions: []`` is migrated to the default preset."""
-    settings = Settings(autonomous={"sessions": []})  # type: ignore[arg-type]
-    assert [session.name for session in settings.autonomous.sessions] == ["default"]
+def test_periodic_empty_sessions_stays_empty() -> None:
+    """An explicit ``periodic.sessions: []`` means nothing fires.
+
+    No hidden default preset is injected.
+    """
+    settings = Settings(periodic={"sessions": []})  # type: ignore[arg-type]
+    assert settings.periodic.sessions == []
 
 
 # ---------------------------------------------------------------------------
@@ -1085,92 +1088,59 @@ def test_real_config_json_is_valid_and_loads() -> None:
     assert settings.public_fetch.max_body_bytes == 1_048_576
 
 
-class TestRetiredTriggerTypeMigration:
-    """Stored presets naming the retired ``trigger_type`` must still load.
+class TestPeriodicSessionDefinition:
+    """Validation of the periodic preset model (clean break, extra=forbid)."""
 
-    ``AutonomousSessionDefinition`` forbids extra keys, so a config written
-    under the old two-trigger model would fail validation outright — chat
-    would refuse to start on an existing deployment.
-    """
-
-    def test_periodic_preset_keeps_its_interval(self) -> None:
-        """A periodic preset's configured interval is preserved."""
-        from robotsix_chat.config.autonomous_models import (
-            AutonomousSessionDefinition,
+    def test_defaults(self) -> None:
+        """A bare preset gets the daily interval and global model level."""
+        from robotsix_chat.config.periodic_models import (
+            DEFAULT_SCHEDULE_INTERVAL_SECONDS,
+            PeriodicSessionDefinition,
         )
 
-        d = AutonomousSessionDefinition.model_validate(
-            {
-                "name": "cost-review",
-                "trigger_type": "periodic",
-                "trigger_interval_seconds": 86400.0,
-            }
-        )
-        assert d.trigger_interval_seconds == 86400.0
-        assert not hasattr(d, "trigger_type")
+        d = PeriodicSessionDefinition(name="p")
+        assert d.schedule_interval_seconds == DEFAULT_SCHEDULE_INTERVAL_SECONDS
+        assert d.initial_prompt == ""
+        assert d.model_level is None
+        assert d.enabled is True
 
-    def test_continuous_preset_adopts_the_standard_interval(self) -> None:
-        """``on_close`` presets drop their placeholder interval.
+    def test_interval_floor_rejects_storm_values(self) -> None:
+        """Intervals under the 300s floor are rejected."""
+        import pydantic
+        import pytest
 
-        The runner ignored ``trigger_interval_seconds`` for ``on_close``, so
-        the stored 45 s is meaningless — honouring it would restart the
-        session every 45 seconds.
+        from robotsix_chat.config.periodic_models import PeriodicSessionDefinition
+
+        with pytest.raises(pydantic.ValidationError):
+            PeriodicSessionDefinition(name="p", schedule_interval_seconds=10)
+
+    def test_model_level_bounds(self) -> None:
+        """model_level accepts 1-3 and rejects out-of-range values."""
+        import pydantic
+        import pytest
+
+        from robotsix_chat.config.periodic_models import PeriodicSessionDefinition
+
+        assert PeriodicSessionDefinition(name="p", model_level=3).model_level == 3
+        with pytest.raises(pydantic.ValidationError):
+            PeriodicSessionDefinition(name="p", model_level=4)
+
+    def test_legacy_keys_rejected(self) -> None:
+        """Old autonomous preset keys fail loudly.
+
+        The deploy migration rewrites stored presets; the code carries no
+        compatibility aliases.
         """
-        from robotsix_chat.config.autonomous_models import (
-            DEFAULT_TRIGGER_INTERVAL_SECONDS,
-            AutonomousSessionDefinition,
-        )
+        import pydantic
+        import pytest
 
-        d = AutonomousSessionDefinition.model_validate(
-            {
-                "name": "default",
-                "trigger_type": "on_close",
-                "trigger_interval_seconds": 45.0,
-            }
-        )
-        assert d.trigger_interval_seconds == DEFAULT_TRIGGER_INTERVAL_SECONDS
+        from robotsix_chat.config.periodic_models import PeriodicSessionDefinition
 
-    def test_default_interval_is_one_hour(self) -> None:
-        """A preset that sets no interval gets the standard one."""
-        from robotsix_chat.config.autonomous_models import (
-            AutonomousSessionDefinition,
-        )
-
-        assert AutonomousSessionDefinition(name="x").trigger_interval_seconds == 3600.0
-
-    def test_model_level_defaults_to_none(self) -> None:
-        """model_level defaults to None (use global default)."""
-        from robotsix_chat.config.autonomous_models import (
-            AutonomousSessionDefinition,
-        )
-
-        assert AutonomousSessionDefinition(name="x").model_level is None
-
-    def test_model_level_accepts_valid_tier(self) -> None:
-        """model_level accepts values 1-4."""
-        from robotsix_chat.config.autonomous_models import (
-            AutonomousSessionDefinition,
-        )
-
-        d = AutonomousSessionDefinition(name="x", model_level=2)
-        assert d.model_level == 2
-
-    def test_max_runs_defaults_to_zero(self) -> None:
-        """max_runs defaults to 0 (unlimited)."""
-        from robotsix_chat.config.autonomous_models import (
-            AutonomousSessionDefinition,
-        )
-
-        assert AutonomousSessionDefinition(name="x").max_runs == 0
-
-    def test_max_runs_rejects_negative(self) -> None:
-        """max_runs rejects negative values."""
-        from robotsix_chat.config.autonomous_models import (
-            AutonomousSessionDefinition,
-        )
-
-        with pytest.raises(ValueError, match="max_runs"):
-            AutonomousSessionDefinition(name="x", max_runs=-1)
+        with pytest.raises(pydantic.ValidationError):
+            PeriodicSessionDefinition(
+                name="p",
+                trigger_interval_seconds=45.0,  # pyright: ignore[reportCallIssue]
+            )
 
 
 # ---------------------------------------------------------------------------

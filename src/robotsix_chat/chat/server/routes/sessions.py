@@ -9,17 +9,14 @@ from starlette.exceptions import HTTPException
 from starlette.requests import Request
 from starlette.responses import JSONResponse
 
-from robotsix_chat.autonomous.models import AutonomousState
 from robotsix_chat.chat.conversation import ConversationStore
 from robotsix_chat.chat.events import session_model_frame
-from robotsix_chat.config.autonomous_models import (
-    DEFAULT_TRIGGER_INTERVAL_SECONDS,
-)
 from robotsix_chat.config.constants import (
     FRONTIER_MODEL_LEVEL,
     level_display_name,
     level_needs_api_key,
 )
+from robotsix_chat.periodic import PERIODIC_OWNER
 from robotsix_chat.subsessions.registry import OWNER_CLOSED_REASON
 
 from ._shared import _get_session_id, _parse_json_body
@@ -110,26 +107,13 @@ async def sessions_list_endpoint(request: Request) -> JSONResponse:
     owner_id = _require_owner_id(request)
 
     store: ConversationStore = request.app.state.conversation_store
-    runner = request.app.state.autonomous_runner
 
-    # Never lazily create a browser default session for any autonomous
-    # pseudo-owner — that husk would surface in the operator's merged list as
-    # an empty, un-closable "New chat".  The runner owns these sessions.
-    create_default = runner is None or not runner.is_autonomous_owner(owner_id)
-    sessions, active_id = store.list_sessions(owner_id, create_default=create_default)
-
-    # Annotate autonomous sessions so the UI can render the [AUTONOMOUS] badge.
-    if runner is not None:
-        for s in sessions:
-            sid = s.get("session_id")
-            if isinstance(sid, str) and runner.is_autonomous(sid):
-                s["autonomous"] = True
-                state = runner.get_state(sid)
-                if state is not None:
-                    s["autonomous_state"] = state.value
-                aq = runner.get_session(sid)
-                if aq is not None:
-                    s["autonomous_turn_count"] = aq.auto_turn_count
+    # Never lazily create a browser default session under the periodic owner
+    # — the scheduler creates its sessions when a preset fires, and an empty
+    # husk would surface in the sidebar as an un-closable "New chat".
+    sessions, active_id = store.list_sessions(
+        owner_id, create_default=owner_id != PERIODIC_OWNER
+    )
 
     # Resolve each session's effective model for the UI badge. ``model_level``
     # is None until the agent escalates the session, so fall back to the
@@ -157,9 +141,6 @@ async def sessions_create_endpoint(request: Request) -> JSONResponse:
 
         {"session_id": "...", "title": "New chat", "last_active": 1.0, "turn_count": 0}
 
-    Pass ``"autonomous": true`` to create an autonomous session instead
-    (requires ``autonomous.enabled`` in config).
-
     The new session is marked as the owner's active session.
     """
     body = await _parse_json_body(request)
@@ -169,27 +150,6 @@ async def sessions_create_endpoint(request: Request) -> JSONResponse:
         raise HTTPException(
             status_code=400,
             detail="'owner_id' field is required and must be a string",
-        )
-
-    autonomous = body.get("autonomous", False)
-    runner = request.app.state.autonomous_runner
-
-    if autonomous:
-        if runner is None:
-            raise HTTPException(
-                status_code=404,
-                detail="autonomous sessions are not enabled",
-            )
-        aq = runner.create_session(owner_id)
-        return JSONResponse(
-            {
-                "session_id": aq.session_id,
-                "title": "Autonomous chat",
-                "last_active": 0.0,
-                "turn_count": 0,
-                "autonomous": True,
-                "autonomous_state": aq.state.value,
-            }
         )
 
     store: ConversationStore = request.app.state.conversation_store
@@ -217,46 +177,20 @@ async def sessions_delete_endpoint(request: Request) -> JSONResponse:
     session_id = request.path_params["session_id"]
     owner_id = _require_owner_id(request)
 
-    runner = request.app.state.autonomous_runner
-    is_autonomous = runner is not None and runner.is_autonomous(session_id)
-
     # 1. Close the session's subsessions.
     subsessions_closed = _cleanup_session(session_id, request)
 
     # 2. Delete the conversation/session itself.
     store: ConversationStore = request.app.state.conversation_store
-
-    # Resolve the concrete owner scope before deleting.  ``GET /sessions``
-    # merges the bootstrap ``autonomous`` owner with every per-preset
-    # ``autonomous:<name>`` sub-scope into a single list, and the client
-    # routes the delete back to the bootstrap owner it fetched the list
-    # from.  A completed preset session actually lives under its sub-scope
-    # owner, so a delete aimed at the bootstrap owner is a silent no-op
-    # (404) and the card reappears on the next refresh.  Re-target the
-    # delete to the session's real owner only when the caller supplied the
-    # merged bootstrap owner, so ordinary operator sessions keep their
-    # ownership check intact.
     delete_owner_id = owner_id
-    if (
-        runner is not None
-        and owner_id == runner.bootstrap_owner
-        and runner.is_autonomous_owner(owner_id)
-    ):
-        actual_owner = store.owner_for_session(session_id)
-        if actual_owner is not None and runner.is_autonomous_owner(actual_owner):
-            delete_owner_id = actual_owner
-
-    is_autonomous_owner = runner is not None and runner.is_autonomous_owner(
-        delete_owner_id
-    )
 
     # Capture history before deletion (for the feedback run).
     deletion_turns = store.history(session_id)
 
-    # Never spawn an empty husk under the autonomous pseudo-owner; the runner
-    # starts a fresh, properly-tracked replacement below instead.
+    # Never spawn an empty husk under the periodic owner — the scheduler
+    # creates sessions only when a preset fires.
     result = store.delete_session(
-        delete_owner_id, session_id, create_replacement=not is_autonomous_owner
+        delete_owner_id, session_id, create_replacement=owner_id != PERIODIC_OWNER
     )
 
     if not result.get("deleted"):
@@ -278,38 +212,6 @@ async def sessions_delete_endpoint(request: Request) -> JSONResponse:
     # Save an action-plan summary to the knowledge store so the assistant
     # can pick up pending work in a new session.
     await _persist_carryover(request, store, session_id, delete_owner_id)
-
-    # A session the operator chats with is dual-owned: ``record`` also adopts
-    # it under the autonomous scope that drives it, so the session lives in
-    # both the operator's and an ``autonomous[:<preset>]`` registry.  The
-    # browser's ``GET /sessions`` merges the operator's own scope with every
-    # autonomous scope into one list, so the primary delete above (scoped to
-    # the operator) leaves the autonomous copy behind — it resurfaces in the
-    # merged list on the next refresh and the discard looks like a no-op until
-    # a second delete (now routed to the autonomous scope) finally removes it.
-    # When a real operator discards the session, also purge it from any
-    # autonomous scope that still holds it so a single delete removes it for
-    # good.  Deletes routed to an autonomous owner are left untouched so an
-    # autonomous run's own retirement never destroys the operator's copy.
-    if runner is not None and not is_autonomous_owner:
-        for other_owner in store.owner_ids_for(session_id):
-            if other_owner != delete_owner_id and runner.is_autonomous_owner(
-                other_owner
-            ):
-                store.delete_session(other_owner, session_id, create_replacement=False)
-
-    # Autonomous cleanup: forget the runner's record and auto-restart so the
-    # operator always has one live autonomous run (auto-restart always).
-    if is_autonomous and runner is not None:
-        was_countdown = runner.get_state(session_id) is AutonomousState.completed
-        runner.forget_session(session_id)
-        # A completed autonomous session is in its inter-run countdown: the
-        # ``_auto_restart`` task scheduled at completion will spawn the fresh
-        # session when the next run actually fires.  Deleting it must hide the
-        # entry immediately WITHOUT auto-restarting right now — otherwise the
-        # card reappears instantly and the discard looks like a no-op.
-        if not was_countdown:
-            runner.schedule_restart(delete_owner_id)
 
     return JSONResponse(
         {
@@ -345,9 +247,6 @@ async def sessions_close_endpoint(request: Request) -> JSONResponse:
     session_id = request.path_params["session_id"]
     owner_id = _require_owner_id(request)
 
-    runner = request.app.state.autonomous_runner
-    is_autonomous = runner is not None and runner.is_autonomous(session_id)
-
     # 1. Close the session's subsessions.
     subsessions_closed = _cleanup_session(session_id, request)
 
@@ -376,22 +275,6 @@ async def sessions_close_endpoint(request: Request) -> JSONResponse:
     # Save an action-plan summary to the knowledge store so the assistant
     # can pick up pending work in a new session.
     await _persist_carryover(request, store, session_id, owner_id)
-
-    # Autonomous cleanup: forget the runner's record (the store keeps the
-    # closed history) and schedule a throttled restart when needed.
-    if is_autonomous and runner is not None:
-        was_countdown = runner.get_state(session_id) is AutonomousState.completed
-        runner.forget_session(session_id)
-        # A completed autonomous session is in its inter-run countdown: the
-        # ``_auto_restart`` task scheduled at completion will spawn the fresh
-        # session when the next run actually fires.  Closing one must hide the
-        # entry immediately WITHOUT restarting right now — otherwise the card
-        # reappears instantly and the close looks like a no-op.
-        # An executing session closed by the operator restarts after the
-        # preset's ``trigger_interval_seconds`` throttle (immediate only for
-        # on_close presets).
-        if not was_countdown:
-            runner.schedule_restart(owner_id)
 
     return JSONResponse(
         {
@@ -470,300 +353,93 @@ async def _persist_carryover(
 
 
 # ---------------------------------------------------------------------------
-# Autonomous session definition endpoints (read-only reflection of config)
+# Periodic session preset endpoints (read-only reflection of config + manual run)
 # ---------------------------------------------------------------------------
 
 
-async def autonomous_definitions_list_endpoint(request: Request) -> JSONResponse:
-    """List autonomous session definitions.
+async def periodic_definitions_list_endpoint(request: Request) -> JSONResponse:
+    """List periodic session presets.
 
-    ``GET /autonomous/definitions`` returns::
+    ``GET /periodic/definitions`` returns::
 
         {
           "definitions": [
             {
-              "name": "default",
-              "prompt": "",
-              "trigger_interval_seconds": 3600.0,
+              "name": "mail-triage",
+              "initial_prompt": "...",
+              "schedule_interval_seconds": 86400.0,
+              "model_level": null,
               "enabled": true,
-              "owner_id": "autonomous",
-              "active_session_id": "..."
+              "last_fired_at": 1756725600.0,
+              "last_session_id": "...",
+              "runs": 12
             },
             ...
           ]
         }
-
-    Each definition is annotated with its derived ``owner_id`` and the
-    ``active_session_id`` of any currently-open session for that definition
-    (``null`` when none is active).
     """
-    runner = request.app.state.autonomous_runner
-    if runner is None:
+    scheduler = request.app.state.periodic_scheduler
+    if scheduler is None:
         return JSONResponse(
-            {"error": "autonomous sessions are not enabled"}, status_code=404
+            {"error": "periodic sessions are not enabled"}, status_code=404
         )
 
     definitions = []
-    for name in runner.definition_names:
-        owner_id = runner.owner_id_for_definition(name)
-        defn = runner.get_definition(name) or {}
-        active_session_id = runner.active_session_id_for_definition(name)
-        # Build refinement summary when a refinement store is present.
-        refinement = None
-        ref_store = runner.refinement_store
-        if ref_store is not None:
-            ref_state = ref_store.get_state(name, defn.get("prompt", ""))
-            pending_count = sum(1 for e in ref_state.entries if e.status == "pending")
-            accepted_count = sum(1 for e in ref_state.entries if e.status == "accepted")
-            refinement = {
-                "self_refine": defn.get("self_refine", False),
-                "self_refine_require_approval": defn.get(
-                    "self_refine_require_approval", False
-                ),
-                "effective_prompt": ref_store.effective_prompt(
-                    name, defn.get("prompt", "")
-                ),
-                "base_prompt": defn.get("prompt", ""),
-                "accepted_addendum": ref_state.accepted_addendum,
-                "pending_count": pending_count,
-                "accepted_count": accepted_count,
-                "total_entries": len(ref_state.entries),
-            }
+    for name in scheduler.definition_names:
+        defn = scheduler.get_definition(name)
+        if defn is None:
+            continue
+        state = scheduler.state_for(name)
         definitions.append(
             {
-                "name": name,
-                "prompt": defn.get("prompt", ""),
-                "trigger_interval_seconds": defn.get(
-                    "trigger_interval_seconds", DEFAULT_TRIGGER_INTERVAL_SECONDS
-                ),
-                "model_level": defn.get("model_level"),
-                "max_runs": defn.get("max_runs", 0),
-                "total_runs": runner._total_runs_for(name),
-                "enabled": defn.get("enabled", True),
-                "self_refine": defn.get("self_refine", False),
-                "self_refine_require_approval": defn.get(
-                    "self_refine_require_approval", False
-                ),
-                "owner_id": owner_id,
-                "active_session_id": active_session_id,
-                "refinement": refinement,
+                "name": defn.name,
+                "initial_prompt": defn.initial_prompt,
+                "schedule_interval_seconds": defn.schedule_interval_seconds,
+                "model_level": defn.model_level,
+                "enabled": defn.enabled,
+                "last_fired_at": state.get("last_fired_at"),
+                "last_session_id": state.get("last_session_id"),
+                "runs": state.get("runs", 0),
             }
         )
 
     return JSONResponse({"definitions": definitions})
 
 
-async def autonomous_definitions_run_endpoint(request: Request) -> JSONResponse:
-    """Manually trigger a one-shot run of an autonomous session definition.
+async def periodic_definitions_run_endpoint(request: Request) -> JSONResponse:
+    """Manually fire a periodic session preset now.
 
-    ``POST /autonomous/definitions/{name}/run`` queues a new run for the
-    named definition (if enabled).  Returns::
+    ``POST /periodic/definitions/{name}/run`` creates a fresh session seeded
+    with the preset's initial prompt (the same thing a scheduled firing
+    does). Returns::
 
-        {
-          "started": true,
-          "session_id": "...",
-          "definition_name": "..."
-        }
+        {"started": true, "session_id": "...", "definition_name": "..."}
 
-    Returns ``404`` when the definition is not found, ``409`` when the
-    definition already has an active session.
+    Returns ``404`` when the preset is unknown, ``409`` when the preset's
+    previous session is still processing a turn.
     """
     name = request.path_params["name"]
-    runner = request.app.state.autonomous_runner
-    if runner is None:
+    scheduler = request.app.state.periodic_scheduler
+    if scheduler is None:
         return JSONResponse(
-            {"error": "autonomous sessions are not enabled"}, status_code=404
+            {"error": "periodic sessions are not enabled"}, status_code=404
         )
-
-    if runner.get_definition(name) is None:
+    if scheduler.get_definition(name) is None:
         return JSONResponse({"error": f"unknown definition {name!r}"}, status_code=404)
 
-    owner_id = runner.owner_id_for_definition(name)
-
-    # Check for an existing open session.
-    active_id = runner.active_session_id_for_definition(name)
-    if active_id is not None:
-        aq = runner.get_session(active_id)
-        state_value = aq.state.value if aq is not None else "unknown"
+    session_id = await scheduler.fire(name, manual=True)
+    if session_id is None:
         return JSONResponse(
             {
                 "error": (
-                    f"definition {name!r} already has an active session "
-                    f"({active_id}, state={state_value})"
-                ),
-                "session_id": active_id,
+                    f"preset {name!r}'s previous session is still processing a turn"
+                )
             },
             status_code=409,
         )
-
-    # Start a new session.
-    aq = runner.ensure_active_session(
-        owner_id,
-        schedule_kickoff=True,
-        definition_name=name,
-    )
-
     return JSONResponse(
-        {
-            "started": True,
-            "session_id": aq.session_id,
-            "definition_name": name,
-        }
+        {"started": True, "session_id": session_id, "definition_name": name}
     )
-
-
-# -- autonomous refinement endpoints ---------------------------------------
-
-
-async def autonomous_refinements_list_endpoint(request: Request) -> JSONResponse:
-    """List refinement entries for an autonomous session definition.
-
-    ``GET /autonomous/definitions/{name}/refinements`` returns::
-
-        {
-          "definition_name": "...",
-          "base_prompt": "...",
-          "accepted_addendum": "...",
-          "effective_prompt": "...",
-          "entries": [
-            {
-              "id": "...",
-              "timestamp": 1234567890.0,
-              "status": "accepted",
-              "feedback_summary": "...",
-              "proposed_addendum": "...",
-              "previous_addendum": "...",
-              "session_id": "..."
-            },
-            ...
-          ]
-        }
-    """
-    name = request.path_params["name"]
-    runner = request.app.state.autonomous_runner
-    if runner is None:
-        return JSONResponse(
-            {"error": "autonomous sessions are not enabled"}, status_code=404
-        )
-
-    ref_store = runner.refinement_store
-    if ref_store is None:
-        return JSONResponse(
-            {"error": "refinement store is not available"}, status_code=404
-        )
-
-    defn = runner.get_definition(name)
-    if defn is None:
-        return JSONResponse({"error": f"unknown definition {name!r}"}, status_code=404)
-
-    base_prompt = defn.get("prompt", "")
-    state = ref_store.get_state(name, base_prompt)
-    entries = [
-        {
-            "id": e.id,
-            "timestamp": e.timestamp,
-            "status": e.status,
-            "feedback_summary": e.feedback_summary,
-            "proposed_addendum": e.proposed_addendum,
-            "previous_addendum": e.previous_addendum,
-            "session_id": e.session_id,
-        }
-        for e in state.entries
-    ]
-
-    return JSONResponse(
-        {
-            "definition_name": name,
-            "base_prompt": state.base_prompt,
-            "accepted_addendum": state.accepted_addendum,
-            "effective_prompt": ref_store.effective_prompt(name, base_prompt),
-            "entries": entries,
-        }
-    )
-
-
-async def autonomous_refinements_accept_endpoint(request: Request) -> JSONResponse:
-    """Accept a pending refinement.
-
-    ``POST /autonomous/definitions/{name}/refinements/{refinement_id}/accept``
-
-    Returns ``{"accepted": true}`` on success, ``404`` when the refinement
-    is not found or is not pending.
-    """
-    name = request.path_params["name"]
-    refinement_id = request.path_params["refinement_id"]
-    runner = request.app.state.autonomous_runner
-    if runner is None:
-        return JSONResponse(
-            {"error": "autonomous sessions are not enabled"}, status_code=404
-        )
-
-    ref_store = runner.refinement_store
-    if ref_store is None:
-        return JSONResponse(
-            {"error": "refinement store is not available"}, status_code=404
-        )
-
-    if ref_store.accept_refinement(name, refinement_id):
-        return JSONResponse({"accepted": True})
-    return JSONResponse(
-        {"error": f"refinement {refinement_id!r} not found or not pending"},
-        status_code=404,
-    )
-
-
-async def autonomous_refinements_reject_endpoint(request: Request) -> JSONResponse:
-    """Reject a pending refinement.
-
-    ``POST /autonomous/definitions/{name}/refinements/{refinement_id}/reject``
-
-    Returns ``{"rejected": true}`` on success, ``404`` when the refinement
-    is not found or is not pending.
-    """
-    name = request.path_params["name"]
-    refinement_id = request.path_params["refinement_id"]
-    runner = request.app.state.autonomous_runner
-    if runner is None:
-        return JSONResponse(
-            {"error": "autonomous sessions are not enabled"}, status_code=404
-        )
-
-    ref_store = runner.refinement_store
-    if ref_store is None:
-        return JSONResponse(
-            {"error": "refinement store is not available"}, status_code=404
-        )
-
-    if ref_store.reject_refinement(name, refinement_id):
-        return JSONResponse({"rejected": True})
-    return JSONResponse(
-        {"error": f"refinement {refinement_id!r} not found or not pending"},
-        status_code=404,
-    )
-
-
-async def autonomous_refinements_reset_endpoint(request: Request) -> JSONResponse:
-    """Reset all refinements for a definition — clears the addendum.
-
-    ``POST /autonomous/definitions/{name}/refinements/reset``
-
-    Returns ``{"reset": true}`` on success.
-    """
-    name = request.path_params["name"]
-    runner = request.app.state.autonomous_runner
-    if runner is None:
-        return JSONResponse(
-            {"error": "autonomous sessions are not enabled"}, status_code=404
-        )
-
-    ref_store = runner.refinement_store
-    if ref_store is None:
-        return JSONResponse(
-            {"error": "refinement store is not available"}, status_code=404
-        )
-
-    ref_store.reset_refinements(name)
-    return JSONResponse({"reset": True})
 
 
 # ---------------------------------------------------------------------------

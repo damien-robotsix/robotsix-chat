@@ -557,14 +557,12 @@ def _build_wait_for_event_input(
             registry.update_checkpoint(sub_id, checkpoint)
 
     parts.append(
-        "Decision-blocked tickets: when the monitored ticket is awaiting an "
-        "operator decision — stuck in human_issue_approval, waiting on an "
-        '"Option A or B?" choice, or otherwise blocked on a human '
-        "direction — do NOT call complete_subsession and do NOT reply "
-        "NO_CHANGE run after run.  The monitor must stay alive and keep "
-        "tracking the ticket until it reaches a terminal state (done, "
-        "closed, rejected) or the user explicitly stops tracking.  "
-        "Instead, reply with a concise acknowledgment of the blocked state "
+        "Decision-blocked tickets: when the monitored ticket sits at "
+        "human_issue_approval, there is NO human approval loop — the main "
+        "assistant is the approver.  Do not wait passively and do not "
+        "reply NO_CHANGE run after run: escalate promptly so the main "
+        "session reviews the spec and acts (approve to ready, send back "
+        "to draft, or retire it).  Reply with a concise acknowledgment "
         "that includes a CONCRETE RECOMMENDATION: state whether you "
         "recommend approving or closing the ticket and why (e.g. "
         "'I recommend approving — this is a standard pre-authorized "

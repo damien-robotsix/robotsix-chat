@@ -1064,7 +1064,7 @@ def test_create_agent_from_settings_bare_skips_memory_and_tools() -> None:
 def test_create_agent_from_settings_memory_disabled_skips_cognee() -> None:
     """``memory_enabled=False`` yields a NullMemory without building cognee.
 
-    Background agents (subsession workers, autonomous auto-continue) run
+    Background agents (subsession workers, periodic session turns) run
     unattended and would otherwise recall + cognify on every turn around the
     clock — the cost bleed this gate exists to stop.  Unlike ``bare``, tools
     and subsession wiring are retained; only long-term memory is dropped.
@@ -1230,8 +1230,10 @@ async def test_run_server_from_config_creates_agent_from_settings(
         assert isinstance(central_deploy_settings, CentralDeploySettings)
         feedback_runner = call_args[1].pop("feedback_runner")
         assert feedback_runner is None
-        autonomous_runner = call_args[1].pop("autonomous_runner")
-        assert autonomous_runner is not None  # enabled by default
+        periodic_definitions = call_args[1].pop("periodic_definitions")
+        assert periodic_definitions == []  # no presets in the default config
+        periodic_agent_factory = call_args[1].pop("periodic_agent_factory")
+        assert callable(periodic_agent_factory)
         on_startup_async = call_args[1].pop("on_startup_async")
         assert callable(on_startup_async)
         on_shutdown = call_args[1].pop("on_shutdown")
