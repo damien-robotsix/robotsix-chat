@@ -1841,3 +1841,50 @@ class TestMaxTicketsPerRun:
     def test_the_default_is_bounded(self) -> None:
         """Regression: the setting did not exist and runs were unbounded."""
         assert _settings().max_tickets_per_run == 3
+
+
+class TestResolveAllowedRepos:
+    """`_do_resolve_allowed_repos` against the REAL API shapes.
+
+    Regression for 2026-09-01: mill's GET /repos returns entries keyed
+    ``repo_id`` (not ``id``); the parser read only ``id``, so the
+    deploy∩mill intersection was permanently empty and every cross-repo
+    feedback ticket fell back to [robotsix-chat] and was dropped.
+    """
+
+    @pytest.mark.asyncio
+    async def test_mill_repo_id_shape_intersects(self, monkeypatch) -> None:
+        """repo_id-keyed mill entries intersect with the deploy roster."""
+        from robotsix_chat.feedback import runner as runner_mod
+
+        deploy_body = json.dumps(
+            [{"id": "chat"}, {"id": "file-hub"}, {"id": "robotsix-chat"}]
+        )
+        # Real mill /repos shape: repo_id + board_id + forge_remote_url.
+        mill_body = json.dumps(
+            [
+                {
+                    "repo_id": "robotsix-chat",
+                    "board_id": "robotsix-chat",
+                    "forge_remote_url": "https://github.com/x/robotsix-chat.git",
+                },
+                {
+                    "repo_id": "file-hub",
+                    "board_id": "file-hub",
+                    "forge_remote_url": "https://github.com/x/file-hub.git",
+                },
+            ]
+        )
+
+        class _R:
+            def __init__(self, text: str) -> None:
+                self.text = text
+                self.error = ""
+                self.ok = True
+
+        async def fake_request(method, url, **kwargs):
+            return _R(mill_body if "/repos" in url else deploy_body)
+
+        monkeypatch.setattr(runner_mod, "safe_http_request", fake_request)
+        allowed = await runner_mod._do_resolve_allowed_repos("key", "http://d:8100")
+        assert allowed == ["file-hub", "robotsix-chat"]
