@@ -502,9 +502,10 @@ def create_app(
             the default settings are used (enabled, 300 s interval).
         evergoing_settings: Optional
             :class:`~robotsix_chat.config.models.EvergoingSettings` controlling
-            the single never-ending session and its periodic subject-aware
-            trim scheduler.  When ``None`` (default), the default settings are
-            used (disabled), so no evergoing session is created on boot.
+            the single never-ending session and its periodic summarising
+            compaction scheduler.  When ``None`` (default), the default
+            settings are used (disabled), so no evergoing session is created
+            on boot.
         continuation_store: Shared
             :class:`~robotsix_chat.continuation.store.ContinuationStore`
             instance for pending post-restart continuations.  When
@@ -797,18 +798,17 @@ def create_app(
         from robotsix_chat.chat.conversation import OPERATOR_OWNER
 
         app.state.conversation_store.ensure_evergoing_session(OPERATOR_OWNER)
-    # The subject-aware trim scheduler is the single context-reduction
+    # The periodic summary scheduler is the single context-reduction
     # mechanism for ALL sessions (idle compaction removed), so it runs
     # regardless of whether the evergoing session itself is enabled.
     if app.state.summary_agent is not None:
-        from robotsix_chat.evergoing import EvergoingTrimScheduler
+        from robotsix_chat.evergoing import EvergoingSummaryScheduler
 
-        app.state.evergoing_scheduler = EvergoingTrimScheduler(
+        app.state.evergoing_scheduler = EvergoingSummaryScheduler(
             interval_seconds=_eg.trim_interval_seconds,
             store=app.state.conversation_store,
             agent=app.state.summary_agent,
-            keep_min_recent=_eg.keep_min_recent,
-            min_fresh_turns=_eg.min_fresh_turns,
+            keep_recent_runs=_eg.keep_recent_runs,
         )
     else:
         app.state.evergoing_scheduler = None
@@ -822,8 +822,12 @@ def create_app(
 
 # Canonical path to the reply-style directive — the single source of truth
 # for how the agent formats replies.  The file is read at agent construction
-# time and appended to the system prompt on every build.
-_PROMPT_STYLE_PATH = Path("docs/prompt-style.md")
+# time and appended to the system prompt on every build.  It lives INSIDE
+# the package (like the per-component skill.md files) so the deployed image
+# actually contains it: the old CWD-relative ``docs/prompt-style.md`` did
+# not ship, and production silently ran without a style directive from the
+# feature's introduction until 2026-09-01.
+_PROMPT_STYLE_PATH = Path(__file__).parent / "prompt-style.md"
 
 # Delimiter line that separates the header/description from the actual
 # directive in the style file.  Everything after this line (exclusive)
@@ -835,7 +839,7 @@ def _load_prompt_style() -> str:
     """Read the canonical reply-style directive from disk.
 
     Returns the directive text (the content following the
-    ``## Style directive`` header in ``docs/prompt-style.md``), or
+    ``## Style directive`` header in the packaged ``prompt-style.md``), or
     an empty string if the file is missing — a missing file logs
     a warning but is not fatal (the agent runs without a style
     directive).
@@ -1239,10 +1243,18 @@ def _build_request_tools_factory(
         req_factories.append(_make_cross_session_tools)
 
     if conversation_store is not None and configured_level is not None:
+        from robotsix_llmio.config import load_tier_config
+
+        from robotsix_chat.llm.agent import _merge_tier_overrides
         from robotsix_chat.llm.escalation import build_escalation_tools
 
         store = conversation_store
         level = configured_level
+        # Chat's own tier config (incl. llmio_tier_overrides) so the
+        # escalation event names the model that actually serves the level.
+        escalation_tier_config = load_tier_config(
+            _merge_tier_overrides(settings.llmio_tier_overrides, None)
+        )
 
         def _make_escalation_tools(session_id: str) -> list[Any]:
             return build_escalation_tools(
@@ -1250,6 +1262,7 @@ def _build_request_tools_factory(
                 session_id=session_id,
                 configured_level=level,
                 event_sink=event_sink,
+                tier_config=escalation_tier_config,
             )
 
         req_factories.append(_make_escalation_tools)
@@ -1491,7 +1504,14 @@ def create_agent_from_settings(
     ):
         from robotsix_chat.lifecycle.client import LifecycleClient
 
+        # The canonical deploy URL must be passed explicitly — constructing
+        # the client without it left auto-recovery pointing at an empty base
+        # URL, so every self-restart attempt failed with a URL protocol
+        # error (and boot logged "central_deploy.url is empty" although the
+        # config had it): a frozen memory backend was never auto-healed.
         agent.memory.set_recovery_callback(
-            LifecycleClient(settings.lifecycle).self_restart
+            LifecycleClient(
+                settings.lifecycle, settings.central_deploy.url
+            ).self_restart
         )
     return agent

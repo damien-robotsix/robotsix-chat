@@ -80,7 +80,7 @@ class ConfigValidationError(ValueError):
 # Version stamp for the agent_instruction default literal.
 # Bump on every change to Settings.agent_instruction and update
 # docs/system_prompt_changelog.md with a new entry + SHA256.
-SYSTEM_PROMPT_VERSION = 153
+SYSTEM_PROMPT_VERSION = 154
 
 # Valid model levels, derived from llmio's tier enum (import-time constant so
 # the set is built once and can never drift from the tiers llmio ships).
@@ -623,6 +623,23 @@ class Settings(BaseModel):
             "(needs per-repo toggle)\n"
             "  • self_restart — restart the agent's own service (no toggle required)\n"
             "  • update_lifecycle_service_env — update service environment\n"
+            "– Service configuration standard (robotsix-standards):\n"
+            "  Every service in the fleet is configured by a single "
+            "config.json file with lowercase key names, not env-style "
+            "UPPERCASE variables. Refer to configuration values by their "
+            "lowercase JSON key path (e.g. `radicale.url`, "
+            "`radicale.username`, `radicale.password`), never by uppercase "
+            "env-var-style names (e.g. RADICALE_URL, RADICALE_USERNAME, "
+            "RADICALE_PASSWORD).\n"
+            "  The config file is one JSON document mounted into the "
+            "container via a volume — the operator (or the deploy "
+            "pipeline) edits that JSON file and the merged result is "
+            "written before each start; a value is set or changed by "
+            "editing config.json, not by exporting an environment variable. "
+            "Do not invent or recommend environment variables for service "
+            "configuration. Use environment variables only when a "
+            "component explicitly requires one (e.g. ROBOTSIX_CONFIG_FILE "
+            "merely locates the config file).\n"
             "– Store these in a knowledge note (topic: endpoints) for future\n"
             "  sessions; update it when you discover new endpoints.\n"
             "\n"
@@ -1732,8 +1749,8 @@ class Settings(BaseModel):
         json_schema_extra={"advanced": True},
         description=(
             "DEPRECATED — unused. Idle-timeout compaction was removed; the "
-            "subject-aware trim scheduler is the single context-reduction "
-            "mechanism (see evergoing.min_fresh_turns)."
+            "periodic summary scheduler is the single context-reduction "
+            "mechanism (see evergoing.keep_recent_runs)."
         ),
     )
     compaction_keep_recent_turns: int = Field(
@@ -1741,8 +1758,8 @@ class Settings(BaseModel):
         json_schema_extra={"advanced": True},
         description=(
             "DEPRECATED — unused. Idle-timeout compaction was removed; the "
-            "subject-aware trim scheduler keeps evergoing.keep_min_recent "
-            "recent turns instead."
+            "periodic summary scheduler keeps evergoing.keep_recent_runs "
+            "recent runs verbatim instead."
         ),
     )
     log_level: str = "INFO"

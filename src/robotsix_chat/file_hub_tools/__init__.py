@@ -16,6 +16,8 @@ from importlib import resources
 from pathlib import Path
 from typing import TYPE_CHECKING, Any
 
+from robotsix_chat.llm.capabilities import IMAGE_OMITTED_NOTE, model_supports_images
+
 if TYPE_CHECKING:
     from robotsix_chat.config.models import FileHubToolsSettings
 
@@ -314,9 +316,6 @@ def build_file_hub_tools(
         except Exception as exc:
             return f"{type(exc).__name__}: {exc}"
 
-        from pydantic_ai.messages import BinaryContent, TextContent
-
-        image_bytes = base64.b64decode(rendered["image_base64"])
         metadata = (
             f"Rendered dimensions: {rendered['width']}x{rendered['height']} px. "
             f"Page dimensions: {rendered['page_width_points']:.1f} x "
@@ -329,6 +328,14 @@ def build_file_hub_tools(
             f" / {rendered['height']})"
         )
 
+        # A BinaryContent block in a tool result 404s the whole turn on
+        # text-only OpenRouter models, so degrade to metadata-only there.
+        if not model_supports_images():
+            return f"{metadata}\n{IMAGE_OMITTED_NOTE}"
+
+        from pydantic_ai.messages import BinaryContent, TextContent
+
+        image_bytes = base64.b64decode(rendered["image_base64"])
         return [
             TextContent(content=metadata),
             BinaryContent(data=image_bytes, media_type="image/png"),
