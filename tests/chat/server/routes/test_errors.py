@@ -12,6 +12,7 @@ import json
 from datetime import UTC
 from unittest.mock import Mock
 
+import pytest
 from asgi_correlation_id import correlation_id as cid_ctx
 from starlette.applications import Starlette
 from starlette.exceptions import HTTPException
@@ -542,3 +543,130 @@ def test_stream_error_code_token_limit_through_chain() -> None:
     )
     exc = _chained(root, RuntimeError("fallback also failed"))
     assert stream_error_code(exc) == STREAM_ERROR_INVALID_REQUEST
+
+
+# ---------------------------------------------------------------------------
+# No-image-support 404s — regression: an OpenRouter 404 for an image-bearing
+# turn on a text-only model surfaced as the generic "internal error" banner.
+# ---------------------------------------------------------------------------
+
+
+def test_stream_error_code_maps_no_image_support_404_body() -> None:
+    """The observed prod shape — a 404 whose body says image input is unsupported.
+
+    Sending an image to a text-only DeepSeek model on OpenRouter returns
+    HTTP 404 with the body "No endpoints found that support image input"
+    (live incident 2026-09-01). This must map to the dedicated code, not
+    ``invalid_request_error``/``server_error``.
+    """
+    from robotsix_chat.chat.server.routes.errors import (
+        STREAM_ERROR_NO_IMAGE_SUPPORT,
+        stream_error_code,
+    )
+
+    exc = Exception("upstream said no")
+    exc.response = Mock(  # type: ignore[attr-defined]
+        status_code=404,
+        text='{"error": {"message": "No endpoints found that support image input"}}',
+    )
+    assert stream_error_code(exc) == STREAM_ERROR_NO_IMAGE_SUPPORT
+
+
+def test_stream_error_code_maps_no_image_support_message_variation() -> None:
+    """Equivalent no-image-support wording carried by the message also matches."""
+    from robotsix_chat.chat.server.routes.errors import (
+        STREAM_ERROR_NO_IMAGE_SUPPORT,
+        stream_error_code,
+    )
+
+    assert (
+        stream_error_code(Exception("The provider model does not support image input"))
+        == STREAM_ERROR_NO_IMAGE_SUPPORT
+    )
+    assert (
+        stream_error_code(Exception("image input is not supported by any endpoint"))
+        == STREAM_ERROR_NO_IMAGE_SUPPORT
+    )
+
+
+def test_stream_error_code_maps_no_image_support_through_chain() -> None:
+    """No-image-support detection walks the cause/context chain."""
+    from robotsix_chat.chat.server.routes.errors import (
+        STREAM_ERROR_NO_IMAGE_SUPPORT,
+        stream_error_code,
+    )
+
+    root = Exception("No endpoints found that support image input")
+    exc = _chained(root, RuntimeError("fallback also failed"))
+    assert stream_error_code(exc) == STREAM_ERROR_NO_IMAGE_SUPPORT
+
+
+def test_stream_error_code_plain_404_keeps_invalid_request() -> None:
+    """An unrelated 404 (no image-support shape) keeps its previous handling."""
+    from robotsix_chat.chat.server.routes.errors import (
+        STREAM_ERROR_INVALID_REQUEST,
+        stream_error_code,
+    )
+
+    exc = Exception("upstream said no")
+    exc.response = Mock(  # type: ignore[attr-defined]
+        status_code=404,
+        text='{"error": {"message": "model not found"}}',
+    )
+    assert stream_error_code(exc) == STREAM_ERROR_INVALID_REQUEST
+
+
+def test_curated_stream_error_no_image_support_names_failover_until(
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    """The curated message tells the user to resend as text and names the retry.
+
+    When provider failover is active, the turn runs on the OpenRouter
+    fallback slot — the failover window end is the concrete retry point, so
+    it must be named (from ``get_failover_status().failover_until``).
+    """
+    from datetime import datetime
+
+    from robotsix_chat.chat.server.routes.errors import (
+        STREAM_ERROR_NO_IMAGE_SUPPORT,
+        curated_stream_error,
+    )
+
+    monkeypatch.setattr(
+        "robotsix_llmio.core.failover.get_failover_status",
+        lambda: Mock(
+            failover_active=True,
+            failover_until=datetime(2026, 9, 1, 14, 30, tzinfo=UTC),
+        ),
+    )
+    exc = Exception("No endpoints found that support image input")
+    payload = curated_stream_error(exc, fallback_id="turn-img-1")
+    assert payload["code"] == STREAM_ERROR_NO_IMAGE_SUPPORT
+    message = payload["message"]
+    # States the provider/model cannot read images.
+    assert "can't read images" in message
+    assert "provider" in message
+    # Tells the user to resend as text or retry after the failover window.
+    assert "resend your message" in message.lower()
+    assert "failover window ends" in message
+    # Includes the failover_until value from get_failover_status().
+    assert "14:30 UTC" in message
+    # Never the generic internal-error surface.
+    assert "internal error" not in message.lower()
+
+
+def test_curated_stream_error_no_image_support_without_failover(
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    """Without an open failover window the message still points at a retry."""
+    from robotsix_chat.chat.server.routes.errors import curated_stream_error
+
+    monkeypatch.setattr(
+        "robotsix_llmio.core.failover.get_failover_status",
+        lambda: Mock(failover_active=False, failover_until=None),
+    )
+    exc = Exception("No endpoints found that support image input")
+    message = curated_stream_error(exc, fallback_id="turn-img-2")["message"]
+    assert "can't read images" in message
+    assert "resend your message" in message.lower()
+    assert "retry in a moment" in message
