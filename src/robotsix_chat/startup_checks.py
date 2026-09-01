@@ -17,6 +17,17 @@ from robotsix_chat.config import CentralDeploySettings
 
 logger = logging.getLogger(__name__)
 
+# Components whose health endpoint deviates from the fleet's ``/health``
+# convention. Langfuse (upstream Next.js app) serves 404 on ``/health``;
+# its documented liveness endpoint is ``/api/public/health`` — the blind
+# convention probe warned on every boot (observed 2026-09-01).
+_HEALTH_PATHS: dict[str, str] = {"langfuse": "/api/public/health"}
+
+# The chat's own roster entry. Probing ourselves during startup always
+# fails (the server isn't listening yet — the check runs before uvicorn
+# binds), so it logged a guaranteed-false warning on every boot.
+_SELF_COMPONENT_ID = "chat"
+
 
 async def check_component_connectivity(settings: CentralDeploySettings) -> None:
     """Check ``GET /health`` reachability for every rostered component.
@@ -49,8 +60,13 @@ async def check_component_connectivity(settings: CentralDeploySettings) -> None:
 
     for entry in valid:
         cid = entry.get("id", "?")
+        if cid == _SELF_COMPONENT_ID:
+            logger.debug(
+                "Component '%s' is this service — skipping self health probe", cid
+            )
+            continue
         base_url = entry["base_url"].rstrip("/")
-        health_url = f"{base_url}/health"
+        health_url = f"{base_url}{_HEALTH_PATHS.get(cid, '/health')}"
 
         try:
             result = await safe_http_request(
