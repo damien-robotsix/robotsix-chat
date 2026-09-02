@@ -1216,9 +1216,9 @@ _CONCRETE_MODEL_PATTERNS: list[str] = [
 # Remove entries as the leaks are cleaned up in follow-up tickets.
 _PREEXISTING_ALLOWLIST: set[tuple[str, int, str]] = {
     # memory/cognee.py — gpt-5-mini / gpt-5-nano in comments
-    ("src/robotsix_chat/memory/cognee.py", 555, "gpt-"),
     ("src/robotsix_chat/memory/cognee.py", 558, "gpt-"),
-    ("src/robotsix_chat/memory/cognee.py", 702, "gpt-"),
+    ("src/robotsix_chat/memory/cognee.py", 561, "gpt-"),
+    ("src/robotsix_chat/memory/cognee.py", 705, "gpt-"),
     # config/settings.py — opus / claude-fable-5 in Settings docstring
     ("src/robotsix_chat/config/settings.py", 98, "-opus"),
     ("src/robotsix_chat/config/settings.py", 98, "claude-fable"),
