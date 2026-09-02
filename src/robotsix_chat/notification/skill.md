@@ -5,8 +5,12 @@ mobile app in future) over the existing SSE channel. It is the agent's only chan
 out-of-band communication — the user receives the notification as a browser-native alert when they
 are connected to the session.
 
-**Delivery limitation:** notifications only reach clients that are currently connected. When no
-browser is listening for the session, the notification is silently dropped.
+**Delivery & persistence:** notifications are published live over SSE to clients that are currently
+connected. When no browser is listening for the session at publish time, the live SSE event is
+dropped but the notification is still persisted to the notification store (chat-data
+`/data/notifications.json`) so it survives a disconnected browser and can be replayed to the next
+connecting client. Records whose live publish reached a connected browser are marked `delivered` and
+are never replayed; undelivered records are marked `delivered=false` and `read=false` until replayed.
 
 ## Fallback agent_message delivery for background task failures
 
