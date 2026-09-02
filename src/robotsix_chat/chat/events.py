@@ -458,6 +458,16 @@ class EventBus:
         if not subscribers:
             del self._subscribers[session_id]
 
+    def subscriber_count(self, session_id: str) -> int:
+        """Return the number of queues currently subscribed for *session_id*.
+
+        Lets callers (e.g. the ``notify_user`` tool) decide whether a
+        publish reaches a live SSE client without reaching into the private
+        registry — a count of ``0`` means the frame would be silently
+        dropped.
+        """
+        return len(self._subscribers.get(session_id, ()))
+
     def publish(self, session_id: str, frame: dict[str, object]) -> None:
         """Put *frame* on every queue currently subscribed for *session_id*.
 

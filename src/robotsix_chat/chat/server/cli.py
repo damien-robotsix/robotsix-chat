@@ -23,6 +23,7 @@ from robotsix_chat.continuation.store import ContinuationStore
 from robotsix_chat.diagnostics import DiagnosticStore
 from robotsix_chat.knowledge.store import KnowledgeStore
 from robotsix_chat.llm import LlmioChatAgent
+from robotsix_chat.notification.store import NotificationStore
 from robotsix_chat.startup_checks import check_component_connectivity
 
 from .app import create_agent_from_settings, create_app
@@ -72,6 +73,7 @@ def run_server(
     health_settings: Any = None,
     evergoing_settings: Any = None,
     continuation_store: Any = None,
+    notification_store: Any = None,
 ) -> None:
     """Start the chat SSE server on ``host:port``.
 
@@ -115,6 +117,7 @@ def run_server(
         health_settings=health_settings,
         evergoing_settings=evergoing_settings,
         continuation_store=continuation_store,
+        notification_store=notification_store,
     )
     uvicorn.run(app, host=host, port=port)
 
@@ -313,6 +316,10 @@ def run_server_from_config(agent: ChatAgent | None = None) -> None:
         max_consecutive=settings.continuation.max_consecutive,
     )
 
+    # Notification store — shared instance so notify_user persists every
+    # notification to chat-data and later replay reads the same records.
+    notification_store = NotificationStore(settings.notification.store_path)
+
     subsession_registry = SubsessionRegistry(
         event_sink=event_bus,
         store_path=Path(settings.subsessions.store_path),
@@ -347,6 +354,7 @@ def run_server_from_config(agent: ChatAgent | None = None) -> None:
             memory_enabled=s.memory.subsession_enabled,
             diagnostic_store=diagnostic_store,
             knowledge_store=knowledge_store,
+            notification_store=notification_store,
         )
 
     env = SubsessionEnv(
@@ -385,6 +393,7 @@ def run_server_from_config(agent: ChatAgent | None = None) -> None:
                 memory_enabled=settings.memory.periodic_enabled,
                 diagnostic_store=diagnostic_store,
                 knowledge_store=knowledge_store,
+                notification_store=notification_store,
             )
         return _periodic_agents[model_level]
 
@@ -404,6 +413,7 @@ def run_server_from_config(agent: ChatAgent | None = None) -> None:
             diagnostic_store=diagnostic_store,
             knowledge_store=knowledge_store,
             continuation_store=continuation_store,
+            notification_store=notification_store,
         )
     # Wire the main agent into ParentDelivery now that both exist (see
     # ParentDelivery.set_agent for why this can't happen at construction
@@ -663,4 +673,5 @@ def run_server_from_config(agent: ChatAgent | None = None) -> None:
         health_settings=settings.health,
         evergoing_settings=settings.evergoing,
         continuation_store=continuation_store,
+        notification_store=notification_store,
     )

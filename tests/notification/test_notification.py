@@ -7,6 +7,7 @@ HTTP mocking.
 
 from __future__ import annotations
 
+from pathlib import Path
 from typing import Any
 
 import pytest
@@ -17,6 +18,7 @@ from robotsix_chat.notification import (
     build_notification_tools,
     load_notification_skill,
 )
+from robotsix_chat.notification.store import NotificationStore
 
 # ---------------------------------------------------------------------------
 # helpers
@@ -224,6 +226,96 @@ async def test_notify_user_eventbus_delivers_to_subscriber() -> None:
 
 
 @pytest.mark.asyncio
+async def test_notify_user_persists_undelivered_when_no_subscriber(
+    tmp_path: Path,
+) -> None:
+    """With no browser connected, notify_user stores one undelivered record."""
+    bus = EventBus()
+    session_id = "sess-no-sub"
+    store = NotificationStore(tmp_path / "notifications.json")
+
+    tools = build_notification_tools(
+        _settings(), event_sink=bus, session_id=session_id, store=store
+    )
+    result = await tools[0](title="Missed", body="No browser was listening")
+
+    assert result == "Notification sent."
+    records = store.list()
+    assert len(records) == 1
+    record = records[0]
+    assert record.delivered is False
+    assert record.read is False
+    assert record.title == "Missed"
+    assert record.body == "No browser was listening"
+    assert record.source_session == session_id
+
+
+@pytest.mark.asyncio
+async def test_notify_user_persists_delivered_when_subscriber_connected(
+    tmp_path: Path,
+) -> None:
+    """With a browser connected, the record is delivered and SSE unchanged."""
+    bus = EventBus()
+    session_id = "sess-sub"
+    store = NotificationStore(tmp_path / "notifications.json")
+
+    # Subscribe a queue BEFORE publishing — a live connected browser.
+    queue = bus.subscribe(session_id)
+
+    tools = build_notification_tools(
+        _settings(), event_sink=bus, session_id=session_id, store=store
+    )
+    await tools[0](title="Hello", body="World", urgency="high", link="/ticket/1")
+
+    # Live SSE frame is unchanged — the exact same shape as before.
+    frame = queue.get_nowait()
+    assert frame == {
+        "type": SSE_NOTIFICATION_TYPE,
+        "title": "Hello",
+        "body": "World",
+        "urgency": "high",
+        "link": "/ticket/1",
+    }
+
+    # The persisted record is marked delivered (no replay later).
+    records = store.list()
+    assert len(records) == 1
+    record = records[0]
+    assert record.delivered is True
+    assert record.read is False
+    assert record.title == "Hello"
+    assert record.body == "World"
+    assert record.source_session == session_id
+
+
+@pytest.mark.asyncio
+async def test_notify_user_persist_failure_does_not_break_publish(
+    tmp_path: Path,
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    """A store failure is logged; the live publish still succeeds."""
+    spy = SpySink()
+    session_id = "sess-1"
+    store = NotificationStore(tmp_path / "notifications.json")
+
+    def _boom(**kwargs: object) -> None:
+        raise OSError("disk full")
+
+    monkeypatch.setattr(store, "append", _boom)
+
+    tools = build_notification_tools(
+        _settings(), event_sink=spy, session_id=session_id, store=store
+    )
+    result = await tools[0](title="Test", body="Body")
+
+    assert result == "Notification sent."
+    assert len(spy.calls) == 1
+    _, frame = spy.calls[0]
+    assert frame["type"] == SSE_NOTIFICATION_TYPE
+    assert frame["title"] == "Test"
+
+
+@pytest.mark.asyncio
 async def test_notify_user_empty_link_omitted() -> None:
     """When link is empty, it is published as an empty string (not omitted)."""
     spy = SpySink()
@@ -250,7 +342,7 @@ def test_settings_enabled_without_extra_fields() -> None:
 def test_settings_no_ntfy_fields_remain() -> None:
     """NotificationSettings has no ntfy-specific fields."""
     field_names = set(NotificationSettings.model_fields.keys())
-    assert field_names == {"enabled"}
+    assert field_names == {"enabled", "store_path"}
     assert "ntfy_topic" not in field_names
     assert "ntfy_token" not in field_names
     assert "ntfy_server" not in field_names

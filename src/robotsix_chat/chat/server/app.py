@@ -326,6 +326,7 @@ SHARED_PARAMS: frozenset[str] = frozenset(
         "health_settings",
         "evergoing_settings",
         "continuation_store",
+        "notification_store",
     }
 )
 
@@ -370,6 +371,7 @@ def create_app(
     health_settings: HealthSettings | None = None,
     evergoing_settings: EvergoingSettings | None = None,
     continuation_store: Any = None,
+    notification_store: Any = None,
 ) -> Starlette:
     """Return a Starlette ASGI app wired to ``agent``.
 
@@ -512,6 +514,11 @@ def create_app(
             instance for pending post-restart continuations.  When
             ``None`` (default), the chat endpoint does not reset the
             consecutive-continuation guardrail counter on operator messages.
+        notification_store: Shared
+            :class:`~robotsix_chat.notification.store.NotificationStore`
+            persisting ``notify_user`` notifications to chat-data so they
+            survive a disconnected browser.  When ``None`` (default),
+            notifications are published live but not persisted.
 
     """
     routes: list[Route | Mount] = [
@@ -814,6 +821,7 @@ def create_app(
     else:
         app.state.evergoing_scheduler = None
     app.state.continuation_store = continuation_store  # may be None
+    app.state.notification_store = notification_store  # may be None
     if config_path is not None:
         app.state.config_path = config_path
     if draft_store_dir is not None:
@@ -1232,6 +1240,7 @@ def _build_request_tools_factory(
     event_sink: EventSink | None,
     conversation_store: ConversationStore | None = None,
     configured_level: int | None = None,
+    notification_store: Any = None,
 ) -> Callable[[str], list[Any]] | None:
     """Build a per-request tools factory for the main chat agent.
 
@@ -1266,6 +1275,7 @@ def _build_request_tools_factory(
                 settings.notification,
                 event_sink=event_sink,
                 session_id=session_id,
+                store=notification_store,
             )
 
         req_factories.append(_make_notification_tools)
@@ -1362,6 +1372,7 @@ def create_agent_from_settings(
     diagnostic_store: Any = None,
     knowledge_store: Any = None,
     continuation_store: Any = None,
+    notification_store: Any = None,
 ) -> LlmioChatAgent:
     """Build an :class:`LlmioChatAgent` wired from *settings*.
 
@@ -1478,6 +1489,7 @@ def create_agent_from_settings(
                         settings.notification,
                         event_sink=subsession_env.event_sink,
                         session_id=subsession_ctx.owner_session_id,
+                        store=notification_store,
                     )
                 )
         # Build per-request tools factory — subsession tools for the main
@@ -1495,6 +1507,7 @@ def create_agent_from_settings(
                 if subsession_ctx is None and not bare
                 else None
             ),
+            notification_store=notification_store,
         )
 
     # Read/write split for background agents. Recall is a retrieval-only
