@@ -273,6 +273,7 @@
   },
   "max_images_per_message": 8,
   "max_image_bytes": 5242880,
+  "vision_model": "openrouter/openai/gpt-4o-mini",
   "allowed_image_media_types": [
     "image/png",
     "image/jpeg",

@@ -60,11 +60,26 @@ def test_defaults() -> None:
     assert settings.server_port == 8000
     assert settings.log_level == "INFO"
     assert settings.agent_instruction.startswith("You are a helpful assistant.")
+    assert settings.vision_model == "openrouter/openai/gpt-4o-mini"
+    assert settings.vision_model_configured is True
 
 
 def test_log_level_default() -> None:
     """Explicit check that ``log_level`` defaults to ``"INFO"``."""
     assert Settings().log_level == "INFO"
+
+
+def test_vision_model_defaults_to_vision_capable_model() -> None:
+    """``vision_model`` defaults to a concrete OpenRouter vision-capable id."""
+    assert Settings().vision_model == "openrouter/openai/gpt-4o-mini"
+    assert Settings().vision_model_configured is True
+
+
+def test_vision_model_empty_means_unconfigured() -> None:
+    """An empty ``vision_model`` marks the vision model as unconfigured."""
+    settings = Settings(vision_model="")
+    assert settings.vision_model == ""
+    assert settings.vision_model_configured is False
 
 
 # ---------------------------------------------------------------------------
@@ -1169,6 +1184,9 @@ _PREEXISTING_ALLOWLIST: set[tuple[str, int, str]] = {
     # config/settings.py — opus / claude-fable-5 in Settings docstring
     ("src/robotsix_chat/config/settings.py", 98, "-opus"),
     ("src/robotsix_chat/config/settings.py", 98, "claude-fable"),
+    # config/settings.py — vision_model default (OpenRouter captioning model)
+    ("src/robotsix_chat/config/settings.py", 160, "gpt-"),
+    ("src/robotsix_chat/config/settings.py", 1948, "gpt-"),
     # config/memory_models.py — gpt-5-nano / gpt-5-mini / deepseek-v4-flash
     ("src/robotsix_chat/config/memory_models.py", 19, "gpt-"),
     ("src/robotsix_chat/config/memory_models.py", 43, "gpt-"),
