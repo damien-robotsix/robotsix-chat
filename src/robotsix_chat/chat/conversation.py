@@ -1155,6 +1155,29 @@ class ConversationStore:
                 "compacted_summary": summary,
             }
 
+        # Atomicity: never advance the compaction indexes (or persist a state
+        # where they are advanced) unless a NON-EMPTY summary was generated.
+        # An empty summary — e.g. a summariser failure — must leave the
+        # previous persisted state fully intact so a later pass or self-heal
+        # can retry. Advancing ``compacted_turn_index`` without a persisted
+        # summary was the original corruption (index advanced, no
+        # ``compacted_summary`` key), so we bail out and return the current
+        # metadata unchanged instead of mutating the session.
+        if not summary:
+            logger.warning(
+                "compaction skipped for session %s — empty summary; "
+                "compacted_turn_index/trimmed_turn_index unchanged",
+                session_id,
+            )
+            return {
+                "session_id": session.session_id,
+                "title": session.title,
+                "last_active": session.wall_last_active,
+                "turn_count": session.turn_count,
+                "closed": session.closed,
+                "compacted_summary": summary,
+            }
+
         if cover_until_index is not None:
             new_index = min(max(0, cover_until_index), len(session.turns))
         else:

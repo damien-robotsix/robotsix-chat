@@ -652,6 +652,29 @@ def test_compact_session_is_in_place():
     assert active == sid
 
 
+def test_compact_session_empty_summary_leaves_indexes_unchanged():
+    """An empty summary never advances the compaction indexes (atomicity)."""
+    store = _store()
+    sid = str(store.create_session("owner-1")["session_id"])
+    store.record(sid, "owner-1", "q1", "a1")
+    store.record(sid, "owner-1", "q2", "a2")
+    # Pre-existing compaction state — must survive untouched.
+    store.compact_session("owner-1", sid, "earlier summary")
+    session = store.get_session(sid)
+    assert session is not None
+    assert session.compacted_turn_index == 2
+
+    store.compact_session("owner-1", sid, "")
+
+    session = store.get_session(sid)
+    assert session is not None
+    assert session.compacted_summary == "earlier summary"
+    assert session.compacted_turn_index == 2
+    assert session.trimmed_turn_index == 0
+    # UI transcript untouched — turns retained for a later self-heal pass.
+    assert store.history(sid) == [("q1", "a1"), ("q2", "a2")]
+
+
 def test_agent_history_replaces_compacted_turns_with_summary():
     """agent_history returns the summary turn plus post-compaction turns."""
     store = _store()
