@@ -1491,7 +1491,7 @@ def create_agent_from_settings(
             # agent has no operator watching the badge change.
             conversation_store if subsession_ctx is None and not bare else None,
             (
-                (settings.chat_model_level or settings.llmio_model_level)
+                settings.llmio_model_level
                 if subsession_ctx is None and not bare
                 else None
             ),
