@@ -155,6 +155,9 @@ class Settings(BaseModel):
             image.  Default ``5_242_880`` (5 MiB).
         allowed_image_media_types: Media types accepted for image attachments.
             Default ``["image/png", "image/jpeg", "image/gif", "image/webp"]``.
+        vision_model: OpenRouter model id used to caption attached images when the
+            active chat model lacks vision support. Empty string means 'vision
+            model unconfigured'.  Default ``openrouter/openai/gpt-4o-mini``.
         mobile_auth: Mobile SSO authentication via tinyauth reverse proxy.
             When enabled, exposes ``GET /auth/login`` and
             ``POST /chat/auth/mobile-token`` for the mobile app's
@@ -1941,9 +1944,29 @@ class Settings(BaseModel):
         default_factory=lambda: ["image/png", "image/jpeg", "image/gif", "image/webp"],
         json_schema_extra={"advanced": True},
     )
+    vision_model: str = Field(
+        default="openrouter/openai/gpt-4o-mini",
+        json_schema_extra={"advanced": True},
+        description=(
+            "OpenRouter model id used to caption attached images when the "
+            "active chat model lacks vision support. Empty string means "
+            "'vision model unconfigured', which triggers the curated "
+            "no-image-support failure path."
+        ),
+    )
     mobile_auth: MobileAuthSettings = Field(
         default_factory=MobileAuthSettings, json_schema_extra={"advanced": True}
     )
+
+    @property
+    def vision_model_configured(self) -> bool:
+        """Whether a vision model is configured for image captioning.
+
+        An empty or unset ``vision_model`` means 'vision model
+        unconfigured' — the curated no-image-support failure path then
+        applies instead of attempting to caption.
+        """
+        return bool(self.vision_model)
 
     model_config = ConfigDict(extra="forbid")
 
