@@ -101,12 +101,6 @@ class Settings(BaseModel):
             keyed (OpenRouter) slot attempts; unused while the keyless
             ``claudeSDK`` default slot serves calls. Without it, provider
             failover is unavailable.
-        chat_model_level: Optional override of ``llmio_model_level`` for the
-            main interactive chat agent.  When ``None`` (default), the chat
-            agent uses ``llmio_model_level``.  Set to a specific level to
-            route chat turns to a different level (e.g. ``3`` for the
-            frontier tier) while other consumers (subsessions, periodic,
-            summary) still use ``llmio_model_level`` or their own overrides.
         summary_model_level: Capability level of the dedicated summariser
             agent — the idle-timeout compaction summary, the carryover
             summary and conversation titles. Defaults to ``1`` (cheap,
@@ -167,9 +161,6 @@ class Settings(BaseModel):
 
     llmio_model_level: int = 2
     llmio_api_key: SecretStr = SecretStr("")
-    chat_model_level: int | None = Field(
-        default=None, json_schema_extra={"advanced": True}
-    )
     summary_model_level: int = Field(default=1, json_schema_extra={"advanced": True})
     llmio_task_budget_tokens: int | None = Field(
         default=None,
@@ -1996,14 +1987,6 @@ class Settings(BaseModel):
         # matters when provider failover routes a call to the keyed
         # OpenRouter slot. A missing key therefore degrades failover
         # instead of failing config load — cli.py logs a warning at startup.
-        if (
-            self.chat_model_level is not None
-            and self.chat_model_level not in VALID_MODEL_LEVELS
-        ):
-            failures.append(
-                f"chat_model_level must be one of {sorted(VALID_MODEL_LEVELS)} "
-                f"or null, got {self.chat_model_level!r}"
-            )
         if self.summary_model_level not in VALID_MODEL_LEVELS:
             failures.append(
                 f"summary_model_level must be one of {sorted(VALID_MODEL_LEVELS)}, "
@@ -2179,6 +2162,16 @@ class Settings(BaseModel):
             data = dict(data)
             del data["low_risk_actions"]
 
+        # Strip the removed chat_model_level override — the main chat agent
+        # now always uses the unified ``llmio_model_level``.
+        if "chat_model_level" in data:
+            logger.info(
+                "Dropping removed config key 'chat_model_level' (unified into "
+                "'llmio_model_level')"
+            )
+            data = dict(data)
+            del data["chat_model_level"]
+
         # Strip pre_authorized_ticket_patterns from subsessions.
         subsessions = data.get("subsessions")
         if (
@@ -2239,6 +2232,11 @@ class Settings(BaseModel):
                 "migrate_legacy_config: dropping removed key 'low_risk_actions'"
             )
             del data["low_risk_actions"]
+        if "chat_model_level" in data:
+            logger.info(
+                "migrate_legacy_config: dropping removed key 'chat_model_level'"
+            )
+            del data["chat_model_level"]
         subsessions = data.get("subsessions")
         if (
             isinstance(subsessions, dict)

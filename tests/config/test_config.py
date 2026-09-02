@@ -520,6 +520,18 @@ def test_legacy_mail_block_is_dropped() -> None:
     assert not hasattr(settings, "mail")
 
 
+def test_legacy_chat_model_level_is_stripped() -> None:
+    """A deployed config still carrying the removed ``chat_model_level`` loads.
+
+    The override was unified into ``llmio_model_level``; a stale key must be
+    dropped by the ``mode="before"`` migration instead of tripping
+    ``extra="forbid"`` and crash-looping the container after an image upgrade.
+    """
+    settings = Settings.model_validate({"llmio_model_level": 3, "chat_model_level": 2})
+    assert not hasattr(settings, "chat_model_level")
+    assert settings.llmio_model_level == 3
+
+
 def test_legacy_lifecycle_base_url_migrates_to_central_deploy_url() -> None:
     """``lifecycle.base_url`` is folded into the canonical ``central_deploy.url``."""
     settings = Settings.model_validate(
@@ -1185,8 +1197,8 @@ _PREEXISTING_ALLOWLIST: set[tuple[str, int, str]] = {
     ("src/robotsix_chat/config/settings.py", 98, "-opus"),
     ("src/robotsix_chat/config/settings.py", 98, "claude-fable"),
     # config/settings.py — vision_model default (OpenRouter captioning model)
-    ("src/robotsix_chat/config/settings.py", 160, "gpt-"),
-    ("src/robotsix_chat/config/settings.py", 1948, "gpt-"),
+    ("src/robotsix_chat/config/settings.py", 154, "gpt-"),
+    ("src/robotsix_chat/config/settings.py", 1939, "gpt-"),
     # config/memory_models.py — gpt-5-nano / gpt-5-mini / deepseek-v4-flash
     ("src/robotsix_chat/config/memory_models.py", 19, "gpt-"),
     ("src/robotsix_chat/config/memory_models.py", 43, "gpt-"),
@@ -1330,14 +1342,10 @@ def test_file_hub_tools_blank_numeric_sentinel_loads_cleanly() -> None:
 
 def test_top_level_optional_numeric_blank_sentinel_becomes_null() -> None:
     """A cleared optional numeric (``int | None``) round-trips to JSON ``null``."""
-    settings = Settings.model_validate(
-        {"chat_model_level": "", "llmio_task_budget_tokens": ""}
-    )
+    settings = Settings.model_validate({"llmio_task_budget_tokens": ""})
 
-    assert settings.chat_model_level is None
     assert settings.llmio_task_budget_tokens is None
     dumped = settings.model_dump(mode="json")
-    assert dumped["chat_model_level"] is None
     assert dumped["llmio_task_budget_tokens"] is None
 
 
@@ -1350,7 +1358,6 @@ def test_production_config_with_blank_numeric_sentinels_loads_cleanly() -> None:
     """
     raw = {
         "llmio_model_level": 2,
-        "chat_model_level": "",
         "llmio_task_budget_tokens": "",
         "idle_timeout_minutes": "",
         "central_deploy": {
@@ -1382,7 +1389,6 @@ def test_production_config_with_blank_numeric_sentinels_loads_cleanly() -> None:
     settings = Settings.model_validate(raw)
 
     # Optional numerics become null; required numerics fall back to defaults.
-    assert settings.chat_model_level is None
     assert settings.central_deploy.component_request_timeout == 60.0
     assert settings.evergoing.keep_recent_runs == 5
     assert settings.feedback.ingest_max_retries == 2
@@ -1395,7 +1401,6 @@ def test_production_config_with_blank_numeric_sentinels_loads_cleanly() -> None:
     dumped = settings.model_dump(mode="json")
     # No numeric field that carried a "" sentinel may re-serialize as "".
     numeric_checks = [
-        dumped["chat_model_level"],
         dumped["llmio_task_budget_tokens"],
         dumped["idle_timeout_minutes"],
         dumped["central_deploy"]["component_request_timeout"],

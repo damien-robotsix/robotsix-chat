@@ -379,7 +379,7 @@ def run_server_from_config(agent: ChatAgent | None = None) -> None:
                 conversation_store=conversation_store,
                 model_level=model_level
                 if model_level is not None
-                else settings.chat_model_level,
+                else settings.llmio_model_level,
                 subsession_env=env,
                 event_sink=event_bus,
                 memory_enabled=settings.memory.periodic_enabled,
@@ -398,7 +398,7 @@ def run_server_from_config(agent: ChatAgent | None = None) -> None:
         agent = create_agent_from_settings(
             settings=settings,
             conversation_store=conversation_store,
-            model_level=settings.chat_model_level,
+            model_level=settings.llmio_model_level,
             subsession_env=env,
             event_sink=event_bus,
             diagnostic_store=diagnostic_store,
