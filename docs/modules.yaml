@@ -358,12 +358,14 @@ modules:
       - src/robotsix_chat/llm/__init__.py
       - src/robotsix_chat/llm/agent.py
       - src/robotsix_chat/llm/capabilities.py
+      - src/robotsix_chat/llm/captioning.py
       - src/robotsix_chat/llm/escalation.py
       - src/robotsix_chat/llm/tool_utils.py
       - docs/llm/agent.md
       - tests/llm/__init__.py
       - tests/llm/test_agent.py
       - tests/llm/test_capabilities.py
+      - tests/llm/test_captioning.py
       - tests/llm/test_escalation.py
       - tests/llm/test_tool_utils.py
       - tests/llm/test_agent_fallback_chain.py

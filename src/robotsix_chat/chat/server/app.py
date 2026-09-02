@@ -1178,7 +1178,11 @@ def _build_static_tools(
         *build_public_fetch_tools(settings.public_fetch, settings.central_deploy),
         *build_langfuse_inspect_tools(settings.langfuse_inspect, settings.langfuse),
         *build_sftp_tools(settings.sftp),
-        *build_file_hub_tools(settings.file_hub_tools),
+        *build_file_hub_tools(
+            settings.file_hub_tools,
+            vision_model=settings.vision_model,
+            vision_api_key=settings.llmio_api_key.get_secret_value(),
+        ),
         *build_volume_tools(settings.volume_tools),
         *build_ticket_poll_tools(settings, component_request=component_request),
         *build_merge_pull_request_tool(settings, component_request=component_request),

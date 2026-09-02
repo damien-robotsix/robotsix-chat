@@ -29,7 +29,8 @@ from pathlib import Path
 from typing import Any
 
 from robotsix_chat.config.models import RenderUrlSettings
-from robotsix_chat.llm.capabilities import IMAGE_OMITTED_NOTE, model_supports_images
+from robotsix_chat.llm.capabilities import model_supports_images
+from robotsix_chat.llm.captioning import caption_or_omit_note
 
 logger = logging.getLogger(__name__)
 
@@ -90,12 +91,20 @@ def _downscale_png(data: bytes, max_pixels: int = MAX_SCREENSHOT_PIXELS) -> byte
 
 def build_render_url_tools(
     settings: RenderUrlSettings,
+    *,
+    vision_model: str = "",
+    vision_api_key: str | None = None,
 ) -> list[Callable[..., Any]]:
     """Return the ``render_url`` tool, or an empty list when disabled.
 
     Args:
         settings: RenderUrl configuration (``enabled`` master switch,
             timeout, viewport dimensions).
+        vision_model: Configured vision model id (``Settings.vision_model``).
+            When set, ``render_url`` sends the screenshot to this model for a
+            caption instead of dropping it with :data:`IMAGE_OMITTED_NOTE` on
+            text-only serving models.
+        vision_api_key: OpenRouter API key for the vision caption call.
 
     Returns:
         A single-element list containing the ``render_url`` async callable,
@@ -201,10 +210,16 @@ def build_render_url_tools(
             return metadata
 
         # A BinaryContent block in a tool result 404s the whole turn on
-        # text-only OpenRouter models — return the metadata (which already
-        # carries the accessibility tree) without the screenshot there.
+        # text-only OpenRouter models — return a caption (when a vision model
+        # is configured) or the metadata + curated omit note there.
         if not model_supports_images():
-            return f"{metadata}\n{IMAGE_OMITTED_NOTE}"
+            return await caption_or_omit_note(
+                metadata,
+                screenshot_bytes,
+                "image/png",
+                vision_model=vision_model,
+                vision_api_key=vision_api_key,
+            )
 
         from pydantic_ai.messages import BinaryContent, TextContent
 
