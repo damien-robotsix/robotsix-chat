@@ -31,7 +31,7 @@ import asyncio
 import contextlib
 import logging
 
-from robotsix_chat.chat.conversation import ConversationStore
+from robotsix_chat.chat.conversation import ConversationStore, Session
 from robotsix_chat.chat.server.routes.chat import ChatAgent
 from robotsix_chat.chat.summarize import generate_idle_summary
 
@@ -120,13 +120,23 @@ class EvergoingSummaryScheduler:
 
     async def _run_once_session(self, session_id: str) -> dict[str, object] | None:
         """Compaction pass for one session; ``None`` when skipped with no work."""
-        # New-input gate — MUST run before any LLM call.
-        if not self._store.has_new_input_since_trim(session_id):
-            return None
-
         session = self._store.get_session(session_id)
         if session is None:
             return None
+
+        # Self-heal first: repair a session whose compaction advanced its
+        # index but never persisted a summary.  This runs BEFORE the
+        # new-input gate because a corrupted session may have no new input
+        # since the last pass yet still need its missing summary backfilled.
+        repair = await self._maybe_repair_summary(session_id, session)
+
+        # New-input gate — MUST run before the (further) compaction LLM call.
+        if not self._store.has_new_input_since_trim(session_id):
+            return repair
+
+        # Carry the self-heal outcome into the compaction audit so a pass
+        # that both repaired and compacted reports both.
+        repaired = bool(repair and repair.get("repaired"))
 
         keep = self._keep_recent_runs
         start = max(session.compacted_turn_index, session.trimmed_turn_index)
@@ -136,7 +146,11 @@ class EvergoingSummaryScheduler:
         # runs accumulated beyond the previous summary.  Deliberately does
         # NOT advance the watermark, so runs keep accumulating.
         if fresh_runs <= keep:
-            return {"compacted": False, "reason": "at most keep_recent_runs fresh"}
+            return {
+                "compacted": False,
+                "reason": "at most keep_recent_runs fresh",
+                "repaired": repaired,
+            }
 
         # Snapshot the fold window BEFORE the (slow) summariser call so
         # turns recorded while it runs are never covered by a summary that
@@ -157,7 +171,11 @@ class EvergoingSummaryScheduler:
                 "summary generation failed for session %s — will retry next pass",
                 session_id,
             )
-            return {"compacted": False, "reason": "summary generation failed"}
+            return {
+                "compacted": False,
+                "reason": "summary generation failed",
+                "repaired": repaired,
+            }
 
         self._store.compact_session(
             "",
@@ -178,6 +196,72 @@ class EvergoingSummaryScheduler:
             "turns_folded": folded,
             "kept_recent_runs": keep,
             "reason": "over keep_recent_runs fresh runs",
+            "repaired": repaired,
+        }
+
+    async def _maybe_repair_summary(
+        self, session_id: str, session: Session
+    ) -> dict[str, object] | None:
+        """Self-heal a session missing its compaction summary.
+
+        Repairs the state where a previous compaction advanced
+        ``compacted_turn_index`` past ``trimmed_turn_index`` but never
+        persisted a ``compacted_summary`` (index moved, summary dropped).
+        The summary is regenerated from the stored covered turns
+        (``turns[:compacted_turn_index]``) and backfilled WITHOUT advancing
+        any index — the covered window is unchanged and no turn is folded or
+        dropped by the repair itself.
+
+        Returns an audit dict when a repair was attempted (``repaired`` True
+        on success, False when regeneration failed), or ``None`` when no
+        repair was needed.  Idempotent: once a non-empty summary is present a
+        subsequent pass regenerates nothing (guarded here and in
+        :meth:`ConversationStore.backfill_compacted_summary`).
+        """
+        # Idempotency + scope guards mirror backfill_compacted_summary so no
+        # LLM call is made when the session does not need a repair.
+        if session.compacted_summary:
+            return None
+        if session.compacted_turn_index <= session.trimmed_turn_index:
+            return None
+
+        turns, actions = self._store.compacted_covered_turns(session_id)
+        if not turns:
+            return None
+
+        summary = await generate_idle_summary(self._run_summary, turns, actions)
+        if not summary:
+            logger.warning(
+                "self-heal summary regeneration failed for session %s "
+                "(compacted_turn_index=%d, trimmed_turn_index=%d) — will "
+                "retry next pass",
+                session_id,
+                session.compacted_turn_index,
+                session.trimmed_turn_index,
+            )
+            return {
+                "repaired": False,
+                "reason": "self-heal summary generation failed",
+            }
+
+        healed = self._store.backfill_compacted_summary(session_id, summary)
+        if not healed:
+            # Lost a race (another writer filled it) — nothing to report.
+            return None
+
+        logger.info(
+            "self-healed session %s: regenerated missing compaction summary "
+            "over %d covered turn(s) (compacted_turn_index=%d, "
+            "trimmed_turn_index=%d); indexes unchanged",
+            session_id,
+            len(turns),
+            session.compacted_turn_index,
+            session.trimmed_turn_index,
+        )
+        return {
+            "repaired": True,
+            "covered_turns": len(turns),
+            "reason": "regenerated missing compaction summary",
         }
 
     async def _run_summary(self, prompt: str) -> str:
