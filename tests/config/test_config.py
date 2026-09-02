@@ -1186,7 +1186,7 @@ _PREEXISTING_ALLOWLIST: set[tuple[str, int, str]] = {
     ("src/robotsix_chat/config/settings.py", 98, "claude-fable"),
     # config/settings.py — vision_model default (OpenRouter captioning model)
     ("src/robotsix_chat/config/settings.py", 160, "gpt-"),
-    ("src/robotsix_chat/config/settings.py", 1935, "gpt-"),
+    ("src/robotsix_chat/config/settings.py", 1948, "gpt-"),
     # config/memory_models.py — gpt-5-nano / gpt-5-mini / deepseek-v4-flash
     ("src/robotsix_chat/config/memory_models.py", 19, "gpt-"),
     ("src/robotsix_chat/config/memory_models.py", 43, "gpt-"),
