@@ -1002,7 +1002,7 @@
     },
     "PeriodicSessionDefinition": {
       "additionalProperties": false,
-      "description": "One named periodic session preset.\n\nAttributes:\n    name: Unique identifier for the preset; also used in session titles\n        (``\"<name> \u2014 <date>\"``).\n    initial_prompt: The one message the scheduler posts into the freshly\n        created session. Write it like a complete task brief: what to do,\n        what the scope is, hard constraints (e.g. read-only), and what\n        the final report should contain. The scheduler prepends a short\n        shared preamble (see ``robotsix_chat.periodic.prompts``).\n    schedule_interval_seconds: Spacing between runs, measured from the\n        last time the preset fired. Default one day.\n    model_level: llmio capability level for this preset's sessions\n        (1 cheap \u2026 3 frontier). ``None`` uses the global\n        ``chat_default_model_level`` resolution, exactly like an operator\n        session.\n    enabled: When ``False`` the preset never fires.",
+      "description": "One named periodic session preset.\n\nAttributes:\n    name: Unique identifier for the preset; also used in session titles\n        (``\"<name> \u2014 <date>\"``).\n    initial_prompt: The one message the scheduler posts into the freshly\n        created session. Write it like a complete task brief: what to do,\n        what the scope is, hard constraints (e.g. read-only), and what\n        the final report should contain. The scheduler prepends a short\n        shared preamble (see ``robotsix_chat.periodic.prompts``).\n    schedule_interval_seconds: Spacing between runs, measured from the\n        last time the preset fired. Default one day.\n    anchor_utc: Optional fixed UTC instant anchoring the schedule. When\n        set, the preset fires at this instant and then every\n        ``schedule_interval_seconds`` thereafter (e.g. an anchor of\n        ``2026-09-03T06:00:00Z`` with a 24h interval fires daily at\n        06:00 UTC). This pins a deterministic daily reference time\n        instead of deriving it from first-registration time. ``None``\n        keeps the legacy behaviour: the first run fires promptly after\n        startup, then spaced by ``schedule_interval_seconds`` from the\n        last firing.\n    model_level: llmio capability level for this preset's sessions\n        (1 cheap \u2026 3 frontier). ``None`` uses the global\n        ``chat_default_model_level`` resolution, exactly like an operator\n        session.\n    enabled: When ``False`` the preset never fires.",
       "properties": {
         "name": {
           "title": "Name",
@@ -1018,6 +1018,20 @@
           "minimum": 300.0,
           "title": "Schedule Interval Seconds",
           "type": "number"
+        },
+        "anchor_utc": {
+          "anyOf": [
+            {
+              "format": "date-time",
+              "type": "string"
+            },
+            {
+              "type": "null"
+            }
+          ],
+          "default": null,
+          "description": "Optional fixed UTC instant anchoring the schedule. When set, the preset fires at this instant and then every schedule_interval_seconds thereafter (e.g. an anchor of '2026-09-03T06:00:00Z' with a 24h interval fires daily at 06:00 UTC). Unset keeps the legacy behaviour: first run promptly after startup, then spaced by schedule_interval_seconds from the last firing.",
+          "title": "Anchor Utc"
         },
         "model_level": {
           "anyOf": [

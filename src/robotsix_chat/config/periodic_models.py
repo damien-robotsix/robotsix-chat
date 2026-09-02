@@ -10,6 +10,8 @@ ordinary session behaviour.
 
 from __future__ import annotations
 
+from datetime import datetime
+
 from pydantic import BaseModel, ConfigDict, Field
 
 # Default spacing between runs of a preset. One day: these are digest-style
@@ -35,6 +37,15 @@ class PeriodicSessionDefinition(BaseModel):
             shared preamble (see ``robotsix_chat.periodic.prompts``).
         schedule_interval_seconds: Spacing between runs, measured from the
             last time the preset fired. Default one day.
+        anchor_utc: Optional fixed UTC instant anchoring the schedule. When
+            set, the preset fires at this instant and then every
+            ``schedule_interval_seconds`` thereafter (e.g. an anchor of
+            ``2026-09-03T06:00:00Z`` with a 24h interval fires daily at
+            06:00 UTC). This pins a deterministic daily reference time
+            instead of deriving it from first-registration time. ``None``
+            keeps the legacy behaviour: the first run fires promptly after
+            startup, then spaced by ``schedule_interval_seconds`` from the
+            last firing.
         model_level: llmio capability level for this preset's sessions
             (1 cheap … 3 frontier). ``None`` uses the global
             ``chat_default_model_level`` resolution, exactly like an operator
@@ -50,6 +61,18 @@ class PeriodicSessionDefinition(BaseModel):
     schedule_interval_seconds: float = Field(
         default=DEFAULT_SCHEDULE_INTERVAL_SECONDS,
         ge=MIN_SCHEDULE_INTERVAL_SECONDS,
+    )
+    anchor_utc: datetime | None = Field(
+        default=None,
+        description=(
+            "Optional fixed UTC instant anchoring the schedule. When set, "
+            "the preset fires at this instant and then every "
+            "schedule_interval_seconds thereafter (e.g. an anchor of "
+            "'2026-09-03T06:00:00Z' with a 24h interval fires daily at "
+            "06:00 UTC). Unset keeps the legacy behaviour: first run "
+            "promptly after startup, then spaced by "
+            "schedule_interval_seconds from the last firing."
+        ),
     )
     model_level: int | None = Field(
         default=None,
