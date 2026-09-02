@@ -91,8 +91,8 @@ class Settings(BaseModel):
     (from its baked default :class:`~robotsix_llmio.config.TierLevelConfig`).
 
     Attributes:
-        llmio_model_level: Capability level — ``1`` (cheap/frequent), ``2``
-            (workhorse, the default) or ``3`` (frontier). Levels are a pure
+        chat_default_model_level: Capability level — ``1`` (cheap/frequent),
+            ``2`` (workhorse, the default) or ``3`` (frontier). Levels are a pure
             capability axis; which provider serves them is llmio's failover
             axis — the keyless Claude SDK default slot (haiku / opus /
             fable) in normal operation, the keyed OpenRouter fallback slot
@@ -159,7 +159,7 @@ class Settings(BaseModel):
 
     """
 
-    llmio_model_level: int = 2
+    chat_default_model_level: int = 2
     llmio_api_key: SecretStr = SecretStr("")
     summary_model_level: int = Field(default=1, json_schema_extra={"advanced": True})
     llmio_task_budget_tokens: int | None = Field(
@@ -1977,10 +1977,11 @@ class Settings(BaseModel):
         """
         failures: list[str] = []
 
-        if self.llmio_model_level not in VALID_MODEL_LEVELS:
+        if self.chat_default_model_level not in VALID_MODEL_LEVELS:
             failures.append(
-                f"llmio.model_level must be one of {sorted(VALID_MODEL_LEVELS)}, "
-                f"got {self.llmio_model_level!r}"
+                f"chat_default_model_level must be one of "
+                f"{sorted(VALID_MODEL_LEVELS)}, "
+                f"got {self.chat_default_model_level!r}"
             )
         # No level requires a key up front any more: every level is served
         # by the keyless Claude SDK default slot, and ``llmio.api_key`` only
@@ -1992,7 +1993,7 @@ class Settings(BaseModel):
                 f"summary_model_level must be one of {sorted(VALID_MODEL_LEVELS)}, "
                 f"got {self.summary_model_level!r}"
             )
-        # Unlike llmio_model_level, a missing key here is not fatal at config
+        # Unlike chat_default_model_level, a missing key here is not fatal at config
         # load — create_agent_from_settings falls back to a keyless level
         # (see cli.py) so a keyed level never breaks a deployment that has
         # not configured an OpenRouter key.
@@ -2163,14 +2164,27 @@ class Settings(BaseModel):
             del data["low_risk_actions"]
 
         # Strip the removed chat_model_level override — the main chat agent
-        # now always uses the unified ``llmio_model_level``.
+        # now always uses the unified ``chat_default_model_level``.
         if "chat_model_level" in data:
             logger.info(
                 "Dropping removed config key 'chat_model_level' (unified into "
-                "'llmio_model_level')"
+                "'chat_default_model_level')"
             )
             data = dict(data)
             del data["chat_model_level"]
+
+        # Rename legacy ``llmio_model_level`` → ``chat_default_model_level``.
+        # Configs serialized before the rename still carry the old key; map
+        # its value over so the setting is preserved (extra="forbid" would
+        # otherwise reject the stale key and brick config load).
+        if "llmio_model_level" in data:
+            logger.info(
+                "Renaming legacy config key 'llmio_model_level' → "
+                "'chat_default_model_level'"
+            )
+            data = dict(data)
+            legacy_level = data.pop("llmio_model_level")
+            data.setdefault("chat_default_model_level", legacy_level)
 
         # Strip pre_authorized_ticket_patterns from subsessions.
         subsessions = data.get("subsessions")
@@ -2237,6 +2251,13 @@ class Settings(BaseModel):
                 "migrate_legacy_config: dropping removed key 'chat_model_level'"
             )
             del data["chat_model_level"]
+        if "llmio_model_level" in data:
+            logger.info(
+                "migrate_legacy_config: renaming legacy key 'llmio_model_level' "
+                "→ 'chat_default_model_level'"
+            )
+            legacy_level = data.pop("llmio_model_level")
+            data.setdefault("chat_default_model_level", legacy_level)
         subsessions = data.get("subsessions")
         if (
             isinstance(subsessions, dict)
@@ -2298,6 +2319,7 @@ class Settings(BaseModel):
 
         # Top-level object fields — tolerate "" and JS sentinels → {}
         _object_keys = (
+            "llmio_tier_overrides",
             "langfuse",
             "openrouter",
             "langfuse_inspect",

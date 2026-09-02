@@ -37,7 +37,7 @@ class PeriodicSessionDefinition(BaseModel):
             last time the preset fired. Default one day.
         model_level: llmio capability level for this preset's sessions
             (1 cheap … 3 frontier). ``None`` uses the global
-            ``llmio_model_level`` resolution, exactly like an operator
+            ``chat_default_model_level`` resolution, exactly like an operator
             session.
         enabled: When ``False`` the preset never fires.
 

@@ -59,7 +59,7 @@ a gitignored local file, and set the key there (never in the committed template)
 ```bash
 uv sync --extra openrouter
 cp config/config.json config/config.local.json
-# Edit config/config.local.json: set llmio_model_level to 1 and llmio_api_key
+# Edit config/config.local.json: set chat_default_model_level to 1 and llmio_api_key
 ROBOTSIX_CONFIG_FILE=config/config.local.json uv run robotsix-chat
 ```
 
@@ -126,7 +126,7 @@ at that file.
 
 ```jsonc
 {
-  "llmio_model_level": 3,
+  "chat_default_model_level": 3,
   // "llmio_api_key": "sk-or-...",  // pragma: allowlist secret
   "server": {
     "host": "127.0.0.1",

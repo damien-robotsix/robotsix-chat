@@ -1008,7 +1008,7 @@ async def test_chat_endpoint_rejects_invalid_image_input(
 
 def test_create_agent_from_settings_explicit() -> None:
     """``create_agent_from_settings`` wires llmio fields from a ``Settings``."""
-    settings = Settings(llmio_model_level=2, llmio_api_key="sk-from-settings")
+    settings = Settings(chat_default_model_level=2, llmio_api_key="sk-from-settings")
 
     agent = create_agent_from_settings("Be concise.", settings=settings)
 
@@ -1152,7 +1152,7 @@ async def test_create_agent_from_settings_uses_load_when_none(
     with patch(
         "robotsix_chat.config.settings.load_config",
         return_value=Settings(
-            llmio_model_level=1, llmio_api_key=SecretStr("sk-env-test")
+            chat_default_model_level=1, llmio_api_key=SecretStr("sk-env-test")
         ),
     ):
         result = create_agent_from_settings("Helpful bot.")
@@ -1182,7 +1182,7 @@ async def test_run_server_from_config_creates_agent_from_settings(
         patch(
             "robotsix_chat.config.settings.load_config",
             return_value=Settings(
-                llmio_model_level=2,
+                chat_default_model_level=2,
                 server_host="127.0.0.1",
                 server_port=8080,
             ),
@@ -1903,8 +1903,8 @@ async def test_subsessions_close_cancels_worker_and_delivers_summary() -> None:
 
 
 def test_create_agent_model_level_override() -> None:
-    """``model_level`` overrides ``settings.llmio_model_level``."""
-    settings = Settings(llmio_model_level=2, llmio_api_key="sk-key")
+    """``model_level`` overrides ``settings.chat_default_model_level``."""
+    settings = Settings(chat_default_model_level=2, llmio_api_key="sk-key")
 
     agent = create_agent_from_settings("Be terse.", settings=settings, model_level=2)
 

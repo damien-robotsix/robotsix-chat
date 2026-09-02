@@ -340,7 +340,7 @@ def test_get_config_returns_masked_data(tmp_path: Path) -> None:
     _write_config(
         config_path,
         {
-            "llmio_model_level": 2,
+            "chat_default_model_level": 2,
             "llmio_api_key": "sk-real",  # pragma: allowlist secret
             "server_port": 8080,
             "memory": {
@@ -358,7 +358,7 @@ def test_get_config_returns_masked_data(tmp_path: Path) -> None:
     _assert_version_header(data, 1)
     config = data["config"]
 
-    assert config["llmio_model_level"] == 2
+    assert config["chat_default_model_level"] == 2
     assert config["llmio_api_key"] == "**********"
     assert config["server_port"] == 8080
     assert (  # pragma: allowlist secret
@@ -382,7 +382,7 @@ def test_get_config_missing_file(tmp_path: Path) -> None:
 def test_get_config_includes_schema(tmp_path: Path) -> None:
     """GET /config includes a valid JSON Schema at the ``schema`` key."""
     config_path = tmp_path / "config.json"
-    _write_config(config_path, {"llmio_model_level": 2})
+    _write_config(config_path, {"chat_default_model_level": 2})
     client = _make_app(config_path)
     resp = client.get("/config")
     assert resp.status_code == 200
@@ -404,7 +404,7 @@ def test_get_config_includes_periodic_when_absent(tmp_path: Path) -> None:
     The presets editor always has a section to render.
     """
     config_path = tmp_path / "config.json"
-    _write_config(config_path, {"llmio_model_level": 2, "server_port": 8080})
+    _write_config(config_path, {"chat_default_model_level": 2, "server_port": 8080})
     client = _make_app(config_path)
 
     resp = client.get("/config")
@@ -423,7 +423,7 @@ def test_get_config_overlay_preserves_file_values(tmp_path: Path) -> None:
     _write_config(
         config_path,
         {
-            "llmio_model_level": 2,
+            "chat_default_model_level": 2,
             "periodic": {
                 "sessions": [
                     {
@@ -462,7 +462,7 @@ def test_get_config_drops_retired_autonomous_block(tmp_path: Path) -> None:
     _write_config(
         config_path,
         {
-            "llmio_model_level": 2,
+            "chat_default_model_level": 2,
             "autonomous": {"completion_marker": "---AUTONOMOUS COMPLETE---"},
         },
     )
@@ -487,7 +487,7 @@ def test_put_succeeds_when_file_has_retired_autonomous_block(
     _write_config(
         config_path,
         {
-            "llmio_model_level": 2,
+            "chat_default_model_level": 2,
             "autonomous": {"sessions": [{"name": "default"}]},
         },
     )
@@ -511,7 +511,7 @@ def test_put_preserves_unmentioned_keys(tmp_path: Path) -> None:
     _write_config(
         config_path,
         {
-            "llmio_model_level": 2,
+            "chat_default_model_level": 2,
             "server_port": 8080,
             "memory": {
                 "embedding": {"endpoint": "http://box:11434/v1"},
@@ -529,7 +529,7 @@ def test_put_preserves_unmentioned_keys(tmp_path: Path) -> None:
     # Re-read the file.
     on_disk = _read_config_json(config_path)
     assert on_disk["server_port"] == 9000
-    assert on_disk["llmio_model_level"] == 2  # preserved
+    assert on_disk["chat_default_model_level"] == 2  # preserved
     # preserved (not blanked by partial save)
     assert on_disk["memory"]["embedding"]["endpoint"] == "http://box:11434/v1"
 
@@ -576,7 +576,7 @@ def test_put_rejects_invalid_config(tmp_path: Path) -> None:
     _write_config(
         config_path,
         {
-            "llmio_model_level": 2,
+            "chat_default_model_level": 2,
             "memory": {
                 "enabled": True,
                 "embedding": {"endpoint": "http://box:11434/v1"},
@@ -609,17 +609,73 @@ def test_put_rejects_invalid_config(tmp_path: Path) -> None:
 def test_put_rejects_invalid_model_level(tmp_path: Path) -> None:
     """An invalid model_level is rejected with 422 and does not persist."""
     config_path = tmp_path / "config.json"
-    _write_config(config_path, {"llmio_model_level": 2})
+    _write_config(config_path, {"chat_default_model_level": 2})
     client = _make_app(config_path)
 
-    resp = client.put("/config", json={"llmio_model_level": 99})
+    resp = client.put("/config", json={"chat_default_model_level": 99})
     assert resp.status_code == 422
     error_data = resp.json()
     assert "failures" in error_data
-    assert any("llmio.model_level" in f for f in error_data["failures"])
+    assert any("chat_default_model_level" in f for f in error_data["failures"])
 
     on_disk = _read_config_json(config_path)
-    assert on_disk["llmio_model_level"] == 2
+    assert on_disk["chat_default_model_level"] == 2
+
+
+def test_put_model_level_preserves_tier_overrides(tmp_path: Path) -> None:
+    """Changing only the model level via the panel keeps llmio_tier_overrides.
+
+    Regression guard: the settings panel serialised the dict-typed
+    ``llmio_tier_overrides`` field with ``String(value)`` → the literal
+    ``"[object Object]"`` string, which pydantic rejected with a
+    ``dict_type`` error, blocking every save.  The submitted sentinel must
+    be dropped so the deep-merge preserves the stored dict.
+    """
+    from robotsix_llmio.config import FALLBACK_LEVEL3
+
+    config_path = tmp_path / "config.json"
+    stored_overrides = {"fallback": {"level2": FALLBACK_LEVEL3.model_dump()}}
+    _write_config(
+        config_path,
+        {
+            "chat_default_model_level": 1,
+            "llmio_tier_overrides": stored_overrides,
+        },
+    )
+    client = _make_app(config_path)
+
+    # Mimic the panel: it re-serialises the whole document and mangles the
+    # object field into "[object Object]" while the operator only changed
+    # the model level to 2.
+    resp = client.put(
+        "/config",
+        json={
+            "chat_default_model_level": 2,
+            "llmio_tier_overrides": "[object Object]",
+        },
+    )
+    assert resp.status_code == 200, resp.json()
+
+    on_disk = _read_config_json(config_path)
+    assert on_disk["chat_default_model_level"] == 2
+    # The stored dict must be intact — never the corrupt sentinel string.
+    assert on_disk["llmio_tier_overrides"] == stored_overrides
+
+
+def test_strip_corrupt_object_sentinels_recurses() -> None:
+    """The sentinel is stripped at any depth; real values are kept."""
+    from robotsix_chat.chat.server.routes.config import (
+        _strip_corrupt_object_sentinels,
+    )
+
+    cleaned = _strip_corrupt_object_sentinels(
+        {
+            "a": "[object Object]",
+            "b": 2,
+            "nested": {"c": "[object Object]", "d": "keep"},
+        }
+    )
+    assert cleaned == {"b": 2, "nested": {"d": "keep"}}
 
 
 def test_put_reports_all_precondition_failures(tmp_path: Path) -> None:
@@ -628,7 +684,7 @@ def test_put_reports_all_precondition_failures(tmp_path: Path) -> None:
     _write_config(
         config_path,
         {
-            "llmio_model_level": 2,
+            "chat_default_model_level": 2,
             "memory": {
                 "enabled": True,
                 "embedding": {"endpoint": "http://box:11434/v1"},
@@ -644,7 +700,7 @@ def test_put_reports_all_precondition_failures(tmp_path: Path) -> None:
     resp = client.put(
         "/config",
         json={
-            "llmio_model_level": 99,
+            "chat_default_model_level": 99,
             "memory": {"embedding": {"endpoint": ""}},
         },
     )
@@ -653,7 +709,7 @@ def test_put_reports_all_precondition_failures(tmp_path: Path) -> None:
     assert "failures" in error_data
     failures = error_data["failures"]
     # Both preconditions should appear
-    assert any("llmio.model_level" in f for f in failures), failures
+    assert any("chat_default_model_level" in f for f in failures), failures
     assert any("memory.embedding.endpoint" in f for f in failures), failures
 
 
@@ -668,7 +724,7 @@ def test_put_masked_secret_preserves_original(tmp_path: Path) -> None:
     _write_config(
         config_path,
         {
-            "llmio_model_level": 2,
+            "chat_default_model_level": 2,
             "llmio_api_key": "sk-real-key",  # pragma: allowlist secret
         },
     )
@@ -687,7 +743,7 @@ def test_put_blank_secret_preserves_original(tmp_path: Path) -> None:
     _write_config(
         config_path,
         {
-            "llmio_model_level": 2,
+            "chat_default_model_level": 2,
             "llmio_api_key": "sk-real-key",  # pragma: allowlist secret
         },
     )
@@ -706,7 +762,7 @@ def test_put_new_secret_overwrites_existing(tmp_path: Path) -> None:
     _write_config(
         config_path,
         {
-            "llmio_model_level": 2,
+            "chat_default_model_level": 2,
             "llmio_api_key": "sk-old",  # pragma: allowlist secret
         },
     )
@@ -762,7 +818,7 @@ def test_put_settings_validation_roundtrip(tmp_path: Path) -> None:
 
     config_path = tmp_path / "config.json"
     # Start with a minimal valid config.
-    _write_config(config_path, {"llmio_model_level": 2})
+    _write_config(config_path, {"chat_default_model_level": 2})
     client = _make_app(config_path)
 
     # Add server_port and idle_timeout.
@@ -787,7 +843,7 @@ def test_put_settings_validation_roundtrip(tmp_path: Path) -> None:
 def test_put_increments_version(tmp_path: Path) -> None:
     """Each successful PUT increments the version number."""
     config_path = tmp_path / "config.json"
-    _write_config(config_path, {"llmio_model_level": 2})
+    _write_config(config_path, {"chat_default_model_level": 2})
     client = _make_app(config_path)
 
     resp1 = client.put("/config", json={"server_port": 9000})
@@ -809,7 +865,7 @@ def test_put_increments_version(tmp_path: Path) -> None:
 def test_get_versions_returns_history(tmp_path: Path) -> None:
     """GET /config/versions returns version history entries."""
     config_path = tmp_path / "config.json"
-    _write_config(config_path, {"llmio_model_level": 2})
+    _write_config(config_path, {"chat_default_model_level": 2})
     client = _make_app(config_path)
 
     # Bootstrap: at least one version exists from a GET.
@@ -839,7 +895,7 @@ def test_get_versions_returns_history(tmp_path: Path) -> None:
 def test_get_versions_no_history(tmp_path: Path) -> None:
     """GET /config/versions bootstraps if no prior history exists."""
     config_path = tmp_path / "config.json"
-    _write_config(config_path, {"llmio_model_level": 2})
+    _write_config(config_path, {"chat_default_model_level": 2})
     client = _make_app(config_path)
 
     # Don't call GET /config first — go straight to /config/versions.
@@ -861,7 +917,7 @@ def test_get_version_document_returns_masked_document(tmp_path: Path) -> None:
     _write_config(
         config_path,
         {
-            "llmio_model_level": 2,
+            "chat_default_model_level": 2,
             "memory": {"llm": {"model": "openrouter/openai/gpt-5-mini"}},
             "openrouter": {"keys": {"robotsix-chat-cognee": "plain-secret-a"}},
         },
@@ -898,7 +954,7 @@ def test_get_version_document_empty_secret_stays_empty(tmp_path: Path) -> None:
 def test_get_version_document_unknown_version_returns_404(tmp_path: Path) -> None:
     """Unknown version returns 404; non-integer segment also 404s."""
     config_path = tmp_path / "config.json"
-    _write_config(config_path, {"llmio_model_level": 2})
+    _write_config(config_path, {"chat_default_model_level": 2})
     client = _make_app(config_path)
     client.get("/config")  # bootstrap v1
 
@@ -925,7 +981,7 @@ def test_version_diff_reports_nested_changed_paths(tmp_path: Path) -> None:
     _write_config(
         config_path,
         {
-            "llmio_model_level": 2,
+            "chat_default_model_level": 2,
             "continuation": {"max_consecutive": 3},
             "memory": {"llm": {"model": "openrouter/openai/gpt-5-mini"}},
             "openrouter": {"keys": {"robotsix-chat-cognee": "secret-a"}},
@@ -991,7 +1047,7 @@ def test_version_diff_first_version_diffs_empty_document(tmp_path: Path) -> None
     _write_config(
         config_path,
         {
-            "llmio_model_level": 2,
+            "chat_default_model_level": 2,
             "memory": {"llm": {"model": "openrouter/openai/gpt-5-mini"}},
         },
     )
@@ -1005,9 +1061,12 @@ def test_version_diff_first_version_diffs_empty_document(tmp_path: Path) -> None
     assert body["previous_version"] == 0
     by_path = {c["path"]: c for c in body["changes"]}
 
-    # llmio_model_level is added
-    assert by_path["llmio_model_level"] == {"path": "llmio_model_level", "new": 2}
-    assert "old" not in by_path["llmio_model_level"]
+    # chat_default_model_level is added
+    assert by_path["chat_default_model_level"] == {
+        "path": "chat_default_model_level",
+        "new": 2,
+    }
+    assert "old" not in by_path["chat_default_model_level"]
     # Nested path added
     assert by_path["memory.llm.model"] == {
         "path": "memory.llm.model",
@@ -1019,7 +1078,7 @@ def test_version_diff_first_version_diffs_empty_document(tmp_path: Path) -> None
 def test_version_diff_unknown_version_returns_404(tmp_path: Path) -> None:
     """Diff of a nonexistent version returns 404."""
     config_path = tmp_path / "config.json"
-    _write_config(config_path, {"llmio_model_level": 2})
+    _write_config(config_path, {"chat_default_model_level": 2})
     client = _make_app(config_path)
     client.get("/config")  # bootstrap v1
 
@@ -1035,7 +1094,7 @@ def test_version_diff_unknown_version_returns_404(tmp_path: Path) -> None:
 def test_rollback_to_previous_version(tmp_path: Path) -> None:
     """Rolling back restores that version's data and creates a new version."""
     config_path = tmp_path / "config.json"
-    _write_config(config_path, {"llmio_model_level": 2, "server_port": 8000})
+    _write_config(config_path, {"chat_default_model_level": 2, "server_port": 8000})
     client = _make_app(config_path)
 
     # Bootstrap version history.
@@ -1058,13 +1117,13 @@ def test_rollback_to_previous_version(tmp_path: Path) -> None:
     # Verify the config was restored.
     on_disk = _read_config_json(config_path)
     assert on_disk["server_port"] == 8000
-    assert on_disk["llmio_model_level"] == 2
+    assert on_disk["chat_default_model_level"] == 2
 
 
 def test_rollback_nonexistent_version(tmp_path: Path) -> None:
     """Rollback to a nonexistent version returns 404."""
     config_path = tmp_path / "config.json"
-    _write_config(config_path, {"llmio_model_level": 2})
+    _write_config(config_path, {"chat_default_model_level": 2})
     client = _make_app(config_path)
 
     # Bootstrap version history.
@@ -1077,7 +1136,7 @@ def test_rollback_nonexistent_version(tmp_path: Path) -> None:
 def test_rollback_invalid_version_param(tmp_path: Path) -> None:
     """Rollback with a non-integer version param returns 400."""
     config_path = tmp_path / "config.json"
-    _write_config(config_path, {"llmio_model_level": 2})
+    _write_config(config_path, {"chat_default_model_level": 2})
     client = _make_app(config_path)
 
     # Bootstrap version history.
@@ -1090,7 +1149,7 @@ def test_rollback_invalid_version_param(tmp_path: Path) -> None:
 def test_rollback_no_history(tmp_path: Path) -> None:
     """Rollback with no prior version history returns 404."""
     config_path = tmp_path / "config.json"
-    _write_config(config_path, {"llmio_model_level": 2})
+    _write_config(config_path, {"chat_default_model_level": 2})
     client = _make_app(config_path)
 
     # No bootstrap (no GET /config, no PUT) — no version history.
@@ -1111,7 +1170,7 @@ def test_rollback_no_history(tmp_path: Path) -> None:
 def test_get_config_nests_document_under_config_key(tmp_path: Path) -> None:
     """GET /config returns exactly ``config``/``schema``/``version``."""
     config_path = tmp_path / "config.json"
-    _write_config(config_path, {"llmio_model_level": 2, "server_port": 8080})
+    _write_config(config_path, {"chat_default_model_level": 2, "server_port": 8080})
     client = _make_app(config_path)
 
     data = client.get("/config").json()
@@ -1120,7 +1179,7 @@ def test_get_config_nests_document_under_config_key(tmp_path: Path) -> None:
     assert data["config"]["server_port"] == 8080
     # No config key ever leaks to the top level.
     assert "server_port" not in data
-    assert "llmio_model_level" not in data
+    assert "chat_default_model_level" not in data
 
 
 def test_put_returns_effective_config(tmp_path: Path) -> None:
@@ -1129,7 +1188,7 @@ def test_put_returns_effective_config(tmp_path: Path) -> None:
     _write_config(
         config_path,
         {
-            "llmio_model_level": 2,
+            "chat_default_model_level": 2,
             "server_port": 8080,
             "llmio_api_key": "sk-real",  # pragma: allowlist secret
         },
@@ -1142,7 +1201,7 @@ def test_put_returns_effective_config(tmp_path: Path) -> None:
 
     assert set(body) == {"config", "version"}
     assert body["config"]["server_port"] == 9000
-    assert body["config"]["llmio_model_level"] == 2  # untouched key round-trips
+    assert body["config"]["chat_default_model_level"] == 2  # untouched key round-trips
     assert body["config"]["llmio_api_key"] == "**********"
     assert "sk-real" not in resp.text  # pragma: allowlist secret
 
@@ -1154,7 +1213,7 @@ def test_put_response_config_matches_get(tmp_path: Path) -> None:
     next Save diffs against a stale document and writes phantom changes.
     """
     config_path = tmp_path / "config.json"
-    _write_config(config_path, {"llmio_model_level": 2, "server_port": 8080})
+    _write_config(config_path, {"chat_default_model_level": 2, "server_port": 8080})
     client = _make_app(config_path)
     client.get("/config")  # bootstrap version history
 
@@ -1167,7 +1226,7 @@ def test_put_response_config_matches_get(tmp_path: Path) -> None:
 def test_get_versions_wraps_list_under_versions_key(tmp_path: Path) -> None:
     """GET /config/versions returns ``{"versions": [...]}``, not a bare list."""
     config_path = tmp_path / "config.json"
-    _write_config(config_path, {"llmio_model_level": 2})
+    _write_config(config_path, {"chat_default_model_level": 2})
     client = _make_app(config_path)
     client.get("/config")
 
@@ -1181,7 +1240,7 @@ def test_get_versions_wraps_list_under_versions_key(tmp_path: Path) -> None:
 def test_get_version_document_nests_under_config_key(tmp_path: Path) -> None:
     """GET /config/versions/{version} nests the stored document too."""
     config_path = tmp_path / "config.json"
-    _write_config(config_path, {"llmio_model_level": 2, "server_port": 8080})
+    _write_config(config_path, {"chat_default_model_level": 2, "server_port": 8080})
     client = _make_app(config_path)
     client.get("/config")  # bootstrap v1
 
@@ -1194,7 +1253,7 @@ def test_get_version_document_nests_under_config_key(tmp_path: Path) -> None:
 def test_rollback_returns_effective_config(tmp_path: Path) -> None:
     """POST /config/rollback answers with the same envelope as PUT."""
     config_path = tmp_path / "config.json"
-    _write_config(config_path, {"llmio_model_level": 2, "server_port": 8000})
+    _write_config(config_path, {"chat_default_model_level": 2, "server_port": 8000})
     client = _make_app(config_path)
     client.get("/config")  # v1
     client.put("/config", json={"server_port": 9000})  # v2
@@ -1234,7 +1293,7 @@ def test_get_config_deploy_returns_deploy_section(tmp_path: Path) -> None:
 def test_get_config_deploy_includes_schema(tmp_path: Path) -> None:
     """GET /config/deploy returns a schema describing deploy config shape."""
     config_path = tmp_path / "config.json"
-    _write_config(config_path, {"llmio_model_level": 2})
+    _write_config(config_path, {"chat_default_model_level": 2})
     client = _make_app(config_path)
     resp = client.get("/config/deploy")
     assert resp.status_code == 200
