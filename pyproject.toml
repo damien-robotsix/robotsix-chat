@@ -78,7 +78,7 @@ tracing = ["robotsix-llmio[tracing]"]
 # previously a shadow/WAL self-heal). An unnoticed engine change silently
 # destroyed the live knowledge graph on every startup. Re-pin deliberately,
 # and re-read `memory/cognee.py` against the new engine's on-disk layout.
-memory = ["cognee==1.4.0", "transformers"]
+memory = ["cognee==1.5.3", "transformers"]
 # render-url: Playwright + headless Chromium for the render_url(url) tool
 # (full-page screenshots + accessibility tree extraction).  Optional —
 # when absent the factory returns no tools.
