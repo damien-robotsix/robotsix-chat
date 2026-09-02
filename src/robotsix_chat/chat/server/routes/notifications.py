@@ -1,9 +1,12 @@
 """Unread-notification API endpoints for the chat UI.
 
 ``GET /notifications/unread`` returns the persisted notifications the user
-has not yet acknowledged (``read=false``), oldest first.  ``POST
-/notifications/read`` marks notifications as read — either a caller-supplied
-list of ids, or (with an empty/omitted ``ids``) all currently unread records.
+has not yet acknowledged (``read=false``), oldest first.  The list is
+paginated via the ``limit`` and ``offset`` query parameters (default
+``limit=100``, ``offset=0``) so clients with many unread notifications
+retrieve them one page at a time.  ``POST /notifications/read`` marks
+notifications as read — either a caller-supplied list of ids, or (with an
+empty/omitted ``ids``) all currently unread records.
 
 Both endpoints read from the shared
 :class:`~robotsix_chat.notification.store.NotificationStore` that
@@ -24,6 +27,55 @@ from starlette.responses import JSONResponse
 from ._shared import _parse_json_body
 
 logger = logging.getLogger(__name__)
+
+#: Default number of unread notifications returned per page.
+DEFAULT_PAGE_LIMIT = 100
+
+
+def _parse_pagination(request: Request) -> tuple[int, int]:
+    """Parse ``limit``/``offset`` query params for the unread listing.
+
+    ``limit`` defaults to :data:`DEFAULT_PAGE_LIMIT` and must be a positive
+    integer.  ``offset`` defaults to ``0`` and must be a non-negative
+    integer.  Malformed or out-of-range values raise HTTP 400.
+
+    Returns:
+        A ``(limit, offset)`` tuple.
+
+    """
+    params = request.query_params
+
+    raw_limit = params.get("limit")
+    if raw_limit is None:
+        limit = DEFAULT_PAGE_LIMIT
+    else:
+        try:
+            limit = int(raw_limit)
+        except TypeError, ValueError:
+            raise HTTPException(
+                status_code=400, detail="limit must be a positive integer"
+            ) from None
+        if limit < 1:
+            raise HTTPException(
+                status_code=400, detail="limit must be a positive integer"
+            )
+
+    raw_offset = params.get("offset")
+    if raw_offset is None:
+        offset = 0
+    else:
+        try:
+            offset = int(raw_offset)
+        except TypeError, ValueError:
+            raise HTTPException(
+                status_code=400, detail="offset must be a non-negative integer"
+            ) from None
+        if offset < 0:
+            raise HTTPException(
+                status_code=400, detail="offset must be a non-negative integer"
+            )
+
+    return limit, offset
 
 
 def _get_store(request: Request) -> Any:
@@ -51,10 +103,15 @@ async def notifications_unread_endpoint(request: Request) -> JSONResponse:
     """Return unread notifications (``read=false``), oldest first.
 
     Records are ordered by ``ts`` ascending so the UI renders the oldest
-    unacknowledged notification first.  The response is a JSON array of
-    record objects (``id``, ``ts``, ``title``, ``body``, ``source_session``,
-    ``delivered``, ``read``).
+    unacknowledged notification first.  The listing is paginated via the
+    ``limit`` and ``offset`` query parameters (default ``limit=100``,
+    ``offset=0``): ``limit`` must be a positive integer and ``offset`` a
+    non-negative integer, or the endpoint responds with HTTP 400.  The
+    response is a JSON array of at most ``limit`` record objects (``id``,
+    ``ts``, ``title``, ``body``, ``source_session``, ``delivered``,
+    ``read``) starting at ``offset``.
     """
+    limit, offset = _parse_pagination(request)
     store = _get_store(request)
     try:
         records = store.list()
@@ -67,7 +124,8 @@ async def notifications_unread_endpoint(request: Request) -> JSONResponse:
 
     unread = [r for r in records if not r.read]
     unread.sort(key=lambda r: r.ts)
-    return JSONResponse([_to_payload(r) for r in unread])
+    page = unread[offset : offset + limit]
+    return JSONResponse([_to_payload(r) for r in page])
 
 
 async def notifications_read_endpoint(request: Request) -> JSONResponse:
