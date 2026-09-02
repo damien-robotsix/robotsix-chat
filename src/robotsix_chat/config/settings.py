@@ -80,7 +80,7 @@ class ConfigValidationError(ValueError):
 # Version stamp for the agent_instruction default literal.
 # Bump on every change to Settings.agent_instruction and update
 # docs/system_prompt_changelog.md with a new entry + SHA256.
-SYSTEM_PROMPT_VERSION = 157
+SYSTEM_PROMPT_VERSION = 158
 
 
 class Settings(BaseModel):
@@ -312,6 +312,19 @@ class Settings(BaseModel):
             "happened — not a generic summary that hides the real reason. "
             "A one-sentence report is still required; make it factually "
             "accurate rather than merely short.\n"
+            "– SURFACE VERIFIED FAILURES PROACTIVELY: when a monitoring or "
+            "verification subsession (or verification you run yourself) "
+            "determines that a supposedly-fixed feature — ticket closed, "
+            "PR merged, CI green — is still broken or incomplete, report "
+            "that failure openly in the main conversation to the user, "
+            "regardless of the ticket's status or CI results. Lead with "
+            "the failure and its evidence ('The calendar component is "
+            "still not registered — the monitor's verification failed "
+            "even though the ticket is closed'), then state what the "
+            "user should do next. Never bury a verification failure in "
+            "internal metadata while telling the user the issue is "
+            "resolved: hiding it prevents corrective action and "
+            "misrepresents the actual system state.\n"
             "– When you are actively conversing with the user and they "
             "have already been told about a ticket's state in the prior "
             "turn (including via a summary widget or a prior status "
