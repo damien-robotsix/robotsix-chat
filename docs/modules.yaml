@@ -216,6 +216,7 @@ modules:
       - docs/chat/server.md
       - docs/chat/server/mobile_sso_runbook.md
       - docs/chat/server/routes/admin.md
+      - docs/chat/server/routes/notifications.md
       - tests/chat/__init__.py
       - tests/chat/test_cli.py
       - tests/chat/test_conversation.py
