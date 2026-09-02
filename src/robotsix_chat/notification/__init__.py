@@ -30,6 +30,7 @@ conversation (subsessions share the agent's tool surface).
 
 from __future__ import annotations
 
+import logging
 from collections.abc import Callable
 from pathlib import Path
 from typing import TYPE_CHECKING, Any
@@ -39,6 +40,9 @@ from robotsix_chat.chat.events import SSE_NOTIFICATION_TYPE
 if TYPE_CHECKING:
     from robotsix_chat.chat.events import EventSink
     from robotsix_chat.config.models import NotificationSettings
+    from robotsix_chat.notification.store import NotificationStore
+
+logger = logging.getLogger(__name__)
 
 __all__ = ["build_notification_tools", "load_notification_skill"]
 
@@ -59,12 +63,37 @@ def load_notification_skill() -> str:
         return ""
 
 
+def _has_active_subscribers(event_sink: EventSink, session_id: str) -> bool:
+    """Return True when at least one SSE client is subscribed to *session_id*.
+
+    The concrete :class:`~robotsix_chat.chat.events.EventBus` exposes
+    :meth:`~robotsix_chat.chat.events.EventBus.subscriber_count`; sinks
+    without subscriber visibility (e.g. test spies) are treated as having
+    no live subscriber, so the record is stored undelivered and would be
+    replayed to a later-connecting client.
+    """
+    count = getattr(event_sink, "subscriber_count", None)
+    return count is not None and count(session_id) > 0
+
+
 def build_notification_tools(
     settings: NotificationSettings,
     event_sink: EventSink,
     session_id: str,
+    store: NotificationStore | None = None,
 ) -> list[Callable[..., Any]]:
-    """Return the notification tool for the agent, or ``[]`` when disabled."""
+    """Return the notification tool for the agent, or ``[]`` when disabled.
+
+    Args:
+        settings: Notification config (the ``enabled`` master switch).
+        event_sink: The per-session SSE bus notifications are published to.
+        session_id: The chat session the notification is scoped to.
+        store: Optional shared :class:`NotificationStore` persisting each
+            notification to chat-data so undelivered notifications survive
+            a disconnected browser.  When ``None``, notifications are
+            published but not persisted (legacy behaviour).
+
+    """
     if not settings.enabled:
         return []
 
@@ -96,8 +125,10 @@ def build_notification_tools(
         routine completions, ``"default"`` for standard notifications,
         ``"high"`` for urgent attention).
 
-        Delivery only reaches clients that are currently connected — the
-        notification is silently dropped when no browser is listening.
+        Delivery only reaches clients that are currently connected — when no
+        browser is listening, the live SSE event is dropped but the
+        notification is persisted so it can be replayed to the next
+        connecting client.
 
         Args:
             title: One-line notification title (required, keep it short).
@@ -112,7 +143,8 @@ def build_notification_tools(
         Returns:
             ``"Notification sent."`` on success.  Publication is always
             successful — frames are silently dropped when no client is
-            connected.
+            connected, and a persistence failure is logged without
+            breaking the publish.
 
         """
         if urgency not in ("low", "default", "high"):
@@ -125,6 +157,20 @@ def build_notification_tools(
             "urgency": urgency,
             "link": link,
         }
+        # Snapshot delivery state at publish time.  There is no ``await``
+        # between this check and the publish below, so the subscriber count
+        # cannot change mid-call.
+        delivered = _has_active_subscribers(event_sink, session_id)
+        if store is not None:
+            try:
+                record = store.append(title=title, body=body, source_session=session_id)
+                if delivered:
+                    store.mark_delivered([record.id])
+            except Exception:
+                logger.exception(
+                    "Failed to persist notification (session=%s) — continuing",
+                    session_id,
+                )
         event_sink.publish(session_id, frame)
         return "Notification sent."
 

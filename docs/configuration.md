@@ -550,9 +550,10 @@ ______________________________________________________________________
 Browser notification settings — lets the agent alert the user proactively via the `notify_user`
 tool. Enabled by default.
 
-| JSON key               | Type      | Default | Description                                                    |
-| ---------------------- | --------- | ------- | -------------------------------------------------------------- |
-| `notification.enabled` | `boolean` | `true`  | Master switch. When `false`, no `notify_user` tool is offered. |
+| JSON key                  | Type      | Default                      | Description                                                                                                                                                                                             |
+| ------------------------- | --------- | ---------------------------- | ------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- |
+| `notification.enabled`    | `boolean` | `true`                       | Master switch. When `false`, no `notify_user` tool is offered.                                                                                                                                          |
+| `notification.store_path` | `string`  | `"/data/notifications.json"` | JSON persistence file for undelivered notifications. Must be on a persistent volume (chat-data `/data`) so notifications survive container recreation and can be replayed when a browser next connects. |
 
 ### HTTP Probe
 

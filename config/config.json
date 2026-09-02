@@ -194,7 +194,8 @@
     "self_restart_max_retries": 3
   },
   "notification": {
-    "enabled": true
+    "enabled": true,
+    "store_path": "/data/notifications.json"
   },
   "http_probe": {
     "enabled": false,
