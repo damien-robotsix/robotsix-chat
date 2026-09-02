@@ -3180,10 +3180,10 @@ requires-dist = [
     { name = "robotsix-config", git = "https://github.com/damien-robotsix/robotsix-config.git?rev=884a452062a04f569fb63a9d103c29eafbf3c056" },
     { name = "robotsix-github-auth", git = "https://github.com/damien-robotsix/robotsix-github-auth.git?rev=e6214c41fd743120aa987bacb4e9b2bc88e73943" },
     { name = "robotsix-http", git = "https://github.com/damien-robotsix/robotsix-http.git?rev=cdfd4d1c42679fef73081439562872792e202dc4" },
-    { name = "robotsix-llmio", git = "https://github.com/damien-robotsix/robotsix-llmio.git?rev=70c6ae9a36a089c7e763d2ee0ce1ab14270bddf4" },
-    { name = "robotsix-llmio", extras = ["claude-sdk"], marker = "extra == 'claude-sdk'", git = "https://github.com/damien-robotsix/robotsix-llmio.git?rev=70c6ae9a36a089c7e763d2ee0ce1ab14270bddf4" },
-    { name = "robotsix-llmio", extras = ["openrouter"], marker = "extra == 'openrouter'", git = "https://github.com/damien-robotsix/robotsix-llmio.git?rev=70c6ae9a36a089c7e763d2ee0ce1ab14270bddf4" },
-    { name = "robotsix-llmio", extras = ["tracing"], marker = "extra == 'tracing'", git = "https://github.com/damien-robotsix/robotsix-llmio.git?rev=70c6ae9a36a089c7e763d2ee0ce1ab14270bddf4" },
+    { name = "robotsix-llmio", git = "https://github.com/damien-robotsix/robotsix-llmio.git?rev=60987bbc5e6d4af5146afd88c557411dc396b0eb" },
+    { name = "robotsix-llmio", extras = ["claude-sdk"], marker = "extra == 'claude-sdk'", git = "https://github.com/damien-robotsix/robotsix-llmio.git?rev=60987bbc5e6d4af5146afd88c557411dc396b0eb" },
+    { name = "robotsix-llmio", extras = ["openrouter"], marker = "extra == 'openrouter'", git = "https://github.com/damien-robotsix/robotsix-llmio.git?rev=60987bbc5e6d4af5146afd88c557411dc396b0eb" },
+    { name = "robotsix-llmio", extras = ["tracing"], marker = "extra == 'tracing'", git = "https://github.com/damien-robotsix/robotsix-llmio.git?rev=60987bbc5e6d4af5146afd88c557411dc396b0eb" },
     { name = "starlette" },
     { name = "structlog", specifier = ">=24.0.0" },
     { name = "transformers", marker = "extra == 'memory'" },
@@ -3243,7 +3243,7 @@ dependencies = [
 [[package]]
 name = "robotsix-llmio"
 version = "0.7.1"
-source = { git = "https://github.com/damien-robotsix/robotsix-llmio.git?rev=70c6ae9a36a089c7e763d2ee0ce1ab14270bddf4#70c6ae9a36a089c7e763d2ee0ce1ab14270bddf4" }
+source = { git = "https://github.com/damien-robotsix/robotsix-llmio.git?rev=60987bbc5e6d4af5146afd88c557411dc396b0eb#60987bbc5e6d4af5146afd88c557411dc396b0eb" }
 dependencies = [
     { name = "httpx" },
     { name = "pydantic" },
