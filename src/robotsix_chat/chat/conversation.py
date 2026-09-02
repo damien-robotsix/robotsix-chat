@@ -1204,6 +1204,62 @@ class ConversationStore:
             "compacted_summary": summary,
         }
 
+    def compacted_covered_turns(
+        self, session_id: str
+    ) -> tuple[list[Turn], list[list[str]]]:
+        """Return the turns the compaction summary covers, with aligned actions.
+
+        These are ``turns[:compacted_turn_index]`` — the "earlier part of the
+        conversation" a compaction summary condenses (see :meth:`_agent_view`).
+        Used by the evergoing scheduler's self-heal pass to regenerate a
+        summary that was never persisted.  Returns ``([], [])`` for unknown
+        sessions or when nothing is covered.
+        """
+        session = self._sessions.get(session_id)
+        if session is None:
+            return [], []
+        end = session.compacted_turn_index
+        if end <= 0:
+            return [], []
+        turns = list(session.turns[:end])
+        actions = [list(a) for a in self._aligned_actions(session)[:end]]
+        return turns, actions
+
+    def backfill_compacted_summary(self, session_id: str, summary: str) -> bool:
+        """Self-heal: persist a regenerated *summary* without advancing indexes.
+
+        Repairs a session whose compaction advanced ``compacted_turn_index``
+        but never persisted a ``compacted_summary`` (the original corruption:
+        the index moved, the summary key was dropped).  Only the missing
+        summary text is filled in — ``compacted_turn_index`` and
+        ``trimmed_turn_index`` are deliberately left untouched, so this repair
+        never folds or drops any turn.
+
+        Guards keep the operation safe and idempotent:
+
+        - a no-op (returns ``False``) when *summary* is empty — a failed
+          regeneration must leave the session intact so a later pass retries;
+        - a no-op when a non-empty ``compacted_summary`` is already present —
+          a subsequent pass never regenerates or duplicates it;
+        - a no-op when ``compacted_turn_index <= trimmed_turn_index`` — the
+          covered window was fully trimmed away, so the summary was retired on
+          purpose (see :meth:`trim_session`) and must not be resurrected.
+
+        Returns ``True`` when a summary was written and persisted.
+        """
+        session = self._sessions.get(session_id)
+        if session is None:
+            return False
+        if not summary:
+            return False
+        if session.compacted_summary:
+            return False
+        if session.compacted_turn_index <= session.trimmed_turn_index:
+            return False
+        session.compacted_summary = summary
+        self._persist()
+        return True
+
     def mark_evergoing(self, session_id: str) -> bool:
         """Flag *session_id* as the evergoing session. Persist.
 

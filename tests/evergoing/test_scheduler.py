@@ -159,6 +159,100 @@ def test_summary_failure_leaves_session_untouched() -> None:
     assert store.has_new_input_since_trim(sid) is True
 
 
+def test_self_heal_backfills_missing_summary_without_advancing_indexes() -> None:
+    """A session with an advanced index but no summary is repaired in place."""
+    store, sid = _store_with_evergoing(turns=8)
+    session = store.get_session(sid)
+    assert session is not None
+    # Simulate the corruption: index advanced, summary never persisted.
+    session.compacted_turn_index = 3
+    session.compacted_summary = None
+    # No new input since the last pass — repair must still run.
+    session.last_trim_turn_count = session.turn_count
+    assert store.has_new_input_since_trim(sid) is False
+
+    agent = _CountingAgent("healed summary")
+    scheduler = EvergoingSummaryScheduler(60.0, store, agent, keep_recent_runs=5)
+    result = asyncio.run(scheduler.run_once())
+
+    audit = _one(result)
+    assert audit["repaired"] is True
+    assert audit["covered_turns"] == 3
+    # One LLM call — the regeneration over the covered turns only.
+    assert agent.calls == 1
+    assert "user 0" in agent.prompts[0]
+    assert "user 3" not in agent.prompts[0]
+    session = store.get_session(sid)
+    assert session is not None
+    assert session.compacted_summary == "healed summary"
+    # Indexes are untouched by the repair.
+    assert session.compacted_turn_index == 3
+    assert session.trimmed_turn_index == 0
+
+
+def test_self_heal_is_idempotent_once_summary_present() -> None:
+    """A present, non-empty summary is never regenerated or duplicated."""
+    store, sid = _store_with_evergoing(turns=8)
+    session = store.get_session(sid)
+    assert session is not None
+    session.compacted_turn_index = 3
+    session.compacted_summary = "already here"
+    session.last_trim_turn_count = session.turn_count
+
+    agent = _CountingAgent("should not be used")
+    scheduler = EvergoingSummaryScheduler(60.0, store, agent, keep_recent_runs=5)
+    result = asyncio.run(scheduler.run_once())
+
+    assert result["sessions"] == []
+    assert agent.calls == 0
+    session = store.get_session(sid)
+    assert session is not None
+    assert session.compacted_summary == "already here"
+
+
+def test_self_heal_skips_when_covered_window_fully_trimmed() -> None:
+    """No repair when the covered turns were trimmed away (summary retired)."""
+    store, sid = _store_with_evergoing(turns=8)
+    session = store.get_session(sid)
+    assert session is not None
+    session.compacted_turn_index = 3
+    session.trimmed_turn_index = 3
+    session.compacted_summary = None
+    session.last_trim_turn_count = session.turn_count
+
+    agent = _CountingAgent("must not run")
+    scheduler = EvergoingSummaryScheduler(60.0, store, agent, keep_recent_runs=5)
+    result = asyncio.run(scheduler.run_once())
+
+    assert result["sessions"] == []
+    assert agent.calls == 0  # never regenerates a retired summary
+    session = store.get_session(sid)
+    assert session is not None
+    assert session.compacted_summary is None
+
+
+def test_self_heal_failure_leaves_state_untouched() -> None:
+    """A failed regeneration keeps the missing-summary state for a later retry."""
+    store, sid = _store_with_evergoing(turns=8)
+    session = store.get_session(sid)
+    assert session is not None
+    session.compacted_turn_index = 3
+    session.compacted_summary = None
+    session.last_trim_turn_count = session.turn_count
+
+    agent = _CountingAgent("")  # summariser failure → empty text
+    scheduler = EvergoingSummaryScheduler(60.0, store, agent, keep_recent_runs=5)
+    result = asyncio.run(scheduler.run_once())
+
+    audit = _one(result)
+    assert audit["repaired"] is False
+    assert agent.calls == 1
+    session = store.get_session(sid)
+    assert session is not None
+    assert session.compacted_summary is None
+    assert session.compacted_turn_index == 3
+
+
 def test_compact_session_cover_until_index() -> None:
     """The explicit snapshot boundary wins over keep_recent_turns."""
     store, sid = _store_with_evergoing(turns=6)
