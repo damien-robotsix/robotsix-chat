@@ -342,3 +342,88 @@ def test_trim_below_summary_keeps_it() -> None:
     assert session is not None
     assert session.compacted_summary == "still-covering summary"
     assert session.compacted_turn_index == 5
+
+
+def test_compaction_failure_advances_neither_index() -> None:
+    """Atomicity: an empty/failed summary advances no index and persists none.
+
+    Regression for the compaction-atomicity fix: when the summariser returns
+    empty text the gate has already opened (fresh_runs > keep), yet neither
+    ``compacted_turn_index`` nor ``trimmed_turn_index`` may move and no
+    ``compacted_summary`` may be persisted — the whole step is all-or-nothing.
+    """
+    store, sid = _store_with_evergoing(turns=7)
+    session = store.get_session(sid)
+    assert session is not None
+    # Preconditions: both indexes at their pristine zero.
+    assert session.compacted_turn_index == 0
+    assert session.trimmed_turn_index == 0
+
+    agent = _CountingAgent("")  # summariser failure → empty text
+    scheduler = EvergoingSummaryScheduler(60.0, store, agent, keep_recent_runs=5)
+    result = asyncio.run(scheduler.run_once())
+
+    audit = _one(result)
+    assert audit["compacted"] is False
+    assert audit["reason"] == "summary generation failed"
+    # The summariser WAS consulted (gate opened) but nothing was committed.
+    assert agent.calls == 1
+    session = store.get_session(sid)
+    assert session is not None
+    assert session.compacted_summary is None
+    assert session.compacted_turn_index == 0
+    assert session.trimmed_turn_index == 0
+
+
+def test_successful_compaction_persists_summary_and_index_atomically() -> None:
+    """Atomicity: a non-empty summary commits summary + covered index together.
+
+    The happy path counterpart of the atomicity fix — on success both the
+    ``compacted_summary`` and the advanced ``compacted_turn_index`` are visible
+    after the same pass, while ``trimmed_turn_index`` (a separate concern) is
+    untouched by compaction.
+    """
+    store, sid = _store_with_evergoing(turns=8)
+    agent = _CountingAgent("a durable summary")
+    scheduler = EvergoingSummaryScheduler(60.0, store, agent, keep_recent_runs=5)
+
+    result = asyncio.run(scheduler.run_once())
+
+    assert _one(result)["compacted"] is True
+    session = store.get_session(sid)
+    assert session is not None
+    # Summary and covered index landed together in the one commit.
+    assert session.compacted_summary == "a durable summary"
+    assert session.compacted_turn_index == 3
+    # Compaction never trims — the trim watermark stays put.
+    assert session.trimmed_turn_index == 0
+
+
+def test_self_heal_backfills_empty_string_summary() -> None:
+    """Edge case: an empty-string (not just ``None``) summary is repaired too.
+
+    The corruption can surface as a persisted-but-empty ``compacted_summary``;
+    the self-heal guard treats it identically to a missing one and regenerates.
+    """
+    store, sid = _store_with_evergoing(turns=8)
+    session = store.get_session(sid)
+    assert session is not None
+    session.compacted_turn_index = 3
+    session.compacted_summary = ""  # empty, not None
+    session.last_trim_turn_count = session.turn_count
+    assert store.has_new_input_since_trim(sid) is False
+
+    agent = _CountingAgent("healed from empty")
+    scheduler = EvergoingSummaryScheduler(60.0, store, agent, keep_recent_runs=5)
+    result = asyncio.run(scheduler.run_once())
+
+    audit = _one(result)
+    assert audit["repaired"] is True
+    assert audit["covered_turns"] == 3
+    assert agent.calls == 1
+    session = store.get_session(sid)
+    assert session is not None
+    # Post-repair consistency: summary present, indexes unchanged and aligned.
+    assert session.compacted_summary == "healed from empty"
+    assert session.compacted_turn_index == 3
+    assert session.trimmed_turn_index == 0
