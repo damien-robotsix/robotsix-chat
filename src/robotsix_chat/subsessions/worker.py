@@ -992,6 +992,28 @@ _TRANSIENT_BACKOFF_BASE = 2.0
 _TRANSIENT_BACKOFF_CAP = 30.0
 
 
+_monitor_turn_gate: asyncio.Semaphore | None = None
+_monitor_turn_gate_size: int = -1
+
+
+def _get_monitor_turn_gate(size: int) -> asyncio.Semaphore | None:
+    """Return the process-wide monitor-turn gate for *size* (``None`` = off).
+
+    Bounds how many periodic/wait_for_event agent turns run at once: each
+    turn spawns a claudeSDK CLI subprocess (~240MB RSS), and a board-event
+    storm waking many monitors simultaneously drove the container to its
+    memory limit and an OOM kill (2026-09-02 15:22Z).  Recreated when the
+    configured size changes (tests, config reload).
+    """
+    global _monitor_turn_gate, _monitor_turn_gate_size
+    if size <= 0:
+        return None
+    if _monitor_turn_gate is None or _monitor_turn_gate_size != size:
+        _monitor_turn_gate = asyncio.Semaphore(size)
+        _monitor_turn_gate_size = size
+    return _monitor_turn_gate
+
+
 async def _run_turn_with_transient_retry(
     env: SubsessionEnv,
     agent: ChatAgent,
@@ -1055,9 +1077,19 @@ async def _run_turn_with_transient_retry(
         )
 
     async def _one_turn() -> str:
-        return await _run_turn_with_timeout(
-            env, agent, turn_input, history, sub_id, info
+        gate = (
+            _get_monitor_turn_gate(settings.monitor_turn_concurrency)
+            if info.kind in (SubsessionKind.PERIODIC, SubsessionKind.WAIT_FOR_EVENT)
+            else None
         )
+        if gate is None:
+            return await _run_turn_with_timeout(
+                env, agent, turn_input, history, sub_id, info
+            )
+        async with gate:
+            return await _run_turn_with_timeout(
+                env, agent, turn_input, history, sub_id, info
+            )
 
     try:
         # cast: acall_with_retry's `Callable[..., T]` resolves T to the
