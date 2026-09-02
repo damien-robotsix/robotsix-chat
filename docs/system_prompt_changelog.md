@@ -3,6 +3,16 @@
 Governed artifact: `Settings.agent_instruction` default literal in
 `src/robotsix_chat/config/settings.py`. Version stamp: `SYSTEM_PROMPT_VERSION` in the same module.
 
+## v159 — 2026-09-01 — 20260901T211433Z-ticket-spec-template-conflates-standard-966c
+
+**Summary:** Add "spec scope clarity" guidance to the Ticket lifecycle "1. Initiate" block: when filing a ticket, make the spec's scope explicit so the backend scope guard never misreads it. Adopting or following conventions from external libraries or standards (e.g. 'follows robotsix-standards', 'uses robotsix-ui') is in-repo-only — the repo consumes those conventions without modifying the external repos — and must be phrased as such, never as requiring changes to an external repository. Only when the work genuinely requires editing files in a different repo (a true external dependency) should the spec name external changes, stating which external repo(s) and why the change cannot be scoped in-repo; when in doubt, add an explicit scope line (e.g. 'single repo: yes — all changes within <repo>; external changes: none').
+
+**Rationale:** A calendar events-view ticket spec referenced 'follows robotsix-standards' and 'uses robotsix-ui' as design conventions; the scope guard misread those as requiring changes to external repositories and blocked implementation even though all changes were entirely within robotsix-calendar. The assistant had to manually rewrite the spec with explicit 'single repo: yes / external changes: no' language to unblock it. The gap would recur for any ticket that follows external standards.
+
+**SHA256:** `f994dc5b425ab60b4e8eca9b005f58159a2bef59458403c6ff6f9480ce35d6c9`
+
+______________________________________________________________________
+
 ## v158 — 2026-09-01 — assistant-did-not-surface-monitor-verifi-4113
 
 **Change:** New "SURFACE VERIFIED FAILURES PROACTIVELY" bullet in the Subsessions section of the
