@@ -1366,7 +1366,7 @@ def create_agent_from_settings(
     """Build an :class:`LlmioChatAgent` wired from *settings*.
 
     The backend is chosen by robotsix-llmio's capability level: *model_level*
-    when given, else ``settings.llmio_model_level``.  The level encodes the
+    when given, else ``settings.chat_default_model_level``.  The level encodes the
     transport + model; ``settings.llmio_api_key`` is forwarded only when the
     effective level's transport needs a key (keyless claudeSDK levels 2, 4, 5
     never receive one).
@@ -1419,7 +1419,7 @@ def create_agent_from_settings(
         instruction = instruction + _SUGGESTIONS_INSTRUCTION
 
     effective_level = (
-        model_level if model_level is not None else settings.llmio_model_level
+        model_level if model_level is not None else settings.chat_default_model_level
     )
     # Frontier subsessions (level 3) get an orchestration directive so they
     # delegate bulk reading/extraction to cheaper child subsessions by
@@ -1491,7 +1491,7 @@ def create_agent_from_settings(
             # agent has no operator watching the badge change.
             conversation_store if subsession_ctx is None and not bare else None,
             (
-                settings.llmio_model_level
+                settings.chat_default_model_level
                 if subsession_ctx is None and not bare
                 else None
             ),

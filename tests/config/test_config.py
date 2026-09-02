@@ -36,7 +36,7 @@ from robotsix_chat.config.models import EvergoingSettings
 def _write_config_json(tmp_path: Path, overrides: dict | None = None) -> Path:
     """Write a minimal valid config.json to *tmp_path* and return its path."""
     data: dict = {
-        "llmio_model_level": 2,
+        "chat_default_model_level": 2,
     }
     if overrides:
         data.update(overrides)
@@ -54,7 +54,7 @@ def test_defaults() -> None:
     """Optional fields fall back to their documented defaults."""
     settings = Settings()
 
-    assert settings.llmio_model_level == 2
+    assert settings.chat_default_model_level == 2
     assert settings.llmio_api_key.get_secret_value() == ""
     assert settings.server_host == "0.0.0.0"
     assert settings.server_port == 8000
@@ -90,7 +90,7 @@ def test_vision_model_empty_means_unconfigured() -> None:
 def test_default_level_is_keyless() -> None:
     """The default level (2, workhorse) is keyless — constructs with no key."""
     settings = Settings()
-    assert settings.llmio_model_level == 2
+    assert settings.chat_default_model_level == 2
     assert settings.llmio_api_key.get_secret_value() == ""
 
 
@@ -102,14 +102,14 @@ def test_no_level_requires_api_key() -> None:
     keyed fallback slot.
     """
     for level in (1, 2, 3):
-        settings = Settings(llmio_model_level=level)
-        assert settings.llmio_model_level == level
+        settings = Settings(chat_default_model_level=level)
+        assert settings.chat_default_model_level == level
 
 
 def test_key_bearing_config_with_key_ok() -> None:
     """A configured key is kept for the failover slot."""
-    settings = Settings(llmio_model_level=1, llmio_api_key=SecretStr("sk-x"))
-    assert settings.llmio_model_level == 1
+    settings = Settings(chat_default_model_level=1, llmio_api_key=SecretStr("sk-x"))
+    assert settings.chat_default_model_level == 1
     # pragma: allowlist secret
     assert settings.llmio_api_key.get_secret_value() == "sk-x"
 
@@ -117,9 +117,9 @@ def test_key_bearing_config_with_key_ok() -> None:
 def test_invalid_model_level_raises() -> None:
     """A model_level outside llmio's levels (1-3) is rejected."""
     with pytest.raises(ValueError, match="model_level"):
-        Settings(llmio_model_level=6)
+        Settings(chat_default_model_level=6)
     with pytest.raises(ValueError, match="model_level"):
-        Settings(llmio_model_level=4)
+        Settings(chat_default_model_level=4)
 
 
 # ---------------------------------------------------------------------------
@@ -132,7 +132,7 @@ def test_load_from_json_file(tmp_path: Path, monkeypatch: pytest.MonkeyPatch) ->
     config_path = _write_config_json(
         tmp_path,
         {
-            "llmio_model_level": 2,
+            "chat_default_model_level": 2,
             "llmio_api_key": "sk-json",  # pragma: allowlist secret
             "server_host": "0.0.0.0",
             "server_port": 9000,
@@ -143,7 +143,7 @@ def test_load_from_json_file(tmp_path: Path, monkeypatch: pytest.MonkeyPatch) ->
 
     settings = Settings.load()
 
-    assert settings.llmio_model_level == 2
+    assert settings.chat_default_model_level == 2
     # pragma: allowlist secret
     assert settings.llmio_api_key.get_secret_value() == "sk-json"
     assert settings.server_host == "0.0.0.0"
@@ -507,7 +507,7 @@ def test_legacy_mail_block_is_dropped() -> None:
     """A deployed config still carrying the retired ``mail`` block loads."""
     settings = Settings.model_validate(
         {
-            "llmio_model_level": 2,
+            "chat_default_model_level": 2,
             "mail": {
                 "enabled": False,
                 "api_base_url": "http://127.0.0.1:8077",
@@ -523,20 +523,46 @@ def test_legacy_mail_block_is_dropped() -> None:
 def test_legacy_chat_model_level_is_stripped() -> None:
     """A deployed config still carrying the removed ``chat_model_level`` loads.
 
-    The override was unified into ``llmio_model_level``; a stale key must be
+    The override was unified into ``chat_default_model_level``; a stale key must be
     dropped by the ``mode="before"`` migration instead of tripping
     ``extra="forbid"`` and crash-looping the container after an image upgrade.
     """
-    settings = Settings.model_validate({"llmio_model_level": 3, "chat_model_level": 2})
+    settings = Settings.model_validate(
+        {"chat_default_model_level": 3, "chat_model_level": 2}
+    )
     assert not hasattr(settings, "chat_model_level")
-    assert settings.llmio_model_level == 3
+    assert settings.chat_default_model_level == 3
+
+
+def test_legacy_llmio_model_level_migrates_to_chat_default_model_level() -> None:
+    """A deployed config still using ``llmio_model_level`` loads unchanged.
+
+    The key was renamed to ``chat_default_model_level``; the ``mode="before"``
+    migration must carry the stored value over rather than tripping
+    ``extra="forbid"`` and crash-looping the container after an image upgrade.
+    """
+    settings = Settings.model_validate({"llmio_model_level": 3})
+    assert settings.chat_default_model_level == 3
+
+
+def test_new_chat_default_model_level_wins_over_legacy_llmio_key() -> None:
+    """When both keys are present the new key wins and the legacy one is dropped."""
+    settings = Settings.model_validate(
+        {"chat_default_model_level": 1, "llmio_model_level": 3}
+    )
+    assert settings.chat_default_model_level == 1
+
+
+def test_chat_default_model_level_defaults_to_two() -> None:
+    """``chat_default_model_level`` defaults to 2 when unset."""
+    assert Settings().chat_default_model_level == 2
 
 
 def test_legacy_lifecycle_base_url_migrates_to_central_deploy_url() -> None:
     """``lifecycle.base_url`` is folded into the canonical ``central_deploy.url``."""
     settings = Settings.model_validate(
         {
-            "llmio_model_level": 2,
+            "chat_default_model_level": 2,
             "lifecycle": {"enabled": True, "base_url": "http://central-deploy:9000"},
         }
     )
@@ -547,7 +573,7 @@ def test_legacy_per_block_deploy_api_key_migrates() -> None:
     """A per-block ``deploy_api_key`` folds into ``central_deploy.deploy_api_key``."""
     settings = Settings.model_validate(
         {
-            "llmio_model_level": 2,
+            "chat_default_model_level": 2,
             "feedback": {"deploy_api_key": "legacy-secret"},  # pragma: allowlist secret
         }
     )
@@ -558,7 +584,7 @@ def test_explicit_central_deploy_values_win_over_legacy() -> None:
     """An explicitly-set canonical value is never clobbered by a legacy copy."""
     settings = Settings.model_validate(
         {
-            "llmio_model_level": 2,
+            "chat_default_model_level": 2,
             "central_deploy": {
                 "url": "http://canonical:9000",
                 "deploy_api_key": "canonical-secret",  # pragma: allowlist secret
@@ -589,7 +615,7 @@ def test_production_config_with_all_legacy_keys_loads_cleanly() -> None:
     migration — so a clean load is the assertion.
     """
     raw = {
-        "llmio_model_level": 2,
+        "chat_default_model_level": 2,
         "mail": {
             "enabled": False,
             "api_base_url": "http://127.0.0.1:8077",
@@ -1357,7 +1383,7 @@ def test_production_config_with_blank_numeric_sentinels_loads_cleanly() -> None:
     validate and the model dump must carry no ``""`` for those numeric fields.
     """
     raw = {
-        "llmio_model_level": 2,
+        "chat_default_model_level": 2,
         "llmio_task_budget_tokens": "",
         "idle_timeout_minutes": "",
         "central_deploy": {
