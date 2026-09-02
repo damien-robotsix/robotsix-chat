@@ -1254,6 +1254,7 @@ async def test_run_server_from_config_creates_agent_from_settings(
         from robotsix_chat.notification.store import NotificationStore
 
         assert isinstance(notification_store, NotificationStore)
+        assert call_args[1].pop("notification_store_and_forward") is True
         from robotsix_chat.config.models import (
             EvergoingSettings,
             HealthSettings,
