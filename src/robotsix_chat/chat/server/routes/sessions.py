@@ -79,18 +79,45 @@ def _require_owner_id(request: Request) -> str:
 async def history_endpoint(request: Request) -> JSONResponse:
     """Return a session's stored conversation history as JSON.
 
-    ``GET /history?session_id=...`` returns ``{"turns": [[user, assistant], ...]}``.
-    Also tolerates ``client_id`` as a legacy fallback (treated as ``session_id``).
+    ``GET /history?session_id=...`` returns the session's turns as
+    ``{"turns": [[user, assistant], ...]}``. Also tolerates ``client_id`` as a
+    legacy fallback (treated as ``session_id``).
 
-    When the session has been compacted (idle summarisation), the response
-    also carries ``compacted_summary`` (the summary text) and
-    ``compacted_turn_index`` (how many leading ``turns`` it covers), so the
-    UI can open the session on its summary and keep the covered turns
-    behind an explicit expand — exactly what the agent itself sees.
-    Sessions that were never compacted get neither key. When the session
-    has been compacted but no usable summary is available, the response
-    carries ``compacted_summary_missing: true`` so clients can render a
-    fallback instead of a bare compacted session with no explanation.
+    Response fields (all except ``turns`` are optional compaction metadata):
+
+    - ``turns`` — ``array[array[string]]``: ``[user, assistant]`` message pairs,
+      newest last.
+    - ``compacted_summary`` — ``string``: summary text of the leading turns.
+      Present only when the session was compacted *and* a usable summary exists.
+    - ``compacted_turn_index`` — ``integer``: how many leading ``turns`` the
+      summary covers. Present whenever the session has advanced past compaction
+      (``> 0``).
+    - ``compacted_summary_missing`` — ``boolean``: ``true`` exactly when the
+      session has advanced past compaction (``compacted_turn_index > 0``) but no
+      usable ``compacted_summary`` is available (it was never persisted, or
+      failed to persist and is empty). Appears only in that case; clients can
+      use it to render a fallback (e.g. a banner / graceful degradation)
+      instead of a bare compacted session with no explanation.
+
+    Compacted session with a usable summary (flag absent)::
+
+        {
+          "turns": [["After the summary", "A reply"], ["More", "And more"]],
+          "compacted_summary": "Earlier we agreed on X.",
+          "compacted_turn_index": 2
+        }
+
+    Compacted session with no usable summary (flag present)::
+
+        {
+          "turns": [["After the summary", "A reply"], ["More", "And more"]],
+          "compacted_turn_index": 2,
+          "compacted_summary_missing": true
+        }
+
+    A session that was never compacted returns only ``turns`` — neither
+    ``compacted_summary`` nor ``compacted_turn_index`` nor
+    ``compacted_summary_missing`` is present.
     """
     session_id = _get_session_id(request)
 

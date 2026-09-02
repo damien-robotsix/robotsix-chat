@@ -39,3 +39,34 @@ Suggestion chips appear in:
 
 If the agent does not emit suggestion chips for a decision, you can still type your response freely
 in the text input.
+
+## Compacted (Summarised) Sessions
+
+Long-running sessions are periodically summarised and their leading turns trimmed. When you reload
+the page, the UI fetches `/history`; for a compacted session the response includes compaction
+metadata (see the [deployment guide](deployment.md#compacted-sessions-and-the-missing-summary-flag)
+for examples):
+
+- `compacted_summary` — the summary text of the covered leading turns.
+- `compacted_turn_index` — how many leading `turns` the summary covers.
+- `compacted_summary_missing` — `true` when the session advanced past compaction but no usable
+  summary is available.
+
+### How the UI handles a compacted session
+
+When `compacted_summary` is a non-empty string, the UI opens the session on a **"Summary of the
+earlier conversation"** card at the top of the transcript, with a toggle that shows/hides the
+covered turns. The covered turns are still loaded and rendered — they are just collapsed behind the
+toggle so the transcript starts from the summary.
+
+### Handling when the summary is missing (`compacted_summary_missing: true`)
+
+When the server reports `compacted_summary_missing: true`, there is no summary text to show in a
+card. Clients must not render an empty summary card. Recommended handling patterns:
+
+- **Graceful degradation (default):** render the covered turns inline like any other turns — the
+  transcript is complete, just without a summary card.
+- **Banner/notice:** if you want to surface the situation, show a small inline notice (e.g.
+  "Earlier messages are available below") in place of the summary card.
+- Always check `compacted_summary_missing` before deciding whether a summary card can be built; a
+  bare compacted session with no explanation would otherwise confuse the reader.
