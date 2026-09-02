@@ -541,9 +541,19 @@ class CogneeMemory:
         # cognee's graph store was kuzu; since 1.4 it is cognee's own embedded
         # ladybug engine, whose ``.wal`` is its crash-recovery journal and is
         # replayed on open. Deleting it destroyed the live knowledge graph on
-        # every startup. cognee is pinned so the engine cannot change under us.
+        # every startup. The graph engine's on-disk layout is not something we
+        # touch, but the relational-store *schema* can still change when cognee
+        # is upgraded under us (dependabot auto-merged 1.4.0->1.5.3 on
+        # 2026-09-02, whose new schema then failed every recall with
+        # ``OperationalError: table queries has no column named dataset_id``).
+        # ``_run_migrations`` below brings the deployed schema up to head.
         cognee.config.data_root_directory(str(data_root))
         cognee.config.system_root_directory(str(system_root))
+
+        # Reconcile the deployed relational-store schema with the installed
+        # cognee version BEFORE the first recall/remember opens it — otherwise
+        # a stale schema surfaces as per-query ``OperationalError`` failures.
+        self._run_migrations()
 
         # Extraction LLM — OpenRouter via litellm's `custom` provider.
         from robotsix_chat.config import PROJECT_MEMORY
@@ -555,10 +565,10 @@ class CogneeMemory:
         cognee.config.set_llm_api_key(self._openrouter.key(alias).get_secret_value())
         # Pin EVERY LLM pipeline stage to the configured model. cognee's
         # per-stage routing (extraction / summarization / query) and its BAML
-        # fallback each carry their own default (``openai/gpt-5-mini``) when
+        # fallback each carry their own built-in default model when
         # left empty; a pipeline step reading one of those directly would
         # otherwise bill the untraced default model instead of the configured
-        # ``gpt-5-nano``. Setting them all to the same value guarantees no
+        # model. Setting them all to the same value guarantees no
         # cognee step can silently fall back to its internal default.
         cognee.config.set_llm_config(
             {
@@ -592,6 +602,54 @@ class CogneeMemory:
         )
 
         self._register_litellm_langfuse_callback()
+
+    def _run_migrations(self) -> None:
+        """Upgrade the cognee relational-store schema to head via alembic.
+
+        cognee ships its own alembic migration tree (``alembic.ini`` +
+        ``alembic/`` alongside the package). Since the package is no longer
+        effectively pinned against us — dependabot auto-merged 1.4.0->1.5.3 on
+        2026-09-02 (#1544) and the newer schema then failed *every* recall with
+        ``OperationalError: table queries has no column named dataset_id`` — the
+        deployed SQLite schema under ``data_dir`` can lag the installed cognee
+        version. Running ``alembic upgrade head`` in-process here (after the
+        data/system roots are configured, before the first store open)
+        reconciles it, exactly as the operator did manually to recover the live
+        DB.
+
+        Called only from :meth:`_configure`, which runs once under
+        :attr:`_setup_lock` — that lock is the startup gate serialising the
+        migration, and callers must keep the process quiescent (no concurrent
+        store access) while it runs, because SQLite requires quiescence to take
+        the write lock.
+
+        Raises:
+            RuntimeError: if the migration fails, so setup surfaces a single
+                clear error instead of degrading to per-query
+                ``OperationalError`` failures on the recall path.
+
+        """
+        import cognee
+        from alembic import command
+        from alembic.config import Config
+
+        package_dir = Path(cognee.__file__).resolve().parent
+        cfg = Config(str(package_dir / "alembic.ini"))
+        # The packaged script_location is relative to the ini's own directory;
+        # pin it to the absolute path so the migration runs regardless of CWD.
+        cfg.set_main_option("script_location", str(package_dir / "alembic"))
+        # Do not let alembic reconfigure the root logger (it would clobber the
+        # server's logging config); env.py honors this attribute.
+        cfg.attributes["configure_logger"] = False
+        try:
+            command.upgrade(cfg, "head")
+        except Exception as exc:
+            raise RuntimeError(
+                "cognee relational-store schema migration (alembic upgrade "
+                "head) failed; the deployed schema does not match the installed "
+                f"cognee version and recall/remember would fail per-query: {exc}"
+            ) from exc
+        logger.info("cognee relational-store schema migrated to head")
 
     def _register_litellm_langfuse_callback(self) -> None:
         """Wire litellm Langfuse OTLP tracing with dedicated cognee creds.
@@ -702,7 +760,7 @@ class CogneeMemory:
         that does not equal the configured value. This is the startup trip-wire
         for the "unconfigured cognee LLM model" failure mode: a config-setter
         no-op, or a stage silently falling back to cognee's internal default
-        (``openai/gpt-5-mini``), would otherwise burn OpenRouter credit
+        model, would otherwise burn OpenRouter credit
         invisibly. Deliberately a LOG, never a raise — memory keeps working,
         but the drift is impossible to miss.
         """

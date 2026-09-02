@@ -215,6 +215,13 @@ ignore_missing_imports = true
 module = ["lancedb", "lancedb.*"]
 ignore_missing_imports = true
 
+# alembic is a transitive dependency of cognee (the memory extra); imported to
+# run cognee's packaged schema migrations at memory setup. Not installed in the
+# default dev/test env, so mypy can't resolve it.
+[[tool.mypy.overrides]]
+module = ["alembic", "alembic.*"]
+ignore_missing_imports = true
+
 # playwright (the optional `render-url` extra) ships no type information.
 [[tool.mypy.overrides]]
 module = ["playwright.*"]
@@ -336,9 +343,12 @@ pynacl = ["nacl"]
 # DEP002 ("defined but not used") is expected and intentional.
 # litellm is a transitive dependency of cognee (the memory extra); imported
 # for its Langfuse callback so cognee traffic lands in a separate project.
+# alembic is a transitive dependency of cognee (the memory extra); imported to
+# run cognee's packaged schema migrations in-process at memory setup so a
+# dependabot cognee bump cannot leave the deployed SQLite schema stale.
 # `_check_common` is a workspace-local sibling module imported by the five
 # standalone scripts/check_*.py audit scripts; it is not an installable package.
-DEP001 = ["litellm", "lancedb", "_check_common"]
+DEP001 = ["litellm", "lancedb", "alembic", "_check_common"]
 DEP002 = ["transformers"]
 # `pydantic_ai` is robotsix-llmio's agent framework: `handle.run` already returns
 # its result objects, and the agent builds a multi-turn `message_history` from
