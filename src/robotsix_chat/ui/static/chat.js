@@ -1026,10 +1026,15 @@ import {
       openBackgroundEventStream(oldSessionId);
     }
 
-    openEventStream();
-
-    // 4. Load history for the new session.
-    loadHistory();
+    // 4. Load history for the new session, THEN open the foreground event
+    //    stream. The order matters: opening /events primes a
+    //    chat_turn_resume frame for any in-flight turn on subscribe, and if
+    //    that re-attach render runs before history renders, the in-flight
+    //    round is appended above the persisted transcript and scrolled out of
+    //    view — hiding it until the turn completes. Deferring openEventStream
+    //    until history is in the DOM makes the re-attached round render below
+    //    it, so switching away and back keeps the live round visible.
+    loadHistory(openEventStream);
 
     // 5. Reload subsessions for the new session.
     fetchSubsessions();
@@ -2813,7 +2818,7 @@ import {
   }
 
   // ---- History loading -------------------------------------------------
-  function loadHistory() {
+  function loadHistory(onComplete) {
     var historyUrl = apiBase() + "/history" +
                      "?session_id=" + encodeURIComponent(activeSessionId) +
                      "&owner_id=" + encodeURIComponent(ownerFor(activeSessionId));
@@ -2853,6 +2858,16 @@ import {
       restoreDraft();
     }).catch(function () {
       // Silently ignore network errors — empty chat is fine.
+    }).then(function () {
+      // Run the continuation (e.g. opening the foreground /events stream) only
+      // AFTER the persisted transcript has rendered. Opening the stream earlier
+      // races the history fetch: the server primes a chat_turn_resume frame for
+      // an in-flight turn on subscribe, so if that frame is handled before
+      // history renders, the in-flight round (user input + live progress) is
+      // appended *above* the persisted turns and then scrolled out of view by
+      // the force-scroll-to-bottom, hiding it until the turn completes. Loading
+      // history first guarantees the re-attached round renders below history.
+      if (typeof onComplete === "function") onComplete();
     });
   }
 
@@ -3330,8 +3345,9 @@ import {
         clearChatBubbles();
         clearSubsessions();
         closeEventStream();
-        openEventStream();
-        loadHistory();
+        // Open /events only after history renders (see switchSession/loadHistory)
+        // so a re-attached in-flight round never renders above the transcript.
+        loadHistory(openEventStream);
         fetchSubsessions();
         refreshSessions();
         resetIdleTimer();
@@ -3572,11 +3588,13 @@ import {
     }
     updateUnreadFromList(data.sessions || []);
     renderSessionList(data);
-    loadHistory();
+    // Open /events only after history renders (see switchSession/loadHistory)
+    // so re-attaching to an in-flight turn on page load renders the live round
+    // below the transcript instead of racing above it.
+    loadHistory(openEventStream);
     fetchSubsessions();
     restoreSubsPanelState();
     restoreSessionsPanelState();
-    openEventStream();
     resetIdleTimer();
   }).catch(function () {
     // If sessions endpoint is unavailable, fall back to local active session.
@@ -3591,11 +3609,10 @@ import {
       // bootstrap above discards it.
       setActiveSessionId(randomId());
     }
-    loadHistory();
+    loadHistory(openEventStream);
     fetchSubsessions();
     restoreSubsPanelState();
     restoreSessionsPanelState();
-    openEventStream();
     resetIdleTimer();
   });
 
