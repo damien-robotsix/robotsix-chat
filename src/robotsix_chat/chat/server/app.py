@@ -11,6 +11,7 @@ import contextlib
 import logging
 import time
 from collections.abc import AsyncIterator, Callable
+from datetime import UTC, datetime
 from importlib import resources
 from pathlib import Path
 from typing import TYPE_CHECKING, Any
@@ -945,20 +946,60 @@ def _skill_registry(
     ]
 
 
+def _current_datetime_directive(now: datetime | None = None) -> str:
+    """Return the authoritative current-date/time directive.
+
+    The agent has no reliable internal clock: date-relative reasoning
+    ("no meeting in the last 7 days", "an upcoming earnings date", "the
+    scheduler missed a trigger") is unreliable unless an authoritative
+    timestamp is injected into its context.  This directive stamps the
+    build-time UTC clock into the system prompt and tells the agent to treat
+    it — not its own assumptions — as the source of truth for any
+    date-relative conclusion, so it never raises a false "missed event"
+    alarm when the scheduled time simply has not arrived yet.
+
+    *now* defaults to :func:`datetime.now` in UTC; it is injectable so tests
+    can pin a deterministic value.
+    """
+    stamp = (now or datetime.now(UTC)).astimezone(UTC).strftime("%Y-%m-%dT%H:%M:%SZ")
+    return (
+        "## Current date and time (authoritative)\n"
+        f"The current date and time is {stamp} (UTC). This clock signal was "
+        "injected into your context when this session started; treat it — not "
+        "your own assumptions or training-cutoff intuition — as the source of "
+        "truth for every date-relative conclusion (e.g. days since an event, "
+        "whether a deadline has passed, whether a scheduled meeting or "
+        "earnings date is upcoming or overdue, whether a scheduler missed a "
+        "trigger). Never conclude that a scheduled event was missed, overdue, "
+        "or skipped unless this current date/time is strictly after the "
+        "event's scheduled time."
+    )
+
+
 def _inject_skills(
     settings: Settings,
     instruction: str,
     *,
     bare: bool = False,
+    now: datetime | None = None,
 ) -> str:
     """Augment *instruction* with component-access instructions and skill prompts.
 
     Skill injection is disabled when *bare* is ``True``, but the canonical
-    reply-style directive is always appended — it is a formatting directive,
-    not a skill.  Each skill gate is independently gated by its own settings
-    key (``central_deploy.url``, ``lifecycle.enabled``,
+    reply-style directive and the authoritative current-date/time directive
+    are always appended — they apply to every agent build, not just
+    tool-enabled ones.  Each skill gate is independently gated by its own
+    settings key (``central_deploy.url``, ``lifecycle.enabled``,
     ``notification.enabled``, ``github_security.enabled``).
+
+    *now* is forwarded to :func:`_current_datetime_directive` so tests can pin
+    the injected timestamp.
     """
+    # Always append the authoritative current-date/time directive so the
+    # agent has a reliable clock signal for date-relative reasoning on every
+    # build (interactive, bare summariser, and unattended periodic agents).
+    instruction = f"{instruction}\n\n{_current_datetime_directive(now)}"
+
     # Always append the canonical reply-style directive — this is a
     # formatting directive, not a skill, and applies to every agent build.
     style = _load_prompt_style()
