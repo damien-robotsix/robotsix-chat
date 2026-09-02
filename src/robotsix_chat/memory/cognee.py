@@ -30,7 +30,9 @@ from typing import TYPE_CHECKING, Any, TypeVar
 from robotsix_http import RetryConfig, acall_with_retry
 
 from robotsix_chat.memory.maintenance import (
+    COGNEE_DB_RELATIVE_PATH,
     LANCEDB_RELATIVE_PATH,
+    CogneeDbVacuumScheduler,
     LanceDbMaintenanceScheduler,
 )
 
@@ -258,6 +260,9 @@ class CogneeMemory:
         # Periodic LanceDB compaction/pruning scheduler (lazily created in
         # :meth:`start_maintenance`); ``None`` when disabled or not started.
         self._maintenance: LanceDbMaintenanceScheduler | None = None
+        # Periodic cognee_db VACUUM scheduler (lazily created in
+        # :meth:`start_maintenance`); ``None`` when disabled or not started.
+        self._vacuum: CogneeDbVacuumScheduler | None = None
 
     # -- health & recovery wiring -----------------------------------------
 
@@ -397,43 +402,77 @@ class CogneeMemory:
                 "auto-recover if the WAL was left inconsistent"
             )
 
-    # -- periodic LanceDB maintenance -------------------------------------
+    # -- periodic memory maintenance -------------------------------------
 
     def _lancedb_store_path(self) -> Path:
         """Absolute path of the cognee LanceDB store directory."""
         data_dir = Path(self._settings.data_dir).expanduser().resolve()
         return data_dir / LANCEDB_RELATIVE_PATH
 
+    def _cognee_db_path(self) -> Path:
+        """Absolute path of the cognee SQLite relational store file."""
+        data_dir = Path(self._settings.data_dir).expanduser().resolve()
+        return data_dir / COGNEE_DB_RELATIVE_PATH
+
     def start_maintenance(self) -> None:
-        """Start the periodic LanceDB compaction/pruning scheduler.
+        """Start the periodic memory maintenance schedulers.
 
         Idempotent and a no-op when maintenance is disabled or the interval is
-        non-positive.  Intended to be called once at server startup; the
-        scheduler runs a pass immediately and then every
-        ``maintenance_interval_seconds``, each under the write lock so it never
-        overlaps a live ``cognify``.
+        non-positive.  Intended to be called once at server startup.
+
+        Starts two schedulers:
+
+        * the LanceDB compaction/pruning scheduler — runs a pass immediately
+          and then every ``maintenance_interval_seconds``;
+        * the cognee_db VACUUM scheduler — runs inside the configured
+          off-peak UTC window every ``maintenance_vacuum_interval_seconds``.
+
+        Each pass runs under the write lock so it never overlaps a live
+        ``cognify``.
         """
         s = self._settings
-        if not s.maintenance_enabled or s.maintenance_interval_seconds <= 0:
+        if not s.maintenance_enabled:
             return
-        if self._maintenance is not None:
-            return
-        self._maintenance = LanceDbMaintenanceScheduler(
-            store_path=self._lancedb_store_path(),
-            write_lock=self._write_lock,
-            interval_seconds=s.maintenance_interval_seconds,
-            cleanup_older_than=timedelta(
-                seconds=s.maintenance_version_retention_seconds
-            ),
-        )
-        self._maintenance.start()
+        if self._maintenance is None and s.maintenance_interval_seconds > 0:
+            self._maintenance = LanceDbMaintenanceScheduler(
+                store_path=self._lancedb_store_path(),
+                write_lock=self._write_lock,
+                interval_seconds=s.maintenance_interval_seconds,
+                cleanup_older_than=timedelta(
+                    seconds=s.maintenance_version_retention_seconds
+                ),
+            )
+            self._maintenance.start()
+        if (
+            self._vacuum is None
+            and s.maintenance_vacuum_enabled
+            and s.maintenance_vacuum_interval_seconds > 0
+        ):
+            window = (
+                (
+                    int(s.maintenance_vacuum_off_peak_window[0]),
+                    int(s.maintenance_vacuum_off_peak_window[1]),
+                )
+                if s.maintenance_vacuum_off_peak_window is not None
+                else None
+            )
+            self._vacuum = CogneeDbVacuumScheduler(
+                db_path=self._cognee_db_path(),
+                write_lock=self._write_lock,
+                interval_seconds=s.maintenance_vacuum_interval_seconds,
+                mode=s.maintenance_vacuum_mode,
+                off_peak_window=window,
+            )
+            self._vacuum.start()
 
     async def stop_maintenance(self) -> None:
-        """Stop the LanceDB maintenance scheduler if it is running."""
-        if self._maintenance is None:
-            return
-        await self._maintenance.stop()
-        self._maintenance = None
+        """Stop the memory maintenance schedulers if they are running."""
+        if self._vacuum is not None:
+            await self._vacuum.stop()
+            self._vacuum = None
+        if self._maintenance is not None:
+            await self._maintenance.stop()
+            self._maintenance = None
 
     def _configure(self) -> None:
         """Configure cognee's global state from the stored settings.
