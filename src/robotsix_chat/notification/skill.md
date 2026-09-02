@@ -10,7 +10,8 @@ connected. When no browser is listening for the session at publish time, the liv
 dropped but the notification is still persisted to the notification store (chat-data
 `/data/notifications.json`) so it survives a disconnected browser and can be replayed to the next
 connecting client. Records whose live publish reached a connected browser are marked `delivered` and
-are never replayed; undelivered records are marked `delivered=false` and `read=false` until replayed.
+are never replayed; undelivered records are marked `delivered=false` and `read=false` until
+replayed.
 
 ## Fallback agent_message delivery for background task failures
 
