@@ -225,6 +225,7 @@ modules:
       - tests/chat/server/__init__.py
       - tests/chat/server/test_server.py
       - tests/chat/server/test_skill_disclosure.py
+      - tests/chat/server/test_datetime_injection.py
       - tests/test_skill_index.py
       - tests/chat/server/test_idempotency.py
       - tests/chat/server/test_message_coalescer_gc.py
