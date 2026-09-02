@@ -66,7 +66,7 @@ card. Clients must not render an empty summary card. Recommended handling patter
 
 - **Graceful degradation (default):** render the covered turns inline like any other turns — the
   transcript is complete, just without a summary card.
-- **Banner/notice:** if you want to surface the situation, show a small inline notice (e.g.
-  "Earlier messages are available below") in place of the summary card.
+- **Banner/notice:** if you want to surface the situation, show a small inline notice (e.g. "Earlier
+  messages are available below") in place of the summary card.
 - Always check `compacted_summary_missing` before deciding whether a summary card can be built; a
   bare compacted session with no explanation would otherwise confuse the reader.
