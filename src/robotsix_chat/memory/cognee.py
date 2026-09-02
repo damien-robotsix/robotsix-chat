@@ -565,10 +565,10 @@ class CogneeMemory:
         cognee.config.set_llm_api_key(self._openrouter.key(alias).get_secret_value())
         # Pin EVERY LLM pipeline stage to the configured model. cognee's
         # per-stage routing (extraction / summarization / query) and its BAML
-        # fallback each carry their own default (``openai/gpt-5-mini``) when
+        # fallback each carry their own built-in default model when
         # left empty; a pipeline step reading one of those directly would
         # otherwise bill the untraced default model instead of the configured
-        # ``gpt-5-nano``. Setting them all to the same value guarantees no
+        # model. Setting them all to the same value guarantees no
         # cognee step can silently fall back to its internal default.
         cognee.config.set_llm_config(
             {
@@ -760,7 +760,7 @@ class CogneeMemory:
         that does not equal the configured value. This is the startup trip-wire
         for the "unconfigured cognee LLM model" failure mode: a config-setter
         no-op, or a stage silently falling back to cognee's internal default
-        (``openai/gpt-5-mini``), would otherwise burn OpenRouter credit
+        model, would otherwise burn OpenRouter credit
         invisibly. Deliberately a LOG, never a raise — memory keeps working,
         but the drift is impossible to miss.
         """
