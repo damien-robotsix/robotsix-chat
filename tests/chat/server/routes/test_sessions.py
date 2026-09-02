@@ -208,7 +208,51 @@ async def test_history_endpoint_exposes_compaction_summary() -> None:
     body = json.loads(response.body)  # type: ignore[arg-type]
     assert body["compacted_summary"] == "Earlier we agreed on X."
     assert body["compacted_turn_index"] == 2
+    assert "compacted_summary_missing" not in body
     assert len(body["turns"]) == 3
+
+
+@pytest.mark.asyncio
+async def test_history_endpoint_compacted_summary_missing() -> None:
+    """A compacted session with no usable summary signals missing_summary."""
+    from types import SimpleNamespace
+
+    mock_store = MagicMock()
+    mock_store.history.return_value = [("Q", "A"), ("Q2", "A2"), ("Q3", "A3")]
+    mock_store.get_session.return_value = SimpleNamespace(
+        compacted_summary=None, compacted_turn_index=2
+    )
+    state = MagicMock(conversation_store=mock_store)
+    request = _make_query_request("session_id=sess-1")
+    request.scope["app"] = type("FakeApp", (), {"state": state})()
+
+    response = await history_endpoint(request)
+    body = json.loads(response.body)  # type: ignore[arg-type]
+    assert body["compacted_summary_missing"] is True
+    assert body["compacted_turn_index"] == 2
+    assert "compacted_summary" not in body
+    assert len(body["turns"]) == 3
+
+
+@pytest.mark.asyncio
+async def test_history_endpoint_compacted_summary_missing_empty() -> None:
+    """An empty (non-None) compacted summary is also treated as missing."""
+    from types import SimpleNamespace
+
+    mock_store = MagicMock()
+    mock_store.history.return_value = [("Q", "A")]
+    mock_store.get_session.return_value = SimpleNamespace(
+        compacted_summary="", compacted_turn_index=1
+    )
+    state = MagicMock(conversation_store=mock_store)
+    request = _make_query_request("session_id=sess-1")
+    request.scope["app"] = type("FakeApp", (), {"state": state})()
+
+    response = await history_endpoint(request)
+    body = json.loads(response.body)  # type: ignore[arg-type]
+    assert body["compacted_summary_missing"] is True
+    assert body["compacted_turn_index"] == 1
+    assert "compacted_summary" not in body
 
 
 @pytest.mark.asyncio

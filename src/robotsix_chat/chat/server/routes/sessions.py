@@ -87,7 +87,10 @@ async def history_endpoint(request: Request) -> JSONResponse:
     ``compacted_turn_index`` (how many leading ``turns`` it covers), so the
     UI can open the session on its summary and keep the covered turns
     behind an explicit expand — exactly what the agent itself sees.
-    Sessions that were never compacted get neither key.
+    Sessions that were never compacted get neither key. When the session
+    has been compacted but no usable summary is available, the response
+    carries ``compacted_summary_missing: true`` so clients can render a
+    fallback instead of a bare compacted session with no explanation.
     """
     session_id = _get_session_id(request)
 
@@ -97,9 +100,16 @@ async def history_endpoint(request: Request) -> JSONResponse:
     session = store.get_session(session_id)
     summary = getattr(session, "compacted_summary", None)
     index = getattr(session, "compacted_turn_index", 0)
-    if isinstance(summary, str) and summary and isinstance(index, int) and index > 0:
-        payload["compacted_summary"] = summary
-        payload["compacted_turn_index"] = min(index, len(turns))
+    if isinstance(index, int) and index > 0:
+        if isinstance(summary, str) and summary:
+            payload["compacted_summary"] = summary
+            payload["compacted_turn_index"] = min(index, len(turns))
+        else:
+            # Session advanced past compaction but has no usable summary —
+            # signal it so clients can render a fallback instead of a bare
+            # compacted session with no explanation.
+            payload["compacted_summary_missing"] = True
+            payload["compacted_turn_index"] = min(index, len(turns))
     return JSONResponse(payload)
 
 
