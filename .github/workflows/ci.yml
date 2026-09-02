@@ -105,11 +105,21 @@ jobs:
         run: uv --preview-features malware-check sync --frozen
         env:
           UV_MALWARE_CHECK: "1"
-      - name: Run pre-commit
+      - name: Run pre-commit (with retry)
         # mypy resolves from the project's dev group via `uv run`; vulture is
         # not a declared dependency (only a system-hook tool), so provision it
         # — and the pre-commit runner — explicitly with `--with`.
-        run: uv run --frozen --with pre-commit --with vulture --with pyright pre-commit run --all-files --show-diff-on-failure
+        # Retried: the trufflehog hook's `go install ./...` downloads a large
+        # dependency tree from proxy.golang.org, which intermittently fails with
+        # transient stream errors; Go's module cache and pre-commit's env dir
+        # persist between attempts, so a retry completes the install.
+        uses: nick-fields/retry@ad984534de44a9489a53aefd81eb77f87c70dc60  # v4.0.0
+        with:
+          timeout_minutes: 20
+          max_attempts: 3
+          retry_wait_seconds: 15
+          retry_on: error
+          command: uv run --frozen --with pre-commit --with vulture --with pyright pre-commit run --all-files --show-diff-on-failure
 
   check-sse-types:
     name: SSE event type audit
