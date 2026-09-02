@@ -1,17 +1,25 @@
-"""Periodic compaction/pruning for the cognee LanceDB vector store.
+"""Periodic maintenance for the cognee memory stores.
 
-Every cognify write appends a fragment, a new dataset version and deletion
-files to each LanceDB table; nothing in cognee ever calls LanceDB's own
-maintenance, so the tables accumulate thousands of tiny fragments and
-versions.  A vector search then has to scan every fragment and apply every
-deletion vector, which both starves recall and saturates the host disk.
+Two independent jobs live here, each targeting one store and never touching
+the others:
 
-This module runs LanceDB's :meth:`Table.optimize` (compact fragments + prune
-old versions) on a periodic schedule.  Tables are processed **sequentially**
-so the first run over a badly-fragmented store cannot exhaust memory, and the
-whole pass runs under the cognee write lock so it never overlaps a live
-``cognify`` write — if a write is already in progress the pass is skipped and
-logged.
+* :func:`optimize_lancedb_store` / :class:`LanceDbMaintenanceScheduler` —
+  compact + prune the cognee **LanceDB** vector store.  Every cognify write
+  appends a fragment, a new dataset version and deletion files; nothing in
+  cognee ever calls LanceDB's own maintenance, so the tables accumulate
+  thousands of tiny fragments and versions.  A vector search then has to scan
+  every fragment and apply every deletion vector, which both starves recall
+  and saturates the host disk.
+* :func:`vacuum_cognee_db` / :class:`CogneeDbVacuumScheduler` — run
+  ``VACUUM`` / ``PRAGMA incremental_vacuum`` against the cognee **SQLite**
+  relational store (``cognee_db``) so pages freed by row deletion (e.g.
+  retention pruning of the bookkeeping tables) are returned to disk instead
+  of accumulating as freelist.  Runs on a configurable off-peak window.
+
+Both jobs process their store **sequentially** so the first run over a
+badly-fragmented store cannot exhaust memory, and each pass runs under the
+cognee write lock so it never overlaps a live ``cognify`` write — if a write
+is already in progress the pass is skipped and logged.
 
 ``lancedb`` is imported lazily inside :func:`optimize_lancedb_store` because it
 is only present when the ``memory`` extra (cognee) is installed; this module is
@@ -25,7 +33,7 @@ import contextlib
 import logging
 import time
 from dataclasses import dataclass
-from datetime import timedelta
+from datetime import UTC, datetime, timedelta
 from pathlib import Path
 
 logger = logging.getLogger(__name__)
@@ -33,6 +41,10 @@ logger = logging.getLogger(__name__)
 # The LanceDB store lives under ``<data_dir>/system/databases/cognee.lancedb``
 # (cognee's ``system_root_directory`` is ``<data_dir>/system``).
 LANCEDB_RELATIVE_PATH = Path("system") / "databases" / "cognee.lancedb"
+
+# The SQLite relational store lives next to it as
+# ``<data_dir>/system/databases/cognee_db`` (cognee's ``db_name`` default).
+COGNEE_DB_RELATIVE_PATH = Path("system") / "databases" / "cognee_db"
 
 
 @dataclass
@@ -242,3 +254,261 @@ class LanceDbMaintenanceScheduler:
                 raise
             except Exception:
                 logger.debug("lancedb maintenance loop iteration raised", exc_info=True)
+
+
+# ---------------------------------------------------------------------------
+# cognee_db SQLite VACUUM maintenance
+# ---------------------------------------------------------------------------
+
+
+@dataclass
+class CogneeDbVacuumResult:
+    """Before/after size and freelist deltas for one vacuum pass."""
+
+    mode: str
+    size_before: int = 0
+    size_after: int = 0
+    freelist_before: int = 0
+    freelist_after: int = 0
+    duration_seconds: float = 0.0
+    error: str | None = None
+
+
+def _db_file_size(path: Path) -> int:
+    """Return the on-disk size of *path* (0 when missing/unreadable)."""
+    try:
+        return path.stat().st_size
+    except OSError:
+        return 0
+
+
+def vacuum_cognee_db(
+    db_path: Path | str,
+    *,
+    mode: str = "incremental_vacuum",
+) -> CogneeDbVacuumResult:
+    """Run VACUUM or incremental_vacuum against the cognee SQLite store.
+
+    Uses the stdlib ``sqlite3`` module directly (no extra dependency): opens
+    the ``cognee_db`` file, records its size and freelist, runs the requested
+    vacuum mode, then records the post-pass size/freelist.  The before/after
+    deltas are logged at INFO so growth and reclamation are visible.
+
+    Args:
+        db_path: Filesystem path of the ``cognee_db`` SQLite file.
+        mode: ``"incremental_vacuum"`` (default) or ``"vacuum"``.
+
+            * ``"incremental_vacuum"`` — issues ``PRAGMA incremental_vacuum``,
+              reclaiming freelist pages at the tail of the file without a full
+              rebuild.  Requires the database to have been created with
+              ``auto_vacuum`` enabled; when ``PRAGMA auto_vacuum`` is 0
+              (NONE) an incremental vacuum is a no-op, so this mode falls
+              back to a full ``VACUUM`` for that store (and logs it).
+            * ``"vacuum"`` — a full ``VACUUM`` rebuild, which also works when
+              ``auto_vacuum`` is NONE and returns freed pages to the OS.
+
+    Returns:
+        A :class:`CogneeDbVacuumResult`; never raises.  A lock/unopenable
+        store is captured in ``result.error`` and logged.
+
+    """
+    import sqlite3
+
+    db = Path(db_path)
+    start = time.monotonic()
+    result = CogneeDbVacuumResult(
+        mode=mode,
+        size_before=_db_file_size(db),
+    )
+    if not db.is_file():
+        # sqlite3.connect would silently CREATE an empty file; a missing
+        # store must instead be reported so the scheduler knows to skip.
+        result.error = f"store {db} does not exist"
+        result.duration_seconds = time.monotonic() - start
+        logger.warning("cognee_db vacuum skipped — store %s does not exist", db)
+        return result
+    try:
+        conn = sqlite3.connect(str(db), timeout=60.0)
+        try:
+            auto_vacuum = int(conn.execute("PRAGMA auto_vacuum").fetchone()[0])
+            result.freelist_before = int(
+                conn.execute("PRAGMA freelist_count").fetchone()[0]
+            )
+            if mode == "vacuum" or auto_vacuum == 0:
+                if mode == "incremental_vacuum" and auto_vacuum == 0:
+                    logger.info(
+                        "cognee_db vacuum: auto_vacuum is NONE, falling back to "
+                        "full VACUUM for %s",
+                        db,
+                    )
+                conn.execute("VACUUM")
+            else:
+                # Reclaim every freelist page (omitted N = all of them).
+                conn.execute("PRAGMA incremental_vacuum")
+            result.freelist_after = int(
+                conn.execute("PRAGMA freelist_count").fetchone()[0]
+            )
+        finally:
+            conn.close()
+        result.size_after = _db_file_size(db)
+        result.duration_seconds = time.monotonic() - start
+        logger.info(
+            "cognee_db vacuum: mode=%s size %d -> %d bytes, freelist %d -> %d in %.1fs",
+            result.mode,
+            result.size_before,
+            result.size_after,
+            result.freelist_before,
+            result.freelist_after,
+            result.duration_seconds,
+        )
+    except Exception as exc:
+        result.duration_seconds = time.monotonic() - start
+        result.error = str(exc)
+        logger.warning(
+            "cognee_db vacuum failed for %s (%s) — will retry next interval",
+            db,
+            exc,
+            exc_info=True,
+        )
+    return result
+
+
+class CogneeDbVacuumScheduler:
+    """Run :func:`vacuum_cognee_db` on a configurable off-peak schedule.
+
+    Mirrors :class:`LanceDbMaintenanceScheduler` (and
+    :class:`robotsix_chat.health.scheduler.HealthScheduler`): ``start``
+    launches a background loop and ``stop`` cancels it.  The pass only runs
+    inside the configured off-peak UTC hour window; outside it the loop
+    sleeps until the window opens.  Every pass acquires the shared cognee
+    write lock — if a ``cognify`` write is already holding it the pass is
+    skipped (and logged) rather than blocking the write, and errors never
+    escape the loop.
+    """
+
+    def __init__(
+        self,
+        *,
+        db_path: Path | str,
+        write_lock: asyncio.Lock,
+        interval_seconds: float,
+        mode: str = "incremental_vacuum",
+        off_peak_window: tuple[int, int] | None = None,
+    ) -> None:
+        """Create a scheduler for the cognee SQLite store at *db_path*.
+
+        Args:
+            db_path: Filesystem path of the ``cognee_db`` SQLite file.
+            write_lock: The cognee write lock serialising ``cognify`` writes;
+                held for the duration of each vacuum pass.
+            interval_seconds: Seconds between scheduled passes (when inside
+                the off-peak window).
+            mode: Vacuum mode forwarded to :func:`vacuum_cognee_db`
+                (``"incremental_vacuum"`` default).
+            off_peak_window: ``(start_hour, end_hour)`` in UTC — the pass
+                only runs while ``start_hour <= utc_hour < end_hour``.
+                ``None`` disables the window (run any time).
+
+        """
+        self.db_path = Path(db_path)
+        self._write_lock = write_lock
+        self.interval_seconds = interval_seconds
+        self.mode = mode
+        self.off_peak_window = off_peak_window
+        self._task: asyncio.Task[None] | None = None
+
+    def start(self) -> None:
+        """Launch the background loop (idempotent — no-op if already running)."""
+        if self._task is not None:
+            return
+        self._task = asyncio.create_task(self._loop())
+        logger.info(
+            "cognee_db vacuum scheduler started (interval=%ss, mode=%s, "
+            "window=%s, db=%s)",
+            self.interval_seconds,
+            self.mode,
+            self.off_peak_window,
+            self.db_path,
+        )
+
+    async def stop(self) -> None:
+        """Cancel the background loop and wait for it to finish."""
+        if self._task is None:
+            return
+        self._task.cancel()
+        with contextlib.suppress(asyncio.CancelledError):
+            await self._task
+        self._task = None
+        logger.info("cognee_db vacuum scheduler stopped")
+
+    def _in_off_peak_window(self, now: datetime | None = None) -> bool:
+        """Return True if *now* (UTC, default: now) is inside the window."""
+        if self.off_peak_window is None:
+            return True
+        hour = (now if now is not None else datetime.now(UTC)).hour
+        start_hour, end_hour = self.off_peak_window
+        return start_hour <= hour < end_hour
+
+    async def run_once(self) -> CogneeDbVacuumResult | None:
+        """Run one vacuum pass; skip (and log) if a write is in progress.
+
+        Returns the :class:`CogneeDbVacuumResult`, or ``None`` when the pass
+        was skipped (write in progress, missing store, outside the off-peak
+        window).  Never raises.
+        """
+        if self._write_lock.locked():
+            logger.info("cognee_db vacuum skipped — a memory write is in progress")
+            return None
+        if not self.db_path.exists():
+            logger.debug(
+                "cognee_db vacuum skipped — store %s does not exist yet",
+                self.db_path,
+            )
+            return None
+        if not self._in_off_peak_window():
+            logger.info(
+                "cognee_db vacuum skipped — outside off-peak window %s",
+                self.off_peak_window,
+            )
+            return None
+        async with self._write_lock:
+            try:
+                return await asyncio.to_thread(
+                    vacuum_cognee_db, self.db_path, mode=self.mode
+                )
+            except Exception:
+                logger.exception(
+                    "cognee_db vacuum pass failed — will retry next interval"
+                )
+                return None
+
+    async def _loop(self) -> None:
+        """Run a pass inside the off-peak window, sleeping to its opening."""
+        while True:
+            try:
+                if self._in_off_peak_window():
+                    await self.run_once()
+                    await asyncio.sleep(self.interval_seconds)
+                else:
+                    await asyncio.sleep(self._seconds_until_window_open())
+            except asyncio.CancelledError:
+                raise
+            except Exception:
+                logger.debug("cognee_db vacuum loop iteration raised", exc_info=True)
+
+    def _seconds_until_window_open(self, now: datetime | None = None) -> float:
+        """Seconds until the next window opening (0 when inside the window).
+
+        Only called when the current time is outside the window; assumes a
+        single daily window that does not wrap midnight.
+        """
+        if self.off_peak_window is None:
+            return 0.0
+        now = now if now is not None else datetime.now(UTC)
+        start_hour, _end_hour = self.off_peak_window
+        seconds_into_day = now.hour * 3600 + now.minute * 60 + now.second
+        start_seconds = start_hour * 3600
+        delta = start_seconds - seconds_into_day
+        if delta <= 0:
+            delta += 24 * 3600
+        return float(delta)
