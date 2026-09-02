@@ -10,9 +10,9 @@ ordinary session behaviour.
 
 from __future__ import annotations
 
-from datetime import datetime
+from datetime import UTC, datetime
 
-from pydantic import BaseModel, ConfigDict, Field
+from pydantic import BaseModel, ConfigDict, Field, field_validator
 
 # Default spacing between runs of a preset. One day: these are digest-style
 # jobs (mail triage, cost review), and anything that needs to react faster
@@ -84,6 +84,23 @@ class PeriodicSessionDefinition(BaseModel):
         ),
     )
     enabled: bool = True
+
+    @field_validator("anchor_utc", mode="after")
+    @classmethod
+    def _normalise_anchor_utc(cls, v: datetime | None) -> datetime | None:
+        """Enforce the field's 'UTC' contract regardless of input form.
+
+        A naive datetime would otherwise be interpreted by
+        ``datetime.timestamp()`` in the scheduler in the HOST's local
+        timezone, silently shifting the anchor. Normalising here — naive
+        means UTC, and any other offset is converted to UTC — makes the
+        stored value an explicit UTC instant.
+        """
+        if v is None:
+            return v
+        if v.tzinfo is None:
+            return v.replace(tzinfo=UTC)
+        return v.astimezone(UTC)
 
 
 class PeriodicSettings(BaseModel):
