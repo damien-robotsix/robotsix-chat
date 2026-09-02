@@ -221,8 +221,10 @@ class NotificationStore:
         except FileNotFoundError:
             self._records = []
             return
-        except (json.JSONDecodeError, OSError):
-            logger.warning("Notification store %s unreadable; starting empty", self._path)
+        except json.JSONDecodeError, OSError:
+            logger.warning(
+                "Notification store %s unreadable; starting empty", self._path
+            )
             self._records = []
             return
         if isinstance(data, list):
@@ -234,4 +236,3 @@ class NotificationStore:
         tmp = self._path.with_suffix(self._path.suffix + ".tmp")
         tmp.write_text(json.dumps(self._records, indent=2), encoding="utf-8")
         tmp.replace(self._path)
-replace(self._path)
