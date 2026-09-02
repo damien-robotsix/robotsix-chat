@@ -13,8 +13,8 @@ import pytest
 
 from robotsix_chat.notification.store import (
     MAX_EVENTS,
-    NotificationStore,
     RETENTION_DAYS,
+    NotificationStore,
 )
 
 
