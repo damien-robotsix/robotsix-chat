@@ -374,6 +374,7 @@ def create_app(
     evergoing_settings: EvergoingSettings | None = None,
     continuation_store: Any = None,
     notification_store: Any = None,
+    notification_store_and_forward: bool = True,
 ) -> Starlette:
     """Return a Starlette ASGI app wired to ``agent``.
 
@@ -521,6 +522,11 @@ def create_app(
             persisting ``notify_user`` notifications to chat-data so they
             survive a disconnected browser.  When ``None`` (default),
             notifications are published live but not persisted.
+        notification_store_and_forward: Feature flag mirroring
+            ``notification.store_and_forward``.  When ``False``, the
+            ``/notifications`` API endpoints return empty responses (the
+            emergency kill-switch); ``True`` (default) serves persisted
+            records.
 
     """
     routes: list[Route | Mount] = [
@@ -835,6 +841,7 @@ def create_app(
         app.state.evergoing_scheduler = None
     app.state.continuation_store = continuation_store  # may be None
     app.state.notification_store = notification_store  # may be None
+    app.state.notification_store_and_forward = notification_store_and_forward
     if config_path is not None:
         app.state.config_path = config_path
     if draft_store_dir is not None:

@@ -366,3 +366,46 @@ async def test_read_store_failure_returns_500() -> None:
     response = await notifications_read_endpoint(request)
 
     assert response.status_code == 500
+
+
+# ---------------------------------------------------------------------------
+# store_and_forward feature flag disabled
+# ---------------------------------------------------------------------------
+
+
+def _app_flag_disabled(store: NotificationStore | None) -> SimpleNamespace:
+    """Build a fake app with the store-and-forward flag turned off."""
+    return SimpleNamespace(
+        state=SimpleNamespace(
+            notification_store=store,
+            notification_store_and_forward=False,
+        )
+    )
+
+
+@pytest.mark.asyncio
+async def test_unread_returns_empty_when_store_and_forward_disabled(
+    tmp_path: Path,
+) -> None:
+    """With the flag off, ``/notifications/unread`` returns ``[]`` and ignores store."""
+    store = _store(tmp_path, [_unread_record("kept", _days_ago(1))])
+    request = _make_bare_request(app=_app_flag_disabled(store))
+
+    response = await notifications_unread_endpoint(request)
+
+    assert response.status_code == 200
+    assert json.loads(response.body) == []  # type: ignore[arg-type]
+
+
+@pytest.mark.asyncio
+async def test_read_is_noop_when_store_and_forward_disabled(tmp_path: Path) -> None:
+    """With the flag off, ``/notifications/read`` marks nothing; store untouched."""
+    store = _store(tmp_path, [_unread_record("kept", _days_ago(1))])
+    request = _post_request(_app_flag_disabled(store), {})
+
+    response = await notifications_read_endpoint(request)
+
+    assert response.status_code == 200
+    assert json.loads(response.body) == {"status": "ok", "marked": 0}  # type: ignore[arg-type]
+    # The store was never touched — the record is still unread.
+    assert [r.read for r in store.list()] == [False]

@@ -1,6 +1,5 @@
+Wrote schema to 'config/config.schema.json'
 {
-  "$defs": {
-    "CentralDeploySettings": {
       "additionalProperties": false,
       "description": "Central-deploy roster and component-access settings.\n\nProvides the base URL for the central-deploy management-plane API.\nAt session start the agent fetches the\n``GET /chat/components`` roster (a list of component agents the chat\nis allowed to call), caches it with a short TTL, and loads each\ncomponent's declared skill into the agent.\n\nAttributes:\n    url: Canonical base URL of the central-deploy / deploy-lifecycle API\n        (no trailing slash).  Single source of truth for the deploy-plane\n        address; the lifecycle client and feedback roster lookup both read\n        it (the former ``lifecycle.base_url`` was retired in favour of it).\n    roster_cache_ttl: Seconds to cache the roster before re-fetching.\n        Default 300 (5 min).\n    component_response_max_chars: Maximum characters of a component API\n        response returned to the agent; longer bodies are truncated.\n        Default 200000.\n    deploy_api_key: Canonical deploy-plane credential \u2014 the shared\n        secret between this chat component and central-deploy.  Sent as\n        the ``X-API-Key`` header on outbound roster/lifecycle calls, and\n        required (matched) on inbound central-deploy \u2192 chat endpoints\n        (``/chat/github/*`` and the feedback roster lookup).  This is the\n        single source of truth; the per-block ``deploy_api_key`` fields\n        were retired in favour of it.\n    component_credentials: Per-component credentials keyed by\n        component id.  Each entry carries credentials for all\n        supported auth schemes; the roster entry's ``auth.type``\n        selects which fields are used.",
       "properties": {
@@ -962,11 +961,16 @@
     },
     "NotificationSettings": {
       "additionalProperties": false,
-      "description": "Browser notification settings \u2014 lets the agent alert the user proactively.\n\nWhen enabled, the agent gains a ``notify_user`` tool that publishes a\nnotification event to connected clients over the existing SSE channel\n(EventBus).  The user's browser renders the event via the native\nNotifications API.\n\nDelivery only reaches clients that are currently connected \u2014 the\nnotification is silently dropped when no browser is listening.\n\nAttributes:\n    enabled: Master switch.  When ``False``, no notify_user tool is\n        offered.\n    store_path: Path to the JSON persistence file for notifications\n        that were not delivered to a connected browser.  Must be on a\n        persistent volume (chat-data ``/data``) so undelivered\n        notifications survive container recreation and can be replayed\n        when a browser next connects.",
+      "description": "Browser notification settings \u2014 lets the agent alert the user proactively.\n\nWhen enabled, the agent gains a ``notify_user`` tool that publishes a\nnotification event to connected clients over the existing SSE channel\n(EventBus).  The user's browser renders the event via the native\nNotifications API.\n\nDelivery only reaches clients that are currently connected \u2014 the\nnotification is silently dropped when no browser is listening.\n\nAttributes:\n    enabled: Master switch.  When ``False``, no notify_user tool is\n        offered.\n    store_and_forward: Feature flag for the persistent store-and-forward\n        path.  When ``True`` (default), undelivered notifications are\n        persisted to ``store_path`` and replayed to the next connecting\n        browser, and the ``/notifications`` API endpoints serve them.\n        Set ``False`` as an emergency kill-switch: ``notify_user`` then\n        publishes live SSE frames only (never persists) and the\n        ``/notifications/unread`` and ``/notifications/read`` endpoints\n        return empty responses.  The live SSE contract is unchanged\n        either way.\n    store_path: Path to the JSON persistence file for notifications\n        that were not delivered to a connected browser.  Must be on a\n        persistent volume (chat-data ``/data``) so undelivered\n        notifications survive container recreation and can be replayed\n        when a browser next connects.",
       "properties": {
         "enabled": {
           "default": true,
           "title": "Enabled",
+          "type": "boolean"
+        },
+        "store_and_forward": {
+          "default": true,
+          "title": "Store And Forward",
           "type": "boolean"
         },
         "store_path": {
