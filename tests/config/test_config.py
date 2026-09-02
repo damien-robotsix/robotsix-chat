@@ -1216,9 +1216,9 @@ _CONCRETE_MODEL_PATTERNS: list[str] = [
 # Remove entries as the leaks are cleaned up in follow-up tickets.
 _PREEXISTING_ALLOWLIST: set[tuple[str, int, str]] = {
     # memory/cognee.py — gpt-5-mini / gpt-5-nano in comments
-    ("src/robotsix_chat/memory/cognee.py", 519, "gpt-"),
-    ("src/robotsix_chat/memory/cognee.py", 522, "gpt-"),
-    ("src/robotsix_chat/memory/cognee.py", 666, "gpt-"),
+    ("src/robotsix_chat/memory/cognee.py", 558, "gpt-"),
+    ("src/robotsix_chat/memory/cognee.py", 561, "gpt-"),
+    ("src/robotsix_chat/memory/cognee.py", 705, "gpt-"),
     # config/settings.py — opus / claude-fable-5 in Settings docstring
     ("src/robotsix_chat/config/settings.py", 98, "-opus"),
     ("src/robotsix_chat/config/settings.py", 98, "claude-fable"),
@@ -1226,11 +1226,11 @@ _PREEXISTING_ALLOWLIST: set[tuple[str, int, str]] = {
     ("src/robotsix_chat/config/settings.py", 154, "gpt-"),
     ("src/robotsix_chat/config/settings.py", 1939, "gpt-"),
     # config/memory_models.py — gpt-5-nano / gpt-5-mini / deepseek-v4-flash
-    ("src/robotsix_chat/config/memory_models.py", 19, "gpt-"),
-    ("src/robotsix_chat/config/memory_models.py", 43, "gpt-"),
-    ("src/robotsix_chat/config/memory_models.py", 46, "gpt-"),
-    ("src/robotsix_chat/config/memory_models.py", 46, "deepseek/"),
-    ("src/robotsix_chat/config/memory_models.py", 49, "gpt-"),
+    ("src/robotsix_chat/config/memory_models.py", 26, "gpt-"),
+    ("src/robotsix_chat/config/memory_models.py", 50, "gpt-"),
+    ("src/robotsix_chat/config/memory_models.py", 53, "gpt-"),
+    ("src/robotsix_chat/config/memory_models.py", 53, "deepseek/"),
+    ("src/robotsix_chat/config/memory_models.py", 56, "gpt-"),
 }
 
 
@@ -1344,10 +1344,15 @@ def test_kind_turn_budget_blank_numeric_sentinel_loads_cleanly() -> None:
 
 def test_memory_blank_numeric_sentinel_loads_cleanly() -> None:
     settings = MemorySettings.model_validate(
-        {"maintenance_interval_seconds": "", "recall_max_concurrency": ""}
+        {
+            "maintenance_interval_seconds": "",
+            "maintenance_vacuum_interval_seconds": "",
+            "recall_max_concurrency": "",
+        }
     )
 
     assert settings.maintenance_interval_seconds == 21600.0
+    assert settings.maintenance_vacuum_interval_seconds == 21600.0
     assert settings.recall_max_concurrency == 4
 
 

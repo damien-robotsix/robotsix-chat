@@ -5,7 +5,14 @@ from __future__ import annotations
 import logging
 from typing import Any
 
-from pydantic import BaseModel, ConfigDict, Field, SecretStr, model_validator
+from pydantic import (
+    BaseModel,
+    ConfigDict,
+    Field,
+    SecretStr,
+    field_validator,
+    model_validator,
+)
 
 from .constants import drop_blank_numeric_sentinels
 from .langfuse_models import PROJECT_MEMORY
@@ -213,6 +220,25 @@ class MemorySettings(BaseModel):
             ``cleanup_older_than`` to ``Table.optimize``.  Older versions are
             removed so the on-disk version count stays bounded.  Default
             ``3600.0`` (1 h).
+        maintenance_vacuum_enabled: When ``True`` (default), a background task
+            runs ``VACUUM`` / ``PRAGMA incremental_vacuum`` against the cognee
+            SQLite relational store (``cognee_db``) so pages freed by row
+            deletion (e.g. retention pruning of the bookkeeping tables) are
+            returned to disk instead of accumulating as freelist.  Runs only
+            inside the configured off-peak UTC window, under the cognee write
+            lock, and never touches the LanceDB or graph stores.
+        maintenance_vacuum_interval_seconds: Seconds between vacuum passes
+            (when inside the off-peak window).  Default ``21600.0`` (6 h).
+        maintenance_vacuum_mode: Vacuum mode for the cognee_db pass —
+            ``"incremental_vacuum"`` (default) reclaims freelist pages at the
+            tail of the file with ``PRAGMA incremental_vacuum`` when the
+            database supports it (``auto_vacuum`` enabled), falling back to a
+            full ``VACUUM`` when it does not; ``"vacuum"`` always performs a
+            full ``VACUUM`` rebuild.
+        maintenance_vacuum_off_peak_window: ``[start_hour, end_hour]`` in UTC
+            (inclusive start, exclusive end) during which the vacuum pass may
+            run — e.g. ``[2, 6]`` means 02:00-06:00 UTC.  ``null`` disables
+            the window (run any time).  Default ``[2, 6]``.
         llm: Extraction-LLM config (graph building / consolidation).
         embedding: Embedding-server config (semantic search).
         langfuse_project: Name of the Langfuse project cognee's own LLM
@@ -247,6 +273,12 @@ class MemorySettings(BaseModel):
     maintenance_enabled: bool = True
     maintenance_interval_seconds: float = 21600.0
     maintenance_version_retention_seconds: float = 3600.0
+    maintenance_vacuum_enabled: bool = True
+    maintenance_vacuum_interval_seconds: float = 21600.0
+    maintenance_vacuum_mode: str = "incremental_vacuum"
+    maintenance_vacuum_off_peak_window: list[int] | None = Field(
+        default_factory=lambda: [2, 6]
+    )
     llm: MemoryLlmSettings = Field(default_factory=MemoryLlmSettings)
     embedding: MemoryEmbeddingSettings = Field(default_factory=MemoryEmbeddingSettings)
     langfuse_project: str = PROJECT_MEMORY
@@ -292,6 +324,37 @@ class MemorySettings(BaseModel):
                 "retry backoff is now managed by robotsix_http.acall_with_retry"
             )
         return data
+
+    @field_validator("maintenance_vacuum_mode")
+    @classmethod
+    def _validate_vacuum_mode(cls, value: str) -> str:
+        allowed = {"incremental_vacuum", "vacuum"}
+        if value not in allowed:
+            raise ValueError(
+                f"maintenance_vacuum_mode must be one of {sorted(allowed)}, "
+                f"got {value!r}"
+            )
+        return value
+
+    @field_validator("maintenance_vacuum_off_peak_window")
+    @classmethod
+    def _validate_off_peak_window(cls, value: list[int] | None) -> list[int] | None:
+        if value is None:
+            return value
+        if len(value) != 2:
+            raise ValueError(
+                "maintenance_vacuum_off_peak_window must be [start_hour, end_hour]"
+            )
+        start_hour, end_hour = value
+        if not (0 <= start_hour < 24 and 0 < end_hour <= 24):
+            raise ValueError(
+                "maintenance_vacuum_off_peak_window hours must be in 0..24"
+            )
+        if start_hour >= end_hour:
+            raise ValueError(
+                "maintenance_vacuum_off_peak_window start_hour must be < end_hour"
+            )
+        return value
 
     @model_validator(mode="before")
     @classmethod

@@ -11,7 +11,7 @@ from __future__ import annotations
 import asyncio
 import sys
 import types
-from datetime import timedelta
+from datetime import UTC, timedelta
 from pathlib import Path
 from typing import Any
 
@@ -25,10 +25,14 @@ from robotsix_chat.config import (
 from robotsix_chat.memory import maintenance as maintenance_module
 from robotsix_chat.memory.cognee import CogneeMemory
 from robotsix_chat.memory.maintenance import (
+    COGNEE_DB_RELATIVE_PATH,
     LANCEDB_RELATIVE_PATH,
+    CogneeDbVacuumResult,
+    CogneeDbVacuumScheduler,
     LanceDbMaintenanceScheduler,
     TableMaintenanceResult,
     optimize_lancedb_store,
+    vacuum_cognee_db,
 )
 
 
@@ -359,4 +363,272 @@ async def test_cognee_start_maintenance_noop_when_disabled(tmp_path: Path) -> No
     mem.start_maintenance()
     assert mem._maintenance is None
     # stop is safe even when nothing started.
+    await mem.stop_maintenance()
+
+
+# ---------------------------------------------------------------------------
+# cognee_db VACUUM maintenance
+# ---------------------------------------------------------------------------
+
+
+def _make_cognee_db(db_path: Path, *, auto_vacuum: int = 2) -> None:
+    """Create a populated SQLite ``cognee_db`` (WAL off, journal delete).
+
+    ``auto_vacuum`` is set BEFORE any table is created (SQLite only honours it
+    at table-creation time), mirroring how the mode selection in
+    :func:`vacuum_cognee_db` reads ``PRAGMA auto_vacuum``.
+    """
+    import sqlite3
+
+    conn = sqlite3.connect(str(db_path))
+    try:
+        conn.execute(f"PRAGMA auto_vacuum={auto_vacuum}")
+        conn.execute(
+            "CREATE TABLE pipeline_runs (id INTEGER PRIMARY KEY, payload TEXT)"
+        )
+        conn.executemany(
+            "INSERT INTO pipeline_runs (payload) VALUES (?)",
+            [(f"row-{i}",) for i in range(2000)],
+        )
+        conn.commit()
+    finally:
+        conn.close()
+
+
+def _delete_rows(db_path: Path, n: int = 1500) -> None:
+    """Delete rows without reclaiming space (simulates retention pruning)."""
+    import sqlite3
+
+    conn = sqlite3.connect(str(db_path))
+    try:
+        conn.execute("DELETE FROM pipeline_runs WHERE id <= ?", (n,))
+        conn.commit()
+    finally:
+        conn.close()
+
+
+def _freelist(db_path: Path) -> int:
+    import sqlite3
+
+    conn = sqlite3.connect(str(db_path))
+    try:
+        return int(conn.execute("PRAGMA freelist_count").fetchone()[0])
+    finally:
+        conn.close()
+
+
+def test_vacuum_incremental_reclaims_freelist_when_auto_vacuum(
+    tmp_path: Path,
+) -> None:
+    """incremental_vacuum reclaims freelist pages freed by row deletion."""
+    db = tmp_path / "cognee_db"
+    _make_cognee_db(db, auto_vacuum=2)
+    _delete_rows(db)
+    assert _freelist(db) > 0
+
+    result = vacuum_cognee_db(db, mode="incremental_vacuum")
+
+    assert result.error is None
+    assert result.mode == "incremental_vacuum"
+    # Tail freelist pages were reclaimed (freelist shrank, file shrank).
+    assert result.freelist_before > 0
+    assert result.freelist_after < result.freelist_before
+    assert result.size_after <= result.size_before
+
+
+def test_vacuum_incremental_falls_back_to_full_when_auto_vacuum_none(
+    tmp_path: Path,
+) -> None:
+    """With auto_vacuum=NONE, incremental is a no-op so it falls back to VACUUM."""
+    db = tmp_path / "cognee_db"
+    _make_cognee_db(db, auto_vacuum=0)
+    _delete_rows(db)
+    size_before = db.stat().st_size
+    assert _freelist(db) > 0
+
+    result = vacuum_cognee_db(db, mode="incremental_vacuum")
+
+    assert result.error is None
+    # Full VACUUM reclaims the entire freelist and shrinks the file.
+    assert result.freelist_after == 0
+    assert result.size_after < size_before
+
+
+def test_vacuum_full_shrinks_file_after_prune(tmp_path: Path) -> None:
+    """Full VACUUM returns freed pages to disk and shrinks the file."""
+    db = tmp_path / "cognee_db"
+    _make_cognee_db(db, auto_vacuum=0)
+    _delete_rows(db)
+    size_before = db.stat().st_size
+    assert _freelist(db) > 0
+
+    result = vacuum_cognee_db(db, mode="vacuum")
+
+    assert result.error is None
+    assert result.freelist_after == 0
+    assert result.size_after < size_before
+
+
+def test_vacuum_logs_and_captures_error_on_missing_file(tmp_path: Path) -> None:
+    """A missing/unopenable store is captured in the result, never raises."""
+    missing = tmp_path / "no-such-cognee_db"
+    result = vacuum_cognee_db(missing, mode="incremental_vacuum")
+    assert result.error is not None
+    assert result.size_before == 0
+    assert result.size_after == 0
+
+
+@pytest.mark.asyncio
+async def test_vacuum_run_once_runs_inside_window(tmp_path: Path) -> None:
+    """run_once vacuums when inside the off-peak window."""
+    db = tmp_path / "cognee_db"
+    _make_cognee_db(db, auto_vacuum=2)
+    _delete_rows(db)
+    sched = CogneeDbVacuumScheduler(
+        db_path=db,
+        write_lock=asyncio.Lock(),
+        interval_seconds=3600,
+        mode="incremental_vacuum",
+        off_peak_window=(2, 6),
+    )
+    inside = sched._in_off_peak_window()
+    if not inside:
+        sched.off_peak_window = None
+
+    result = await sched.run_once()
+
+    assert result is not None
+    assert result.error is None
+    # Incremental reclaims at least the tail freelist pages.
+    assert result.freelist_after < result.freelist_before
+
+
+@pytest.mark.asyncio
+async def test_vacuum_run_once_skips_when_writing(tmp_path: Path) -> None:
+    """A pass is skipped (no vacuum) while a write holds the lock."""
+    db = tmp_path / "cognee_db"
+    _make_cognee_db(db, auto_vacuum=2)
+    lock = asyncio.Lock()
+    sched = CogneeDbVacuumScheduler(
+        db_path=db,
+        write_lock=lock,
+        interval_seconds=3600,
+        mode="incremental_vacuum",
+    )
+    await lock.acquire()
+    try:
+        result = await sched.run_once()
+    finally:
+        lock.release()
+    assert result is None
+
+
+@pytest.mark.asyncio
+async def test_vacuum_run_once_skips_when_store_missing(tmp_path: Path) -> None:
+    """A non-existent store is skipped without touching sqlite."""
+    sched = CogneeDbVacuumScheduler(
+        db_path=tmp_path / "does-not-exist",
+        write_lock=asyncio.Lock(),
+        interval_seconds=3600,
+        mode="incremental_vacuum",
+    )
+    assert await sched.run_once() is None
+
+
+@pytest.mark.asyncio
+async def test_vacuum_run_once_skips_outside_window(tmp_path: Path) -> None:
+    """run_once returns None when the current UTC hour is outside the window."""
+    db = tmp_path / "cognee_db"
+    _make_cognee_db(db, auto_vacuum=2)
+    from datetime import datetime
+
+    now = datetime.now(UTC)
+    # A window that cannot contain the current hour.
+    sched = CogneeDbVacuumScheduler(
+        db_path=db,
+        write_lock=asyncio.Lock(),
+        interval_seconds=3600,
+        mode="incremental_vacuum",
+        off_peak_window=((now.hour + 1) % 24, (now.hour + 2) % 24),
+    )
+    assert not sched._in_off_peak_window()
+    assert await sched.run_once() is None
+
+
+@pytest.mark.asyncio
+async def test_vacuum_loop_sleeps_to_window_open(
+    monkeypatch: pytest.MonkeyPatch, tmp_path: Path
+) -> None:
+    """Outside the window the loop sleeps until it opens (never vacuums)."""
+    from datetime import datetime
+
+    sched = CogneeDbVacuumScheduler(
+        db_path=tmp_path / "cognee_db",
+        write_lock=asyncio.Lock(),
+        interval_seconds=777,
+        mode="incremental_vacuum",
+        off_peak_window=(23, 24),  # 23:00-24:00 UTC — usually not now
+    )
+    runs = 0
+    sleeps: list[float] = []
+
+    async def _fake_run_once() -> CogneeDbVacuumResult | None:
+        nonlocal runs
+        runs += 1
+        return None
+
+    async def _fake_sleep(seconds: float) -> None:
+        sleeps.append(seconds)
+        raise asyncio.CancelledError
+
+    monkeypatch.setattr(sched, "run_once", _fake_run_once)
+    monkeypatch.setattr(maintenance_module.asyncio, "sleep", _fake_sleep)
+
+    now = datetime.now(UTC)
+    with pytest.raises(asyncio.CancelledError):
+        await sched._loop()
+
+    if sched._in_off_peak_window(now):
+        # 23:00-24:00 happens to be now — the pass ran and slept the interval.
+        assert runs == 1
+        assert sleeps == [777]
+    else:
+        assert runs == 0
+        assert sleeps and sleeps[0] == sched._seconds_until_window_open(now)
+
+
+@pytest.mark.asyncio
+async def test_cognee_start_maintenance_starts_vacuum_scheduler(
+    tmp_path: Path,
+) -> None:
+    """CogneeMemory wires the vacuum scheduler to its write lock and DB path."""
+    mem = CogneeMemory(_enabled_memory_settings(str(tmp_path)))
+    mem.start_maintenance()
+    try:
+        sched = mem._vacuum
+        assert sched is not None
+        assert sched._write_lock is mem._write_lock
+        expected = (tmp_path / COGNEE_DB_RELATIVE_PATH).resolve()
+        assert sched.db_path == expected
+        assert sched.interval_seconds == 21600.0
+        assert sched.mode == "incremental_vacuum"
+        assert sched.off_peak_window == (2, 6)
+    finally:
+        await mem.stop_maintenance()
+    assert mem._vacuum is None
+    assert mem._maintenance is None
+
+
+@pytest.mark.asyncio
+async def test_cognee_start_maintenance_vacuum_noop_when_disabled(
+    tmp_path: Path,
+) -> None:
+    """No vacuum scheduler is created when vacuum maintenance is disabled."""
+    mem = CogneeMemory(
+        _enabled_memory_settings(str(tmp_path), maintenance_vacuum_enabled=False)
+    )
+    mem.start_maintenance()
+    assert mem._vacuum is None
+    # The LanceDB scheduler still starts (its own toggle is separate).
+    assert mem._maintenance is not None
     await mem.stop_maintenance()
