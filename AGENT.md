@@ -157,6 +157,19 @@ This applies to all Markdown files under `docs/`.
 **Rationale:** PRs #1297 and #1298 both hit this cycle; every PR touching the three ordered lists in
 `docs/configuration.md` will trigger it until the hook is changed.
 
+**Rule:** Any edit to a settings table in `docs/configuration.md` — renaming a row, changing a cell
+value, or removing a row — narrows a column and de-aligns the mdformat-formatted cell padding.
+Re-run `mdformat --wrap 100 docs/configuration.md` and commit the re-alignment in the same change;
+otherwise the `Pre-commit hooks` CI check fails with a pure-whitespace reformat cycle.
+
+**Rationale:** Two fixing_ci cycles traced to settings-table edits: PR #1801 row removal (commit
+72bada82) and PR #1809 row rename (commit 69456683), each requiring a follow-up
+`mdformat --wrap 100` reformat of docs/configuration.md. The mdformat pre-commit hook (args
+`--wrap 100`, gfm + frontmatter plugins) rewrites the orphaned widths on every subsequent run.
+
+**Provenance:** proposed by retrospect from
+20260902T151502Z-rename-llmio-model-level-chat-default-mo-5af8
+
 ## Python conventions
 
 **Rule:** On this repo (Python ≥3.14, `target-version = "py314"`) the canonical form is the
