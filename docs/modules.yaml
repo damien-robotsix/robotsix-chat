@@ -205,6 +205,7 @@ modules:
       - src/robotsix_chat/chat/server/routes/memory.py
       - src/robotsix_chat/chat/server/routes/metrics.py
       - src/robotsix_chat/chat/server/routes/mill_events.py
+      - src/robotsix_chat/chat/server/routes/notifications.py
       - src/robotsix_chat/chat/server/metrics.py
       - src/robotsix_chat/chat/server/routes/sessions.py
       - src/robotsix_chat/chat/server/routes/subsessions.py
@@ -215,6 +216,7 @@ modules:
       - docs/chat/server.md
       - docs/chat/server/mobile_sso_runbook.md
       - docs/chat/server/routes/admin.md
+      - docs/chat/server/routes/notifications.md
       - tests/chat/__init__.py
       - tests/chat/test_cli.py
       - tests/chat/test_conversation.py
@@ -241,6 +243,7 @@ modules:
       - tests/chat/server/routes/test_github.py
       - tests/chat/server/routes/test_memory.py
       - tests/chat/server/routes/test_mill_events.py
+      - tests/chat/server/routes/test_notifications.py
       - tests/chat/server/routes/test_draft.py
       - tests/chat/server/routes/test_errors.py
       - tests/chat/server/routes/test_sessions.py

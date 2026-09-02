@@ -127,6 +127,8 @@ from .routes import (
     mobile_token_endpoint,
     models_list_endpoint,
     not_found_handler,
+    notifications_read_endpoint,
+    notifications_unread_endpoint,
     periodic_definitions_list_endpoint,
     periodic_definitions_run_endpoint,
     prune_endpoint,
@@ -544,6 +546,16 @@ def create_app(
         Route("/events", events_endpoint, methods=["GET"]),
         Route("/history", history_endpoint, methods=["GET"]),
         Route("/models", models_list_endpoint, methods=["GET"]),
+        Route(
+            "/notifications/unread",
+            notifications_unread_endpoint,
+            methods=["GET"],
+        ),
+        Route(
+            "/notifications/read",
+            notifications_read_endpoint,
+            methods=["POST"],
+        ),
         Route("/sessions", sessions_list_endpoint, methods=["GET"]),
         Route("/sessions", sessions_create_endpoint, methods=["POST"]),
         Route(
