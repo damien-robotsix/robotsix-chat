@@ -132,6 +132,7 @@
     "user_chat_max_retries": 3,
     "monitor_error_max_retries": 2,
     "transient_error_max_retries": 3,
+    "monitor_turn_concurrency": 2,
     "max_runs_escalation_threshold": 3,
     "max_runs_progress_extension": 20,
     "max_runs_progress_window": 5,

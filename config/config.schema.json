@@ -1441,6 +1441,12 @@
           "title": "Transient Error Max Retries",
           "type": "integer"
         },
+        "monitor_turn_concurrency": {
+          "default": 2,
+          "description": "Maximum number of periodic/wait_for_event monitor agent turns running at the same time, fleet-wide within this chat process.  A board-event storm (e.g. a mill restart re-enqueuing many tickets) wakes many monitors at once; each turn spawns a claudeSDK CLI subprocess (~240MB RSS), and an unbounded stampede drove the container to its memory limit and an OOM kill on 2026-09-02.  Excess wakes wait on the gate instead of running concurrently.  Set to ``0`` to disable the gate.  Default ``2``.",
+          "title": "Monitor Turn Concurrency",
+          "type": "integer"
+        },
         "max_runs_escalation_threshold": {
           "default": 3,
           "description": "Number of consecutive times a periodic subsession can hit its ``max_runs`` limit before auto-escalating with a follow-up ticket.  When the threshold is reached, a follow-up ticket is created on the board and the monitor closes with reason ``max_runs_escalated``.  Set to ``0`` to disable escalation.  Default ``3``.",

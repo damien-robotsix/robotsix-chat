@@ -455,6 +455,20 @@ class SubsessionsSettings(BaseModel):
         ),
     )
     transient_error_max_retries: int = 3
+    monitor_turn_concurrency: int = Field(
+        default=2,
+        description=(
+            "Maximum number of periodic/wait_for_event monitor agent "
+            "turns running at the same time, fleet-wide within this "
+            "chat process.  A board-event storm (e.g. a mill restart "
+            "re-enqueuing many tickets) wakes many monitors at once; "
+            "each turn spawns a claudeSDK CLI subprocess (~240MB RSS), "
+            "and an unbounded stampede drove the container to its "
+            "memory limit and an OOM kill on 2026-09-02.  Excess wakes "
+            "wait on the gate instead of running concurrently.  Set to "
+            "``0`` to disable the gate.  Default ``2``."
+        ),
+    )
     max_runs_escalation_threshold: int = Field(
         default=3,
         description=(
