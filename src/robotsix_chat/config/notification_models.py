@@ -23,10 +23,16 @@ class NotificationSettings(BaseModel):
     Attributes:
         enabled: Master switch.  When ``False``, no notify_user tool is
             offered.
+        store_path: Path to the JSON persistence file for notifications
+            that were not delivered to a connected browser.  Must be on a
+            persistent volume (chat-data ``/data``) so undelivered
+            notifications survive container recreation and can be replayed
+            when a browser next connects.
 
     """
 
     enabled: bool = True
+    store_path: str = "/data/notifications.json"
     model_config = ConfigDict(extra="forbid")
 
 
