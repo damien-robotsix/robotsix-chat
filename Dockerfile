@@ -52,7 +52,7 @@ RUN uv export --frozen --no-emit-project --no-hashes \
 # 'idealTree' already exists" error when run from the filesystem root (/), so
 # install from a real project directory (/build) instead.
 # ---------------------------------------------------------------------------
-FROM node:22-alpine AS ui
+FROM node:24-alpine AS ui
 ARG ROBOTSIX_UI_VERSION=v0.1.41
 WORKDIR /build
 # hadolint ignore=DL3016,DL3018
@@ -111,10 +111,10 @@ RUN apt-get update \
     && mkdir -p /etc/apt/keyrings \
     && curl -fsSL https://deb.nodesource.com/gpgkey/nodesource-repo.gpg.key \
         | gpg --dearmor -o /etc/apt/keyrings/nodesource.gpg \
-    && echo "deb [signed-by=/etc/apt/keyrings/nodesource.gpg] https://deb.nodesource.com/node_22.x nodistro main" \
+    && echo "deb [signed-by=/etc/apt/keyrings/nodesource.gpg] https://deb.nodesource.com/node_24.x nodistro main" \
         > /etc/apt/sources.list.d/nodesource.list \
     && apt-get update \
-    && apt-get install -y --no-install-recommends nodejs="22.*" \
+    && apt-get install -y --no-install-recommends nodejs="24.*" \
     && npm install -g @anthropic-ai/claude-code@2.1.199 \
     && claude --version \
     && apt-get purge -y --auto-remove curl gnupg \
