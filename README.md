@@ -175,6 +175,30 @@ subsequent turns in that session only — other sessions retain their own config
 selection. Every level is served by the keyless claudeSDK default slot; llmio fails over to the
 keyed OpenRouter slot automatically (the header badge flags it), which requires `llmio_api_key`.
 
+### Image attachments (vision fallback)
+
+Users can attach images to a chat turn. Vision-capable models (the keyless Claude SDK slot, levels
+3–4) read them natively. Text-only models (the keyed OpenRouter slot, levels 1–2 such as DeepSeek)
+cannot accept image input, so robotsix-chat routes the attachment to a configured **vision model**
+that captions it and substitutes the caption as text.
+
+The `vision_model` setting names that fallback model — an OpenRouter model id of the form
+`openrouter/<vendor>/<model-slug>` (default `openrouter/openai/gpt-4o-mini`). It bills under the
+same `llmio_api_key` as the level 1–2 chat slots.
+
+```jsonc
+{
+  "chat_default_model_level": 2,
+  // "llmio_api_key": "sk-or-...",  // pragma: allowlist secret
+  "vision_model": "openrouter/openai/gpt-4o-mini"  // "" disables captioning
+}
+```
+
+When `vision_model` is an empty string the fallback is disabled: a text-only model then returns a
+curated "this model cannot read images" message instead of captioning. See
+[`docs/vision.md`](docs/vision.md) for supported models, behavior, examples, and the migration
+guide.
+
 ### Authentication
 
 The server ships no auth of its own (robotsix-standards component standard): production traffic is
