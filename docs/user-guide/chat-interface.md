@@ -109,6 +109,20 @@ ensures you never miss an alert even if desktop permission was never granted.
 > **Tip:** If you want desktop notifications, watch for the browser's permission prompt on your
 > first click. Grant it to enable native alerts as a backup to the in-app toasts.
 
+### System Alerts — Service Faults
+
+In addition to agent-generated notifications, the system sends **high-urgency red toasts** when a
+critical backend service fault is detected and automatic recovery cannot safely repair it. These
+are rare but important:
+
+- **"Memory store down (graph segfault)"** — The long-term memory service encountered a persistent
+  fault that auto-recovery could not heal. The memory service is temporarily offline, so the agent
+  will continue without access to your conversation history. **What to do:** check the system logs
+  or contact support if the memory service does not recover within a few minutes. The fault
+  diagnosis is included in the notification body.
+
+These system alerts persist on screen (red border, high urgency) until you dismiss them.
+
 ## Missed Notifications Badge & Panel
 
 When the agent sends you **missed notifications** (alerts and reminders you weren't connected to
