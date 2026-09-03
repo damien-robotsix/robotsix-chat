@@ -3,7 +3,7 @@
 Phase 2b of image support: a small, self-contained helper that turns an
 attached image into a short text caption using the model named by
 :attr:`robotsix_chat.config.settings.Settings.vision_model` (an OpenRouter
-model id such as ``openrouter/openai/gpt-4o-mini``).
+model id such as ``openrouter/<vendor>/<model>``).
 
 The chat agent already lets *text-only* OpenRouter slots interrogate images
 through llmio's ``ask_image`` tool (see
@@ -23,7 +23,7 @@ Design mirrors :func:`robotsix_llmio.core.image_tool._ask_vision_model`:
   no-image-support message.
 
 The ``vision_model`` config value uses a ``<provider>/<model-slug>`` shape
-(``openrouter/openai/gpt-4o-mini``); llmio's factory expects a combined
+(``openrouter/<vendor>/<model>``); llmio's factory expects a combined
 ``<provider>-<model-name>`` identifier (the provider prefix is split on the
 first hyphen).  :func:`_to_llmio_identifier` bridges the two by turning the
 first ``/`` into a ``-``.
@@ -62,7 +62,7 @@ def _to_llmio_identifier(vision_model: str) -> str:
     """Convert a ``vision_model`` config value to an llmio tier identifier.
 
     The config uses ``<provider>/<model-slug>`` (e.g.
-    ``openrouter/openai/gpt-4o-mini``) while
+    ``openrouter/<vendor>/<model>``) while
     :func:`robotsix_llmio.core.factory.get_provider_for_identifier` expects
     ``<provider>-<model-name>`` (the provider prefix is split on the first
     hyphen, so the model name may itself contain hyphens and slashes).  This
