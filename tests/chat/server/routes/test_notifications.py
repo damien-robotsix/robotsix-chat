@@ -195,6 +195,34 @@ async def test_unread_store_failure_returns_500() -> None:
     assert response.status_code == 500
 
 
+@pytest.mark.asyncio
+async def test_unread_tolerates_corrupt_backing_file(tmp_path: Path) -> None:
+    """A corrupt record in the backing file is skipped, not a 500.
+
+    A single malformed/partial record must not blank the whole unread API —
+    valid records still serialise and corrupt ones are dropped on load.
+    """
+    path = tmp_path / "notifications.json"
+    good = {
+        "id": "good-1",
+        "ts": _days_ago(1),
+        "title": "Build failed",
+        "body": "main broke on CI",
+        "source_session": "sess",
+        "delivered": False,
+        "read": False,
+    }
+    path.write_text(json.dumps([good, {"id": "corrupt-missing-fields"}]), "utf-8")
+    store = NotificationStore(path)
+
+    request = _make_bare_request(app=_app_with_store(store))
+    response = await notifications_unread_endpoint(request)
+
+    assert response.status_code == 200
+    body = json.loads(response.body)  # type: ignore[arg-type]
+    assert [n["id"] for n in body] == ["good-1"]
+
+
 # ---------------------------------------------------------------------------
 # GET /notifications/unread — pagination
 # ---------------------------------------------------------------------------
