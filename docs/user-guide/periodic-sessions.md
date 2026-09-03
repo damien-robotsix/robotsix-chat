@@ -20,6 +20,14 @@ Presets live under `periodic.sessions` in the config:
   "periodic": {
     "sessions": [
       {
+        "name": "calendar-agenda",
+        "initial_prompt": "Produce today's calendar agenda for the current UTC day. List the day's scheduled items in chronological order; if the day is empty, say so.",
+        "schedule_interval_seconds": 86400,
+        "anchor_utc": "2026-09-03T06:00:00Z",
+        "model_level": null,
+        "enabled": true
+      },
+      {
         "name": "mail-triage",
         "initial_prompt": "Review today's mail triage decisions. READ-ONLY: never move, archive, delete, or send anything. Finish with a concise report.",
         "schedule_interval_seconds": 86400,
@@ -36,8 +44,18 @@ Presets live under `periodic.sessions` in the config:
   the periodic contract (finish in this turn, report at the end, no continuations).
 - `schedule_interval_seconds` — spacing between firings (min 300, default one day). A never-fired
   preset fires promptly after startup.
+- `anchor_utc` — optional fixed UTC instant (ISO 8601, e.g. `2026-09-03T06:00:00Z`) that anchors the
+  schedule. When set, the preset fires at this instant and then every `schedule_interval_seconds`
+  thereafter, so `every 24h from <ts>` fires daily at the anchor's UTC time-of-day. An anchored
+  preset never fires off its cadence: if it is registered after the anchor has passed, the first
+  run waits for the next occurrence on/after the current time. Omit it (`null`) to keep the legacy
+  cadence — first run promptly after startup, then spaced by the interval from the last firing.
 - `model_level` — optional llmio level override (1–3); `null` follows the global model-level
   resolution, like an operator session.
+
+Anchoring a daily digest (e.g. the calendar-agenda job above) at a morning UTC instant makes it fire
+at the start of the UTC day and report that day's agenda before the day ends, instead of at an
+arbitrary end-of-day time.
 
 If a preset comes due while its previous session is still processing a turn, that firing is skipped
 (logged, not queued).
@@ -45,6 +63,7 @@ If a preset comes due while its previous session is still processing a turn, tha
 ## Endpoints
 
 - `GET /periodic/definitions` — presets with their firing state (`last_fired_at`, `last_session_id`,
-  `runs`).
+  `runs`) and configuration (`schedule_interval_seconds`, `anchor_utc` as an ISO 8601 string when
+  set, `model_level`, `enabled`).
 - `POST /periodic/definitions/{name}/run` — fire a preset now (409 while its previous session is
   mid-turn).

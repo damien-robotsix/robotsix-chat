@@ -645,13 +645,14 @@ machine, no self-scheduled continuation, and no restart-resume — see
 
 Each entry in `periodic.sessions` is a `PeriodicSessionDefinition` object:
 
-| JSON key                    | Type      | Default | Description                                                                                                                           |
-| --------------------------- | --------- | ------- | ------------------------------------------------------------------------------------------------------------------------------------- |
-| `name`                      | `string`  | —       | Unique preset name; also used in session titles (`<name> — <date>`).                                                                  |
-| `initial_prompt`            | `string`  | `""`    | The one message the scheduler posts into the fresh session. Write it as a complete task brief: task, scope, hard constraints, report. |
-| `schedule_interval_seconds` | `number`  | `86400` | Spacing between firings (min 300). A never-fired preset fires promptly after startup.                                                 |
-| `model_level`               | `integer` | `null`  | Optional llmio level (1–3) for this preset's sessions. `null` follows the global model-level resolution, like an operator session.    |
-| `enabled`                   | `boolean` | `true`  | When `false`, the preset never fires.                                                                                                 |
+| JSON key                    | Type      | Default | Description                                                                                                                                                                                                                                                                                                                                                                    |
+| --------------------------- | --------- | ------- | ------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------ |
+| `name`                      | `string`  | —       | Unique preset name; also used in session titles (`<name> — <date>`).                                                                                                                                                                                                                                                                                                           |
+| `initial_prompt`            | `string`  | `""`    | The one message the scheduler posts into the fresh session. Write it as a complete task brief: task, scope, hard constraints, report.                                                                                                                                                                                                                                          |
+| `schedule_interval_seconds` | `number`  | `86400` | Spacing between firings (min 300). A never-fired preset fires promptly after startup.                                                                                                                                                                                                                                                                                          |
+| `anchor_utc`                | `string`  | `null`  | Optional fixed UTC instant (ISO 8601, e.g. `2026-09-03T06:00:00Z`) anchoring the schedule: the preset fires at this instant and then every `schedule_interval_seconds` thereafter, so `every 24h from <ts>` fires daily at the anchor's UTC time-of-day. `null` keeps the legacy cadence (first run promptly after startup, then spaced by the interval from the last firing). |
+| `model_level`               | `integer` | `null`  | Optional llmio level (1–3) for this preset's sessions. `null` follows the global model-level resolution, like an operator session.                                                                                                                                                                                                                                             |
+| `enabled`                   | `boolean` | `true`  | When `false`, the preset never fires.                                                                                                                                                                                                                                                                                                                                          |
 
 Endpoints:
 
@@ -660,11 +661,18 @@ Endpoints:
 - `POST /periodic/definitions/{name}/run` — fire a preset now (409 while its previous session is
   mid-turn).
 
-**Example** — a daily read-only mail review:
+**Example** — a daily read-only mail review and the calendar-agenda job anchored to a morning
+reference:
 
 ```json
 "periodic": {
   "sessions": [
+    {
+      "name": "calendar-agenda",
+      "initial_prompt": "Produce today's calendar agenda for the current UTC day. List the day's scheduled items in chronological order; if the day is empty, say so.",
+      "schedule_interval_seconds": 86400,
+      "anchor_utc": "2026-09-03T06:00:00Z"
+    },
     {
       "name": "mail-triage",
       "initial_prompt": "Review today's mail triage decisions. READ-ONLY: never move, archive, delete, or send anything. Finish with a concise report of findings.",
@@ -673,6 +681,10 @@ Endpoints:
   ]
 }
 ```
+
+Anchoring the daily calendar-agenda job at a morning UTC instant (06:00 UTC in the example, an hour
+the operator can change by editing `anchor_utc`) makes it fire at the start of the UTC day and
+report that day's agenda before the day ends, instead of at an arbitrary end-of-day time.
 
 ______________________________________________________________________
 
