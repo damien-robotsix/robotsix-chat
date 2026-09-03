@@ -14,6 +14,7 @@ import pytest
 
 from robotsix_chat.notification.store import (
     MAX_EVENTS,
+    READ_RETENTION_DAYS,
     RETENTION_DAYS,
     NotificationStore,
 )
@@ -154,6 +155,100 @@ def test_recent_event_within_retention_is_kept(tmp_path):
         ts=_days_ago(RETENTION_DAYS - 1),
     )
     assert [r.id for r in store.list()] == [recent.id]
+
+
+# ---------------------------------------------------------------------------
+# bounded retention — read lifetime
+# ---------------------------------------------------------------------------
+
+
+def test_mark_read_stamps_read_ts(tmp_path):
+    """Marking a record read stamps a ``read_ts`` timestamp."""
+    store = NotificationStore(tmp_path / "notifications.json")
+    one = store.append(title="one", body="x", source_session="sess")
+    assert store.list()[0].read_ts is None
+
+    store.mark_read([one.id])
+    read = store.list()[0]
+    assert read.read is True
+    assert read.read_ts is not None
+    datetime.fromisoformat(read.read_ts)
+
+
+def test_read_record_older_than_read_retention_is_purged(tmp_path):
+    """A record read longer than ``read_retention_days`` ago is purged.
+
+    The record is published well within the absolute lifetime, so only the
+    read-lifetime rule can drop it.
+    """
+    path = tmp_path / "notifications.json"
+    # Seed a record that was read long ago but published within the
+    # absolute lifetime, then reopen so pruning runs on the next write.
+    raw = [
+        {
+            "id": "old-read",
+            "ts": _days_ago(RETENTION_DAYS - 5),
+            "title": "read-long-ago",
+            "body": "b",
+            "source_session": "sess",
+            "delivered": True,
+            "read": True,
+            "read_ts": _days_ago(READ_RETENTION_DAYS + 1),
+        }
+    ]
+    path.write_text(json.dumps(raw), encoding="utf-8")
+
+    store = NotificationStore(path)
+    # A fresh append triggers _prune, which evaluates the read-lifetime rule.
+    fresh = store.append(title="new", body="x", source_session="sess")
+
+    ids = {r.id for r in store.list()}
+    assert ids == {fresh.id}
+    assert "old-read" not in ids
+
+
+def test_recently_read_record_within_read_retention_is_kept(tmp_path):
+    """A record read within ``read_retention_days`` is retained."""
+    path = tmp_path / "notifications.json"
+    raw = [
+        {
+            "id": "recent-read",
+            "ts": _days_ago(RETENTION_DAYS - 5),
+            "title": "read-recently",
+            "body": "b",
+            "source_session": "sess",
+            "delivered": True,
+            "read": True,
+            "read_ts": _days_ago(READ_RETENTION_DAYS - 1),
+        }
+    ]
+    path.write_text(json.dumps(raw), encoding="utf-8")
+
+    store = NotificationStore(path)
+    store.append(title="new", body="x", source_session="sess")
+
+    assert "recent-read" in {r.id for r in store.list()}
+
+
+def test_unread_record_not_subject_to_read_retention(tmp_path):
+    """An unread record older than the read window survives (still unread)."""
+    store = NotificationStore(tmp_path / "notifications.json")
+    kept = store.append(
+        title="unread",
+        body="x",
+        source_session="sess",
+        ts=_days_ago(READ_RETENTION_DAYS + 5),
+    )
+    assert kept.id in {r.id for r in store.list()}
+
+
+def test_size_reports_record_count(tmp_path):
+    """``size`` returns the current number of stored records."""
+    store = NotificationStore(tmp_path / "notifications.json")
+    assert store.size() == 0
+    for i in range(3):
+        store.append(title=str(i), body="x", source_session="sess")
+    assert store.size() == 3
 
 
 # ---------------------------------------------------------------------------

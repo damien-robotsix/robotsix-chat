@@ -37,12 +37,25 @@ class NotificationSettings(BaseModel):
             persistent volume (chat-data ``/data``) so undelivered
             notifications survive container recreation and can be replayed
             when a browser next connects.
+        max_events: Maximum number of newest notifications retained in the
+            store.  Older records beyond this count are evicted on write to
+            cap unbounded growth.  Default ``200``.
+        retention_days: Absolute lifetime — notifications older than this
+            many days are purged on write regardless of read state.
+            Default ``90``.
+        read_retention_days: Read lifetime — notifications that have been
+            read are purged once they have been read for more than this
+            many days, reclaiming space from acknowledged notifications
+            sooner than the absolute lifetime.  Default ``30``.
 
     """
 
     enabled: bool = True
     store_and_forward: bool = True
     store_path: str = "/data/notifications.json"
+    max_events: int = 200
+    retention_days: int = 90
+    read_retention_days: int = 30
     model_config = ConfigDict(extra="forbid")
 
 
