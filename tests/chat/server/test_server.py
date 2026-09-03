@@ -30,6 +30,7 @@ from robotsix_chat.config.models import (
     DirectRepoSettings,
     GitHubActionsSettings,
     GitHubSecuritySettings,
+    MemoryComponentSettings,
 )
 from robotsix_chat.llm import LlmioChatAgent
 from robotsix_chat.memory import NullMemory
@@ -1288,6 +1289,7 @@ async def test_run_server_from_config_creates_agent_from_settings(
             "evergoing_settings": EvergoingSettings(
                 enabled=False, trim_interval_seconds=1800.0, keep_recent_runs=5
             ),
+            "memory_component_settings": MemoryComponentSettings(),
         }
 
 

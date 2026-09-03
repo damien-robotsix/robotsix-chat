@@ -286,6 +286,7 @@ class TestRunServer:
             health_settings=None,
             continuation_store=None,
             evergoing_settings=None,
+            memory_component_settings=None,
             notification_store=None,
             notification_store_and_forward=True,
         )

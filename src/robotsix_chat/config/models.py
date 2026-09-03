@@ -61,6 +61,7 @@ from .server_models import (
     ContinuationSettings,
     EvergoingSettings,
     HealthSettings,
+    MemoryComponentSettings,
     VolumeToolsSettings,
 )
 from .session_models import (
@@ -102,6 +103,7 @@ __all__ = [
     "LangfuseProjectCreds",
     "LangfuseSettings",
     "LifecycleSettings",
+    "MemoryComponentSettings",
     "MemoryEmbeddingSettings",
     "MemoryLlmSettings",
     "MemorySettings",

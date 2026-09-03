@@ -676,6 +676,30 @@
       "title": "LifecycleSettings",
       "type": "object"
     },
+    "MemoryComponentSettings": {
+      "additionalProperties": false,
+      "description": "robotsix-memory component integration (long-term fleet memory).\n\nThe evergoing summary scheduler pushes every session summary it writes\nto the memory component's ``/remember`` endpoint, and a final summary\nis pushed when a conversation is closed. Pushes reuse a stable\nper-session ``document_id`` with ``update_mode=\"replace\"``, so\nre-summaries supersede rather than duplicate. Writes are best-effort:\na memory outage never breaks chat.\n\nAttributes:\n    enabled: Master switch for the summary \u2192 memory pushes. The chat\n        agent's direct skill access to the component (via the deploy\n        roster) is independent of this flag.\n    url: Base URL of the memory component on the internal network.\n    timeout_seconds: Per-push HTTP timeout.",
+      "properties": {
+        "enabled": {
+          "default": true,
+          "title": "Enabled",
+          "type": "boolean"
+        },
+        "url": {
+          "default": "http://memory:8080",
+          "title": "Url",
+          "type": "string"
+        },
+        "timeout_seconds": {
+          "default": 60.0,
+          "exclusiveMinimum": 0,
+          "title": "Timeout Seconds",
+          "type": "number"
+        }
+      },
+      "title": "MemoryComponentSettings",
+      "type": "object"
+    },
     "MemoryEmbeddingSettings": {
       "additionalProperties": false,
       "description": "Embedding config for cognee memory (remote OpenAI-compatible server).\n\nDefaults target a self-hosted Ollama ``bge-m3`` endpoint. ``provider`` must\nbe ``openai_compatible`` for that path (it tolerates a non-OpenAI model\nname); ``endpoint`` (e.g. ``http://host:11434/v1``) is required when memory\nis enabled. ``dimensions`` is sticky \u2014 changing it invalidates stored\nvectors.\n\nAttributes:\n    provider: cognee embedding provider.  Must be ``openai_compatible``\n        for the self-hosted Ollama path.\n    model: Embedding model name served by the endpoint (e.g. ``bge-m3``).\n    endpoint: Base URL of the OpenAI-compatible embedding server\n        (e.g. ``http://host:11434/v1``).  Required when memory is enabled.\n    dimensions: Embedding vector dimensionality.  Sticky \u2014 changing it\n        invalidates every stored vector.\n    api_key: API key for the embedding server (``ollama`` for a keyless\n        local Ollama).\n    huggingface_tokenizer: HuggingFace tokenizer id used to count tokens\n        for the embedding model.",
@@ -1853,6 +1877,9 @@
     },
     "evergoing": {
       "$ref": "#/$defs/EvergoingSettings"
+    },
+    "memory_component": {
+      "$ref": "#/$defs/MemoryComponentSettings"
     },
     "max_images_per_message": {
       "default": 8,
