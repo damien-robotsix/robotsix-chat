@@ -14,6 +14,7 @@ from types import SimpleNamespace
 from unittest.mock import MagicMock
 
 import pytest
+from starlette.exceptions import HTTPException
 from starlette.requests import Request
 
 from robotsix_chat.chat.server.routes.notifications import (
@@ -74,6 +75,27 @@ def _store(tmp_path: Path, records: list[dict[str, str]]) -> NotificationStore:
 def _unread_record(title: str, ts: str) -> dict[str, str]:
     """Build a single unread notification record dict for seeding."""
     return {"title": title, "body": "b", "source_session": "sess", "ts": ts}
+
+
+def _unread_request(app: SimpleNamespace, query: str = "") -> Request:
+    """Build a GET request for ``/notifications/unread`` with a query string."""
+    scope: dict[str, object] = {
+        "type": "http",
+        "http_version": "1.1",
+        "method": "GET",
+        "scheme": "http",
+        "server": ("testserver", 80),
+        "client": ("testclient", 50000),
+        "path": "/notifications/unread",
+        "query_string": query.encode(),
+        "headers": [],
+        "app": app,
+    }
+
+    async def receive() -> dict[str, object]:
+        return {"type": "http.disconnect"}
+
+    return Request(scope, receive)
 
 
 # ---------------------------------------------------------------------------
@@ -171,6 +193,100 @@ async def test_unread_store_failure_returns_500() -> None:
     response = await notifications_unread_endpoint(request)
 
     assert response.status_code == 500
+
+
+# ---------------------------------------------------------------------------
+# GET /notifications/unread — pagination
+# ---------------------------------------------------------------------------
+
+
+@pytest.mark.asyncio
+async def test_unread_default_limit_caps_page(tmp_path: Path) -> None:
+    """With no query params at most DEFAULT_PAGE_LIMIT (100) records return."""
+    store = _store(
+        tmp_path,
+        [_unread_record(f"n{i}", _days_ago((120 - i) * 0.2)) for i in range(120)],
+    )
+
+    request = _unread_request(_app_with_store(store))
+    response = await notifications_unread_endpoint(request)
+
+    assert response.status_code == 200
+    body = json.loads(response.body)  # type: ignore[arg-type]
+    assert len(body) == 100
+    # Oldest first: first record is the oldest seeded.
+    assert body[0]["title"] == "n0"
+    assert body[-1]["title"] == "n99"
+
+
+@pytest.mark.asyncio
+async def test_unread_limit_and_offset_select_page(tmp_path: Path) -> None:
+    """``limit``/``offset`` return the expected oldest-first slice."""
+    store = _store(
+        tmp_path,
+        [_unread_record(f"n{i}", _days_ago(10 - i)) for i in range(10)],
+    )
+
+    request = _unread_request(_app_with_store(store), "limit=3&offset=2")
+    response = await notifications_unread_endpoint(request)
+
+    assert response.status_code == 200
+    body = json.loads(response.body)  # type: ignore[arg-type]
+    assert [n["title"] for n in body] == ["n2", "n3", "n4"]
+
+
+@pytest.mark.asyncio
+async def test_unread_offset_past_end_returns_empty(tmp_path: Path) -> None:
+    """An ``offset`` beyond the record count yields an empty page."""
+    store = _store(
+        tmp_path,
+        [_unread_record("a", _days_ago(2)), _unread_record("b", _days_ago(1))],
+    )
+
+    request = _unread_request(_app_with_store(store), "offset=5")
+    response = await notifications_unread_endpoint(request)
+
+    assert response.status_code == 200
+    assert json.loads(response.body) == []  # type: ignore[arg-type]
+
+
+@pytest.mark.asyncio
+async def test_unread_limit_larger_than_count_returns_all(tmp_path: Path) -> None:
+    """A ``limit`` exceeding the record count returns every unread record."""
+    store = _store(
+        tmp_path,
+        [_unread_record("a", _days_ago(2)), _unread_record("b", _days_ago(1))],
+    )
+
+    request = _unread_request(_app_with_store(store), "limit=1000")
+    response = await notifications_unread_endpoint(request)
+
+    assert response.status_code == 200
+    assert [n["title"] for n in json.loads(response.body)] == ["a", "b"]  # type: ignore[arg-type]
+
+
+@pytest.mark.asyncio
+@pytest.mark.parametrize("query", ["limit=0", "limit=-1", "limit=abc"])
+async def test_unread_invalid_limit_returns_400(tmp_path: Path, query: str) -> None:
+    """A non-positive or non-integer ``limit`` yields a 400 response."""
+    store = _store(tmp_path, [_unread_record("a", _days_ago(1))])
+
+    request = _unread_request(_app_with_store(store), query)
+    with pytest.raises(HTTPException) as exc:
+        await notifications_unread_endpoint(request)
+    assert exc.value.status_code == 400
+
+
+@pytest.mark.asyncio
+@pytest.mark.parametrize("query", ["offset=-1", "offset=xyz"])
+async def test_unread_invalid_offset_returns_400(tmp_path: Path, query: str) -> None:
+    """A negative or non-integer ``offset`` yields a 400 response."""
+    store = _store(tmp_path, [_unread_record("a", _days_ago(1))])
+
+    request = _unread_request(_app_with_store(store), query)
+    with pytest.raises(HTTPException) as exc:
+        await notifications_unread_endpoint(request)
+    assert exc.value.status_code == 400
 
 
 # ---------------------------------------------------------------------------
