@@ -34,6 +34,7 @@ from robotsix_chat.memory.maintenance import (
     LANCEDB_RELATIVE_PATH,
     CogneeDbVacuumScheduler,
     LanceDbMaintenanceScheduler,
+    StoreMetricsScheduler,
 )
 
 if TYPE_CHECKING:
@@ -263,6 +264,9 @@ class CogneeMemory:
         # Periodic cognee_db VACUUM scheduler (lazily created in
         # :meth:`start_maintenance`); ``None`` when disabled or not started.
         self._vacuum: CogneeDbVacuumScheduler | None = None
+        # Periodic consolidated store-size metrics emitter (lazily created in
+        # :meth:`start_maintenance`); ``None`` when disabled or not started.
+        self._metrics: StoreMetricsScheduler | None = None
 
     # -- health & recovery wiring -----------------------------------------
 
@@ -464,9 +468,42 @@ class CogneeMemory:
                 off_peak_window=window,
             )
             self._vacuum.start()
+        if (
+            self._metrics is None
+            and s.maintenance_metrics_enabled
+            and s.maintenance_metrics_interval_seconds > 0
+        ):
+            self._metrics = StoreMetricsScheduler(
+                data_dir=Path(s.data_dir).expanduser().resolve(),
+                interval_seconds=s.maintenance_metrics_interval_seconds,
+                graph_stats_provider=self._graph_stats,
+            )
+            self._metrics.start()
+
+    async def _graph_stats(self) -> tuple[int, int] | None:
+        """Best-effort ``(nodes, edges)`` count from the live graph engine.
+
+        Read-only and never raises: returns ``None`` when the store is not yet
+        set up, cognee is absent, or the engine cannot report counts, so a
+        missing count degrades the metrics line rather than the scheduler.
+        """
+        if not self._setup_done:
+            return None
+        try:
+            from cognee.infrastructure.databases.graph import get_graph_engine
+
+            engine = await get_graph_engine()
+            nodes, edges = await engine.get_graph_data()
+            return len(nodes), len(edges)
+        except Exception:
+            logger.debug("cognee graph node/edge counts unavailable", exc_info=True)
+            return None
 
     async def stop_maintenance(self) -> None:
         """Stop the memory maintenance schedulers if they are running."""
+        if self._metrics is not None:
+            await self._metrics.stop()
+            self._metrics = None
         if self._vacuum is not None:
             await self._vacuum.stop()
             self._vacuum = None
