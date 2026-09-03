@@ -44,14 +44,20 @@ export function shouldNotifyMainConversation({ docVisible, subsessionFocused }) 
 /**
  * Whether a new subsession update should raise a desktop notification.
  *
- * A subsession is "actively focused" (already on screen) only when the tab
- * is visible AND this specific subsession is the one in focus mode.
+ * A subsession is "actively viewed" (already on screen) when the tab is
+ * visible AND either (a) this specific subsession is the one in focus mode,
+ * or (b) its row is expanded and the side-chat panel is visible — the same
+ * on-screen signal the unread-badge logic uses to treat a message as read.
+ * When it is on screen a new message is already visible, so no notification
+ * is needed.
  *
  * @param {Object} opts
  * @param {boolean} opts.docVisible - is the browser tab visible?
  * @param {boolean} opts.focused    - is THIS subsession the focused one?
+ * @param {boolean} opts.visible    - is THIS subsession's row expanded and
+ *                                    its panel visible (on screen)?
  * @returns {boolean} true when the notification should be raised
  */
-export function shouldNotifySubsession({ docVisible, focused }) {
-  return !(docVisible && focused);
+export function shouldNotifySubsession({ docVisible, focused, visible }) {
+  return !(docVisible && (focused || visible));
 }

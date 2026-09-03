@@ -2683,12 +2683,15 @@ import {
   }
 
   // A new user_chat side-chat update: notify unless the user is actively
-  // viewing this specific subsession.
+  // viewing this specific subsession — either in focus mode or with its row
+  // expanded and the side-chat panel visible (the same on-screen signal the
+  // unread-badge logic uses).
   function maybeNotifySubsession(sub, text) {
     if (!sub || !sub.subsession_id) return;
     var docVisible = isDocumentVisible(document);
     var focused = focusedSubId !== null && focusedSubId === sub.subsession_id;
-    if (!shouldNotifySubsession({ docVisible: docVisible, focused: focused })) return;
+    var onScreen = sub.expanded && subsPanel.classList.contains("visible");
+    if (!shouldNotifySubsession({ docVisible: docVisible, focused: focused, visible: onScreen })) return;
     notify({
       title: "Chat request: " + (sub.title || "side-chat"),
       body: truncateText(text, 200),

@@ -50,15 +50,20 @@ describe("shouldNotifyMainConversation", () => {
 
 describe("shouldNotifySubsession", () => {
   it("notifies when the tab is hidden (user is elsewhere)", () => {
-    expect(shouldNotifySubsession({ docVisible: false, focused: false })).toBe(true);
-    expect(shouldNotifySubsession({ docVisible: false, focused: true })).toBe(true);
+    expect(shouldNotifySubsession({ docVisible: false, focused: false, visible: false })).toBe(true);
+    expect(shouldNotifySubsession({ docVisible: false, focused: true, visible: false })).toBe(true);
+    expect(shouldNotifySubsession({ docVisible: false, focused: false, visible: true })).toBe(true);
   });
 
-  it("suppresses while the user views this exact subsession", () => {
-    expect(shouldNotifySubsession({ docVisible: true, focused: true })).toBe(false);
+  it("suppresses while the user views this exact subsession in focus mode", () => {
+    expect(shouldNotifySubsession({ docVisible: true, focused: true, visible: false })).toBe(false);
   });
 
-  it("notifies when the tab is visible but a different target is focused", () => {
-    expect(shouldNotifySubsession({ docVisible: true, focused: false })).toBe(true);
+  it("suppresses while this subsession's row is expanded and the panel is visible", () => {
+    expect(shouldNotifySubsession({ docVisible: true, focused: false, visible: true })).toBe(false);
+  });
+
+  it("notifies when the tab is visible but a different target is on screen", () => {
+    expect(shouldNotifySubsession({ docVisible: true, focused: false, visible: false })).toBe(true);
   });
 });
