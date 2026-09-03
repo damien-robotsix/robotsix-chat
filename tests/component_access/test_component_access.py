@@ -1496,3 +1496,58 @@ def test_coerce_json_object_rejects_non_object() -> None:
     obj, err = _coerce_json_object("[1, 2]", "params")
     assert obj is None
     assert err is not None and "got list" in err
+
+
+# ---------------------------------------------------------------------------
+# params with primitive (non-string) values — 2026-09-03 regression
+# ---------------------------------------------------------------------------
+
+
+@pytest.mark.asyncio
+async def test_tool_accepts_integer_param_values(
+    respx_mock: respx.MockRouter,
+) -> None:
+    """Integer param values are coerced and reach the wire as strings.
+
+    Regression 2026-09-03: agents naturally pass ``params={"hours": 24}``
+    (correlation 01503849b30820d130129430c1f3ceee) and the call must not
+    be rejected before the request is made.
+    """
+    _wipe_cache()
+    roster_entries = [
+        {"id": "cost-monitor", "base_url": "http://cm:8080", "skill": "..."}
+    ]
+    respx_mock.get("http://deploy:8080/chat/components").mock(
+        return_value=httpx.Response(200, json=roster_entries)
+    )
+    route = respx_mock.get("http://cm:8080/api/summary", params={"hours": "24"}).mock(
+        return_value=httpx.Response(200, json={"total": 1})
+    )
+
+    tools = build_component_access_tools(
+        _settings(url="http://deploy:8080", roster_cache_ttl=300.0)
+    )
+    result = await tools[0]("cost-monitor", "GET", "/api/summary", params={"hours": 24})
+    assert "HTTP 200" in result
+    assert route.call_count == 1
+
+
+def test_tool_schema_admits_primitive_param_values() -> None:
+    """The generated JSON schema must admit int/float/bool param VALUES.
+
+    The claude_sdk path (llmio ``_convert_tools``) validates pydantic-ai's
+    ``parameters_json_schema`` BEFORE the tool body runs, so the body's
+    ``str()`` coercion never sees the call: with ``dict[str, str]`` in the
+    annotation, ``params={"hours": 24}`` died with "Input validation
+    error: 24 is not of type 'string'" (2026-09-03, four wasted error
+    turns per session).
+    """
+    import json as _json
+
+    import pydantic_ai
+
+    tools = build_component_access_tools(_settings(url="http://deploy:8080"))
+    schema = pydantic_ai.Tool(tools[0]).tool_def.parameters_json_schema
+    params_schema = _json.dumps(schema["properties"]["params"])
+    assert '"integer"' in params_schema
+    assert '"boolean"' in params_schema
