@@ -5,7 +5,14 @@ from __future__ import annotations
 import logging
 from typing import Any
 
-from pydantic import BaseModel, ConfigDict, Field, SecretStr, model_validator
+from pydantic import (
+    BaseModel,
+    ConfigDict,
+    Field,
+    SecretStr,
+    field_validator,
+    model_validator,
+)
 
 from .constants import drop_blank_numeric_sentinels
 from .langfuse_models import PROJECT_MEMORY
@@ -195,6 +202,17 @@ class MemorySettings(BaseModel):
             before the next write starts.  Prevents a burst of many concurrent
             writes from collectively exhausting the worker's memory.
             Default ``0.5``.
+        cognify_max_workers: Upper bound on the number of parallel worker
+            processes cognee's ingestion pipeline (``dlt``) may spawn for its
+            extract / normalize / load stages, applied via the
+            ``EXTRACT__WORKERS`` / ``NORMALIZE__WORKERS`` / ``LOAD__WORKERS``
+            env vars before cognee import.  ``dlt`` otherwise scales its
+            normalize process pool with the host CPU count, so a large
+            ingestion backlog fans out into several multiprocessing spawn
+            workers that each hold a data batch — the unbounded RSS that OOM-
+            killed the container during a cognify burst (2026-09-03 incident).
+            Default ``1`` (single-worker, memory-bounded); raise only on a
+            host with memory headroom to trade RSS for ingestion throughput.
         maintenance_enabled: When ``True`` (default), a background task
             periodically compacts and prunes every table in the cognee
             LanceDB store (LanceDB's ``Table.optimize`` — merge fragments and
@@ -213,6 +231,35 @@ class MemorySettings(BaseModel):
             ``cleanup_older_than`` to ``Table.optimize``.  Older versions are
             removed so the on-disk version count stays bounded.  Default
             ``3600.0`` (1 h).
+        maintenance_vacuum_enabled: When ``True`` (default), a background task
+            runs ``VACUUM`` / ``PRAGMA incremental_vacuum`` against the cognee
+            SQLite relational store (``cognee_db``) so pages freed by row
+            deletion (e.g. retention pruning of the bookkeeping tables) are
+            returned to disk instead of accumulating as freelist.  Runs only
+            inside the configured off-peak UTC window, under the cognee write
+            lock, and never touches the LanceDB or graph stores.
+        maintenance_vacuum_interval_seconds: Seconds between vacuum passes
+            (when inside the off-peak window).  Default ``21600.0`` (6 h).
+        maintenance_vacuum_mode: Vacuum mode for the cognee_db pass —
+            ``"incremental_vacuum"`` (default) reclaims freelist pages at the
+            tail of the file with ``PRAGMA incremental_vacuum`` when the
+            database supports it (``auto_vacuum`` enabled), falling back to a
+            full ``VACUUM`` when it does not; ``"vacuum"`` always performs a
+            full ``VACUUM`` rebuild.
+        maintenance_vacuum_off_peak_window: ``[start_hour, end_hour]`` in UTC
+            (inclusive start, exclusive end) during which the vacuum pass may
+            run — e.g. ``[2, 6]`` means 02:00-06:00 UTC.  ``null`` disables
+            the window (run any time).  Default ``[2, 6]``.
+        maintenance_metrics_enabled: When ``True`` (default), a read-only
+            background task periodically logs a consolidated store-size
+            snapshot — the cognee_db file size and per-table
+            (``pipeline_runs``/``results``/``queries``) row counts and sizes,
+            the graph store size and node/edge counts, and the LanceDB total
+            size plus fragment/deletion file counts — so store growth can be
+            trended and alarmed from one line.  It mutates nothing and never
+            takes the write lock.
+        maintenance_metrics_interval_seconds: Seconds between store-metrics
+            emissions.  Default ``21600.0`` (6 h).
         llm: Extraction-LLM config (graph building / consolidation).
         embedding: Embedding-server config (semantic search).
         langfuse_project: Name of the Langfuse project cognee's own LLM
@@ -244,9 +291,18 @@ class MemorySettings(BaseModel):
     frozen_store_recovery_minutes: float = 15.0
     recovery_cooldown_minutes: float = 30.0
     write_throttle_seconds: float = 0.5
+    cognify_max_workers: int = 1
     maintenance_enabled: bool = True
     maintenance_interval_seconds: float = 21600.0
     maintenance_version_retention_seconds: float = 3600.0
+    maintenance_vacuum_enabled: bool = True
+    maintenance_vacuum_interval_seconds: float = 21600.0
+    maintenance_vacuum_mode: str = "incremental_vacuum"
+    maintenance_vacuum_off_peak_window: list[int] | None = Field(
+        default_factory=lambda: [2, 6]
+    )
+    maintenance_metrics_enabled: bool = True
+    maintenance_metrics_interval_seconds: float = 21600.0
     llm: MemoryLlmSettings = Field(default_factory=MemoryLlmSettings)
     embedding: MemoryEmbeddingSettings = Field(default_factory=MemoryEmbeddingSettings)
     langfuse_project: str = PROJECT_MEMORY
@@ -292,6 +348,37 @@ class MemorySettings(BaseModel):
                 "retry backoff is now managed by robotsix_http.acall_with_retry"
             )
         return data
+
+    @field_validator("maintenance_vacuum_mode")
+    @classmethod
+    def _validate_vacuum_mode(cls, value: str) -> str:
+        allowed = {"incremental_vacuum", "vacuum"}
+        if value not in allowed:
+            raise ValueError(
+                f"maintenance_vacuum_mode must be one of {sorted(allowed)}, "
+                f"got {value!r}"
+            )
+        return value
+
+    @field_validator("maintenance_vacuum_off_peak_window")
+    @classmethod
+    def _validate_off_peak_window(cls, value: list[int] | None) -> list[int] | None:
+        if value is None:
+            return value
+        if len(value) != 2:
+            raise ValueError(
+                "maintenance_vacuum_off_peak_window must be [start_hour, end_hour]"
+            )
+        start_hour, end_hour = value
+        if not (0 <= start_hour < 24 and 0 < end_hour <= 24):
+            raise ValueError(
+                "maintenance_vacuum_off_peak_window hours must be in 0..24"
+            )
+        if start_hour >= end_hour:
+            raise ValueError(
+                "maintenance_vacuum_off_peak_window start_hour must be < end_hour"
+            )
+        return value
 
     @model_validator(mode="before")
     @classmethod

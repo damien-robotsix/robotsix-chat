@@ -34,6 +34,7 @@ modules:
       - docs/architecture.md
       - docs/getting-started.md
       - docs/configuration.md
+      - docs/vision.md
       - docs/contributing.md
       - docs/changelog.md
       - docs/triage-boilerplate.md
@@ -121,6 +122,7 @@ modules:
       - tests/periodic/__init__.py
       - tests/periodic/test_prompts.py
       - tests/periodic/test_scheduler.py
+      - tests/periodic/test_shipped_presets.py
       - docs/user-guide/periodic-sessions.md
 
   - id: component-client
@@ -205,6 +207,7 @@ modules:
       - src/robotsix_chat/chat/server/routes/memory.py
       - src/robotsix_chat/chat/server/routes/metrics.py
       - src/robotsix_chat/chat/server/routes/mill_events.py
+      - src/robotsix_chat/chat/server/routes/notifications.py
       - src/robotsix_chat/chat/server/metrics.py
       - src/robotsix_chat/chat/server/routes/sessions.py
       - src/robotsix_chat/chat/server/routes/subsessions.py
@@ -215,6 +218,7 @@ modules:
       - docs/chat/server.md
       - docs/chat/server/mobile_sso_runbook.md
       - docs/chat/server/routes/admin.md
+      - docs/chat/server/routes/notifications.md
       - tests/chat/__init__.py
       - tests/chat/test_cli.py
       - tests/chat/test_conversation.py
@@ -241,6 +245,7 @@ modules:
       - tests/chat/server/routes/test_github.py
       - tests/chat/server/routes/test_memory.py
       - tests/chat/server/routes/test_mill_events.py
+      - tests/chat/server/routes/test_notifications.py
       - tests/chat/server/routes/test_draft.py
       - tests/chat/server/routes/test_errors.py
       - tests/chat/server/routes/test_sessions.py
@@ -361,6 +366,7 @@ modules:
       - src/robotsix_chat/llm/captioning.py
       - src/robotsix_chat/llm/escalation.py
       - src/robotsix_chat/llm/tool_utils.py
+      - src/robotsix_chat/llm/vision.py
       - docs/llm/agent.md
       - tests/llm/__init__.py
       - tests/llm/test_agent.py
@@ -369,6 +375,7 @@ modules:
       - tests/llm/test_escalation.py
       - tests/llm/test_tool_utils.py
       - tests/llm/test_agent_fallback_chain.py
+      - tests/llm/test_vision.py
 
   - id: memory
     description: "Long-term memory backend — Cognee-based persistent storage for cross-conversation continuity."
@@ -594,6 +601,9 @@ modules:
     paths:
       - src/robotsix_chat/notification/__init__.py
       - src/robotsix_chat/notification/skill.md
+      - src/robotsix_chat/notification/store.py
       - docs/notification/skill.md
       - tests/notification/__init__.py
       - tests/notification/test_notification.py
+      - tests/notification/test_store.py
+      - tests/notification/test_store_and_forward_e2e.py

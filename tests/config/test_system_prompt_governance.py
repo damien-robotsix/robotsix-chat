@@ -168,31 +168,31 @@ def _extract_docs_agent_instruction(docs_text: str) -> str | None:
     return raw_value.replace("\\n", "\n")
 
 
-def _extract_docs_llmio_model_level(docs_text: str) -> int:
-    """Extract the ``llmio_model_level`` value from the configuration table."""
+def _extract_docs_chat_default_model_level(docs_text: str) -> int:
+    """Extract the ``chat_default_model_level`` value from the configuration table."""
     # The table has four columns: key, type, default, description.
     # Match through the Type column to the opening backtick of the Default column.
-    start_marker = r"`llmio_model_level`\s+\|\s+`[^`]+`\s+\|\s+`"
+    start_marker = r"`chat_default_model_level`\s+\|\s+`[^`]+`\s+\|\s+`"
     m = re.search(start_marker, docs_text)
     if m is None:
         raise ValueError(
-            "Could not find llmio_model_level row start marker in "
+            "Could not find chat_default_model_level row start marker in "
             "docs/configuration.md. Has the table format changed?"
         )
     after_start = docs_text[m.end() :]
-    end_marker = r"`\s+\|\s+LLM capability level"
+    end_marker = r"`\s+\|\s+The chat agent's default"
     m_end = re.search(end_marker, after_start)
     if m_end is None:
         raise ValueError(
-            "Could not find llmio_model_level row end marker in "
+            "Could not find chat_default_model_level row end marker in "
             "docs/configuration.md. Has the table format changed?"
         )
     raw_value = after_start[: m_end.start()]
     return int(raw_value)
 
 
-def test_docs_configuration_md_mirrors_llmio_model_level_default() -> None:
-    """``docs/configuration.md`` ``llmio_model_level`` row mirrors the live default."""
+def test_docs_configuration_md_mirrors_chat_default_model_level_default() -> None:
+    """``chat_default_model_level`` docs row mirrors the live default."""
     docs_path = Path("docs") / "configuration.md"
     if not docs_path.exists():
         raise FileNotFoundError(
@@ -200,12 +200,12 @@ def test_docs_configuration_md_mirrors_llmio_model_level_default() -> None:
         )
     docs_text = docs_path.read_text()
 
-    docs_default = _extract_docs_llmio_model_level(docs_text)
-    code_default = Settings.model_fields["llmio_model_level"].default
+    docs_default = _extract_docs_chat_default_model_level(docs_text)
+    code_default = Settings.model_fields["chat_default_model_level"].default
 
     assert docs_default == code_default, (
-        f"docs/configuration.md llmio_model_level row Default column "
-        f"({docs_default!r}) does not match the Settings.llmio_model_level "
+        f"docs/configuration.md chat_default_model_level row Default column "
+        f"({docs_default!r}) does not match the Settings.chat_default_model_level "
         f"default ({code_default!r}). Update the docs table row to reflect "
         f"the code default."
     )

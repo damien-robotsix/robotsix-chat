@@ -91,8 +91,8 @@ class Settings(BaseModel):
     (from its baked default :class:`~robotsix_llmio.config.TierLevelConfig`).
 
     Attributes:
-        llmio_model_level: Capability level — ``1`` (cheap/frequent), ``2``
-            (workhorse, the default) or ``3`` (frontier). Levels are a pure
+        chat_default_model_level: Capability level — ``1`` (cheap/frequent),
+            ``2`` (workhorse, the default) or ``3`` (frontier). Levels are a pure
             capability axis; which provider serves them is llmio's failover
             axis — the keyless Claude SDK default slot (haiku / opus /
             fable) in normal operation, the keyed OpenRouter fallback slot
@@ -159,12 +159,11 @@ class Settings(BaseModel):
 
     """
 
-    llmio_model_level: int = 2
+    chat_default_model_level: int = 2
     llmio_api_key: SecretStr = SecretStr("")
-    summary_model_level: int = Field(default=1, json_schema_extra={"advanced": True})
+    summary_model_level: int = Field(default=1)
     llmio_task_budget_tokens: int | None = Field(
         default=None,
-        json_schema_extra={"advanced": True},
         description=(
             "Optional advisory per-task token budget forwarded to the keyless "
             "Claude SDK tiers as ``task_budget`` — the countdown the model "
@@ -178,7 +177,6 @@ class Settings(BaseModel):
     llmio_failover_window_seconds: float = Field(
         default=900.0,
         ge=1,
-        json_schema_extra={"advanced": True},
         description=(
             "How long llmio routes calls straight to the fallback "
             "(OpenRouter) provider slot after the default (Claude) slot "
@@ -188,7 +186,6 @@ class Settings(BaseModel):
     )
     llmio_tier_overrides: dict[str, Any] = Field(
         default_factory=dict,
-        json_schema_extra={"advanced": True},
         description=(
             "Overrides merged over llmio's baked tier config, in "
             "load_tier_config's nested shape — e.g. "
@@ -1804,14 +1801,12 @@ class Settings(BaseModel):
             "briefly say so and suggest an alternative; never narrate or pretend to "
             "perform actions you cannot take."
         ),
-        json_schema_extra={"advanced": True},
     )
-    server_host: str = Field(default="0.0.0.0", json_schema_extra={"advanced": True})  # noqa: S104  # nosec B104
-    server_port: int = Field(default=8000, json_schema_extra={"advanced": True})
+    server_host: str = Field(default="0.0.0.0")  # noqa: S104  # nosec B104
+    server_port: int = Field(default=8000)
     idle_timeout_minutes: int = 30
     compaction_min_turns: int = Field(
         default=3,
-        json_schema_extra={"advanced": True},
         description=(
             "DEPRECATED — unused. Idle-timeout compaction was removed; the "
             "periodic summary scheduler is the single context-reduction "
@@ -1820,7 +1815,6 @@ class Settings(BaseModel):
     )
     compaction_keep_recent_turns: int = Field(
         default=2,
-        json_schema_extra={"advanced": True},
         description=(
             "DEPRECATED — unused. Idle-timeout compaction was removed; the "
             "periodic summary scheduler keeps evergoing.keep_recent_runs "
@@ -1829,115 +1823,53 @@ class Settings(BaseModel):
     )
     log_level: str = "INFO"
     log_json_format: bool = True
-    cors_allow_origins: list[str] = Field(
-        default_factory=list, json_schema_extra={"advanced": True}
-    )
-    correlation_id_header: str = Field(
-        default="X-Request-ID", json_schema_extra={"advanced": True}
-    )
+    cors_allow_origins: list[str] = Field(default_factory=list)
+    correlation_id_header: str = Field(default="X-Request-ID")
     langfuse: LangfuseSettings = Field(default_factory=LangfuseSettings)
     openrouter: OpenRouterSettings = Field(default_factory=OpenRouterSettings)
     langfuse_inspect: LangfuseInspectSettings = Field(
-        default_factory=LangfuseInspectSettings, json_schema_extra={"advanced": True}
+        default_factory=LangfuseInspectSettings
     )
-    memory: MemorySettings = Field(
-        default_factory=MemorySettings, json_schema_extra={"advanced": True}
-    )
-    central_deploy: CentralDeploySettings = Field(
-        default_factory=CentralDeploySettings, json_schema_extra={"advanced": True}
-    )
-    conversation: ConversationSettings = Field(
-        default_factory=ConversationSettings, json_schema_extra={"advanced": True}
-    )
-    diagnostics: DiagnosticsSettings = Field(
-        default_factory=DiagnosticsSettings, json_schema_extra={"advanced": True}
-    )
-    refdocs: RefDocsSettings = Field(
-        default_factory=RefDocsSettings, json_schema_extra={"advanced": True}
-    )
-    render_url: RenderUrlSettings = Field(
-        default_factory=RenderUrlSettings, json_schema_extra={"advanced": True}
-    )
+    memory: MemorySettings = Field(default_factory=MemorySettings)
+    central_deploy: CentralDeploySettings = Field(default_factory=CentralDeploySettings)
+    conversation: ConversationSettings = Field(default_factory=ConversationSettings)
+    diagnostics: DiagnosticsSettings = Field(default_factory=DiagnosticsSettings)
+    refdocs: RefDocsSettings = Field(default_factory=RefDocsSettings)
+    render_url: RenderUrlSettings = Field(default_factory=RenderUrlSettings)
     knowledge: KnowledgeSettings = Field(default_factory=KnowledgeSettings)
-    self_review: SelfReviewSettings = Field(
-        default_factory=SelfReviewSettings, json_schema_extra={"advanced": True}
-    )
-    version_check: VersionCheckSettings = Field(
-        default_factory=VersionCheckSettings, json_schema_extra={"advanced": True}
-    )
+    self_review: SelfReviewSettings = Field(default_factory=SelfReviewSettings)
+    version_check: VersionCheckSettings = Field(default_factory=VersionCheckSettings)
     component_client: ComponentClientSettings = Field(
         default_factory=ComponentClientSettings,
-        json_schema_extra={"advanced": True},
     )
-    subsessions: SubsessionsSettings = Field(
-        default_factory=SubsessionsSettings, json_schema_extra={"advanced": True}
-    )
-    direct_repo: DirectRepoSettings = Field(
-        default_factory=DirectRepoSettings, json_schema_extra={"advanced": True}
-    )
+    subsessions: SubsessionsSettings = Field(default_factory=SubsessionsSettings)
+    direct_repo: DirectRepoSettings = Field(default_factory=DirectRepoSettings)
     github_security: GitHubSecuritySettings = Field(
         default_factory=GitHubSecuritySettings,
-        json_schema_extra={"advanced": True},
     )
-    github_actions: GitHubActionsSettings = Field(
-        default_factory=GitHubActionsSettings, json_schema_extra={"advanced": True}
-    )
-    repo_study: RepoStudySettings = Field(
-        default_factory=RepoStudySettings, json_schema_extra={"advanced": True}
-    )
-    lifecycle: LifecycleSettings = Field(
-        default_factory=LifecycleSettings, json_schema_extra={"advanced": True}
-    )
-    notification: NotificationSettings = Field(
-        default_factory=NotificationSettings, json_schema_extra={"advanced": True}
-    )
-    http_probe: HttpProbeSettings = Field(
-        default_factory=HttpProbeSettings, json_schema_extra={"advanced": True}
-    )
-    docker_digest: DockerDigestSettings = Field(
-        default_factory=DockerDigestSettings, json_schema_extra={"advanced": True}
-    )
-    gateway_route: GatewayRouteSettings = Field(
-        default_factory=GatewayRouteSettings, json_schema_extra={"advanced": True}
-    )
-    public_fetch: PublicFetchSettings = Field(
-        default_factory=PublicFetchSettings, json_schema_extra={"advanced": True}
-    )
-    sftp: SftpSettings = Field(
-        default_factory=SftpSettings, json_schema_extra={"advanced": True}
-    )
-    file_hub_tools: FileHubToolsSettings = Field(
-        default_factory=FileHubToolsSettings, json_schema_extra={"advanced": True}
-    )
-    volume_tools: VolumeToolsSettings = Field(
-        default_factory=VolumeToolsSettings, json_schema_extra={"advanced": True}
-    )
-    feedback: FeedbackSettings = Field(
-        default_factory=FeedbackSettings, json_schema_extra={"advanced": True}
-    )
-    health: HealthSettings = Field(
-        default_factory=HealthSettings, json_schema_extra={"advanced": True}
-    )
-    periodic: PeriodicSettings = Field(
-        default_factory=PeriodicSettings, json_schema_extra={"advanced": True}
-    )
-    continuation: ContinuationSettings = Field(
-        default_factory=ContinuationSettings, json_schema_extra={"advanced": True}
-    )
-    evergoing: EvergoingSettings = Field(
-        default_factory=EvergoingSettings, json_schema_extra={"advanced": True}
-    )
-    max_images_per_message: int = Field(default=8, json_schema_extra={"advanced": True})
-    max_image_bytes: int = Field(
-        default=5_242_880, json_schema_extra={"advanced": True}
-    )
+    github_actions: GitHubActionsSettings = Field(default_factory=GitHubActionsSettings)
+    repo_study: RepoStudySettings = Field(default_factory=RepoStudySettings)
+    lifecycle: LifecycleSettings = Field(default_factory=LifecycleSettings)
+    notification: NotificationSettings = Field(default_factory=NotificationSettings)
+    http_probe: HttpProbeSettings = Field(default_factory=HttpProbeSettings)
+    docker_digest: DockerDigestSettings = Field(default_factory=DockerDigestSettings)
+    gateway_route: GatewayRouteSettings = Field(default_factory=GatewayRouteSettings)
+    public_fetch: PublicFetchSettings = Field(default_factory=PublicFetchSettings)
+    sftp: SftpSettings = Field(default_factory=SftpSettings)
+    file_hub_tools: FileHubToolsSettings = Field(default_factory=FileHubToolsSettings)
+    volume_tools: VolumeToolsSettings = Field(default_factory=VolumeToolsSettings)
+    feedback: FeedbackSettings = Field(default_factory=FeedbackSettings)
+    health: HealthSettings = Field(default_factory=HealthSettings)
+    periodic: PeriodicSettings = Field(default_factory=PeriodicSettings)
+    continuation: ContinuationSettings = Field(default_factory=ContinuationSettings)
+    evergoing: EvergoingSettings = Field(default_factory=EvergoingSettings)
+    max_images_per_message: int = Field(default=8)
+    max_image_bytes: int = Field(default=5_242_880)
     allowed_image_media_types: list[str] = Field(
         default_factory=lambda: ["image/png", "image/jpeg", "image/gif", "image/webp"],
-        json_schema_extra={"advanced": True},
     )
     vision_model: str = Field(
         default="openrouter/openai/gpt-4o-mini",
-        json_schema_extra={"advanced": True},
         description=(
             "OpenRouter model id used to caption attached images when the "
             "active chat model lacks vision support. Empty string means "
@@ -1945,9 +1877,7 @@ class Settings(BaseModel):
             "no-image-support failure path."
         ),
     )
-    mobile_auth: MobileAuthSettings = Field(
-        default_factory=MobileAuthSettings, json_schema_extra={"advanced": True}
-    )
+    mobile_auth: MobileAuthSettings = Field(default_factory=MobileAuthSettings)
 
     @property
     def vision_model_configured(self) -> bool:
@@ -1977,10 +1907,11 @@ class Settings(BaseModel):
         """
         failures: list[str] = []
 
-        if self.llmio_model_level not in VALID_MODEL_LEVELS:
+        if self.chat_default_model_level not in VALID_MODEL_LEVELS:
             failures.append(
-                f"llmio.model_level must be one of {sorted(VALID_MODEL_LEVELS)}, "
-                f"got {self.llmio_model_level!r}"
+                f"chat_default_model_level must be one of "
+                f"{sorted(VALID_MODEL_LEVELS)}, "
+                f"got {self.chat_default_model_level!r}"
             )
         # No level requires a key up front any more: every level is served
         # by the keyless Claude SDK default slot, and ``llmio.api_key`` only
@@ -1992,7 +1923,7 @@ class Settings(BaseModel):
                 f"summary_model_level must be one of {sorted(VALID_MODEL_LEVELS)}, "
                 f"got {self.summary_model_level!r}"
             )
-        # Unlike llmio_model_level, a missing key here is not fatal at config
+        # Unlike chat_default_model_level, a missing key here is not fatal at config
         # load — create_agent_from_settings falls back to a keyless level
         # (see cli.py) so a keyed level never breaks a deployment that has
         # not configured an OpenRouter key.
@@ -2163,14 +2094,27 @@ class Settings(BaseModel):
             del data["low_risk_actions"]
 
         # Strip the removed chat_model_level override — the main chat agent
-        # now always uses the unified ``llmio_model_level``.
+        # now always uses the unified ``chat_default_model_level``.
         if "chat_model_level" in data:
             logger.info(
                 "Dropping removed config key 'chat_model_level' (unified into "
-                "'llmio_model_level')"
+                "'chat_default_model_level')"
             )
             data = dict(data)
             del data["chat_model_level"]
+
+        # Rename legacy ``llmio_model_level`` → ``chat_default_model_level``.
+        # Configs serialized before the rename still carry the old key; map
+        # its value over so the setting is preserved (extra="forbid" would
+        # otherwise reject the stale key and brick config load).
+        if "llmio_model_level" in data:
+            logger.info(
+                "Renaming legacy config key 'llmio_model_level' → "
+                "'chat_default_model_level'"
+            )
+            data = dict(data)
+            legacy_level = data.pop("llmio_model_level")
+            data.setdefault("chat_default_model_level", legacy_level)
 
         # Strip pre_authorized_ticket_patterns from subsessions.
         subsessions = data.get("subsessions")
@@ -2237,6 +2181,13 @@ class Settings(BaseModel):
                 "migrate_legacy_config: dropping removed key 'chat_model_level'"
             )
             del data["chat_model_level"]
+        if "llmio_model_level" in data:
+            logger.info(
+                "migrate_legacy_config: renaming legacy key 'llmio_model_level' "
+                "→ 'chat_default_model_level'"
+            )
+            legacy_level = data.pop("llmio_model_level")
+            data.setdefault("chat_default_model_level", legacy_level)
         subsessions = data.get("subsessions")
         if (
             isinstance(subsessions, dict)
@@ -2298,6 +2249,7 @@ class Settings(BaseModel):
 
         # Top-level object fields — tolerate "" and JS sentinels → {}
         _object_keys = (
+            "llmio_tier_overrides",
             "langfuse",
             "openrouter",
             "langfuse_inspect",

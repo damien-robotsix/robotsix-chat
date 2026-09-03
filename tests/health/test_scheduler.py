@@ -49,7 +49,7 @@ class TestHealthScheduler:
         scheduler = HealthScheduler(interval_seconds=300.0, state=state)
         status = asyncio.run(scheduler.run_once())
         assert status is not None
-        assert len(status.checks) == 4
+        assert len(status.checks) == 5
         assert state.health_status is status
 
     def test_run_once_overall_ok_when_all_checks_pass(self) -> None:

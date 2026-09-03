@@ -113,6 +113,10 @@ class RecordingSink:
         """Record the published frame."""
         self.frames.append((session_id, frame))
 
+    def publish_all(self, frame: dict[str, object]) -> None:
+        """Record a broadcast frame under a sentinel ``"*"`` session id."""
+        self.frames.append(("*", frame))
+
     def of_type(self, frame_type: str) -> list[tuple[str, dict[str, object]]]:
         """Return the captured frames whose ``type`` equals *frame_type*."""
         return [(s, f) for s, f in self.frames if f.get("type") == frame_type]
@@ -160,6 +164,7 @@ def make_settings(
     monitor_error_max_retries: int = 2,
     consecutive_error_fail_threshold: int = 3,
     transient_error_max_retries: int = 3,
+    monitor_turn_concurrency: int = 0,
     paused_monitor_auto_resume_seconds: float = 1800.0,
     max_runs_escalation_threshold: int = 3,
     max_runs_progress_extension: int = 20,
@@ -213,6 +218,7 @@ def make_settings(
             monitor_error_max_retries=monitor_error_max_retries,
             consecutive_error_fail_threshold=consecutive_error_fail_threshold,
             transient_error_max_retries=transient_error_max_retries,
+            monitor_turn_concurrency=monitor_turn_concurrency,
             periodic_max_interval_seconds=periodic_max_interval_seconds,
             periodic_max_total_runs=periodic_max_total_runs,
             event_driven_timeout_seconds=event_driven_timeout_seconds,

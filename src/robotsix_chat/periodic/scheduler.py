@@ -24,6 +24,7 @@ import asyncio
 import contextlib
 import json
 import logging
+import math
 import time
 from collections.abc import Awaitable, Callable
 from datetime import UTC, datetime
@@ -121,14 +122,40 @@ class PeriodicScheduler:
 
     # -- scheduling ----------------------------------------------------------
 
+    def _next_run(
+        self, defn: PeriodicSessionDefinition, last_fired: float | None
+    ) -> float:
+        """Absolute clock time of *defn*'s next fire (``None`` = never fired).
+
+        Unanchored presets keep the legacy cadence: a never-fired preset is
+        immediately due, and every later run is spaced by
+        ``schedule_interval_seconds`` from the previous firing.
+
+        Anchored presets are pinned to a fixed UTC instant: they fire at the
+        anchor and then every ``schedule_interval_seconds`` thereafter. The
+        first run fires at the anchor (or, if the anchor has already passed,
+        at the next occurrence on/after now) — an anchored preset never
+        fires off its cadence.
+        """
+        interval = defn.schedule_interval_seconds
+        if defn.anchor_utc is None:
+            if last_fired is None:
+                return 0.0
+            return last_fired + interval
+        anchor_ts = defn.anchor_utc.timestamp()
+        if last_fired is None:
+            now = self._clock()
+            if now <= anchor_ts:
+                return anchor_ts
+            k = math.ceil((now - anchor_ts) / interval)
+            return anchor_ts + k * interval
+        k = math.floor((last_fired - anchor_ts) / interval) + 1
+        return anchor_ts + k * interval
+
     def _due(self, defn: PeriodicSessionDefinition) -> bool:
         entry = self._state.get(defn.name)
-        if entry is None:
-            # Never fired: due immediately, so a fresh preset does not wait
-            # out a full (possibly day-long) interval before its first run.
-            return True
-        last = float(entry.get("last_fired_at", 0.0))
-        return (self._clock() - last) >= defn.schedule_interval_seconds
+        last = None if entry is None else float(entry.get("last_fired_at", 0.0))
+        return self._clock() >= self._next_run(defn, last)
 
     def _previous_run_busy(self, name: str) -> bool:
         task = self._turn_tasks.get(name)

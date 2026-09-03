@@ -127,6 +127,8 @@ from .routes import (
     mobile_token_endpoint,
     models_list_endpoint,
     not_found_handler,
+    notifications_read_endpoint,
+    notifications_unread_endpoint,
     periodic_definitions_list_endpoint,
     periodic_definitions_run_endpoint,
     prune_endpoint,
@@ -326,6 +328,7 @@ SHARED_PARAMS: frozenset[str] = frozenset(
         "health_settings",
         "evergoing_settings",
         "continuation_store",
+        "notification_store",
     }
 )
 
@@ -370,6 +373,8 @@ def create_app(
     health_settings: HealthSettings | None = None,
     evergoing_settings: EvergoingSettings | None = None,
     continuation_store: Any = None,
+    notification_store: Any = None,
+    notification_store_and_forward: bool = True,
 ) -> Starlette:
     """Return a Starlette ASGI app wired to ``agent``.
 
@@ -512,6 +517,16 @@ def create_app(
             instance for pending post-restart continuations.  When
             ``None`` (default), the chat endpoint does not reset the
             consecutive-continuation guardrail counter on operator messages.
+        notification_store: Shared
+            :class:`~robotsix_chat.notification.store.NotificationStore`
+            persisting ``notify_user`` notifications to chat-data so they
+            survive a disconnected browser.  When ``None`` (default),
+            notifications are published live but not persisted.
+        notification_store_and_forward: Feature flag mirroring
+            ``notification.store_and_forward``.  When ``False``, the
+            ``/notifications`` API endpoints return empty responses (the
+            emergency kill-switch); ``True`` (default) serves persisted
+            records.
 
     """
     routes: list[Route | Mount] = [
@@ -537,6 +552,16 @@ def create_app(
         Route("/events", events_endpoint, methods=["GET"]),
         Route("/history", history_endpoint, methods=["GET"]),
         Route("/models", models_list_endpoint, methods=["GET"]),
+        Route(
+            "/notifications/unread",
+            notifications_unread_endpoint,
+            methods=["GET"],
+        ),
+        Route(
+            "/notifications/read",
+            notifications_read_endpoint,
+            methods=["POST"],
+        ),
         Route("/sessions", sessions_list_endpoint, methods=["GET"]),
         Route("/sessions", sessions_create_endpoint, methods=["POST"]),
         Route(
@@ -781,6 +806,7 @@ def create_app(
     # Health-check scheduler — created here so it has access to the fully
     # populated app.state, then started during the lifespan async phase.
     _hs = health_settings or HealthSettings()
+    app.state.health_settings = _hs
     if _hs.enabled:
         from robotsix_chat.health import HealthScheduler
 
@@ -814,6 +840,8 @@ def create_app(
     else:
         app.state.evergoing_scheduler = None
     app.state.continuation_store = continuation_store  # may be None
+    app.state.notification_store = notification_store  # may be None
+    app.state.notification_store_and_forward = notification_store_and_forward
     if config_path is not None:
         app.state.config_path = config_path
     if draft_store_dir is not None:
@@ -1236,6 +1264,7 @@ def _build_request_tools_factory(
     event_sink: EventSink | None,
     conversation_store: ConversationStore | None = None,
     configured_level: int | None = None,
+    notification_store: Any = None,
 ) -> Callable[[str], list[Any]] | None:
     """Build a per-request tools factory for the main chat agent.
 
@@ -1270,6 +1299,7 @@ def _build_request_tools_factory(
                 settings.notification,
                 event_sink=event_sink,
                 session_id=session_id,
+                store=notification_store,
             )
 
         req_factories.append(_make_notification_tools)
@@ -1366,11 +1396,12 @@ def create_agent_from_settings(
     diagnostic_store: Any = None,
     knowledge_store: Any = None,
     continuation_store: Any = None,
+    notification_store: Any = None,
 ) -> LlmioChatAgent:
     """Build an :class:`LlmioChatAgent` wired from *settings*.
 
     The backend is chosen by robotsix-llmio's capability level: *model_level*
-    when given, else ``settings.llmio_model_level``.  The level encodes the
+    when given, else ``settings.chat_default_model_level``.  The level encodes the
     transport + model; ``settings.llmio_api_key`` is forwarded only when the
     effective level's transport needs a key (keyless claudeSDK levels 2, 4, 5
     never receive one).
@@ -1423,7 +1454,7 @@ def create_agent_from_settings(
         instruction = instruction + _SUGGESTIONS_INSTRUCTION
 
     effective_level = (
-        model_level if model_level is not None else settings.llmio_model_level
+        model_level if model_level is not None else settings.chat_default_model_level
     )
     # Frontier subsessions (level 3) get an orchestration directive so they
     # delegate bulk reading/extraction to cheaper child subsessions by
@@ -1482,6 +1513,7 @@ def create_agent_from_settings(
                         settings.notification,
                         event_sink=subsession_env.event_sink,
                         session_id=subsession_ctx.owner_session_id,
+                        store=notification_store,
                     )
                 )
         # Build per-request tools factory — subsession tools for the main
@@ -1495,10 +1527,11 @@ def create_agent_from_settings(
             # agent has no operator watching the badge change.
             conversation_store if subsession_ctx is None and not bare else None,
             (
-                settings.llmio_model_level
+                settings.chat_default_model_level
                 if subsession_ctx is None and not bare
                 else None
             ),
+            notification_store=notification_store,
         )
 
     # Read/write split for background agents. Recall is a retrieval-only

@@ -68,6 +68,29 @@ _MASKED_SECRET_SENTINEL = "**********"
 # ---------------------------------------------------------------------------
 
 
+def _strip_corrupt_object_sentinels(update: dict[str, Any]) -> dict[str, Any]:
+    """Drop keys whose submitted value is the JS ``String(obj)`` sentinel.
+
+    The browser settings panel occasionally serialises an object field with
+    ``String(value)`` instead of ``JSON.stringify(value)``, yielding the
+    literal ``"[object Object]"`` string (observed for
+    ``llmio_tier_overrides``).  That value is never a legitimate config leaf;
+    dropping the key here lets the deep-merge preserve the stored value
+    instead of overwriting it — and later failing validation with a
+    ``dict_type`` error.  Recurses into nested dicts so the fix covers
+    object fields inside sub-models too.
+    """
+    result: dict[str, Any] = {}
+    for key, value in update.items():
+        if isinstance(value, dict):
+            result[key] = _strip_corrupt_object_sentinels(value)
+        elif value == "[object Object]":
+            continue
+        else:
+            result[key] = value
+    return result
+
+
 def _deep_merge(existing: dict[str, Any], update: dict[str, Any]) -> dict[str, Any]:
     """Recursively merge *update* into *existing*.
 
@@ -563,6 +586,12 @@ async def config_save_endpoint(request: Request) -> JSONResponse:
 
     # 1. Read the current on-disk config (raw JSON, not model-dumped).
     existing = _read_config_json(config_path)
+
+    # Drop JS ``String(obj)`` sentinels ("[object Object]") the settings
+    # panel sometimes submits for object fields (e.g. llmio_tier_overrides)
+    # so the deep-merge preserves the stored value instead of corrupting it.
+    if isinstance(body, dict):
+        body = _strip_corrupt_object_sentinels(body)
 
     # 2. Deep-merge the submitted form over the existing config.
     merged = _deep_merge(existing, body)

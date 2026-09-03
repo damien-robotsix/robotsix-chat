@@ -30,8 +30,11 @@ from typing import TYPE_CHECKING, Any, TypeVar
 from robotsix_http import RetryConfig, acall_with_retry
 
 from robotsix_chat.memory.maintenance import (
+    COGNEE_DB_RELATIVE_PATH,
     LANCEDB_RELATIVE_PATH,
+    CogneeDbVacuumScheduler,
     LanceDbMaintenanceScheduler,
+    StoreMetricsScheduler,
 )
 
 if TYPE_CHECKING:
@@ -258,6 +261,12 @@ class CogneeMemory:
         # Periodic LanceDB compaction/pruning scheduler (lazily created in
         # :meth:`start_maintenance`); ``None`` when disabled or not started.
         self._maintenance: LanceDbMaintenanceScheduler | None = None
+        # Periodic cognee_db VACUUM scheduler (lazily created in
+        # :meth:`start_maintenance`); ``None`` when disabled or not started.
+        self._vacuum: CogneeDbVacuumScheduler | None = None
+        # Periodic consolidated store-size metrics emitter (lazily created in
+        # :meth:`start_maintenance`); ``None`` when disabled or not started.
+        self._metrics: StoreMetricsScheduler | None = None
 
     # -- health & recovery wiring -----------------------------------------
 
@@ -397,43 +406,110 @@ class CogneeMemory:
                 "auto-recover if the WAL was left inconsistent"
             )
 
-    # -- periodic LanceDB maintenance -------------------------------------
+    # -- periodic memory maintenance -------------------------------------
 
     def _lancedb_store_path(self) -> Path:
         """Absolute path of the cognee LanceDB store directory."""
         data_dir = Path(self._settings.data_dir).expanduser().resolve()
         return data_dir / LANCEDB_RELATIVE_PATH
 
+    def _cognee_db_path(self) -> Path:
+        """Absolute path of the cognee SQLite relational store file."""
+        data_dir = Path(self._settings.data_dir).expanduser().resolve()
+        return data_dir / COGNEE_DB_RELATIVE_PATH
+
     def start_maintenance(self) -> None:
-        """Start the periodic LanceDB compaction/pruning scheduler.
+        """Start the periodic memory maintenance schedulers.
 
         Idempotent and a no-op when maintenance is disabled or the interval is
-        non-positive.  Intended to be called once at server startup; the
-        scheduler runs a pass immediately and then every
-        ``maintenance_interval_seconds``, each under the write lock so it never
-        overlaps a live ``cognify``.
+        non-positive.  Intended to be called once at server startup.
+
+        Starts two schedulers:
+
+        * the LanceDB compaction/pruning scheduler — runs a pass immediately
+          and then every ``maintenance_interval_seconds``;
+        * the cognee_db VACUUM scheduler — runs inside the configured
+          off-peak UTC window every ``maintenance_vacuum_interval_seconds``.
+
+        Each pass runs under the write lock so it never overlaps a live
+        ``cognify``.
         """
         s = self._settings
-        if not s.maintenance_enabled or s.maintenance_interval_seconds <= 0:
+        if not s.maintenance_enabled:
             return
-        if self._maintenance is not None:
-            return
-        self._maintenance = LanceDbMaintenanceScheduler(
-            store_path=self._lancedb_store_path(),
-            write_lock=self._write_lock,
-            interval_seconds=s.maintenance_interval_seconds,
-            cleanup_older_than=timedelta(
-                seconds=s.maintenance_version_retention_seconds
-            ),
-        )
-        self._maintenance.start()
+        if self._maintenance is None and s.maintenance_interval_seconds > 0:
+            self._maintenance = LanceDbMaintenanceScheduler(
+                store_path=self._lancedb_store_path(),
+                write_lock=self._write_lock,
+                interval_seconds=s.maintenance_interval_seconds,
+                cleanup_older_than=timedelta(
+                    seconds=s.maintenance_version_retention_seconds
+                ),
+            )
+            self._maintenance.start()
+        if (
+            self._vacuum is None
+            and s.maintenance_vacuum_enabled
+            and s.maintenance_vacuum_interval_seconds > 0
+        ):
+            window = (
+                (
+                    int(s.maintenance_vacuum_off_peak_window[0]),
+                    int(s.maintenance_vacuum_off_peak_window[1]),
+                )
+                if s.maintenance_vacuum_off_peak_window is not None
+                else None
+            )
+            self._vacuum = CogneeDbVacuumScheduler(
+                db_path=self._cognee_db_path(),
+                write_lock=self._write_lock,
+                interval_seconds=s.maintenance_vacuum_interval_seconds,
+                mode=s.maintenance_vacuum_mode,
+                off_peak_window=window,
+            )
+            self._vacuum.start()
+        if (
+            self._metrics is None
+            and s.maintenance_metrics_enabled
+            and s.maintenance_metrics_interval_seconds > 0
+        ):
+            self._metrics = StoreMetricsScheduler(
+                data_dir=Path(s.data_dir).expanduser().resolve(),
+                interval_seconds=s.maintenance_metrics_interval_seconds,
+                graph_stats_provider=self._graph_stats,
+            )
+            self._metrics.start()
+
+    async def _graph_stats(self) -> tuple[int, int] | None:
+        """Best-effort ``(nodes, edges)`` count from the live graph engine.
+
+        Read-only and never raises: returns ``None`` when the store is not yet
+        set up, cognee is absent, or the engine cannot report counts, so a
+        missing count degrades the metrics line rather than the scheduler.
+        """
+        if not self._setup_done:
+            return None
+        try:
+            from cognee.infrastructure.databases.graph import get_graph_engine
+
+            engine = await get_graph_engine()
+            nodes, edges = await engine.get_graph_data()
+            return len(nodes), len(edges)
+        except Exception:
+            logger.debug("cognee graph node/edge counts unavailable", exc_info=True)
+            return None
 
     async def stop_maintenance(self) -> None:
-        """Stop the LanceDB maintenance scheduler if it is running."""
-        if self._maintenance is None:
-            return
-        await self._maintenance.stop()
-        self._maintenance = None
+        """Stop the memory maintenance schedulers if they are running."""
+        if self._metrics is not None:
+            await self._metrics.stop()
+            self._metrics = None
+        if self._vacuum is not None:
+            await self._vacuum.stop()
+            self._vacuum = None
+        if self._maintenance is not None:
+            await self._maintenance.stop()
+            self._maintenance = None
 
     def _configure(self) -> None:
         """Configure cognee's global state from the stored settings.
@@ -466,6 +542,19 @@ class CogneeMemory:
                 "DATAFUSION_RUNTIME_MEMORY_LIMIT",
                 s.datafusion_runtime_memory_limit,
             )
+
+        # Cap the ingestion pipeline's spawn-worker fan-out.  cognee ingests
+        # through ``dlt``, whose normalize stage scales a multiprocessing
+        # process pool with the host CPU count; each worker holds a data batch
+        # in memory, so a large cognify backlog fans out into several
+        # multi-GB spawn workers with no aggregate bound — the RSS blow-up that
+        # OOM-killed the container on 2026-09-03.  dlt reads these per-stage
+        # worker counts from the env at pipeline-config time (before
+        # ``import cognee``), so set them now.
+        if s.cognify_max_workers >= 1:
+            workers = str(s.cognify_max_workers)
+            for _env in ("EXTRACT__WORKERS", "NORMALIZE__WORKERS", "LOAD__WORKERS"):
+                os.environ.setdefault(_env, workers)
 
         # cognee force-selects Langfuse as its monitoring tool when LANGFUSE_*
         # creds are present in the env (a model validator, overriding
@@ -502,9 +591,19 @@ class CogneeMemory:
         # cognee's graph store was kuzu; since 1.4 it is cognee's own embedded
         # ladybug engine, whose ``.wal`` is its crash-recovery journal and is
         # replayed on open. Deleting it destroyed the live knowledge graph on
-        # every startup. cognee is pinned so the engine cannot change under us.
+        # every startup. The graph engine's on-disk layout is not something we
+        # touch, but the relational-store *schema* can still change when cognee
+        # is upgraded under us (dependabot auto-merged 1.4.0->1.5.3 on
+        # 2026-09-02, whose new schema then failed every recall with
+        # ``OperationalError: table queries has no column named dataset_id``).
+        # ``_run_migrations`` below brings the deployed schema up to head.
         cognee.config.data_root_directory(str(data_root))
         cognee.config.system_root_directory(str(system_root))
+
+        # Reconcile the deployed relational-store schema with the installed
+        # cognee version BEFORE the first recall/remember opens it — otherwise
+        # a stale schema surfaces as per-query ``OperationalError`` failures.
+        self._run_migrations()
 
         # Extraction LLM — OpenRouter via litellm's `custom` provider.
         from robotsix_chat.config import PROJECT_MEMORY
@@ -516,10 +615,10 @@ class CogneeMemory:
         cognee.config.set_llm_api_key(self._openrouter.key(alias).get_secret_value())
         # Pin EVERY LLM pipeline stage to the configured model. cognee's
         # per-stage routing (extraction / summarization / query) and its BAML
-        # fallback each carry their own default (``openai/gpt-5-mini``) when
+        # fallback each carry their own built-in default model when
         # left empty; a pipeline step reading one of those directly would
         # otherwise bill the untraced default model instead of the configured
-        # ``gpt-5-nano``. Setting them all to the same value guarantees no
+        # model. Setting them all to the same value guarantees no
         # cognee step can silently fall back to its internal default.
         cognee.config.set_llm_config(
             {
@@ -553,6 +652,54 @@ class CogneeMemory:
         )
 
         self._register_litellm_langfuse_callback()
+
+    def _run_migrations(self) -> None:
+        """Upgrade the cognee relational-store schema to head via alembic.
+
+        cognee ships its own alembic migration tree (``alembic.ini`` +
+        ``alembic/`` alongside the package). Since the package is no longer
+        effectively pinned against us — dependabot auto-merged 1.4.0->1.5.3 on
+        2026-09-02 (#1544) and the newer schema then failed *every* recall with
+        ``OperationalError: table queries has no column named dataset_id`` — the
+        deployed SQLite schema under ``data_dir`` can lag the installed cognee
+        version. Running ``alembic upgrade head`` in-process here (after the
+        data/system roots are configured, before the first store open)
+        reconciles it, exactly as the operator did manually to recover the live
+        DB.
+
+        Called only from :meth:`_configure`, which runs once under
+        :attr:`_setup_lock` — that lock is the startup gate serialising the
+        migration, and callers must keep the process quiescent (no concurrent
+        store access) while it runs, because SQLite requires quiescence to take
+        the write lock.
+
+        Raises:
+            RuntimeError: if the migration fails, so setup surfaces a single
+                clear error instead of degrading to per-query
+                ``OperationalError`` failures on the recall path.
+
+        """
+        import cognee
+        from alembic import command
+        from alembic.config import Config
+
+        package_dir = Path(cognee.__file__).resolve().parent
+        cfg = Config(str(package_dir / "alembic.ini"))
+        # The packaged script_location is relative to the ini's own directory;
+        # pin it to the absolute path so the migration runs regardless of CWD.
+        cfg.set_main_option("script_location", str(package_dir / "alembic"))
+        # Do not let alembic reconfigure the root logger (it would clobber the
+        # server's logging config); env.py honors this attribute.
+        cfg.attributes["configure_logger"] = False
+        try:
+            command.upgrade(cfg, "head")
+        except Exception as exc:
+            raise RuntimeError(
+                "cognee relational-store schema migration (alembic upgrade "
+                "head) failed; the deployed schema does not match the installed "
+                f"cognee version and recall/remember would fail per-query: {exc}"
+            ) from exc
+        logger.info("cognee relational-store schema migrated to head")
 
     def _register_litellm_langfuse_callback(self) -> None:
         """Wire litellm Langfuse OTLP tracing with dedicated cognee creds.
@@ -663,7 +810,7 @@ class CogneeMemory:
         that does not equal the configured value. This is the startup trip-wire
         for the "unconfigured cognee LLM model" failure mode: a config-setter
         no-op, or a stage silently falling back to cognee's internal default
-        (``openai/gpt-5-mini``), would otherwise burn OpenRouter credit
+        model, would otherwise burn OpenRouter credit
         invisibly. Deliberately a LOG, never a raise — memory keeps working,
         but the drift is impossible to miss.
         """

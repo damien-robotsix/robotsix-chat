@@ -127,7 +127,7 @@ packages = ["src/robotsix_chat"]
 # fleet pin-bump workflow advances them through reviewed PRs.
 [tool.uv.sources]
 robotsix-config = { git = "https://github.com/damien-robotsix/robotsix-config.git", rev = "884a452062a04f569fb63a9d103c29eafbf3c056" }  # pragma: allowlist secret
-robotsix-llmio = { git = "https://github.com/damien-robotsix/robotsix-llmio.git", rev = "70c6ae9a36a089c7e763d2ee0ce1ab14270bddf4" }  # pragma: allowlist secret
+robotsix-llmio = { git = "https://github.com/damien-robotsix/robotsix-llmio.git", rev = "60987bbc5e6d4af5146afd88c557411dc396b0eb" }  # pragma: allowlist secret
 # robotsix-modules: same SHA as robotsix-mill (coherent-set rule).
 robotsix-modules = { git = "https://github.com/damien-robotsix/robotsix-modules.git", rev = "d7c5e59980516de6e050db02ff54aef4e15ff5c3" }  # pragma: allowlist secret
 robotsix-http = { git = "https://github.com/damien-robotsix/robotsix-http.git", rev = "cdfd4d1c42679fef73081439562872792e202dc4" }  # pragma: allowlist secret
@@ -213,6 +213,13 @@ ignore_missing_imports = true
 # lancedb is a transitive dependency of cognee (the memory extra); no type stubs.
 [[tool.mypy.overrides]]
 module = ["lancedb", "lancedb.*"]
+ignore_missing_imports = true
+
+# alembic is a transitive dependency of cognee (the memory extra); imported to
+# run cognee's packaged schema migrations at memory setup. Not installed in the
+# default dev/test env, so mypy can't resolve it.
+[[tool.mypy.overrides]]
+module = ["alembic", "alembic.*"]
 ignore_missing_imports = true
 
 # playwright (the optional `render-url` extra) ships no type information.
@@ -336,9 +343,12 @@ pynacl = ["nacl"]
 # DEP002 ("defined but not used") is expected and intentional.
 # litellm is a transitive dependency of cognee (the memory extra); imported
 # for its Langfuse callback so cognee traffic lands in a separate project.
+# alembic is a transitive dependency of cognee (the memory extra); imported to
+# run cognee's packaged schema migrations in-process at memory setup so a
+# dependabot cognee bump cannot leave the deployed SQLite schema stale.
 # `_check_common` is a workspace-local sibling module imported by the five
 # standalone scripts/check_*.py audit scripts; it is not an installable package.
-DEP001 = ["litellm", "lancedb", "_check_common"]
+DEP001 = ["litellm", "lancedb", "alembic", "_check_common"]
 DEP002 = ["transformers"]
 # `pydantic_ai` is robotsix-llmio's agent framework: `handle.run` already returns
 # its result objects, and the agent builds a multi-turn `message_history` from

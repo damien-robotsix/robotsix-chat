@@ -201,6 +201,42 @@ Key characteristics:
 - **Container restart**: history loaded from `/data/conversations.json` is fully functional —
   idle-reset behaviour, the 50-turn cap, and LRU eviction all apply to restored conversations.
 
+### Compacted sessions and the missing-summary flag
+
+Long-running sessions are periodically summarised and their leading turns trimmed. On reload the UI
+fetches `/history`; for a compacted session the response carries extra compaction metadata so the
+browser can open the session on its summary card instead of a long flat transcript:
+
+- `compacted_summary` — the summary text of the covered leading turns.
+- `compacted_turn_index` — how many leading `turns` the summary covers.
+- `compacted_summary_missing` — `true` when the session advanced past compaction
+  (`compacted_turn_index > 0`) but no usable `compacted_summary` is available.
+
+Example — compacted session with a usable summary (flag absent):
+
+```json
+{
+  "turns": [["After the summary", "A reply"], ["More", "And more"]],
+  "compacted_summary": "Earlier we agreed on X.",
+  "compacted_turn_index": 2
+}
+```
+
+Example — compacted session whose summary is missing (flag present):
+
+```json
+{
+  "turns": [["After the summary", "A reply"], ["More", "And more"]],
+  "compacted_turn_index": 2,
+  "compacted_summary_missing": true
+}
+```
+
+A session that was never compacted returns only `turns`. Clients should treat
+`compacted_summary_missing: true` as "the covered turns exist but the summary is unavailable" and
+degrade gracefully — for example render the covered turns inline, or show a small notice instead of
+a summary card.
+
 ## 8. Updating
 
 Every push to `main` publishes a fresh `ghcr.io/damien-robotsix/robotsix-chat:main` (CI-gated).

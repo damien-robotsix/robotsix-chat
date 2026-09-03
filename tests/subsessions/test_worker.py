@@ -3049,3 +3049,80 @@ async def test_task_transient_error_not_retried() -> None:
     assert info is not None
     # TASK subsession should be FAILED — no retry for non-periodic.
     assert info.status is SubsessionStatus.FAILED
+
+
+# ---------------------------------------------------------------------------
+# Monitor turn concurrency gate (2026-09-02 OOM: unbounded monitor-turn
+# stampede — each turn spawns a ~240MB claudeSDK subprocess)
+# ---------------------------------------------------------------------------
+
+
+def _gate_env(concurrency: int) -> SimpleNamespace:
+    from tests.common.subsession_fakes import make_settings
+
+    return SimpleNamespace(settings=make_settings(monitor_turn_concurrency=concurrency))
+
+
+def _gate_info(kind: SubsessionKind) -> SimpleNamespace:
+    return SimpleNamespace(kind=kind, runs=0)
+
+
+@pytest.mark.asyncio
+async def test_monitor_turns_serialize_through_the_gate(monkeypatch):
+    """With concurrency=1, two monitor turns never overlap."""
+    worker_mod._monitor_turn_gate = None
+    worker_mod._monitor_turn_gate_size = -1
+    running = 0
+    max_running = 0
+
+    async def fake_turn(env, agent, turn_input, history, sub_id, info):
+        nonlocal running, max_running
+        running += 1
+        max_running = max(max_running, running)
+        await asyncio.sleep(0.02)
+        running -= 1
+        return "ok"
+
+    monkeypatch.setattr(worker_mod, "_run_turn_with_timeout", fake_turn)
+    env = _gate_env(1)
+    results = await asyncio.gather(
+        *(
+            worker_mod._run_turn_with_transient_retry(
+                env, None, "in", [], f"sub{i}", _gate_info(SubsessionKind.PERIODIC)
+            )
+            for i in range(3)
+        )
+    )
+    assert results == ["ok", "ok", "ok"]
+    assert max_running == 1
+
+
+@pytest.mark.asyncio
+async def test_gate_disabled_and_non_monitor_kinds_bypass(monkeypatch):
+    """concurrency=0 disables the gate; TASK turns never wait on it."""
+    worker_mod._monitor_turn_gate = None
+    worker_mod._monitor_turn_gate_size = -1
+    running = 0
+    max_running = 0
+
+    async def fake_turn(env, agent, turn_input, history, sub_id, info):
+        nonlocal running, max_running
+        running += 1
+        max_running = max(max_running, running)
+        await asyncio.sleep(0.02)
+        running -= 1
+        return "ok"
+
+    monkeypatch.setattr(worker_mod, "_run_turn_with_timeout", fake_turn)
+    await asyncio.gather(
+        worker_mod._run_turn_with_transient_retry(
+            _gate_env(0), None, "in", [], "s1", _gate_info(SubsessionKind.PERIODIC)
+        ),
+        worker_mod._run_turn_with_transient_retry(
+            _gate_env(1), None, "in", [], "s2", _gate_info(SubsessionKind.TASK)
+        ),
+        worker_mod._run_turn_with_transient_retry(
+            _gate_env(1), None, "in", [], "s3", _gate_info(SubsessionKind.TASK)
+        ),
+    )
+    assert max_running >= 2

@@ -145,3 +145,27 @@ Tasks that are pending, in-progress, or blocked.
   **User-facing feedback:** the agent surfaces the returned status/result via the normal SSE reply.
   **Definition of done:** a chat session successfully drives a form-fill through `component_request`
   → robotsix-browser and reports the outcome. Related to (and narrower than) T-0004.
+
+## T-0007 — Activate the `dependabot-drain` periodic preset on the live deployment
+
+- status: pending
+- created: 2026-09-03T00:00:00Z
+- updated: 2026-09-03T00:00:00Z
+- notes: Ticket 20260903T113001Z / follow-up 20260903T114337Z shipped the `dependabot-drain`
+  periodic-session preset into `config/config.json` under `periodic.sessions`, documented in
+  `docs/user-guide/periodic-sessions.md`. It ships `"enabled": false` per the feature-flag
+  convention, so it is inert until an operator turns it on.
+
+  **Activation config change (operator, live deployment):** set `"enabled": true` on the
+  `dependabot-drain` entry under `periodic.sessions` in the deployment's merged config (the
+  central-deploy config-target `/home/app/config/config.json`), then redeploy. All other fields are
+  already correct (weekly, `anchor_utc: "2026-09-07T06:00:00Z"` = Monday 06:00 UTC, `model_level: 3`).
+
+  **Live-proof step:** after activation, fire it once out-of-band with
+  `POST /periodic/definitions/dependabot-drain/run` and read the returned session's report (PRs
+  merged, migration tickets filed, PRs skipped); confirm the preset shows `enabled: true` in
+  `GET /periodic/definitions`.
+
+  **Post-deploy follow-up:** after the first anchored Monday 06:00 UTC firing, re-check
+  `GET /periodic/definitions` and confirm `last_fired_at`/`runs` advanced on schedule — i.e. the
+  preset actually turned on and fired in production. Archive this task once that is confirmed.

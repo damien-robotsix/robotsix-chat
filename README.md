@@ -59,7 +59,7 @@ a gitignored local file, and set the key there (never in the committed template)
 ```bash
 uv sync --extra openrouter
 cp config/config.json config/config.local.json
-# Edit config/config.local.json: set llmio_model_level to 1 and llmio_api_key
+# Edit config/config.local.json: set chat_default_model_level to 1 and llmio_api_key
 ROBOTSIX_CONFIG_FILE=config/config.local.json uv run robotsix-chat
 ```
 
@@ -126,7 +126,7 @@ at that file.
 
 ```jsonc
 {
-  "llmio_model_level": 3,
+  "chat_default_model_level": 3,
   // "llmio_api_key": "sk-or-...",  // pragma: allowlist secret
   "server": {
     "host": "127.0.0.1",
@@ -174,6 +174,30 @@ session to a different capability level without restarting. The selected model a
 subsequent turns in that session only — other sessions retain their own configured level or
 selection. Every level is served by the keyless claudeSDK default slot; llmio fails over to the
 keyed OpenRouter slot automatically (the header badge flags it), which requires `llmio_api_key`.
+
+### Image attachments (vision fallback)
+
+Users can attach images to a chat turn. Vision-capable models (the keyless Claude SDK slot, levels
+3–4) read them natively. Text-only models (the keyed OpenRouter slot, levels 1–2 such as DeepSeek)
+cannot accept image input, so robotsix-chat routes the attachment to a configured **vision model**
+that captions it and substitutes the caption as text.
+
+The `vision_model` setting names that fallback model — an OpenRouter model id of the form
+`openrouter/<vendor>/<model-slug>` (default `openrouter/openai/gpt-4o-mini`). It bills under the
+same `llmio_api_key` as the level 1–2 chat slots.
+
+```jsonc
+{
+  "chat_default_model_level": 2,
+  // "llmio_api_key": "sk-or-...",  // pragma: allowlist secret
+  "vision_model": "openrouter/openai/gpt-4o-mini"  // "" disables captioning
+}
+```
+
+When `vision_model` is an empty string the fallback is disabled: a text-only model then returns a
+curated "this model cannot read images" message instead of captioning. See
+[`docs/vision.md`](docs/vision.md) for supported models, behavior, examples, and the migration
+guide.
 
 ### Authentication
 

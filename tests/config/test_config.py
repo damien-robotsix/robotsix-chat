@@ -36,7 +36,7 @@ from robotsix_chat.config.models import EvergoingSettings
 def _write_config_json(tmp_path: Path, overrides: dict | None = None) -> Path:
     """Write a minimal valid config.json to *tmp_path* and return its path."""
     data: dict = {
-        "llmio_model_level": 2,
+        "chat_default_model_level": 2,
     }
     if overrides:
         data.update(overrides)
@@ -54,7 +54,7 @@ def test_defaults() -> None:
     """Optional fields fall back to their documented defaults."""
     settings = Settings()
 
-    assert settings.llmio_model_level == 2
+    assert settings.chat_default_model_level == 2
     assert settings.llmio_api_key.get_secret_value() == ""
     assert settings.server_host == "0.0.0.0"
     assert settings.server_port == 8000
@@ -90,7 +90,7 @@ def test_vision_model_empty_means_unconfigured() -> None:
 def test_default_level_is_keyless() -> None:
     """The default level (2, workhorse) is keyless — constructs with no key."""
     settings = Settings()
-    assert settings.llmio_model_level == 2
+    assert settings.chat_default_model_level == 2
     assert settings.llmio_api_key.get_secret_value() == ""
 
 
@@ -102,14 +102,14 @@ def test_no_level_requires_api_key() -> None:
     keyed fallback slot.
     """
     for level in (1, 2, 3):
-        settings = Settings(llmio_model_level=level)
-        assert settings.llmio_model_level == level
+        settings = Settings(chat_default_model_level=level)
+        assert settings.chat_default_model_level == level
 
 
 def test_key_bearing_config_with_key_ok() -> None:
     """A configured key is kept for the failover slot."""
-    settings = Settings(llmio_model_level=1, llmio_api_key=SecretStr("sk-x"))
-    assert settings.llmio_model_level == 1
+    settings = Settings(chat_default_model_level=1, llmio_api_key=SecretStr("sk-x"))
+    assert settings.chat_default_model_level == 1
     # pragma: allowlist secret
     assert settings.llmio_api_key.get_secret_value() == "sk-x"
 
@@ -117,9 +117,9 @@ def test_key_bearing_config_with_key_ok() -> None:
 def test_invalid_model_level_raises() -> None:
     """A model_level outside llmio's levels (1-3) is rejected."""
     with pytest.raises(ValueError, match="model_level"):
-        Settings(llmio_model_level=6)
+        Settings(chat_default_model_level=6)
     with pytest.raises(ValueError, match="model_level"):
-        Settings(llmio_model_level=4)
+        Settings(chat_default_model_level=4)
 
 
 # ---------------------------------------------------------------------------
@@ -132,7 +132,7 @@ def test_load_from_json_file(tmp_path: Path, monkeypatch: pytest.MonkeyPatch) ->
     config_path = _write_config_json(
         tmp_path,
         {
-            "llmio_model_level": 2,
+            "chat_default_model_level": 2,
             "llmio_api_key": "sk-json",  # pragma: allowlist secret
             "server_host": "0.0.0.0",
             "server_port": 9000,
@@ -143,7 +143,7 @@ def test_load_from_json_file(tmp_path: Path, monkeypatch: pytest.MonkeyPatch) ->
 
     settings = Settings.load()
 
-    assert settings.llmio_model_level == 2
+    assert settings.chat_default_model_level == 2
     # pragma: allowlist secret
     assert settings.llmio_api_key.get_secret_value() == "sk-json"
     assert settings.server_host == "0.0.0.0"
@@ -507,7 +507,7 @@ def test_legacy_mail_block_is_dropped() -> None:
     """A deployed config still carrying the retired ``mail`` block loads."""
     settings = Settings.model_validate(
         {
-            "llmio_model_level": 2,
+            "chat_default_model_level": 2,
             "mail": {
                 "enabled": False,
                 "api_base_url": "http://127.0.0.1:8077",
@@ -523,20 +523,46 @@ def test_legacy_mail_block_is_dropped() -> None:
 def test_legacy_chat_model_level_is_stripped() -> None:
     """A deployed config still carrying the removed ``chat_model_level`` loads.
 
-    The override was unified into ``llmio_model_level``; a stale key must be
+    The override was unified into ``chat_default_model_level``; a stale key must be
     dropped by the ``mode="before"`` migration instead of tripping
     ``extra="forbid"`` and crash-looping the container after an image upgrade.
     """
-    settings = Settings.model_validate({"llmio_model_level": 3, "chat_model_level": 2})
+    settings = Settings.model_validate(
+        {"chat_default_model_level": 3, "chat_model_level": 2}
+    )
     assert not hasattr(settings, "chat_model_level")
-    assert settings.llmio_model_level == 3
+    assert settings.chat_default_model_level == 3
+
+
+def test_legacy_llmio_model_level_migrates_to_chat_default_model_level() -> None:
+    """A deployed config still using ``llmio_model_level`` loads unchanged.
+
+    The key was renamed to ``chat_default_model_level``; the ``mode="before"``
+    migration must carry the stored value over rather than tripping
+    ``extra="forbid"`` and crash-looping the container after an image upgrade.
+    """
+    settings = Settings.model_validate({"llmio_model_level": 3})
+    assert settings.chat_default_model_level == 3
+
+
+def test_new_chat_default_model_level_wins_over_legacy_llmio_key() -> None:
+    """When both keys are present the new key wins and the legacy one is dropped."""
+    settings = Settings.model_validate(
+        {"chat_default_model_level": 1, "llmio_model_level": 3}
+    )
+    assert settings.chat_default_model_level == 1
+
+
+def test_chat_default_model_level_defaults_to_two() -> None:
+    """``chat_default_model_level`` defaults to 2 when unset."""
+    assert Settings().chat_default_model_level == 2
 
 
 def test_legacy_lifecycle_base_url_migrates_to_central_deploy_url() -> None:
     """``lifecycle.base_url`` is folded into the canonical ``central_deploy.url``."""
     settings = Settings.model_validate(
         {
-            "llmio_model_level": 2,
+            "chat_default_model_level": 2,
             "lifecycle": {"enabled": True, "base_url": "http://central-deploy:9000"},
         }
     )
@@ -547,7 +573,7 @@ def test_legacy_per_block_deploy_api_key_migrates() -> None:
     """A per-block ``deploy_api_key`` folds into ``central_deploy.deploy_api_key``."""
     settings = Settings.model_validate(
         {
-            "llmio_model_level": 2,
+            "chat_default_model_level": 2,
             "feedback": {"deploy_api_key": "legacy-secret"},  # pragma: allowlist secret
         }
     )
@@ -558,7 +584,7 @@ def test_explicit_central_deploy_values_win_over_legacy() -> None:
     """An explicitly-set canonical value is never clobbered by a legacy copy."""
     settings = Settings.model_validate(
         {
-            "llmio_model_level": 2,
+            "chat_default_model_level": 2,
             "central_deploy": {
                 "url": "http://canonical:9000",
                 "deploy_api_key": "canonical-secret",  # pragma: allowlist secret
@@ -589,7 +615,7 @@ def test_production_config_with_all_legacy_keys_loads_cleanly() -> None:
     migration — so a clean load is the assertion.
     """
     raw = {
-        "llmio_model_level": 2,
+        "chat_default_model_level": 2,
         "mail": {
             "enabled": False,
             "api_base_url": "http://127.0.0.1:8077",
@@ -1169,6 +1195,44 @@ class TestPeriodicSessionDefinition:
                 trigger_interval_seconds=45.0,  # pyright: ignore[reportCallIssue]
             )
 
+    def test_anchor_utc_normalised_to_utc(self) -> None:
+        """Anchors are normalised to an explicit UTC instant.
+
+        A naive datetime would otherwise be interpreted by
+        ``datetime.timestamp()`` in the scheduler in the host's local
+        timezone. Naive values mean UTC; other offsets are converted.
+        """
+        from datetime import datetime, timedelta, timezone
+
+        from robotsix_chat.config.periodic_models import PeriodicSessionDefinition
+
+        naive = PeriodicSessionDefinition(
+            name="p", anchor_utc=datetime(2026, 9, 3, 6, 0, 0)
+        ).anchor_utc
+        assert naive is not None
+        assert naive.utcoffset() == timedelta(0)
+        assert naive.hour == 6
+
+        from_str = PeriodicSessionDefinition(
+            name="p", anchor_utc="2026-09-03T06:00:00Z"
+        ).anchor_utc
+        assert from_str is not None
+        assert from_str.utcoffset() == timedelta(0)
+        assert from_str.hour == 6
+
+        shifted = PeriodicSessionDefinition(
+            name="p",
+            anchor_utc=datetime(
+                2026, 9, 3, 6, 0, 0, tzinfo=timezone(timedelta(hours=-4))
+            ),
+        ).anchor_utc
+        assert shifted is not None
+        assert shifted.utcoffset() == timedelta(0)
+        assert shifted.hour == 10  # 06:00 -0400 == 10:00 UTC
+
+        unset = PeriodicSessionDefinition(name="p").anchor_utc
+        assert unset is None
+
 
 # ---------------------------------------------------------------------------
 # Guard: no concrete model names in source
@@ -1190,21 +1254,21 @@ _CONCRETE_MODEL_PATTERNS: list[str] = [
 # Remove entries as the leaks are cleaned up in follow-up tickets.
 _PREEXISTING_ALLOWLIST: set[tuple[str, int, str]] = {
     # memory/cognee.py — gpt-5-mini / gpt-5-nano in comments
-    ("src/robotsix_chat/memory/cognee.py", 519, "gpt-"),
-    ("src/robotsix_chat/memory/cognee.py", 522, "gpt-"),
-    ("src/robotsix_chat/memory/cognee.py", 666, "gpt-"),
+    ("src/robotsix_chat/memory/cognee.py", 558, "gpt-"),
+    ("src/robotsix_chat/memory/cognee.py", 561, "gpt-"),
+    ("src/robotsix_chat/memory/cognee.py", 705, "gpt-"),
     # config/settings.py — opus / claude-fable-5 in Settings docstring
     ("src/robotsix_chat/config/settings.py", 98, "-opus"),
     ("src/robotsix_chat/config/settings.py", 98, "claude-fable"),
     # config/settings.py — vision_model default (OpenRouter captioning model)
     ("src/robotsix_chat/config/settings.py", 154, "gpt-"),
-    ("src/robotsix_chat/config/settings.py", 1939, "gpt-"),
+    ("src/robotsix_chat/config/settings.py", 1872, "gpt-"),
     # config/memory_models.py — gpt-5-nano / gpt-5-mini / deepseek-v4-flash
-    ("src/robotsix_chat/config/memory_models.py", 19, "gpt-"),
-    ("src/robotsix_chat/config/memory_models.py", 43, "gpt-"),
-    ("src/robotsix_chat/config/memory_models.py", 46, "gpt-"),
-    ("src/robotsix_chat/config/memory_models.py", 46, "deepseek/"),
-    ("src/robotsix_chat/config/memory_models.py", 49, "gpt-"),
+    ("src/robotsix_chat/config/memory_models.py", 26, "gpt-"),
+    ("src/robotsix_chat/config/memory_models.py", 50, "gpt-"),
+    ("src/robotsix_chat/config/memory_models.py", 53, "gpt-"),
+    ("src/robotsix_chat/config/memory_models.py", 53, "deepseek/"),
+    ("src/robotsix_chat/config/memory_models.py", 56, "gpt-"),
 }
 
 
@@ -1318,10 +1382,15 @@ def test_kind_turn_budget_blank_numeric_sentinel_loads_cleanly() -> None:
 
 def test_memory_blank_numeric_sentinel_loads_cleanly() -> None:
     settings = MemorySettings.model_validate(
-        {"maintenance_interval_seconds": "", "recall_max_concurrency": ""}
+        {
+            "maintenance_interval_seconds": "",
+            "maintenance_vacuum_interval_seconds": "",
+            "recall_max_concurrency": "",
+        }
     )
 
     assert settings.maintenance_interval_seconds == 21600.0
+    assert settings.maintenance_vacuum_interval_seconds == 21600.0
     assert settings.recall_max_concurrency == 4
 
 
@@ -1357,7 +1426,7 @@ def test_production_config_with_blank_numeric_sentinels_loads_cleanly() -> None:
     validate and the model dump must carry no ``""`` for those numeric fields.
     """
     raw = {
-        "llmio_model_level": 2,
+        "chat_default_model_level": 2,
         "llmio_task_budget_tokens": "",
         "idle_timeout_minutes": "",
         "central_deploy": {

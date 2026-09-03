@@ -135,6 +135,14 @@ On `"done"` the client knows the reply is complete and can re-enable the input.
 | `GET`  | `/sessions?owner_id=…`      | List all sessions for an owner                         |
 | `POST` | `/sessions`                 | Create a new empty session                             |
 
+The `/history` response carries optional compaction metadata for sessions that have been summarised:
+`compacted_summary` (string), `compacted_turn_index` (integer — how many leading `turns` the summary
+covers), and `compacted_summary_missing` (boolean). `compacted_summary_missing: true` means the
+session advanced past compaction (`compacted_turn_index > 0`) but no usable summary is available —
+clients should degrade gracefully (render the covered turns inline or show a fallback notice) rather
+than open the session on a bare summary. See the `history_endpoint` docstring in
+`src/robotsix_chat/chat/server/routes/sessions.py` for the full response schema and examples.
+
 ### Session ownership
 
 The deployment is single-user: there is no login and no per-browser identity. `owner_id` is still
@@ -259,6 +267,7 @@ State that survives restarts when `/data/` is bind-mounted:
 | `/data/conversations.json`            | Multi-session conversation history (auto-migrated from legacy format)                                                                                                                                                                                             |
 | `/data/subsessions.json`              | Subsession state (periodic subsessions resumed on startup; auto-closed monitors are re-spawned so the worker can re-verify ticket state — see `docs/periodic-checks.md`); retry counts for user_chat/task subsessions persisted so retry budget survives restarts |
 | `/data/cognee/`                       | Long-term memory storage (cognee)                                                                                                                                                                                                                                 |
+| `/data/notifications.json`            | Undelivered browser notifications (from the `notify_user` tool) persisted so they survive a disconnected browser and can be replayed when a browser next connects — see `docs/notification/skill.md`                                                              |
 | `/data/periodic_scheduler_state.json` | Periodic scheduler firing state (see [Periodic Sessions](#periodic-sessions))                                                                                                                                                                                     |
 
 ______________________________________________________________________

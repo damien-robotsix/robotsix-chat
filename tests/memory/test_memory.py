@@ -234,9 +234,47 @@ def test_format_results_unknown_dict_shape_falls_back_to_repr() -> None:
 # ---------------------------------------------------------------------------
 
 
+class _FakeAlembicConfig:
+    """Minimal stand-in for ``alembic.config.Config`` (no file I/O)."""
+
+    def __init__(self, config_file_name: str) -> None:
+        self.config_file_name = config_file_name
+        self._opts: dict[str, str] = {}
+        self.attributes: dict[str, Any] = {}
+
+    def set_main_option(self, key: str, value: str) -> None:
+        self._opts[key] = value
+
+    def get_main_option(self, key: str, default: Any = None) -> Any:
+        return self._opts.get(key, default)
+
+
+def _install_fake_alembic(monkeypatch: pytest.MonkeyPatch) -> Any:
+    """Install stub ``alembic`` / ``alembic.command`` / ``alembic.config``.
+
+    Returns the ``command`` module so tests can inspect/override
+    ``command.upgrade``.  The default ``upgrade`` is an inert ``MagicMock``.
+    """
+    alembic_mod = types.ModuleType("alembic")
+    command_mod = types.ModuleType("alembic.command")
+    command_mod.upgrade = MagicMock()
+    config_mod = types.ModuleType("alembic.config")
+    config_mod.Config = _FakeAlembicConfig
+    alembic_mod.command = command_mod
+    alembic_mod.config = config_mod
+    monkeypatch.setitem(sys.modules, "alembic", alembic_mod)
+    monkeypatch.setitem(sys.modules, "alembic.command", command_mod)
+    monkeypatch.setitem(sys.modules, "alembic.config", config_mod)
+    return command_mod
+
+
 def _install_fake_cognee(monkeypatch: pytest.MonkeyPatch) -> Any:
     """Install a stub ``cognee`` module (awaitable mocks) and return it."""
     fake: Any = types.ModuleType("cognee")
+    # ``_run_migrations`` derives the packaged alembic.ini path from
+    # ``cognee.__file__``; give the stub a plausible location (never read — the
+    # stubbed alembic Config does no file I/O).
+    fake.__file__ = "/fake/site-packages/cognee/__init__.py"
     fake.config = MagicMock()
 
     class _SearchType:
@@ -248,6 +286,7 @@ def _install_fake_cognee(monkeypatch: pytest.MonkeyPatch) -> Any:
     fake.add = AsyncMock(return_value=None)
     fake.cognify = AsyncMock(return_value=None)
     monkeypatch.setitem(sys.modules, "cognee", fake)
+    _install_fake_alembic(monkeypatch)
     return fake
 
 
@@ -304,6 +343,76 @@ async def test_configure_pins_all_llm_stages_to_configured_model(
             "baml_llm_model": mem._settings.llm.model,
         }
     )
+
+
+@pytest.mark.asyncio
+async def test_configure_runs_alembic_upgrade_head_on_stale_schema(
+    monkeypatch: pytest.MonkeyPatch, tmp_path: Any
+) -> None:
+    """Setup runs ``alembic upgrade head`` and upgrades a stale sqlite schema.
+
+    Regression for the 2026-09-02 incident: a dependabot cognee bump (1.4.0 ->
+    1.5.3) left the deployed relational store missing ``queries.dataset_id`` and
+    every recall failed with ``OperationalError``.  ``_run_migrations`` must run
+    at setup, before the store is first opened.
+    """
+    import sqlite3
+
+    fake = _install_fake_cognee(monkeypatch)
+    data_dir = tmp_path / "cognee"
+    db_path = data_dir / "system" / "cognee_db"
+    db_path.parent.mkdir(parents=True, exist_ok=True)
+    # Stale-schema fixture: a ``queries`` table missing the ``dataset_id`` column.
+    conn = sqlite3.connect(db_path)
+    conn.execute("CREATE TABLE queries (id INTEGER PRIMARY KEY, text TEXT)")
+    conn.commit()
+    conn.close()
+
+    captured: dict[str, Any] = {}
+
+    def _fake_upgrade(cfg: Any, revision: str) -> None:
+        captured["cfg"] = cfg
+        captured["revision"] = revision
+        # Stand in for cognee's env.py: bring the stale schema up to head.
+        migrate = sqlite3.connect(db_path)
+        migrate.execute("ALTER TABLE queries ADD COLUMN dataset_id TEXT")
+        migrate.commit()
+        migrate.close()
+
+    fake_command = sys.modules["alembic.command"]
+    fake_command.upgrade = _fake_upgrade
+
+    mem = CogneeMemory(_enabled_settings(str(data_dir)))
+    await mem.setup()
+
+    assert captured["revision"] == "head"
+    cfg = captured["cfg"]
+    assert cfg.attributes["configure_logger"] is False
+    assert cfg.get_main_option("script_location").endswith("alembic")
+    # cognee.__file__ drives the packaged alembic.ini location.
+    assert Path(fake.__file__).parent.name == "cognee"
+    # The stale schema was migrated to head.
+    conn = sqlite3.connect(db_path)
+    cols = {row[1] for row in conn.execute("PRAGMA table_info(queries)")}
+    conn.close()
+    assert "dataset_id" in cols
+
+
+@pytest.mark.asyncio
+async def test_configure_raises_clear_error_when_migration_fails(
+    monkeypatch: pytest.MonkeyPatch, tmp_path: Any
+) -> None:
+    """A failed migration surfaces one clear error, not per-query failures."""
+    _install_fake_cognee(monkeypatch)
+
+    def _boom(cfg: Any, revision: str) -> None:
+        raise RuntimeError("no such table: alembic_version")
+
+    sys.modules["alembic.command"].upgrade = _boom
+
+    mem = CogneeMemory(_enabled_settings(str(tmp_path / "cognee")))
+    with pytest.raises(RuntimeError, match="schema migration"):
+        await mem.setup()
 
 
 def test_flag_configured_llm_model_drift_logs_error(
@@ -846,6 +955,51 @@ async def test_configure_restores_langfuse_env(
     await mem.setup()
     assert os.environ["LANGFUSE_PUBLIC_KEY"] == "pk-keep"
     assert os.environ["LANGFUSE_SECRET_KEY"] == "sk-keep"  # pragma: allowlist secret
+
+
+@pytest.mark.asyncio
+async def test_configure_caps_cognify_worker_env(
+    monkeypatch: pytest.MonkeyPatch, tmp_path: Any
+) -> None:
+    """``cognify_max_workers`` bounds the dlt ingestion spawn-worker fan-out.
+
+    Regression guard for the 2026-09-03 OOM: a large cognify backlog spread
+    across several multi-GB dlt normalize workers. The cap is applied as the
+    per-stage dlt worker-count env vars before cognee import.
+    """
+    import os
+
+    for var in ("EXTRACT__WORKERS", "NORMALIZE__WORKERS", "LOAD__WORKERS"):
+        monkeypatch.delenv(var, raising=False)
+    _install_fake_cognee(monkeypatch)
+    settings = _enabled_settings(str(tmp_path / "cognee")).model_copy(
+        update={"cognify_max_workers": 2}
+    )
+    mem = CogneeMemory(settings)
+    await mem.setup()
+    assert os.environ["EXTRACT__WORKERS"] == "2"
+    assert os.environ["NORMALIZE__WORKERS"] == "2"
+    assert os.environ["LOAD__WORKERS"] == "2"
+
+
+@pytest.mark.asyncio
+async def test_configure_cognify_worker_env_respects_operator_override(
+    monkeypatch: pytest.MonkeyPatch, tmp_path: Any
+) -> None:
+    """An operator-set dlt worker env var wins over the config default."""
+    import os
+
+    monkeypatch.setenv("NORMALIZE__WORKERS", "4")
+    monkeypatch.delenv("EXTRACT__WORKERS", raising=False)
+    monkeypatch.delenv("LOAD__WORKERS", raising=False)
+    _install_fake_cognee(monkeypatch)
+    mem = CogneeMemory(_enabled_settings(str(tmp_path / "cognee")))
+    await mem.setup()
+    # setdefault must not clobber the pre-existing operator override.
+    assert os.environ["NORMALIZE__WORKERS"] == "4"
+    # Unset stages still get the config-derived default (1).
+    assert os.environ["EXTRACT__WORKERS"] == "1"
+    assert os.environ["LOAD__WORKERS"] == "1"
 
 
 # ---------------------------------------------------------------------------

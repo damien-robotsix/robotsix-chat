@@ -10,7 +10,9 @@ ordinary session behaviour.
 
 from __future__ import annotations
 
-from pydantic import BaseModel, ConfigDict, Field
+from datetime import UTC, datetime
+
+from pydantic import BaseModel, ConfigDict, Field, field_validator
 
 # Default spacing between runs of a preset. One day: these are digest-style
 # jobs (mail triage, cost review), and anything that needs to react faster
@@ -35,9 +37,18 @@ class PeriodicSessionDefinition(BaseModel):
             shared preamble (see ``robotsix_chat.periodic.prompts``).
         schedule_interval_seconds: Spacing between runs, measured from the
             last time the preset fired. Default one day.
+        anchor_utc: Optional fixed UTC instant anchoring the schedule. When
+            set, the preset fires at this instant and then every
+            ``schedule_interval_seconds`` thereafter (e.g. an anchor of
+            ``2026-09-03T06:00:00Z`` with a 24h interval fires daily at
+            06:00 UTC). This pins a deterministic daily reference time
+            instead of deriving it from first-registration time. ``None``
+            keeps the legacy behaviour: the first run fires promptly after
+            startup, then spaced by ``schedule_interval_seconds`` from the
+            last firing.
         model_level: llmio capability level for this preset's sessions
             (1 cheap … 3 frontier). ``None`` uses the global
-            ``llmio_model_level`` resolution, exactly like an operator
+            ``chat_default_model_level`` resolution, exactly like an operator
             session.
         enabled: When ``False`` the preset never fires.
 
@@ -51,6 +62,18 @@ class PeriodicSessionDefinition(BaseModel):
         default=DEFAULT_SCHEDULE_INTERVAL_SECONDS,
         ge=MIN_SCHEDULE_INTERVAL_SECONDS,
     )
+    anchor_utc: datetime | None = Field(
+        default=None,
+        description=(
+            "Optional fixed UTC instant anchoring the schedule. When set, "
+            "the preset fires at this instant and then every "
+            "schedule_interval_seconds thereafter (e.g. an anchor of "
+            "'2026-09-03T06:00:00Z' with a 24h interval fires daily at "
+            "06:00 UTC). Unset keeps the legacy behaviour: first run "
+            "promptly after startup, then spaced by "
+            "schedule_interval_seconds from the last firing."
+        ),
+    )
     model_level: int | None = Field(
         default=None,
         ge=1,
@@ -61,6 +84,23 @@ class PeriodicSessionDefinition(BaseModel):
         ),
     )
     enabled: bool = True
+
+    @field_validator("anchor_utc", mode="after")
+    @classmethod
+    def _normalise_anchor_utc(cls, v: datetime | None) -> datetime | None:
+        """Enforce the field's 'UTC' contract regardless of input form.
+
+        A naive datetime would otherwise be interpreted by
+        ``datetime.timestamp()`` in the scheduler in the HOST's local
+        timezone, silently shifting the anchor. Normalising here — naive
+        means UTC, and any other offset is converted to UTC — makes the
+        stored value an explicit UTC instant.
+        """
+        if v is None:
+            return v
+        if v.tzinfo is None:
+            return v.replace(tzinfo=UTC)
+        return v.astimezone(UTC)
 
 
 class PeriodicSettings(BaseModel):

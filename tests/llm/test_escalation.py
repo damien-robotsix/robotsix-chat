@@ -19,6 +19,9 @@ class _RecordingSink:
     def publish(self, session_id: str, frame: dict[str, object]) -> None:
         self.frames.append((session_id, frame))
 
+    def publish_all(self, frame: dict[str, object]) -> None:
+        self.frames.append(("*", frame))
+
 
 def _store_with_session() -> tuple[ConversationStore, str]:
     store = ConversationStore()

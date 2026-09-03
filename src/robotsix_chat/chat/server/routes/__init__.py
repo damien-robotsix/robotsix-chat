@@ -77,6 +77,10 @@ from .metrics import (
 from .mill_events import (
     mill_events_endpoint,
 )
+from .notifications import (
+    notifications_read_endpoint,
+    notifications_unread_endpoint,
+)
 from .sessions import (
     _cleanup_session,
     history_endpoint,
@@ -148,6 +152,8 @@ __all__ = [
     "mobile_token_endpoint",
     "models_list_endpoint",
     "not_found_handler",
+    "notifications_read_endpoint",
+    "notifications_unread_endpoint",
     "periodic_definitions_list_endpoint",
     "periodic_definitions_run_endpoint",
     "prune_endpoint",

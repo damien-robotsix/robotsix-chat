@@ -23,10 +23,39 @@ class NotificationSettings(BaseModel):
     Attributes:
         enabled: Master switch.  When ``False``, no notify_user tool is
             offered.
+        store_and_forward: Feature flag for the persistent store-and-forward
+            path.  When ``True`` (default), undelivered notifications are
+            persisted to ``store_path`` and replayed to the next connecting
+            browser, and the ``/notifications`` API endpoints serve them.
+            Set ``False`` as an emergency kill-switch: ``notify_user`` then
+            publishes live SSE frames only (never persists) and the
+            ``/notifications/unread`` and ``/notifications/read`` endpoints
+            return empty responses.  The live SSE contract is unchanged
+            either way.
+        store_path: Path to the JSON persistence file for notifications
+            that were not delivered to a connected browser.  Must be on a
+            persistent volume (chat-data ``/data``) so undelivered
+            notifications survive container recreation and can be replayed
+            when a browser next connects.
+        max_events: Maximum number of newest notifications retained in the
+            store.  Older records beyond this count are evicted on write to
+            cap unbounded growth.  Default ``200``.
+        retention_days: Absolute lifetime — notifications older than this
+            many days are purged on write regardless of read state.
+            Default ``90``.
+        read_retention_days: Read lifetime — notifications that have been
+            read are purged once they have been read for more than this
+            many days, reclaiming space from acknowledged notifications
+            sooner than the absolute lifetime.  Default ``30``.
 
     """
 
     enabled: bool = True
+    store_and_forward: bool = True
+    store_path: str = "/data/notifications.json"
+    max_events: int = 200
+    retention_days: int = 90
+    read_retention_days: int = 30
     model_config = ConfigDict(extra="forbid")
 
 

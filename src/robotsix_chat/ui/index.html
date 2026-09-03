@@ -26,6 +26,7 @@
   <span id="active-model" title="Model serving the active session"></span>
   <select id="model-selector" class="model-selector" title="Select the model for this session" aria-label="Session model"></select>
   <span id="connection-dot" title="Connection status"></span>
+  <button id="notifications-toggle" class="header-btn" title="Show missed notifications" aria-label="Missed notifications">🔔 Alerts<span id="notifications-badge" class="notif-badge" hidden>0</span></button>
   <button id="subsessions-toggle" class="header-btn" title="Show background subsessions" aria-label="Subsessions">🗂 Subsessions</button>
   <button id="settings-toggle" class="header-btn" title="Edit server configuration" aria-label="Settings">⚙ Settings</button>
 </div>
@@ -58,6 +59,17 @@
   </div>
   <div id="subsessions-list"></div>
   <div id="subs-announce" class="sr-only" aria-live="polite"></div>
+</div>
+
+<!-- ================================================================= -->
+<!-- Notifications panel (missed notifications)                         -->
+<!-- ================================================================= -->
+<div id="notifications-panel">
+  <div class="notifications-header panel-header">
+    <span>Missed notifications</span>
+    <button class="dismiss" title="Close panel" aria-label="Close notifications panel">&times;</button>
+  </div>
+  <div id="notifications-list"></div>
 </div>
 
 <!-- ================================================================= -->

@@ -23,7 +23,7 @@ repos:
         exclude: ^CHANGELOG\.md$
 
   - repo: https://github.com/astral-sh/ruff-pre-commit
-    rev: v0.16.1
+    rev: v0.16.4
     hooks:
       - id: ruff
         args: [--fix]
@@ -94,7 +94,7 @@ repos:
       - id: hadolint-docker
 
   - repo: https://github.com/trufflesecurity/trufflehog
-    rev: v3.96.0
+    rev: v3.97.1
     hooks:
       - id: trufflehog
         args: ["--exclude-detectors=Lob"]

@@ -3,6 +3,7 @@
 from __future__ import annotations
 
 import json
+from datetime import UTC, datetime
 from unittest.mock import MagicMock
 
 import pytest
@@ -14,6 +15,7 @@ from robotsix_chat.chat.server.routes.sessions import (
     _require_owner_id,
     history_endpoint,
     models_list_endpoint,
+    periodic_definitions_list_endpoint,
     session_model_set_endpoint,
     sessions_close_endpoint,
     sessions_create_endpoint,
@@ -887,3 +889,62 @@ async def test_models_endpoint_reflects_chat_tier_overrides() -> None:
     rows = {m["level"]: m for m in body["models"]}
     assert rows[2]["name"] == "deepseek/deepseek-v4-pro-0813"
     assert rows[1]["name"] == "deepseek/deepseek-v4-flash-20260731"
+
+
+# ---------------------------------------------------------------------------
+# periodic_definitions_list_endpoint
+# ---------------------------------------------------------------------------
+
+
+@pytest.mark.asyncio
+async def test_periodic_definitions_list_serialises_anchor_utc(tmp_path) -> None:
+    """An anchored preset serialises ``anchor_utc`` as an ISO string, not a datetime.
+
+    Regression: the endpoint passed the pydantic ``datetime`` straight into
+    ``JSONResponse``, whose bare ``json.dumps`` cannot encode datetimes — so
+    the instant any preset had a non-null anchor, the endpoint raised
+    ``TypeError`` (HTTP 500). ``last_fired_at`` etc. are epoch floats; the
+    anchor is deliberately an ISO 8601 string matching what the operator
+    configured.
+    """
+    from robotsix_chat.config.periodic_models import PeriodicSessionDefinition
+    from robotsix_chat.periodic.scheduler import PeriodicScheduler
+
+    scheduler = PeriodicScheduler(
+        definitions=[
+            PeriodicSessionDefinition(
+                name="calendar-agenda",
+                initial_prompt="Produce today's calendar agenda.",
+                schedule_interval_seconds=86400,
+                anchor_utc=datetime(2026, 9, 3, 6, 0, 0, tzinfo=UTC),
+            ),
+            PeriodicSessionDefinition(
+                name="mail-triage",
+                initial_prompt="Review the mail queue. READ-ONLY.",
+                schedule_interval_seconds=3600,
+            ),
+        ],
+        conversation_store=MagicMock(),
+        submit_turn=MagicMock(),
+        is_busy=lambda sid: False,
+        persist_path=str(tmp_path / "state.json"),
+    )
+    request = _make_request(
+        app_state=MagicMock(periodic_scheduler=scheduler),
+    )
+
+    response = await periodic_definitions_list_endpoint(request)
+    assert response.status_code == 200
+    body = json.loads(response.body)  # type: ignore[arg-type]
+    by_name = {d["name"]: d for d in body["definitions"]}
+    assert by_name["calendar-agenda"]["anchor_utc"] == "2026-09-03T06:00:00+00:00"
+    assert by_name["mail-triage"]["anchor_utc"] is None
+
+
+@pytest.mark.asyncio
+async def test_periodic_definitions_list_404_when_disabled() -> None:
+    """Returns 404 when the periodic scheduler is not enabled."""
+    request = _make_request(app_state=MagicMock(periodic_scheduler=None))
+
+    response = await periodic_definitions_list_endpoint(request)
+    assert response.status_code == 404
