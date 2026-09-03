@@ -3,6 +3,24 @@
 Governed artifact: `Settings.agent_instruction` default literal in
 `src/robotsix_chat/config/settings.py`. Version stamp: `SYSTEM_PROMPT_VERSION` in the same module.
 
+## v161 — 2026-09-04 — cognee-removed-memory-component
+
+**Summary:** Reword the two memory references in the default instruction after the cognee
+removal: the knowledge-store contrast now says "automatic long-term conversation memory —
+it recalls past exchanges by similarity" (was "automatic cognee conversation memory"),
+and the periodic prompt's recall caveat now says "Recalled session memories
+(similarity-recall blocks)" (was "cognee similarity blocks"). No behavioral guidance
+changed — the memory backend is now the robotsix-memory component and the engine name no
+longer appears in the prompt.
+
+**Rationale:** cognee was removed from robotsix-chat (replaced by the robotsix-memory
+component wrapping a Hindsight engine) after repeated storage-engine failures; the prompt
+must not name a backend that no longer exists.
+
+**SHA256:** `76d270aa1d51d4f82f1d0ee233bda552ea868347555f097bdb09d5ddff000269`
+
+______________________________________________________________________
+
 ## v160 — 2026-09-01 — 20260901T205418Z-enhance-periodic-prompt-to-verify-deploy-6b74
 
 **Summary:** Add a 'delivery verification' step to the periodic monitoring prompt's ticket-close path (step 4 "Complete" of the monitor workflow): beyond the existing infrastructure probes (endpoint 2xx, config-flag value), whenever a FEATURE ticket — a user-facing feature that changes what the product does — reaches a terminal state, perform a simple functional smoke test before closing tracking: exercise the real user path once with a minimal test input and confirm the feature responds as a user would see it (e.g. upload a test image and verify a non-empty summary/tags; send a real payload to a new endpoint rather than a bare /health check). Report the smoke-test result to the operator in the closure message. If the verification fails (e.g. the feature is broken despite merged, CI-green, deployed code), alert the operator with the failure as evidence instead of silently closing — reopen the ticket or file a follow-up.

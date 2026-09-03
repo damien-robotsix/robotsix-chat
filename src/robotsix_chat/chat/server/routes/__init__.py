@@ -68,9 +68,6 @@ from .github import (
     github_repo_create_endpoint,
     github_settings_endpoint,
 )
-from .memory import (
-    memory_ingestion_structure_endpoint,
-)
 from .metrics import (
     metrics_endpoint,
 )
@@ -146,7 +143,6 @@ __all__ = [
     "health_endpoint",
     "history_endpoint",
     "http_exception_handler",
-    "memory_ingestion_structure_endpoint",
     "metrics_endpoint",
     "mill_events_endpoint",
     "mobile_token_endpoint",

@@ -8,7 +8,7 @@ no tools when knowledge is disabled.
 This is the agent's **deliberate, explicit, curated** store of operational
 notes and lessons — entirely local JSON, no embeddings, no external service,
 always-on.  It is independent of both the **human-governed system prompt**
-(which the agent must never modify) and the **optional cognee episodic memory**
+(which the agent must never modify) and the **long-term memory component**
 (which automatically recalls whole conversations by similarity — see
 ``src/robotsix_chat/memory/``).
 """
@@ -84,9 +84,9 @@ def build_knowledge_tools(
 
         Boundary: this is your deliberate, self-authored operational-note
         store — distinct from the stable, human-governed system prompt
-        (which you must not modify) AND distinct from the automatic cognee
+        (which you must not modify) AND distinct from the automatic long-term
         conversation memory (which fuzzily recalls entire past exchanges by
-        similarity).  cognee = "what was said before"; this KB = "notes I
+        similarity).  Long-term memory = "what was said before"; this KB = "notes I
         explicitly write and address by id."
 
         """

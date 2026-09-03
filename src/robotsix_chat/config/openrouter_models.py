@@ -16,7 +16,6 @@ class OpenRouterSettings(BaseModel):
 
     The main chat agent runs on the Claude SDK and needs no OpenRouter key,
     so this component declares only the ``robotsix-chat-cognee`` alias — the
-    cognee memory extraction LLM.  See ``PROJECT_MEMORY`` in
     :mod:`robotsix_chat.config`.
 
     Attributes:

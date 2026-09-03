@@ -6,7 +6,7 @@ On load it tolerates a missing, empty, or corrupt file by starting empty,
 and forward-compatibly defaults missing keys to ``None``.
 
 This is the backing store for the agent's deliberate, explicit note-taking;
-it is independent of the cognee ``memory/`` package and of the human-governed
+it is independent of the ``memory/`` package and of the human-governed
 system prompt.
 """
 

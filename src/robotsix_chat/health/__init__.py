@@ -1,7 +1,7 @@
 """Periodic health checks for critical subsystems.
 
 Runs at session start and on a configurable interval to verify that
-emitters (feedback runner), memory layers (cognee recall + knowledge
+emitters (feedback runner), memory layers (long-term recall + knowledge
 store), and diagnostic stores are active and producing expected output.
 """
 

@@ -66,19 +66,6 @@ openrouter = ["robotsix-llmio[openrouter]"]
 # OTel trace-id injection in log records.  Credentials are read from the
 # LANGFUSE_* env vars at startup; absent credentials = graceful no-op.
 tracing = ["robotsix-llmio[tracing]"]
-# memory: cognee-backed long-term agent memory (model_level-agnostic). Heavy —
-# pulls a large transitive tree (litellm, lancedb, …). `transformers` supplies
-# the HuggingFace tokenizer for the bge-m3 embedding path (no torch required).
-# Disabled at runtime unless `memory.enabled` is set; absent extra = graceful
-# no-op (NullMemory).
-#
-# cognee is pinned to an exact version on purpose. It swaps its embedded graph
-# engine between releases — 1.4 replaced kuzu with its own ladybug engine — and
-# this codebase touches those on-disk stores directly (data/system roots, and
-# previously a shadow/WAL self-heal). An unnoticed engine change silently
-# destroyed the live knowledge graph on every startup. Re-pin deliberately,
-# and re-read `memory/cognee.py` against the new engine's on-disk layout.
-memory = ["cognee==1.5.3", "transformers"]
 # render-url: Playwright + headless Chromium for the render_url(url) tool
 # (full-page screenshots + accessibility tree extraction).  Optional —
 # when absent the factory returns no tools.
@@ -133,8 +120,6 @@ robotsix-modules = { git = "https://github.com/damien-robotsix/robotsix-modules.
 robotsix-http = { git = "https://github.com/damien-robotsix/robotsix-http.git", rev = "cdfd4d1c42679fef73081439562872792e202dc4" }  # pragma: allowlist secret
 robotsix-github-auth = { git = "https://github.com/damien-robotsix/robotsix-github-auth.git", rev = "e6214c41fd743120aa987bacb4e9b2bc88e73943" }  # pragma: allowlist secret
 
-# Force pypdf>=6.15.0 (transitive dep of cognee) to resolve GHSA-fwg2-594c-jp42.
-# Constraint-dependencies avoids making pypdf a direct (deptry-visible) dependency.
 [tool.uv]
 constraint-dependencies = [
     "pypdf>=6.15.0",
@@ -204,23 +189,6 @@ select = ["E", "F", "I", "UP", "B", "SIM", "S", "D", "FURB", "ARG", "N", "RUF", 
 python_version = "3.14"
 strict = true
 exclude = ["vulture_whitelist.py", ".local-deps", "_stubs", "src/robotsix_mill/"]
-
-# cognee (the optional `memory` extra) ships no type information.
-[[tool.mypy.overrides]]
-module = ["cognee.*"]
-ignore_missing_imports = true
-
-# lancedb is a transitive dependency of cognee (the memory extra); no type stubs.
-[[tool.mypy.overrides]]
-module = ["lancedb", "lancedb.*"]
-ignore_missing_imports = true
-
-# alembic is a transitive dependency of cognee (the memory extra); imported to
-# run cognee's packaged schema migrations at memory setup. Not installed in the
-# default dev/test env, so mypy can't resolve it.
-[[tool.mypy.overrides]]
-module = ["alembic", "alembic.*"]
-ignore_missing_imports = true
 
 # playwright (the optional `render-url` extra) ships no type information.
 [[tool.mypy.overrides]]
