@@ -589,12 +589,15 @@ target platform to its immutable `sha256:...` content digest. Enabled by default
 Periodic health-check settings. When enabled, a background scheduler runs every
 `health.check_interval_seconds` (default 300 s / 5 min) and verifies that critical subsystems are
 reachable and producing expected output: memory (cognee recall), knowledge store, feedback runner,
-and diagnostics store. Results are exposed via `GET /health` and logged.
+and diagnostics store. It also watches the container's cgroup memory usage and logs a `WARNING`
+pre-OOM alert once usage reaches `health.memory_warn_fraction` of the limit, so the operator is
+notified before the OOM killer fires. Results are exposed via `GET /health` and logged.
 
-| JSON key                        | Type      | Default | Description                                                |
-| ------------------------------- | --------- | ------- | ---------------------------------------------------------- |
-| `health.enabled`                | `boolean` | `true`  | Master switch. When `false`, no health checks run.         |
-| `health.check_interval_seconds` | `number`  | `300.0` | Seconds between scheduled health-check cycles. Must be >0. |
+| JSON key                        | Type      | Default | Description                                                                                  |
+| ------------------------------- | --------- | ------- | -------------------------------------------------------------------------------------------- |
+| `health.enabled`                | `boolean` | `true`  | Master switch. When `false`, no health checks run.                                           |
+| `health.check_interval_seconds` | `number`  | `300.0` | Seconds between scheduled health-check cycles. Must be >0.                                   |
+| `health.memory_warn_fraction`   | `number`  | `0.85`  | Fraction of the container cgroup memory limit at which the pre-OOM `WARNING` fires. (0, 1\]. |
 
 ### Gateway Route
 
