@@ -9,6 +9,8 @@ Browser + SSE chat server exposing an LLM agent to human users.
 - **[Getting Started](getting-started.md)** — local setup and first run.
 - **[Configuration](configuration.md)** — complete settings reference (environment variables, YAML,
   model levels).
+- **[Vision fallback](vision.md)** — captioning attached images when the active chat model lacks
+  vision support (`vision_model`).
 - **[Periodic Checks](periodic-checks.md)** — how the agent sets up and manages background check
   loops.
 - **[Contributing](contributing.md)** — contributor setup and conventions.
