@@ -220,7 +220,22 @@ async def _component_request_impl(
             body_str = body_str[:limit] + (
                 f"\n\n... (truncated at {limit} chars, original length {len(body_str)})"
             )
-        return f"HTTP {status}\n{body_str}"
+        formatted = f"HTTP {status}\n{body_str}"
+        # A 422 on a write call made without a body is almost always the
+        # caller forgetting this tool's json_body parameter; the bare
+        # FastAPI validation error ("loc": ["body"]) gives no clue about
+        # the parameter name, and models retry the same broken call.
+        if (
+            status == 422
+            and json_body is None
+            and method_upper in ("POST", "PUT", "PATCH")
+        ):
+            formatted += (
+                "\n\nHint: this endpoint expects a request body, but the call "
+                "passed no json_body. Retry with the payload in the json_body "
+                'parameter, e.g. json_body={"field": "value"}.'
+            )
+        return formatted
 
     async with httpx.AsyncClient(
         timeout=request_timeout, follow_redirects=True
