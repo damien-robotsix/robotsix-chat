@@ -14,11 +14,22 @@ Each record carries:
     source_session (str) — session that published the notification
     delivered (bool) — whether it has been pushed to an SSE client
     read (bool) — whether the user has acknowledged/seen it
+    read_ts (str | None) — ISO-8601 UTC timestamp of when it was marked
+        read (``None`` while unread)
 
-Retention is bounded: the store keeps at most ``max_events`` (default 200)
-newest records and drops anything older than ``retention_days`` (default
-30).  Retention runs on every write, so the store never grows without
-bound.
+Retention is bounded by a three-part policy applied on every write, so the
+store never grows without bound:
+
+* **Absolute lifetime** — records older than ``retention_days`` (default
+  90) are dropped regardless of read state.
+* **Read lifetime** — records that have been read are dropped once they
+  have been read for more than ``read_retention_days`` (default 30),
+  reclaiming space from acknowledged notifications sooner.
+* **Count cap** — at most ``max_events`` (default 200) newest records are
+  kept; the oldest beyond that are evicted.
+
+When the count cap evicts records (the store is at capacity), a warning is
+logged so operators can monitor store pressure.
 
 No external database is introduced — records are persisted to a single
 JSON file, mirroring the ``ContinuationStore`` pattern.  Reads and writes
@@ -45,8 +56,11 @@ logger = logging.getLogger(__name__)
 #: Maximum records retained in the store (newest kept).
 MAX_EVENTS = 200
 
-#: Records older than this many days are dropped on write.
-RETENTION_DAYS = 30
+#: Records older than this many days are dropped on write (absolute lifetime).
+RETENTION_DAYS = 90
+
+#: Read records are dropped once read for more than this many days.
+READ_RETENTION_DAYS = 30
 
 
 class NotificationRecord(BaseModel):
@@ -59,6 +73,7 @@ class NotificationRecord(BaseModel):
     source_session: str
     delivered: bool = False
     read: bool = False
+    read_ts: str | None = None
 
 
 def _now_iso() -> str:
@@ -74,7 +89,10 @@ class NotificationStore:
         max_events: Maximum number of newest records to retain.  Default
             ``MAX_EVENTS`` (200).
         retention_days: Records older than this many days are dropped on
-            write.  Default ``RETENTION_DAYS`` (30).
+            write (absolute lifetime).  Default ``RETENTION_DAYS`` (90).
+        read_retention_days: Read records are dropped once they have been
+            read for more than this many days.  Default
+            ``READ_RETENTION_DAYS`` (30).
 
     """
 
@@ -84,11 +102,13 @@ class NotificationStore:
         *,
         max_events: int = MAX_EVENTS,
         retention_days: int = RETENTION_DAYS,
+        read_retention_days: int = READ_RETENTION_DAYS,
     ) -> None:
         """Create a store persisting to *path*."""
         self._path = Path(path)
         self._max_events = max_events
         self._retention_days = retention_days
+        self._read_retention_days = read_retention_days
         self._lock = Lock()
         self._records: list[dict[str, Any]] = []
         self._load()
@@ -108,8 +128,9 @@ class NotificationStore:
         """Append a new notification record and return it.
 
         The record is persisted, then bounded retention is applied — the
-        oldest records beyond ``max_events`` and anything older than
-        ``retention_days`` are dropped.
+        oldest records beyond ``max_events``, anything older than
+        ``retention_days``, and read records older than
+        ``read_retention_days`` since being read are dropped.
 
         Args:
             title: One-line notification title.
@@ -130,6 +151,7 @@ class NotificationStore:
             "source_session": source_session,
             "delivered": False,
             "read": False,
+            "read_ts": None,
         }
         with self._lock:
             self._records.append(record)
@@ -178,6 +200,10 @@ class NotificationStore:
     def mark_read(self, ids: Iterable[str]) -> int:
         """Mark the given records as read by the user.
 
+        Newly-read records are stamped with a ``read_ts`` timestamp so the
+        read-lifetime retention policy can purge them once they have been
+        read for longer than ``read_retention_days``.
+
         Args:
             ids: Notification ids to mark read.
 
@@ -186,6 +212,14 @@ class NotificationStore:
 
         """
         return self._set_flag(ids, "read", True)
+
+    def size(self) -> int:
+        """Return the number of records currently held in the store.
+
+        Exposed for monitoring the store's size against ``max_events``.
+        """
+        with self._lock:
+            return len(self._records)
 
     # ------------------------------------------------------------------
     # internals
@@ -199,19 +233,47 @@ class NotificationStore:
             for record in self._records:
                 if record["id"] in wanted and record[flag] != value:
                     record[flag] = value
+                    # Stamp when a record transitions to read so read-based
+                    # retention has a reference point; clear it on unread.
+                    if flag == "read":
+                        record["read_ts"] = _now_iso() if value else None
                     changed += 1
             if changed:
                 self._persist()
         return changed
 
     def _prune(self) -> None:
-        """Apply bounded retention to :attr:`_records` in place."""
-        cutoff = datetime.now(UTC) - timedelta(days=self._retention_days)
-        cutoff_iso = cutoff.isoformat()
-        kept = [r for r in self._records if r["ts"] >= cutoff_iso]
+        """Apply the bounded retention policy to :attr:`_records` in place.
+
+        Three rules are applied in order: absolute lifetime
+        (``retention_days``), read lifetime (``read_retention_days`` since
+        being read), then the ``max_events`` count cap.  When the count cap
+        evicts records a warning is logged so store pressure is observable.
+        """
+        now = datetime.now(UTC)
+        pub_cutoff_iso = (now - timedelta(days=self._retention_days)).isoformat()
+        read_cutoff_iso = (now - timedelta(days=self._read_retention_days)).isoformat()
+
+        def _survives(record: dict[str, Any]) -> bool:
+            # Absolute lifetime: drop anything published before the cutoff.
+            if record["ts"] < pub_cutoff_iso:
+                return False
+            # Read lifetime: drop read records read before the read cutoff.
+            read_ts = record.get("read_ts")
+            return not (record.get("read") and read_ts and read_ts < read_cutoff_iso)
+
+        kept = [r for r in self._records if _survives(r)]
         kept.sort(key=lambda r: r["ts"])
         if len(kept) > self._max_events:
+            evicted = len(kept) - self._max_events
             kept = kept[-self._max_events :]
+            logger.warning(
+                "Notification store %s at capacity (%d): evicted %d oldest "
+                "record(s) before natural expiry",
+                self._path,
+                self._max_events,
+                evicted,
+            )
         self._records = kept
 
     def _load(self) -> None:

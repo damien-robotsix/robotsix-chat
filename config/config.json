@@ -202,7 +202,10 @@
   "notification": {
     "enabled": true,
     "store_and_forward": true,
-    "store_path": "/data/notifications.json"
+    "store_path": "/data/notifications.json",
+    "max_events": 200,
+    "retention_days": 90,
+    "read_retention_days": 30
   },
   "http_probe": {
     "enabled": false,

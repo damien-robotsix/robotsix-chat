@@ -320,7 +320,12 @@ def run_server_from_config(agent: ChatAgent | None = None) -> None:
 
     # Notification store — shared instance so notify_user persists every
     # notification to chat-data and later replay reads the same records.
-    notification_store = NotificationStore(settings.notification.store_path)
+    notification_store = NotificationStore(
+        settings.notification.store_path,
+        max_events=settings.notification.max_events,
+        retention_days=settings.notification.retention_days,
+        read_retention_days=settings.notification.read_retention_days,
+    )
 
     subsession_registry = SubsessionRegistry(
         event_sink=event_bus,

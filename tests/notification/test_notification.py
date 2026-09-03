@@ -375,7 +375,14 @@ def test_settings_enabled_without_extra_fields() -> None:
 def test_settings_no_ntfy_fields_remain() -> None:
     """NotificationSettings has no ntfy-specific fields."""
     field_names = set(NotificationSettings.model_fields.keys())
-    assert field_names == {"enabled", "store_and_forward", "store_path"}
+    assert field_names == {
+        "enabled",
+        "store_and_forward",
+        "store_path",
+        "max_events",
+        "retention_days",
+        "read_retention_days",
+    }
     assert "ntfy_topic" not in field_names
     assert "ntfy_token" not in field_names
     assert "ntfy_server" not in field_names
