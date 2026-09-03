@@ -20,7 +20,7 @@ from typing import Any
 
 import httpx
 
-from robotsix_chat.memory.base import RecoverCallback
+from robotsix_chat.memory.base import NotifyCallback, RecoverCallback
 
 logger = logging.getLogger(__name__)
 
@@ -177,6 +177,13 @@ class ComponentMemory:
         callback: RecoverCallback | None,  # noqa: ARG002 — ChatMemory protocol
     ) -> None:
         """No recovery path — the component restarts itself via Docker."""
+        return None
+
+    def set_notify_callback(
+        self,
+        callback: NotifyCallback | None,  # noqa: ARG002 — ChatMemory protocol
+    ) -> None:
+        """No escalation path — component health is on GET /health."""
         return None
 
     def _note_failure(self, reason: str) -> None:

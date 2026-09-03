@@ -376,15 +376,18 @@ modules:
       - tests/llm/test_vision.py
 
   - id: memory
-    description: "Long-term memory backend — Cognee-based persistent storage for cross-conversation continuity."
+    description: "Long-term memory backends — the robotsix-memory component client plus the legacy Cognee store."
     paths:
       - src/robotsix_chat/memory/__init__.py
       - src/robotsix_chat/memory/base.py
       - src/robotsix_chat/memory/cognee.py
+      - src/robotsix_chat/memory/component.py
       - src/robotsix_chat/memory/maintenance.py
       - src/robotsix_chat/memory/tools.py
+      - src/robotsix_chat/memory_push.py
       - docs/memory/api.md
       - tests/memory/__init__.py
+      - tests/memory/test_component_memory.py
       - tests/memory/test_maintenance.py
       - tests/memory/test_memory.py
 
@@ -497,6 +500,7 @@ modules:
       - src/robotsix_chat/evergoing/skill.md
       - tests/evergoing/__init__.py
       - tests/evergoing/test_cross_session_tools.py
+      - tests/evergoing/test_memory_push.py
       - tests/evergoing/test_scheduler.py
 
   - id: ui
