@@ -70,3 +70,43 @@ card. Clients must not render an empty summary card. Recommended handling patter
   messages are available below") in place of the summary card.
 - Always check `compacted_summary_missing` before deciding whether a summary card can be built; a
   bare compacted session with no explanation would otherwise confuse the reader.
+
+## Missed Notifications Badge & Panel
+
+When the agent sends you **missed notifications** (alerts and reminders), they are stored on the
+server with an unread state. The chat header displays a badge showing how many notifications you
+have not yet viewed.
+
+### Badge
+
+The "🔔 Alerts" button in the header shows an unread-notification count badge. The badge is hidden
+when the count is zero.
+
+### Opening the Notifications Panel
+
+**Click the "🔔 Alerts" button** to open the missed-notifications panel. The panel slides in from
+the right side of the screen and displays:
+
+- **Title** — the notification subject
+- **Body** — the notification message content
+- **Timestamp** — when the notification was sent
+- **Source session** — which session issued the notification
+
+### Marking Notifications as Read
+
+When you open the notifications panel, all notifications displayed are automatically marked as read.
+The badge clears immediately and will stay at zero on page refresh — those notifications are no
+longer unread.
+
+### Replayed Missed Notifications
+
+When you reconnect to the chat (on page reload or after a network disconnect), any notifications
+you missed while offline are replayed and appear in the unread-notifications badge. You can then
+open the panel to view and acknowledge them. Native desktop notifications are sent for these
+replayed alerts as well.
+
+### Closing the Panel
+
+Click the **×** button in the notifications panel header or click outside the panel to close it.
+The marked-as-read state is preserved — the panel can be reopened if you want to view the
+notification history again in a later session.
