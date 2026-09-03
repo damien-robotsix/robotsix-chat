@@ -7,6 +7,7 @@ bounded retention contract (at most 200 newest events, nothing older than
 
 from __future__ import annotations
 
+import json
 from datetime import UTC, datetime, timedelta
 
 import pytest
@@ -225,3 +226,76 @@ def test_publish_then_flag_durable(tmp_path, method):
     assert len(reopened.list()) == 1
     flag = "delivered" if method == "mark_delivered" else "read"
     assert getattr(reopened.list()[0], flag)
+
+
+# ---------------------------------------------------------------------------
+# corrupted-record resilience
+# ---------------------------------------------------------------------------
+
+
+def _valid_raw(record_id: str) -> dict[str, object]:
+    """Build a fully-populated raw record dict for direct file seeding."""
+    return {
+        "id": record_id,
+        "ts": _days_ago(1),
+        "title": "ok",
+        "body": "b",
+        "source_session": "sess",
+        "delivered": False,
+        "read": False,
+    }
+
+
+def test_corrupt_records_are_dropped_valid_ones_survive(tmp_path):
+    """A mix of valid and corrupt records loads only the valid ones."""
+    path = tmp_path / "notifications.json"
+    raw = [
+        _valid_raw("good-1"),
+        {"id": "bad-missing-fields"},  # missing required fields
+        "not-a-dict",  # not even an object
+        {**_valid_raw("bad-type"), "title": None},  # null required field
+        _valid_raw("good-2"),
+    ]
+    path.write_text(json.dumps(raw), encoding="utf-8")
+
+    store = NotificationStore(path)
+
+    ids = {r.id for r in store.list()}
+    assert ids == {"good-1", "good-2"}
+
+
+def test_non_list_json_starts_empty(tmp_path):
+    """A JSON object (not a list) at the store path is treated as empty."""
+    path = tmp_path / "notifications.json"
+    path.write_text(json.dumps({"unexpected": "shape"}), encoding="utf-8")
+
+    store = NotificationStore(path)
+
+    assert store.list() == []
+
+
+def test_recovery_after_corruption_persists_clean_file(tmp_path):
+    """After dropping corrupt records, a new append rewrites a clean file."""
+    path = tmp_path / "notifications.json"
+    raw = [_valid_raw("good"), {"id": "corrupt"}]
+    path.write_text(json.dumps(raw), encoding="utf-8")
+
+    store = NotificationStore(path)
+    fresh = store.append(title="new", body="b", source_session="sess")
+
+    # Reopening reads the rewritten file: only the surviving valid record
+    # plus the freshly appended one, no corruption re-introduced.
+    reopened = NotificationStore(path)
+    assert {r.id for r in reopened.list()} == {"good", fresh.id}
+
+
+def test_list_survives_corrupt_records(tmp_path):
+    """``list`` never raises on a corrupt file, enabling graceful API replies."""
+    path = tmp_path / "notifications.json"
+    path.write_text(json.dumps([{"id": "corrupt"}]), encoding="utf-8")
+
+    store = NotificationStore(path)
+
+    # No exception — a corrupt backing file yields an empty listing, which
+    # the unread API serialises as an empty page rather than a 500.
+    assert store.list() == []

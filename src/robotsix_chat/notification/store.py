@@ -38,7 +38,7 @@ from pathlib import Path
 from threading import Lock
 from typing import Any
 
-from pydantic import BaseModel
+from pydantic import BaseModel, ValidationError
 
 logger = logging.getLogger(__name__)
 
@@ -227,8 +227,37 @@ class NotificationStore:
             )
             self._records = []
             return
-        if isinstance(data, list):
-            self._records = [r for r in data if isinstance(r, dict)]
+        if not isinstance(data, list):
+            logger.warning(
+                "Notification store %s holds %s, not a list; starting empty",
+                self._path,
+                type(data).__name__,
+            )
+            self._records = []
+            return
+        kept: list[dict[str, Any]] = []
+        skipped = 0
+        for record in data:
+            if not isinstance(record, dict):
+                skipped += 1
+                continue
+            try:
+                # Validate each persisted record against the schema so a
+                # single corrupted/partial entry (missing or wrong-typed
+                # field) cannot crash ``list``/``mark_*`` and blank the
+                # whole unread API — drop it instead.
+                NotificationRecord(**record)
+            except TypeError, ValidationError:
+                skipped += 1
+                continue
+            kept.append(record)
+        if skipped:
+            logger.warning(
+                "Notification store %s: dropped %d corrupted record(s) on load",
+                self._path,
+                skipped,
+            )
+        self._records = kept
 
     def _persist(self) -> None:
         """Atomically write records to disk (tmp file + rename)."""
