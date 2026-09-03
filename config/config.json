@@ -33,6 +33,7 @@
     "datafusion_runtime_memory_limit": "256M",
     "frozen_store_alert_minutes": 10.0,
     "write_throttle_seconds": 0.5,
+    "cognify_max_workers": 1,
     "maintenance_enabled": true,
     "maintenance_interval_seconds": 21600.0,
     "maintenance_version_retention_seconds": 3600.0,

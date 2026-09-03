@@ -202,6 +202,17 @@ class MemorySettings(BaseModel):
             before the next write starts.  Prevents a burst of many concurrent
             writes from collectively exhausting the worker's memory.
             Default ``0.5``.
+        cognify_max_workers: Upper bound on the number of parallel worker
+            processes cognee's ingestion pipeline (``dlt``) may spawn for its
+            extract / normalize / load stages, applied via the
+            ``EXTRACT__WORKERS`` / ``NORMALIZE__WORKERS`` / ``LOAD__WORKERS``
+            env vars before cognee import.  ``dlt`` otherwise scales its
+            normalize process pool with the host CPU count, so a large
+            ingestion backlog fans out into several multiprocessing spawn
+            workers that each hold a data batch — the unbounded RSS that OOM-
+            killed the container during a cognify burst (2026-09-03 incident).
+            Default ``1`` (single-worker, memory-bounded); raise only on a
+            host with memory headroom to trade RSS for ingestion throughput.
         maintenance_enabled: When ``True`` (default), a background task
             periodically compacts and prunes every table in the cognee
             LanceDB store (LanceDB's ``Table.optimize`` — merge fragments and
@@ -280,6 +291,7 @@ class MemorySettings(BaseModel):
     frozen_store_recovery_minutes: float = 15.0
     recovery_cooldown_minutes: float = 30.0
     write_throttle_seconds: float = 0.5
+    cognify_max_workers: int = 1
     maintenance_enabled: bool = True
     maintenance_interval_seconds: float = 21600.0
     maintenance_version_retention_seconds: float = 3600.0

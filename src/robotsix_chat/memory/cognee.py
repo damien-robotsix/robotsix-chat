@@ -543,6 +543,19 @@ class CogneeMemory:
                 s.datafusion_runtime_memory_limit,
             )
 
+        # Cap the ingestion pipeline's spawn-worker fan-out.  cognee ingests
+        # through ``dlt``, whose normalize stage scales a multiprocessing
+        # process pool with the host CPU count; each worker holds a data batch
+        # in memory, so a large cognify backlog fans out into several
+        # multi-GB spawn workers with no aggregate bound — the RSS blow-up that
+        # OOM-killed the container on 2026-09-03.  dlt reads these per-stage
+        # worker counts from the env at pipeline-config time (before
+        # ``import cognee``), so set them now.
+        if s.cognify_max_workers >= 1:
+            workers = str(s.cognify_max_workers)
+            for _env in ("EXTRACT__WORKERS", "NORMALIZE__WORKERS", "LOAD__WORKERS"):
+                os.environ.setdefault(_env, workers)
+
         # cognee force-selects Langfuse as its monitoring tool when LANGFUSE_*
         # creds are present in the env (a model validator, overriding
         # MONITORING_TOOL) and then `import cognee` does `from langfuse.decorators
