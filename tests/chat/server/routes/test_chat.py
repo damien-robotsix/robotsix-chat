@@ -17,7 +17,10 @@ from robotsix_chat.chat.server import (
     SSE_ERROR_TYPE,
     SSE_TOKEN_TYPE,
 )
-from robotsix_chat.chat.server.routes.errors import STREAM_ERROR_SERVER
+from robotsix_chat.chat.server.routes.errors import (
+    STREAM_ERROR_NO_IMAGE_SUPPORT,
+    STREAM_ERROR_SERVER,
+)
 from tests.conftest import mock_app
 
 # ---------------------------------------------------------------------------
@@ -457,6 +460,142 @@ async def test_chat_endpoint_oversized_image_returns_400() -> None:
     assert response.status_code == 400
     data = response.json()
     assert "error" in data
+
+
+# ---------------------------------------------------------------------------
+# Image handling — valid attachments & the curated no-image-support flow
+# ---------------------------------------------------------------------------
+
+
+@pytest.mark.asyncio
+async def test_chat_endpoint_valid_image_accepted() -> None:
+    """A valid image attachment is accepted and forwarded to the agent.
+
+    Covers the success branch of ``_parse_and_validate_images`` (the
+    ``images.append`` / ``return`` path) that the 400-error tests above
+    cannot reach, and proves the decoded bytes reach ``agent.stream``.
+    """
+    png = _png_pixel()
+    async with mock_app(tokens=["ok"]) as f:
+        response = await f.client.post(
+            "/chat",
+            json={
+                "message": "describe this",
+                "images": [
+                    {
+                        "media_type": "image/png",
+                        "data": base64.b64encode(png).decode(),
+                    }
+                ],
+            },
+        )
+
+    assert response.status_code == 200
+    frames = _parse_sse(response.text)
+    assert any(fr.get("type") == SSE_DONE_TYPE for fr in frames)
+    assert f.agent.images == [("image/png", png)]
+
+
+@pytest.mark.asyncio
+async def test_chat_endpoint_image_only_turn_accepted() -> None:
+    """An image-only turn (no ``message``) is accepted and forwarded.
+
+    Exercises the ``if not message: message = ""`` branch — a request whose
+    content lives entirely in the attachment is a valid image turn.
+    """
+    async with mock_app(tokens=["ok"]) as f:
+        response = await f.client.post(
+            "/chat",
+            json={
+                "images": [
+                    {
+                        "media_type": "image/jpeg",
+                        "data": base64.b64encode(b"jpeg-bytes").decode(),
+                    }
+                ],
+            },
+        )
+
+    assert response.status_code == 200
+    frames = _parse_sse(response.text)
+    assert any(fr.get("type") == SSE_DONE_TYPE for fr in frames)
+    assert f.agent.images == [("image/jpeg", b"jpeg-bytes")]
+
+
+@pytest.mark.asyncio
+async def test_chat_endpoint_multiple_valid_images_forwarded() -> None:
+    """Multiple images in a single turn all reach the agent, in order."""
+    png = _png_pixel()
+    async with mock_app(tokens=["ok"]) as f:
+        response = await f.client.post(
+            "/chat",
+            json={
+                "message": "describe both",
+                "images": [
+                    {
+                        "media_type": "image/png",
+                        "data": base64.b64encode(png).decode(),
+                    },
+                    {
+                        "media_type": "image/webp",
+                        "data": base64.b64encode(b"webp-bytes").decode(),
+                    },
+                ],
+            },
+        )
+
+    assert response.status_code == 200
+    frames = _parse_sse(response.text)
+    assert any(fr.get("type") == SSE_DONE_TYPE for fr in frames)
+    assert f.agent.images == [("image/png", png), ("image/webp", b"webp-bytes")]
+
+
+@pytest.mark.asyncio
+async def test_chat_endpoint_no_image_support_error_is_curated(
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    """A text-only-model image 404 surfaces a curated SSE error, not 'internal error'.
+
+    End-to-end regression for the no-image-support path: when the resolved
+    provider/model cannot read images (DeepSeek on OpenRouter — "No endpoints
+    found that support image input"), the client receives an SSE ``error``
+    frame carrying the ``no_image_support`` code and the actionable message —
+    never the raw ``server_error`` banner or the exception text.
+    """
+    from unittest.mock import Mock
+
+    monkeypatch.setattr(
+        "robotsix_llmio.core.failover.get_failover_status",
+        lambda: Mock(failover_active=False, failover_until=None),
+    )
+    png = _png_pixel()
+    async with mock_app(
+        error=Exception("No endpoints found that support image input")
+    ) as f:
+        response = await f.client.post(
+            "/chat",
+            json={
+                "message": "describe this",
+                "images": [
+                    {
+                        "media_type": "image/png",
+                        "data": base64.b64encode(png).decode(),
+                    }
+                ],
+            },
+        )
+
+    assert response.status_code == 200
+    frames = _parse_sse(response.text)
+    error_frames = [fr for fr in frames if fr.get("type") == SSE_ERROR_TYPE]
+    assert len(error_frames) == 1
+    assert error_frames[0]["code"] == STREAM_ERROR_NO_IMAGE_SUPPORT
+    message = error_frames[0]["message"]
+    # Actionable, not the raw internal-error banner.
+    assert "can't read images" in message
+    assert "internal error" not in message.lower()
+    assert "correlation_id" in error_frames[0]
+    assert not any(fr.get("type") == SSE_DONE_TYPE for fr in frames)
 
 
 # ---------------------------------------------------------------------------
