@@ -472,10 +472,33 @@ def run_server_from_config(agent: ChatAgent | None = None) -> None:
             knowledge_store=knowledge_store,
         )
 
+        # When the board rejects a feedback finding with its admission policy
+        # (investigation tickets retired), the runner routes the finding to a
+        # one-shot chat subsession agent that investigates/acts on it instead.
+        from robotsix_chat.subsessions import SubsessionKind
+        from robotsix_chat.subsessions.worker import spawn_subsession
+
+        _feedback_subsession_level = settings.feedback.model_level
+
+        def _spawn_feedback_investigation(
+            *, owner_session_id: str, title: str, prompt: str
+        ) -> str | None:
+            return spawn_subsession(
+                env=env,
+                kind=SubsessionKind.TASK,
+                owner_session_id=owner_session_id,
+                parent_id=None,
+                depth=1,
+                title=title,
+                prompt=prompt,
+                model_level=_feedback_subsession_level,
+            )
+
         feedback_runner = FeedbackRunner(
             settings.feedback,
             feedback_agent,
             subsession_registry=subsession_registry,
+            subsession_spawner=_spawn_feedback_investigation,
             deploy_base_url=settings.central_deploy.url,
             deploy_api_key=settings.central_deploy.deploy_api_key.get_secret_value(),
         )
