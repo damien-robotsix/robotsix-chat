@@ -2096,6 +2096,183 @@ async def test_recall_wal_recovery_respects_auto_recovery_flag(
 
 
 # ---------------------------------------------------------------------------
+# Graph-store open segfault (exit -11) — backoff + validated-copy recovery
+# (2026-09-03 incident: kuzu/ladybug worker crash-loop with no matchable text)
+# ---------------------------------------------------------------------------
+
+_SEGV_ERROR = "Subprocess exited unexpectedly (exit code -11)"
+
+
+@pytest.mark.asyncio
+async def test_recall_graph_segv_backs_off_and_stops_respawning(
+    cognee_memory: tuple[CogneeMemory, Any],
+) -> None:
+    """Repeated open segfaults degrade with a specific reason and back off.
+
+    Regression (2026-09-03): a kuzu/ladybug worker segfaulting at open surfaces
+    only "exit code -11" — matched by neither the WAL nor store-fault
+    signatures — so recall crash-looped every ~2s with no recovery. It must now
+    degrade after the threshold and short-circuit further recalls (no respawn).
+    """
+    mem, fake = cognee_memory
+    # Disable auto-recovery so no recovery task fires: this isolates the
+    # backoff/degrade behaviour deterministically.
+    mem._settings.auto_recovery_enabled = False
+    mem._settings.recall_failure_degrade_threshold = 3
+    fake.search = AsyncMock(side_effect=RuntimeError(_SEGV_ERROR))
+
+    for _ in range(2):
+        assert await mem.recall("who?") == ""
+        assert mem.status()["degraded"] is False
+
+    # Third failure crosses the threshold: degraded with a segfault reason.
+    assert await mem.recall("who?") == ""
+    status = mem.status()
+    assert status["degraded"] is True
+    assert "exit -11" in str(status["reason"])
+    assert status["consecutive_graph_segv_failures"] == 3
+    assert fake.search.await_count == 3
+
+    # Further recalls short-circuit — the segfaulting worker is NOT respawned.
+    assert await mem.recall("who?") == ""
+    assert fake.search.await_count == 3
+
+
+@pytest.mark.asyncio
+async def test_recall_graph_segv_validated_copy_stashes_wal(
+    cognee_memory: tuple[CogneeMemory, Any],
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    """A clean-opening copy stashes the live .wal as .wal.corrupt-segv-DATE.
+
+    The main graph file and the other sidecars are never touched; only the
+    corrupt ``.wal`` is moved aside, after the copy proves the main file is at a
+    consistent checkpoint.
+    """
+    mem, fake = cognee_memory
+    mem._settings.recall_failure_degrade_threshold = 1
+    fake.search = AsyncMock(side_effect=RuntimeError(_SEGV_ERROR))
+
+    probe_calls: list[Path] = []
+
+    def _probe_ok(copy_path: Path) -> bool:
+        probe_calls.append(copy_path)
+        return True
+
+    monkeypatch.setattr(
+        "robotsix_chat.memory.cognee.probe_graph_store_opens", _probe_ok
+    )
+
+    dbs = Path(mem._settings.data_dir) / "system" / "databases"
+    dbs.mkdir(parents=True, exist_ok=True)
+    main = dbs / "cognee_graph_ladybug"
+    wal = dbs / "cognee_graph_ladybug.wal"
+    checkpoint = dbs / "cognee_graph_ladybug.wal.checkpoint"
+    main.write_bytes(b"LBUGmain graph")
+    wal.write_bytes(b"unreplayable wal")
+    checkpoint.write_bytes(b"cp")
+
+    date = time.strftime("%Y%m%d")
+
+    assert await mem.recall("who?") == ""
+    # Let the scheduled recovery task run to completion.
+    assert mem._segv_recovery_task is not None
+    await mem._segv_recovery_task
+
+    # The copy was probed, and the live .wal stashed with the dated suffix.
+    assert probe_calls, "the on-disk copy must be probe-opened"
+    assert not wal.exists()
+    assert (dbs / f"cognee_graph_ladybug.wal.corrupt-segv-{date}").read_bytes() == (
+        b"unreplayable wal"
+    )
+    # The main graph file and the unrelated sidecar are untouched.
+    assert main.read_bytes() == b"LBUGmain graph"
+    assert checkpoint.exists()
+    # Backoff cleared so the next recall retries the healed store.
+    assert mem._in_graph_segv_backoff() is False
+    assert mem.status()["consecutive_graph_segv_failures"] == 0
+
+
+@pytest.mark.asyncio
+async def test_recall_graph_segv_unopenable_copy_escalates_and_touches_nothing(
+    cognee_memory: tuple[CogneeMemory, Any],
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    """When the copy will not open, nothing is moved and notify_user escalates."""
+    mem, fake = cognee_memory
+    mem._settings.recall_failure_degrade_threshold = 1
+    fake.search = AsyncMock(side_effect=RuntimeError(_SEGV_ERROR))
+
+    monkeypatch.setattr(
+        "robotsix_chat.memory.cognee.probe_graph_store_opens",
+        lambda copy_path: False,
+    )
+
+    escalations: list[tuple[str, str]] = []
+
+    async def _notify(title: str, body: str) -> None:
+        escalations.append((title, body))
+
+    mem.set_notify_callback(_notify)
+
+    dbs = Path(mem._settings.data_dir) / "system" / "databases"
+    dbs.mkdir(parents=True, exist_ok=True)
+    main = dbs / "cognee_graph_ladybug"
+    wal = dbs / "cognee_graph_ladybug.wal"
+    main.write_bytes(b"LBUGmain graph")
+    wal.write_bytes(b"unreplayable wal")
+
+    assert await mem.recall("who?") == ""
+    assert mem._segv_recovery_task is not None
+    await mem._segv_recovery_task
+
+    # Nothing was touched — the main file and the .wal are exactly as before.
+    assert main.read_bytes() == b"LBUGmain graph"
+    assert wal.read_bytes() == b"unreplayable wal"
+    date = time.strftime("%Y%m%d")
+    assert not (dbs / f"cognee_graph_ladybug.wal.corrupt-segv-{date}").exists()
+    # The fault was escalated to the user with the diagnosis.
+    assert len(escalations) == 1
+    _title, body = escalations[0]
+    assert "exit -11" in body
+    assert mem.status()["degraded"] is True
+
+
+@pytest.mark.asyncio
+async def test_graph_segv_does_not_hijack_the_wal_record_path(
+    cognee_memory: tuple[CogneeMemory, Any],
+) -> None:
+    """The existing wal_record/UNREACHABLE_CODE path is unchanged by the segv path.
+
+    A WAL-replay abort must still degrade immediately via the store-fault
+    signature (not be counted as a segfault crash-loop), and a segfault must
+    not match the WAL signature.
+    """
+    from robotsix_chat.memory.cognee import (
+        _is_graph_open_segv_error,
+        _is_wal_corruption_error,
+    )
+
+    wal_exc = RuntimeError(
+        'Assertion failed in file "/ladybug/src/storage/wal/wal_record.cpp" '
+        "on line 76: UNREACHABLE_CODE"
+    )
+    segv_exc = RuntimeError(_SEGV_ERROR)
+    # The two signatures are disjoint.
+    assert _is_wal_corruption_error(wal_exc)
+    assert not _is_graph_open_segv_error(wal_exc)
+    assert _is_graph_open_segv_error(segv_exc)
+    assert not _is_wal_corruption_error(segv_exc)
+
+    # A WAL abort still degrades immediately, never via the segfault counter.
+    mem, fake = cognee_memory
+    fake.search = AsyncMock(side_effect=wal_exc)
+    assert await mem.recall("who?") == ""
+    assert mem.status()["consecutive_graph_segv_failures"] == 0
+    assert mem.status()["degraded"] is True
+
+
+# ---------------------------------------------------------------------------
 # Clean shutdown: checkpoint + close the ladybug graph store
 # ---------------------------------------------------------------------------
 

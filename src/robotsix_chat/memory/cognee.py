@@ -22,6 +22,9 @@ import json
 import logging
 import os
 import re
+import shutil
+import subprocess
+import sys
 import time
 from datetime import timedelta
 from pathlib import Path
@@ -43,7 +46,7 @@ if TYPE_CHECKING:
         MemorySettings,
         OpenRouterSettings,
     )
-    from robotsix_chat.memory.base import RecoverCallback
+    from robotsix_chat.memory.base import NotifyCallback, RecoverCallback
 
 _T = TypeVar("_T")
 
@@ -113,6 +116,97 @@ _WAL_CORRUPTION_RE = re.compile(r"UNREACHABLE_CODE|wal_record", re.IGNORECASE)
 def _is_wal_corruption_error(exc: BaseException) -> bool:
     """Return True if *exc* is the ladybug WAL-corruption abort signature."""
     return bool(_WAL_CORRUPTION_RE.search(str(exc)))
+
+
+# Signature of a graph-store worker subprocess dying in *native* code while
+# opening the store — the segfault (exit code -11 / SIGSEGV) observed
+# 2026-09-03 when the ladybug WAL was left unreplayable after the main process
+# died mid-ingest.  Unlike the WAL-replay abort (``_WAL_CORRUPTION_RE``), a
+# segfault raises NO catchable assertion text: cognee's worker harness surfaces
+# only "Subprocess exited unexpectedly (exit code -11)".  Matching that surface
+# lets a sustained open-time crash-loop be recognised as a store fault instead
+# of an unexplained recall-failure streak that never recovers or escalates.
+_GRAPH_OPEN_SEGV_RE = re.compile(
+    r"exit code -11\b|exited unexpectedly[^-\n]*-11\b|signal 11\b|SIGSEGV",
+    re.IGNORECASE,
+)
+
+# Base filename of the ladybug graph store, next to its ``.wal`` sidecars under
+# ``<data_dir>/system/databases``.
+_LADYBUG_GRAPH_BASENAME = "cognee_graph_ladybug"
+
+# How long to short-circuit recalls after a graph-open segfault crash-loop is
+# detected, so the segfaulting worker is not respawned every turn (the tight
+# ~2s respawn loop seen in the incident).  Recovery, when it succeeds, clears
+# the window early.
+_GRAPH_SEGV_BACKOFF_SECONDS = 300.0
+
+# Wall-clock ceiling for the out-of-process graph-store open probe.
+_GRAPH_PROBE_TIMEOUT_SECONDS = 60.0
+
+# Child script for :func:`probe_graph_store_opens`.  Runs in a *separate*
+# process because the open itself may segfault (the exact fault being
+# diagnosed) — a segfault there takes down only the child (negative return
+# code), never the chat server.  Exit 0 == clean open + count query.
+_GRAPH_PROBE_SCRIPT = r"""
+import sys
+
+try:
+    import ladybug
+except Exception as exc:  # pragma: no cover - environment dependent
+    sys.stderr.write("ladybug import failed: %r" % (exc,))
+    sys.exit(4)
+
+path = sys.argv[1]
+try:
+    try:
+        db = ladybug.Database(path, read_only=True)
+    except TypeError:
+        db = ladybug.Database(path)
+    conn = ladybug.Connection(db)
+    conn.execute("MATCH (n) RETURN count(n)")
+except Exception as exc:  # pragma: no cover - environment dependent
+    sys.stderr.write("open/query failed: %r" % (exc,))
+    sys.exit(3)
+sys.exit(0)
+"""
+
+
+def probe_graph_store_opens(copy_path: Path) -> bool:
+    """Open a *copy* of the graph store out-of-process and count its nodes.
+
+    Runs the open + ``MATCH (n) RETURN count(n)`` in a subprocess because the
+    open itself may segfault (the fault being diagnosed); a segfault surfaces
+    as a negative return code, which is treated as "did not open cleanly".
+
+    Returns True only when the child exits 0 — a clean open where the count
+    query succeeded, proving the copied main file is at a consistent
+    checkpoint.
+    """
+    try:
+        proc = subprocess.run(  # noqa: S603 - fixed argv, our own probe script
+            [sys.executable, "-c", _GRAPH_PROBE_SCRIPT, str(copy_path)],
+            capture_output=True,
+            timeout=_GRAPH_PROBE_TIMEOUT_SECONDS,
+            check=False,
+        )
+    except OSError, subprocess.TimeoutExpired:
+        logger.exception("graph-store open probe subprocess failed to run")
+        return False
+    if proc.returncode != 0:
+        logger.warning(
+            "graph-store open probe on %s did not open cleanly (rc=%s): %s",
+            copy_path,
+            proc.returncode,
+            proc.stderr.decode("utf-8", "replace").strip()[:500],
+        )
+        return False
+    return True
+
+
+def _is_graph_open_segv_error(exc: BaseException) -> bool:
+    """Return True if *exc* is a graph-store worker subprocess open segfault."""
+    return bool(_GRAPH_OPEN_SEGV_RE.search(str(exc)))
 
 
 def _is_store_fault_error(exc: BaseException) -> bool:
@@ -258,6 +352,19 @@ class CogneeMemory:
         # the first time a WAL-corruption abort triggers a sidecar stash so a
         # store that stays broken cannot loop the stash+retry every turn.
         self._wal_heal_attempted: bool = False
+        # Graph-store open-segfault (exit -11) tracking.  A worker that dies in
+        # native code at ``_open_database`` leaves no catchable text, so the
+        # WAL heal above cannot fire.  These count *consecutive* open segfaults
+        # so a sustained crash-loop (a) degrades with a specific reason, (b)
+        # backs off the tight respawn loop, and (c) drives the validated-copy
+        # recovery below.  One-shot heal latch, like ``_wal_heal_attempted``.
+        self._consecutive_graph_segv_failures: int = 0
+        self._segv_backoff_until: float | None = None
+        self._segv_heal_attempted: bool = False
+        self._segv_recovery_task: asyncio.Task[None] | None = None
+        # User-facing escalation transport (notify_user).  Injected by the
+        # server; ``None`` falls back to an ERROR log only.
+        self._notify_cb: NotifyCallback | None = None
         # Periodic LanceDB compaction/pruning scheduler (lazily created in
         # :meth:`start_maintenance`); ``None`` when disabled or not started.
         self._maintenance: LanceDbMaintenanceScheduler | None = None
@@ -279,6 +386,15 @@ class CogneeMemory:
         """
         self._recover_cb = callback
 
+    def set_notify_callback(self, callback: NotifyCallback | None) -> None:
+        """Register (or clear) the user-facing escalation (``notify_user``).
+
+        Injected by the server so this module escalates a store fault that
+        auto-recovery cannot safely heal without a hard dependency on the
+        notification/EventBus layer.
+        """
+        self._notify_cb = callback
+
     def status(self) -> dict[str, Any]:
         """Return a small health snapshot for ``GET /health`` (never raises)."""
         return {
@@ -287,6 +403,7 @@ class CogneeMemory:
             "reason": self._degraded_reason,
             "consecutive_write_failures": self._consecutive_write_failures,
             "consecutive_recall_failures": self._consecutive_recall_failures,
+            "consecutive_graph_segv_failures": self._consecutive_graph_segv_failures,
         }
 
     def _mark_degraded(self, reason: str) -> None:
@@ -306,6 +423,11 @@ class CogneeMemory:
         self._write_failure_start = None
         self._consecutive_write_failures = 0
         self._consecutive_recall_failures = 0
+        # A responsive store also ends any graph-open segfault crash-loop and
+        # its backoff window (the one-shot ``_segv_heal_attempted`` latch is
+        # deliberately NOT reset — it guards against re-looping the recovery).
+        self._consecutive_graph_segv_failures = 0
+        self._segv_backoff_until = None
 
     # -- lifecycle --------------------------------------------------------
 
@@ -854,6 +976,12 @@ class CogneeMemory:
         """
         if not query.strip():
             return ""
+        if self._in_graph_segv_backoff():
+            # The graph-store worker is crash-looping (segfault) at open.
+            # Short-circuit rather than respawn the segfaulting worker again —
+            # the backoff window stops the tight ~2s respawn loop.  The store
+            # stays degraded (surfaced on GET /health) until recovery clears it.
+            return ""
         try:
             async with asyncio.timeout(self._settings.recall_timeout_seconds):
                 result = await self._recall_core(query, session_id=session_id)
@@ -895,6 +1023,19 @@ class CogneeMemory:
         report an unexplained streak rather than assume it is benign.
         """
         self._consecutive_recall_failures += 1
+        # A graph-store worker subprocess segfault at open (exit -11) leaves no
+        # catchable assertion text, so it matches neither the store-fault nor
+        # the WAL-corruption signatures.  Recognise a *sustained* crash-loop as
+        # its own fault: degrade with a specific reason, back off the tight
+        # respawn loop, and drive the validated-copy recovery.
+        if _is_graph_open_segv_error(exc):
+            self._consecutive_graph_segv_failures += 1
+            threshold = max(1, self._settings.recall_failure_degrade_threshold)
+            if self._consecutive_graph_segv_failures >= threshold:
+                self._enter_graph_segv_fault(exc)
+            return
+        # Any other failure ends a segfault crash-loop streak.
+        self._consecutive_graph_segv_failures = 0
         if _is_store_fault_error(exc):
             self._mark_degraded(f"recall failed: {exc}")
             return
@@ -904,6 +1045,38 @@ class CogneeMemory:
                 f"{self._consecutive_recall_failures} consecutive recall failures; "
                 f"last error: {exc}"
             )
+
+    def _in_graph_segv_backoff(self) -> bool:
+        """Return True while the post-segfault recall backoff window is open."""
+        until = self._segv_backoff_until
+        return until is not None and time.monotonic() < until
+
+    def _enter_graph_segv_fault(self, exc: Exception) -> None:
+        """Handle a sustained graph-open segfault crash-loop.
+
+        Marks the store degraded with a specific reason, opens the backoff
+        window that stops the tight respawn loop, and schedules the guarded
+        validated-copy recovery exactly once per process.
+        """
+        reason = (
+            f"graph-store worker segfaulted (exit -11) at open "
+            f"{self._consecutive_graph_segv_failures}x — {exc}"
+        )
+        self._mark_degraded(reason)
+        self._segv_backoff_until = time.monotonic() + _GRAPH_SEGV_BACKOFF_SECONDS
+        if not self._settings.auto_recovery_enabled:
+            return
+        if self._segv_heal_attempted:
+            return
+        if self._segv_recovery_task is not None and not self._segv_recovery_task.done():
+            return
+        try:
+            loop = asyncio.get_running_loop()
+        except RuntimeError:
+            return
+        self._segv_recovery_task = loop.create_task(
+            self._run_graph_segv_recovery(reason)
+        )
 
     async def _recall_core(
         self,
@@ -969,6 +1142,11 @@ class CogneeMemory:
         """
         if not query.strip():
             return "Empty query — nothing to search for."
+        if self._in_graph_segv_backoff():
+            return (
+                "Memory is temporarily unavailable — the graph store is "
+                "recovering from a fault. Continue without it."
+            )
         timeout = self._settings.deep_recall_timeout_seconds
         try:
             async with asyncio.timeout(timeout):
@@ -1365,6 +1543,125 @@ class CogneeMemory:
             )
             return True
         return False
+
+    # -- graph-open segfault auto-recovery (validated-copy) ---------------
+
+    async def _run_graph_segv_recovery(self, reason: str) -> None:
+        """Attempt the validated-copy recovery, then clear backoff or escalate.
+
+        Never raises: a recovery that itself fails must not break the chat
+        path.  On success the corrupt ``.wal`` has been stashed aside and the
+        backoff is cleared so the next recall re-opens the (now consistent)
+        store; on failure the fault is escalated via ``notify_user`` and the
+        store stays degraded.
+        """
+        self._segv_heal_attempted = True
+        try:
+            healed = await asyncio.to_thread(self._attempt_graph_segv_recovery)
+        except Exception:
+            logger.exception("graph-store segfault recovery raised unexpectedly")
+            healed = False
+        if healed:
+            # The main graph file opened cleanly once the corrupt .wal was
+            # stashed — let the next recall retry against the healed store.
+            self._segv_backoff_until = None
+            self._consecutive_graph_segv_failures = 0
+            logger.warning(
+                "graph-store segfault recovery stashed the corrupt .wal; the "
+                "next recall will retry the store open"
+            )
+        else:
+            await self._escalate_graph_segv(reason)
+
+    def _attempt_graph_segv_recovery(self) -> bool:
+        """Validated-copy recovery for a graph-open segfault (runs in a thread).
+
+        Copy the main graph file to scratch, probe-open the COPY *without* its
+        ``.wal`` in a subprocess (the probe may itself segfault), and only if
+        the copy opens cleanly and ``MATCH (n) RETURN count(n)`` succeeds,
+        stash the LIVE ``.wal`` aside as ``<base>.wal.corrupt-segv-YYYYMMDD``.
+
+        The main graph file and the ``.wal`` are never deleted; the ``.wal`` is
+        only *moved*, and only after the copy proves the main file is at a
+        consistent checkpoint (respecting the 2026-08-01 lesson: never
+        blind-heal the main file/.wal).  The durable write backlog re-ingests
+        the lost transaction afterwards.
+
+        Returns True if the corrupt ``.wal`` was stashed (a retry is worth
+        attempting); False otherwise (nothing was safely healed — escalate).
+        """
+        dbs = self._ladybug_databases_dir()
+        if not dbs.is_dir():
+            return False
+        main = dbs / _LADYBUG_GRAPH_BASENAME
+        wal = dbs / f"{_LADYBUG_GRAPH_BASENAME}.wal"
+        if not main.is_file() or not wal.is_file():
+            # No main file, or no live .wal to stash: not the unreplayable-WAL
+            # case, so there is nothing safe to do here.
+            return False
+        scratch = dbs / f".segv-probe-{time.strftime('%Y%m%d%H%M%S')}"
+        copy_path = scratch / main.name
+        try:
+            scratch.mkdir(parents=True, exist_ok=True)
+            # Copy ONLY the main file — the probe must open it *without* the
+            # .wal, exactly as the manual recovery validated the checkpoint.
+            shutil.copy2(main, copy_path)
+        except OSError:
+            logger.exception(
+                "graph-store segfault recovery: failed to copy the main graph "
+                "file for validation"
+            )
+            shutil.rmtree(scratch, ignore_errors=True)
+            return False
+        try:
+            opened = probe_graph_store_opens(copy_path)
+        finally:
+            shutil.rmtree(scratch, ignore_errors=True)
+        if not opened:
+            logger.error(
+                "graph-store segfault recovery: the COPY did NOT open cleanly "
+                "— the main graph file is not at a consistent checkpoint; not "
+                "touching any files, escalating"
+            )
+            return False
+        # The copy opened cleanly: the main file is consistent, so the live
+        # .wal is the corrupt sidecar.  Move it aside (never delete).
+        dst = dbs / f"{wal.name}.corrupt-segv-{time.strftime('%Y%m%d')}"
+        try:
+            wal.rename(dst)
+        except OSError:
+            logger.exception(
+                "graph-store segfault recovery: failed to stash the corrupt .wal"
+            )
+            return False
+        logger.warning(
+            "graph-store segfault recovery: copy opened cleanly (MATCH (n) "
+            "count succeeded); stashed the live corrupt .wal as %s. The main "
+            "graph file was NOT touched; the write backlog will re-ingest the "
+            "lost transaction.",
+            dst,
+        )
+        return True
+
+    async def _escalate_graph_segv(self, reason: str) -> None:
+        """Escalate an unhealable graph-open segfault via ``notify_user``."""
+        diagnosis = (
+            "Long-term memory is down: the graph-store worker keeps "
+            "segfaulting while opening the store (exit -11) and auto-recovery "
+            "could not safely heal it — the on-disk copy did not open cleanly, "
+            "so no files were touched. Manual recovery is required. "
+            f"Diagnosis: {reason}"
+        )
+        logger.error(
+            "graph-store segfault recovery could not heal the store: %s", diagnosis
+        )
+        cb = self._notify_cb
+        if cb is None:
+            return
+        try:
+            await cb("Memory store down (graph segfault)", diagnosis)
+        except Exception:
+            logger.exception("failed to escalate graph-store segfault via notify_user")
 
     # -- durable backlog --------------------------------------------------
 
