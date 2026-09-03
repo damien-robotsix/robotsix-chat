@@ -853,6 +853,59 @@ async def test_component_request_http_error(
 
 
 @pytest.mark.asyncio
+async def test_component_request_422_without_body_gets_json_body_hint(
+    respx_mock: respx.MockRouter,
+) -> None:
+    """A 422 on a bodyless POST appends the json_body hint.
+
+    Mirrors the real shape from 2026-09-03: an agent POSTed
+    /tickets/{id}/comments without json_body, mill returned FastAPI's
+    422 with loc=["body"], and the bare error drove a 9x identical
+    retry loop.
+    """
+    roster = [{"id": "mill", "base_url": "http://m:8080", "skill": "..."}]
+    respx_mock.post("http://m:8080/tickets/t1/comments").mock(
+        return_value=httpx.Response(
+            422,
+            json={
+                "type": "about:blank",
+                "title": "Unprocessable Entity",
+                "status": 422,
+                "detail": "Request validation failed",
+                "errors": [
+                    {"type": "missing", "loc": ["body"], "msg": "Field required"}
+                ],
+            },
+        )
+    )
+    result = await _component_request_impl(
+        roster, "mill", "POST", "/tickets/t1/comments"
+    )
+    assert "HTTP 422" in result
+    assert "json_body" in result
+    assert "Hint" in result
+
+
+@pytest.mark.asyncio
+async def test_component_request_422_with_body_has_no_hint(
+    respx_mock: respx.MockRouter,
+) -> None:
+    """A 422 on a POST that DID send json_body is returned verbatim."""
+    roster = [{"id": "mill", "base_url": "http://m:8080", "skill": "..."}]
+    respx_mock.post("http://m:8080/tickets/t1/comments").mock(
+        return_value=httpx.Response(
+            422,
+            json={"detail": "Request validation failed"},
+        )
+    )
+    result = await _component_request_impl(
+        roster, "mill", "POST", "/tickets/t1/comments", {"wrong_field": 1}
+    )
+    assert "HTTP 422" in result
+    assert "Hint" not in result
+
+
+@pytest.mark.asyncio
 async def test_component_request_network_error(
     respx_mock: respx.MockRouter,
 ) -> None:
