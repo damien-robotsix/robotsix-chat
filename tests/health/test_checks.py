@@ -4,7 +4,9 @@ from __future__ import annotations
 
 import asyncio
 
+import robotsix_chat.health.checks as checks_mod
 from robotsix_chat.health.checks import (
+    check_container_memory,
     check_diagnostics_store,
     check_feedback_runner,
     check_knowledge_store,
@@ -196,6 +198,93 @@ class TestCheckDiagnosticsStore:
         result = asyncio.run(check_diagnostics_store(state))
         assert result.status == CheckSeverity.ERROR
         assert "exception" in result.message
+
+
+# ---------------------------------------------------------------------------
+# check_container_memory
+# ---------------------------------------------------------------------------
+
+
+class TestCheckContainerMemory:
+    """Tests for :func:`check_container_memory`."""
+
+    @staticmethod
+    def _point_at(monkeypatch, tmp_path, current: str, maximum: str) -> None:
+        """Write cgroup fixture files and point the check at them."""
+        cur = tmp_path / "memory.current"
+        mx = tmp_path / "memory.max"
+        cur.write_text(current, encoding="utf-8")
+        mx.write_text(maximum, encoding="utf-8")
+        monkeypatch.setattr(checks_mod, "_MEMORY_CURRENT_PATH", str(cur))
+        monkeypatch.setattr(checks_mod, "_MEMORY_MAX_PATH", str(mx))
+
+    def test_missing_files_is_ok(self, monkeypatch, tmp_path) -> None:  # type: ignore[no-untyped-def]
+        """OK (never raises) when cgroup accounting files are absent."""
+        monkeypatch.setattr(
+            checks_mod, "_MEMORY_CURRENT_PATH", str(tmp_path / "nope.current")
+        )
+        monkeypatch.setattr(checks_mod, "_MEMORY_MAX_PATH", str(tmp_path / "nope.max"))
+        result = asyncio.run(check_container_memory(_FakeState()))
+        assert result.name == "container_memory"
+        assert result.status == CheckSeverity.OK
+        assert "unavailable" in result.message
+
+    def test_no_limit_is_ok(self, monkeypatch, tmp_path) -> None:  # type: ignore[no-untyped-def]
+        """OK when cgroup imposes no hard limit (memory.max=max)."""
+        self._point_at(monkeypatch, tmp_path, current="1048576", maximum="max")
+        result = asyncio.run(check_container_memory(_FakeState()))
+        assert result.status == CheckSeverity.OK
+        assert "No container memory limit" in result.message
+
+    def test_unreadable_values_is_ok(self, monkeypatch, tmp_path) -> None:  # type: ignore[no-untyped-def]
+        """OK when the accounting values are not integers."""
+        self._point_at(monkeypatch, tmp_path, current="garbage", maximum="4096")
+        result = asyncio.run(check_container_memory(_FakeState()))
+        assert result.status == CheckSeverity.OK
+        assert "unreadable" in result.message
+
+    def test_below_threshold_is_ok(self, monkeypatch, tmp_path) -> None:  # type: ignore[no-untyped-def]
+        """OK when usage is comfortably below the warn fraction."""
+        # 1 GiB / 4 GiB = 25%
+        self._point_at(
+            monkeypatch,
+            tmp_path,
+            current=str(1024 * 1024 * 1024),
+            maximum=str(4 * 1024 * 1024 * 1024),
+        )
+        result = asyncio.run(check_container_memory(_FakeState()))
+        assert result.status == CheckSeverity.OK
+        assert result.details["fraction"] == 0.25
+
+    def test_at_threshold_warns(self, monkeypatch, tmp_path) -> None:  # type: ignore[no-untyped-def]
+        """WARNING (pre-OOM alert) once usage reaches the warn fraction."""
+        # 3.5 GiB / 4 GiB ≈ 87.5% ≥ default 0.85
+        self._point_at(
+            monkeypatch,
+            tmp_path,
+            current=str(int(3.5 * 1024 * 1024 * 1024)),
+            maximum=str(4 * 1024 * 1024 * 1024),
+        )
+        result = asyncio.run(check_container_memory(_FakeState()))
+        assert result.status == CheckSeverity.WARNING
+        assert "approaching OOM" in result.message
+
+    def test_custom_warn_fraction_from_settings(self, monkeypatch, tmp_path) -> None:  # type: ignore[no-untyped-def]
+        """The warn fraction is read from state.health_settings."""
+        import types
+
+        # 50% usage — below default 0.85 but above a custom 0.4 threshold.
+        self._point_at(
+            monkeypatch,
+            tmp_path,
+            current=str(2 * 1024 * 1024 * 1024),
+            maximum=str(4 * 1024 * 1024 * 1024),
+        )
+        state = _FakeState(
+            health_settings=types.SimpleNamespace(memory_warn_fraction=0.4)
+        )
+        result = asyncio.run(check_container_memory(state))
+        assert result.status == CheckSeverity.WARNING
 
 
 # ---------------------------------------------------------------------------
