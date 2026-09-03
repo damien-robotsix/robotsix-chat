@@ -10,6 +10,7 @@ from __future__ import annotations
 
 import asyncio
 import sys
+import threading
 import types
 from datetime import UTC, timedelta
 from pathlib import Path
@@ -632,3 +633,268 @@ async def test_cognee_start_maintenance_vacuum_noop_when_disabled(
     # The LanceDB scheduler still starts (its own toggle is separate).
     assert mem._maintenance is not None
     await mem.stop_maintenance()
+
+
+# ---------------------------------------------------------------------------
+# Retention-pruning guard: pruning may only touch the relational bookkeeping
+# tables (pipeline_runs / results / queries) — never the memory graph tables
+# (Entity nodes / EdgeType edges).  No retention-pruning job exists in the
+# codebase yet; these tests pin the contract a future one MUST honour by
+# exercising a mock pruning function.
+# ---------------------------------------------------------------------------
+
+# cognee's SQLite bookkeeping tables — safe to prune.
+_RELATIONAL_TABLES = ("pipeline_runs", "results", "queries")
+# cognee's memory graph tables — nodes and edges; pruning must NEVER touch them.
+_MEMORY_TABLES = ("Entity", "EdgeType")
+
+
+def _make_multi_table_cognee_db(db_path: Path, *, auto_vacuum: int = 2) -> None:
+    """Create a ``cognee_db`` with both relational and memory node/edge tables.
+
+    Relational (bookkeeping) tables get 2000 rows each; the memory graph tables
+    (``Entity`` nodes, ``EdgeType`` edges) get 500 rows each.  ``auto_vacuum``
+    is set before any table is created (SQLite only honours it then).
+    """
+    import sqlite3
+
+    conn = sqlite3.connect(str(db_path))
+    try:
+        conn.execute(f"PRAGMA auto_vacuum={auto_vacuum}")
+        for name in _RELATIONAL_TABLES:
+            conn.execute(f"CREATE TABLE {name} (id INTEGER PRIMARY KEY, payload TEXT)")
+            conn.executemany(
+                f"INSERT INTO {name} (payload) VALUES (?)",  # noqa: S608
+                [(f"row-{i}",) for i in range(2000)],
+            )
+        for name in _MEMORY_TABLES:
+            conn.execute(f"CREATE TABLE {name} (id INTEGER PRIMARY KEY, payload TEXT)")
+            conn.executemany(
+                f"INSERT INTO {name} (payload) VALUES (?)",  # noqa: S608
+                [(f"node-{i}",) for i in range(500)],
+            )
+        conn.commit()
+    finally:
+        conn.close()
+
+
+def _row_count(db_path: Path, table: str) -> int:
+    import sqlite3
+
+    conn = sqlite3.connect(str(db_path))
+    try:
+        query = f"SELECT count(*) FROM {table}"  # noqa: S608
+        return int(conn.execute(query).fetchone()[0])
+    finally:
+        conn.close()
+
+
+def _prune_relational_tables(
+    db_path: Path,
+    *,
+    n: int = 1500,
+    tables: tuple[str, ...] = _RELATIONAL_TABLES,
+) -> None:
+    """Mock retention-pruning: delete rows ONLY from bookkeeping tables.
+
+    Represents the contract a future retention-pruning job must honour — it
+    refuses (raises) if asked to target a memory node/edge table, and only ever
+    deletes rows whose ``id`` is ``<= n`` from the named relational tables.
+    """
+    assert all(t not in _MEMORY_TABLES for t in tables), (
+        "retention pruning must never target memory node/edge tables"
+    )
+    import sqlite3
+
+    conn = sqlite3.connect(str(db_path))
+    try:
+        for table in tables:
+            conn.execute(f"DELETE FROM {table} WHERE id <= ?", (n,))  # noqa: S608
+        conn.commit()
+    finally:
+        conn.close()
+
+
+def test_retention_pruning_only_touches_relational_tables(tmp_path: Path) -> None:
+    """Pruning removes rows from bookkeeping tables; memory rows are untouched."""
+    db = tmp_path / "cognee_db"
+    _make_multi_table_cognee_db(db)
+    memory_before = {t: _row_count(db, t) for t in _MEMORY_TABLES}
+
+    _prune_relational_tables(db, n=1500)
+
+    for table in _RELATIONAL_TABLES:
+        assert _row_count(db, table) == 500  # 2000 - 1500 pruned
+    for table in _MEMORY_TABLES:
+        assert _row_count(db, table) == memory_before[table]
+
+
+def test_retention_pruning_refuses_to_target_memory_tables(tmp_path: Path) -> None:
+    """A pruning call that names a memory node/edge table raises and deletes 0."""
+    db = tmp_path / "cognee_db"
+    _make_multi_table_cognee_db(db)
+
+    with pytest.raises(AssertionError, match="memory node/edge"):
+        _prune_relational_tables(db, tables=("Entity",))
+
+    # The guard fires before any DELETE — memory graph is intact.
+    for table in _MEMORY_TABLES:
+        assert _row_count(db, table) == 500
+
+
+def test_vacuum_after_pruning_preserves_memory_rows(tmp_path: Path) -> None:
+    """VACUUM reclaims pruned relational space without touching memory rows."""
+    db = tmp_path / "cognee_db"
+    _make_multi_table_cognee_db(db, auto_vacuum=0)
+    memory_before = {t: _row_count(db, t) for t in _MEMORY_TABLES}
+    _prune_relational_tables(db, n=1500)
+    size_before = db.stat().st_size
+
+    result = vacuum_cognee_db(db, mode="vacuum")
+
+    assert result.error is None
+    assert result.freelist_after == 0
+    assert result.size_after < size_before
+    # Memory node/edge rows survived both the prune and the vacuum rebuild.
+    for table in _MEMORY_TABLES:
+        assert _row_count(db, table) == memory_before[table]
+
+
+# ---------------------------------------------------------------------------
+# Memory node/edge protection: LanceDB compaction must never change the row
+# count of the Entity (node) / EdgeType (edge) vector tables.
+# ---------------------------------------------------------------------------
+
+# The memory graph LanceDB tables produced by cognee.
+_MEMORY_LANCE_TABLES = ("EdgeType_relationship_name.lance", "Entity_name.lance")
+
+
+def test_optimize_preserves_memory_node_edge_row_counts(
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    """optimize_lancedb_store leaves Entity/EdgeType row counts unchanged."""
+    tables = _big_tables()
+    rows_before = {name: table.rows for name, table in tables.items()}
+    _install_fake_lancedb(monkeypatch, tables)
+
+    results = optimize_lancedb_store(
+        "/store/cognee.lancedb", cleanup_older_than=timedelta(hours=1)
+    )
+
+    by_name = {r.name: r for r in results}
+    for name in _MEMORY_LANCE_TABLES:
+        result = by_name[name]
+        assert result.error is None
+        # The result records an invariant row count...
+        assert result.rows_before == result.rows_after == rows_before[name]
+        # ...and the underlying table was not mutated in row count.
+        assert tables[name].rows == rows_before[name]
+
+
+# ---------------------------------------------------------------------------
+# Concurrent maintenance + write availability: maintenance must never
+# permanently block memory writes — a write succeeds immediately once a pass
+# finishes, and any backlog of writes queued behind an in-flight pass drains.
+# ---------------------------------------------------------------------------
+
+
+@pytest.mark.asyncio
+async def test_write_succeeds_immediately_after_maintenance(
+    monkeypatch: pytest.MonkeyPatch, tmp_path: Path
+) -> None:
+    """Once a maintenance pass completes the write lock is free for writers."""
+    store = tmp_path / "cognee.lancedb"
+    store.mkdir()
+    _install_fake_lancedb(monkeypatch, _big_tables())
+    lock = asyncio.Lock()
+    sched = LanceDbMaintenanceScheduler(
+        store_path=store,
+        write_lock=lock,
+        interval_seconds=3600,
+        cleanup_older_than=timedelta(hours=1),
+    )
+
+    await sched.run_once()
+
+    # The pass released the lock — a write acquires without blocking.
+    assert not lock.locked()
+
+    async def _write() -> str:
+        async with lock:
+            return "written"
+
+    assert await asyncio.wait_for(_write(), timeout=1.0) == "written"
+
+
+@pytest.mark.asyncio
+async def test_backlog_writes_drain_after_maintenance(
+    monkeypatch: pytest.MonkeyPatch, tmp_path: Path
+) -> None:
+    """Writes queued behind an in-flight maintenance pass all drain afterward."""
+    store = tmp_path / "cognee.lancedb"
+    store.mkdir()
+    lock = asyncio.Lock()
+    loop = asyncio.get_running_loop()
+    release = threading.Event()
+    maintenance_holding_lock = asyncio.Event()
+
+    def _blocking_optimize(*_a: Any, **_k: Any) -> list[TableMaintenanceResult]:
+        # Runs in the to_thread worker while the pass holds the write lock.
+        loop.call_soon_threadsafe(maintenance_holding_lock.set)
+        assert release.wait(timeout=5.0), "maintenance was never released"
+        return []
+
+    monkeypatch.setattr(
+        maintenance_module, "optimize_lancedb_store", _blocking_optimize
+    )
+    sched = LanceDbMaintenanceScheduler(
+        store_path=store,
+        write_lock=lock,
+        interval_seconds=3600,
+        cleanup_older_than=timedelta(hours=1),
+    )
+
+    drained: list[int] = []
+
+    async def _writer(i: int) -> None:
+        async with lock:
+            drained.append(i)
+
+    maint = asyncio.create_task(sched.run_once())
+    await asyncio.wait_for(maintenance_holding_lock.wait(), timeout=2.0)
+
+    # Queue a backlog of writes while maintenance holds the lock.
+    writers = [asyncio.create_task(_writer(i)) for i in range(3)]
+    await asyncio.sleep(0)  # let the writers block on the held lock
+    assert drained == []  # nothing drains while maintenance holds the lock
+
+    release.set()  # let the pass finish and release the lock
+    await asyncio.wait_for(maint, timeout=2.0)
+    await asyncio.wait_for(asyncio.gather(*writers), timeout=2.0)
+
+    assert sorted(drained) == [0, 1, 2]  # every backlog write drained
+
+
+@pytest.mark.asyncio
+async def test_vacuum_write_succeeds_immediately_after_pass(tmp_path: Path) -> None:
+    """A write acquires the lock immediately after a vacuum pass completes."""
+    db = tmp_path / "cognee_db"
+    _make_multi_table_cognee_db(db, auto_vacuum=2)
+    lock = asyncio.Lock()
+    sched = CogneeDbVacuumScheduler(
+        db_path=db,
+        write_lock=lock,
+        interval_seconds=3600,
+        mode="incremental_vacuum",
+        off_peak_window=None,
+    )
+
+    result = await sched.run_once()
+    assert result is not None and result.error is None
+    assert not lock.locked()
+
+    async def _write() -> str:
+        async with lock:
+            return "written"
+
+    assert await asyncio.wait_for(_write(), timeout=1.0) == "written"
