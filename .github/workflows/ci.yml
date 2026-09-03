@@ -109,17 +109,20 @@ jobs:
         # mypy resolves from the project's dev group via `uv run`; vulture is
         # not a declared dependency (only a system-hook tool), so provision it
         # — and the pre-commit runner — explicitly with `--with`.
-        # Retried: the trufflehog hook's `go install ./...` downloads a large
-        # dependency tree from proxy.golang.org, which intermittently fails with
-        # transient stream errors; Go's module cache and pre-commit's env dir
-        # persist between attempts, so a retry completes the install.
+        #
+        # Retry on transient hook-environment install failures: the golang
+        # hooks (trufflehog, actionlint) build via `go install ./...`, which
+        # hits proxy.golang.org / go.dev — a transient stream error there
+        # aborts the whole job with pre-commit's unexpected-error exit code
+        # (3), turning main red and blocking the release-image gate.
         uses: nick-fields/retry@ad984534de44a9489a53aefd81eb77f87c70dc60  # v4.0.0
         with:
           timeout_minutes: 20
           max_attempts: 3
           retry_wait_seconds: 15
           retry_on: error
-          command: uv run --frozen --with pre-commit --with vulture --with pyright pre-commit run --all-files --show-diff-on-failure
+          command: |
+            uv run --frozen --with pre-commit --with vulture --with pyright pre-commit run --all-files --show-diff-on-failure
 
   check-sse-types:
     name: SSE event type audit
