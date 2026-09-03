@@ -88,6 +88,13 @@ import {
   const sessionsDismiss = sessionsPanel.querySelector(".dismiss");
   const sessionsResizeHandle = document.getElementById("sessions-resize-handle");
   const newChatBtn = document.getElementById("new-chat-btn");
+  const notificationsToggle  = document.getElementById("notifications-toggle");
+  const notificationsPanel   = document.getElementById("notifications-panel");
+  const notificationsBadge   = document.getElementById("notifications-badge");
+  const notificationsList    = document.getElementById("notifications-list");
+  const notificationsDismiss = notificationsPanel
+    ? notificationsPanel.querySelector(".dismiss")
+    : null;
   const subsToggle     = document.getElementById("subsessions-toggle");
   const subsPanel      = document.getElementById("subsessions-panel");
   const subsResizeHandle = document.getElementById("subsessions-resize-handle");
@@ -105,6 +112,7 @@ import {
   var typingIndicatorEl      = null;  // the animated dots element
   var lastModelTimestampEl   = null;  // timestamp element for last model message
   var messageQueue = [];       // FIFO queue of { text, el } for busy-state
+  var unreadNotifications = []; // unread notification records for the badge/panel
   // (currentRequestSessionId removed — unused; cross-session guard uses
   //  the requestSessionId captured inside doPost instead.)
 
@@ -2728,6 +2736,10 @@ import {
               body: frame.body || "",
             });
           }
+          // Refresh the unread badge/panel. Both live and replayed missed
+          // notifications are persisted server-side with read=false, so the
+          // unread API reflects them regardless of desktop-permission state.
+          fetchUnreadNotifications();
         } else if (frame.type === "chat_turn_started") {
           handleReattachStart(frame);
         } else if (frame.type === "chat_turn_resume") {
@@ -3557,6 +3569,121 @@ import {
     if (modelSel) modelSel.addEventListener("change", onModelSelectorChange);
   })();
 
+  // ---- Missed-notification badge + panel -------------------------------
+  // Store-and-forward: notify_user notifications are persisted server-side
+  // and replayed over /events on connect. The badge surfaces the count of
+  // notifications the user has not yet acknowledged (read=false); opening
+  // the panel marks them read so the badge clears and stays clear on
+  // refresh. Native desktop notifications are unaffected — the /events
+  // "notification" branch still fires the browser Notifications API.
+  function renderNotificationBadge() {
+    if (!notificationsBadge) return;
+    var n = unreadNotifications.length;
+    notificationsBadge.textContent = String(n);
+    notificationsBadge.hidden = n === 0;
+  }
+
+  function formatNotifTimestamp(ts) {
+    if (!ts) return "";
+    var d = new Date(ts);
+    if (isNaN(d.getTime())) return ts;
+    return d.toLocaleString();
+  }
+
+  function renderNotificationsList() {
+    if (!notificationsList) return;
+    notificationsList.innerHTML = "";
+    if (unreadNotifications.length === 0) {
+      var empty = document.createElement("div");
+      empty.className = "notif-empty";
+      empty.textContent = "No missed notifications.";
+      notificationsList.appendChild(empty);
+      return;
+    }
+    for (var i = 0; i < unreadNotifications.length; i++) {
+      var rec = unreadNotifications[i];
+      var row = document.createElement("div");
+      row.className = "notif-row";
+
+      var title = document.createElement("div");
+      title.className = "notif-title";
+      title.textContent = rec.title || "Notification";
+      row.appendChild(title);
+
+      if (rec.body) {
+        var body = document.createElement("div");
+        body.className = "notif-body";
+        body.textContent = rec.body;
+        row.appendChild(body);
+      }
+
+      var meta = document.createElement("div");
+      meta.className = "notif-meta";
+      var when = formatNotifTimestamp(rec.ts);
+      var src = rec.source_session ? ("session " + rec.source_session) : "";
+      meta.textContent = [when, src].filter(Boolean).join(" · ");
+      row.appendChild(meta);
+
+      notificationsList.appendChild(row);
+    }
+  }
+
+  function fetchUnreadNotifications() {
+    // Best-effort: a failed fetch must never break the chat UI.
+    return fetch(apiBase() + "/notifications/unread", { method: "GET" })
+      .then(function (r) { return r.ok ? r.json() : []; })
+      .then(function (data) {
+        unreadNotifications = Array.isArray(data) ? data : [];
+        renderNotificationBadge();
+        renderNotificationsList();
+      })
+      .catch(function () { /* leave the current state untouched */ });
+  }
+
+  function markNotificationsRead() {
+    // Empty body → the server marks every currently-unread record read.
+    return fetch(apiBase() + "/notifications/read", {
+      method: "POST",
+      headers: { "Content-Type": "application/json" },
+      body: "{}"
+    })
+      .then(function () {
+        unreadNotifications = [];
+        renderNotificationBadge();
+        renderNotificationsList();
+      })
+      .catch(function () { /* best-effort */ });
+  }
+
+  function openNotificationsPanel() {
+    if (!notificationsPanel) return;
+    notificationsPanel.classList.add("visible");
+    // Render what was missed FIRST, then mark those records read so the
+    // panel still lists them while the badge clears.
+    renderNotificationsList();
+    markNotificationsRead();
+  }
+
+  function closeNotificationsPanel() {
+    if (notificationsPanel) notificationsPanel.classList.remove("visible");
+  }
+
+  function toggleNotificationsPanel() {
+    if (!notificationsPanel) return;
+    if (notificationsPanel.classList.contains("visible")) {
+      closeNotificationsPanel();
+    } else {
+      openNotificationsPanel();
+    }
+  }
+
+  if (notificationsToggle) {
+    notificationsToggle.addEventListener("click", toggleNotificationsPanel);
+  }
+  if (notificationsDismiss) {
+    notificationsDismiss.addEventListener("click", closeNotificationsPanel);
+  }
+
   // Request browser notification permission early so the agent's
   // notify_user tool can push native alerts.  Silently ignored when the
   // browser does not support the Notifications API or when permission
@@ -3587,6 +3714,7 @@ import {
       setActiveSessionId(sid);
     }
     updateUnreadFromList(data.sessions || []);
+    fetchUnreadNotifications();
     renderSessionList(data);
     // Open /events only after history renders (see switchSession/loadHistory)
     // so re-attaching to an in-flight turn on page load renders the live round
