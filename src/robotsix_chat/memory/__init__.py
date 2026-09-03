@@ -18,7 +18,7 @@ The public surface is the :class:`ChatMemory` protocol — ``setup`` / ``recall`
 
 from __future__ import annotations
 
-from typing import TYPE_CHECKING
+from typing import TYPE_CHECKING, Any
 
 from .base import ChatMemory, NullMemory, ReadOnlyMemory
 
@@ -63,6 +63,7 @@ def build_memory(
     settings: MemorySettings,
     langfuse: LangfuseSettings | None = None,
     openrouter: OpenRouterSettings | None = None,
+    memory_component: Any = None,
 ) -> ChatMemory:
     """Return the :class:`ChatMemory` for the given ``MemorySettings``.
 
@@ -86,8 +87,29 @@ def build_memory(
             from which cognee resolves its extraction-LLM API key under
             ``settings.langfuse_project``'s alias. Omitted means the key is
             empty.
+        memory_component: Optional
+            :class:`~robotsix_chat.config.models.MemoryComponentSettings`;
+            when enabled it supersedes the in-process backend with the
+            robotsix-memory component.
 
     """
+    if memory_component is not None and getattr(memory_component, "enabled", False):
+        # The robotsix-memory component supersedes the in-process backend:
+        # recall goes over HTTP to the component; writes belong to the
+        # summary pipeline and the agent's explicit skill calls.
+        key = "component|" + memory_component.model_dump_json()
+        cached = _MEMORY_CACHE.get(key)
+        if cached is not None:
+            return cached
+        from .component import ComponentMemory
+
+        component_memory = ComponentMemory(
+            memory_component.url,
+            timeout_seconds=memory_component.timeout_seconds,
+        )
+        _MEMORY_CACHE[key] = component_memory
+        return component_memory
+
     if not settings.enabled:
         return NullMemory()
 

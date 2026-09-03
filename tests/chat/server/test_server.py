@@ -1070,7 +1070,10 @@ def test_create_agent_from_settings_memory_disabled_skips_cognee() -> None:
     clock — the cost bleed this gate exists to stop.  Unlike ``bare``, tools
     and subsession wiring are retained; only long-term memory is dropped.
     """
-    settings = Settings(agent_instruction="Be terse.")
+    settings = Settings(
+        agent_instruction="Be terse.",
+        memory_component={"enabled": False},
+    )
 
     with patch(
         "robotsix_chat.chat.server.app.build_memory",
@@ -1079,6 +1082,32 @@ def test_create_agent_from_settings_memory_disabled_skips_cognee() -> None:
         agent = create_agent_from_settings(settings=settings, memory_enabled=False)
 
     assert isinstance(agent._memory, NullMemory)
+
+
+def test_create_agent_from_settings_gated_memory_still_reads_component() -> None:
+    """With the memory component enabled, a gated agent gets read-only recall.
+
+    Component recall is a cheap HTTP lookup (no LLM pipeline), so unattended
+    agents keep the context the main conversation already learned; writes
+    stay off (ComponentMemory writes are no-ops anyway).
+    """
+    settings = Settings(agent_instruction="Be terse.")
+    sentinel = NullMemory()
+
+    with patch(
+        "robotsix_chat.chat.server.app.build_memory", return_value=sentinel
+    ) as build:
+        agent = create_agent_from_settings(settings=settings, memory_enabled=False)
+
+    build.assert_called_once_with(
+        settings.memory,
+        settings.langfuse,
+        settings.openrouter,
+        memory_component=settings.memory_component,
+    )
+    from robotsix_chat.memory import ReadOnlyMemory
+
+    assert isinstance(agent._memory, ReadOnlyMemory)
 
 
 def test_create_agent_from_settings_memory_enabled_builds_memory() -> None:
@@ -1096,7 +1125,10 @@ def test_create_agent_from_settings_memory_enabled_builds_memory() -> None:
         agent = create_agent_from_settings(settings=settings)
 
     build.assert_called_once_with(
-        settings.memory, settings.langfuse, settings.openrouter
+        settings.memory,
+        settings.langfuse,
+        settings.openrouter,
+        memory_component=settings.memory_component,
     )
     assert agent._memory is sentinel
 

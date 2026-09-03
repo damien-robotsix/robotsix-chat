@@ -1554,10 +1554,22 @@ def create_agent_from_settings(
     if bare:
         memory: ChatMemory = NullMemory()
     elif memory_enabled:
-        memory = build_memory(settings.memory, settings.langfuse, settings.openrouter)
-    elif settings.memory.enabled and settings.memory.background_recall_enabled:
+        memory = build_memory(
+            settings.memory,
+            settings.langfuse,
+            settings.openrouter,
+            memory_component=settings.memory_component,
+        )
+    elif settings.memory_component.enabled or (
+        settings.memory.enabled and settings.memory.background_recall_enabled
+    ):
         memory = ReadOnlyMemory(
-            build_memory(settings.memory, settings.langfuse, settings.openrouter)
+            build_memory(
+                settings.memory,
+                settings.langfuse,
+                settings.openrouter,
+                memory_component=settings.memory_component,
+            )
         )
     else:
         memory = NullMemory()
