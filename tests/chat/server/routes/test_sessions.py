@@ -2,6 +2,7 @@
 
 from __future__ import annotations
 
+import asyncio
 import json
 from datetime import UTC, datetime
 from unittest.mock import MagicMock
@@ -427,6 +428,7 @@ async def test_sessions_delete_endpoint_not_found() -> None:
     state = MagicMock(
         conversation_store=mock_store,
         subsession_registry=None,
+        evergoing_scheduler=None,
         feedback_runner=None,
     )
     request = _make_request(
@@ -470,6 +472,7 @@ async def test_sessions_delete_endpoint_cleans_up_subsessions() -> None:
     state = MagicMock(
         conversation_store=mock_store,
         subsession_registry=mock_registry,
+        evergoing_scheduler=None,
         feedback_runner=None,
     )
     request = _make_request(
@@ -502,6 +505,7 @@ async def test_sessions_delete_endpoint_schedules_feedback() -> None:
     state = MagicMock(
         conversation_store=mock_store,
         subsession_registry=None,
+        evergoing_scheduler=None,
         feedback_runner=mock_feedback,
     )
     request = _make_request(
@@ -532,6 +536,7 @@ async def test_sessions_delete_endpoint_no_feedback_on_empty_history() -> None:
     state = MagicMock(
         conversation_store=mock_store,
         subsession_registry=None,
+        evergoing_scheduler=None,
         feedback_runner=mock_feedback,
     )
     request = _make_request(
@@ -561,6 +566,7 @@ async def test_sessions_close_endpoint_success() -> None:
     state = MagicMock(
         conversation_store=mock_store,
         subsession_registry=None,
+        evergoing_scheduler=None,
         feedback_runner=None,
     )
     request = _make_request(
@@ -580,6 +586,39 @@ async def test_sessions_close_endpoint_success() -> None:
 
 
 @pytest.mark.asyncio
+async def test_sessions_close_endpoint_triggers_memory_finalize() -> None:
+    """A successful close schedules the scheduler's finalize_session push."""
+    mock_store = MagicMock()
+    mock_store.history.return_value = []
+    mock_store.close_session.return_value = {"closed": True}
+    finalized: list[str] = []
+
+    class _Scheduler:
+        async def finalize_session(self, session_id: str) -> bool:
+            finalized.append(session_id)
+            return True
+
+    state = MagicMock(
+        conversation_store=mock_store,
+        subsession_registry=None,
+        evergoing_scheduler=_Scheduler(),
+        feedback_runner=None,
+    )
+    request = _make_request(
+        method="POST",
+        query_string="owner_id=alice",
+        path_params={"session_id": "sess-9"},
+        app_state=state,
+    )
+
+    response = await sessions_close_endpoint(request)
+    assert response.status_code == 200
+    for _ in range(5):
+        await asyncio.sleep(0)
+    assert finalized == ["sess-9"]
+
+
+@pytest.mark.asyncio
 async def test_sessions_close_endpoint_not_found() -> None:
     """Returns 404 when the session is not found."""
     mock_store = MagicMock()
@@ -588,6 +627,7 @@ async def test_sessions_close_endpoint_not_found() -> None:
     state = MagicMock(
         conversation_store=mock_store,
         subsession_registry=None,
+        evergoing_scheduler=None,
         feedback_runner=None,
     )
     request = _make_request(
@@ -628,6 +668,7 @@ async def test_sessions_close_endpoint_cleans_up_subsessions() -> None:
     state = MagicMock(
         conversation_store=mock_store,
         subsession_registry=mock_registry,
+        evergoing_scheduler=None,
         feedback_runner=None,
     )
     request = _make_request(
@@ -654,6 +695,7 @@ async def test_sessions_close_endpoint_schedules_feedback() -> None:
     state = MagicMock(
         conversation_store=mock_store,
         subsession_registry=None,
+        evergoing_scheduler=None,
         feedback_runner=mock_feedback,
     )
     request = _make_request(
@@ -681,6 +723,7 @@ async def test_sessions_close_endpoint_no_feedback_on_empty_history() -> None:
     state = MagicMock(
         conversation_store=mock_store,
         subsession_registry=None,
+        evergoing_scheduler=None,
         feedback_runner=mock_feedback,
     )
     request = _make_request(

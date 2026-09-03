@@ -44,6 +44,7 @@ from robotsix_chat.config.models import (
     LangfuseInspectSettings,
     LangfuseSettings,
     LifecycleSettings,
+    MemoryComponentSettings,
     MemorySettings,
     MobileAuthSettings,
     NotificationSettings,
@@ -1863,6 +1864,9 @@ class Settings(BaseModel):
     periodic: PeriodicSettings = Field(default_factory=PeriodicSettings)
     continuation: ContinuationSettings = Field(default_factory=ContinuationSettings)
     evergoing: EvergoingSettings = Field(default_factory=EvergoingSettings)
+    memory_component: MemoryComponentSettings = Field(
+        default_factory=MemoryComponentSettings
+    )
     max_images_per_message: int = Field(default=8)
     max_image_bytes: int = Field(default=5_242_880)
     allowed_image_media_types: list[str] = Field(

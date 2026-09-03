@@ -32,7 +32,11 @@ from robotsix_chat.chat.events import EventBus, EventSink
 from robotsix_chat.component_access import build_component_access_tools
 from robotsix_chat.component_client import build_component_tools
 from robotsix_chat.config import Settings
-from robotsix_chat.config.models import EvergoingSettings, HealthSettings
+from robotsix_chat.config.models import (
+    EvergoingSettings,
+    HealthSettings,
+    MemoryComponentSettings,
+)
 from robotsix_chat.continuation import (
     build_continuation_tools,
     load_continuation_skill,
@@ -372,6 +376,7 @@ def create_app(
     knowledge_store: Any = None,
     health_settings: HealthSettings | None = None,
     evergoing_settings: EvergoingSettings | None = None,
+    memory_component_settings: MemoryComponentSettings | None = None,
     continuation_store: Any = None,
     notification_store: Any = None,
     notification_store_and_forward: bool = True,
@@ -512,6 +517,9 @@ def create_app(
             compaction scheduler.  When ``None`` (default), the default
             settings are used (disabled), so no evergoing session is created
             on boot.
+        memory_component_settings: Optional
+            :class:`~robotsix_chat.config.models.MemoryComponentSettings` —
+            summary pushes to the robotsix-memory component.
         continuation_store: Shared
             :class:`~robotsix_chat.continuation.store.ContinuationStore`
             instance for pending post-restart continuations.  When
@@ -830,12 +838,20 @@ def create_app(
     # regardless of whether the evergoing session itself is enabled.
     if app.state.summary_agent is not None:
         from robotsix_chat.evergoing import EvergoingSummaryScheduler
+        from robotsix_chat.memory_push import MemoryPush
 
+        _mc = memory_component_settings or MemoryComponentSettings()
+        memory_push = (
+            MemoryPush(_mc.url, timeout_seconds=_mc.timeout_seconds)
+            if _mc.enabled
+            else None
+        )
         app.state.evergoing_scheduler = EvergoingSummaryScheduler(
             interval_seconds=_eg.trim_interval_seconds,
             store=app.state.conversation_store,
             agent=app.state.summary_agent,
             keep_recent_runs=_eg.keep_recent_runs,
+            memory_push=memory_push,
         )
     else:
         app.state.evergoing_scheduler = None
@@ -1538,10 +1554,22 @@ def create_agent_from_settings(
     if bare:
         memory: ChatMemory = NullMemory()
     elif memory_enabled:
-        memory = build_memory(settings.memory, settings.langfuse, settings.openrouter)
-    elif settings.memory.enabled and settings.memory.background_recall_enabled:
+        memory = build_memory(
+            settings.memory,
+            settings.langfuse,
+            settings.openrouter,
+            memory_component=settings.memory_component,
+        )
+    elif settings.memory_component.enabled or (
+        settings.memory.enabled and settings.memory.background_recall_enabled
+    ):
         memory = ReadOnlyMemory(
-            build_memory(settings.memory, settings.langfuse, settings.openrouter)
+            build_memory(
+                settings.memory,
+                settings.langfuse,
+                settings.openrouter,
+                memory_component=settings.memory_component,
+            )
         )
     else:
         memory = NullMemory()
