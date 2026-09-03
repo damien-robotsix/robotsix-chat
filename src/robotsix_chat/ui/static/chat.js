@@ -112,7 +112,8 @@ import {
   var typingIndicatorEl      = null;  // the animated dots element
   var lastModelTimestampEl   = null;  // timestamp element for last model message
   var messageQueue = [];       // FIFO queue of { text, el } for busy-state
-  var unreadNotifications = []; // unread notification records for the badge/panel
+  var unreadNotifications = []; // unread notification records driving the badge
+  var displayedNotifications = []; // snapshot rendered in the open panel
   // (currentRequestSessionId removed — unused; cross-session guard uses
   //  the requestSessionId captured inside doPost instead.)
 
@@ -3593,15 +3594,15 @@ import {
   function renderNotificationsList() {
     if (!notificationsList) return;
     notificationsList.innerHTML = "";
-    if (unreadNotifications.length === 0) {
+    if (displayedNotifications.length === 0) {
       var empty = document.createElement("div");
       empty.className = "notif-empty";
       empty.textContent = "No missed notifications.";
       notificationsList.appendChild(empty);
       return;
     }
-    for (var i = 0; i < unreadNotifications.length; i++) {
-      var rec = unreadNotifications[i];
+    for (var i = 0; i < displayedNotifications.length; i++) {
+      var rec = displayedNotifications[i];
       var row = document.createElement("div");
       row.className = "notif-row";
 
@@ -3635,7 +3636,14 @@ import {
       .then(function (data) {
         unreadNotifications = Array.isArray(data) ? data : [];
         renderNotificationBadge();
-        renderNotificationsList();
+        // Keep the panel's rendered snapshot in sync only while it is
+        // closed. While the panel is open we must not mutate what the user
+        // is reading (markNotificationsRead clears the live list but the
+        // opened records stay on screen until the panel is reopened).
+        if (!notificationsPanel || !notificationsPanel.classList.contains("visible")) {
+          displayedNotifications = unreadNotifications.slice();
+          renderNotificationsList();
+        }
       })
       .catch(function () { /* leave the current state untouched */ });
   }
@@ -3648,9 +3656,11 @@ import {
       body: "{}"
     })
       .then(function () {
+        // Clear the live unread set + badge, but leave displayedNotifications
+        // (and the rendered list) intact so the just-opened panel keeps
+        // showing what was missed instead of flashing to the empty state.
         unreadNotifications = [];
         renderNotificationBadge();
-        renderNotificationsList();
       })
       .catch(function () { /* best-effort */ });
   }
@@ -3658,8 +3668,11 @@ import {
   function openNotificationsPanel() {
     if (!notificationsPanel) return;
     notificationsPanel.classList.add("visible");
-    // Render what was missed FIRST, then mark those records read so the
-    // panel still lists them while the badge clears.
+    // Snapshot the current unread records into the panel FIRST, then mark
+    // them read. markNotificationsRead() clears unreadNotifications and the
+    // badge but leaves this snapshot on screen, so the missed notifications
+    // stay readable instead of vanishing as soon as the POST resolves.
+    displayedNotifications = unreadNotifications.slice();
     renderNotificationsList();
     markNotificationsRead();
   }
