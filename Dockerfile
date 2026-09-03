@@ -52,7 +52,7 @@ RUN uv export --frozen --no-emit-project --no-hashes \
 # 'idealTree' already exists" error when run from the filesystem root (/), so
 # install from a real project directory (/build) instead.
 # ---------------------------------------------------------------------------
-FROM node:22-alpine AS ui
+FROM node:24-alpine AS ui
 ARG ROBOTSIX_UI_VERSION=v0.1.41
 WORKDIR /build
 # hadolint ignore=DL3016,DL3018
