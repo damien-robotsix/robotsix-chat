@@ -119,6 +119,7 @@ def _make_runner(
     agent: Any = None,
     *,
     subsession_registry: Any = None,
+    subsession_spawner: Any = None,
 ) -> FeedbackRunner:
     """Build a :class:`FeedbackRunner` with fakes; typed as the real class.
 
@@ -129,6 +130,7 @@ def _make_runner(
         settings or _settings(),
         agent or _FakeAgent(),  # type: ignore[arg-type]
         subsession_registry=subsession_registry,
+        subsession_spawner=subsession_spawner,
     )
 
 
@@ -780,7 +782,7 @@ class TestFileTickets:
     async def test_returns_zero_when_board_url_empty(self) -> None:
         """An empty board URL short-circuits and returns (0, 0)."""
         runner = _make_runner(_settings(board_url=""))
-        filed, failed = await runner._file_tickets(
+        filed, failed, _routed = await runner._file_tickets(
             [
                 {
                     "title": "T",
@@ -846,7 +848,7 @@ class TestFileTickets:
                 "target_repo": "robotsix-chat",
             },
         ]
-        filed, failed = await runner._file_tickets(
+        filed, failed, _routed = await runner._file_tickets(
             tickets, trigger_type="compaction", session_id="sess-1"
         )
         assert filed == 2
@@ -929,7 +931,7 @@ class TestFileTickets:
         )
         runner = _make_runner()
         with caplog.at_level(logging.WARNING):
-            filed, failed = await runner._file_tickets(
+            filed, failed, _routed = await runner._file_tickets(
                 [
                     {
                         "title": "T",
@@ -944,6 +946,90 @@ class TestFileTickets:
         assert filed == 0
         assert failed == 1
         assert "returned 400" in caplog.text
+
+    @pytest.mark.asyncio
+    async def test_admission_policy_400_routes_to_subsession(
+        self, respx_mock: respx.MockRouter, caplog: pytest.LogCaptureFixture
+    ) -> None:
+        """The board admission-policy 400 routes the finding to a subsession.
+
+        Regression for mill #3093: ``POST /tickets/ingest`` now rejects
+        ``source_tag=robotsix-chat-feedback`` with HTTP 400 and instructs
+        callers to run the investigation as a chat subsession agent.  The
+        runner must recognise this as a policy outcome (routed, not failed)
+        and spawn an investigation subsession with the finding.
+        """
+        # The exact 400 shape mill returns.
+        policy_detail = (
+            "source_tag robotsix-chat-feedback is not admitted on this board: "
+            "mill admits deployment tickets only. Run this investigation as a "
+            "chat subsession agent instead of filing a ticket."
+        )
+        route = respx_mock.post("http://test-board/tickets/ingest").mock(
+            return_value=httpx.Response(400, json={"detail": policy_detail})
+        )
+        spawner = MagicMock(return_value="ss-routed-1")
+        runner = _make_runner(subsession_spawner=spawner)
+        with caplog.at_level(logging.INFO):
+            filed, failed, routed = await runner._file_tickets(
+                [
+                    {
+                        "title": "Add PATCH endpoint to enable "
+                        "delete_branch_on_merge on fleet repos",
+                        "description": "The board should support toggling "
+                        "delete_branch_on_merge via a PATCH endpoint.",
+                        "kind": "code",
+                        "target_repo": "robotsix-chat",
+                    }
+                ],
+                trigger_type="compaction",
+                session_id="sess-abc",
+            )
+        # Policy outcome: routed, never counted as failed.
+        assert filed == 0
+        assert failed == 0
+        assert routed == 1
+        assert route.call_count == 1
+        # The finding was handed to a chat subsession agent.
+        spawner.assert_called_once()
+        _, kwargs = spawner.call_args
+        assert kwargs["owner_session_id"] == "sess-abc"
+        assert "delete_branch_on_merge" in kwargs["title"]
+        assert "robotsix-chat" in kwargs["prompt"]
+        assert "chat subsession agent" in kwargs["prompt"]
+        assert "routing to chat subsession agent" in caplog.text
+
+    @pytest.mark.asyncio
+    async def test_admission_policy_400_no_spawner_drops_finding(
+        self, respx_mock: respx.MockRouter, caplog: pytest.LogCaptureFixture
+    ) -> None:
+        """Without a spawner the policy-blocked finding is dropped, not failed."""
+        policy_detail = (
+            "source_tag robotsix-chat-feedback is not admitted on this board: "
+            "mill admits deployment tickets only. Run this investigation as a "
+            "chat subsession agent instead of filing a ticket."
+        )
+        respx_mock.post("http://test-board/tickets/ingest").mock(
+            return_value=httpx.Response(400, json={"detail": policy_detail})
+        )
+        runner = _make_runner()  # no spawner
+        with caplog.at_level(logging.WARNING):
+            filed, failed, routed = await runner._file_tickets(
+                [
+                    {
+                        "title": "T",
+                        "description": "actionable finding description",
+                        "kind": "code",
+                        "target_repo": "robotsix-chat",
+                    }
+                ],
+                trigger_type="compaction",
+                session_id="s1",
+            )
+        assert filed == 0
+        assert failed == 0
+        assert routed == 1
+        assert "no subsession spawner is configured" in caplog.text
 
     @pytest.mark.asyncio
     async def test_verify_ingested_ticket_404_logs_warning(
@@ -963,7 +1049,7 @@ class TestFileTickets:
         )
         runner = _make_runner()
         with caplog.at_level(logging.WARNING):
-            filed, failed = await runner._file_tickets(
+            filed, failed, _routed = await runner._file_tickets(
                 [
                     {
                         "title": "Ghost ticket",
@@ -999,7 +1085,7 @@ class TestFileTickets:
         )
         runner = _make_runner()
         with caplog.at_level(logging.WARNING):
-            filed, failed = await runner._file_tickets(
+            filed, failed, _routed = await runner._file_tickets(
                 [
                     {
                         "title": "Network flake",
@@ -1026,7 +1112,7 @@ class TestFileTickets:
         )
         runner = _make_runner()
         with caplog.at_level(logging.WARNING):
-            filed, failed = await runner._file_tickets(
+            filed, failed, _routed = await runner._file_tickets(
                 [
                     {
                         "title": "HTML ticket",
@@ -1055,7 +1141,7 @@ class TestFileTickets:
         # ingest_max_retries=0 → a single attempt, no backoff sleep.
         runner = _make_runner(_settings(ingest_max_retries=0))
         with caplog.at_level(logging.ERROR):
-            filed, failed = await runner._file_tickets(
+            filed, failed, _routed = await runner._file_tickets(
                 [
                     {
                         "title": "T",
@@ -1099,7 +1185,7 @@ class TestFileTickets:
             "robotsix_chat.feedback.runner.asyncio.sleep",
             new_callable=AsyncMock,
         ) as sleep_mock:
-            filed, failed = await runner._file_tickets(
+            filed, failed, _routed = await runner._file_tickets(
                 [
                     {
                         "title": "Fix X",
@@ -1154,7 +1240,7 @@ class TestFileTickets:
             ) as sleep_mock,
             caplog.at_level(logging.INFO),
         ):
-            filed, failed = await runner._file_tickets(
+            filed, failed, _routed = await runner._file_tickets(
                 [
                     {
                         "title": "Fix X",
@@ -1183,7 +1269,7 @@ class TestFileTickets:
             return_value=httpx.Response(201)
         )
         runner = _make_runner(_settings())
-        filed, failed = await runner._file_tickets(
+        filed, failed, _routed = await runner._file_tickets(
             [
                 {
                     "title": "Fix mill bug",
@@ -1219,7 +1305,7 @@ class TestFileTickets:
             "robotsix_chat.feedback.runner.start_span",
             return_value=fake_span,
         ):
-            filed, failed = await runner._file_tickets(
+            filed, failed, _routed = await runner._file_tickets(
                 [
                     {
                         "title": "T",
@@ -1258,7 +1344,7 @@ class TestFileTickets:
             "robotsix_chat.feedback.runner.start_span",
             return_value=fake_span,
         ):
-            filed, failed = await runner._file_tickets(
+            filed, failed, _routed = await runner._file_tickets(
                 [
                     {
                         "title": "T",
@@ -1294,7 +1380,7 @@ class TestFileTickets:
             "robotsix_chat.feedback.runner.start_span",
             return_value=fake_span,
         ):
-            filed, failed = await runner._file_tickets(
+            filed, failed, _routed = await runner._file_tickets(
                 [
                     {
                         "title": "T",
@@ -1326,7 +1412,7 @@ class TestFileTickets:
             "kind": "code",
             "target_repo": "robotsix-chat",
         }
-        filed, failed = await runner._file_tickets(
+        filed, failed, _routed = await runner._file_tickets(
             [ticket, ticket],
             trigger_type="compaction",
             session_id="s1",
@@ -1359,7 +1445,7 @@ class TestFileTickets:
                 "target_repo": "robotsix-chat",
             },
         ]
-        filed, failed = await runner._file_tickets(
+        filed, failed, _routed = await runner._file_tickets(
             tickets, trigger_type="compaction", session_id="s1"
         )
         assert filed == 2  # dedup returns True
@@ -1381,7 +1467,7 @@ class TestFileTickets:
             "kind": "code",
             "target_repo": "robotsix-chat",
         }
-        filed, failed = await runner._file_tickets(
+        filed, failed, _routed = await runner._file_tickets(
             [ticket, ticket],
             trigger_type="compaction",
             session_id="s1",
@@ -1671,17 +1757,18 @@ def test_stamp_tags_noop_when_span_is_none() -> None:
 
 
 def test_stamp_outcome_sets_attributes() -> None:
-    """_stamp_outcome sets feedback attributes for filed, failed, and total."""
+    """_stamp_outcome sets feedback attributes for filed, failed, routed, total."""
     fake_span = MagicMock()
     with patch(
         "robotsix_chat.feedback.runner.get_recording_span",
         return_value=fake_span,
     ):
-        FeedbackRunner._stamp_outcome(filed=3, total=5, failed=2)
+        FeedbackRunner._stamp_outcome(filed=3, total=5, failed=2, routed=1)
 
-    assert fake_span.set_attribute.call_count == 3
+    assert fake_span.set_attribute.call_count == 4
     fake_span.set_attribute.assert_any_call("feedback.filed_tickets", 3)
     fake_span.set_attribute.assert_any_call("feedback.failed_tickets", 2)
+    fake_span.set_attribute.assert_any_call("feedback.routed_tickets", 1)
     fake_span.set_attribute.assert_any_call("feedback.total_tickets", 5)
 
 
@@ -1783,7 +1870,7 @@ class TestMaxTicketsPerRun:
             return_value=httpx.Response(201)
         )
         runner = _make_runner(_settings(max_tickets_per_run=3))
-        filed, failed = await runner._file_tickets(
+        filed, failed, _routed = await runner._file_tickets(
             _tickets(9), trigger_type="compaction", session_id="s1"
         )
         assert (filed, failed) == (3, 0)
@@ -1818,7 +1905,7 @@ class TestMaxTicketsPerRun:
         )
         runner = _make_runner(_settings(max_tickets_per_run=3))
         with caplog.at_level(logging.WARNING):
-            filed, _ = await runner._file_tickets(
+            filed, _, _ = await runner._file_tickets(
                 _tickets(2), trigger_type="session_end", session_id="s1"
             )
         assert filed == 2
@@ -1832,7 +1919,7 @@ class TestMaxTicketsPerRun:
             return_value=httpx.Response(201)
         )
         runner = _make_runner(_settings(max_tickets_per_run=0))
-        filed, failed = await runner._file_tickets(
+        filed, failed, _routed = await runner._file_tickets(
             _tickets(4), trigger_type="compaction", session_id="s1"
         )
         assert (filed, failed) == (0, 0)
