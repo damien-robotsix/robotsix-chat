@@ -122,6 +122,7 @@ modules:
       - tests/periodic/__init__.py
       - tests/periodic/test_prompts.py
       - tests/periodic/test_scheduler.py
+      - tests/periodic/test_shipped_presets.py
       - docs/user-guide/periodic-sessions.md
 
   - id: component-client
