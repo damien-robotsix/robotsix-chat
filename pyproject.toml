@@ -136,6 +136,11 @@ robotsix-github-auth = { git = "https://github.com/damien-robotsix/robotsix-gith
 # Force pypdf>=6.15.0 (transitive dep of cognee) to resolve GHSA-fwg2-594c-jp42.
 # Constraint-dependencies avoids making pypdf a direct (deptry-visible) dependency.
 [tool.uv]
+# Pin the uv toolchain so astral-sh/setup-uv resolves the version from this
+# file and never falls back to fetching the "latest" manifest from
+# raw.githubusercontent.com (a transient fetch failure there repeatedly broke
+# the release-please workflow's Set up uv step).
+required-version = "0.12.9"
 constraint-dependencies = [
     "pypdf>=6.15.0",
     "anyio>=4.14.2",
