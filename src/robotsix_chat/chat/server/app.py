@@ -800,6 +800,7 @@ def create_app(
     # Health-check scheduler — created here so it has access to the fully
     # populated app.state, then started during the lifespan async phase.
     _hs = health_settings or HealthSettings()
+    app.state.health_settings = _hs
     if _hs.enabled:
         from robotsix_chat.health import HealthScheduler
 

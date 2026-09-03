@@ -476,7 +476,7 @@
     },
     "HealthSettings": {
       "additionalProperties": false,
-      "description": "Periodic health-check settings.\n\nWhen enabled, a background scheduler runs every *check_interval_seconds*\n(default 300 s / 5 min) and verifies that critical subsystems are\nreachable and producing expected output:\nmemory (cognee recall), knowledge store, feedback runner, and\ndiagnostics store.  Results are exposed via ``GET /health`` and logged.\n\nAttributes:\n    enabled: Master switch.  When ``False``, no health checks run.\n    check_interval_seconds: Seconds between scheduled health-check\n        cycles.  Default ``300`` (5 minutes).",
+      "description": "Periodic health-check settings.\n\nWhen enabled, a background scheduler runs every *check_interval_seconds*\n(default 300 s / 5 min) and verifies that critical subsystems are\nreachable and producing expected output:\nmemory (cognee recall), knowledge store, feedback runner, and\ndiagnostics store.  It also watches the container's cgroup memory\nusage and warns *before* the OOM killer fires.  Results are exposed\nvia ``GET /health`` and logged.\n\nAttributes:\n    enabled: Master switch.  When ``False``, no health checks run.\n    check_interval_seconds: Seconds between scheduled health-check\n        cycles.  Default ``300`` (5 minutes).\n    memory_warn_fraction: Fraction of the container's cgroup memory\n        limit at which the ``container_memory`` check flips to\n        ``WARNING`` (logged as a pre-OOM alert).  Default ``0.85``\n        (85 %).  Must be in ``(0, 1]``.",
       "properties": {
         "enabled": {
           "default": true,
@@ -487,6 +487,13 @@
           "default": 300.0,
           "exclusiveMinimum": 0,
           "title": "Check Interval Seconds",
+          "type": "number"
+        },
+        "memory_warn_fraction": {
+          "default": 0.85,
+          "exclusiveMinimum": 0,
+          "maximum": 1,
+          "title": "Memory Warn Fraction",
           "type": "number"
         }
       },

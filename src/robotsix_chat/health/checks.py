@@ -18,6 +18,104 @@ from robotsix_chat.health.models import CheckResult, CheckSeverity
 
 logger = logging.getLogger(__name__)
 
+# cgroup v2 memory accounting files (present in the deploy container).
+# Module-level so tests can point them at fixtures.
+_MEMORY_CURRENT_PATH = "/sys/fs/cgroup/memory.current"
+_MEMORY_MAX_PATH = "/sys/fs/cgroup/memory.max"
+
+# Fallback warning threshold when no HealthSettings are attached to state.
+_DEFAULT_MEMORY_WARN_FRACTION = 0.85
+
+
+async def check_container_memory(state: Any) -> CheckResult:
+    """Warn *before* the container is OOM-killed by its cgroup limit.
+
+    Reads the cgroup v2 memory accounting files and compares current
+    usage against the container's hard limit.  Flips to ``WARNING`` once
+    usage reaches ``health.memory_warn_fraction`` of the limit (default
+    85 %) so the scheduler logs a pre-OOM alert and the operator is
+    notified *before* the OOM killer fires, not after (incident
+    2026-09-02: chat climbed from ~400 MiB to its 4 GiB limit and was
+    OOM-killed with no prior signal).
+
+    Returns ``OK`` — never raises — when accounting is unavailable
+    (non-cgroup-v2 host) or no hard limit is set (``memory.max=max``).
+    """
+    warn_fraction = _DEFAULT_MEMORY_WARN_FRACTION
+    settings = getattr(state, "health_settings", None)
+    if settings is not None:
+        warn_fraction = getattr(
+            settings, "memory_warn_fraction", _DEFAULT_MEMORY_WARN_FRACTION
+        )
+
+    try:
+        with open(_MEMORY_MAX_PATH, encoding="utf-8") as fh:
+            raw_max = fh.read().strip()
+        with open(_MEMORY_CURRENT_PATH, encoding="utf-8") as fh:
+            raw_current = fh.read().strip()
+    except OSError:
+        return CheckResult(
+            name="container_memory",
+            status=CheckSeverity.OK,
+            message="Container memory accounting unavailable (no cgroup v2)",
+        )
+
+    # "max" means the cgroup imposes no hard limit — nothing to warn about.
+    if raw_max == "max":
+        return CheckResult(
+            name="container_memory",
+            status=CheckSeverity.OK,
+            message="No container memory limit set (cgroup memory.max=max)",
+        )
+
+    try:
+        limit_bytes = int(raw_max)
+        current_bytes = int(raw_current)
+    except ValueError:
+        return CheckResult(
+            name="container_memory",
+            status=CheckSeverity.OK,
+            message="Container memory accounting unreadable",
+        )
+
+    if limit_bytes <= 0:
+        return CheckResult(
+            name="container_memory",
+            status=CheckSeverity.OK,
+            message="Container memory limit is non-positive; skipping check",
+        )
+
+    fraction = current_bytes / limit_bytes
+    current_mib = current_bytes >> 20
+    limit_mib = limit_bytes >> 20
+    details: dict[str, object] = {
+        "current_bytes": current_bytes,
+        "limit_bytes": limit_bytes,
+        "fraction": round(fraction, 4),
+        "warn_fraction": warn_fraction,
+    }
+
+    if fraction >= warn_fraction:
+        return CheckResult(
+            name="container_memory",
+            status=CheckSeverity.WARNING,
+            message=(
+                f"Container memory at {fraction * 100:.1f}% of limit "
+                f"({current_mib} MiB / {limit_mib} MiB) — approaching OOM"
+            ),
+            details=details,
+        )
+
+    return CheckResult(
+        name="container_memory",
+        status=CheckSeverity.OK,
+        message=(
+            f"Container memory at {fraction * 100:.1f}% of limit "
+            f"({current_mib} MiB / {limit_mib} MiB)"
+        ),
+        details=details,
+    )
+
 
 async def check_memory(state: Any) -> CheckResult:
     """Verify the cognee memory backend is not degraded.
@@ -224,6 +322,7 @@ async def check_diagnostics_store(state: Any) -> CheckResult:
 # Ordered list of checks executed in every cycle.  Each entry is
 # ``(check_name, check_fn)`` — the name is for logging / alerting.
 CHECKS: list[tuple[str, Any]] = [
+    ("container_memory", check_container_memory),
     ("memory", check_memory),
     ("knowledge_store", check_knowledge_store),
     ("feedback_runner", check_feedback_runner),

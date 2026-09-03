@@ -70,17 +70,24 @@ class HealthSettings(BaseModel):
     (default 300 s / 5 min) and verifies that critical subsystems are
     reachable and producing expected output:
     memory (cognee recall), knowledge store, feedback runner, and
-    diagnostics store.  Results are exposed via ``GET /health`` and logged.
+    diagnostics store.  It also watches the container's cgroup memory
+    usage and warns *before* the OOM killer fires.  Results are exposed
+    via ``GET /health`` and logged.
 
     Attributes:
         enabled: Master switch.  When ``False``, no health checks run.
         check_interval_seconds: Seconds between scheduled health-check
             cycles.  Default ``300`` (5 minutes).
+        memory_warn_fraction: Fraction of the container's cgroup memory
+            limit at which the ``container_memory`` check flips to
+            ``WARNING`` (logged as a pre-OOM alert).  Default ``0.85``
+            (85 %).  Must be in ``(0, 1]``.
 
     """
 
     enabled: bool = True
     check_interval_seconds: float = Field(default=300.0, gt=0)
+    memory_warn_fraction: float = Field(default=0.85, gt=0, le=1)
     model_config = ConfigDict(extra="forbid")
 
 
