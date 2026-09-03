@@ -11,6 +11,12 @@ from typing import Any, Protocol, runtime_checkable
 # the deploy-lifecycle client.
 RecoverCallback = Callable[[], Awaitable[str]]
 
+# A ``(title, body)`` async callable that escalates a store fault to the user
+# (wired to ``notify_user`` by the server).  Injected into a memory backend so
+# it can surface a fault auto-recovery cannot safely heal without a hard
+# dependency on the notification/EventBus layer.
+NotifyCallback = Callable[[str, str], Awaitable[None]]
+
 
 @runtime_checkable
 class ChatMemory(Protocol):
@@ -64,6 +70,15 @@ class ChatMemory(Protocol):
         """
         ...
 
+    def set_notify_callback(self, callback: NotifyCallback | None) -> None:
+        """Register (or clear) the user-facing escalation callback.
+
+        A backend that detects a fault auto-recovery cannot safely heal uses
+        this to escalate (``notify_user``).  Backends with no escalation path
+        may ignore it.
+        """
+        ...
+
 
 class NullMemory:
     """A :class:`ChatMemory` that stores nothing and recalls nothing.
@@ -96,6 +111,10 @@ class NullMemory:
 
     def set_recovery_callback(self, callback: RecoverCallback | None) -> None:
         """No-op: a null backend has nothing to recover."""
+        return None
+
+    def set_notify_callback(self, callback: NotifyCallback | None) -> None:
+        """No-op: a null backend has nothing to escalate."""
         return None
 
 
@@ -161,4 +180,8 @@ class ReadOnlyMemory:
 
     def set_recovery_callback(self, callback: RecoverCallback | None) -> None:
         """No-op: recovery is driven by the writing (main-chat) agent."""
+        return None
+
+    def set_notify_callback(self, callback: NotifyCallback | None) -> None:
+        """No-op: escalation is driven by the writing (main-chat) agent."""
         return None

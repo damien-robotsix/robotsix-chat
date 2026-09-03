@@ -1588,4 +1588,39 @@ def create_agent_from_settings(
                 settings.lifecycle, settings.central_deploy.url
             ).self_restart
         )
+    # Wire user-facing escalation (notify_user) for the top-level chat agent's
+    # memory so a store fault auto-recovery cannot safely heal (e.g. a
+    # graph-store open segfault whose on-disk copy will not open) surfaces to
+    # the user rather than staying a silent log line.  Same gating as recovery.
+    if (
+        not bare
+        and memory_enabled
+        and subsession_ctx is None
+        and settings.notification.enabled
+        and event_sink is not None
+    ):
+        from robotsix_chat.chat.events import SSE_NOTIFICATION_TYPE
+
+        _notify_sink = event_sink
+        _notify_store = notification_store
+
+        async def _escalate(title: str, body: str) -> None:
+            """Broadcast a high-urgency notification to every connected browser."""
+            frame: dict[str, object] = {
+                "type": SSE_NOTIFICATION_TYPE,
+                "title": title,
+                "body": body,
+                "urgency": "high",
+                "link": "",
+            }
+            if _notify_store is not None:
+                try:
+                    _notify_store.append(title=title, body=body, source_session="")
+                except Exception:
+                    logger.exception(
+                        "failed to persist memory-fault escalation notification"
+                    )
+            _notify_sink.publish_all(frame)
+
+        agent.memory.set_notify_callback(_escalate)
     return agent
