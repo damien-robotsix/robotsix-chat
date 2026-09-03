@@ -2728,10 +2728,14 @@ import {
           }
           renderSessionList({ sessions: sessionsList });
         } else if (frame.type === "notification") {
-          // Push notification from the agent's notify_user tool.
-          // The browser shows a native notification when permission is
-          // granted; silently ignored otherwise (same as the server-side
-          // silent drop when no client is connected).
+          // Push notification from the agent's notify_user tool, broadcast to
+          // every connected browser regardless of which session it views.
+          // Always render an in-app toast so the alert is visible even when
+          // native desktop permission was never granted (Chrome frequently
+          // suppresses the on-load requestPermission with no user gesture).
+          showNotificationToast(frame);
+          // The native desktop notification is an ADDITIONAL channel, shown
+          // only when permission is granted.
           if ("Notification" in window && Notification.permission === "granted") {
             new Notification(frame.title || "Notification", {
               body: frame.body || "",
@@ -3570,6 +3574,67 @@ import {
     if (modelSel) modelSel.addEventListener("change", onModelSelectorChange);
   })();
 
+  // ---- In-app notification toasts --------------------------------------
+  // Every notify_user frame renders a transient, urgency-styled toast in the
+  // corner, independent of the native Notifications API — so an escalation is
+  // always visibly surfaced even when desktop permission was never granted.
+  // The native desktop notification (when permitted) and the unread badge are
+  // additional channels wired alongside this in the /events dispatcher.
+  function ensureToastContainer() {
+    var el = document.getElementById("notification-toasts");
+    if (!el) {
+      el = document.createElement("div");
+      el.id = "notification-toasts";
+      el.className = "notification-toasts";
+      el.setAttribute("aria-live", "polite");
+      el.setAttribute("role", "status");
+      document.body.appendChild(el);
+    }
+    return el;
+  }
+
+  function showNotificationToast(frame) {
+    var container = ensureToastContainer();
+    var urgency = frame.urgency;
+    if (urgency !== "low" && urgency !== "high") urgency = "default";
+
+    var toast = document.createElement("div");
+    toast.className = "notification-toast notification-toast-" + urgency;
+
+    var title = document.createElement("div");
+    title.className = "notification-toast-title";
+    title.textContent = frame.title || "Notification";
+    toast.appendChild(title);
+
+    if (frame.body) {
+      var body = document.createElement("div");
+      body.className = "notification-toast-body";
+      body.textContent = frame.body;
+      toast.appendChild(body);
+    }
+
+    if (frame.link) {
+      var link = document.createElement("a");
+      link.className = "notification-toast-link";
+      link.href = frame.link;
+      link.textContent = frame.link;
+      link.target = "_blank";
+      link.rel = "noopener noreferrer";
+      toast.appendChild(link);
+    }
+
+    // Click to dismiss; high-urgency toasts persist until dismissed, others
+    // auto-dismiss after a short delay.
+    function dismiss() {
+      if (toast.parentNode) toast.parentNode.removeChild(toast);
+    }
+    toast.addEventListener("click", dismiss);
+    container.appendChild(toast);
+    if (urgency !== "high") {
+      setTimeout(dismiss, 8000);
+    }
+  }
+
   // ---- Missed-notification badge + panel -------------------------------
   // Store-and-forward: notify_user notifications are persisted server-side
   // and replayed over /events on connect. The badge surfaces the count of
@@ -3697,12 +3762,20 @@ import {
     notificationsDismiss.addEventListener("click", closeNotificationsPanel);
   }
 
-  // Request browser notification permission early so the agent's
-  // notify_user tool can push native alerts.  Silently ignored when the
-  // browser does not support the Notifications API or when permission
-  // was previously denied.
+  // Request browser notification permission on the FIRST user gesture, not on
+  // load: Chrome frequently suppresses a requestPermission() that fires
+  // without a user gesture, leaving permission stuck at "default" forever.
+  // Binding to the first click satisfies the gesture requirement. In-app
+  // toasts render regardless of this permission, so a denied/ignored prompt
+  // never silences notifications — the native alert is just an extra channel.
   if ("Notification" in window && Notification.permission === "default") {
-    Notification.requestPermission();
+    var requestNotifyPermissionOnce = function () {
+      document.removeEventListener("click", requestNotifyPermissionOnce);
+      if (Notification.permission === "default") {
+        try { Notification.requestPermission(); } catch (_) {}
+      }
+    };
+    document.addEventListener("click", requestNotifyPermissionOnce);
   }
 
   // Bootstrap: fetch sessions, pick the active one, then load history/events.

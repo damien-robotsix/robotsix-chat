@@ -375,6 +375,9 @@ class _RecordingEventSink:
     def publish(self, session_id: str, frame: dict[str, object]) -> None:
         self.published.append((session_id, frame))
 
+    def publish_all(self, frame: dict[str, object]) -> None:
+        self.published.append(("*", frame))
+
 
 def _patched_create_model_with_activity(
     output: str = "hi there",

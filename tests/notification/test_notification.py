@@ -32,15 +32,27 @@ def _settings(**kw: Any) -> NotificationSettings:
 
 
 class SpySink:
-    """An :class:`EventSink` spy that records every published frame."""
+    """An :class:`EventSink` spy that records every published frame.
+
+    ``calls`` captures session-scoped :meth:`publish` frames; ``broadcasts``
+    captures session-agnostic :meth:`publish_all` frames (the path
+    ``notify_user`` uses).  A spy exposes no ``total_subscriber_count`` so
+    notifications persist undelivered, mirroring a live drop when nothing is
+    connected.
+    """
 
     def __init__(self) -> None:
-        """Initialize the spy with an empty call log."""
+        """Initialize the spy with empty call logs."""
         self.calls: list[tuple[str, dict[str, object]]] = []
+        self.broadcasts: list[dict[str, object]] = []
 
     def publish(self, session_id: str, frame: dict[str, object]) -> None:
         """Record the published frame along with the session id."""
         self.calls.append((session_id, dict(frame)))
+
+    def publish_all(self, frame: dict[str, object]) -> None:
+        """Record a broadcast frame (delivered to every connected client)."""
+        self.broadcasts.append(dict(frame))
 
 
 # ---------------------------------------------------------------------------
@@ -96,9 +108,8 @@ async def test_notify_user_success() -> None:
     result = await tools[0](title="Test", body="Test body")
 
     assert result == "Notification sent."
-    assert len(spy.calls) == 1
-    sid, frame = spy.calls[0]
-    assert sid == session_id
+    assert len(spy.broadcasts) == 1
+    frame = spy.broadcasts[0]
     assert frame["type"] == SSE_NOTIFICATION_TYPE
     assert frame["title"] == "Test"
     assert frame["body"] == "Test body"
@@ -120,8 +131,8 @@ async def test_notify_user_with_link() -> None:
         link="https://github.com/org/repo/pull/42",
     )
 
-    assert len(spy.calls) == 1
-    _, frame = spy.calls[0]
+    assert len(spy.broadcasts) == 1
+    frame = spy.broadcasts[0]
     assert frame["link"] == "https://github.com/org/repo/pull/42"
     assert frame["type"] == SSE_NOTIFICATION_TYPE
     assert frame["title"] == "PR merged"
@@ -135,7 +146,7 @@ async def test_notify_user_urgency_high() -> None:
     tools = build_notification_tools(_settings(), event_sink=spy, session_id="s")
     await tools[0](title="Urgent", body="Something needs attention", urgency="high")
 
-    _, frame = spy.calls[0]
+    frame = spy.broadcasts[0]
     assert frame["urgency"] == "high"
 
 
@@ -147,7 +158,7 @@ async def test_notify_user_urgency_low() -> None:
     tools = build_notification_tools(_settings(), event_sink=spy, session_id="s")
     await tools[0](title="Routine", body="Routine check completed", urgency="low")
 
-    _, frame = spy.calls[0]
+    frame = spy.broadcasts[0]
     assert frame["urgency"] == "low"
 
 
@@ -163,7 +174,7 @@ async def test_notify_user_invalid_urgency_falls_back() -> None:
         urgency="critical",  # invalid — should fall back
     )
 
-    _, frame = spy.calls[0]
+    frame = spy.broadcasts[0]
     assert frame["urgency"] == "default"
 
 
@@ -173,8 +184,8 @@ async def test_notify_user_invalid_urgency_falls_back() -> None:
 
 
 @pytest.mark.asyncio
-async def test_notify_user_publishes_to_correct_session() -> None:
-    """The frame is published to the correct session_id."""
+async def test_notify_user_broadcasts_regardless_of_source_session() -> None:
+    """Each notify_user call broadcasts its frame (not scoped to a session)."""
     spy = SpySink()
 
     tools_a = build_notification_tools(_settings(), event_sink=spy, session_id="a")
@@ -183,13 +194,11 @@ async def test_notify_user_publishes_to_correct_session() -> None:
     await tools_a[0](title="For A", body="msg")
     await tools_b[0](title="For B", body="msg")
 
-    assert len(spy.calls) == 2
-    sid_a, frame_a = spy.calls[0]
-    sid_b, frame_b = spy.calls[1]
-    assert sid_a == "a"
-    assert frame_a["title"] == "For A"
-    assert sid_b == "b"
-    assert frame_b["title"] == "For B"
+    # Broadcast path is used — never the session-scoped publish.
+    assert spy.calls == []
+    assert len(spy.broadcasts) == 2
+    assert spy.broadcasts[0]["title"] == "For A"
+    assert spy.broadcasts[1]["title"] == "For B"
 
 
 @pytest.mark.asyncio
@@ -223,6 +232,33 @@ async def test_notify_user_eventbus_delivers_to_subscriber() -> None:
     assert frame["body"] == "World"
     assert frame["urgency"] == "high"
     assert frame["link"] == "/ticket/1"
+
+
+@pytest.mark.asyncio
+async def test_notify_user_from_periodic_session_reaches_other_session() -> None:
+    """A periodic-session notify_user reaches a browser on a DIFFERENT session.
+
+    This mirrors the real bug: escalations fire from a background/periodic
+    session id nobody watches, while the browser is subscribed only to the
+    session it currently views.  Session-scoped delivery dropped these
+    silently; the broadcast path must reach the connected client.
+    """
+    bus = EventBus()
+
+    # The browser is viewing session "user-visible"; the escalation fires
+    # from the "periodic-board-drain" session the UI never subscribes to.
+    viewer_queue = bus.subscribe("user-visible")
+
+    tools = build_notification_tools(
+        _settings(), event_sink=bus, session_id="periodic-board-drain"
+    )
+    result = await tools[0](title="Escalation", body="Decision needed", urgency="high")
+
+    assert result == "Notification sent."
+    frame = viewer_queue.get_nowait()
+    assert frame["type"] == SSE_NOTIFICATION_TYPE
+    assert frame["title"] == "Escalation"
+    assert frame["urgency"] == "high"
 
 
 @pytest.mark.asyncio
@@ -342,8 +378,8 @@ async def test_notify_user_persist_failure_does_not_break_publish(
     result = await tools[0](title="Test", body="Body")
 
     assert result == "Notification sent."
-    assert len(spy.calls) == 1
-    _, frame = spy.calls[0]
+    assert len(spy.broadcasts) == 1
+    frame = spy.broadcasts[0]
     assert frame["type"] == SSE_NOTIFICATION_TYPE
     assert frame["title"] == "Test"
 
@@ -356,7 +392,7 @@ async def test_notify_user_empty_link_omitted() -> None:
     tools = build_notification_tools(_settings(), event_sink=spy, session_id="s")
     await tools[0](title="T", body="B")
 
-    _, frame = spy.calls[0]
+    frame = spy.broadcasts[0]
     assert frame["link"] == ""
     assert "link" in frame  # always present, even when empty
 
