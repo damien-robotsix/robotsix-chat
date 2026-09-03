@@ -8,13 +8,15 @@
     "docs/user-guide/deployment.md": "End-to-end deploy guide. 'Compacted sessions and the missing-summary flag' subsection (inside 'Conversation history across restarts') carries JSON examples for flag present/absent. Sections numbered (## 8. Updating, ## 9. Mobile SSO with 9.x subsections); ordered-list rule uses '1.' for all items.",
     "docs/api/": "mkdocstrings stubs only (robotsix_chat.md, mobile-sso.md) — NOT prose docs for /history. mobile-sso.md documents the mobile SSO auth API.",
     "docs/chat/server.md": "mkdocstrings stub for robotsix_chat.chat.server.",
+    "docs/user-guide/settings-ui.md": "UI settings panel. 'Editing periodic-session presets' section: the UI preset editor exposes EXACTLY FIVE fields (name, initial_prompt, schedule_interval_seconds, model_level, enabled) — it does NOT render/edit anchor_utc, and savePresetForm replaces the whole preset object (so an anchor_utc would be dropped if a preset were edited via UI). Reference line points to periodic-sessions.md for the full key reference.",
     "README.md": "No vision/image docs."
   },
   "conventions": {
-    "config_key_docs": "New config keys documented in 4 places: (1) config/config.json (committed default template), (2) config/config.schema.json (auto-regenerated from Settings pydantic model, CI-checked), (3) docs/configuration.md Settings-reference table row, (4) src/robotsix_chat/config/settings.py (class docstring + Field description).",
+    "config_key_docs": "New config keys documented in 4 places: (1) config/config.json (committed default template, periodic.sessions is an EMPTY array placeholder), (2) config/config.schema.json (schema for periodic nested models like PeriodicSessionDefinition; generated externally via robotsix_config CLI, not in-repo), (3) docs/configuration.md Settings-reference table row, (4) src/robotsix_chat/config/settings.py (class docstring + Field description). Nested-model keys (e.g. anchor_utc on PeriodicSessionDefinition) are documented in the schema description + config/periodic_models.py Field description + docs prose, not settings.py.",
     "secrets": "JSON Schema type string with writeOnly:true = SecretStr (never logged, redacted in trace output).",
     "changelog": "CHANGELOG.md and docs/changelog.md are release-please auto-generated; no manual edits.",
     "ordered_lists": "Use '1.' for every ordered-list item in docs/ (mdformat --number pre-commit flattens sequential 2., 3. back to 1.). Avoid sequential numeric lists.",
+    "periodic_anchor_utc": "periodic preset anchor_utc (ISO 8601 UTC instant) anchors the schedule: fires at the anchor and every schedule_interval_seconds thereafter; legacy unanchored cadence is first-run-promptly-then-spaced. Normalised to explicit UTC in periodic_models.py field_validator (naive=UTC, offsets converted). Serialised to ISO string in periodic_definitions_list_endpoint (JSONResponse has no datetime encoder). Docs: docs/configuration.md table row + docs/user-guide/periodic-sessions.md bullet.",
     "history_schema": "No OpenAPI/Swagger spec file exists in this repo. The authoritative /history response schema lives in the history_endpoint docstring in src/robotsix_chat/chat/server/routes/sessions.py, backed by prose in docs/architecture.md, docs/user-guide/deployment.md, and docs/user-guide/chat-interface.md. No compaction runbook/wiki exists (only an unrelated mobile-SSO runbook)."
   },
   "image_vision": {
@@ -24,5 +26,8 @@
   "history_compaction": {
     "flag_semantics": "compacted_summary_missing:true appears EXACTLY when compacted_turn_index>0 but no usable compacted_summary (never persisted or empty). Never-compacted sessions return only 'turns'. Implemented in src/robotsix_chat/chat/server/routes/sessions.py history_endpoint. Schema lives in the endpoint docstring (no OpenAPI file).",
     "docs_locations": "history_endpoint docstring (sessions.py, schema+examples), docs/architecture.md (Other Endpoints table), docs/user-guide/deployment.md (JSON examples present/absent), docs/user-guide/chat-interface.md (client-handling patterns: summary card+toggle; graceful degradation / banner on missing flag; must not render empty summary card)."
+  },
+  "periodic_docs": {
+    "anchor_utc_locations": "PeriodicSessionDefinition.anchor_utc. Docs already updated: config/config.schema.json (schema + description), docs/configuration.md (Settings-reference table row + example), docs/user-guide/periodic-sessions.md (key bullet + calendar-agenda example + endpoint prose). settings-ui.md intentionally unchanged (UI does not edit anchor_utc). Code: src/robotsix_chat/config/periodic_models.py (model+validator), src/robotsix_chat/periodic/scheduler.py (_next_run), src/robotsix_chat/chat/server/routes/sessions.py (ISO serialisation)."
   }
 }
