@@ -623,9 +623,8 @@ def _cognee_db_table_stats(db_path: Path) -> tuple[dict[str, int], dict[str, int
             if name in existing:
                 # ``name`` is drawn only from the hardcoded
                 # COGNEE_DB_METRIC_TABLES constant — never user input.
-                rows[name] = int(
-                    conn.execute(f"SELECT count(*) FROM {name}").fetchone()[0]  # noqa: S608
-                )
+                count_sql = f"SELECT count(*) FROM {name}"  # noqa: S608  # nosec B608
+                rows[name] = int(conn.execute(count_sql).fetchone()[0])
         try:
             for name, pgsize in conn.execute(
                 "SELECT name, SUM(pgsize) FROM dbstat GROUP BY name"
