@@ -26,12 +26,16 @@ from robotsix_chat.config import (
 from robotsix_chat.memory import maintenance as maintenance_module
 from robotsix_chat.memory.cognee import CogneeMemory
 from robotsix_chat.memory.maintenance import (
+    COGNEE_DB_METRIC_TABLES,
     COGNEE_DB_RELATIVE_PATH,
     LANCEDB_RELATIVE_PATH,
     CogneeDbVacuumResult,
     CogneeDbVacuumScheduler,
     LanceDbMaintenanceScheduler,
+    StoreMetrics,
+    StoreMetricsScheduler,
     TableMaintenanceResult,
+    emit_store_metrics,
     optimize_lancedb_store,
     vacuum_cognee_db,
 )
@@ -898,3 +902,175 @@ async def test_vacuum_write_succeeds_immediately_after_pass(tmp_path: Path) -> N
             return "written"
 
     assert await asyncio.wait_for(_write(), timeout=1.0) == "written"
+
+
+# ---------------------------------------------------------------------------
+# consolidated store-size metrics
+# ---------------------------------------------------------------------------
+
+
+def _make_store_layout(
+    data_dir: Path,
+    *,
+    with_lancedb: bool = True,
+) -> None:
+    """Build a minimal cognee store tree under ``<data_dir>/system/databases``.
+
+    Creates a cognee_db SQLite file with the three metric tables, a stand-in
+    ladybug graph file, and (optionally) a LanceDB-shaped table directory with
+    one fragment data file and one deletion file.
+    """
+    import sqlite3
+
+    databases = data_dir / "system" / "databases"
+    databases.mkdir(parents=True, exist_ok=True)
+
+    db = databases / "cognee_db"
+    conn = sqlite3.connect(str(db))
+    try:
+        for table in COGNEE_DB_METRIC_TABLES:
+            conn.execute(f"CREATE TABLE {table} (id INTEGER PRIMARY KEY, payload TEXT)")
+            conn.executemany(
+                f"INSERT INTO {table} (payload) VALUES (?)",  # noqa: S608
+                [(f"{table}-{i}",) for i in range(5)],
+            )
+        conn.commit()
+    finally:
+        conn.close()
+
+    (databases / "cognee_graph_ladybug").write_bytes(b"x" * 4096)
+    (databases / "cognee_graph_ladybug.wal").write_bytes(b"y" * 256)
+
+    if with_lancedb:
+        table_dir = databases / "cognee.lancedb" / "Entity.lance"
+        (table_dir / "data").mkdir(parents=True)
+        (table_dir / "data" / "frag-1.lance").write_bytes(b"z" * 2048)
+        (table_dir / "_deletions").mkdir(parents=True)
+        (table_dir / "_deletions" / "del-1.arrow").write_bytes(b"d" * 128)
+
+
+def test_emit_store_metrics_collects_all_dimensions(tmp_path: Path) -> None:
+    """emit_store_metrics reports cognee_db, graph and LanceDB sizes/counts."""
+    _make_store_layout(tmp_path)
+
+    metrics = emit_store_metrics(tmp_path, graph_nodes=7, graph_edges=11)
+
+    assert isinstance(metrics, StoreMetrics)
+    assert metrics.error is None
+    assert metrics.cognee_db_size > 0
+    # Per-table row counts for the three named bookkeeping tables.
+    assert set(metrics.table_rows) == set(COGNEE_DB_METRIC_TABLES)
+    assert all(count == 5 for count in metrics.table_rows.values())
+    # Graph store size (main file + wal) and injected node/edge counts.
+    assert metrics.graph_size >= 4096 + 256
+    assert metrics.graph_nodes == 7
+    assert metrics.graph_edges == 11
+    # LanceDB total size plus fragment/deletion file counts.
+    assert metrics.lancedb_size >= 2048 + 128
+    assert metrics.lancedb_fragments == 1
+    assert metrics.lancedb_deletion_files == 1
+
+
+def test_emit_store_metrics_handles_missing_stores(tmp_path: Path) -> None:
+    """A wholly-empty data_dir yields zeros and no error (never raises)."""
+    metrics = emit_store_metrics(tmp_path)
+
+    assert metrics.error is None
+    assert metrics.cognee_db_size == 0
+    assert metrics.table_rows == {}
+    assert metrics.graph_size == 0
+    assert metrics.graph_nodes is None
+    assert metrics.graph_edges is None
+    assert metrics.lancedb_size == 0
+    assert metrics.lancedb_fragments == 0
+    assert metrics.lancedb_deletion_files == 0
+
+
+@pytest.mark.asyncio
+async def test_store_metrics_scheduler_uses_graph_provider(tmp_path: Path) -> None:
+    """run_once folds the async graph-stats provider into the emitted metrics."""
+    _make_store_layout(tmp_path)
+
+    async def _provider() -> tuple[int, int] | None:
+        return (3, 9)
+
+    sched = StoreMetricsScheduler(
+        data_dir=tmp_path,
+        interval_seconds=3600,
+        graph_stats_provider=_provider,
+    )
+    metrics = await sched.run_once()
+
+    assert metrics.graph_nodes == 3
+    assert metrics.graph_edges == 9
+    assert metrics.cognee_db_size > 0
+
+
+@pytest.mark.asyncio
+async def test_store_metrics_scheduler_survives_provider_error(tmp_path: Path) -> None:
+    """A failing graph provider degrades counts to None, never raises."""
+    _make_store_layout(tmp_path)
+
+    async def _boom() -> tuple[int, int] | None:
+        raise RuntimeError("graph engine unavailable")
+
+    sched = StoreMetricsScheduler(
+        data_dir=tmp_path,
+        interval_seconds=3600,
+        graph_stats_provider=_boom,
+    )
+    metrics = await sched.run_once()
+
+    assert metrics.graph_nodes is None
+    assert metrics.graph_edges is None
+    assert metrics.error is None
+
+
+@pytest.mark.asyncio
+async def test_store_metrics_scheduler_start_idempotent_and_stop(
+    tmp_path: Path,
+) -> None:
+    """Start launches one task; a second start is a no-op; stop cancels it."""
+    sched = StoreMetricsScheduler(data_dir=tmp_path, interval_seconds=3600)
+    sched.start()
+    first = sched._task
+    sched.start()
+    assert sched._task is first
+    await sched.stop()
+    assert sched._task is None
+
+
+@pytest.mark.asyncio
+async def test_cognee_start_maintenance_starts_metrics_scheduler(
+    tmp_path: Path,
+) -> None:
+    """CogneeMemory wires the metrics scheduler to its resolved data_dir."""
+    mem = CogneeMemory(_enabled_memory_settings(str(tmp_path)))
+    mem.start_maintenance()
+    try:
+        sched = mem._metrics
+        assert sched is not None
+        assert sched.data_dir == tmp_path.resolve()
+        assert sched.interval_seconds == 21600.0
+        assert sched._graph_stats_provider == mem._graph_stats
+    finally:
+        await mem.stop_maintenance()
+    assert mem._metrics is None
+
+
+@pytest.mark.asyncio
+async def test_cognee_start_maintenance_metrics_noop_when_disabled(
+    tmp_path: Path,
+) -> None:
+    """No metrics scheduler is created when metrics emission is disabled."""
+    mem = CogneeMemory(
+        _enabled_memory_settings(str(tmp_path), maintenance_metrics_enabled=False)
+    )
+    mem.start_maintenance()
+    try:
+        assert mem._metrics is None
+        # The other schedulers keep their independent toggles.
+        assert mem._maintenance is not None
+        assert mem._vacuum is not None
+    finally:
+        await mem.stop_maintenance()

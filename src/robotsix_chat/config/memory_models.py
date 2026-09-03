@@ -239,6 +239,16 @@ class MemorySettings(BaseModel):
             (inclusive start, exclusive end) during which the vacuum pass may
             run — e.g. ``[2, 6]`` means 02:00-06:00 UTC.  ``null`` disables
             the window (run any time).  Default ``[2, 6]``.
+        maintenance_metrics_enabled: When ``True`` (default), a read-only
+            background task periodically logs a consolidated store-size
+            snapshot — the cognee_db file size and per-table
+            (``pipeline_runs``/``results``/``queries``) row counts and sizes,
+            the graph store size and node/edge counts, and the LanceDB total
+            size plus fragment/deletion file counts — so store growth can be
+            trended and alarmed from one line.  It mutates nothing and never
+            takes the write lock.
+        maintenance_metrics_interval_seconds: Seconds between store-metrics
+            emissions.  Default ``21600.0`` (6 h).
         llm: Extraction-LLM config (graph building / consolidation).
         embedding: Embedding-server config (semantic search).
         langfuse_project: Name of the Langfuse project cognee's own LLM
@@ -279,6 +289,8 @@ class MemorySettings(BaseModel):
     maintenance_vacuum_off_peak_window: list[int] | None = Field(
         default_factory=lambda: [2, 6]
     )
+    maintenance_metrics_enabled: bool = True
+    maintenance_metrics_interval_seconds: float = 21600.0
     llm: MemoryLlmSettings = Field(default_factory=MemoryLlmSettings)
     embedding: MemoryEmbeddingSettings = Field(default_factory=MemoryEmbeddingSettings)
     langfuse_project: str = PROJECT_MEMORY
