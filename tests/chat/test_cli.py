@@ -287,6 +287,7 @@ class TestRunServer:
             continuation_store=None,
             evergoing_settings=None,
             notification_store=None,
+            notification_store_and_forward=True,
         )
 
 

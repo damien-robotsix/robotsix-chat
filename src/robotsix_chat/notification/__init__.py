@@ -161,7 +161,7 @@ def build_notification_tools(
         # between this check and the publish below, so the subscriber count
         # cannot change mid-call.
         delivered = _has_active_subscribers(event_sink, session_id)
-        if store is not None:
+        if store is not None and settings.store_and_forward:
             try:
                 record = store.append(title=title, body=body, source_session=session_id)
                 if delivered:

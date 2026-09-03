@@ -962,11 +962,16 @@
     },
     "NotificationSettings": {
       "additionalProperties": false,
-      "description": "Browser notification settings \u2014 lets the agent alert the user proactively.\n\nWhen enabled, the agent gains a ``notify_user`` tool that publishes a\nnotification event to connected clients over the existing SSE channel\n(EventBus).  The user's browser renders the event via the native\nNotifications API.\n\nDelivery only reaches clients that are currently connected \u2014 the\nnotification is silently dropped when no browser is listening.\n\nAttributes:\n    enabled: Master switch.  When ``False``, no notify_user tool is\n        offered.\n    store_path: Path to the JSON persistence file for notifications\n        that were not delivered to a connected browser.  Must be on a\n        persistent volume (chat-data ``/data``) so undelivered\n        notifications survive container recreation and can be replayed\n        when a browser next connects.",
+      "description": "Browser notification settings \u2014 lets the agent alert the user proactively.\n\nWhen enabled, the agent gains a ``notify_user`` tool that publishes a\nnotification event to connected clients over the existing SSE channel\n(EventBus).  The user's browser renders the event via the native\nNotifications API.\n\nDelivery only reaches clients that are currently connected \u2014 the\nnotification is silently dropped when no browser is listening.\n\nAttributes:\n    enabled: Master switch.  When ``False``, no notify_user tool is\n        offered.\n    store_and_forward: Feature flag for the persistent store-and-forward\n        path.  When ``True`` (default), undelivered notifications are\n        persisted to ``store_path`` and replayed to the next connecting\n        browser, and the ``/notifications`` API endpoints serve them.\n        Set ``False`` as an emergency kill-switch: ``notify_user`` then\n        publishes live SSE frames only (never persists) and the\n        ``/notifications/unread`` and ``/notifications/read`` endpoints\n        return empty responses.  The live SSE contract is unchanged\n        either way.\n    store_path: Path to the JSON persistence file for notifications\n        that were not delivered to a connected browser.  Must be on a\n        persistent volume (chat-data ``/data``) so undelivered\n        notifications survive container recreation and can be replayed\n        when a browser next connects.",
       "properties": {
         "enabled": {
           "default": true,
           "title": "Enabled",
+          "type": "boolean"
+        },
+        "store_and_forward": {
+          "default": true,
+          "title": "Store And Forward",
           "type": "boolean"
         },
         "store_path": {
