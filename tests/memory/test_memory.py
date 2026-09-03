@@ -957,6 +957,51 @@ async def test_configure_restores_langfuse_env(
     assert os.environ["LANGFUSE_SECRET_KEY"] == "sk-keep"  # pragma: allowlist secret
 
 
+@pytest.mark.asyncio
+async def test_configure_caps_cognify_worker_env(
+    monkeypatch: pytest.MonkeyPatch, tmp_path: Any
+) -> None:
+    """``cognify_max_workers`` bounds the dlt ingestion spawn-worker fan-out.
+
+    Regression guard for the 2026-09-03 OOM: a large cognify backlog spread
+    across several multi-GB dlt normalize workers. The cap is applied as the
+    per-stage dlt worker-count env vars before cognee import.
+    """
+    import os
+
+    for var in ("EXTRACT__WORKERS", "NORMALIZE__WORKERS", "LOAD__WORKERS"):
+        monkeypatch.delenv(var, raising=False)
+    _install_fake_cognee(monkeypatch)
+    settings = _enabled_settings(str(tmp_path / "cognee")).model_copy(
+        update={"cognify_max_workers": 2}
+    )
+    mem = CogneeMemory(settings)
+    await mem.setup()
+    assert os.environ["EXTRACT__WORKERS"] == "2"
+    assert os.environ["NORMALIZE__WORKERS"] == "2"
+    assert os.environ["LOAD__WORKERS"] == "2"
+
+
+@pytest.mark.asyncio
+async def test_configure_cognify_worker_env_respects_operator_override(
+    monkeypatch: pytest.MonkeyPatch, tmp_path: Any
+) -> None:
+    """An operator-set dlt worker env var wins over the config default."""
+    import os
+
+    monkeypatch.setenv("NORMALIZE__WORKERS", "4")
+    monkeypatch.delenv("EXTRACT__WORKERS", raising=False)
+    monkeypatch.delenv("LOAD__WORKERS", raising=False)
+    _install_fake_cognee(monkeypatch)
+    mem = CogneeMemory(_enabled_settings(str(tmp_path / "cognee")))
+    await mem.setup()
+    # setdefault must not clobber the pre-existing operator override.
+    assert os.environ["NORMALIZE__WORKERS"] == "4"
+    # Unset stages still get the config-derived default (1).
+    assert os.environ["EXTRACT__WORKERS"] == "1"
+    assert os.environ["LOAD__WORKERS"] == "1"
+
+
 # ---------------------------------------------------------------------------
 # litellm Langfuse callback (dedicated cognee creds)
 # ---------------------------------------------------------------------------
