@@ -9,5 +9,6 @@ satisfies the chat server's ``ChatAgent`` protocol with a simple
 from __future__ import annotations
 
 from .agent import LlmioChatAgent
+from .vision import generate_caption
 
-__all__ = ["LlmioChatAgent"]
+__all__ = ["LlmioChatAgent", "generate_caption"]

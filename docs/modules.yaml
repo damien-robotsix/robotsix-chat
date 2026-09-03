@@ -363,6 +363,7 @@ modules:
       - src/robotsix_chat/llm/capabilities.py
       - src/robotsix_chat/llm/escalation.py
       - src/robotsix_chat/llm/tool_utils.py
+      - src/robotsix_chat/llm/vision.py
       - docs/llm/agent.md
       - tests/llm/__init__.py
       - tests/llm/test_agent.py
@@ -370,6 +371,7 @@ modules:
       - tests/llm/test_escalation.py
       - tests/llm/test_tool_utils.py
       - tests/llm/test_agent_fallback_chain.py
+      - tests/llm/test_vision.py
 
   - id: memory
     description: "Long-term memory backend — Cognee-based persistent storage for cross-conversation continuity."
