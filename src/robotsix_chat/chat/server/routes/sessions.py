@@ -424,9 +424,10 @@ async def periodic_definitions_list_endpoint(request: Request) -> JSONResponse:
         {
           "definitions": [
             {
-              "name": "mail-triage",
+              "name": "calendar-agenda",
               "initial_prompt": "...",
               "schedule_interval_seconds": 86400.0,
+              "anchor_utc": "2026-09-03T06:00:00+00:00",
               "model_level": null,
               "enabled": true,
               "last_fired_at": 1756725600.0,
@@ -454,6 +455,12 @@ async def periodic_definitions_list_endpoint(request: Request) -> JSONResponse:
                 "name": defn.name,
                 "initial_prompt": defn.initial_prompt,
                 "schedule_interval_seconds": defn.schedule_interval_seconds,
+                # Serialise to an ISO 8601 string: the raw datetime is not
+                # JSON-serialisable, and the string matches what the operator
+                # configured (``JSONResponse`` has no datetime encoder).
+                "anchor_utc": (
+                    defn.anchor_utc.isoformat() if defn.anchor_utc is not None else None
+                ),
                 "model_level": defn.model_level,
                 "enabled": defn.enabled,
                 "last_fired_at": state.get("last_fired_at"),

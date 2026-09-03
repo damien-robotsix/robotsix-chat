@@ -11,6 +11,7 @@ from __future__ import annotations
 
 import asyncio
 import json
+from datetime import UTC, datetime
 
 import pytest
 
@@ -174,3 +175,128 @@ async def test_submit_failure_is_contained(tmp_path):
     # The failed run is recorded; a later fire proceeds normally.
     assert scheduler.state_for("p")["runs"] == 1
     assert await scheduler.fire("p") == "sess-2"
+
+
+def _anchored_daily_def(
+    anchor: datetime, name: str = "daily"
+) -> PeriodicSessionDefinition:
+    return PeriodicSessionDefinition(
+        name=name,
+        initial_prompt="Produce today's calendar agenda.",
+        schedule_interval_seconds=86400,
+        anchor_utc=anchor,
+    )
+
+
+@pytest.mark.asyncio
+async def test_anchored_preset_fires_at_anchor_not_before(tmp_path):
+    """An anchored preset is quiet before its anchor and fires at the anchor."""
+    anchor = datetime(2026, 9, 3, 6, 0, 0, tzinfo=UTC)
+    anchor_ts = anchor.timestamp()
+    scheduler, store, _, now = _make(
+        tmp_path, definitions=[_anchored_daily_def(anchor)]
+    )
+
+    # One hour before the anchor — not due (no end-of-day/registration fire).
+    now["t"] = anchor_ts - 3600
+    await scheduler.tick()
+    assert store.created == []
+
+    # Exactly at the anchor — due.
+    now["t"] = anchor_ts
+    await scheduler.tick()
+    assert store.created == ["sess-1"]
+    assert scheduler.state_for("daily")["runs"] == 1
+
+
+@pytest.mark.asyncio
+async def test_anchored_preset_fires_at_anchor_time_of_day_every_utc_day(tmp_path):
+    """Anchored daily preset fires once per UTC day at the anchor's time-of-day.
+
+    Over a 7-day window every fire lands at the anchor's UTC time-of-day and
+    no run lands at or after end of day.
+    """
+    anchor = datetime(2026, 9, 3, 6, 0, 0, tzinfo=UTC)
+    anchor_ts = anchor.timestamp()
+    scheduler, store, _, now = _make(
+        tmp_path, definitions=[_anchored_daily_def(anchor)]
+    )
+
+    # Fire day 0 at the anchor.
+    now["t"] = anchor_ts
+    await scheduler.tick()
+    await asyncio.sleep(0)  # let the seeded turn complete so the next fire isn't "busy"
+    assert store.created == ["sess-1"]
+
+    for day in range(1, 7):
+        # At the anchor's time-of-day on each subsequent UTC day: due.
+        now["t"] = anchor_ts + day * 86400
+        await scheduler.tick()
+        await asyncio.sleep(0)
+        assert len(store.created) == day + 1
+
+    # Mid-day is never a fire time — no run lands at or after end of day.
+    now["t"] = anchor_ts + 6 * 86400 + 12 * 3600
+    await scheduler.tick()
+    assert len(store.created) == 7
+
+
+@pytest.mark.asyncio
+async def test_anchored_preset_whose_anchor_passed_waits_for_next_occurrence(
+    tmp_path,
+):
+    """A preset registered after its anchor waits for the next occurrence.
+
+    It does not fire immediately off the cadence — the first run is the next
+    occurrence on/after now.
+    """
+    anchor = datetime(2026, 9, 3, 6, 0, 0, tzinfo=UTC)
+    anchor_ts = anchor.timestamp()
+    scheduler, store, _, now = _make(
+        tmp_path, definitions=[_anchored_daily_def(anchor)]
+    )
+
+    # Registered an hour after the anchor: no immediate fire.
+    now["t"] = anchor_ts + 3600
+    await scheduler.tick()
+    assert store.created == []
+
+    # Next UTC day at the anchor: fires.
+    now["t"] = anchor_ts + 86400
+    await scheduler.tick()
+    await asyncio.sleep(0)
+    assert store.created == ["sess-1"]
+
+
+@pytest.mark.asyncio
+async def test_unanchored_preset_regression(tmp_path):
+    """Presets without an anchor keep the legacy cadence exactly.
+
+    Never-fired fires promptly; later runs are spaced by the interval from the
+    last fire.
+    """
+    defs = [
+        PeriodicSessionDefinition(
+            name="mail-triage",
+            initial_prompt="Review the mail queue. READ-ONLY.",
+            schedule_interval_seconds=3600,
+            model_level=2,
+        )
+    ]
+    scheduler, store, _, now = _make(tmp_path, definitions=defs)
+
+    # Never-fired → due immediately (legacy behaviour).
+    await scheduler.tick()
+    await asyncio.sleep(0)
+    assert store.created == ["sess-1"]
+
+    # Just under one interval later → not due.
+    now["t"] += 3599
+    await scheduler.tick()
+    assert store.created == ["sess-1"]
+
+    # Past one full interval since the last fire → due again.
+    now["t"] += 1
+    await scheduler.tick()
+    await asyncio.sleep(0)
+    assert store.created == ["sess-1", "sess-2"]

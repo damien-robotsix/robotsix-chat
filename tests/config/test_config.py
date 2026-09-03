@@ -1195,6 +1195,44 @@ class TestPeriodicSessionDefinition:
                 trigger_interval_seconds=45.0,  # pyright: ignore[reportCallIssue]
             )
 
+    def test_anchor_utc_normalised_to_utc(self) -> None:
+        """Anchors are normalised to an explicit UTC instant.
+
+        A naive datetime would otherwise be interpreted by
+        ``datetime.timestamp()`` in the scheduler in the host's local
+        timezone. Naive values mean UTC; other offsets are converted.
+        """
+        from datetime import datetime, timedelta, timezone
+
+        from robotsix_chat.config.periodic_models import PeriodicSessionDefinition
+
+        naive = PeriodicSessionDefinition(
+            name="p", anchor_utc=datetime(2026, 9, 3, 6, 0, 0)
+        ).anchor_utc
+        assert naive is not None
+        assert naive.utcoffset() == timedelta(0)
+        assert naive.hour == 6
+
+        from_str = PeriodicSessionDefinition(
+            name="p", anchor_utc="2026-09-03T06:00:00Z"
+        ).anchor_utc
+        assert from_str is not None
+        assert from_str.utcoffset() == timedelta(0)
+        assert from_str.hour == 6
+
+        shifted = PeriodicSessionDefinition(
+            name="p",
+            anchor_utc=datetime(
+                2026, 9, 3, 6, 0, 0, tzinfo=timezone(timedelta(hours=-4))
+            ),
+        ).anchor_utc
+        assert shifted is not None
+        assert shifted.utcoffset() == timedelta(0)
+        assert shifted.hour == 10  # 06:00 -0400 == 10:00 UTC
+
+        unset = PeriodicSessionDefinition(name="p").anchor_utc
+        assert unset is None
+
 
 # ---------------------------------------------------------------------------
 # Guard: no concrete model names in source
