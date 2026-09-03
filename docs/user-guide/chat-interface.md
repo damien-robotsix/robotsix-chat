@@ -71,11 +71,49 @@ card. Clients must not render an empty summary card. Recommended handling patter
 - Always check `compacted_summary_missing` before deciding whether a summary card can be built; a
   bare compacted session with no explanation would otherwise confuse the reader.
 
+## In-App Notification Toasts
+
+When the agent sends you a notification, it appears as a transient **toast** notification in the
+upper-right corner of the browser window. This happens **regardless of whether you have granted the
+browser's notification permission** — in-app toasts ensure every alert is visibly surfaced even
+when desktop notifications are unavailable.
+
+### Where Toasts Appear
+
+Toasts stack vertically in the top-right corner of the screen, each showing:
+
+- **Title** — the notification subject
+- **Body** — the notification message content
+- **Link** (optional) — a reference URL or ticket ID if included
+
+### Auto-Dismiss & Interactivity
+
+- **Low and default urgency** — toasts auto-dismiss after 8 seconds
+- **High urgency** — toasts persist until you click them to dismiss
+- **Any urgency** — you can click a toast at any time to dismiss it immediately
+
+### Urgency Levels
+
+Toasts are color-coded by urgency level (visible as a left border):
+
+- **Low** — routine completions (gray border)
+- **Default** — standard notifications (blue border)
+- **High** — urgent attention required (red border)
+
+### Native Desktop Notifications (Additional Channel)
+
+When you have **granted browser notification permission**, the agent also sends native desktop
+notifications alongside the toast. Native notifications are an additional channel — the in-app toast
+ensures you never miss an alert even if desktop permission was never granted.
+
+> **Tip:** If you want desktop notifications, watch for the browser's permission prompt on your
+> first click. Grant it to enable native alerts as a backup to the in-app toasts.
+
 ## Missed Notifications Badge & Panel
 
-When the agent sends you **missed notifications** (alerts and reminders), they are stored on the
-server with an unread state. The chat header displays a badge showing how many notifications you
-have not yet viewed.
+When the agent sends you **missed notifications** (alerts and reminders you weren't connected to
+receive), they are stored on the server with an unread state. The chat header displays a badge
+showing how many notifications you have not yet viewed.
 
 ### Badge
 
@@ -101,9 +139,14 @@ longer unread.
 ### Replayed Missed Notifications
 
 When you reconnect to the chat (on page reload or after a network disconnect), any notifications
-you missed while offline are replayed and appear in the unread-notifications badge. You can then
-open the panel to view and acknowledge them. Native desktop notifications are sent for these
-replayed alerts as well.
+you missed while offline are replayed. Each replayed notification:
+
+- Appears as an **in-app toast** in the corner (the same transient alert you see for live
+  notifications)
+- Shows up in the **unread-notifications badge** so you can review the full history
+- Triggers a **native desktop notification** if permission was granted
+
+You can then open the notifications panel to view the full list and mark them as read.
 
 ### Closing the Panel
 

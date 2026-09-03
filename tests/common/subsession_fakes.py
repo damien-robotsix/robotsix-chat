@@ -113,6 +113,10 @@ class RecordingSink:
         """Record the published frame."""
         self.frames.append((session_id, frame))
 
+    def publish_all(self, frame: dict[str, object]) -> None:
+        """Record a broadcast frame under a sentinel ``"*"`` session id."""
+        self.frames.append(("*", frame))
+
     def of_type(self, frame_type: str) -> list[tuple[str, dict[str, object]]]:
         """Return the captured frames whose ``type`` equals *frame_type*."""
         return [(s, f) for s, f in self.frames if f.get("type") == frame_type]

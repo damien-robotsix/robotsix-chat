@@ -2,12 +2,16 @@
 
 When a background subsession needs user awareness or action (a decision
 escalation, a completed task, a blocking condition), the agent calls
-``notify_user`` which publishes a notification event to connected clients
-over the existing SSE channel (EventBus).  The user's browser (or mobile
-app in future) renders the event via the native Notifications API.
+``notify_user`` which broadcasts a notification event to every connected
+client over the existing SSE channel (EventBus) — regardless of which
+session each browser is viewing, since a notification may fire from a
+periodic/background session no browser watches.  The user's browser (or
+mobile app in future) renders the event as an in-app toast (always) and via
+the native Notifications API (when permission is granted).
 
 Delivery only reaches clients that are currently connected — notifications
-are silently dropped when no browser is listening for the session.
+are silently dropped when no browser is listening (and persisted for replay
+on reconnect when store-and-forward is enabled).
 
 Exposes :func:`build_notification_tools` — a factory returning the LLM
 tool that publishes notifications.  Returns no tools when disabled, so the
@@ -63,17 +67,22 @@ def load_notification_skill() -> str:
         return ""
 
 
-def _has_active_subscribers(event_sink: EventSink, session_id: str) -> bool:
-    """Return True when at least one SSE client is subscribed to *session_id*.
+def _has_any_subscriber(event_sink: EventSink) -> bool:
+    """Return True when at least one SSE client is connected on any session.
 
-    The concrete :class:`~robotsix_chat.chat.events.EventBus` exposes
-    :meth:`~robotsix_chat.chat.events.EventBus.subscriber_count`; sinks
-    without subscriber visibility (e.g. test spies) are treated as having
-    no live subscriber, so the record is stored undelivered and would be
+    Notifications are broadcast to every connected browser via
+    :meth:`~robotsix_chat.chat.events.EventBus.publish_all` (a notify_user
+    call from a periodic/background session must reach a browser viewing a
+    *different* session), so delivery is decided by the total subscriber
+    count across all sessions — not the source session's own count.  The
+    concrete :class:`~robotsix_chat.chat.events.EventBus` exposes
+    :meth:`~robotsix_chat.chat.events.EventBus.total_subscriber_count`; sinks
+    without subscriber visibility (e.g. test spies) are treated as having no
+    live subscriber, so the record is stored undelivered and would be
     replayed to a later-connecting client.
     """
-    count = getattr(event_sink, "subscriber_count", None)
-    return count is not None and count(session_id) > 0
+    count = getattr(event_sink, "total_subscriber_count", None)
+    return count is not None and count() > 0
 
 
 def build_notification_tools(
@@ -158,9 +167,9 @@ def build_notification_tools(
             "link": link,
         }
         # Snapshot delivery state at publish time.  There is no ``await``
-        # between this check and the publish below, so the subscriber count
+        # between this check and the broadcast below, so the subscriber count
         # cannot change mid-call.
-        delivered = _has_active_subscribers(event_sink, session_id)
+        delivered = _has_any_subscriber(event_sink)
         if store is not None and settings.store_and_forward:
             try:
                 record = store.append(title=title, body=body, source_session=session_id)
@@ -171,7 +180,10 @@ def build_notification_tools(
                     "Failed to persist notification (session=%s) — continuing",
                     session_id,
                 )
-        event_sink.publish(session_id, frame)
+        # Broadcast to every connected browser regardless of which session it
+        # is viewing — a notify_user call from a periodic/background session
+        # must not be scoped to a channel nobody watches.
+        event_sink.publish_all(frame)
         return "Notification sent."
 
     return [notify_user]

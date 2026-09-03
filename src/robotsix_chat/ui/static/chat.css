@@ -900,6 +900,33 @@ body {
 .notif-row .notif-body { margin-top: 0.2rem; white-space: pre-wrap; }
 .notif-row .notif-meta { margin-top: 0.3rem; font-size: 0.75rem; color: #94a3b8; }
 
+/* In-app notification toasts: urgency-styled, corner-stacked, click to
+   dismiss. Rendered for every notify_user frame regardless of native
+   Notifications permission. */
+.notification-toasts {
+  position: fixed; top: 4rem; right: 1rem;
+  display: flex; flex-direction: column; gap: 0.5rem;
+  z-index: 60; max-width: min(360px, 90vw); pointer-events: none;
+}
+.notification-toast {
+  pointer-events: auto; cursor: pointer;
+  padding: 0.6rem 0.75rem; border-radius: 8px;
+  background: var(--assistant-bubble-bg); color: var(--text-fg);
+  border: 1px solid var(--composer-border);
+  border-left: 4px solid #64748b;
+  box-shadow: 0 4px 12px rgba(0,0,0,0.35);
+  word-break: break-word;
+}
+.notification-toast-low { border-left-color: #64748b; }
+.notification-toast-default { border-left-color: var(--accent, #7aa2f7); }
+.notification-toast-high { border-left-color: var(--dot-red, #ef4444); }
+.notification-toast-title { font-weight: 700; }
+.notification-toast-body { margin-top: 0.2rem; white-space: pre-wrap; font-size: 0.9rem; }
+.notification-toast-link {
+  display: inline-block; margin-top: 0.3rem;
+  font-size: 0.8rem; color: var(--accent, #7aa2f7); word-break: break-all;
+}
+
 #settings-panel {
   display: none; position: fixed; top: 0; right: 0; bottom: 0;
   width: 420px; min-width: 260px; max-width: 90vw;
