@@ -199,6 +199,7 @@
   },
   "notification": {
     "enabled": true,
+    "store_and_forward": true,
     "store_path": "/data/notifications.json"
   },
   "http_probe": {

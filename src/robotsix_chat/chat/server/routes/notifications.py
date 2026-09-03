@@ -78,6 +78,15 @@ def _parse_pagination(request: Request) -> tuple[int, int]:
     return limit, offset
 
 
+def _store_and_forward_enabled(request: Request) -> bool:
+    """Return whether the store-and-forward feature flag is enabled.
+
+    Defaults to ``True`` when the flag was never wired onto app state (e.g.
+    older test harnesses), so absence never disables the feature silently.
+    """
+    return bool(getattr(request.app.state, "notification_store_and_forward", True))
+
+
 def _get_store(request: Request) -> Any:
     """Return the shared notification store, or raise HTTP 503 when unset."""
     store = getattr(request.app.state, "notification_store", None)
@@ -110,7 +119,13 @@ async def notifications_unread_endpoint(request: Request) -> JSONResponse:
     response is a JSON array of at most ``limit`` record objects (``id``,
     ``ts``, ``title``, ``body``, ``source_session``, ``delivered``,
     ``read``) starting at ``offset``.
+
+    When the ``notification.store_and_forward`` feature flag is disabled, the
+    persistent path is off and this endpoint returns an empty array without
+    touching the store.
     """
+    if not _store_and_forward_enabled(request):
+        return JSONResponse([])
     limit, offset = _parse_pagination(request)
     store = _get_store(request)
     try:
@@ -135,7 +150,13 @@ async def notifications_read_endpoint(request: Request) -> JSONResponse:
     notifications, or an empty object / omitted ``ids`` to mark all
     currently unread notifications as read.  Returns the number of records
     whose ``read`` flag changed.
+
+    When the ``notification.store_and_forward`` feature flag is disabled, the
+    persistent path is off and this endpoint is a no-op returning
+    ``{"status": "ok", "marked": 0}`` without touching the store.
     """
+    if not _store_and_forward_enabled(request):
+        return JSONResponse({"status": "ok", "marked": 0})
     store = _get_store(request)
     try:
         body = await _parse_json_body(request)

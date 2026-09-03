@@ -251,6 +251,39 @@ async def test_notify_user_persists_undelivered_when_no_subscriber(
 
 
 @pytest.mark.asyncio
+async def test_notify_user_does_not_persist_when_store_and_forward_disabled(
+    tmp_path: Path,
+) -> None:
+    """With the feature flag off, notify_user publishes live but never persists."""
+    bus = EventBus()
+    session_id = "sess-flag-off"
+    store = NotificationStore(tmp_path / "notifications.json")
+
+    tools = build_notification_tools(
+        _settings(store_and_forward=False),
+        event_sink=bus,
+        session_id=session_id,
+        store=store,
+    )
+    # A live subscriber connects so we can assert the SSE frame is unchanged.
+    queue = bus.subscribe(session_id)
+    result = await tools[0](title="Live", body="Only", urgency="high", link="/x")
+
+    assert result == "Notification sent."
+    # Live SSE contract is preserved.
+    frame = queue.get_nowait()
+    assert frame == {
+        "type": SSE_NOTIFICATION_TYPE,
+        "title": "Live",
+        "body": "Only",
+        "urgency": "high",
+        "link": "/x",
+    }
+    # Nothing was persisted to the store.
+    assert store.list() == []
+
+
+@pytest.mark.asyncio
 async def test_notify_user_persists_delivered_when_subscriber_connected(
     tmp_path: Path,
 ) -> None:
@@ -342,7 +375,7 @@ def test_settings_enabled_without_extra_fields() -> None:
 def test_settings_no_ntfy_fields_remain() -> None:
     """NotificationSettings has no ntfy-specific fields."""
     field_names = set(NotificationSettings.model_fields.keys())
-    assert field_names == {"enabled", "store_path"}
+    assert field_names == {"enabled", "store_and_forward", "store_path"}
     assert "ntfy_topic" not in field_names
     assert "ntfy_token" not in field_names
     assert "ntfy_server" not in field_names

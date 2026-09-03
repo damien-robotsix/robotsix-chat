@@ -23,6 +23,15 @@ class NotificationSettings(BaseModel):
     Attributes:
         enabled: Master switch.  When ``False``, no notify_user tool is
             offered.
+        store_and_forward: Feature flag for the persistent store-and-forward
+            path.  When ``True`` (default), undelivered notifications are
+            persisted to ``store_path`` and replayed to the next connecting
+            browser, and the ``/notifications`` API endpoints serve them.
+            Set ``False`` as an emergency kill-switch: ``notify_user`` then
+            publishes live SSE frames only (never persists) and the
+            ``/notifications/unread`` and ``/notifications/read`` endpoints
+            return empty responses.  The live SSE contract is unchanged
+            either way.
         store_path: Path to the JSON persistence file for notifications
             that were not delivered to a connected browser.  Must be on a
             persistent volume (chat-data ``/data``) so undelivered
@@ -32,6 +41,7 @@ class NotificationSettings(BaseModel):
     """
 
     enabled: bool = True
+    store_and_forward: bool = True
     store_path: str = "/data/notifications.json"
     model_config = ConfigDict(extra="forbid")
 
