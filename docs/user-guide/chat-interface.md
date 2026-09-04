@@ -182,6 +182,22 @@ tell main-chat from side-chat updates at a glance.
 > notifications above — grant the permission prompt to enable them. De-duplication is automatic; no
 > configuration is needed.
 
+### Clicking a Notification to Navigate
+
+When you click a **desktop notification** for a conversation message, the chat app automatically
+navigates to the target and brings the window/tab to the foreground — even if the browser was
+backgrounded at the time.
+
+- **Clicking a main-conversation notification** — opens or focuses the active main chat and the
+  session that message belongs to (if a different session is currently active, it switches to the
+  correct one). Any subsession focus mode is exited so you see the main conversation.
+- **Clicking a `user_chat` side-chat notification** — opens or focuses the specific subsession that
+  sent the message. The subsessions panel slides open and the target subsession appears (either
+  expanded in the panel or in full-screen focus mode if that was active).
+
+The notification is then closed so you don't see it again — no duplicate or stale notifications
+remain after the click is handled.
+
 ### Replayed Missed Notifications
 
 When you reconnect to the chat (on page reload or after a network disconnect), any notifications
