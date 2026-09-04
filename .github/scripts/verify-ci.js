@@ -136,6 +136,16 @@ module.exports = async ({github, context, core}) => {
     // the release gate.
     const nonBlocking = new Set([
       'Security scan (shared) / Security',
+      // "Release Please / Release Please" is the release-please.yml job that
+      // opens/updates the release PR on every push to main.  Its own check
+      // run failing on a given commit (e.g. a "Set up job" timeout or a
+      // transient GitHub App permission hiccup) does not reflect the state of
+      // the codebase CI and self-heals on the next push.  Persistent release
+      // pipeline breakage is separately monitored by release-health.yml
+      // ("Monitor release-please status", which alerts on 3 consecutive
+      // failures), so a single transient run failure must not block
+      // publishing an otherwise green image.
+      'Release Please / Release Please',
     ]);
     others = runs.filter(
       (r) =>
