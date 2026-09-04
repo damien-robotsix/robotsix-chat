@@ -150,6 +150,38 @@ When you open the notifications panel, all notifications displayed are automatic
 The badge clears immediately and will stay at zero on page refresh — those notifications are no
 longer unread.
 
+## Desktop Notifications for Conversation Messages
+
+In addition to the agent-sent notifications above, new **conversation messages** can also raise
+native desktop notifications when you have granted browser notification permission — but only when
+you are not actively viewing the target.
+
+This covers two live update paths driven by the existing Server-Sent Events (SSE) channel:
+
+- **New main-conversation messages** — a completed or re-attached agent turn in the active chat.
+- **New `user_chat` side-chat messages** — when the agent asks the operator something in a focused
+  side conversation (a subsession the agent starts to get a decision).
+
+### De-duplication (when you won't be notified)
+
+To avoid an intrusive notification for something that is already on screen, notifications are
+suppressed when **the browser tab is visible** **and** the target is the one you are actively
+viewing:
+
+- A **main-conversation** message does not notify while you are looking at the main chat (no
+  subsession is in focus mode).
+- A **`user_chat` side-chat** message does not notify while that specific subsession is either in
+  **focus mode** (fills the screen) or has its row **expanded** with the side-chat panel visible —
+  the same on-screen signal the unread-badge logic uses.
+
+When the tab is in the background, or you are viewing a different target, a new message raises a
+desktop notification titled with the conversation (`New message in …`) or "Chat request" so you can
+tell main-chat from side-chat updates at a glance.
+
+> **Tip:** These notifications are gated by the same browser permission as the agent-sent
+> notifications above — grant the permission prompt to enable them. De-duplication is automatic; no
+> configuration is needed.
+
 ### Replayed Missed Notifications
 
 When you reconnect to the chat (on page reload or after a network disconnect), any notifications

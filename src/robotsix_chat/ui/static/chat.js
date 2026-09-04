@@ -1,6 +1,12 @@
 import { processSSEStream } from "./sse-parser.js";
 import { drainSessionDraft } from "./drain-draft.js";
 import { renderMemoryBanner } from "./memory-banner.js";
+import { notify } from "./notify.js";
+import {
+  isDocumentVisible,
+  shouldNotifyMainConversation,
+  shouldNotifySubsession,
+} from "./notify-gating.js";
 import {
   parseSuggestions,
   stripStreamingSuggestions,
@@ -1145,12 +1151,16 @@ import {
     if (!reattachActive) return;
     if (reattachTurnId && frame.turn_id && frame.turn_id !== reattachTurnId) return;
     hideTypingIndicator();
+    var reattachDoneText = rawAssistantText;
     finaliseAssistantBubble();
     reattachActive = false;
     reattachTurnId = null;
     state = "idle";
     updateSendBusy();
     if (frame.timestamp) updateLastModelTimestamp(frame.timestamp);
+    // The re-attached turn is a new main-conversation message — notify
+    // unless the user is actively viewing it.
+    maybeNotifyMainConversation(reattachDoneText);
     // The re-attached turn finished — now dispatch any messages the user
     // queued behind it.
     drainQueue();
@@ -1578,6 +1588,12 @@ import {
     };
     if (!subsTranscriptHas(sub, msg)) sub.transcript.push(msg);
     if (frame.timestamp) sub.last_activity_at = frame.timestamp;
+    // A user_chat side-chat message is the agent asking the user something —
+    // raise a desktop notification unless that side-chat is the one being
+    // actively viewed (the user's own replies need no notification).
+    if (sub.kind === "user_chat" && frame.role !== "user") {
+      maybeNotifySubsession(sub, msg.text);
+    }
     // Mark this subsession unread and propagate the count up the parent
     // chain, then refresh the affected rows' headers in place — a full
     // list re-render here would steal focus from the reply box while the
@@ -2632,6 +2648,57 @@ import {
 
   // processSSEStream is now in sse-parser.js (imported at module top).
 
+  // ---- Desktop notifications from the SSE streams ----------------------
+  // The /events channel and the /chat POST response are the two live
+  // update streams.  New main-conversation messages and user_chat side-chat
+  // updates are surfaced as desktop notifications (permission-gated by
+  // notify.js, which never throws) unless the user is already actively
+  // viewing the target — see notify-gating.js.
+
+  function sessionTitleFor(sid) {
+    for (var ti = 0; ti < sessionsList.length; ti++) {
+      var s = sessionsList[ti];
+      if (s && s.session_id === sid) {
+        return s.title || "conversation";
+      }
+    }
+    return "conversation";
+  }
+
+  // A new main-conversation message: notify unless the user is actively
+  // viewing the main conversation.  The tag keeps repeated OS-level
+  // notifications for the same conversation replaced rather than stacked.
+  function maybeNotifyMainConversation(text) {
+    var docVisible = isDocumentVisible(document);
+    var subsessionFocused = focusedSubId !== null;
+    if (!shouldNotifyMainConversation({
+      docVisible: docVisible,
+      subsessionFocused: subsessionFocused,
+    })) return;
+    notify({
+      title: "New message in " + sessionTitleFor(activeSessionId),
+      body: truncateText(text, 200),
+      tag: "main-" + activeSessionId,
+    });
+  }
+
+  // A new user_chat side-chat update: notify unless the user is actively
+  // viewing this specific subsession — either in focus mode or with its row
+  // expanded and the side-chat panel visible (the same on-screen signal the
+  // unread-badge logic uses).
+  function maybeNotifySubsession(sub, text) {
+    if (!sub || !sub.subsession_id) return;
+    var docVisible = isDocumentVisible(document);
+    var focused = focusedSubId !== null && focusedSubId === sub.subsession_id;
+    var onScreen = sub.expanded && subsPanel.classList.contains("visible");
+    if (!shouldNotifySubsession({ docVisible: docVisible, focused: focused, visible: onScreen })) return;
+    notify({
+      title: "Chat request: " + (sub.title || "side-chat"),
+      body: truncateText(text, 200),
+      tag: "sub-" + sub.subsession_id,
+    });
+  }
+
   // ---- Persistent /events SSE channel ----------------------------------
   function openEventStream() {
     eventsStreamIntentionallyClosed = false;
@@ -2682,6 +2749,8 @@ import {
           // itself auto-expands in applySubsSnapshot).
           if (frame.kind === "user_chat") {
             openSubsessionsPanel();
+            var newChatSub = subsById[frame.subsession_id];
+            maybeNotifySubsession(newChatSub, newChatSub.prompt || newChatSub.title || "");
           }
         } else if (frame.type === "subsession_updated") {
           // Partial update — merge into the existing row.
@@ -2710,7 +2779,10 @@ import {
           // subsession closing) — not a live /chat response, so it arrives
           // here instead of as a token/done frame. Render it as a normal
           // assistant bubble.
-          if (frame.text) addAssistantBubble(frame.text);
+          if (frame.text) {
+            addAssistantBubble(frame.text);
+            maybeNotifyMainConversation(frame.text);
+          }
         } else if (frame.type === "session_model") {
           // The agent escalated this session to a stronger model. Update the
           // badges immediately; the next session-list refetch confirms it.
@@ -3125,6 +3197,7 @@ import {
         } else if (frame.type === "done") {
           clearPost();
           hideTypingIndicator();
+          var doneText = rawAssistantText;
           finaliseAssistantBubble();
           setConnectionStatus(true);
           state = "idle";
@@ -3138,6 +3211,9 @@ import {
           if (frame.session_id && frame.session_id !== requestSessionId) {
             adoptSession(frame.session_id);
           }
+          // A completed turn is a new main-conversation message — notify
+          // unless the user is actively viewing it (visible tab, main chat).
+          maybeNotifyMainConversation(doneText);
           // Automatically dispatch the next queued message (FIFO).
           drainQueue();
         } else if (frame.type === "error") {
