@@ -505,9 +505,12 @@ run once and a transient failure would silently lose the work.
 
    **On CI failure.** If the workflow run failed or is still failing, the agent must NOT claim
    success. Instead it calls `complete_subsession` with a summary documenting the failure (run id,
-   reason, log excerpt), then calls `spawn_subsession` to file a new diagnostic ticket so the
-   operator sees the pipeline is still broken. If the workflow API is unreachable, the agent retries
-   twice with a 5-second pause before acknowledging the status could not be verified.
+   reason, log excerpt). It must **not** file a new diagnostic or investigation ticket — tickets are
+   for implementation work only, and investigation belongs in a chat subsession. If the failure needs
+   follow-up, it is surfaced as an investigation chat subsession or a notification so the operator
+   sees the pipeline is still broken — never as a filed ticket. If the workflow API is unreachable,
+   the agent retries twice with a 5-second pause before acknowledging the status could not be
+   verified.
 
 1. Subsessions persist to `/data/subsessions.json`; periodic ones are automatically resumed after a
    process restart (e.g. Watchtower redeploy) with their remaining run budget. Unlike task and
