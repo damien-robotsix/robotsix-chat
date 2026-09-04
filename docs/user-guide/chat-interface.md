@@ -75,8 +75,8 @@ card. Clients must not render an empty summary card. Recommended handling patter
 
 When the agent sends you a notification, it appears as a transient **toast** notification in the
 upper-right corner of the browser window. This happens **regardless of whether you have granted the
-browser's notification permission** — in-app toasts ensure every alert is visibly surfaced even
-when desktop notifications are unavailable.
+browser's notification permission** — in-app toasts ensure every alert is visibly surfaced even when
+desktop notifications are unavailable.
 
 ### Where Toasts Appear
 
@@ -109,11 +109,11 @@ ensures you never miss an alert even if desktop permission was never granted.
 > **Tip:** If you want desktop notifications, watch for the browser's permission prompt on your
 > first click. Grant it to enable native alerts as a backup to the in-app toasts.
 
-### System Alerts — Service Faults
+### System Notifications — Service Faults
 
 In addition to agent-generated notifications, the system sends **high-urgency red toasts** when a
-critical backend service fault is detected and automatic recovery cannot safely repair it. These
-are rare but important:
+critical backend service fault is detected and automatic recovery cannot safely repair it. These are
+rare but important:
 
 - **"Memory store down (graph segfault)"** — The long-term memory service encountered a persistent
   fault that auto-recovery could not heal. The memory service is temporarily offline, so the agent
@@ -121,7 +121,7 @@ are rare but important:
   or contact support if the memory service does not recover within a few minutes. The fault
   diagnosis is included in the notification body.
 
-These system alerts persist on screen (red border, high urgency) until you dismiss them.
+These system notifications persist on screen (red border, high urgency) until you dismiss them.
 
 ## Missed Notifications Badge & Panel
 
@@ -131,13 +131,13 @@ showing how many notifications you have not yet viewed.
 
 ### Badge
 
-The "🔔 Alerts" button in the header shows an unread-notification count badge. The badge is hidden
-when the count is zero.
+The "🔔 Notifications" button in the header shows an unread-notification count badge. The badge is
+hidden when the count is zero.
 
 ### Opening the Notifications Panel
 
-**Click the "🔔 Alerts" button** to open the missed-notifications panel. The panel slides in from
-the right side of the screen and displays:
+**Click the "🔔 Notifications" button** to open the missed-notifications panel. The panel slides in
+from the right side of the screen and displays:
 
 - **Title** — the notification subject
 - **Body** — the notification message content
@@ -200,8 +200,8 @@ remain after the click is handled.
 
 ### Replayed Missed Notifications
 
-When you reconnect to the chat (on page reload or after a network disconnect), any notifications
-you missed while offline are replayed. Each replayed notification:
+When you reconnect to the chat (on page reload or after a network disconnect), any notifications you
+missed while offline are replayed. Each replayed notification:
 
 - Appears as an **in-app toast** in the corner (the same transient alert you see for live
   notifications)
@@ -212,6 +212,6 @@ You can then open the notifications panel to view the full list and mark them as
 
 ### Closing the Panel
 
-Click the **×** button in the notifications panel header or click outside the panel to close it.
-The marked-as-read state is preserved — the panel can be reopened if you want to view the
-notification history again in a later session.
+Click the **×** button in the notifications panel header or click outside the panel to close it. The
+marked-as-read state is preserved — the panel can be reopened if you want to view the notification
+history again in a later session.
