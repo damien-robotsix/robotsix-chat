@@ -23,3 +23,6 @@ jobs:
       has-docker: true
       has-board: true
       python-version: "3.14"
+      # Must match pyproject.toml's [tool.uv] required-version: the shared
+      # workflow defaults to an older uv, which uv refuses to run under.
+      uv-version: "0.12.9"

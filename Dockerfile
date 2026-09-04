@@ -14,7 +14,7 @@ SHELL ["/bin/bash", "-o", "pipefail", "-c"]
 # the push build authenticates to GHCR with GITHUB_TOKEN, whose packages scope
 # is repo-local, so it cannot pull the cross-namespace astral-sh/uv image
 # ("failed to fetch oauth token: denied: denied").
-RUN python -m pip install --no-cache-dir "uv==0.11.21"
+RUN python -m pip install --no-cache-dir "uv==0.12.9"
 
 ENV UV_LINK_MODE=copy \
     UV_PYTHON_DOWNLOADS=0

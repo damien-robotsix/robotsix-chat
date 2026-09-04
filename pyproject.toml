@@ -121,6 +121,11 @@ robotsix-http = { git = "https://github.com/damien-robotsix/robotsix-http.git", 
 robotsix-github-auth = { git = "https://github.com/damien-robotsix/robotsix-github-auth.git", rev = "e6214c41fd743120aa987bacb4e9b2bc88e73943" }  # pragma: allowlist secret
 
 [tool.uv]
+# Pin the uv toolchain so astral-sh/setup-uv resolves the version from this
+# file and never falls back to fetching the "latest" manifest from
+# raw.githubusercontent.com (a transient fetch failure there repeatedly broke
+# the release-please workflow's Set up uv step).
+required-version = "0.12.9"
 constraint-dependencies = [
     "pypdf>=6.15.0",
     "anyio>=4.14.2",
