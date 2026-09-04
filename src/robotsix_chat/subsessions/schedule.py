@@ -26,6 +26,14 @@ schedule is phase-aligned on the epoch to the anchored time-of-day, so the
 *duration* between runs is held constant; the local time-of-day may shift
 by the DST offset across a transition.
 
+A nonexistent local time — an anchor whose time-of-day falls inside a
+spring-forward gap (e.g. ``"02:30 Europe/Paris"`` on the transition date) —
+cannot be represented in that zone.  It is resolved silently via the tz
+database's ``fold`` rules (the default ``fold=0`` uses the pre-transition
+UTC offset) rather than raising, so the recurrence fires at the instant
+that skipped wall time maps to; this matches Python's standard
+``datetime`` behaviour for such times.
+
 This module is pure (no asyncio, no registry) so it can be unit-tested in
 isolation and imported by both the spawn-validation layer (``worker``) and
 the post-turn scheduler (``worker_periodic``).
