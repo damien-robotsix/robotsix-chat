@@ -938,3 +938,48 @@ def _request_implementation_changes_expanded(
 _TransitionMixin.request_implementation_changes = (
     _request_implementation_changes_expanded
 )
+
+# ---------------------------------------------------------------------------
+# 10.  Extend the review agent's system prompt with PEP 758 exception-syntax
+#      guidance.  The reviewer once raised a false "hard blocker" on the
+#      parenthesized-less comma form ``except A, B:`` in a repo declaring
+#      ``requires-python = ">=3.14"``.  Under PEP 758 (accepted for Python
+#      3.14) that form is valid syntax — and it is exactly what ``ruff
+#      format`` emits for ``target-version = "py314"``, which rewrites the
+#      parenthesized form back to the comma form.  The audited repo's
+#      AGENT.md rule is framed at the code-AUTHOR level and did not stop the
+#      REVIEWER from re-raising the same false claim, so a reviewer-side rule
+#      is needed: before flagging these forms as a syntax hard blocker, the
+#      reviewer must consult the repo's AGENT.md language conventions and its
+#      declared ``requires-python`` / ruff ``target-version``.
+#
+#      Appending to ``SYSTEM_PROMPT`` also changes the reviewer fingerprint
+#      (``stages/_stage_cache.reviewer_fingerprint`` hashes it), so any
+#      workspace holding a cached review verdict misses and runs a fresh
+#      review with the new guidance — the mechanism designed for this.
+# ---------------------------------------------------------------------------
+import robotsix_mill.agents.reviewing as _reviewing  # noqa: E402
+
+_PEP758_EXCEPT_SYNTAX_GUIDANCE = (
+    "## PEP 758 exception syntax — verify before flagging\n"
+    "\n"
+    "Before raising a syntax-validity hard blocker on `except A, B:` or "
+    "`except* A, B:` (parenthesized-less, comma-separated) forms:\n"
+    "\n"
+    "1. Consult the audited repo's AGENT.md language-conventions section — "
+    "it may document a target-version-specific rule for this exact form.\n"
+    "1. Check the repo's declared `requires-python` in `pyproject.toml` (and "
+    "the ruff `target-version`, if configured).\n"
+    "\n"
+    "If the repo targets Python >= 3.14, the parenthesized-less comma form "
+    "is valid PEP 758 syntax (accepted for Python 3.14) and is exactly what "
+    '`ruff format` emits for `target-version = "py314"` — it is NOT a '
+    "syntax error and must not be raised as a hard blocker.  When you cannot "
+    "verify the target version, downgrade the syntax claim to a non-blocking "
+    "note asking the implement agent to confirm it rather than a hard "
+    "blocker."
+)
+
+_reviewing.SYSTEM_PROMPT = (
+    _reviewing.SYSTEM_PROMPT.rstrip() + "\n\n" + _PEP758_EXCEPT_SYNTAX_GUIDANCE.strip()
+)
