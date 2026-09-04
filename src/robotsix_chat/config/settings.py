@@ -81,6 +81,13 @@ class ConfigValidationError(ValueError):
 # docs/system_prompt_changelog.md with a new entry + SHA256.
 SYSTEM_PROMPT_VERSION = 161
 
+# Settings-panel group label collecting every llmio knob (model-level
+# selection, OpenRouter key, task-budget, failover window, tier overrides,
+# vision model) under one collapsible header instead of the generic
+# "General" bucket.  The shared ConfigPanel buckets fields by this
+# ``json_schema_extra["group"]`` label.
+_LLMIO_GROUP: dict[str, Any] = {"group": "LLM I/O"}
+
 
 class Settings(BaseModel):
     """Application settings, loaded from a single JSON config file.
@@ -158,11 +165,14 @@ class Settings(BaseModel):
 
     """
 
-    chat_default_model_level: int = 2
-    llmio_api_key: SecretStr = SecretStr("")
-    summary_model_level: int = Field(default=1)
+    chat_default_model_level: int = Field(default=2, json_schema_extra=_LLMIO_GROUP)
+    llmio_api_key: SecretStr = Field(
+        default=SecretStr(""), json_schema_extra=_LLMIO_GROUP
+    )
+    summary_model_level: int = Field(default=1, json_schema_extra=_LLMIO_GROUP)
     llmio_task_budget_tokens: int | None = Field(
         default=None,
+        json_schema_extra=_LLMIO_GROUP,
         description=(
             "Optional advisory per-task token budget forwarded to the keyless "
             "Claude SDK tiers as ``task_budget`` — the countdown the model "
@@ -176,6 +186,7 @@ class Settings(BaseModel):
     llmio_failover_window_seconds: float = Field(
         default=900.0,
         ge=1,
+        json_schema_extra=_LLMIO_GROUP,
         description=(
             "How long llmio routes calls straight to the fallback "
             "(OpenRouter) provider slot after the default (Claude) slot "
@@ -185,6 +196,7 @@ class Settings(BaseModel):
     )
     llmio_tier_overrides: dict[str, Any] = Field(
         default_factory=dict,
+        json_schema_extra=_LLMIO_GROUP,
         description=(
             "Overrides merged over llmio's baked tier config, in "
             "load_tier_config's nested shape — e.g. "
@@ -1871,6 +1883,7 @@ class Settings(BaseModel):
     )
     vision_model: str = Field(
         default="openrouter/openai/gpt-4o-mini",
+        json_schema_extra=_LLMIO_GROUP,
         description=(
             "OpenRouter model id used to caption attached images when the "
             "active chat model lacks vision support. Empty string means "

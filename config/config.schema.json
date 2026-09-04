@@ -1446,18 +1446,21 @@
   "properties": {
     "chat_default_model_level": {
       "default": 2,
+      "group": "LLM I/O",
       "title": "Chat Default Model Level",
       "type": "integer"
     },
     "llmio_api_key": {
       "default": "",
       "format": "password",
+      "group": "LLM I/O",
       "title": "Llmio Api Key",
       "type": "string",
       "writeOnly": true
     },
     "summary_model_level": {
       "default": 1,
+      "group": "LLM I/O",
       "title": "Summary Model Level",
       "type": "integer"
     },
@@ -1472,11 +1475,13 @@
       ],
       "default": null,
       "description": "Optional advisory per-task token budget forwarded to the keyless Claude SDK tiers as ``task_budget`` \u2014 the countdown the model reads so it can pace itself and wrap up gracefully instead of being cut off mid-task. Minimum 20000 (the Claude Agent SDK floor); values below it are ignored with a warning. Not forwarded to keyed OpenRouter tiers, which keep their own per-response ``max_tokens`` caps. ``None`` means no budget.",
+      "group": "LLM I/O",
       "title": "Llmio Task Budget Tokens"
     },
     "llmio_failover_window_seconds": {
       "default": 900.0,
       "description": "How long llmio routes calls straight to the fallback (OpenRouter) provider slot after the default (Claude) slot fails repeatedly or exhausts its quota, before automatically returning to the default. Default 900 (15 minutes).",
+      "group": "LLM I/O",
       "minimum": 1,
       "title": "Llmio Failover Window Seconds",
       "type": "number"
@@ -1484,6 +1489,7 @@
     "llmio_tier_overrides": {
       "additionalProperties": true,
       "description": "Overrides merged over llmio's baked tier config, in load_tier_config's nested shape \u2014 e.g. {\"fallback\": {\"level2\": {\"model\": \"openrouter-<model>\"}}} to change which model serves a capability level on a provider slot. Per-level dicts merge field-by-field over the baked binding; unknown keys are rejected. The failover window from llmio_failover_window_seconds is layered on top.",
+      "group": "LLM I/O",
       "title": "Llmio Tier Overrides",
       "type": "object"
     },
@@ -1657,6 +1663,7 @@
     "vision_model": {
       "default": "openrouter/openai/gpt-4o-mini",
       "description": "OpenRouter model id used to caption attached images when the active chat model lacks vision support. Empty string means 'vision model unconfigured', which triggers the curated no-image-support failure path.",
+      "group": "LLM I/O",
       "title": "Vision Model",
       "type": "string"
     },
