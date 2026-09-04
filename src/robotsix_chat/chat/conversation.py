@@ -165,7 +165,7 @@ class Session:
     # trimmed out of the active context by the auto-trim pass.  Unlike
     # compaction (which condenses into a summary), trimmed turns are simply
     # dropped from the agent view and the UI transcript — they remain
-    # recoverable only via conversation memory (cognee).  Turns before this
+    # recoverable only via conversation memory.  Turns before this
     # index are considered removed.
     trimmed_turn_index: int = 0
     # Watermark: the ``turn_count`` value at the last trim pass.  The periodic
@@ -1521,9 +1521,9 @@ class ConversationStore:
         This method is **read-only**: it does not update LRU ordering,
         ``last_activity`` timestamps, or trigger eviction or persistence.
 
-        Complements, but is independent of, the optional cognee episodic
+        Complements, but is independent of, the memory component's episodic
         memory subsystem (``src/robotsix_chat/memory/``) — this returns
-        the live, in-process conversation turns; cognee recalls by
+        the live, in-process conversation turns; long-term memory recalls by
         similarity across past sessions.
         """
         result: list[dict[str, Any]] = []

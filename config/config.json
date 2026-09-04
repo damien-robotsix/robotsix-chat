@@ -23,41 +23,6 @@
     "enabled": false,
     "max_traces": 5
   },
-  "memory": {
-    "enabled": false,
-    "data_dir": "/data/cognee",
-    "recall_search_type": "GRAPH_COMPLETION",
-    "recall_timeout_seconds": 60.0,
-    "remember_timeout_seconds": 300.0,
-    "write_backlog_path": "/data/cognee/backlog.jsonl",
-    "datafusion_runtime_memory_limit": "256M",
-    "frozen_store_alert_minutes": 10.0,
-    "write_throttle_seconds": 0.5,
-    "cognify_max_workers": 1,
-    "maintenance_enabled": true,
-    "maintenance_interval_seconds": 21600.0,
-    "maintenance_version_retention_seconds": 3600.0,
-    "maintenance_vacuum_enabled": true,
-    "maintenance_vacuum_interval_seconds": 21600.0,
-    "maintenance_vacuum_mode": "incremental_vacuum",
-    "maintenance_vacuum_off_peak_window": [2, 6],
-    "maintenance_metrics_enabled": true,
-    "maintenance_metrics_interval_seconds": 21600.0,
-    "llm": {
-      "provider": "custom",
-      "model": "openrouter/openai/gpt-5-nano",
-      "endpoint": "https://openrouter.ai/api/v1"
-    },
-    "embedding": {
-      "provider": "openai_compatible",
-      "model": "bge-m3",
-      "endpoint": "",
-      "dimensions": 1024,
-      "api_key": "",
-      "huggingface_tokenizer": "BAAI/bge-m3"
-    },
-    "langfuse_project": "robotsix-chat-cognee"
-  },
   "central_deploy": {
     "url": "",
     "deploy_api_key": "",
@@ -310,7 +275,7 @@
     "sessions": [
       {
         "name": "dependabot-drain",
-        "initial_prompt": "You are a periodic dependency-drain agent for this repository. Your job is to triage the open dependency-update pull requests and either help them merge or file follow-up work for the ones that cannot merge cleanly. Complement — do not duplicate — any CI-level auto-merge that is already configured.\n\nSteps:\n1. Enumerate every open Dependabot/Renovate pull request with `list_open_prs`.\n2. For each such PR, judge its impact: read the change with `inspect_pr_diff` and check its checks with `verify_pr_ci_status`. Classify it as either SAFE (a routine, non-breaking bump with green CI that can simply be merged) or BREAKING (an update that changes public API, requires a code/file migration, or has failing CI that a migration would fix).\n3. Skip any PR that CI-level auto-merge has already armed or that is already queued to merge — do not act on it. This job exists to handle the PRs auto-merge cannot, not to race it.\n4. For each BREAKING PR, file a migration ticket describing the required code changes via `POST /tickets/ingest` (one ticket per PR). Reference the PR number and summarise what must change.\n5. For SAFE PRs that are not already auto-merging, merge them.\n\nHard constraints: only touch dependency-update PRs (Dependabot/Renovate authored). Do not modify unrelated PRs or push code yourself — breaking changes go to migration tickets, not direct edits.\n\nFinish with a single report listing: the PRs you merged, the migration tickets you filed (with ticket ids and the PR each covers), and the PRs you skipped (with the reason, e.g. already auto-merging).",
+        "initial_prompt": "You are a periodic dependency-drain agent for this repository. Your job is to triage the open dependency-update pull requests and either help them merge or file follow-up work for the ones that cannot merge cleanly. Complement \u2014 do not duplicate \u2014 any CI-level auto-merge that is already configured.\n\nSteps:\n1. Enumerate every open Dependabot/Renovate pull request with `list_open_prs`.\n2. For each such PR, judge its impact: read the change with `inspect_pr_diff` and check its checks with `verify_pr_ci_status`. Classify it as either SAFE (a routine, non-breaking bump with green CI that can simply be merged) or BREAKING (an update that changes public API, requires a code/file migration, or has failing CI that a migration would fix).\n3. Skip any PR that CI-level auto-merge has already armed or that is already queued to merge \u2014 do not act on it. This job exists to handle the PRs auto-merge cannot, not to race it.\n4. For each BREAKING PR, file a migration ticket describing the required code changes via `POST /tickets/ingest` (one ticket per PR). Reference the PR number and summarise what must change.\n5. For SAFE PRs that are not already auto-merging, merge them.\n\nHard constraints: only touch dependency-update PRs (Dependabot/Renovate authored). Do not modify unrelated PRs or push code yourself \u2014 breaking changes go to migration tickets, not direct edits.\n\nFinish with a single report listing: the PRs you merged, the migration tickets you filed (with ticket ids and the PR each covers), and the PRs you skipped (with the reason, e.g. already auto-merging).",
         "schedule_interval_seconds": 604800,
         "anchor_utc": "2026-09-07T06:00:00Z",
         "model_level": 3,

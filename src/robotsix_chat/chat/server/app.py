@@ -125,7 +125,6 @@ from .routes import (
     health_endpoint,
     history_endpoint,
     http_exception_handler,
-    memory_ingestion_structure_endpoint,
     metrics_endpoint,
     mill_events_endpoint,
     mobile_token_endpoint,
@@ -549,11 +548,6 @@ def create_app(
         ),
         Route("/admin/disk", disk_usage_endpoint, methods=["GET"]),
         Route("/admin/prune", prune_endpoint, methods=["POST"]),
-        Route(
-            "/admin/memory/ingestion-structure",
-            memory_ingestion_structure_endpoint,
-            methods=["POST"],
-        ),
         Route("/mill-events", mill_events_endpoint, methods=["POST"]),
         Route("/chat", chat_endpoint, methods=["POST"]),
         Route("/chat/queue/cancel", cancel_queued_endpoint, methods=["POST"]),
@@ -1427,7 +1421,7 @@ def create_agent_from_settings(
     tools.  Use it for bounded text-transformation calls (e.g. the
     compaction summary agent).
 
-    *memory_enabled* (default ``True``) gates only long-term (cognee) memory
+    *memory_enabled* (default ``True``) gates only the full long-term memory
     while leaving tools and subsession wiring intact.  Set ``False`` for
     unattended background agents (subsession workers, periodic
     auto-continue) that would otherwise recall + cognify every turn around
@@ -1554,23 +1548,9 @@ def create_agent_from_settings(
     if bare:
         memory: ChatMemory = NullMemory()
     elif memory_enabled:
-        memory = build_memory(
-            settings.memory,
-            settings.langfuse,
-            settings.openrouter,
-            memory_component=settings.memory_component,
-        )
-    elif settings.memory_component.enabled or (
-        settings.memory.enabled and settings.memory.background_recall_enabled
-    ):
-        memory = ReadOnlyMemory(
-            build_memory(
-                settings.memory,
-                settings.langfuse,
-                settings.openrouter,
-                memory_component=settings.memory_component,
-            )
-        )
+        memory = build_memory(settings.memory_component)
+    elif settings.memory_component.enabled:
+        memory = ReadOnlyMemory(build_memory(settings.memory_component))
     else:
         memory = NullMemory()
     # Deep on-demand memory search: the automatic per-message recall is

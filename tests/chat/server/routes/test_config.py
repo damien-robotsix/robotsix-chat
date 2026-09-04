@@ -364,7 +364,6 @@ def test_get_config_returns_masked_data(tmp_path: Path) -> None:
     assert (  # pragma: allowlist secret
         config["openrouter"]["keys"]["robotsix-chat-cognee"] == "**********"
     )
-    assert config["memory"]["embedding"]["endpoint"] == "http://box:11434/v1"
 
 
 def test_get_config_missing_file(tmp_path: Path) -> None:
@@ -570,42 +569,6 @@ def test_put_preserves_nested_object_keys(tmp_path: Path) -> None:
 # ---------------------------------------------------------------------------
 
 
-def test_put_rejects_invalid_config(tmp_path: Path) -> None:
-    """A save that would yield an invalid config is rejected with 422 (RFC 9457)."""
-    config_path = tmp_path / "config.json"
-    _write_config(
-        config_path,
-        {
-            "chat_default_model_level": 2,
-            "memory": {
-                "enabled": True,
-                "embedding": {"endpoint": "http://box:11434/v1"},
-            },
-            "openrouter": {
-                "keys": {"robotsix-chat-cognee": "sk-llm"}  # pragma: allowlist secret
-            },
-        },
-    )
-    client = _make_app(config_path)
-
-    # Blank the embedding endpoint — this would make memory invalid.
-    resp = client.put(
-        "/config",
-        json={"memory": {"embedding": {"endpoint": ""}}},
-    )
-    assert resp.status_code == 422
-    assert resp.headers["Content-Type"] == "application/json"
-    error_data = resp.json()
-    assert error_data["error"] == "config validation failed"
-    assert "memory.embedding.endpoint" in error_data.get("detail", "")
-    assert "failures" in error_data
-    assert any("memory.embedding.endpoint" in f for f in error_data["failures"])
-
-    # Assert the on-disk config was NOT modified.
-    on_disk = _read_config_json(config_path)
-    assert on_disk["memory"]["embedding"]["endpoint"] == "http://box:11434/v1"
-
-
 def test_put_rejects_invalid_model_level(tmp_path: Path) -> None:
     """An invalid model_level is rejected with 422 and does not persist."""
     config_path = tmp_path / "config.json"
@@ -710,7 +673,6 @@ def test_put_reports_all_precondition_failures(tmp_path: Path) -> None:
     failures = error_data["failures"]
     # Both preconditions should appear
     assert any("chat_default_model_level" in f for f in failures), failures
-    assert any("memory.embedding.endpoint" in f for f in failures), failures
 
 
 # ---------------------------------------------------------------------------

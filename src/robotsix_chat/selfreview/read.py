@@ -34,7 +34,7 @@ def build_recent_activity_tools(
         per-``client_id`` conversation turns — and returns a human-readable
         summary of the most recent activity across all clients and sessions.
 
-        This is **not** the cognee long-term memory. cognee automatically
+        This is **not** the long-term memory component, which automatically
         recalls past exchanges by similarity; this tool reads the current
         live conversation store directly and is only available when the
         ``self_review`` feature is explicitly enabled in config.

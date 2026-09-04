@@ -1,6 +1,6 @@
 // Memory-backend degradation banner.
 //
-// The cognee memory backend fails in ways that are invisible from the chat:
+// The long-term memory backend fails in ways that are invisible from the chat:
 // recall() returns "" on any fault, so replies keep streaming — just without
 // any recalled context, and with nothing being written back. On 2026-08-26
 // the graph store was unopenable for 16 hours while the UI showed no sign of

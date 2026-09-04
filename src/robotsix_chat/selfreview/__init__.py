@@ -6,8 +6,8 @@ The tool reads from the in-process :class:`ConversationStore`
 (short-lived per-client conversation turns), producing a human-readable
 multi-session digest.
 
-This package is **independent of** the optional cognee episodic memory
-subsystem (``src/robotsix_chat/memory/``).  cognee automatically recalls
+This package is **independent of** the optional memory component
+(``src/robotsix_chat/memory/``), which automatically recalls
 whole past conversations by similarity; the tool here is a deliberate,
 explicit, read-only snapshot of the live conversation store — no
 embeddings, no persistence writes, no external service.
