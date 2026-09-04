@@ -194,6 +194,7 @@ async def test_periodic_non_transient_error_retry_succeeds() -> None:
             trace_metadata: dict[str, str] | None = None,
             trace_name: str | None = None,
             model_level: int | None = None,
+            skip_recall: bool = False,
         ) -> AsyncIterator[str]:
             nonlocal call_count
             call_count += 1
@@ -515,6 +516,7 @@ async def test_tool_failure_leaves_subsession_alive_periodic() -> None:
             trace_metadata: dict[str, str] | None = None,
             trace_name: str | None = None,
             model_level: int | None = None,
+            skip_recall: bool = False,
         ) -> AsyncIterator[str]:
             nonlocal call_count
             call_count += 1
@@ -572,6 +574,7 @@ async def test_tool_failure_exhausting_retries_leaves_subsession_alive_wfe() -> 
             trace_metadata: dict[str, str] | None = None,
             trace_name: str | None = None,
             model_level: int | None = None,
+            skip_recall: bool = False,
         ) -> AsyncIterator[str]:
             nonlocal call_count
             call_count += 1

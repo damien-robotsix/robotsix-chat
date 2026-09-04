@@ -661,8 +661,18 @@ class LlmioChatAgent:
         trace_metadata: dict[str, str] | None = None,
         trace_name: str | None = None,
         model_level: int | None = None,
+        skip_recall: bool = False,
     ) -> AsyncIterator[str]:
         """Yield the assistant's reply to *message* as a single block.
+
+        *skip_recall* suppresses the automatic long-term memory recall for
+        this turn. It is set by callers whose turn input is machine-generated
+        boilerplate rather than an operator utterance — chiefly event-driven
+        and periodic monitor wakes, whose prompts are self-contained by
+        design and whose fixed instruction text recalls near-random,
+        noise-only matches while hammering the memory component on every
+        wake. Interactive operator turns leave it ``False`` and keep full
+        recall.
 
         *history* is the prior ``(user, assistant)`` turns of the current
         conversation, replayed to the agent so it has multi-turn context.
@@ -711,25 +721,27 @@ class LlmioChatAgent:
         # prompt cache for the whole request on every turn. Prepending to the
         # newest user turn keeps the instruction, tools, and replayed
         # transcript byte-stable and cache-servable.
-        self._publish_synthetic_activity(
-            session_id, "tool_call", tool_name="recall_memory"
-        )
-        # A periodic session's first message starts with fixed scheduler
-        # scaffolding; recalling on it retrieves chunks about "scheduled
-        # periodic session" instead of the preset's actual task, so strip
-        # the known preamble from the recall query (the agent still gets
-        # the full message).
-        recall_query = message.removeprefix(PERIODIC_PREAMBLE)
-        recalled = await self._memory.recall(recall_query, session_id=session_id)
-        self._publish_synthetic_activity(
-            session_id,
-            "tool_result",
-            detail=(
-                f"found {len(recalled)} chars of prior context"
-                if recalled
-                else "no relevant memory found"
-            ),
-        )
+        recalled = ""
+        if not skip_recall:
+            self._publish_synthetic_activity(
+                session_id, "tool_call", tool_name="recall_memory"
+            )
+            # A periodic session's first message starts with fixed scheduler
+            # scaffolding; recalling on it retrieves chunks about "scheduled
+            # periodic session" instead of the preset's actual task, so strip
+            # the known preamble from the recall query (the agent still gets
+            # the full message).
+            recall_query = message.removeprefix(PERIODIC_PREAMBLE)
+            recalled = await self._memory.recall(recall_query, session_id=session_id)
+            self._publish_synthetic_activity(
+                session_id,
+                "tool_result",
+                detail=(
+                    f"found {len(recalled)} chars of prior context"
+                    if recalled
+                    else "no relevant memory found"
+                ),
+            )
         system_prompt = self._instruction
         llm_message = message
         if recalled:

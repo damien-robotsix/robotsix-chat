@@ -133,6 +133,35 @@ async def test_task_single_turn_completes_and_delivers() -> None:
     assert "completed" in label
     assert reply == "result 42"
 
+    # A task turn is operator-facing work, not machine boilerplate, so it
+    # keeps full automatic recall.
+    assert agent.calls[0]["skip_recall"] is False
+
+
+@pytest.mark.asyncio
+async def test_periodic_monitor_wake_skips_recall() -> None:
+    """A periodic monitor wake suppresses automatic long-term recall.
+
+    Monitor turn inputs are fixed, machine-generated instruction
+    boilerplate; recalling on them churns the memory component for
+    near-random matches on every wake. Monitors are self-contained by
+    design, so the worker passes ``skip_recall=True``.
+    """
+    agent = FakeAgent(["report 1"])
+    env = build_env(agent=agent)
+
+    sub_id = _spawn(
+        env,
+        kind=SubsessionKind.PERIODIC,
+        interval_seconds=0.02,
+        max_runs=1,
+        title="watch",
+    )
+    await _await_worker(env, sub_id)
+
+    assert len(agent.calls) >= 1
+    assert agent.calls[0]["skip_recall"] is True
+
 
 @pytest.mark.asyncio
 async def test_agent_factory_runs_off_the_event_loop_thread() -> None:

@@ -47,6 +47,7 @@ class _SlowAgent:
         trace_metadata: dict[str, str] | None = None,
         trace_name: str | None = None,
         model_level: int | None = None,
+        skip_recall: bool = False,
     ) -> AsyncIterator[str]:
         await self._release.wait()
         for token in self._tokens:

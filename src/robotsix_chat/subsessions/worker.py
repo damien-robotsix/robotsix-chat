@@ -1186,6 +1186,7 @@ async def _run_turn(
     max_history_turns: int = _MAX_WORKER_HISTORY_TURNS,
     trace_metadata: dict[str, str] | None = None,
     trace_name: str | None = None,
+    skip_recall: bool = False,
 ) -> str:
     """Run one agent turn and return the reply text."""
     parts = [
@@ -1197,6 +1198,7 @@ async def _run_turn(
             client_id=sub_id,
             trace_metadata=trace_metadata,
             trace_name=trace_name,
+            skip_recall=skip_recall,
         )
     ]
     return "".join(parts)
@@ -1239,6 +1241,13 @@ async def _run_turn_with_timeout(
                     "parent_session_id": info.parent_id or info.owner_session_id,
                 },
                 trace_name="subsession-turn",
+                # Monitor wakes (periodic / wait_for_event) feed fixed,
+                # machine-generated instruction boilerplate as the turn
+                # input; recalling on it churns the memory component for
+                # near-random, noise-only matches. Monitors are
+                # self-contained by design, so skip automatic recall.
+                skip_recall=info.kind
+                in (SubsessionKind.PERIODIC, SubsessionKind.WAIT_FOR_EVENT),
             )
     except TimeoutError:
         logger.warning(
