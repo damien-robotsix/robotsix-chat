@@ -69,7 +69,7 @@ class HealthSettings(BaseModel):
     When enabled, a background scheduler runs every *check_interval_seconds*
     (default 300 s / 5 min) and verifies that critical subsystems are
     reachable and producing expected output:
-    memory (cognee recall), knowledge store, feedback runner, and
+    memory (long-term recall), knowledge store, feedback runner, and
     diagnostics store.  It also watches the container's cgroup memory
     usage and warns *before* the OOM killer fires.  Results are exposed
     via ``GET /health`` and logged.
@@ -89,6 +89,37 @@ class HealthSettings(BaseModel):
     check_interval_seconds: float = Field(default=300.0, gt=0)
     memory_warn_fraction: float = Field(default=0.85, gt=0, le=1)
     model_config = ConfigDict(extra="forbid")
+
+
+class MemoryComponentSettings(BaseModel):
+    """robotsix-memory component integration (long-term fleet memory).
+
+    The evergoing summary scheduler pushes every session summary it writes
+    to the memory component's ``/remember`` endpoint, and a final summary
+    is pushed when a conversation is closed. Pushes reuse a stable
+    per-session ``document_id`` with ``update_mode="replace"``, so
+    re-summaries supersede rather than duplicate. Writes are best-effort:
+    a memory outage never breaks chat.
+
+    Attributes:
+        enabled: Master switch for the summary → memory pushes. The chat
+            agent's direct skill access to the component (via the deploy
+            roster) is independent of this flag.
+        url: Base URL of the memory component on the internal network.
+        timeout_seconds: Per-push HTTP timeout.
+
+    """
+
+    enabled: bool = True
+    url: str = "http://memory:8080"
+    timeout_seconds: float = Field(default=60.0, gt=0)
+    model_config = ConfigDict(extra="forbid")
+
+    @model_validator(mode="before")
+    @classmethod
+    def _strip_blank_numeric(cls, data: Any) -> Any:
+        """Strip blank ``""`` numeric sentinels so stored configs load."""
+        return drop_blank_numeric_sentinels(cls, data)
 
 
 class EvergoingSettings(BaseModel):

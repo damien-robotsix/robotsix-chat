@@ -75,8 +75,8 @@ card. Clients must not render an empty summary card. Recommended handling patter
 
 When the agent sends you a notification, it appears as a transient **toast** notification in the
 upper-right corner of the browser window. This happens **regardless of whether you have granted the
-browser's notification permission** — in-app toasts ensure every alert is visibly surfaced even
-when desktop notifications are unavailable.
+browser's notification permission** — in-app toasts ensure every alert is visibly surfaced even when
+desktop notifications are unavailable.
 
 ### Where Toasts Appear
 
@@ -109,6 +109,42 @@ ensures you never miss an alert even if desktop permission was never granted.
 > **Tip:** If you want desktop notifications, watch for the browser's permission prompt on your
 > first click. Grant it to enable native alerts as a backup to the in-app toasts.
 
+### Browser Notification Permissions
+
+Native desktop notifications use the browser's standard Notification permission, which has three
+states: **default** (not yet decided), **granted**, and **denied**.
+
+- **When the prompt appears** — the app requests permission on your **first click** anywhere in the
+  page, not on page load. Browsers (notably Chrome) suppress a permission request that fires without
+  a user gesture, so binding it to the first click is what makes the prompt reliably appear. If you
+  never interact with the page, the prompt is never shown and permission stays at *default*.
+- **Granting** — click **Allow** in the browser prompt. Native desktop notifications then appear
+  alongside the in-app toasts.
+- **Denying** — click **Block** (or dismiss the prompt). You will **not** be asked again on that
+  site. Denying only turns off the *native* channel — the in-app toasts, unread badge, and
+  missed-notifications panel keep working exactly as before, so no alert is ever lost.
+- **Changing your mind later** — permission is managed by the browser, not the app. To grant or
+  revoke it after the fact, open the browser's **site settings** for this page (usually the padlock
+  / "tune" icon in the address bar, then *Notifications*) and set it to *Allow* or *Block*. Reset it
+  to *Ask* there if you want the prompt to appear again.
+
+Because in-app toasts render regardless of this permission, granting it is entirely optional — it
+only adds a second, native channel for the same notifications.
+
+### System Notifications — Service Faults
+
+In addition to agent-generated notifications, the system sends **high-urgency red toasts** when a
+critical backend service fault is detected and automatic recovery cannot safely repair it. These are
+rare but important:
+
+- **"Memory store down (graph segfault)"** — The long-term memory service encountered a persistent
+  fault that auto-recovery could not heal. The memory service is temporarily offline, so the agent
+  will continue without access to your conversation history. **What to do:** check the system logs
+  or contact support if the memory service does not recover within a few minutes. The fault
+  diagnosis is included in the notification body.
+
+These system notifications persist on screen (red border, high urgency) until you dismiss them.
+
 ## Missed Notifications Badge & Panel
 
 When the agent sends you **missed notifications** (alerts and reminders you weren't connected to
@@ -117,13 +153,13 @@ showing how many notifications you have not yet viewed.
 
 ### Badge
 
-The "🔔 Alerts" button in the header shows an unread-notification count badge. The badge is hidden
-when the count is zero.
+The "🔔 Notifications" button in the header shows an unread-notification count badge. The badge is
+hidden when the count is zero.
 
 ### Opening the Notifications Panel
 
-**Click the "🔔 Alerts" button** to open the missed-notifications panel. The panel slides in from
-the right side of the screen and displays:
+**Click the "🔔 Notifications" button** to open the missed-notifications panel. The panel slides in
+from the right side of the screen and displays:
 
 - **Title** — the notification subject
 - **Body** — the notification message content
@@ -136,10 +172,58 @@ When you open the notifications panel, all notifications displayed are automatic
 The badge clears immediately and will stay at zero on page refresh — those notifications are no
 longer unread.
 
+## Desktop Notifications for Conversation Messages
+
+In addition to the agent-sent notifications above, new **conversation messages** can also raise
+native desktop notifications when you have granted browser notification permission — but only when
+you are not actively viewing the target.
+
+This covers two live update paths driven by the existing Server-Sent Events (SSE) channel:
+
+- **New main-conversation messages** — a completed or re-attached agent turn in the active chat.
+- **New `user_chat` side-chat messages** — when the agent asks the operator something in a focused
+  side conversation (a subsession the agent starts to get a decision).
+
+### De-duplication (when you won't be notified)
+
+To avoid an intrusive notification for something that is already on screen, notifications are
+suppressed when **the browser tab is visible** **and** the target is the one you are actively
+viewing:
+
+- A **main-conversation** message does not notify while you are looking at the main chat (no
+  subsession is in focus mode).
+- A **`user_chat` side-chat** message does not notify while that specific subsession is either in
+  **focus mode** (fills the screen) or has its row **expanded** with the side-chat panel visible —
+  the same on-screen signal the unread-badge logic uses.
+
+When the tab is in the background, or you are viewing a different target, a new message raises a
+desktop notification titled with the conversation (`New message in …`) or "Chat request" so you can
+tell main-chat from side-chat updates at a glance.
+
+> **Tip:** These notifications are gated by the same browser permission as the agent-sent
+> notifications above — grant the permission prompt to enable them. De-duplication is automatic; no
+> configuration is needed.
+
+### Clicking a Notification to Navigate
+
+When you click a **desktop notification** for a conversation message, the chat app automatically
+navigates to the target and brings the window/tab to the foreground — even if the browser was
+backgrounded at the time.
+
+- **Clicking a main-conversation notification** — opens or focuses the active main chat and the
+  session that message belongs to (if a different session is currently active, it switches to the
+  correct one). Any subsession focus mode is exited so you see the main conversation.
+- **Clicking a `user_chat` side-chat notification** — opens or focuses the specific subsession that
+  sent the message. The subsessions panel slides open and the target subsession appears (either
+  expanded in the panel or in full-screen focus mode if that was active).
+
+The notification is then closed so you don't see it again — no duplicate or stale notifications
+remain after the click is handled.
+
 ### Replayed Missed Notifications
 
-When you reconnect to the chat (on page reload or after a network disconnect), any notifications
-you missed while offline are replayed. Each replayed notification:
+When you reconnect to the chat (on page reload or after a network disconnect), any notifications you
+missed while offline are replayed. Each replayed notification:
 
 - Appears as an **in-app toast** in the corner (the same transient alert you see for live
   notifications)
@@ -150,6 +234,23 @@ You can then open the notifications panel to view the full list and mark them as
 
 ### Closing the Panel
 
-Click the **×** button in the notifications panel header or click outside the panel to close it.
-The marked-as-read state is preserved — the panel can be reopened if you want to view the
-notification history again in a later session.
+Click the **×** button in the notifications panel header or click outside the panel to close it. The
+marked-as-read state is preserved — the panel can be reopened if you want to view the notification
+history again in a later session.
+
+## Migrating from the Alerts Inbox
+
+Earlier versions surfaced agent alerts behind a header button labelled **🔔 Alerts**. That button is
+now **🔔 Notifications**, and the feature set has grown rather than changed underneath you:
+
+- **Same inbox, new name** — the button still opens the missed-notifications panel described above,
+  still shows an unread-count badge, and still stores alerts you weren't connected to receive. No
+  history is lost in the rename; nothing you relied on was removed.
+- **New: native desktop notifications** — in addition to the in-app toasts and the inbox panel, the
+  agent (and new-message events) can now raise **native desktop notifications** when you grant
+  browser permission. See [Browser Notification Permissions](#browser-notification-permissions).
+- **New: click-to-navigate** — clicking a desktop notification jumps straight to the conversation or
+  subsession that raised it (see
+  [Clicking a Notification to Navigate](#clicking-a-notification-to-navigate)).
+- **Nothing to configure** — there is no separate Alerts setting to migrate. Desktop notifications
+  are gated only by the browser permission prompt; de-duplication and inbox replay are automatic.

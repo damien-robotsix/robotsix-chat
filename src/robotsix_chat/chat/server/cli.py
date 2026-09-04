@@ -72,6 +72,7 @@ def run_server(
     knowledge_store: Any = None,
     health_settings: Any = None,
     evergoing_settings: Any = None,
+    memory_component_settings: Any = None,
     continuation_store: Any = None,
     notification_store: Any = None,
     notification_store_and_forward: bool = True,
@@ -117,6 +118,7 @@ def run_server(
         knowledge_store=knowledge_store,
         health_settings=health_settings,
         evergoing_settings=evergoing_settings,
+        memory_component_settings=memory_component_settings,
         continuation_store=continuation_store,
         notification_store=notification_store,
         notification_store_and_forward=notification_store_and_forward,
@@ -162,7 +164,7 @@ def _export_langfuse_env(settings: Settings) -> None:
         os.environ["LANGFUSE_SECRET_KEY"] = creds.secret_key.get_secret_value()
         # llmio's setup_langfuse_tracing reads LANGFUSE_BASE_URL and falls back
         # to Langfuse Cloud US when it is absent; LANGFUSE_HOST is the langfuse
-        # SDK / cognee name. Export both so every consumer sees the same host.
+        # SDK name. Export both so every consumer sees the same host.
         os.environ["LANGFUSE_BASE_URL"] = settings.langfuse.host
         os.environ["LANGFUSE_HOST"] = settings.langfuse.host
     else:
@@ -355,10 +357,10 @@ def run_server_from_config(agent: ChatAgent | None = None) -> None:
             subsession_env=env,
             subsession_ctx=ctx,
             subsession_close_state=close_state,
-            # Background subsession workers run unattended; long-term cognee
-            # memory is gated off by default (memory.subsession_enabled) so
-            # they don't recall + cognify every turn around the clock.
-            memory_enabled=s.memory.subsession_enabled,
+            # Background subsession workers run unattended; they get
+            # read-only component recall via the gated path in
+            # create_agent_from_settings, never the full backend.
+            memory_enabled=False,
             diagnostic_store=diagnostic_store,
             knowledge_store=knowledge_store,
             notification_store=notification_store,
@@ -382,7 +384,7 @@ def run_server_from_config(agent: ChatAgent | None = None) -> None:
     # -- periodic session agents -------------------------------------------
     # Periodic sessions run the exact same instruction and code path as an
     # operator session; the only per-preset knob is the model level. Agents
-    # are cached per level so repeated firings reuse them. Long-term cognee
+    # are cached per level so repeated firings reuse them. Full long-term
     # memory stays gated (memory.periodic_enabled) — these turns are
     # unattended and would otherwise cognify around the clock.
     _periodic_agents: dict[int | None, LlmioChatAgent] = {}
@@ -397,7 +399,9 @@ def run_server_from_config(agent: ChatAgent | None = None) -> None:
                 else settings.chat_default_model_level,
                 subsession_env=env,
                 event_sink=event_bus,
-                memory_enabled=settings.memory.periodic_enabled,
+                # Periodic agents get read-only component recall via the
+                # gated path in create_agent_from_settings.
+                memory_enabled=False,
                 diagnostic_store=diagnostic_store,
                 knowledge_store=knowledge_store,
                 notification_store=notification_store,
@@ -472,10 +476,33 @@ def run_server_from_config(agent: ChatAgent | None = None) -> None:
             knowledge_store=knowledge_store,
         )
 
+        # When the board rejects a feedback finding with its admission policy
+        # (investigation tickets retired), the runner routes the finding to a
+        # one-shot chat subsession agent that investigates/acts on it instead.
+        from robotsix_chat.subsessions import SubsessionKind
+        from robotsix_chat.subsessions.worker import spawn_subsession
+
+        _feedback_subsession_level = settings.feedback.model_level
+
+        def _spawn_feedback_investigation(
+            *, owner_session_id: str, title: str, prompt: str
+        ) -> str | None:
+            return spawn_subsession(
+                env=env,
+                kind=SubsessionKind.TASK,
+                owner_session_id=owner_session_id,
+                parent_id=None,
+                depth=1,
+                title=title,
+                prompt=prompt,
+                model_level=_feedback_subsession_level,
+            )
+
         feedback_runner = FeedbackRunner(
             settings.feedback,
             feedback_agent,
             subsession_registry=subsession_registry,
+            subsession_spawner=_spawn_feedback_investigation,
             deploy_base_url=settings.central_deploy.url,
             deploy_api_key=settings.central_deploy.deploy_api_key.get_secret_value(),
         )
@@ -500,9 +527,9 @@ def run_server_from_config(agent: ChatAgent | None = None) -> None:
 
     # -- warm the memory backend off the request path ----------------------
     def _start_memory_warmup() -> None:
-        """Fire cognee's cold start as a background task, if the backend wants one.
+        """Fire the memory backend's cold start, if the backend wants one.
 
-        Deliberately not awaited: warming imports cognee and opens the vector
+        Deliberately not awaited: warming may open stores and block
         tables, which takes tens of seconds, and blocking here would delay
         readiness. Backends without a ``warm`` hook (NullMemory, ReadOnlyMemory
         over one) are simply skipped.
@@ -638,10 +665,9 @@ def run_server_from_config(agent: ChatAgent | None = None) -> None:
 
     logger.info(
         "Resolved persistence paths: conversation=%s, knowledge=%s, "
-        "memory_data=%s, diagnostics=%s, subsessions=%s",
+        "diagnostics=%s, subsessions=%s",
         settings.conversation.persist_path,
         settings.knowledge.path,
-        settings.memory.data_dir,
         settings.diagnostics.store_path,
         settings.subsessions.store_path,
     )
@@ -679,6 +705,7 @@ def run_server_from_config(agent: ChatAgent | None = None) -> None:
         knowledge_store=knowledge_store,
         health_settings=settings.health,
         evergoing_settings=settings.evergoing,
+        memory_component_settings=settings.memory_component,
         continuation_store=continuation_store,
         notification_store=notification_store,
         notification_store_and_forward=settings.notification.store_and_forward,

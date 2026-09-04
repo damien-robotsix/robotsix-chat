@@ -2,6 +2,7 @@
 
 from __future__ import annotations
 
+import asyncio
 import logging
 from typing import TYPE_CHECKING, Any
 
@@ -21,6 +22,9 @@ from robotsix_chat.subsessions.registry import OWNER_CLOSED_REASON
 
 from ._shared import _get_session_id, _parse_json_body
 from .chat import ChatAgent
+
+# Keep strong refs to fire-and-forget finalize tasks (GC guard).
+_finalize_tasks: set[asyncio.Task[bool]] = set()
 
 logger = logging.getLogger(__name__)
 
@@ -329,6 +333,15 @@ async def sessions_close_endpoint(request: Request) -> JSONResponse:
         turns = store.history(session_id)
         if turns:
             feedback_runner.schedule("session_end", session_id, turns)
+
+    # Final memory push: summarise the full conversation (including the
+    # fresh runs the periodic scheduler never covered) and replace the
+    # session's rolling-summary document in the memory component.
+    scheduler = getattr(request.app.state, "evergoing_scheduler", None)
+    if scheduler is not None:
+        task = asyncio.create_task(scheduler.finalize_session(session_id))
+        _finalize_tasks.add(task)
+        task.add_done_callback(_finalize_tasks.discard)
 
     # -- session carryover persistence ------------------------------------
     # Save an action-plan summary to the knowledge store so the assistant

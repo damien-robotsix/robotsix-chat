@@ -16,9 +16,6 @@ from robotsix_chat.config import (
     FeedbackSettings,
     FileHubToolsSettings,
     KindTurnBudget,
-    MemoryEmbeddingSettings,
-    MemorySettings,
-    OpenRouterSettings,
     RefDocsSettings,
     SelfReviewSettings,
     Settings,
@@ -153,131 +150,6 @@ def test_load_from_json_file(tmp_path: Path, monkeypatch: pytest.MonkeyPatch) ->
 
 # ---------------------------------------------------------------------------
 # Memory
-# ---------------------------------------------------------------------------
-
-
-def test_memory_disabled_by_default() -> None:
-    """Memory is off by default, with the validated robotsix defaults present."""
-    settings = Settings()
-
-    assert settings.memory.enabled is False
-    assert settings.memory.data_dir == "/data/cognee"
-    # Automatic recall is retrieval-only (no LLM hop per message); the
-    # LLM-mediated GRAPH_COMPLETION moved to the on-demand search_memory tool.
-    assert settings.memory.recall_search_type == "CHUNKS"
-    assert settings.memory.deep_recall_search_type == "GRAPH_COMPLETION"
-    assert settings.memory.deep_recall_timeout_seconds == 180.0
-    assert settings.memory.llm.model == "openrouter/openai/gpt-5-nano"
-    assert settings.memory.embedding.provider == "openai_compatible"
-    assert settings.memory.embedding.dimensions == 1024
-
-
-def test_memory_enabled_requires_llm_key() -> None:
-    """Enabling memory without an extraction-LLM key is rejected."""
-    with pytest.raises(ValueError, match="openrouter.keys"):
-        Settings(
-            memory=MemorySettings(
-                enabled=True,
-                embedding=MemoryEmbeddingSettings(endpoint="http://box:11434/v1"),
-            )
-        )
-
-
-def test_memory_enabled_requires_embedding_endpoint() -> None:
-    """Enabling memory without an embedding endpoint is rejected."""
-    with pytest.raises(ValueError, match="memory.embedding.endpoint"):
-        Settings(
-            memory=MemorySettings(enabled=True),
-            openrouter=OpenRouterSettings(
-                keys={  # pragma: allowlist secret
-                    "robotsix-chat-cognee": SecretStr("sk-or-x")
-                }
-            ),
-        )
-
-
-def test_memory_enabled_with_key_and_endpoint_ok() -> None:
-    """Memory constructs once both required fields are present."""
-    settings = Settings(
-        memory=MemorySettings(
-            enabled=True,
-            embedding=MemoryEmbeddingSettings(endpoint="http://box:11434/v1"),
-        ),
-        openrouter=OpenRouterSettings(
-            keys={  # pragma: allowlist secret
-                "robotsix-chat-cognee": SecretStr("sk-or-x")
-            }
-        ),
-    )
-    assert settings.memory.enabled is True
-
-
-def test_memory_from_json_config(
-    tmp_path: Path, monkeypatch: pytest.MonkeyPatch
-) -> None:
-    """Memory settings can be loaded from JSON config file."""
-    config_path = _write_config_json(
-        tmp_path,
-        {
-            "memory": {
-                "enabled": True,
-                "embedding": {"endpoint": "http://box:11434/v1", "dimensions": 768},
-            },
-            "openrouter": {
-                "keys": {
-                    "robotsix-chat-cognee": "sk-or-env"  # pragma: allowlist secret
-                }
-            },
-        },
-    )
-    monkeypatch.setenv("ROBOTSIX_CONFIG_FILE", str(config_path))
-
-    settings = Settings.load()
-
-    assert settings.memory.enabled is True
-    # pragma: allowlist secret
-    assert (
-        settings.openrouter.key("robotsix-chat-cognee").get_secret_value()
-        == "sk-or-env"
-    )
-    assert settings.memory.embedding.endpoint == "http://box:11434/v1"
-    assert settings.memory.embedding.dimensions == 768
-
-
-def test_memory_legacy_llm_api_key_migrates_to_openrouter(
-    tmp_path: Path, monkeypatch: pytest.MonkeyPatch
-) -> None:
-    """A legacy ``memory.llm.api_key`` loads into ``openrouter.keys`` on read."""
-    config_path = _write_config_json(
-        tmp_path,
-        {
-            "memory": {
-                "enabled": True,
-                "llm": {"api_key": "sk-legacy"},  # pragma: allowlist secret
-                "embedding": {"endpoint": "http://box:11434/v1"},
-            },
-        },
-    )
-    monkeypatch.setenv("ROBOTSIX_CONFIG_FILE", str(config_path))
-
-    settings = Settings.load()
-
-    assert settings.memory.enabled is True
-    # pragma: allowlist secret
-    assert (
-        settings.openrouter.key("robotsix-chat-cognee").get_secret_value()
-        == "sk-legacy"
-    )
-    assert "api_key" not in settings.memory.llm.model_dump()
-
-
-# ---------------------------------------------------------------------------
-# Mill (broker integration)
-# ---------------------------------------------------------------------------
-
-
-# ---------------------------------------------------------------------------
-# Conversation settings
 # ---------------------------------------------------------------------------
 
 
@@ -882,34 +754,6 @@ def test_legacy_langfuse_keys_are_stripped_not_migrated() -> None:
     assert settings.langfuse.creds("robotsix-chat").is_configured() is False
 
 
-def test_legacy_memory_langfuse_block_is_stripped() -> None:
-    """The removed ``memory.langfuse`` sub-block no longer rejects the file."""
-    settings = Settings(
-        memory={
-            "data_dir": "/data/cognee",
-            "langfuse": {
-                "public_key": "pk-legacy",
-                "secret_key": "sk-legacy",  # pragma: allowlist secret
-                "host": "https://langfuse.example.net",
-            },
-        }  # type: ignore[arg-type]
-    )
-    assert settings.memory.data_dir == "/data/cognee"
-    assert settings.memory.langfuse_project == "robotsix-chat-cognee"
-    assert not hasattr(settings.memory, "langfuse")
-
-
-def test_memory_langfuse_project_default() -> None:
-    """Memory names its own project rather than carrying credentials."""
-    settings = Settings()
-    assert settings.memory.langfuse_project == "robotsix-chat-cognee"
-
-
-# ---------------------------------------------------------------------------
-# Legacy empty-string coercion
-# ---------------------------------------------------------------------------
-
-
 def test_coerce_cors_allow_origins_empty_string_to_list() -> None:
     """``cors_allow_origins=""`` is coerced to ``[]``."""
     settings = Settings(cors_allow_origins="")  # type: ignore[arg-type]
@@ -924,9 +768,8 @@ def test_coerce_allowed_image_media_types_empty_string_to_list() -> None:
 
 def test_coerce_top_level_object_empty_string_to_dict() -> None:
     """Top-level object fields like ``memory=""`` fall back to defaults."""
-    settings = Settings(memory="")  # type: ignore[arg-type]
-    assert settings.memory.enabled is False
-    assert settings.memory.data_dir == "/data/cognee"
+    settings = Settings(diagnostics="")  # type: ignore[arg-type]
+    assert settings.diagnostics.enabled is True
 
 
 def test_coerce_refdocs_empty_string_to_dict() -> None:
@@ -955,22 +798,6 @@ def test_coerce_component_client_components_empty_string_to_list() -> None:
     assert settings.component_client.components == []
 
 
-def test_coerce_memory_nested_empty_string_to_dict() -> None:
-    """Coerce ``memory.llm=""`` and friends to ``{}`` → defaults.
-
-    ``memory.llm=""`` and ``memory.embedding=""`` are each coerced to
-    ``{}`` → defaults.
-    """
-    settings = Settings(
-        memory={
-            "llm": "",
-            "embedding": "",
-        }  # type: ignore[arg-type]
-    )
-    assert settings.memory.llm.model == "openrouter/openai/gpt-5-nano"
-    assert settings.memory.embedding.model == "bge-m3"
-
-
 def test_periodic_empty_sessions_stays_empty() -> None:
     """An explicit ``periodic.sessions: []`` means nothing fires.
 
@@ -987,25 +814,8 @@ def test_periodic_empty_sessions_stays_empty() -> None:
 
 def test_coerce_object_object_sentinel_top_level_object() -> None:
     """``memory="[object Object]"`` is coerced to ``{}`` → defaults."""
-    settings = Settings(memory="[object Object]")  # type: ignore[arg-type]
-    assert settings.memory.enabled is False
-    assert settings.memory.data_dir == "/data/cognee"
-
-
-def test_coerce_object_object_sentinel_nested_memory_llm() -> None:
-    """``memory.llm="[object Object]"`` is coerced to ``{}`` → defaults."""
-    settings = Settings(
-        memory={"llm": "[object Object]"}  # type: ignore[arg-type]
-    )
-    assert settings.memory.llm.model == "openrouter/openai/gpt-5-nano"
-
-
-def test_coerce_object_object_sentinel_nested_memory_embedding() -> None:
-    """``memory.embedding="[object Object]"`` is coerced to ``{}`` → defaults."""
-    settings = Settings(
-        memory={"embedding": "[object Object]"}  # type: ignore[arg-type]
-    )
-    assert settings.memory.embedding.model == "bge-m3"
+    settings = Settings(diagnostics="[object Object]")  # type: ignore[arg-type]
+    assert settings.diagnostics.enabled is True
 
 
 def test_coerce_object_object_sentinel_top_level_langfuse() -> None:
@@ -1037,14 +847,14 @@ def test_coerce_object_object_sentinel_nested_component_client_components() -> N
 
 def test_coerce_undefined_sentinel_top_level_object() -> None:
     """``memory="undefined"`` is coerced to ``{}`` → defaults."""
-    settings = Settings(memory="undefined")  # type: ignore[arg-type]
-    assert settings.memory.enabled is False
+    settings = Settings(diagnostics="undefined")  # type: ignore[arg-type]
+    assert settings.diagnostics.enabled is True
 
 
 def test_coerce_null_sentinel_top_level_object() -> None:
     """``memory="null"`` is coerced to ``{}`` → defaults."""
-    settings = Settings(memory="null")  # type: ignore[arg-type]
-    assert settings.memory.enabled is False
+    settings = Settings(diagnostics="null")  # type: ignore[arg-type]
+    assert settings.diagnostics.enabled is True
 
 
 def test_coerce_undefined_sentinel_top_level_list() -> None:
@@ -1063,11 +873,13 @@ def test_roundtrip_nested_object_field_preserves_structure() -> None:
     original = Settings()
     dumped = original.model_dump()
     reloaded = Settings.model_validate(dumped)
-    assert reloaded.memory.llm.model == original.memory.llm.model
-    assert reloaded.memory.llm.provider == original.memory.llm.provider
-    assert reloaded.memory.llm.endpoint == original.memory.llm.endpoint
+    assert reloaded.evergoing.enabled == original.evergoing.enabled
+    assert (
+        reloaded.evergoing.trim_interval_seconds
+        == original.evergoing.trim_interval_seconds
+    )
     # Whole nested dict is equal
-    assert reloaded.memory.llm.model_dump() == original.memory.llm.model_dump()
+    assert reloaded.evergoing.model_dump() == original.evergoing.model_dump()
 
 
 def test_roundtrip_empty_array_field_preserves_structure() -> None:
@@ -1102,14 +914,14 @@ class TestUnknownKeys:
     """Unknown keys in any model raise a ``ValidationError`` (extra="forbid")."""
 
     def test_top_level_settings_rejects_unknown(self) -> None:
-        """Typo in a top-level key (e.g. ``memry`` for ``memory``) is rejected."""
+        """Typo in a top-level key (e.g. ``memry``) is rejected."""
         with pytest.raises(ValidationError, match="memry"):
             Settings(memry={"enabled": True})  # type: ignore[call-arg]
 
     def test_nested_submodel_rejects_unknown(self) -> None:
         """Unknown key inside a nested sub-model is rejected."""
         with pytest.raises(ValidationError, match="typo_key"):
-            MemorySettings(enabled=True, typo_key="value")  # type: ignore[call-arg]
+            EvergoingSettings(enabled=True, typo_key="value")  # type: ignore[call-arg]
 
     def test_list_field_model_rejects_unknown(self) -> None:
         """Unknown key inside a list-field sub-model is rejected."""
@@ -1261,8 +1073,8 @@ _PREEXISTING_ALLOWLIST: set[tuple[str, int, str]] = {
     ("src/robotsix_chat/config/settings.py", 98, "-opus"),
     ("src/robotsix_chat/config/settings.py", 98, "claude-fable"),
     # config/settings.py — vision_model default (OpenRouter captioning model)
-    ("src/robotsix_chat/config/settings.py", 154, "gpt-"),
-    ("src/robotsix_chat/config/settings.py", 1872, "gpt-"),
+    ("src/robotsix_chat/config/settings.py", 153, "gpt-"),
+    ("src/robotsix_chat/config/settings.py", 1873, "gpt-"),
     # config/memory_models.py — gpt-5-nano / gpt-5-mini / deepseek-v4-flash
     ("src/robotsix_chat/config/memory_models.py", 26, "gpt-"),
     ("src/robotsix_chat/config/memory_models.py", 50, "gpt-"),
@@ -1300,56 +1112,6 @@ def test_no_concrete_model_names_in_source() -> None:
     )
 
 
-def test_legacy_memory_api_key_survives_the_config_library_strip(
-    tmp_path: Path, monkeypatch: pytest.MonkeyPatch
-) -> None:
-    """The migration must run through robotsix-config's pre-strip hook.
-
-    `load_config` strips keys the model no longer declares *before* calling
-    `model_validate`, so relying only on the `@model_validator(mode="before")`
-    left the legacy value stripped and unrecoverable — and then validation
-    failed for the missing canonical key, i.e. exactly the crash-loop the
-    migration exists to prevent. Guards that `Settings.migrate_legacy_config`
-    stays wired up.
-    """
-    assert callable(getattr(Settings, "migrate_legacy_config", None)), (
-        "robotsix-config calls Settings.migrate_legacy_config before stripping "
-        "unknown keys; without it the legacy key is gone before the "
-        "before-validator runs"
-    )
-
-    config_path = _write_config_json(
-        tmp_path,
-        {
-            "memory": {
-                "enabled": True,
-                "llm": {"api_key": "sk-legacy-via-hook"},  # pragma: allowlist secret
-                "embedding": {"endpoint": "http://box:11434/v1"},
-            },
-        },
-    )
-    monkeypatch.setenv("ROBOTSIX_CONFIG_FILE", str(config_path))
-
-    settings = Settings.load()
-
-    assert (
-        settings.openrouter.key("robotsix-chat-cognee").get_secret_value()
-        == "sk-legacy-via-hook"  # pragma: allowlist secret
-    )
-
-    # Second load sees the already-cleaned file: the hook must be a no-op.
-    again = Settings.load()
-    assert (
-        again.openrouter.key("robotsix-chat-cognee").get_secret_value()
-        == "sk-legacy-via-hook"  # pragma: allowlist secret
-    )
-
-
-# ---------------------------------------------------------------------------
-# Legacy "" numeric sentinels — settings-UI hygiene
-# ---------------------------------------------------------------------------
-
-
 def test_central_deploy_blank_numeric_sentinel_falls_back_to_default() -> None:
     """A legacy ``""`` on a numeric field loads and dumps its default, not ``""``."""
     settings = CentralDeploySettings.model_validate(
@@ -1378,20 +1140,6 @@ def test_kind_turn_budget_blank_numeric_sentinel_loads_cleanly() -> None:
 
     assert settings.soft_warn_turns == 25
     assert settings.hard_stop_turns == 40
-
-
-def test_memory_blank_numeric_sentinel_loads_cleanly() -> None:
-    settings = MemorySettings.model_validate(
-        {
-            "maintenance_interval_seconds": "",
-            "maintenance_vacuum_interval_seconds": "",
-            "recall_max_concurrency": "",
-        }
-    )
-
-    assert settings.maintenance_interval_seconds == 21600.0
-    assert settings.maintenance_vacuum_interval_seconds == 21600.0
-    assert settings.recall_max_concurrency == 4
 
 
 def test_feedback_blank_numeric_sentinel_loads_cleanly() -> None:
@@ -1438,10 +1186,6 @@ def test_production_config_with_blank_numeric_sentinels_loads_cleanly() -> None:
             "trim_interval_seconds": "",
             "keep_recent_runs": "",
         },
-        "memory": {
-            "maintenance_interval_seconds": "",
-            "maintenance_version_retention_seconds": "",
-        },
         "feedback": {"ingest_max_retries": "", "max_tickets_per_run": ""},
         "file_hub_tools": {"max_download_bytes": "", "timeout": ""},
         "subsessions": {
@@ -1477,8 +1221,6 @@ def test_production_config_with_blank_numeric_sentinels_loads_cleanly() -> None:
         dumped["central_deploy"]["component_response_max_chars"],
         dumped["evergoing"]["trim_interval_seconds"],
         dumped["evergoing"]["keep_recent_runs"],
-        dumped["memory"]["maintenance_interval_seconds"],
-        dumped["memory"]["maintenance_version_retention_seconds"],
         dumped["feedback"]["ingest_max_retries"],
         dumped["feedback"]["max_tickets_per_run"],
         dumped["file_hub_tools"]["max_download_bytes"],

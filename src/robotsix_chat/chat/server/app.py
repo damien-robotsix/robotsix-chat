@@ -32,7 +32,11 @@ from robotsix_chat.chat.events import EventBus, EventSink
 from robotsix_chat.component_access import build_component_access_tools
 from robotsix_chat.component_client import build_component_tools
 from robotsix_chat.config import Settings
-from robotsix_chat.config.models import EvergoingSettings, HealthSettings
+from robotsix_chat.config.models import (
+    EvergoingSettings,
+    HealthSettings,
+    MemoryComponentSettings,
+)
 from robotsix_chat.continuation import (
     build_continuation_tools,
     load_continuation_skill,
@@ -121,7 +125,6 @@ from .routes import (
     health_endpoint,
     history_endpoint,
     http_exception_handler,
-    memory_ingestion_structure_endpoint,
     metrics_endpoint,
     mill_events_endpoint,
     mobile_token_endpoint,
@@ -372,6 +375,7 @@ def create_app(
     knowledge_store: Any = None,
     health_settings: HealthSettings | None = None,
     evergoing_settings: EvergoingSettings | None = None,
+    memory_component_settings: MemoryComponentSettings | None = None,
     continuation_store: Any = None,
     notification_store: Any = None,
     notification_store_and_forward: bool = True,
@@ -512,6 +516,9 @@ def create_app(
             compaction scheduler.  When ``None`` (default), the default
             settings are used (disabled), so no evergoing session is created
             on boot.
+        memory_component_settings: Optional
+            :class:`~robotsix_chat.config.models.MemoryComponentSettings` —
+            summary pushes to the robotsix-memory component.
         continuation_store: Shared
             :class:`~robotsix_chat.continuation.store.ContinuationStore`
             instance for pending post-restart continuations.  When
@@ -541,11 +548,6 @@ def create_app(
         ),
         Route("/admin/disk", disk_usage_endpoint, methods=["GET"]),
         Route("/admin/prune", prune_endpoint, methods=["POST"]),
-        Route(
-            "/admin/memory/ingestion-structure",
-            memory_ingestion_structure_endpoint,
-            methods=["POST"],
-        ),
         Route("/mill-events", mill_events_endpoint, methods=["POST"]),
         Route("/chat", chat_endpoint, methods=["POST"]),
         Route("/chat/queue/cancel", cancel_queued_endpoint, methods=["POST"]),
@@ -830,12 +832,20 @@ def create_app(
     # regardless of whether the evergoing session itself is enabled.
     if app.state.summary_agent is not None:
         from robotsix_chat.evergoing import EvergoingSummaryScheduler
+        from robotsix_chat.memory_push import MemoryPush
 
+        _mc = memory_component_settings or MemoryComponentSettings()
+        memory_push = (
+            MemoryPush(_mc.url, timeout_seconds=_mc.timeout_seconds)
+            if _mc.enabled
+            else None
+        )
         app.state.evergoing_scheduler = EvergoingSummaryScheduler(
             interval_seconds=_eg.trim_interval_seconds,
             store=app.state.conversation_store,
             agent=app.state.summary_agent,
             keep_recent_runs=_eg.keep_recent_runs,
+            memory_push=memory_push,
         )
     else:
         app.state.evergoing_scheduler = None
@@ -1415,7 +1425,7 @@ def create_agent_from_settings(
     tools.  Use it for bounded text-transformation calls (e.g. the
     compaction summary agent).
 
-    *memory_enabled* (default ``True``) gates only long-term (cognee) memory
+    *memory_enabled* (default ``True``) gates only the full long-term memory
     while leaving tools and subsession wiring intact.  Set ``False`` for
     unattended background agents (subsession workers, periodic
     auto-continue) that would otherwise recall + cognify every turn around
@@ -1542,11 +1552,9 @@ def create_agent_from_settings(
     if bare:
         memory: ChatMemory = NullMemory()
     elif memory_enabled:
-        memory = build_memory(settings.memory, settings.langfuse, settings.openrouter)
-    elif settings.memory.enabled and settings.memory.background_recall_enabled:
-        memory = ReadOnlyMemory(
-            build_memory(settings.memory, settings.langfuse, settings.openrouter)
-        )
+        memory = build_memory(settings.memory_component)
+    elif settings.memory_component.enabled:
+        memory = ReadOnlyMemory(build_memory(settings.memory_component))
     else:
         memory = NullMemory()
     # Deep on-demand memory search: the automatic per-message recall is
@@ -1592,4 +1600,39 @@ def create_agent_from_settings(
                 settings.lifecycle, settings.central_deploy.url
             ).self_restart
         )
+    # Wire user-facing escalation (notify_user) for the top-level chat agent's
+    # memory so a store fault auto-recovery cannot safely heal (e.g. a
+    # graph-store open segfault whose on-disk copy will not open) surfaces to
+    # the user rather than staying a silent log line.  Same gating as recovery.
+    if (
+        not bare
+        and memory_enabled
+        and subsession_ctx is None
+        and settings.notification.enabled
+        and event_sink is not None
+    ):
+        from robotsix_chat.chat.events import SSE_NOTIFICATION_TYPE
+
+        _notify_sink = event_sink
+        _notify_store = notification_store
+
+        async def _escalate(title: str, body: str) -> None:
+            """Broadcast a high-urgency notification to every connected browser."""
+            frame: dict[str, object] = {
+                "type": SSE_NOTIFICATION_TYPE,
+                "title": title,
+                "body": body,
+                "urgency": "high",
+                "link": "",
+            }
+            if _notify_store is not None:
+                try:
+                    _notify_store.append(title=title, body=body, source_session="")
+                except Exception:
+                    logger.exception(
+                        "failed to persist memory-fault escalation notification"
+                    )
+            _notify_sink.publish_all(frame)
+
+        agent.memory.set_notify_callback(_escalate)
     return agent

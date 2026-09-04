@@ -23,3 +23,7 @@ jobs:
       has-docker: true
       has-board: true
       python-version: "3.14"
+      # Align with the [tool.uv] required-version pin (uv 0.12.9); the shared
+      # workflow defaults to 0.8.15 and would otherwise fail `uv sync` with a
+      # "Required uv version ... does not match the running version" error.
+      uv-version: "0.12.9"

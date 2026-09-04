@@ -11,6 +11,12 @@ from typing import Any, Protocol, runtime_checkable
 # the deploy-lifecycle client.
 RecoverCallback = Callable[[], Awaitable[str]]
 
+# A ``(title, body)`` async callable that escalates a store fault to the user
+# (wired to ``notify_user`` by the server).  Injected into a memory backend so
+# it can surface a fault auto-recovery cannot safely heal without a hard
+# dependency on the notification/EventBus layer.
+NotifyCallback = Callable[[str, str], Awaitable[None]]
+
 
 @runtime_checkable
 class ChatMemory(Protocol):
@@ -64,6 +70,15 @@ class ChatMemory(Protocol):
         """
         ...
 
+    def set_notify_callback(self, callback: NotifyCallback | None) -> None:
+        """Register (or clear) the user-facing escalation callback.
+
+        A backend that detects a fault auto-recovery cannot safely heal uses
+        this to escalate (``notify_user``).  Backends with no escalation path
+        may ignore it.
+        """
+        ...
+
 
 class NullMemory:
     """A :class:`ChatMemory` that stores nothing and recalls nothing.
@@ -98,18 +113,22 @@ class NullMemory:
         """No-op: a null backend has nothing to recover."""
         return None
 
+    def set_notify_callback(self, callback: NotifyCallback | None) -> None:
+        """No-op: a null backend has nothing to escalate."""
+        return None
+
 
 class ReadOnlyMemory:
     """Wraps a :class:`ChatMemory` so it can recall but never write.
 
     Recall and cognify have wildly different costs. Recall is a retrieval-only
-    vector lookup (~0.4 s warm, no LLM call); ``remember`` runs cognee's
+    vector lookup (~0.4 s warm, no LLM call); ``remember`` historically ran an
     multi-minute LLM extraction pipeline and contends with every concurrent
     recall for the same stores.
 
     Background agents — subsessions and periodic session turns —
     run unattended around the clock, so letting them cognify every turn is
-    what produced the ~$22/day cognee bill and the write contention that
+    what produced the ~$22/day bill and the write contention that
     slows interactive chat. But there is no reason to deny them *reading*
     what the main conversation has already learned.
 
@@ -161,4 +180,8 @@ class ReadOnlyMemory:
 
     def set_recovery_callback(self, callback: RecoverCallback | None) -> None:
         """No-op: recovery is driven by the writing (main-chat) agent."""
+        return None
+
+    def set_notify_callback(self, callback: NotifyCallback | None) -> None:
+        """No-op: escalation is driven by the writing (main-chat) agent."""
         return None

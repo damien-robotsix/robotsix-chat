@@ -34,6 +34,7 @@ import logging
 from robotsix_chat.chat.conversation import ConversationStore, Session
 from robotsix_chat.chat.server.routes.chat import ChatAgent
 from robotsix_chat.chat.summarize import generate_idle_summary
+from robotsix_chat.memory_push import MemoryPush
 
 logger = logging.getLogger(__name__)
 
@@ -53,6 +54,7 @@ class EvergoingSummaryScheduler:
         agent: ChatAgent,
         *,
         keep_recent_runs: int = 5,
+        memory_push: MemoryPush | None = None,
     ) -> None:
         """Create a scheduler bound to *store* and a cheap *agent*.
 
@@ -64,12 +66,16 @@ class EvergoingSummaryScheduler:
                 verbatim in the replay and excluded from the summariser
                 input.  A session is only compacted when MORE than this
                 many fresh runs exist beyond the previous summary.
+            memory_push: Optional best-effort client pushing every summary
+                to the robotsix-memory component (``None`` disables the
+                pushes).
 
         """
         self.interval_seconds = interval_seconds
         self._store = store
         self._agent = agent
         self._keep_recent_runs = max(1, keep_recent_runs)
+        self._memory_push = memory_push
         self._task: asyncio.Task[None] | None = None
 
     # ------------------------------------------------------------------
@@ -183,6 +189,7 @@ class EvergoingSummaryScheduler:
             summary,
             cover_until_index=cover_until,
         )
+        self._push_summary_to_memory(session_id, summary)
         folded = len(fold_turns)
         logger.info(
             "compacted session %s: %d turn(s) folded into summary, "
@@ -245,6 +252,8 @@ class EvergoingSummaryScheduler:
             }
 
         healed = self._store.backfill_compacted_summary(session_id, summary)
+        if healed:
+            self._push_summary_to_memory(session_id, summary)
         if not healed:
             # Lost a race (another writer filled it) — nothing to report.
             return None
@@ -263,6 +272,58 @@ class EvergoingSummaryScheduler:
             "covered_turns": len(turns),
             "reason": "regenerated missing compaction summary",
         }
+
+    def _push_summary_to_memory(
+        self, session_id: str, summary: str, *, final: bool = False
+    ) -> None:
+        """Best-effort fire-and-forget push of *summary* to the memory component.
+
+        Dedup contract: every push for one session reuses the same
+        ``document_id`` with ``update_mode="replace"`` (see
+        :mod:`robotsix_chat.memory_push`), so successive summaries supersede
+        each other instead of accumulating near-duplicates.
+        """
+        if self._memory_push is None:
+            return
+        session = self._store.get_session(session_id)
+        owner_id = self._store.owner_for_session(session_id) or "operator"
+        title = session.title if session is not None else session_id
+        self._memory_push.schedule(
+            owner_id=owner_id,
+            session_id=session_id,
+            title=title,
+            summary=summary,
+            final=final,
+        )
+
+    async def finalize_session(self, session_id: str) -> bool:
+        """Summarise the FULL current replay of *session_id* and push it.
+
+        Called when a conversation is closed: unlike the periodic pass this
+        covers the fresh (never-summarised) recent runs too, so the memory
+        component receives a complete record of the conversation. The push
+        replaces the session's rolling-summary document — the final summary
+        simply wins. Returns ``True`` when a summary was generated.
+        """
+        if self._memory_push is None:
+            return False
+        session = self._store.get_session(session_id)
+        if session is None:
+            return False
+        history = self._store.agent_history(session_id)
+        actions = self._store.agent_history_actions(session_id)
+        if not history:
+            return False
+        summary = await generate_idle_summary(self._run_summary, history, actions)
+        if not summary:
+            logger.warning(
+                "finalize: summary generation failed for closed session %s — "
+                "its last rolling summary remains in memory",
+                session_id,
+            )
+            return False
+        self._push_summary_to_memory(session_id, summary, final=True)
+        return True
 
     async def _run_summary(self, prompt: str) -> str:
         """One summariser call: prompt → text (``""`` on failure)."""

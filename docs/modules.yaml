@@ -154,7 +154,6 @@ modules:
       - src/robotsix_chat/config/deploy_models.py
       - src/robotsix_chat/config/github_models.py
       - src/robotsix_chat/config/langfuse_models.py
-      - src/robotsix_chat/config/memory_models.py
       - src/robotsix_chat/config/models.py
       - src/robotsix_chat/config/network_models.py
       - src/robotsix_chat/config/notification_models.py
@@ -204,7 +203,6 @@ modules:
       - src/robotsix_chat/chat/server/routes/errors.py
       - src/robotsix_chat/chat/server/routes/events.py
       - src/robotsix_chat/chat/server/routes/github.py
-      - src/robotsix_chat/chat/server/routes/memory.py
       - src/robotsix_chat/chat/server/routes/metrics.py
       - src/robotsix_chat/chat/server/routes/mill_events.py
       - src/robotsix_chat/chat/server/routes/notifications.py
@@ -243,7 +241,6 @@ modules:
       - tests/chat/server/routes/test_chat.py
       - tests/chat/server/routes/test_events.py
       - tests/chat/server/routes/test_github.py
-      - tests/chat/server/routes/test_memory.py
       - tests/chat/server/routes/test_mill_events.py
       - tests/chat/server/routes/test_notifications.py
       - tests/chat/server/routes/test_draft.py
@@ -378,17 +375,16 @@ modules:
       - tests/llm/test_vision.py
 
   - id: memory
-    description: "Long-term memory backend — Cognee-based persistent storage for cross-conversation continuity."
+    description: "Long-term memory — the robotsix-memory component client (recall/reflect) and the summary push pipeline."
     paths:
       - src/robotsix_chat/memory/__init__.py
       - src/robotsix_chat/memory/base.py
-      - src/robotsix_chat/memory/cognee.py
-      - src/robotsix_chat/memory/maintenance.py
+      - src/robotsix_chat/memory/component.py
       - src/robotsix_chat/memory/tools.py
+      - src/robotsix_chat/memory_push.py
       - docs/memory/api.md
       - tests/memory/__init__.py
-      - tests/memory/test_maintenance.py
-      - tests/memory/test_memory.py
+      - tests/memory/test_component_memory.py
 
   - id: subsessions
     description: "Unified subsession system — background agents (task / periodic / user_chat) spawned from chat sessions, with per-subsession model levels, depth-limited nesting, inbox steering, and parent summary delivery."
@@ -499,6 +495,7 @@ modules:
       - src/robotsix_chat/evergoing/skill.md
       - tests/evergoing/__init__.py
       - tests/evergoing/test_cross_session_tools.py
+      - tests/evergoing/test_memory_push.py
       - tests/evergoing/test_scheduler.py
 
   - id: ui
@@ -509,6 +506,9 @@ modules:
       - src/robotsix_chat/ui/static/chat.js
       - src/robotsix_chat/ui/static/memory-banner.js
       - src/robotsix_chat/ui/static/message-queue.js
+      - src/robotsix_chat/ui/static/notify-gating.js
+      - src/robotsix_chat/ui/static/notify-navigation.js
+      - src/robotsix_chat/ui/static/notify.js
       - src/robotsix_chat/ui/static/reconnect-guard.js
       - src/robotsix_chat/ui/static/drain-draft.js
       - src/robotsix_chat/ui/static/sse-parser.js
@@ -517,6 +517,9 @@ modules:
       - docs/user-guide/settings-ui.md
       - tests/js/memory-banner.test.js
       - tests/js/message-queue.test.js
+      - tests/js/notify-gating.test.js
+      - tests/js/notify-navigation.test.js
+      - tests/js/notify.test.js
       - tests/js/reconnect-guard.test.js
       - tests/js/drain-draft.test.js
       - tests/js/sse-parser.test.js

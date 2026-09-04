@@ -281,6 +281,77 @@ def _build_feedback_prompt(
 
 
 # ---------------------------------------------------------------------------
+# Board admission-policy handling
+# ---------------------------------------------------------------------------
+
+#: Markers in a ``POST /tickets/ingest`` HTTP 400 body that identify the
+#: board's *admission policy* rejection (mill #3093 permanently removed the
+#: investigation-ticket capability: the board now admits deployment tickets
+#: only and rejects ``source_tag=robotsix-chat-feedback`` with guidance to
+#: run the investigation as a chat subsession agent instead).  Matched
+#: case-insensitively against the ``detail`` field (or raw body) so a
+#: policy rejection is recognised as an outcome, not a transient failure.
+_ADMISSION_POLICY_MARKERS: tuple[str, ...] = (
+    "is not admitted on this board",
+    "ingest_blocked_source_tags",
+    "chat subsession agent",
+)
+
+
+def _is_admission_policy_block(resp: httpx.Response) -> bool:
+    """Return True when *resp* is the board's admission-policy 400 rejection.
+
+    Only an HTTP 400 whose body advertises one of
+    :data:`_ADMISSION_POLICY_MARKERS` qualifies — a generic 400 (malformed
+    payload, validation error) is still treated as a real failure.
+    """
+    if resp.status_code != 400:
+        return False
+    detail = ""
+    try:
+        body = resp.json()
+    except json.JSONDecodeError, ValueError:
+        body = None
+    if isinstance(body, dict):
+        raw_detail = body.get("detail")
+        if isinstance(raw_detail, str):
+            detail = raw_detail
+    haystack = (detail or resp.text or "").lower()
+    return any(marker in haystack for marker in _ADMISSION_POLICY_MARKERS)
+
+
+def _build_investigation_prompt(
+    ticket: dict[str, Any],
+    *,
+    session_id: str,
+    trigger_type: str,
+) -> str:
+    """Build a self-contained instruction for the investigation subsession.
+
+    The board no longer accepts feedback findings as tickets; the mill 400
+    prescribes running the investigation as a chat subsession agent.  This
+    prompt hands the agent the full finding so it can investigate and act
+    on it directly in the target repo.
+    """
+    return (
+        "A feedback analysis of a chat session surfaced an actionable "
+        "improvement. The board no longer accepts these as ingest tickets "
+        "(it admits deployment tickets only), so you must investigate and "
+        "act on this finding directly as a chat subsession agent.\n\n"
+        f"Target repo: {ticket.get('target_repo', '') or 'robotsix-chat'}\n"
+        f"Kind: {ticket.get('kind', '')}\n"
+        f"Title: {ticket['title']}\n\n"
+        f"Finding:\n{ticket['description']}\n\n"
+        f"(Origin: robotsix-chat feedback run | session: {session_id} | "
+        f"trigger: {trigger_type})\n\n"
+        "Investigate the finding in the target repo, then take the smallest "
+        "concrete action that addresses it (e.g. open a pull request, file a "
+        "properly-scoped deployment ticket, or document why no change is "
+        "needed). Report a short summary of what you did when done."
+    )
+
+
+# ---------------------------------------------------------------------------
 # Feedback runner
 # ---------------------------------------------------------------------------
 
@@ -304,10 +375,22 @@ class FeedbackRunner:
         feedback_agent: LlmioChatAgent,
         *,
         subsession_registry: SubsessionRegistry | None = None,
+        subsession_spawner: Callable[..., str | None] | None = None,
         deploy_base_url: str = "",
         deploy_api_key: str = "",
     ) -> None:
         """*feedback_agent* is a bare ``LlmioChatAgent`` (no tools, no memory).
+
+        *subsession_spawner* routes an actionable finding to a chat
+        subsession agent when the board rejects the ingest with its
+        admission policy (mill #3093 permanently removed the
+        investigation-ticket capability — ``POST /tickets/ingest`` now
+        answers HTTP 400 for ``source_tag=robotsix-chat-feedback`` and
+        instructs callers to run the investigation as a chat subsession
+        agent instead).  It is called as
+        ``spawner(owner_session_id=..., title=..., prompt=...)`` and
+        returns the spawned subsession id (or ``None``).  Left unset, a
+        policy-blocked finding is logged and dropped rather than filed.
 
         *deploy_base_url* and *deploy_api_key* are the canonical
         ``central_deploy.url`` and ``central_deploy.deploy_api_key`` — the
@@ -318,6 +401,7 @@ class FeedbackRunner:
         self._settings = settings
         self._agent = feedback_agent
         self._registry = subsession_registry
+        self._spawner = subsession_spawner
         self._deploy_base_url = deploy_base_url
         self._deploy_api_key = deploy_api_key
         self._board_url = settings.board_url.rstrip("/") if settings.board_url else ""
@@ -443,21 +527,22 @@ class FeedbackRunner:
                     return
 
                 # 5. File each ticket.
-                filed, failed = await self._file_tickets(
+                filed, failed, routed = await self._file_tickets(
                     tickets, trigger_type=trigger_type, session_id=session_id
                 )
                 logger.info(
                     "Feedback run complete: trigger=%s session=%s filed=%d/%d"
-                    " failed=%d",
+                    " failed=%d routed=%d",
                     trigger_type,
                     session_id,
                     filed,
                     len(tickets),
                     failed,
+                    routed,
                 )
 
                 # 6. Stamp outcome metadata on the trace root span.
-                self._stamp_outcome(filed, len(tickets), failed=failed)
+                self._stamp_outcome(filed, len(tickets), failed=failed, routed=routed)
         except Exception:
             logger.exception(
                 "Feedback run failed: trigger=%s session=%s",
@@ -550,7 +635,9 @@ class FeedbackRunner:
             )
 
     @staticmethod
-    def _stamp_outcome(filed: int, total: int, *, failed: int = 0) -> None:
+    def _stamp_outcome(
+        filed: int, total: int, *, failed: int = 0, routed: int = 0
+    ) -> None:
         """Stamp feedback outcome metadata on the current recording span."""
         if get_recording_span is None:
             return
@@ -558,6 +645,7 @@ class FeedbackRunner:
         if span is not None:
             span.set_attribute("feedback.filed_tickets", filed)
             span.set_attribute("feedback.failed_tickets", failed)
+            span.set_attribute("feedback.routed_tickets", routed)
             span.set_attribute("feedback.total_tickets", total)
 
     @staticmethod
@@ -661,8 +749,20 @@ class FeedbackRunner:
         session_id: str,
         trigger_type: str,
         client: httpx.AsyncClient,
-    ) -> bool:
-        """POST a single ticket; return True when the server responds 2xx."""
+    ) -> str:
+        """POST a single ticket; return the outcome for the run tally.
+
+        Returns one of:
+
+        * ``"filed"`` — the server accepted the ticket (2xx), or the
+          filing was intentionally skipped as a duplicate.
+        * ``"routed"`` — the board rejected the ingest with its admission
+          policy (HTTP 400, investigation-tickets no longer accepted); the
+          finding was handed to a chat subsession agent instead.  A policy
+          outcome, *not* a failure.
+        * ``"failed"`` — a genuine failure (non-policy error, exhausted
+          retries, or an unexpected exception).
+        """
         # Pre-flight board-API dedup: query GET /tickets on the board
         # and check whether an open ticket with the same title already
         # exists.  This catches duplicates the in-process in-memory
@@ -674,7 +774,7 @@ class FeedbackRunner:
             target_repo=ticket.get("target_repo", ""),
             client=client,
         ):
-            return True  # intentionally skipped, not a failure
+            return "filed"  # intentionally skipped, not a failure
 
         # Title-level dedup: skip when the same normalized title was
         # filed within the dedup window (catches cross-session duplicates
@@ -690,7 +790,7 @@ class FeedbackRunner:
                 now - last,
                 self._dedup_window,
             )
-            return True  # intentionally skipped, not a failure
+            return "filed"  # intentionally skipped, not a failure
 
         # Fold runner-level metadata into the body so it survives
         # the mill ingest round-trip even though mill's TicketIngest
@@ -734,7 +834,28 @@ class FeedbackRunner:
                         ticket_title=ticket["title"],
                         client=client,
                     )
-                    return True
+                    return "filed"
+                elif _is_admission_policy_block(resp):
+                    # Board admission policy (mill #3093): investigation
+                    # tickets are no longer accepted.  This is a policy
+                    # outcome, NOT a transient failure — route the finding
+                    # to a chat subsession agent (the mechanism the mill
+                    # 400 prescribes) instead of counting it as failed.
+                    logger.info(
+                        "Feedback finding %r blocked by board admission "
+                        "policy (HTTP 400) — routing to chat subsession "
+                        "agent instead of filing: %s",
+                        ticket["title"],
+                        resp.text[:200],
+                    )
+                    if _span is not None:
+                        _span.set_attribute("feedback.admission_policy_block", True)
+                    self._route_finding_to_subsession(
+                        ticket,
+                        session_id=session_id,
+                        trigger_type=trigger_type,
+                    )
+                    return "routed"
                 else:
                     logger.warning(
                         "Feedback ticket ingest returned %d for %r: %s",
@@ -747,7 +868,7 @@ class FeedbackRunner:
                             Status(StatusCode.ERROR, f"HTTP {resp.status_code}")
                         )
                         _span.set_attribute("error.type", f"http_{resp.status_code}")
-                    return False
+                    return "failed"
             except httpx.TransportError as exc:
                 # A read/connect timeout (or other transport-level error)
                 # may have still created the ticket server-side before the
@@ -774,7 +895,7 @@ class FeedbackRunner:
                         ticket["title"],
                     )
                     self._last_filed_at[title_key] = time.monotonic()
-                    return True
+                    return "filed"
                 if attempt + 1 < max_attempts:
                     backoff = _INGEST_RETRY_BACKOFF_BASE * (2**attempt)
                     logger.debug(
@@ -789,13 +910,55 @@ class FeedbackRunner:
                     max_attempts,
                     ticket["title"],
                 )
-                return False
+                return "failed"
             except Exception as exc:
                 logger.exception("Failed to file feedback ticket: %s", ticket["title"])
                 if _span is not None:
                     self._record_span_exception(_span, exc, ticket["title"])
-                return False
-        return False
+                return "failed"
+        return "failed"
+
+    def _route_finding_to_subsession(
+        self,
+        ticket: dict[str, Any],
+        *,
+        session_id: str,
+        trigger_type: str,
+    ) -> None:
+        """Hand a policy-blocked finding to a chat subsession agent.
+
+        Best-effort: a missing spawner or a spawn error is logged and the
+        finding dropped rather than raised into the filing loop.
+        """
+        if self._spawner is None:
+            logger.warning(
+                "Feedback finding %r blocked by board admission policy but no "
+                "subsession spawner is configured — finding dropped",
+                ticket["title"],
+            )
+            return
+        prompt = _build_investigation_prompt(
+            ticket, session_id=session_id, trigger_type=trigger_type
+        )
+        try:
+            sub_id = self._spawner(
+                owner_session_id=session_id,
+                title=ticket["title"],
+                prompt=prompt,
+            )
+        except Exception:
+            logger.exception(
+                "Failed to spawn investigation subsession for feedback finding %r",
+                ticket["title"],
+            )
+            return
+        logger.info(
+            "Feedback finding routed to chat subsession agent: title=%r "
+            "target_repo=%r subsession=%s",
+            ticket["title"],
+            ticket.get("target_repo", ""),
+            sub_id,
+        )
 
     @staticmethod
     def _record_span_exception(span: Any, exc: Exception, ticket_title: str) -> None:
@@ -1013,14 +1176,19 @@ class FeedbackRunner:
         *,
         trigger_type: str,
         session_id: str,
-    ) -> tuple[int, int]:
-        """POST each ticket to ``/tickets/ingest``; return (filed, failed)."""
+    ) -> tuple[int, int, int]:
+        """POST each ticket to ``/tickets/ingest``; return (filed, failed, routed).
+
+        ``routed`` counts findings the board rejected with its admission
+        policy that were handed to a chat subsession agent instead — a
+        policy outcome, not a failure.
+        """
         if not self._board_url:
-            return (0, 0)
+            return (0, 0, 0)
 
         tickets = self._apply_cap(tickets, session_id=session_id)
         if not tickets:
-            return (0, 0)
+            return (0, 0, 0)
 
         ingest_url = f"{self._board_url}/tickets/ingest"
         headers: dict[str, str] = {
@@ -1049,9 +1217,10 @@ class FeedbackRunner:
 
         filed = 0
         failed = 0
+        routed = 0
         async with httpx.AsyncClient(timeout=self._timeout) as client:
             for ticket in tickets:
-                success = await self._file_one_ticket(
+                outcome = await self._file_one_ticket(
                     ticket,
                     ingest_url=ingest_url,
                     headers=headers,
@@ -1060,8 +1229,10 @@ class FeedbackRunner:
                     trigger_type=trigger_type,
                     client=client,
                 )
-                if success:
+                if outcome == "filed":
                     filed += 1
+                elif outcome == "routed":
+                    routed += 1
                 else:
                     failed += 1
-        return (filed, failed)
+        return (filed, failed, routed)

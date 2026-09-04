@@ -52,6 +52,10 @@ jobs:
     uses: damien-robotsix/robotsix-github-workflows/.github/workflows/python-ci.yml@0234f4b82365d776fc021c774dc104c5e7042c29  # main
     with:
       python-version: "3.14"
+      # Must match pyproject.toml's [tool.uv] required-version: the shared
+      # workflow defaults to an older uv, and uv refuses to run when the
+      # installed version doesn't satisfy the project's required-version.
+      uv-version: "0.12.9"
       cov-package: "robotsix_chat"
       install-extras: ""
       # coverage-threshold deliberately omitted: the fleet-wide floor (80)
@@ -74,6 +78,10 @@ jobs:
     uses: damien-robotsix/robotsix-github-workflows/.github/workflows/python-security.yml@454851ccfdba26ba4d08f3effea09258dfc3fe2f  # main
     with:
       install-extras: ""
+      # Align with the [tool.uv] required-version pin (uv 0.12.9); the shared
+      # workflow defaults to 0.8.15 and would otherwise fail `uv sync` with a
+      # "Required uv version ... does not match the running version" error.
+      uv-version: "0.12.9"
       trufflehog-pr-diff: true
       # Postgres detector excluded: the WIP commit on this branch temporarily
       # carried .inspect_cognee/ and .inspect_litellm/ directories (third-party

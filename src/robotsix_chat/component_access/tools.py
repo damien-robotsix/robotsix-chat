@@ -66,7 +66,7 @@ async def _component_request_impl(
     method: str,
     path: str,
     json_body: dict[str, Any] | None = None,
-    params: dict[str, str] | None = None,
+    params: dict[str, str | int | float | bool] | None = None,
     read_response_max_chars: int = _TRUNCATE_LENGTH,
     component_credentials: dict[str, Any] | None = None,
     component_fallbacks: dict[str, str] | None = None,
@@ -220,7 +220,22 @@ async def _component_request_impl(
             body_str = body_str[:limit] + (
                 f"\n\n... (truncated at {limit} chars, original length {len(body_str)})"
             )
-        return f"HTTP {status}\n{body_str}"
+        formatted = f"HTTP {status}\n{body_str}"
+        # A 422 on a write call made without a body is almost always the
+        # caller forgetting this tool's json_body parameter; the bare
+        # FastAPI validation error ("loc": ["body"]) gives no clue about
+        # the parameter name, and models retry the same broken call.
+        if (
+            status == 422
+            and json_body is None
+            and method_upper in ("POST", "PUT", "PATCH")
+        ):
+            formatted += (
+                "\n\nHint: this endpoint expects a request body, but the call "
+                "passed no json_body. Retry with the payload in the json_body "
+                'parameter, e.g. json_body={"field": "value"}.'
+            )
+        return formatted
 
     async with httpx.AsyncClient(
         timeout=request_timeout, follow_redirects=True
@@ -435,7 +450,7 @@ def build_component_access_tools(
         method: str,
         path: str,
         json_body: dict[str, Any] | str | None = None,
-        params: dict[str, str] | str | None = None,
+        params: dict[str, str | int | float | bool] | str | None = None,
         max_response_chars: int | None = None,
     ) -> str:
         """Call an external component's API.
@@ -452,7 +467,9 @@ def build_component_access_tools(
             json_body: Optional JSON body for POST/PUT/PATCH requests.
                 A JSON-encoded string is also accepted and decoded.
             params: Optional query-string parameters as key/value pairs
-                (e.g. ``{"limit": "5", "state": "open"}``).
+                (e.g. ``{"limit": 5, "state": "open"}``). Values may be
+                strings, numbers, or booleans; they are rendered into the
+                query string.
             max_response_chars: Optional per-call truncation limit for the
                 response body.  When omitted the configured default
                 (component_response_max_chars) is used.  Set to a small

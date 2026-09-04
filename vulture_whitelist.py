@@ -6,6 +6,7 @@ from src.robotsix_chat.chat.conversation import ConversationStore
 from src.robotsix_chat.config import SYSTEM_PROMPT_VERSION, Settings
 from src.robotsix_chat.diagnostics.fixes import FixProposalStore
 from src.robotsix_chat.diagnostics.store import DiagnosticStore
+from src.robotsix_chat.memory.base import ChatMemory
 
 # pydantic hook — called by pydantic's model initialisation machinery
 Settings.model_post_init  # noqa: B018  # unused method (pydantic hook)
@@ -23,6 +24,11 @@ ConversationStore.ensure_evergoing_session  # noqa: B018  # unused method (everg
 ConversationStore.evergoing_session_id  # noqa: B018  # unused method (evergoing, not yet wired)
 ConversationStore.has_new_input_since_trim  # noqa: B018  # unused method (trim, not yet wired)
 ConversationStore.trim_session  # noqa: B018  # unused method (trim, not yet wired)
+
+# memory/base.py + memory/component.py — the ChatMemory ``remember`` protocol
+# parameter is deliberately ignored by every current implementation (writes
+# belong to the evergoing summary pipeline since the cognee removal).
+ChatMemory.remember.assistant_message  # noqa: B018  # unused variable (protocol param)
 
 # config.py — public API imported and asserted in test_system_prompt_governance.py
 SYSTEM_PROMPT_VERSION  # noqa: B018  # unused variable (used from tests)

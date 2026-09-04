@@ -118,10 +118,10 @@ async def check_container_memory(state: Any) -> CheckResult:
 
 
 async def check_memory(state: Any) -> CheckResult:
-    """Verify the cognee memory backend is not degraded.
+    """Verify the long-term memory backend is not degraded.
 
     Uses the existing ``memory.status()`` protocol — every memory
-    backend (cognee, null, future) must implement it.
+    backend (component, null, future) must implement it.
     """
     memory = getattr(state, "memory", None)
     if memory is None:

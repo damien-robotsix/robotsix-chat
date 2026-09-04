@@ -24,15 +24,9 @@ from .github_models import (
 )
 from .langfuse_models import (
     PROJECT_MAIN,
-    PROJECT_MEMORY,
     LangfuseInspectSettings,
     LangfuseProjectCreds,
     LangfuseSettings,
-)
-from .memory_models import (
-    MemoryEmbeddingSettings,
-    MemoryLlmSettings,
-    MemorySettings,
 )
 from .network_models import (
     DockerDigestSettings,
@@ -61,6 +55,7 @@ from .server_models import (
     ContinuationSettings,
     EvergoingSettings,
     HealthSettings,
+    MemoryComponentSettings,
     VolumeToolsSettings,
 )
 from .session_models import (
@@ -78,7 +73,6 @@ from .storage_models import (
 
 __all__ = [
     "PROJECT_MAIN",
-    "PROJECT_MEMORY",
     "CentralDeploySettings",
     "ComponentClientSettings",
     "ComponentCredentials",
@@ -102,9 +96,7 @@ __all__ = [
     "LangfuseProjectCreds",
     "LangfuseSettings",
     "LifecycleSettings",
-    "MemoryEmbeddingSettings",
-    "MemoryLlmSettings",
-    "MemorySettings",
+    "MemoryComponentSettings",
     "MobileAuthSettings",
     "NotificationSettings",
     "OpenRouterSettings",

@@ -11,7 +11,6 @@ from robotsix_chat.config.constants import (
 )
 from robotsix_chat.config.models import (
     PROJECT_MAIN,
-    PROJECT_MEMORY,
     CentralDeploySettings,
     ComponentClientSettings,
     ComponentCredentials,
@@ -32,9 +31,6 @@ from robotsix_chat.config.models import (
     LangfuseProjectCreds,
     LangfuseSettings,
     LifecycleSettings,
-    MemoryEmbeddingSettings,
-    MemoryLlmSettings,
-    MemorySettings,
     NotificationSettings,
     OpenRouterSettings,
     PeriodicSettings,
@@ -55,7 +51,6 @@ from robotsix_chat.config.settings import (
 
 __all__ = [
     "PROJECT_MAIN",
-    "PROJECT_MEMORY",
     "SYSTEM_PROMPT_VERSION",
     "VALID_MODEL_LEVELS",
     "CentralDeploySettings",
@@ -78,9 +73,6 @@ __all__ = [
     "LangfuseProjectCreds",
     "LangfuseSettings",
     "LifecycleSettings",
-    "MemoryEmbeddingSettings",
-    "MemoryLlmSettings",
-    "MemorySettings",
     "NotificationSettings",
     "OpenRouterSettings",
     "PeriodicSettings",
