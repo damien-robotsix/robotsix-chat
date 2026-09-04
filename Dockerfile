@@ -53,7 +53,10 @@ RUN uv export --frozen --no-emit-project --no-hashes \
 # install from a real project directory (/build) instead.
 # ---------------------------------------------------------------------------
 FROM node:26-alpine AS ui
-ARG ROBOTSIX_UI_VERSION=v0.1.41
+# Pinned to the robotsix-ui PR #78 merge commit (ConfigPanel: foldable group
+# headers, advanced-settings mechanism removed, smart schema-driven grouping).
+# No release tag contains this commit yet; re-pin to the tag once released.
+ARG ROBOTSIX_UI_VERSION=0a655e5b7be6a6f16b5ec67a28cd1c7255c35f06
 WORKDIR /build
 # hadolint ignore=DL3016,DL3018
 RUN apk add --no-cache git && \
