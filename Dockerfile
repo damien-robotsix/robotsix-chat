@@ -37,7 +37,7 @@ COPY src ./src
 # --no-hashes: the git-sourced first-party deps cannot carry hashes.
 # hadolint ignore=DL3066
 RUN uv export --frozen --no-emit-project --no-hashes \
-        --extra claude-sdk --extra tracing --extra render-url \
+        --extra claude-sdk --extra tracing --extra openrouter --extra render-url \
         --extra github-actions \
         -o /tmp/requirements.txt \
     && uv pip install --system --no-cache -r /tmp/requirements.txt \
