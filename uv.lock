@@ -1941,7 +1941,7 @@ requires-dist = [
     { name = "pypdfium2", specifier = ">=5.13.0" },
     { name = "reportlab" },
     { name = "robotsix-config", git = "https://github.com/damien-robotsix/robotsix-config.git?rev=884a452062a04f569fb63a9d103c29eafbf3c056" },
-    { name = "robotsix-github-auth", git = "https://github.com/damien-robotsix/robotsix-github-auth.git?rev=e6214c41fd743120aa987bacb4e9b2bc88e73943" },
+    { name = "robotsix-github-auth", git = "https://github.com/damien-robotsix/robotsix-github-auth.git?rev=5cfa953ecf346144e98b84b1fea58b8fcfc3c17f" },
     { name = "robotsix-http", git = "https://github.com/damien-robotsix/robotsix-http.git?rev=cdfd4d1c42679fef73081439562872792e202dc4" },
     { name = "robotsix-llmio", git = "https://github.com/damien-robotsix/robotsix-llmio.git?rev=60987bbc5e6d4af5146afd88c557411dc396b0eb" },
     { name = "robotsix-llmio", extras = ["claude-sdk"], marker = "extra == 'claude-sdk'", git = "https://github.com/damien-robotsix/robotsix-llmio.git?rev=60987bbc5e6d4af5146afd88c557411dc396b0eb" },
@@ -1987,11 +1987,12 @@ dependencies = [
 
 [[package]]
 name = "robotsix-github-auth"
-version = "0.1.0"
-source = { git = "https://github.com/damien-robotsix/robotsix-github-auth.git?rev=e6214c41fd743120aa987bacb4e9b2bc88e73943#e6214c41fd743120aa987bacb4e9b2bc88e73943" }
+version = "0.4.0"
+source = { git = "https://github.com/damien-robotsix/robotsix-github-auth.git?rev=5cfa953ecf346144e98b84b1fea58b8fcfc3c17f#5cfa953ecf346144e98b84b1fea58b8fcfc3c17f" }
 dependencies = [
     { name = "httpx" },
     { name = "pyjwt", extra = ["crypto"] },
+    { name = "robotsix-http" },
 ]
 
 [[package]]
