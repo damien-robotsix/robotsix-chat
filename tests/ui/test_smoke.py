@@ -198,6 +198,7 @@ class TestStaticFileServing:
 
         assert '"use strict"' in response.text
 
+
 # ---------------------------------------------------------------------------
 # chat.js — function presence (static analysis)
 # ---------------------------------------------------------------------------

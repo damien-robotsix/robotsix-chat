@@ -518,6 +518,7 @@ def create_app(
             instance for pending post-restart continuations.  When
             ``None`` (default), the chat endpoint does not reset the
             consecutive-continuation guardrail counter on operator messages.
+
     """
     routes: list[Route | Mount] = [
         Route("/health", health_endpoint, methods=["GET"]),
