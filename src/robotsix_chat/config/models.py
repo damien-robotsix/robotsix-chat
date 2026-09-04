@@ -35,7 +35,6 @@ from .network_models import (
 )
 from .notification_models import (
     FeedbackSettings,
-    NotificationSettings,
 )
 from .openrouter_models import OpenRouterSettings
 from .periodic_models import (
@@ -98,7 +97,6 @@ __all__ = [
     "LifecycleSettings",
     "MemoryComponentSettings",
     "MobileAuthSettings",
-    "NotificationSettings",
     "OpenRouterSettings",
     "PeriodicSessionDefinition",
     "PeriodicSettings",

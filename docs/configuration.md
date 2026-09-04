@@ -563,20 +563,6 @@ default.
 
 ______________________________________________________________________
 
-### Notification
-
-Browser notification settings — lets the agent alert the user proactively via the `notify_user`
-tool. Enabled by default.
-
-| JSON key                           | Type      | Default                      | Description                                                                                                                                                                                                                                                                                                                                                                                         |
-| ---------------------------------- | --------- | ---------------------------- | --------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- |
-| `notification.enabled`             | `boolean` | `true`                       | Master switch. When `false`, no `notify_user` tool is offered.                                                                                                                                                                                                                                                                                                                                      |
-| `notification.store_and_forward`   | `boolean` | `true`                       | Feature flag for the persistent store-and-forward path. When `true`, undelivered notifications are persisted and replayed to the next connecting browser and the `/notifications` endpoints serve them. Set `false` as an emergency kill-switch: `notify_user` publishes live SSE only (never persists) and the `/notifications/unread` and `/notifications/read` endpoints return empty responses. |
-| `notification.store_path`          | `string`  | `"/data/notifications.json"` | JSON persistence file for undelivered notifications. Must be on a persistent volume (chat-data `/data`) so notifications survive container recreation and can be replayed when a browser next connects.                                                                                                                                                                                             |
-| `notification.max_events`          | `integer` | `200`                        | Maximum number of newest notifications retained in the store. Older records beyond this count are evicted on write (a warning is logged) to cap unbounded growth.                                                                                                                                                                                                                                   |
-| `notification.retention_days`      | `integer` | `90`                         | Absolute lifetime in days. Notifications older than this are purged on write regardless of read state.                                                                                                                                                                                                                                                                                              |
-| `notification.read_retention_days` | `integer` | `30`                         | Read lifetime in days. Notifications that have been read are purged once they have been read for more than this many days, reclaiming space from acknowledged notifications sooner than the absolute lifetime.                                                                                                                                                                                      |
-
 ### HTTP Probe
 
 Read-only HTTP uptime/render-probe tool for the agent. Enabled by default.

@@ -205,7 +205,6 @@ modules:
       - src/robotsix_chat/chat/server/routes/github.py
       - src/robotsix_chat/chat/server/routes/metrics.py
       - src/robotsix_chat/chat/server/routes/mill_events.py
-      - src/robotsix_chat/chat/server/routes/notifications.py
       - src/robotsix_chat/chat/server/metrics.py
       - src/robotsix_chat/chat/server/routes/sessions.py
       - src/robotsix_chat/chat/server/routes/subsessions.py
@@ -216,7 +215,6 @@ modules:
       - docs/chat/server.md
       - docs/chat/server/mobile_sso_runbook.md
       - docs/chat/server/routes/admin.md
-      - docs/chat/server/routes/notifications.md
       - tests/chat/__init__.py
       - tests/chat/test_cli.py
       - tests/chat/test_conversation.py
@@ -242,7 +240,6 @@ modules:
       - tests/chat/server/routes/test_events.py
       - tests/chat/server/routes/test_github.py
       - tests/chat/server/routes/test_mill_events.py
-      - tests/chat/server/routes/test_notifications.py
       - tests/chat/server/routes/test_draft.py
       - tests/chat/server/routes/test_errors.py
       - tests/chat/server/routes/test_sessions.py
@@ -599,14 +596,3 @@ modules:
       - tests/version_check/__init__.py
       - tests/version_check/test_version_check.py
 
-  - id: notification
-    description: "Browser notification tool for the agent — exposes build_notification_tools(), a factory returning a notify_user LLM tool that publishes concise alerts (title, body, urgency, optional link) as notification events to connected clients over the SSE channel. The browser renders them via the Notifications API. No external push-provider infrastructure is needed."
-    paths:
-      - src/robotsix_chat/notification/__init__.py
-      - src/robotsix_chat/notification/skill.md
-      - src/robotsix_chat/notification/store.py
-      - docs/notification/skill.md
-      - tests/notification/__init__.py
-      - tests/notification/test_notification.py
-      - tests/notification/test_store.py
-      - tests/notification/test_store_and_forward_e2e.py

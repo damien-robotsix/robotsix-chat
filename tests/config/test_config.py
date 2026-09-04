@@ -536,6 +536,14 @@ def test_production_config_with_all_legacy_keys_loads_cleanly() -> None:
             "timeout": 30.0,
         },
         "lifecycle": {"enabled": True, "base_url": "http://central-deploy:9000"},
+        "notification": {
+            "enabled": True,
+            "store_and_forward": True,
+            "store_path": "/data/notifications.json",
+            "max_events": 200,
+            "retention_days": 90,
+            "read_retention_days": 30,
+        },
         "feedback": {
             "enabled": True,
             "board_url": "http://mill:8077",
@@ -558,6 +566,7 @@ def test_production_config_with_all_legacy_keys_loads_cleanly() -> None:
     assert settings.central_deploy.deploy_api_key.get_secret_value() == "deploy-key"
     # Retired surfaces are gone / stripped.
     assert not hasattr(settings, "mail")
+    assert not hasattr(settings, "notification")
     assert not hasattr(settings.feedback, "deploy_api_key")
     assert not hasattr(settings.github_security, "deploy_api_key")
     assert not hasattr(settings.github_actions, "deploy_api_key")
@@ -1114,8 +1123,8 @@ _PREEXISTING_ALLOWLIST: set[tuple[str, int, str]] = {
     ("src/robotsix_chat/config/settings.py", 98, "-opus"),
     ("src/robotsix_chat/config/settings.py", 98, "claude-fable"),
     # config/settings.py — vision_model default (OpenRouter captioning model)
-    ("src/robotsix_chat/config/settings.py", 160, "gpt-"),
-    ("src/robotsix_chat/config/settings.py", 1885, "gpt-"),
+    ("src/robotsix_chat/config/settings.py", 159, "gpt-"),
+    ("src/robotsix_chat/config/settings.py", 1883, "gpt-"),
     # config/memory_models.py — gpt-5-nano / gpt-5-mini / deepseek-v4-flash
     ("src/robotsix_chat/config/memory_models.py", 26, "gpt-"),
     ("src/robotsix_chat/config/memory_models.py", 50, "gpt-"),

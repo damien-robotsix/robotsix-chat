@@ -45,7 +45,6 @@ from robotsix_chat.config.models import (
     LifecycleSettings,
     MemoryComponentSettings,
     MobileAuthSettings,
-    NotificationSettings,
     OpenRouterSettings,
     PeriodicSettings,
     PublicFetchSettings,
@@ -1860,7 +1859,6 @@ class Settings(BaseModel):
     github_actions: GitHubActionsSettings = Field(default_factory=GitHubActionsSettings)
     repo_study: RepoStudySettings = Field(default_factory=RepoStudySettings)
     lifecycle: LifecycleSettings = Field(default_factory=LifecycleSettings)
-    notification: NotificationSettings = Field(default_factory=NotificationSettings)
     http_probe: HttpProbeSettings = Field(default_factory=HttpProbeSettings)
     docker_digest: DockerDigestSettings = Field(default_factory=DockerDigestSettings)
     gateway_route: GatewayRouteSettings = Field(default_factory=GatewayRouteSettings)
@@ -2076,6 +2074,19 @@ class Settings(BaseModel):
             data = dict(data)
             del data["autonomous"]
 
+        # Strip the entire removed notification block (the notify_user tool
+        # and its store-and-forward subsystem were decommissioned — the
+        # operator is now notified only via new assistant messages and
+        # user_chat subsessions). Deployed configs still carry it, which
+        # extra="forbid" would otherwise reject and crash-loop the boot.
+        if "notification" in data:
+            logger.info(
+                "Dropping removed config block 'notification' (the notify_user "
+                "tool was decommissioned)"
+            )
+            data = dict(data)
+            del data["notification"]
+
         # Strip the entire removed autonomy block.
         if "autonomy" in data:
             logger.info(
@@ -2155,6 +2166,9 @@ class Settings(BaseModel):
         function, which pops the legacy key, so running twice is a no-op.
         """
         # Strip removed autonomy/authorization keys.
+        if "notification" in data:
+            logger.info("migrate_legacy_config: dropping removed key 'notification'")
+            del data["notification"]
         if "autonomy" in data:
             logger.info("migrate_legacy_config: dropping removed key 'autonomy'")
             del data["autonomy"]
@@ -2257,7 +2271,6 @@ class Settings(BaseModel):
             "github_actions",
             "repo_study",
             "lifecycle",
-            "notification",
             "http_probe",
             "public_fetch",
             "feedback",

@@ -11,10 +11,9 @@ from typing import Any, Protocol, runtime_checkable
 # the deploy-lifecycle client.
 RecoverCallback = Callable[[], Awaitable[str]]
 
-# A ``(title, body)`` async callable that escalates a store fault to the user
-# (wired to ``notify_user`` by the server).  Injected into a memory backend so
-# it can surface a fault auto-recovery cannot safely heal without a hard
-# dependency on the notification/EventBus layer.
+# A ``(title, body)`` async callable that escalates a store fault to the user.
+# Injected into a memory backend so it can surface a fault auto-recovery cannot
+# safely heal without a hard dependency on the server's escalation layer.
 NotifyCallback = Callable[[str, str], Awaitable[None]]
 
 
@@ -74,8 +73,8 @@ class ChatMemory(Protocol):
         """Register (or clear) the user-facing escalation callback.
 
         A backend that detects a fault auto-recovery cannot safely heal uses
-        this to escalate (``notify_user``).  Backends with no escalation path
-        may ignore it.
+        this to escalate to the user.  Backends with no escalation path may
+        ignore it.
         """
         ...
 

@@ -8,12 +8,9 @@ from __future__ import annotations
 import asyncio
 import logging
 from collections.abc import AsyncIterator
-from typing import Any
 
 from starlette.requests import Request
 from starlette.responses import JSONResponse, StreamingResponse
-
-from robotsix_chat.chat.events import SSE_NOTIFICATION_TYPE
 
 from ._shared import _get_session_id, _sse_frame
 from .constants import (
@@ -23,33 +20,6 @@ from .constants import (
 )
 
 logger = logging.getLogger(__name__)
-
-
-def _undelivered_notification_frames(store: Any) -> list[tuple[str, dict[str, object]]]:
-    """Return ``(id, frame)`` pairs for undelivered notifications, oldest first.
-
-    Queries the persistent notification store for records with
-    ``delivered=false``, ordered by ``ts`` ascending, and builds an SSE frame
-    for each using the same event shape as the live ``notify_user``
-    publication (``type``/``title``/``body``/``urgency``/``link``).  The store
-    does not persist ``urgency``/``link``, so replayed frames carry the same
-    defaults a plain ``notify_user`` call would emit.
-    """
-    records = [r for r in store.list() if not r.delivered]
-    records.sort(key=lambda r: r.ts)
-    return [
-        (
-            record.id,
-            {
-                "type": SSE_NOTIFICATION_TYPE,
-                "title": record.title,
-                "body": record.body,
-                "urgency": "default",
-                "link": "",
-            },
-        )
-        for record in records
-    ]
 
 
 async def events_endpoint(request: Request) -> JSONResponse | StreamingResponse:
@@ -66,30 +36,6 @@ async def events_endpoint(request: Request) -> JSONResponse | StreamingResponse:
 
     async def event_stream() -> AsyncIterator[bytes]:
         queue = request.app.state.event_bus.subscribe(session_id)
-
-        # Replay notifications persisted while no client was connected.  Each
-        # record is enqueued onto this subscriber's own queue with the same
-        # SSE shape as a live notify_user event, then marked delivered as a
-        # per-record batch.  Enqueue + mark run synchronously here (before the
-        # send loop drains the queue), so a mid-replay failure never re-sends
-        # the records already handed off and a later connect never replays
-        # them again.
-        store = getattr(request.app.state, "notification_store", None)
-        if store is not None:
-            try:
-                pending = _undelivered_notification_frames(store)
-            except Exception:
-                logger.exception("events: failed to load undelivered notifications")
-                pending = []
-            for record_id, frame in pending:
-                queue.put_nowait(frame)
-                try:
-                    store.mark_delivered([record_id])
-                except Exception:
-                    logger.exception(
-                        "events: failed to mark notification %s delivered",
-                        record_id,
-                    )
 
         try:
             yield SSE_HEARTBEAT_FRAME  # first byte immediately

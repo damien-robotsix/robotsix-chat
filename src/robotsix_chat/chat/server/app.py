@@ -61,7 +61,6 @@ from robotsix_chat.langfuse import (
 from robotsix_chat.lifecycle import build_lifecycle_tools, load_lifecycle_skill
 from robotsix_chat.llm import LlmioChatAgent
 from robotsix_chat.memory import ChatMemory, NullMemory, ReadOnlyMemory, build_memory
-from robotsix_chat.notification import build_notification_tools, load_notification_skill
 from robotsix_chat.public_fetch import build_public_fetch_tools, load_public_fetch_skill
 from robotsix_chat.refdocs import build_refdocs_tools
 from robotsix_chat.render_url import build_render_url_tools, load_render_url_skill
@@ -130,8 +129,6 @@ from .routes import (
     mobile_token_endpoint,
     models_list_endpoint,
     not_found_handler,
-    notifications_read_endpoint,
-    notifications_unread_endpoint,
     periodic_definitions_list_endpoint,
     periodic_definitions_run_endpoint,
     prune_endpoint,
@@ -331,7 +328,6 @@ SHARED_PARAMS: frozenset[str] = frozenset(
         "health_settings",
         "evergoing_settings",
         "continuation_store",
-        "notification_store",
     }
 )
 
@@ -377,8 +373,6 @@ def create_app(
     evergoing_settings: EvergoingSettings | None = None,
     memory_component_settings: MemoryComponentSettings | None = None,
     continuation_store: Any = None,
-    notification_store: Any = None,
-    notification_store_and_forward: bool = True,
 ) -> Starlette:
     """Return a Starlette ASGI app wired to ``agent``.
 
@@ -524,16 +518,6 @@ def create_app(
             instance for pending post-restart continuations.  When
             ``None`` (default), the chat endpoint does not reset the
             consecutive-continuation guardrail counter on operator messages.
-        notification_store: Shared
-            :class:`~robotsix_chat.notification.store.NotificationStore`
-            persisting ``notify_user`` notifications to chat-data so they
-            survive a disconnected browser.  When ``None`` (default),
-            notifications are published live but not persisted.
-        notification_store_and_forward: Feature flag mirroring
-            ``notification.store_and_forward``.  When ``False``, the
-            ``/notifications`` API endpoints return empty responses (the
-            emergency kill-switch); ``True`` (default) serves persisted
-            records.
 
     """
     routes: list[Route | Mount] = [
@@ -554,16 +538,6 @@ def create_app(
         Route("/events", events_endpoint, methods=["GET"]),
         Route("/history", history_endpoint, methods=["GET"]),
         Route("/models", models_list_endpoint, methods=["GET"]),
-        Route(
-            "/notifications/unread",
-            notifications_unread_endpoint,
-            methods=["GET"],
-        ),
-        Route(
-            "/notifications/read",
-            notifications_read_endpoint,
-            methods=["POST"],
-        ),
         Route("/sessions", sessions_list_endpoint, methods=["GET"]),
         Route("/sessions", sessions_create_endpoint, methods=["POST"]),
         Route(
@@ -850,8 +824,7 @@ def create_app(
     else:
         app.state.evergoing_scheduler = None
     app.state.continuation_store = continuation_store  # may be None
-    app.state.notification_store = notification_store  # may be None
-    app.state.notification_store_and_forward = notification_store_and_forward
+
     if config_path is not None:
         app.state.config_path = config_path
     if draft_store_dir is not None:
@@ -948,7 +921,6 @@ def _skill_registry(
             load_cross_session_skill,
         ),
         (settings.lifecycle.enabled, "lifecycle", load_lifecycle_skill),
-        (settings.notification.enabled, "notification", load_notification_skill),
         (settings.http_probe.enabled, "http_probe", load_http_probe_skill),
         (settings.docker_digest.enabled, "docker_digest", load_docker_digest_skill),
         (settings.gateway_route.enabled, "gateway_route", load_gateway_route_skill),
@@ -1028,7 +1000,7 @@ def _inject_skills(
     are always appended — they apply to every agent build, not just
     tool-enabled ones.  Each skill gate is independently gated by its own
     settings key (``central_deploy.url``, ``lifecycle.enabled``,
-    ``notification.enabled``, ``github_security.enabled``).
+    ``github_security.enabled``).
 
     *now* is forwarded to :func:`_current_datetime_directive` so tests can pin
     the injected timestamp.
@@ -1274,13 +1246,12 @@ def _build_request_tools_factory(
     event_sink: EventSink | None,
     conversation_store: ConversationStore | None = None,
     configured_level: int | None = None,
-    notification_store: Any = None,
 ) -> Callable[[str], list[Any]] | None:
     """Build a per-request tools factory for the main chat agent.
 
     Combines subsession tools (built per ``stream()`` call so closures
-    capture the request's session id) and, when enabled, notification
-    tools.  Returns ``None`` when no per-request tools are configured.
+    capture the request's session id) with the evergoing/escalation tools.
+    Returns ``None`` when no per-request tools are configured.
     """
     req_factories: list[Callable[[str], list[Any]]] = []
 
@@ -1301,18 +1272,6 @@ def _build_request_tools_factory(
             )
 
         req_factories.append(_make_request_tools)
-
-    if settings.notification.enabled and event_sink is not None:
-
-        def _make_notification_tools(session_id: str) -> list[Any]:
-            return build_notification_tools(
-                settings.notification,
-                event_sink=event_sink,
-                session_id=session_id,
-                store=notification_store,
-            )
-
-        req_factories.append(_make_notification_tools)
 
     if settings.evergoing.enabled and conversation_store is not None:
         from robotsix_chat.evergoing import build_cross_session_tools
@@ -1406,7 +1365,6 @@ def create_agent_from_settings(
     diagnostic_store: Any = None,
     knowledge_store: Any = None,
     continuation_store: Any = None,
-    notification_store: Any = None,
 ) -> LlmioChatAgent:
     """Build an :class:`LlmioChatAgent` wired from *settings*.
 
@@ -1510,24 +1468,8 @@ def create_agent_from_settings(
                     close_state=subsession_close_state,
                 )
             )
-            # Subsession agents get notify_user pinned to the owner's session
-            # so notifications reach the user's connected browser.  Built
-            # statically here (not via the per-request factory) because the
-            # per-request factory receives the subsession's own sub_id, not
-            # the owner's session_id that the browser is subscribed to.
-            if subsession_env.event_sink is not None:
-                from robotsix_chat.notification import build_notification_tools
-
-                tools.extend(
-                    build_notification_tools(
-                        settings.notification,
-                        event_sink=subsession_env.event_sink,
-                        session_id=subsession_ctx.owner_session_id,
-                        store=notification_store,
-                    )
-                )
-        # Build per-request tools factory — subsession tools for the main
-        # agent, notification tools for the main agent.
+        # Build per-request tools factory — subsession and escalation tools
+        # for the main agent.
         request_tools_factory = _build_request_tools_factory(
             settings,
             subsession_env if subsession_ctx is None else None,
@@ -1541,7 +1483,6 @@ def create_agent_from_settings(
                 if subsession_ctx is None and not bare
                 else None
             ),
-            notification_store=notification_store,
         )
 
     # Read/write split for background agents. Recall is a retrieval-only
@@ -1600,39 +1541,4 @@ def create_agent_from_settings(
                 settings.lifecycle, settings.central_deploy.url
             ).self_restart
         )
-    # Wire user-facing escalation (notify_user) for the top-level chat agent's
-    # memory so a store fault auto-recovery cannot safely heal (e.g. a
-    # graph-store open segfault whose on-disk copy will not open) surfaces to
-    # the user rather than staying a silent log line.  Same gating as recovery.
-    if (
-        not bare
-        and memory_enabled
-        and subsession_ctx is None
-        and settings.notification.enabled
-        and event_sink is not None
-    ):
-        from robotsix_chat.chat.events import SSE_NOTIFICATION_TYPE
-
-        _notify_sink = event_sink
-        _notify_store = notification_store
-
-        async def _escalate(title: str, body: str) -> None:
-            """Broadcast a high-urgency notification to every connected browser."""
-            frame: dict[str, object] = {
-                "type": SSE_NOTIFICATION_TYPE,
-                "title": title,
-                "body": body,
-                "urgency": "high",
-                "link": "",
-            }
-            if _notify_store is not None:
-                try:
-                    _notify_store.append(title=title, body=body, source_session="")
-                except Exception:
-                    logger.exception(
-                        "failed to persist memory-fault escalation notification"
-                    )
-            _notify_sink.publish_all(frame)
-
-        agent.memory.set_notify_callback(_escalate)
     return agent
