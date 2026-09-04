@@ -58,6 +58,75 @@ def validate_file_entries(files: list[Any]) -> str | None:
     return None
 
 
+# ---------------------------------------------------------------------------
+# Ungated "simple PR" path — risky-file guard
+# ---------------------------------------------------------------------------
+# The ungated direct-PR path (``open_simple_repo_pr``) is only for low-risk,
+# simple changes (content/text edits, small doc changes, single-file tweaks).
+# Files that can alter CI behaviour or carry credentials are NOT eligible on
+# this path — they must go through the ticket-gated flow (with its BLOCKED
+# state check and operator review) instead.  The opened PR is the review gate
+# for everything else.
+SIMPLE_PR_FORBIDDEN_PREFIXES = (
+    ".github/workflows/",
+    ".github/actions/",
+)
+SIMPLE_PR_FORBIDDEN_SUFFIXES = (
+    ".pem",
+    ".key",
+    ".pfx",
+    ".p12",
+)
+SIMPLE_PR_FORBIDDEN_BASENAMES = (
+    "id_rsa",
+    "id_ed25519",
+    "id_dsa",
+    "id_ecdsa",
+)
+
+
+def check_simple_pr_file_safety(files: list[dict[str, str]]) -> str | None:
+    """Return an error if any path is ineligible for the ungated simple-PR path.
+
+    Rejects CI workflow / composite-action files and credential-shaped files
+    (private keys, ``.env`` files).  Such changes carry elevated risk
+    (secret exfiltration, CI compromise) and must be routed through the
+    ticket-gated direct-repo flow — with its BLOCKED-state gate and operator
+    review — rather than the lightweight ungated path.  Returns ``None`` when
+    every path is eligible.
+    """
+    for f in files:
+        raw = str(f.get("path", "")).strip()
+        # Normalise separators and leading slashes so a guard cannot be
+        # bypassed with ``\`` or a leading ``/``.
+        norm = raw.replace("\\", "/").lstrip("/")
+        lower = norm.lower()
+        base = lower.rsplit("/", 1)[-1]
+        if any(lower.startswith(prefix) for prefix in SIMPLE_PR_FORBIDDEN_PREFIXES):
+            return (
+                f"Refused: '{raw}' is a CI workflow/action file and is NOT "
+                "eligible for the ungated simple-PR path.  Route workflow "
+                "changes through the ticket-gated direct-repo flow instead."
+            )
+        if any(lower.endswith(suffix) for suffix in SIMPLE_PR_FORBIDDEN_SUFFIXES):
+            return (
+                f"Refused: '{raw}' looks like a credential/secret file and is "
+                "NOT eligible for the ungated simple-PR path.  Route "
+                "secret-bearing changes through the ticket-gated flow instead."
+            )
+        if (
+            base in SIMPLE_PR_FORBIDDEN_BASENAMES
+            or base == ".env"
+            or (base.startswith(".env.") and not base.endswith(".example"))
+        ):
+            return (
+                f"Refused: '{raw}' looks like a credential/secret file and is "
+                "NOT eligible for the ungated simple-PR path.  Route "
+                "secret-bearing changes through the ticket-gated flow instead."
+            )
+    return None
+
+
 def build_github_tools(
     *,
     client: DirectRepoClient,
@@ -213,6 +282,121 @@ def build_github_tools(
             title=title,
             body=pr_body,
         )
+
+    async def open_simple_repo_pr(
+        repo_full_name: str,
+        branch_name: str,
+        files_json: str,
+        title: str,
+        body: str = "",
+        commit_message: str = "",
+    ) -> str:
+        """Open a PR for a simple change — NO mill ticket required.
+
+        **Lightweight ungated direct-PR path.**  Creates a branch, commits
+        the given files, and opens a reviewable pull request in one call,
+        *without* requiring a mill ticket in BLOCKED state.  The opened PR is
+        the review gate: a human approves and merges it, so this path stays
+        safe and reversible.
+
+        **Use this ONLY for low-risk, simple tasks:**
+        - content / text edits (e.g. adding a project card to a website),
+        - small documentation changes,
+        - single-file or few-file tweaks with no behavioural risk.
+
+        For larger or complex work — anything needing multi-step design,
+        broad refactors, or careful review — file a mill ticket and use the
+        ticket-gated flow (``push_direct_repo_branch`` + ``open_direct_repo_pr``)
+        instead.
+
+        **Not eligible on this path (refused by the tool):** CI workflow /
+        composite-action files (``.github/workflows/``, ``.github/actions/``)
+        and credential/secret-shaped files (private keys, ``.env`` files).
+        Route those — and any destructive change, force-merge, or merge
+        operation (still confirmation-gated) — through the ticket-gated flow.
+
+        **Scope:** When called through the component roster the GitHub App
+        installation scope check is bypassed.  For direct board-API calls,
+        *repo_full_name* must be within the robotsix-mill GitHub App's current
+        installation scope (checked dynamically at call time).
+
+        Args:
+            repo_full_name: GitHub ``owner/name`` (e.g.
+                ``"robotsix/robotsix-website"``).
+            branch_name: Name for the new branch (e.g.
+                ``"chore/add-thalamus-card"``).
+            files_json: JSON array of file entries to create or overwrite.
+                Same forms as ``push_direct_repo_branch``:
+                ``{"path": "...", "content": "..."}`` for text,
+                ``{"path": "...", "content_b64": "..."}`` for base64 bytes, or
+                ``{"path": "...", "local_path": "..."}`` for a file inside the
+                file-hub work directory.
+            title: PR title.  Should be a conventional-commit subject
+                (``feat:``/``fix:``/``docs:``/``chore:`` …).
+            body: PR description.  Defaults to a note describing the
+                lightweight direct-PR path and that review is required.
+            commit_message: Commit message.  Defaults to *title*.
+
+        Returns:
+            A status message with the branch URL and PR URL on success, or an
+            error message describing why the change was refused or failed.
+
+        """
+        try:
+            files: list[dict[str, str]] = json.loads(files_json)
+        except json.JSONDecodeError, TypeError:
+            return (
+                "Error: files_json must be a valid JSON array of file "
+                f"entries — {FILES_JSON_FORMS}."
+            )
+
+        if not isinstance(files, list):
+            return "Error: files_json must be a JSON array."
+
+        if entry_error := validate_file_entries(files):
+            return entry_error
+
+        # --- guard: reject workflow/secret files on the ungated path ---
+        if safety_error := check_simple_pr_file_safety(files):
+            return safety_error
+
+        # --- scope check only (NO BLOCKED-state / ticket gate) ---
+        if error := await assert_in_scope(client, repo_full_name):
+            return error
+
+        # --- ensure changelog fragments end with a newline (text entries) ---
+        for f in files:
+            if (
+                "content" in f
+                and f.get("path", "").startswith("changelog.d/")
+                and f["path"].endswith(".md")
+                and not f.get("content", "").endswith("\n")
+            ):
+                f["content"] = f["content"] + "\n"
+
+        commit_msg = commit_message or title
+        push_result = await client.push_branch(
+            repo_full_name=repo_full_name,
+            branch_name=branch_name,
+            files=files,
+            commit_message=commit_msg,
+            ticket_id="simple-pr",
+        )
+        if push_result.startswith("Error"):
+            return push_result
+
+        pr_body = body or (
+            "PR opened by robotsix-chat agent via the lightweight "
+            "direct-PR path for a simple change.\n\n"
+            "**Auto-merge is disabled** — human review required before merge."
+        )
+        pr_result = await client.create_pr(
+            repo_full_name=repo_full_name,
+            head_branch=branch_name,
+            title=title,
+            body=pr_body,
+        )
+        return f"{push_result}\n\n{pr_result}"
 
     async def update_pr_branch(
         ticket_id: str,
@@ -2049,6 +2233,7 @@ def build_github_tools(
     return [
         push_direct_repo_branch,
         open_direct_repo_pr,
+        open_simple_repo_pr,
         update_pr_branch,
         check_pr_merge_conflict,
         verify_pr_ci_status,

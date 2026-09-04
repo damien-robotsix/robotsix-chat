@@ -135,6 +135,7 @@ def test_merge_tools_returned() -> None:
         "list_open_prs",
         "merge_direct_repo_pr",
         "open_direct_repo_pr",
+        "open_simple_repo_pr",
         "push_direct_repo_branch",
         "push_patch_to_pr_branch",
         "recover_auto_merge",

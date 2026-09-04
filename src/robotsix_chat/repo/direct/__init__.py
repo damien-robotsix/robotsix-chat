@@ -11,8 +11,14 @@ skill markdown — a description of the direct-repo tools, their auth
 requirements, and their confirmation-gated mutation policy.
 
 **Guardrails enforced by the tools:**
-- Branch/PR/fix actions are ONLY permitted for tickets currently in BLOCKED
-  state.
+- Ticket-gated branch/PR/fix actions (``push_direct_repo_branch``,
+  ``open_direct_repo_pr``, ``direct_fix`` …) are ONLY permitted for tickets
+  currently in BLOCKED state.
+- The lightweight ``open_simple_repo_pr`` path is UNGATED (no ticket / no
+  BLOCKED state) so simple, low-risk changes (content/text edits, small doc
+  changes, single-file tweaks) can be turned into a reviewable PR directly.
+  It still requires installation scope, refuses CI-workflow and secret files,
+  and — like every path here — never merges: the opened PR is the review gate.
 - Merge and auto-merge tools require installation scope but do NOT require
   BLOCKED state — they are follow-up operations on PRs already created.
 - The repo set is resolved DYNAMICALLY from the GitHub App installation
