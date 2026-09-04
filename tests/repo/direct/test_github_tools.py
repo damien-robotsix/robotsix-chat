@@ -16,7 +16,10 @@ from typing import Any, cast
 
 import pytest
 
-from robotsix_chat.repo.direct.github_tools import build_github_tools
+from robotsix_chat.repo.direct.github_tools import (
+    build_github_tools,
+    check_simple_pr_file_safety,
+)
 
 
 class _FakeClient:
@@ -109,13 +112,14 @@ def test_build_github_tools_returns_all_named_async_tools() -> None:
         assert_in_scope=_pass,
     )
     names = [t.__name__ for t in tools]
-    assert len(tools) == 23
+    assert len(tools) == 24
     # No duplicate registrations.
     assert len(names) == len(set(names))
     assert all(callable(t) for t in tools)
     for expected in (
         "push_direct_repo_branch",
         "open_direct_repo_pr",
+        "open_simple_repo_pr",
         "check_pr_merge_conflict",
         "verify_pr_ci_status",
         "merge_direct_repo_pr",
@@ -291,3 +295,141 @@ class TestVerifyPrCiStatus:
             component_request=None,
         )
         assert await tools["verify_pr_ci_status"]("o/r", 7) == "out of scope"
+
+
+# ---------------------------------------------------------------------------
+# check_simple_pr_file_safety (module-level guard)
+# ---------------------------------------------------------------------------
+
+
+class TestCheckSimplePrFileSafety:
+    """The risky-file guard for the ungated simple-PR path."""
+
+    def test_plain_content_edits_pass(self) -> None:
+        """Ordinary content/doc/source edits are eligible."""
+        files = [
+            {"path": "content/projects.html", "content": "<div>THALAMUS</div>"},
+            {"path": "docs/readme.md", "content": "hi"},
+            {"path": "src/app.py", "content": "x = 1"},
+            {"path": ".env.example", "content": "KEY="},
+        ]
+        assert check_simple_pr_file_safety(files) is None
+
+    @pytest.mark.parametrize(
+        "path",
+        [
+            ".github/workflows/ci.yml",
+            "/.github/workflows/ci.yml",
+            ".github/actions/build/action.yml",
+        ],
+    )
+    def test_workflow_files_refused(self, path: str) -> None:
+        """CI workflow / action files are refused on the ungated path."""
+        result = check_simple_pr_file_safety([{"path": path, "content": "x"}])
+        assert result is not None
+        assert "workflow" in result.lower()
+
+    @pytest.mark.parametrize(
+        "path",
+        ["deploy.pem", "secrets/server.key", ".env", ".env.local", "keys/id_rsa"],
+    )
+    def test_secret_files_refused(self, path: str) -> None:
+        """Credential/secret-shaped files are refused on the ungated path."""
+        result = check_simple_pr_file_safety([{"path": path, "content": "x"}])
+        assert result is not None
+        assert "secret" in result.lower() or "credential" in result.lower()
+
+
+# ---------------------------------------------------------------------------
+# open_simple_repo_pr (ungated: scope check, NO BLOCKED requirement)
+# ---------------------------------------------------------------------------
+
+
+class TestOpenSimpleRepoPr:
+    """The lightweight ungated direct-PR tool."""
+
+    @pytest.mark.asyncio
+    async def test_happy_path_pushes_and_opens_pr(self) -> None:
+        """A simple change pushes a branch and opens a PR without a ticket."""
+        client = _FakeClient()
+        tools = _build(client=client)
+        result = await tools["open_simple_repo_pr"](
+            "o/r",
+            "chore/add-card",
+            '[{"path": "content/x.html", "content": "hi"}]',
+            "chore: add card",
+        )
+        assert "pushed-ok" in result
+        assert "pr-created" in result
+        # No ticket_id gate — a synthetic marker is used for traceability.
+        assert client.pushed is not None
+        assert client.pushed["ticket_id"] == "simple-pr"
+        assert client.pushed["commit_message"] == "chore: add card"
+        assert client.created is not None
+        assert client.created["head_branch"] == "chore/add-card"
+
+    @pytest.mark.asyncio
+    async def test_invalid_json_returns_error(self) -> None:
+        """Non-JSON ``files_json`` yields a validation error, not a crash."""
+        tools = _build()
+        result = await tools["open_simple_repo_pr"]("o/r", "b", "not-json", "title")
+        assert "valid JSON array" in result
+
+    @pytest.mark.asyncio
+    async def test_workflow_file_refused(self) -> None:
+        """A workflow-file change is refused before any push."""
+        client = _FakeClient()
+        tools = _build(client=client)
+        result = await tools["open_simple_repo_pr"](
+            "o/r",
+            "b",
+            '[{"path": ".github/workflows/ci.yml", "content": "x"}]',
+            "ci: tweak",
+        )
+        assert "Refused" in result
+        assert client.pushed is None
+
+    @pytest.mark.asyncio
+    async def test_scope_error_short_circuits(self) -> None:
+        """A scope error short-circuits before any push."""
+
+        async def _scope_fail(*_a: Any, **_k: Any) -> str | None:
+            return "out of scope"
+
+        async def _pass(*_a: Any, **_k: Any) -> str | None:
+            return None
+
+        client = _FakeClient()
+        tools = {
+            t.__name__: t
+            for t in build_github_tools(
+                client=cast(Any, client),
+                board=cast(Any, object()),
+                settings=cast(Any, object()),
+                component_request=None,
+                assert_blocked_and_scoped=_pass,
+                assert_in_scope=_scope_fail,
+            )
+        }
+        result = await tools["open_simple_repo_pr"](
+            "o/r", "b", '[{"path": "x.md", "content": "hi"}]', "docs: x"
+        )
+        assert result == "out of scope"
+        assert client.pushed is None
+
+    @pytest.mark.asyncio
+    async def test_push_failure_skips_pr(self) -> None:
+        """A push failure returns early without opening a PR."""
+
+        class _FailPush(_FakeClient):
+            async def push_branch(self, **kwargs: Any) -> str:
+                self.pushed = kwargs
+                return "Error pushing branch: boom"
+
+        client = _FailPush()
+        tools = _build(client=client)
+        result = await tools["open_simple_repo_pr"](
+            "o/r", "b", '[{"path": "x.md", "content": "hi"}]', "docs: x"
+        )
+        assert result == "Error pushing branch: boom"
+        assert client.created is None

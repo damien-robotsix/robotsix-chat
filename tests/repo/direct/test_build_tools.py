@@ -18,12 +18,13 @@ def test_build_direct_repo_tools_disabled() -> None:
 
 
 def test_build_direct_repo_tools_returns_twentytwo_tools() -> None:
-    """Verify that enabled direct_repo returns the twenty-three expected tools."""
+    """Verify that enabled direct_repo returns the twenty-four expected tools."""
     tools = build_direct_repo_tools(_settings())
-    assert len(tools) == 23
+    assert len(tools) == 24
     names = [t.__name__ for t in tools]
     assert "push_direct_repo_branch" in names
     assert "open_direct_repo_pr" in names
+    assert "open_simple_repo_pr" in names
     assert "update_pr_branch" in names
     assert "check_pr_merge_conflict" in names
     assert "verify_pr_ci_status" in names

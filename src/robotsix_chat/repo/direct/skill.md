@@ -1,5 +1,58 @@
 # Direct Repository Access
 
+## Agent tool: `open_simple_repo_pr` (ungated — no ticket required)
+
+**Lightweight direct-PR path for simple, low-risk changes.** Creates a branch, commits the given
+files, and opens a reviewable pull request in one call — **without requiring a mill ticket in BLOCKED
+state**. The opened PR is the review gate: a human approves and merges it, so this path stays safe
+and reversible. Use this so an operator does NOT have to file a ticket just to get a trivial change
+reviewed.
+
+**Eligible task classes (use this tool):**
+
+- Content / text edits — e.g. adding a project card to the robotsix-website PHP site, fixing copy.
+- Small documentation changes — README/docs wording, a new doc page.
+- Single-file or few-file tweaks with no behavioural risk.
+
+**NOT eligible — route through the ticket-gated flow instead:**
+
+- Larger or complex work needing multi-step design, broad refactors, or careful review — file a mill
+  ticket and use `push_direct_repo_branch` + `open_direct_repo_pr` (gated on BLOCKED state).
+- CI workflow / composite-action files (`.github/workflows/`, `.github/actions/`) — **refused** by
+  the tool (they can alter CI behaviour and exfiltrate secrets).
+- Credential/secret-shaped files (private keys `*.pem`/`*.key`/`*.pfx`/`*.p12`, `.env` files, SSH
+  keys) — **refused** by the tool.
+- Destructive changes, force-merge, or any merge operation — merges remain confirmation-gated
+  (`merge_direct_repo_pr`) and require explicit operator approval in-chat.
+
+### Preconditions
+
+- `direct_repo.enabled` must be true.
+- Repository must be within the GitHub App installation scope (checked at call time; bypassed when
+  the change is orchestrated through the component roster).
+- Every `files_json` entry must be one of the accepted forms (`{path, content}`,
+  `{path, content_b64}`, `{path, local_path}`) and must pass the risky-file guard above.
+
+### Arguments
+
+- `repo_full_name` — GitHub `owner/name` (e.g. `robotsix/robotsix-website`).
+- `branch_name` — name for the new branch (e.g. `chore/add-thalamus-card`).
+- `files_json` — JSON array of file entries to create or overwrite.
+- `title` — PR title; use a conventional-commit subject (`feat:`/`fix:`/`docs:`/`chore:` …).
+- `body` — optional PR description (defaults to a note about the lightweight path).
+- `commit_message` — optional; defaults to `title`.
+
+### Error responses
+
+| Condition                        | Message                                                          |
+| -------------------------------- | ---------------------------------------------------------------- |
+| Malformed `files_json`           | `Error: files_json must be a valid JSON array of file entries …` |
+| Workflow/action file in the diff | `Refused: '<path>' is a CI workflow/action file …`               |
+| Secret/credential file           | `Refused: '<path>' looks like a credential/secret file …`        |
+| Repo not in installation scope   | `The robotsix-mill GitHub App is not installed on 'owner/name'`  |
+
+______________________________________________________________________
+
 ## Agent tool: `verify_pr_ci_status`
 
 Fetch live CI run status and PR state from GitHub — PR metadata (state, mergeability, draft status)
