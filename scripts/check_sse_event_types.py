@@ -137,20 +137,35 @@ def main() -> int:
     _BARE_SSE_LITERAL_RE = re.compile(rf'"({_alt})"|\'({_alt})\'')
     # Strip Python comments (both full-line and inline) before scanning.
     _PY_COMMENT_RE = re.compile(r"#.*$", re.MULTILINE)
+    # A canonical value used as a dict KEY (followed by ``:``) or as an
+    # attribute name inside ``hasattr``/``getattr``/``setattr``/``delattr``
+    # is a config/attribute-namespace collision, never an SSE frame-type
+    # reference (SSE types only ever appear as dict VALUES). Skip those so a
+    # generic word like ``"notification"`` used as a config key does not
+    # false-positive — mirroring the namespace exclusion the HTML scan does.
+    _ATTR_CALL_RE = re.compile(r"\b(?:has|get|set|del)attr\s*\(")
 
     for py_file in sorted(test_dir.rglob("*.py")):
         raw = py_file.read_text(encoding="utf-8")
         # Remove comment lines so we don't flag documentation references.
         code_only = _PY_COMMENT_RE.sub("", raw)
-        for m in _BARE_SSE_LITERAL_RE.finditer(code_only):
-            val = m.group(1) or m.group(2)
-            violations = True
-            print(
-                f"{py_file.relative_to(repo_root)}: bare string "
-                f'"{val}" — replace with the corresponding '
-                f"SSE_*_TYPE constant from robotsix_chat.chat.events",
-                file=sys.stderr,
-            )
+        for line in code_only.splitlines():
+            for m in _BARE_SSE_LITERAL_RE.finditer(line):
+                val = m.group(1) or m.group(2)
+                # Dict-key position: literal immediately followed by ``:``.
+                if line[m.end() :].lstrip().startswith(":"):
+                    continue
+                # Attribute-name position: literal is an arg to
+                # hasattr/getattr/setattr/delattr on the same line.
+                if _ATTR_CALL_RE.search(line[: m.start()]):
+                    continue
+                violations = True
+                print(
+                    f"{py_file.relative_to(repo_root)}: bare string "
+                    f'"{val}" — replace with the corresponding '
+                    f"SSE_*_TYPE constant from robotsix_chat.chat.events",
+                    file=sys.stderr,
+                )
 
     if violations:
         print(
