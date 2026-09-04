@@ -86,7 +86,7 @@ SYSTEM_PROMPT_VERSION = 161
 # vision model) under one collapsible header instead of the generic
 # "General" bucket.  The shared ConfigPanel buckets fields by this
 # ``json_schema_extra["group"]`` label.
-_LLMIO_GROUP = {"group": "LLM I/O"}
+_LLMIO_GROUP: dict[str, Any] = {"group": "LLM I/O"}
 
 
 class Settings(BaseModel):
