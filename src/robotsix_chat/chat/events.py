@@ -48,7 +48,9 @@ SSE_CHAT_TURN_DONE_TYPE = "chat_turn_done"
 SSE_CHAT_TURN_ERROR_TYPE = "chat_turn_error"
 SSE_CHAT_TURN_RESUME_TYPE = "chat_turn_resume"
 
-# Browser push notification (via notify_user tool → EventBus → SSE).
+# Browser push notification frame (EventBus → SSE) used by the subsession
+# framework to surface a desktop alert when a user_chat subsession opens or
+# receives a message.  The browser renders it via the native Notifications API.
 SSE_NOTIFICATION_TYPE = "notification"
 
 # Session model changed (via the escalate_model tool → EventBus → SSE) so the

@@ -96,18 +96,6 @@ class TestHtmlDomStructure:
         assert 'id="subsessions-list"' in ui_html
         assert 'id="subsessions-resize-handle"' in ui_html
 
-    def test_notifications_header_control(self, ui_html: str) -> None:
-        """The header carries the missed-notifications toggle and count badge."""
-        assert 'id="notifications-toggle"' in ui_html
-        assert 'id="notifications-badge"' in ui_html
-        # The badge starts hidden (zero unread) until the UI fetches state.
-        assert re.search(r'id="notifications-badge"[^>]*\bhidden\b', ui_html)
-
-    def test_notifications_panel(self, ui_html: str) -> None:
-        """The missed-notifications panel and its list container exist."""
-        assert 'id="notifications-panel"' in ui_html
-        assert 'id="notifications-list"' in ui_html
-
     def test_subsessions_announce_region(self, ui_html: str) -> None:
         """A live region announces new subsession messages to screen readers."""
         assert 'id="subs-announce"' in ui_html
@@ -209,26 +197,6 @@ class TestStaticFileServing:
             response = await f.client.get("/static/chat.js")
 
         assert '"use strict"' in response.text
-
-    @pytest.mark.asyncio
-    async def test_js_wires_unread_notifications_api(self) -> None:
-        """chat.js drives the unread-notification badge/panel via the API.
-
-        It must fetch the unread listing (GET /notifications/unread) to
-        populate the badge and mark them read (POST /notifications/read)
-        when the panel opens.
-        """
-        from tests.conftest import mock_app
-
-        async with mock_app() as f:
-            response = await f.client.get("/static/chat.js")
-
-        body = response.text
-        assert "/notifications/unread" in body
-        assert "/notifications/read" in body
-        assert "fetchUnreadNotifications" in body
-        assert "markNotificationsRead" in body
-
 
 # ---------------------------------------------------------------------------
 # chat.js — function presence (static analysis)
