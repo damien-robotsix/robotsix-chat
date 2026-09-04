@@ -78,6 +78,10 @@ upper-right corner of the browser window. This happens **regardless of whether y
 browser's notification permission** — in-app toasts ensure every alert is visibly surfaced even when
 desktop notifications are unavailable.
 
+Toasts are driven by the live SSE `notification` frames — most often raised when a `user_chat`
+side-chat opens or receives a message, when the monitor auto-pauses or auto-stops a subsession, and
+on new main-conversation messages.
+
 ### Where Toasts Appear
 
 Toasts stack vertically in the top-right corner of the screen, each showing:
@@ -121,8 +125,8 @@ states: **default** (not yet decided), **granted**, and **denied**.
 - **Granting** — click **Allow** in the browser prompt. Native desktop notifications then appear
   alongside the in-app toasts.
 - **Denying** — click **Block** (or dismiss the prompt). You will **not** be asked again on that
-  site. Denying only turns off the *native* channel — the in-app toasts, unread badge, and
-  missed-notifications panel keep working exactly as before, so no alert is ever lost.
+  site. Denying only turns off the *native* channel — the in-app toasts still render, so no alert is
+  ever lost.
 - **Changing your mind later** — permission is managed by the browser, not the app. To grant or
   revoke it after the fact, open the browser's **site settings** for this page (usually the padlock
   / "tune" icon in the address bar, then *Notifications*) and set it to *Allow* or *Block*. Reset it
@@ -130,47 +134,6 @@ states: **default** (not yet decided), **granted**, and **denied**.
 
 Because in-app toasts render regardless of this permission, granting it is entirely optional — it
 only adds a second, native channel for the same notifications.
-
-### System Notifications — Service Faults
-
-In addition to agent-generated notifications, the system sends **high-urgency red toasts** when a
-critical backend service fault is detected and automatic recovery cannot safely repair it. These are
-rare but important:
-
-- **"Memory store down (graph segfault)"** — The long-term memory service encountered a persistent
-  fault that auto-recovery could not heal. The memory service is temporarily offline, so the agent
-  will continue without access to your conversation history. **What to do:** check the system logs
-  or contact support if the memory service does not recover within a few minutes. The fault
-  diagnosis is included in the notification body.
-
-These system notifications persist on screen (red border, high urgency) until you dismiss them.
-
-## Missed Notifications Badge & Panel
-
-When the agent sends you **missed notifications** (alerts and reminders you weren't connected to
-receive), they are stored on the server with an unread state. The chat header displays a badge
-showing how many notifications you have not yet viewed.
-
-### Badge
-
-The "🔔 Notifications" button in the header shows an unread-notification count badge. The badge is
-hidden when the count is zero.
-
-### Opening the Notifications Panel
-
-**Click the "🔔 Notifications" button** to open the missed-notifications panel. The panel slides in
-from the right side of the screen and displays:
-
-- **Title** — the notification subject
-- **Body** — the notification message content
-- **Timestamp** — when the notification was sent
-- **Source session** — which session issued the notification
-
-### Marking Notifications as Read
-
-When you open the notifications panel, all notifications displayed are automatically marked as read.
-The badge clears immediately and will stay at zero on page refresh — those notifications are no
-longer unread.
 
 ## Desktop Notifications for Conversation Messages
 
@@ -194,7 +157,7 @@ viewing:
   subsession is in focus mode).
 - A **`user_chat` side-chat** message does not notify while that specific subsession is either in
   **focus mode** (fills the screen) or has its row **expanded** with the side-chat panel visible —
-  the same on-screen signal the unread-badge logic uses.
+  the conversation is already on screen, so no notification is needed.
 
 When the tab is in the background, or you are viewing a different target, a new message raises a
 desktop notification titled with the conversation (`New message in …`) or "Chat request" so you can
@@ -227,30 +190,4 @@ missed while offline are replayed. Each replayed notification:
 
 - Appears as an **in-app toast** in the corner (the same transient alert you see for live
   notifications)
-- Shows up in the **unread-notifications badge** so you can review the full history
 - Triggers a **native desktop notification** if permission was granted
-
-You can then open the notifications panel to view the full list and mark them as read.
-
-### Closing the Panel
-
-Click the **×** button in the notifications panel header or click outside the panel to close it. The
-marked-as-read state is preserved — the panel can be reopened if you want to view the notification
-history again in a later session.
-
-## Migrating from the Alerts Inbox
-
-Earlier versions surfaced agent alerts behind a header button labelled **🔔 Alerts**. That button is
-now **🔔 Notifications**, and the feature set has grown rather than changed underneath you:
-
-- **Same inbox, new name** — the button still opens the missed-notifications panel described above,
-  still shows an unread-count badge, and still stores alerts you weren't connected to receive. No
-  history is lost in the rename; nothing you relied on was removed.
-- **New: native desktop notifications** — in addition to the in-app toasts and the inbox panel, the
-  agent (and new-message events) can now raise **native desktop notifications** when you grant
-  browser permission. See [Browser Notification Permissions](#browser-notification-permissions).
-- **New: click-to-navigate** — clicking a desktop notification jumps straight to the conversation or
-  subsession that raised it (see
-  [Clicking a Notification to Navigate](#clicking-a-notification-to-navigate)).
-- **Nothing to configure** — there is no separate Alerts setting to migrate. Desktop notifications
-  are gated only by the browser permission prompt; de-duplication and inbox replay are automatic.
