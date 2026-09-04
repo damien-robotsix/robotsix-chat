@@ -66,6 +66,47 @@ def test_log_level_default() -> None:
     assert Settings().log_level == "INFO"
 
 
+# ---------------------------------------------------------------------------
+# Settings-panel field grouping
+# ---------------------------------------------------------------------------
+
+# Every llmio-related top-level field renders under one dedicated
+# settings-panel group instead of the generic "General" bucket.
+_LLMIO_GROUP_FIELDS = {
+    "chat_default_model_level",
+    "llmio_api_key",
+    "summary_model_level",
+    "llmio_task_budget_tokens",
+    "llmio_failover_window_seconds",
+    "llmio_tier_overrides",
+    "vision_model",
+}
+
+
+def test_llmio_fields_share_one_settings_panel_group() -> None:
+    """All llmio settings carry the same ``LLM I/O`` panel-group label."""
+    from robotsix_config import config_schema
+
+    schema = config_schema(Settings)
+    props = schema["properties"]
+    for name in _LLMIO_GROUP_FIELDS:
+        assert props[name].get("group") == "LLM I/O", name
+
+
+def test_non_llmio_fields_stay_ungrouped() -> None:
+    """Non-llmio top-level fields carry no group (they render under General)."""
+    from robotsix_config import config_schema
+
+    schema = config_schema(Settings)
+    props = schema["properties"]
+    # Representative non-llmio top-level fields must not leak into the group.
+    for name in ("server_host", "server_port", "log_level", "agent_instruction"):
+        assert "group" not in props[name], name
+    # No top-level field outside the llmio set is tagged "LLM I/O".
+    tagged = {n for n, p in props.items() if p.get("group") == "LLM I/O"}
+    assert tagged == _LLMIO_GROUP_FIELDS
+
+
 def test_vision_model_defaults_to_vision_capable_model() -> None:
     """``vision_model`` defaults to a concrete OpenRouter vision-capable id."""
     assert Settings().vision_model == "openrouter/openai/gpt-4o-mini"
@@ -1073,8 +1114,8 @@ _PREEXISTING_ALLOWLIST: set[tuple[str, int, str]] = {
     ("src/robotsix_chat/config/settings.py", 98, "-opus"),
     ("src/robotsix_chat/config/settings.py", 98, "claude-fable"),
     # config/settings.py — vision_model default (OpenRouter captioning model)
-    ("src/robotsix_chat/config/settings.py", 153, "gpt-"),
-    ("src/robotsix_chat/config/settings.py", 1873, "gpt-"),
+    ("src/robotsix_chat/config/settings.py", 160, "gpt-"),
+    ("src/robotsix_chat/config/settings.py", 1885, "gpt-"),
     # config/memory_models.py — gpt-5-nano / gpt-5-mini / deepseek-v4-flash
     ("src/robotsix_chat/config/memory_models.py", 26, "gpt-"),
     ("src/robotsix_chat/config/memory_models.py", 50, "gpt-"),
