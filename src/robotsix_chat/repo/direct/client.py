@@ -643,11 +643,8 @@ class DirectRepoClient:
             token (and its permission map) actually belongs to — rather than
             only the configured value.
             """
-            import httpx
-
             jwt_token = _build_app_jwt(app_id, private_key)
-            with httpx.Client() as client:
-                return str(_resolve_installation_id(client, jwt_token, owner, repo))
+            return str(_resolve_installation_id(jwt_token, owner, repo))
 
         try:
             resolved_installation_id = await asyncio.to_thread(_resolve_installation)

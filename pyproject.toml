@@ -118,7 +118,7 @@ robotsix-llmio = { git = "https://github.com/damien-robotsix/robotsix-llmio.git"
 # robotsix-modules: same SHA as robotsix-mill (coherent-set rule).
 robotsix-modules = { git = "https://github.com/damien-robotsix/robotsix-modules.git", rev = "d7c5e59980516de6e050db02ff54aef4e15ff5c3" }  # pragma: allowlist secret
 robotsix-http = { git = "https://github.com/damien-robotsix/robotsix-http.git", rev = "cdfd4d1c42679fef73081439562872792e202dc4" }  # pragma: allowlist secret
-robotsix-github-auth = { git = "https://github.com/damien-robotsix/robotsix-github-auth.git", rev = "e6214c41fd743120aa987bacb4e9b2bc88e73943" }  # pragma: allowlist secret
+robotsix-github-auth = { git = "https://github.com/damien-robotsix/robotsix-github-auth.git", rev = "9447d652ffe98e3e19cad2a57fd4f2621074f28c" }  # pragma: allowlist secret
 
 [tool.uv]
 # Pin the uv toolchain so astral-sh/setup-uv resolves the version from this

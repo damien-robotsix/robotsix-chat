@@ -41,9 +41,7 @@ def _mock_github_auth(monkeypatch: pytest.MonkeyPatch) -> None:
     def _fake_build_app_jwt(app_id: str, private_key: str) -> str:
         return "fake-app-jwt"
 
-    def _fake_resolve_installation_id(
-        client: object, jwt_token: str, owner: str, repo: str
-    ) -> str:
+    def _fake_resolve_installation_id(jwt_token: str, owner: str, repo: str) -> str:
         return "67890"
 
     fake = SimpleNamespace()

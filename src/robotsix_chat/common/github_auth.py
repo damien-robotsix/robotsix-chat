@@ -8,7 +8,6 @@ from __future__ import annotations
 
 import asyncio
 import logging
-from typing import cast
 
 from robotsix_chat.config import DirectRepoSettings
 
@@ -48,7 +47,7 @@ async def _build_github_app_auth_headers(
             private_key=dr.github_app_private_key.get_secret_value(),
             installation_id=dr.github_app_installation_id,
         )
-        token = cast(str, result.token)
+        token = result.token
         if token_cache is not None:
             token_cache[dr.github_app_installation_id] = token
         return token
