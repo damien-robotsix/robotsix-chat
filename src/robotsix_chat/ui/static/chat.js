@@ -8,6 +8,10 @@ import {
   shouldNotifySubsession,
 } from "./notify-gating.js";
 import {
+  buildMainConversationClick,
+  buildSubsessionClick,
+} from "./notify-navigation.js";
+import {
   parseSuggestions,
   stripStreamingSuggestions,
   renderSuggestionChips,
@@ -2665,6 +2669,39 @@ import {
     return "conversation";
   }
 
+  // Navigation primitives invoked when a desktop notification is clicked.
+  // Injected into notify-navigation.js so the routing logic stays DOM-free
+  // and unit-testable; notify() closes the clicked notification itself, so
+  // these only perform the focus + navigation.
+  var notifyNav = {
+    // Bring the window/tab to the foreground, even when backgrounded.
+    focusWindow: function () {
+      try { window.focus(); } catch (_) {}
+    },
+    // Open/focus the main conversation for *sid*: leave any subsession focus
+    // mode and switch to the session if it is not already active.
+    openMainConversation: function (sid) {
+      if (focusedSubId !== null) exitSubsFocus();
+      if (sid && sid !== activeSessionId) switchSession(sid);
+    },
+    // Open/focus the specific user_chat subsession identified by *subId*.
+    openSubsession: function (subId) {
+      var target = subsById[subId];
+      if (!target) {
+        // The subsession is not in the current session's store (e.g. the
+        // active session changed) — at least surface the panel.
+        openSubsessionsPanel();
+        return;
+      }
+      if (focusedSubId === subId) {
+        // Already focused — just make sure the panel is visible.
+        openSubsessionsPanel();
+        return;
+      }
+      enterSubsFocus(target);
+    },
+  };
+
   // A new main-conversation message: notify unless the user is actively
   // viewing the main conversation.  The tag keeps repeated OS-level
   // notifications for the same conversation replaced rather than stacked.
@@ -2675,10 +2712,12 @@ import {
       docVisible: docVisible,
       subsessionFocused: subsessionFocused,
     })) return;
+    var sid = activeSessionId;
     notify({
-      title: "New message in " + sessionTitleFor(activeSessionId),
+      title: "New message in " + sessionTitleFor(sid),
       body: truncateText(text, 200),
-      tag: "main-" + activeSessionId,
+      tag: "main-" + sid,
+      onClick: buildMainConversationClick(notifyNav, sid),
     });
   }
 
@@ -2696,6 +2735,7 @@ import {
       title: "Chat request: " + (sub.title || "side-chat"),
       body: truncateText(text, 200),
       tag: "sub-" + sub.subsession_id,
+      onClick: buildSubsessionClick(notifyNav, sub.subsession_id),
     });
   }
 
