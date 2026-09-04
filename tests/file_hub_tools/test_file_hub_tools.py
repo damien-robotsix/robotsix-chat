@@ -871,3 +871,79 @@ class TestRenderPdfPageTextOnlyModel:
         assert isinstance(result, str)
         assert "Page dimensions" in result
         assert IMAGE_OMITTED_NOTE in result
+
+
+class TestRenderPdfPageCaptionBranch:
+    """render_pdf_page captions the page when a vision model is configured."""
+
+    @pytest.mark.asyncio
+    async def test_caption_replaces_omit_note_when_vision_configured(
+        self, tmp_path: Path
+    ) -> None:
+        """A configured vision model produces a caption instead of the note."""
+        from unittest.mock import AsyncMock, patch
+
+        from robotsix_chat.llm.capabilities import (
+            IMAGE_OMITTED_NOTE,
+            reset_model_supports_images,
+            set_model_supports_images,
+        )
+
+        pdf_path = tmp_path / "flat.pdf"
+        _make_flat_pdf(pdf_path)
+
+        settings = _settings(working_dir=str(tmp_path))
+        tools = build_file_hub_tools(
+            settings,
+            vision_model="openrouter/openai/gpt-4o-mini",
+            vision_api_key="key-123",
+        )
+        render_page = tools[3]
+
+        token = set_model_supports_images(False)
+        try:
+            with patch(
+                "robotsix_chat.file_hub_tools.caption_or_omit_note",
+                new=AsyncMock(
+                    return_value="Page dimensions: 612.0 x 792.0 points.\n"
+                    "[Image caption: a filled form]"
+                ),
+            ) as mock_caption:
+                result = await render_page(str(pdf_path))
+        finally:
+            reset_model_supports_images(token)
+
+        assert "[Image caption: a filled form]" in result
+        assert IMAGE_OMITTED_NOTE not in result
+        # The caption helper was invoked with the vision config threaded through.
+        assert mock_caption.await_count == 1
+        call_kwargs = mock_caption.await_args.kwargs
+        assert call_kwargs["vision_model"] == "openrouter/openai/gpt-4o-mini"
+        assert call_kwargs["vision_api_key"] == "key-123"
+
+    @pytest.mark.asyncio
+    async def test_omit_note_when_no_vision_model_configured(
+        self, tmp_path: Path
+    ) -> None:
+        """Without a vision model the curated omit note path is unchanged."""
+        from robotsix_chat.llm.capabilities import (
+            IMAGE_OMITTED_NOTE,
+            reset_model_supports_images,
+            set_model_supports_images,
+        )
+
+        pdf_path = tmp_path / "flat.pdf"
+        _make_flat_pdf(pdf_path)
+
+        settings = _settings(working_dir=str(tmp_path))
+        tools = build_file_hub_tools(settings)  # no vision_model
+        render_page = tools[3]
+
+        token = set_model_supports_images(False)
+        try:
+            result = await render_page(str(pdf_path))
+        finally:
+            reset_model_supports_images(token)
+
+        assert isinstance(result, str)
+        assert IMAGE_OMITTED_NOTE in result

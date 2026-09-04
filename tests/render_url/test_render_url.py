@@ -465,3 +465,80 @@ async def test_render_url_bounds_the_returned_screenshot() -> None:
         assert width * height <= MAX_SCREENSHOT_PIXELS
     finally:
         _remove_fake_playwright()
+
+
+# ---------------------------------------------------------------------------
+# render_url — caption-or-omit path (text-only serving model)
+# ---------------------------------------------------------------------------
+
+
+@pytest.mark.asyncio
+async def test_render_url_captions_screenshot_when_vision_configured() -> None:
+    """A configured vision model yields a caption in place of IMAGE_OMITTED_NOTE."""
+    from unittest.mock import AsyncMock, patch
+
+    from robotsix_chat.llm.capabilities import (
+        reset_model_supports_images,
+        set_model_supports_images,
+    )
+
+    _install_fake_playwright()
+    try:
+        from robotsix_chat.render_url import build_render_url_tools
+
+        tools = build_render_url_tools(
+            _settings(),
+            vision_model="openrouter/openai/gpt-4o-mini",
+            vision_api_key="key-123",
+        )
+        render_url = tools[0]
+
+        token = set_model_supports_images(False)
+        try:
+            with patch(
+                "robotsix_chat.render_url.caption_or_omit_note",
+                new=AsyncMock(
+                    return_value='{"page_title": "T"}\n[Image caption: a dashboard]'
+                ),
+            ) as mock_caption:
+                result = await render_url("https://example.com")
+        finally:
+            reset_model_supports_images(token)
+
+        assert "[Image caption: a dashboard]" in result
+        assert "Image omitted" not in result
+        assert mock_caption.await_count == 1
+        call_kwargs = mock_caption.await_args.kwargs
+        assert call_kwargs["vision_model"] == "openrouter/openai/gpt-4o-mini"
+        assert call_kwargs["vision_api_key"] == "key-123"
+    finally:
+        _remove_fake_playwright()
+
+
+@pytest.mark.asyncio
+async def test_render_url_omit_note_when_no_vision_model() -> None:
+    """Without a vision model the curated omit-note path is unchanged."""
+    from robotsix_chat.llm.capabilities import (
+        IMAGE_OMITTED_NOTE,
+        reset_model_supports_images,
+        set_model_supports_images,
+    )
+
+    _install_fake_playwright()
+    try:
+        from robotsix_chat.render_url import build_render_url_tools
+
+        tools = build_render_url_tools(_settings())  # no vision_model
+        render_url = tools[0]
+
+        token = set_model_supports_images(False)
+        try:
+            result = await render_url("https://example.com")
+        finally:
+            reset_model_supports_images(token)
+
+        assert isinstance(result, str)
+        assert IMAGE_OMITTED_NOTE in result
+        assert "Image caption:" not in result
+    finally:
+        _remove_fake_playwright()
