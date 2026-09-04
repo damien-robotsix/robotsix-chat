@@ -1962,7 +1962,7 @@ async def test_get_installation_token_diagnostics_success(
     monkeypatch.setattr(
         sys.modules["robotsix_github_auth._auth"],
         "_resolve_installation_id",
-        lambda client, jwt_token, owner, repo: "99999",
+        lambda jwt_token, owner, repo: "99999",
     )
 
     details = await client.get_installation_token_diagnostics("org/repo")
