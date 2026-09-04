@@ -58,10 +58,6 @@ jobs:
       uv-version: "0.12.9"
       cov-package: "robotsix_chat"
       install-extras: ""
-      # Align with the [tool.uv] required-version pin (uv 0.12.9); the shared
-      # workflow defaults to 0.8.15 and would otherwise fail `uv sync` with a
-      # "Required uv version ... does not match the running version" error.
-      uv-version: "0.12.9"
       # coverage-threshold deliberately omitted: the fleet-wide floor (80)
       # lives in the shared workflow — no per-repo threshold (repo baseline).
       # The CVE audit runs in the `lockfile` job instead, which carries the
