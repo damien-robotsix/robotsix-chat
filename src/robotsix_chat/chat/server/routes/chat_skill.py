@@ -67,6 +67,27 @@ Returns three top-level keys:
 
 Secret values come back as `"**********"` when set and `""` when unset.
 
+The schema is large (~200k chars) and can overflow your context window.
+To read config without pulling the whole schema, pass one of these query
+params:
+
+- `GET /config?keys_only=true` — returns just `{"keys": [...]}` with each
+  top-level key name and its approximate serialized `size`, plus `version`.
+  Use this to enumerate the config shape cheaply.
+- `GET /config?path=periodic` — returns only that subtree (dotted path)
+  under `config`, masked, with no schema. For example `path=periodic`
+  returns just the `periodic` object, `path=periodic.sessions` just that
+  array, `path=agent_instruction` the base prompt. A path that does not
+  exist returns `404`.
+- `GET /config?include_schema=false` — the full masked config but with no
+  `schema` field.
+
+A missing path returns `404` with a clear message; malformed params return
+`400`. The default `GET /config` (no params) keeps returning all three
+keys for backward compatibility. Because these scoped reads skip the
+schema, prefer `keys_only=true` then `path=<...>` to inspect a value
+before editing it with `PUT /config`.
+
 ---
 
 ## PUT /config — update the config
