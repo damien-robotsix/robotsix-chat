@@ -16,7 +16,8 @@ from importlib import resources
 from pathlib import Path
 from typing import TYPE_CHECKING, Any
 
-from robotsix_chat.llm.capabilities import IMAGE_OMITTED_NOTE, model_supports_images
+from robotsix_chat.llm.capabilities import model_supports_images
+from robotsix_chat.llm.captioning import caption_or_omit_note
 
 if TYPE_CHECKING:
     from robotsix_chat.config.models import FileHubToolsSettings
@@ -26,12 +27,20 @@ __all__ = ["build_file_hub_tools", "load_file_hub_skill"]
 
 def build_file_hub_tools(
     settings: FileHubToolsSettings,
+    *,
+    vision_model: str = "",
+    vision_api_key: str | None = None,
 ) -> list[Callable[..., Any]]:
     """Return the file-hub tools for the agent, or ``[]`` when disabled.
 
     Args:
         settings: FileHubToolsSettings (``enabled`` master switch,
             ``base_url``, ``working_dir``, etc.).
+        vision_model: Configured vision model id (``Settings.vision_model``).
+            When set, image-returning tools (``render_pdf_page``) send the
+            image to this model for a caption instead of dropping it with
+            :data:`IMAGE_OMITTED_NOTE` on text-only serving models.
+        vision_api_key: OpenRouter API key for the vision caption call.
 
     Returns:
         A list of async callables (``file_hub_get``, ``fill_pdf_document``,
@@ -328,14 +337,22 @@ def build_file_hub_tools(
             f" / {rendered['height']})"
         )
 
+        image_bytes = base64.b64decode(rendered["image_base64"])
+
         # A BinaryContent block in a tool result 404s the whole turn on
-        # text-only OpenRouter models, so degrade to metadata-only there.
+        # text-only OpenRouter models, so degrade to a caption (when a vision
+        # model is configured) or the curated omit note there.
         if not model_supports_images():
-            return f"{metadata}\n{IMAGE_OMITTED_NOTE}"
+            return await caption_or_omit_note(
+                metadata,
+                image_bytes,
+                "image/png",
+                vision_model=vision_model,
+                vision_api_key=vision_api_key,
+            )
 
         from pydantic_ai.messages import BinaryContent, TextContent
 
-        image_bytes = base64.b64decode(rendered["image_base64"])
         return [
             TextContent(content=metadata),
             BinaryContent(data=image_bytes, media_type="image/png"),
