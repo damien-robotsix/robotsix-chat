@@ -565,6 +565,26 @@ async def test_spawn_tool_forwards_auto_stop_no_change_runs_override() -> None:
     await asyncio.sleep(0.05)
 
 
+@pytest.mark.asyncio
+async def test_spawn_tool_forwards_run_timeout_seconds() -> None:
+    """The spawn tool persists a per-subsession run-timeout override."""
+    env = build_env()
+    spawn = _by_name(build_subsession_tools(env, ctx=_ctx()), "spawn_subsession")
+
+    result = await spawn(
+        "task", "batch job", "run the search batch", run_timeout_seconds=1800
+    )
+
+    assert result.startswith("Started task subsession ")
+    info = env.registry.list_for_owner(OWNER)[0]
+    assert info.run_timeout_seconds == 1800
+
+    task = env.registry._running.get(info.id)
+    if task is not None and not task.done():
+        task.cancel()
+    await asyncio.sleep(0.05)
+
+
 # ---------------------------------------------------------------------------
 # message / close scope guard
 # ---------------------------------------------------------------------------

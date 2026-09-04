@@ -149,6 +149,7 @@ def _build_spawn_and_control_tools(
         inherit_context: bool = False,
         dedup_key: str | None = None,
         depends_on_ticket_id: str | None = None,
+        run_timeout_seconds: float | None = None,
     ) -> str:
         """Start a background subsession and return its id immediately.
 
@@ -235,6 +236,15 @@ def _build_spawn_and_control_tools(
         reaching a terminal state, this monitor is automatically paused
         with a clear status message and resumes once the pre-requisite is
         resolved or you resume it manually with message_subsession.
+
+        run_timeout_seconds (seconds, optional) overrides the global
+        subsessions.run_timeout_seconds per-run timeout (default 600 s)
+        for this subsession's agent turns — declare a longer budget for
+        long batch work (e.g. run_timeout_seconds=1800 for a 20-minute
+        search batch; up to subsessions.max_run_timeout_seconds, default
+        3600 s — requests above the cap are clamped to it). A turn that
+        exceeds its budget is failed and is NOT retried, so size it to
+        the longest single step of the job.
 
         The subsession runs in the background; you will receive its
         summary in this conversation when it closes. Use
@@ -473,6 +483,7 @@ def _build_spawn_and_control_tools(
                 inherit_context=inherit_context,
                 dedup_key=dedup_key,
                 depends_on_ticket_id=depends_on_ticket_id,
+                run_timeout_seconds=run_timeout_seconds,
                 checkpoint=checkpoint,
                 event_timeout_seconds=(
                     env.settings.subsessions.event_driven_timeout_seconds

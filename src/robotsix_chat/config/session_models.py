@@ -174,6 +174,13 @@ class SubsessionsSettings(BaseModel):
             is marked failed and the schedule continues instead of staying
             ``running`` forever.  Default 600 s.
             Env override: ``SUBSESSIONS_RUN_TIMEOUT_SECONDS``.
+        max_run_timeout_seconds: Upper bound (seconds) for a per-subsession
+            ``run_timeout_seconds`` request on the ``spawn_subsession``
+            tool.  A spawned subsession may declare a longer per-run budget
+            (for long batch work) than the global ``run_timeout_seconds``
+            default, but never above this ceiling — requests above it are
+            clamped to the cap.  Default ``3600`` (1 hour).
+            Env override: ``SUBSESSIONS_MAX_RUN_TIMEOUT_SECONDS``.
         store_path: JSON persistence file (periodic subsessions resume
             across restarts).  Env override: ``SUBSESSIONS_STORE_PATH``.
         transcript_max_entries: Per-subsession transcript retention cap.
@@ -316,6 +323,7 @@ class SubsessionsSettings(BaseModel):
         ),
     )
     run_timeout_seconds: float = 600.0
+    max_run_timeout_seconds: float = 3600.0
     store_path: str = "/data/subsessions.json"
     transcript_max_entries: int = 200
     mill_recovery_initial_backoff_seconds: float = 60.0

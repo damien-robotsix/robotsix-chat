@@ -202,6 +202,12 @@ class SubsessionInfo:
     completed_runs: set[int] = field(default_factory=set)
     # wait_for_event-only fields:
     event_timeout_seconds: float | None = None
+    # Per-subsession hard per-run timeout override (seconds) — overrides the
+    # global subsessions.run_timeout_seconds for this subsession's agent
+    # turns.  None → fall back to the global default (600 s).  Set via the
+    # spawn_subsession tool's run_timeout_seconds argument (capped at
+    # subsessions.max_run_timeout_seconds); persisted so it survives resume.
+    run_timeout_seconds: float | None = None
     # terminal fields:
     summary: str | None = None
     close_reason: str | None = None
@@ -278,6 +284,7 @@ class SubsessionInfo:
             "error": self.error,
             "completed_runs": sorted(self.completed_runs),
             "event_timeout_seconds": self.event_timeout_seconds,
+            "run_timeout_seconds": self.run_timeout_seconds,
             "turn_history": [list(pair) for pair in self.turn_history],
             "checkpoint": self.checkpoint,
             "dedup_key": self.dedup_key,

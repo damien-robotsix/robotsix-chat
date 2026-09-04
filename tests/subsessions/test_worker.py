@@ -3051,6 +3051,73 @@ async def test_task_transient_error_not_retried() -> None:
     assert info.status is SubsessionStatus.FAILED
 
 
+@pytest.mark.asyncio
+async def test_task_run_timeout_fails_without_retry(monkeypatch) -> None:
+    """A task turn that exceeds its per-run timeout fails fast — no retry.
+
+    Regression for the 2026-09-04 incident: three 10-minute retries of the
+    same timed-out Hexarchy batch.  A turn that hit the hard timeout will
+    hit it again with the identical input, so it must fail immediately
+    rather than burn the retry budget on a doomed turn.
+    """
+    # Collapse the grace window so the tiny test timeout fires instantly.
+    monkeypatch.setattr(worker_mod, "_RUN_TIMEOUT_GRACE", 0.0)
+    # The agent blocks forever on the gate, so the turn can only end by
+    # hitting the per-subsession run timeout.
+    gate = asyncio.Event()
+    agent = FakeAgent(gate=gate)
+    env = build_env(agent=agent)
+
+    sub_id = _spawn(
+        env,
+        kind=SubsessionKind.TASK,
+        prompt="compute",
+        run_timeout_seconds=0.05,
+    )
+    await _await_worker(env, sub_id, timeout=2.0)
+
+    info = env.registry.get(sub_id)
+    assert info is not None
+    # Failed, and exactly one agent call — the timeout was never retried.
+    assert info.status is SubsessionStatus.FAILED
+    assert info.retry_count == 0
+    assert len(agent.calls) == 1
+    # The per-subsession value (0.05s) drove the timeout, not the global
+    # 600 s default — proving the override is read by _run_turn_with_timeout.
+    assert info.run_timeout_seconds == 0.05
+
+
+@pytest.mark.asyncio
+async def test_spawn_run_timeout_override_and_cap() -> None:
+    """Per-subsession run_timeout_seconds is plumbed and capped at the max."""
+    env = build_env(agent=FakeAgent(["done"]))
+    env.settings.subsessions.max_run_timeout_seconds = 3600.0
+
+    # Within the cap → honored as-is.
+    sub_a = _spawn(env, kind=SubsessionKind.TASK, run_timeout_seconds=1800.0)
+    info_a = env.registry.get(sub_a)
+    assert info_a is not None
+    assert info_a.run_timeout_seconds == 1800.0
+
+    # Above the cap → clamped to max_run_timeout_seconds.
+    sub_b = _spawn(env, kind=SubsessionKind.TASK, run_timeout_seconds=7200.0)
+    info_b = env.registry.get(sub_b)
+    assert info_b is not None
+    assert info_b.run_timeout_seconds == 3600.0
+
+    # Absent → None (falls back to the global default at run time).
+    sub_c = _spawn(env, kind=SubsessionKind.TASK)
+    info_c = env.registry.get(sub_c)
+    assert info_c is not None
+    assert info_c.run_timeout_seconds is None
+
+    for sid in (sub_a, sub_b, sub_c):
+        task = env.registry._running.get(sid)
+        if task is not None and not task.done():
+            task.cancel()
+    await asyncio.sleep(0.05)
+
+
 # ---------------------------------------------------------------------------
 # Monitor turn concurrency gate (2026-09-02 OOM: unbounded monitor-turn
 # stampede — each turn spawns a ~240MB claudeSDK subprocess)
