@@ -505,6 +505,7 @@ modules:
       - src/robotsix_chat/ui/static/memory-banner.js
       - src/robotsix_chat/ui/static/message-queue.js
       - src/robotsix_chat/ui/static/notify-gating.js
+      - src/robotsix_chat/ui/static/notify-navigation.js
       - src/robotsix_chat/ui/static/notify.js
       - src/robotsix_chat/ui/static/reconnect-guard.js
       - src/robotsix_chat/ui/static/drain-draft.js
@@ -515,6 +516,7 @@ modules:
       - tests/js/memory-banner.test.js
       - tests/js/message-queue.test.js
       - tests/js/notify-gating.test.js
+      - tests/js/notify-navigation.test.js
       - tests/js/notify.test.js
       - tests/js/reconnect-guard.test.js
       - tests/js/drain-draft.test.js
