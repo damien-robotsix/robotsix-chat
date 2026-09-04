@@ -109,6 +109,28 @@ ensures you never miss an alert even if desktop permission was never granted.
 > **Tip:** If you want desktop notifications, watch for the browser's permission prompt on your
 > first click. Grant it to enable native alerts as a backup to the in-app toasts.
 
+### Browser Notification Permissions
+
+Native desktop notifications use the browser's standard Notification permission, which has three
+states: **default** (not yet decided), **granted**, and **denied**.
+
+- **When the prompt appears** — the app requests permission on your **first click** anywhere in the
+  page, not on page load. Browsers (notably Chrome) suppress a permission request that fires without
+  a user gesture, so binding it to the first click is what makes the prompt reliably appear. If you
+  never interact with the page, the prompt is never shown and permission stays at *default*.
+- **Granting** — click **Allow** in the browser prompt. Native desktop notifications then appear
+  alongside the in-app toasts.
+- **Denying** — click **Block** (or dismiss the prompt). You will **not** be asked again on that
+  site. Denying only turns off the *native* channel — the in-app toasts, unread badge, and
+  missed-notifications panel keep working exactly as before, so no alert is ever lost.
+- **Changing your mind later** — permission is managed by the browser, not the app. To grant or
+  revoke it after the fact, open the browser's **site settings** for this page (usually the padlock
+  / "tune" icon in the address bar, then *Notifications*) and set it to *Allow* or *Block*. Reset it
+  to *Ask* there if you want the prompt to appear again.
+
+Because in-app toasts render regardless of this permission, granting it is entirely optional — it
+only adds a second, native channel for the same notifications.
+
 ### System Notifications — Service Faults
 
 In addition to agent-generated notifications, the system sends **high-urgency red toasts** when a
@@ -215,3 +237,20 @@ You can then open the notifications panel to view the full list and mark them as
 Click the **×** button in the notifications panel header or click outside the panel to close it. The
 marked-as-read state is preserved — the panel can be reopened if you want to view the notification
 history again in a later session.
+
+## Migrating from the Alerts Inbox
+
+Earlier versions surfaced agent alerts behind a header button labelled **🔔 Alerts**. That button is
+now **🔔 Notifications**, and the feature set has grown rather than changed underneath you:
+
+- **Same inbox, new name** — the button still opens the missed-notifications panel described above,
+  still shows an unread-count badge, and still stores alerts you weren't connected to receive. No
+  history is lost in the rename; nothing you relied on was removed.
+- **New: native desktop notifications** — in addition to the in-app toasts and the inbox panel, the
+  agent (and new-message events) can now raise **native desktop notifications** when you grant
+  browser permission. See [Browser Notification Permissions](#browser-notification-permissions).
+- **New: click-to-navigate** — clicking a desktop notification jumps straight to the conversation or
+  subsession that raised it (see
+  [Clicking a Notification to Navigate](#clicking-a-notification-to-navigate)).
+- **Nothing to configure** — there is no separate Alerts setting to migrate. Desktop notifications
+  are gated only by the browser permission prompt; de-duplication and inbox replay are automatic.
