@@ -117,7 +117,7 @@ robotsix-config = { git = "https://github.com/damien-robotsix/robotsix-config.gi
 robotsix-llmio = { git = "https://github.com/damien-robotsix/robotsix-llmio.git", rev = "60987bbc5e6d4af5146afd88c557411dc396b0eb" }  # pragma: allowlist secret
 # robotsix-modules: same SHA as robotsix-mill (coherent-set rule).
 robotsix-modules = { git = "https://github.com/damien-robotsix/robotsix-modules.git", rev = "d7c5e59980516de6e050db02ff54aef4e15ff5c3" }  # pragma: allowlist secret
-robotsix-http = { git = "https://github.com/damien-robotsix/robotsix-http.git", rev = "cdfd4d1c42679fef73081439562872792e202dc4" }  # pragma: allowlist secret
+robotsix-http = { git = "https://github.com/damien-robotsix/robotsix-http.git", rev = "0dfb8eccd60942cdcb401d78f054e388a9c84a9b" }  # pragma: allowlist secret
 robotsix-github-auth = { git = "https://github.com/damien-robotsix/robotsix-github-auth.git", rev = "e6214c41fd743120aa987bacb4e9b2bc88e73943" }  # pragma: allowlist secret
 
 [tool.uv]
