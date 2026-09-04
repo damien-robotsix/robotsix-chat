@@ -78,7 +78,9 @@ jobs:
     uses: damien-robotsix/robotsix-github-workflows/.github/workflows/python-security.yml@454851ccfdba26ba4d08f3effea09258dfc3fe2f  # main
     with:
       install-extras: ""
-      # Must match pyproject.toml's [tool.uv] required-version (see the `ci` job).
+      # Align with the [tool.uv] required-version pin (uv 0.12.9); the shared
+      # workflow defaults to 0.8.15 and would otherwise fail `uv sync` with a
+      # "Required uv version ... does not match the running version" error.
       uv-version: "0.12.9"
       trufflehog-pr-diff: true
       # Postgres detector excluded: the WIP commit on this branch temporarily
