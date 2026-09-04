@@ -26,6 +26,7 @@ import httpx
 from .models import (
     ACTIVE_STATUSES,
     COSTLY_TIER_MIN_LEVEL,
+    SubsessionAnchorError,
     SubsessionCapacityError,
     SubsessionDepthError,
     SubsessionInfo,
@@ -143,6 +144,7 @@ def _build_spawn_and_control_tools(
         instructions: str,
         model_level: int | None = None,
         interval_seconds: float | None = None,
+        anchor_time: str | None = None,
         max_runs: int | None = None,
         auto_stop_no_change_runs: int | None = None,
         include_previous_result: bool = False,
@@ -207,6 +209,18 @@ def _build_spawn_and_control_tools(
         server's JSON config file.
         interval_seconds (minimum applies), max_runs, and
         auto_stop_no_change_runs are for kind="periodic" only.
+
+        anchor_time (kind="periodic" only, optional) pins recurrences to an
+        absolute wall-clock time instead of "spawn time + interval". Accepts
+        "HH:MM" or "HH:MM:SS", optionally followed by an IANA timezone, e.g.
+        "09:00", "09:00:00 UTC", or "09:00 Europe/Paris" (default timezone
+        UTC). With interval_seconds=86400 and anchor_time="09:00" the monitor
+        fires every day at 09:00 UTC; the next fire is computed as the next
+        occurrence of that time-of-day phase-aligned to interval_seconds, so
+        the schedule does not drift. The first run still fires immediately at
+        spawn; the anchor governs every subsequent run. When omitted, the
+        legacy relative-interval behaviour is unchanged. DST: for whole-day
+        intervals the local time-of-day is held constant across transitions.
         auto_stop_no_change_runs overrides the global
         subsessions.auto_stop_no_change_runs auto-stop threshold for
         this monitor only (must be an integer >= 1). For a long-lived
@@ -477,6 +491,7 @@ def _build_spawn_and_control_tools(
                     model_level if model_level is not None else _default_child_level()
                 ),
                 interval_seconds=interval_seconds,
+                anchor_time=anchor_time,
                 include_previous_result=include_previous_result,
                 max_runs=max_runs,
                 auto_stop_no_change_runs=auto_stop_no_change_runs,
@@ -507,6 +522,7 @@ def _build_spawn_and_control_tools(
         except (
             SubsessionDepthError,
             SubsessionIntervalError,
+            SubsessionAnchorError,
             SubsessionLevelError,
             SubsessionNoChangeThresholdError,
             SubsessionPeriodicSpawnError,

@@ -46,6 +46,7 @@ from .models import (
     SubsessionUserChatSpawnError,
 )
 from .registry import OWNER_CLOSED_REASON, SubsessionRegistry
+from .schedule import parse_anchor_time
 from .slot_budget import SLOT_BUDGET_QUEUED, SlotBudget, SlotBudgetQueueFullError
 
 if TYPE_CHECKING:
@@ -437,6 +438,7 @@ def spawn_subsession(
     prompt: str,
     model_level: int,
     interval_seconds: float | None = None,
+    anchor_time: str | None = None,
     include_previous_result: bool = False,
     max_runs: int | None = None,
     auto_stop_no_change_runs: int | None = None,
@@ -457,9 +459,17 @@ def spawn_subsession(
     """Validate, register, and launch a subsession worker; return its id.
 
     Raises :class:`SubsessionCapacityError`, :class:`SubsessionDepthError`,
-    :class:`SubsessionLevelError`, :class:`SubsessionIntervalError`, or
+    :class:`SubsessionLevelError`, :class:`SubsessionIntervalError`,
+    :class:`SubsessionAnchorError`, or
     :class:`SubsessionNoChangeThresholdError` on invalid requests — the
     tool layer maps these to polite refusals.
+
+    *anchor_time* (kind="periodic" only) pins recurrences to an absolute
+    wall-clock time — e.g. ``"09:00"`` or ``"09:00 Europe/Paris"`` (default
+    timezone UTC).  When set, each recurrence lands on the next occurrence
+    of that time-of-day phase-aligned to *interval_seconds* instead of
+    ``now + interval``, eliminating cumulative drift.  The first run still
+    fires immediately at spawn; the anchor governs every subsequent run.
 
     Idempotent: when *sub_id* is given and already registered (e.g. a
     duplicate resume), the existing worker is left alone and the id is
@@ -723,10 +733,16 @@ def spawn_subsession(
             raise SubsessionIntervalError(
                 f"periodic interval must be >= {cfg.min_interval_seconds} seconds"
             )
+        if anchor_time is not None:
+            # Validate the spec up front so a malformed anchor is a polite
+            # spawn-time refusal, not a crash inside the worker later.
+            parse_anchor_time(anchor_time)
     elif kind is SubsessionKind.WAIT_FOR_EVENT:
         interval_seconds = None
+        anchor_time = None
     else:
         interval_seconds = None
+        anchor_time = None
 
     if inherit_context and parent_id is not None:
         prompt = _build_ancestor_context(env.registry, parent_id) + prompt
@@ -757,6 +773,7 @@ def spawn_subsession(
             prompt=prompt,
             model_level=model_level,
             interval_seconds=interval_seconds,
+            anchor_time=anchor_time,
             include_previous_result=include_previous_result,
             max_runs=max_runs,
             sub_id=sub_id,

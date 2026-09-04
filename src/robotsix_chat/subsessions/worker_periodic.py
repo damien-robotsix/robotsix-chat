@@ -18,8 +18,14 @@ import logging
 
 from robotsix_chat.chat.events import SSE_NOTIFICATION_TYPE, subsession_result_frame
 
-from .models import InboxMessage, SubsessionInfo, SubsessionStatus
+from .models import (
+    InboxMessage,
+    SubsessionAnchorError,
+    SubsessionInfo,
+    SubsessionStatus,
+)
 from .registry import SubsessionRegistry
+from .schedule import next_anchored_run_at
 from .subsession_waits import _paused_wait_loop, _queued_wait_loop
 from .worker import (
     _NO_CHANGE_SENTINEL,
@@ -34,6 +40,29 @@ from .worker import (
 )
 
 logger = logging.getLogger(__name__)
+
+
+def _anchored_next_run_at(now: float, info: SubsessionInfo) -> float:
+    """Compute a periodic subsession's next fire epoch.
+
+    Honours ``info.anchor_time`` when set (pinning the recurrence to an
+    absolute wall-clock time, drift-free), otherwise falls back to the
+    legacy relative ``now + interval_seconds`` cadence.  A persisted anchor
+    that somehow fails to parse degrades gracefully to the relative cadence
+    with a warning rather than crashing the worker.
+    """
+    interval = info.interval_seconds or 60.0
+    if info.anchor_time:
+        try:
+            return next_anchored_run_at(now, interval, info.anchor_time)
+        except SubsessionAnchorError:
+            logger.warning(
+                "Subsession %s has malformed anchor_time %r — falling back "
+                "to relative interval scheduling.",
+                info.id,
+                info.anchor_time,
+            )
+    return now + interval
 
 
 def _build_periodic_input(
@@ -485,7 +514,7 @@ async def _run_periodic_turn(
         sub_id,
         SubsessionStatus.SLEEPING,
         runs=runs,
-        next_run_at=registry.now() + info.interval_seconds,
+        next_run_at=_anchored_next_run_at(registry.now(), info),
         last_result=reply,
     )
     if not suppressed and env.event_sink is not None:
@@ -972,7 +1001,14 @@ async def _run_periodic_turn(
             )
         return None
 
-    # Sleep until the next tick, waking early on a steering message.
-    woke = await registry.wait_for_inbox(sub_id, timeout=info.interval_seconds)
+    # Sleep until the next tick, waking early on a steering message.  For an
+    # anchored schedule the delay is the gap to the computed wall-clock
+    # ``next_run_at`` rather than a fixed interval, so recurrences land on
+    # the anchor instead of drifting by each turn's execution time.
+    if info.anchor_time and info.next_run_at is not None:
+        timeout = max(0.0, info.next_run_at - registry.now())
+    else:
+        timeout = info.interval_seconds
+    woke = await registry.wait_for_inbox(sub_id, timeout=timeout)
     pending = registry.drain_inbox(sub_id) if woke else []
     return pending, previous_result, consecutive_no_change
