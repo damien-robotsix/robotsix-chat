@@ -12,6 +12,7 @@ from .delivery import ParentDelivery
 from .models import (
     ACTIVE_STATUSES,
     InboxMessage,
+    SubsessionAnchorError,
     SubsessionCapacityError,
     SubsessionDedupError,
     SubsessionDepthError,
@@ -66,6 +67,7 @@ __all__ = [
     "ParentDelivery",
     "SlotBudget",
     "SlotBudgetQueueFullError",
+    "SubsessionAnchorError",
     "SubsessionCapacityError",
     "SubsessionContext",
     "SubsessionDedupError",

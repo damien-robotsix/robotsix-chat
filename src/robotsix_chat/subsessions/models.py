@@ -49,6 +49,7 @@ __all__ = [
     "COSTLY_TIER_MIN_LEVEL",
     "COSTLY_TIER_ORCHESTRATION_DIRECTIVE",
     "InboxMessage",
+    "SubsessionAnchorError",
     "SubsessionCapacityError",
     "SubsessionDepthError",
     "SubsessionInfo",
@@ -109,6 +110,14 @@ class SubsessionDepthError(RuntimeError):
 
 class SubsessionIntervalError(ValueError):
     """Raised when a periodic interval is below the configured minimum."""
+
+
+class SubsessionAnchorError(ValueError):
+    """Raised when a periodic ``anchor_time`` spec is malformed.
+
+    Covers a bad shape (not ``HH:MM[:SS] [tz]``), an out-of-range field, or
+    an unknown timezone.  The tool layer maps it to a polite refusal.
+    """
 
 
 class SubsessionNoChangeThresholdError(ValueError):
@@ -192,6 +201,13 @@ class SubsessionInfo:
     last_activity_at: float
     # periodic-only fields:
     interval_seconds: float | None = None
+    # Optional absolute wall-clock anchor for the recurrence, e.g.
+    # "09:00" or "09:00 Europe/Paris" (default timezone UTC).  When set,
+    # the scheduler pins each recurrence to the next occurrence of this
+    # time-of-day phase-aligned to interval_seconds instead of
+    # ``now + interval`` — eliminating cumulative drift.  None → the
+    # legacy relative-interval behaviour.  See ``schedule.py``.
+    anchor_time: str | None = None
     next_run_at: float | None = None  # wall clock, for the UI countdown
     include_previous_result: bool = False
     runs: int = 0
@@ -274,6 +290,7 @@ class SubsessionInfo:
             "created_at": self.created_at,
             "last_activity_at": self.last_activity_at,
             "interval_seconds": self.interval_seconds,
+            "anchor_time": self.anchor_time,
             "next_run_at": self.next_run_at,
             "include_previous_result": self.include_previous_result,
             "runs": self.runs,

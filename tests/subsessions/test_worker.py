@@ -7,14 +7,17 @@ import contextlib
 import contextvars
 import threading
 from collections.abc import AsyncIterator
+from datetime import datetime
 from types import SimpleNamespace
 from typing import Any
 from unittest.mock import patch
+from zoneinfo import ZoneInfo
 
 import pytest
 
 from robotsix_chat.chat.events import SSE_NOTIFICATION_TYPE, SSE_SUBSESSION_RESULT_TYPE
 from robotsix_chat.subsessions import (
+    SubsessionAnchorError,
     SubsessionCapacityError,
     SubsessionDepthError,
     SubsessionIntervalError,
@@ -27,6 +30,7 @@ from robotsix_chat.subsessions import (
     spawn_subsession,
 )
 from robotsix_chat.subsessions import worker as worker_mod
+from robotsix_chat.subsessions.models import SubsessionInfo
 from robotsix_chat.subsessions.worker import (
     CloseState,
     SubsessionContext,
@@ -37,7 +41,10 @@ from robotsix_chat.subsessions.worker import (
     _is_queued,
     _truncate,
 )
-from robotsix_chat.subsessions.worker_periodic import _build_periodic_input
+from robotsix_chat.subsessions.worker_periodic import (
+    _anchored_next_run_at,
+    _build_periodic_input,
+)
 from tests.common.subsession_fakes import (
     CapturingAgentFactory,
     FakeAgent,
@@ -466,6 +473,99 @@ def test_periodic_interval_below_minimum_is_rejected() -> None:
         _spawn(env, kind=SubsessionKind.PERIODIC, interval_seconds=None)
 
     assert env.registry.list_for_owner(OWNER) == []
+
+
+@pytest.mark.asyncio
+async def test_periodic_anchor_time_is_stored_on_spawn() -> None:
+    """A valid anchor_time is persisted on the periodic subsession record."""
+    agent = FakeAgent(["report 1"])
+    settings = make_settings(min_interval_seconds=1.0, max_runs_progress_extension=0)
+    env = build_env(agent=agent, settings=settings)
+
+    sub_id = _spawn(
+        env,
+        kind=SubsessionKind.PERIODIC,
+        interval_seconds=86400.0,
+        max_runs=1,
+        anchor_time="09:00 Europe/Paris",
+    )
+    info = env.registry.get(sub_id)
+    assert info is not None
+    assert info.anchor_time == "09:00 Europe/Paris"
+    await _await_worker(env, sub_id)
+
+
+def _periodic_info(**overrides: object) -> SubsessionInfo:
+    """Minimal periodic SubsessionInfo for scheduler-helper tests."""
+    defaults: dict[str, object] = {
+        "id": "sub-x",
+        "kind": SubsessionKind.PERIODIC,
+        "owner_session_id": OWNER,
+        "parent_id": None,
+        "depth": 1,
+        "title": "watch",
+        "prompt": "check",
+        "model_level": 1,
+        "status": SubsessionStatus.SLEEPING,
+        "created_at": 0.0,
+        "last_activity_at": 0.0,
+        "interval_seconds": 86400.0,
+    }
+    defaults.update(overrides)
+    return SubsessionInfo(**defaults)  # type: ignore[arg-type]
+
+
+def test_anchored_next_run_at_uses_anchor_when_set() -> None:
+    """With an anchor, the next fire is the anchored time, not now+interval."""
+    tz = ZoneInfo("UTC")
+    now = datetime(2026, 9, 4, 14, 0, tzinfo=tz).timestamp()  # 14:00 UTC
+    info = _periodic_info(anchor_time="09:00")
+
+    nxt = _anchored_next_run_at(now, info)
+
+    assert nxt == datetime(2026, 9, 5, 9, 0, tzinfo=tz).timestamp()
+
+
+def test_anchored_next_run_at_falls_back_without_anchor() -> None:
+    """Without an anchor, the legacy now+interval cadence is preserved."""
+    info = _periodic_info(interval_seconds=60.0, anchor_time=None)
+
+    assert _anchored_next_run_at(1000.0, info) == 1060.0
+
+
+def test_anchored_next_run_at_degrades_on_malformed_anchor() -> None:
+    """A malformed persisted anchor degrades to now+interval instead of crashing."""
+    info = _periodic_info(interval_seconds=60.0, anchor_time="nonsense")
+
+    assert _anchored_next_run_at(1000.0, info) == 1060.0
+
+
+def test_periodic_malformed_anchor_time_is_rejected() -> None:
+    """A malformed anchor_time raises SubsessionAnchorError and spawns nothing."""
+    env = build_env(settings=make_settings(min_interval_seconds=1.0))
+
+    with pytest.raises(SubsessionAnchorError):
+        _spawn(
+            env,
+            kind=SubsessionKind.PERIODIC,
+            interval_seconds=86400.0,
+            anchor_time="25:00",
+        )
+    assert env.registry.list_for_owner(OWNER) == []
+
+
+@pytest.mark.asyncio
+async def test_non_periodic_anchor_time_is_ignored() -> None:
+    """anchor_time on a non-periodic kind is nulled, not stored or validated."""
+    agent = FakeAgent(["done"])
+    env = build_env(agent=agent)
+
+    # Even a malformed anchor is harmless on a task — it is discarded.
+    sub_id = _spawn(env, kind=SubsessionKind.TASK, anchor_time="not-a-time")
+    info = env.registry.get(sub_id)
+    assert info is not None
+    assert info.anchor_time is None
+    await _await_worker(env, sub_id)
 
 
 def test_periodic_no_change_threshold_below_one_is_rejected() -> None:

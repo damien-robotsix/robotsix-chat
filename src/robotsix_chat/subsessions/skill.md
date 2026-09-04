@@ -22,8 +22,9 @@ children would still be within the configured `max_depth`.
 ### `spawn_subsession`
 
 Start a background subsession and return its id immediately. Required: `kind`, `title`,
-`instructions`. Optional: `model_level`, `interval_seconds`, `max_runs`, `auto_stop_no_change_runs`,
-`include_previous_result`, `inherit_context`, `dedup_key`, `run_timeout_seconds`.
+`instructions`. Optional: `model_level`, `interval_seconds`, `anchor_time`, `max_runs`,
+`auto_stop_no_change_runs`, `include_previous_result`, `inherit_context`, `dedup_key`,
+`run_timeout_seconds`.
 
 - `model_level` picks capability 1 (cheap/frequent) to 3 (frontier); 1 covers monitors and routine
   checks, 2 is the workhorse for general work, 3 is frontier-only. Which provider serves a level is
@@ -32,6 +33,14 @@ Start a background subsession and return its id immediately. Required: `kind`, `
   level 1 for all routine monitoring. Hard tasks should use `kind="task"` (uncapped) instead.
 - `interval_seconds` (minimum enforced), `max_runs`, and `auto_stop_no_change_runs` are for
   `periodic` only.
+- `anchor_time` (`periodic` only, optional) pins recurrences to an absolute wall-clock time instead
+  of "spawn time + interval". Accepts `"HH:MM"` or `"HH:MM:SS"`, optionally followed by an IANA
+  timezone — e.g. `"09:00"`, `"09:00:00 UTC"`, or `"09:00 Europe/Paris"` (default timezone UTC).
+  With `interval_seconds=86400` and `anchor_time="09:00"` the monitor fires every day at 09:00 UTC;
+  each next fire is the next occurrence of that time-of-day phase-aligned to `interval_seconds`, so
+  the schedule does not drift. The first run still fires at spawn; the anchor governs every
+  subsequent run. Omit it for the legacy relative-interval behaviour. DST: for whole-day intervals
+  the local time-of-day is held constant across daylight-saving transitions.
 - `auto_stop_no_change_runs` (must be an integer ≥ 1) overrides the global auto-stop threshold for
   this monitor only. For a long-lived ticket monitor that progresses over days (waiting on human
   review or CI), pass a higher value (e.g. 50) so it is not auto-stopped after the default 3

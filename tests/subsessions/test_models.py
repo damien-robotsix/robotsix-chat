@@ -56,6 +56,7 @@ def test_snapshot_round_trips_every_field() -> None:
         "created_at": 100.0,
         "last_activity_at": 200.0,
         "interval_seconds": 60.0,
+        "anchor_time": None,
         "next_run_at": 260.0,
         "include_previous_result": True,
         "runs": 3,
@@ -75,6 +76,13 @@ def test_snapshot_round_trips_every_field() -> None:
         "event_timeout_seconds": None,
         "run_timeout_seconds": None,
     }
+
+
+def test_snapshot_exposes_anchor_time() -> None:
+    """A periodic anchor is surfaced under the ``anchor_time`` key."""
+    snapshot = _info(anchor_time="09:00 Europe/Paris").snapshot()
+
+    assert snapshot["anchor_time"] == "09:00 Europe/Paris"
 
 
 def test_snapshot_serialises_enums_as_values() -> None:

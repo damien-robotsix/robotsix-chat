@@ -165,6 +165,7 @@ class _CommonEntryKwargs(TypedDict):
     prompt: str
     model_level: int
     interval_seconds: float | None
+    anchor_time: str | None
     include_previous_result: bool
     depends_on_ticket_id: str | None
     run_timeout_seconds: float | None
@@ -198,6 +199,7 @@ def _entry_to_common_kwargs(entry: Mapping[str, object]) -> _CommonEntryKwargs:
         "prompt": _entry_str(entry, "prompt"),
         "model_level": model_level,
         "interval_seconds": _entry_opt_float(entry, "interval_seconds"),
+        "anchor_time": _entry_opt_str(entry, "anchor_time"),
         "include_previous_result": bool(entry.get("include_previous_result")),
         "depends_on_ticket_id": _entry_opt_str(entry, "depends_on_ticket_id"),
         "run_timeout_seconds": _entry_opt_float(entry, "run_timeout_seconds"),

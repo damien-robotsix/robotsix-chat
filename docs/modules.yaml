@@ -391,6 +391,7 @@ modules:
       - src/robotsix_chat/subsessions/models.py
       - src/robotsix_chat/subsessions/registry.py
       - src/robotsix_chat/subsessions/resume.py
+      - src/robotsix_chat/subsessions/schedule.py
       - src/robotsix_chat/subsessions/skill.md
       - src/robotsix_chat/subsessions/slot_budget.py
       - src/robotsix_chat/subsessions/subsession_waits.py
@@ -404,6 +405,7 @@ modules:
       - tests/subsessions/test_models.py
       - tests/subsessions/test_registry.py
       - tests/subsessions/test_resume.py
+      - tests/subsessions/test_schedule.py
       - tests/subsessions/test_slot_budget.py
       - tests/subsessions/test_subsession_waits.py
       - tests/subsessions/test_tools.py
