@@ -70,6 +70,10 @@ class MemoryPush:
             "context": f"{kind} of chat session '{title}' ({session_id})",
             "document_id": session_document_id(session_id),
             "update_mode": "replace",
+            # The engine's fact extraction is a multi-second LLM pipeline;
+            # background mode returns as soon as the item is queued (live
+            # 2026-09-03T23:46Z: a synchronous push timed out at 60s).
+            "background": True,
         }
         try:
             async with httpx.AsyncClient(timeout=self._timeout) as client:

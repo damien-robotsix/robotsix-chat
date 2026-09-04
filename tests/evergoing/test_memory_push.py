@@ -84,6 +84,7 @@ async def test_push_payload_carries_replace_document_semantics() -> None:
     assert body["update_mode"] == "replace"
     assert body["owner_id"] == "operator"
     assert body["tags"] == ["chat-session-summary"]
+    assert body["background"] is True
     assert "rolling summary" in body["context"]
 
 
