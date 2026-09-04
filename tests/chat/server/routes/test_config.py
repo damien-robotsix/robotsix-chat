@@ -447,6 +447,162 @@ def test_get_config_overlay_preserves_file_values(tmp_path: Path) -> None:
 
 
 # ---------------------------------------------------------------------------
+# GET /config — scoped reads (keys_only / path / include_schema)
+# ---------------------------------------------------------------------------
+
+
+def _config_with_secrets(config_path: Path) -> None:
+    """Write a config file with a secret and a nested periodic block."""
+    _write_config(
+        config_path,
+        {
+            "chat_default_model_level": 2,
+            "llmio_api_key": "sk-real",  # pragma: allowlist secret
+            "agent_instruction": "You are helpful.",
+            "periodic": {
+                "sessions": [{"name": "nightly", "schedule_interval_seconds": 86400}],
+            },
+        },
+    )
+
+
+def test_get_config_keys_only_lists_top_level(tmp_path: Path) -> None:
+    """keys_only=true returns the top-level key names with sizes and no schema."""
+    config_path = tmp_path / "config.json"
+    _config_with_secrets(config_path)
+    client = _make_app(config_path)
+
+    resp = client.get("/config?keys_only=true")
+    assert resp.status_code == 200
+    data = resp.json()
+    assert "schema" not in data
+    assert "config" not in data
+    assert data["version"] == 1
+    assert isinstance(data["keys"], list)
+    names = [entry["name"] for entry in data["keys"]]
+    assert "agent_instruction" in names
+    assert "periodic" in names
+    for entry in data["keys"]:
+        assert "name" in entry
+        assert "size" in entry
+        assert isinstance(entry["size"], int)
+
+
+def test_get_config_path_returns_subtree(tmp_path: Path) -> None:
+    """path=<dotted> returns only that subtree, masked, with no schema."""
+    config_path = tmp_path / "config.json"
+    _config_with_secrets(config_path)
+    client = _make_app(config_path)
+
+    resp = client.get("/config?path=periodic")
+    assert resp.status_code == 200
+    data = resp.json()
+    assert "schema" not in data
+    assert "config" in data
+    assert data["version"] == 1
+    sessions = data["config"]["sessions"]
+    assert [p["name"] for p in sessions] == ["nightly"]
+
+
+def test_get_config_path_nested_array(tmp_path: Path) -> None:
+    """path=periodic.sessions returns just that array, with no schema."""
+    config_path = tmp_path / "config.json"
+    _config_with_secrets(config_path)
+    client = _make_app(config_path)
+
+    resp = client.get("/config?path=periodic.sessions")
+    assert resp.status_code == 200
+    data = resp.json()
+    assert "schema" not in data
+    assert [p["name"] for p in data["config"]] == ["nightly"]
+
+
+def test_get_config_path_agent_instruction(tmp_path: Path) -> None:
+    """path=agent_instruction returns the scalar base prompt."""
+    config_path = tmp_path / "config.json"
+    _config_with_secrets(config_path)
+    client = _make_app(config_path)
+
+    resp = client.get("/config?path=agent_instruction")
+    assert resp.status_code == 200
+    data = resp.json()
+    assert "schema" not in data
+    assert data["config"] == "You are helpful."
+
+
+def test_get_config_path_masks_secret(tmp_path: Path) -> None:
+    """Path into a secret leaf still masks the value."""
+    config_path = tmp_path / "config.json"
+    _config_with_secrets(config_path)
+    client = _make_app(config_path)
+
+    resp = client.get("/config?path=llmio_api_key")
+    assert resp.status_code == 200
+    assert resp.json()["config"] == "**********"
+
+
+def test_get_config_path_missing_returns_404(tmp_path: Path) -> None:
+    """Path that does not exist returns 404 with a clear message."""
+    config_path = tmp_path / "config.json"
+    _config_with_secrets(config_path)
+    client = _make_app(config_path)
+
+    resp = client.get("/config?path=nope.nope")
+    assert resp.status_code == 404
+    body = resp.json()
+    assert body["status"] == 404
+    assert "does not exist" in body["detail"]
+
+
+def test_get_config_include_schema_false_omits_schema(tmp_path: Path) -> None:
+    """include_schema=false returns full masked config with no schema."""
+    config_path = tmp_path / "config.json"
+    _config_with_secrets(config_path)
+    client = _make_app(config_path)
+
+    resp = client.get("/config?include_schema=false")
+    assert resp.status_code == 200
+    data = resp.json()
+    assert "schema" not in data
+    assert data["version"] == 1
+    assert data["config"]["agent_instruction"] == "You are helpful."
+    assert data["config"]["llmio_api_key"] == "**********"
+
+
+def test_get_config_keys_only_and_path_conflict_returns_400(tmp_path: Path) -> None:
+    """Combining keys_only and path is a 400."""
+    config_path = tmp_path / "config.json"
+    _config_with_secrets(config_path)
+    client = _make_app(config_path)
+
+    resp = client.get("/config?keys_only=true&path=periodic")
+    assert resp.status_code == 400
+    assert resp.json()["status"] == 400
+
+
+def test_get_config_malformed_bool_returns_400(tmp_path: Path) -> None:
+    """A non-boolean keys_only value is a 400."""
+    config_path = tmp_path / "config.json"
+    _config_with_secrets(config_path)
+    client = _make_app(config_path)
+
+    resp = client.get("/config?keys_only=maybe")
+    assert resp.status_code == 400
+    assert resp.json()["status"] == 400
+
+
+def test_get_config_empty_path_returns_400(tmp_path: Path) -> None:
+    """An empty path value is a 400."""
+    config_path = tmp_path / "config.json"
+    _config_with_secrets(config_path)
+    client = _make_app(config_path)
+
+    resp = client.get("/config?path=")
+    assert resp.status_code == 400
+    assert resp.json()["status"] == 400
+
+
+# ---------------------------------------------------------------------------
 # Retired-block stripping (the pre-rework ``autonomous`` block)
 # ---------------------------------------------------------------------------
 

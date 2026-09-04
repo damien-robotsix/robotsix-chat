@@ -502,6 +502,49 @@ def _effective_config(data: dict[str, Any]) -> dict[str, Any]:
     return _mask_secrets(response_data)
 
 
+def _config_serialized_size(value: Any) -> int:
+    """Return the approximate serialized size (in chars) of *value*."""
+    return len(json.dumps(value, ensure_ascii=False))
+
+
+def _resolve_dotted_path(data: dict[str, Any], dotted_path: str) -> Any:
+    """Resolve a dotted *dotted_path* into *data*, or raise :class:`KeyError`.
+
+    Supports dict keys and integer indexes into arrays (e.g.
+    ``periodic.sessions.0``).  Any missing segment raises :class:`KeyError`.
+    """
+    current: Any = data
+    for part in dotted_path.split("."):
+        if isinstance(current, dict):
+            if part not in current:
+                raise KeyError(part)
+            current = current[part]
+        elif isinstance(current, list):
+            try:
+                current = current[int(part)]
+            except ValueError, IndexError:
+                raise KeyError(part) from None
+        else:
+            raise KeyError(part)
+    return current
+
+
+def _parse_bool_param(params: Any, name: str) -> bool | None:
+    """Parse a boolean query param, returning ``None`` when absent.
+
+    Raises :class:`ValueError` when present but not a ``true``/``false``.
+    """
+    raw = params.get(name)
+    if raw is None:
+        return None
+    lowered = raw.strip().lower()
+    if lowered == "true":
+        return True
+    if lowered == "false":
+        return False
+    raise ValueError(f"query parameter '{name}' must be 'true' or 'false'")
+
+
 async def config_get_endpoint(request: Request) -> JSONResponse:
     """Return the current on-disk config with secrets masked, plus version and schema.
 
@@ -509,6 +552,20 @@ async def config_get_endpoint(request: Request) -> JSONResponse:
     standard ``{"config": ..., "schema": ..., "version": ...}`` envelope;
     the config document is never spread across the top level (see the
     module docstring for what breaks when it is).
+
+    Three optional query params enable scoped, lightweight reads that
+    avoid pulling the (large) embedded schema:
+
+    - ``keys_only=true`` — return ``{"keys": [{"name", "size"}, ...],
+      "version"}`` with no schema, letting an agent enumerate the top-level
+      config shape cheaply.
+    - ``path=<dotted.path>`` — return just that subtree's masked value
+      under ``config`` (e.g. ``path=periodic``), with no schema.
+    - ``include_schema=false`` — return the full masked config but omit the
+      ``schema`` field.
+
+    With no params, the default ``{config, schema, version}`` envelope is
+    returned unchanged.
     """
     config_path = _resolve_config_path_from_app(request)
     data = _read_config_json(config_path)
@@ -516,6 +573,52 @@ async def config_get_endpoint(request: Request) -> JSONResponse:
     # Ensure version history is bootstrapped.
     version = _bootstrap_version_history(config_path, data)
 
+    params = request.query_params
+
+    try:
+        keys_only = _parse_bool_param(params, "keys_only")
+        include_schema = _parse_bool_param(params, "include_schema")
+    except ValueError as exc:
+        return _problem_response(400, "Bad Request", str(exc))
+
+    # keys_only=true — enumerate the top-level shape with no schema.
+    if keys_only is True:
+        if "path" in params:
+            return _problem_response(
+                400,
+                "Bad Request",
+                "query parameters 'keys_only' and 'path' are mutually exclusive",
+            )
+        effective = _effective_config(data)
+        keys = [
+            {"name": name, "size": _config_serialized_size(value)}
+            for name, value in effective.items()
+        ]
+        return JSONResponse({"keys": keys, "version": version})
+
+    # path=<dotted.path> — return just that subtree, masked, no schema.
+    if "path" in params:
+        dotted = (params.get("path") or "").strip()
+        if not dotted:
+            return _problem_response(
+                400, "Bad Request", "query parameter 'path' must be non-empty"
+            )
+        effective = _effective_config(data)
+        try:
+            value = _resolve_dotted_path(effective, dotted)
+        except KeyError:
+            return _problem_response(
+                404,
+                "Not Found",
+                f"config key path '{dotted}' does not exist",
+            )
+        return JSONResponse({"config": value, "version": version})
+
+    # include_schema=false — full masked config without the schema.
+    if include_schema is False:
+        return JSONResponse({"config": _effective_config(data), "version": version})
+
+    # Default — the standard full envelope.
     return JSONResponse(
         {
             "config": _effective_config(data),
