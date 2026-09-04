@@ -167,6 +167,7 @@ class _CommonEntryKwargs(TypedDict):
     interval_seconds: float | None
     include_previous_result: bool
     depends_on_ticket_id: str | None
+    run_timeout_seconds: float | None
 
 
 class _ResumeFate(TypedDict):
@@ -199,6 +200,7 @@ def _entry_to_common_kwargs(entry: Mapping[str, object]) -> _CommonEntryKwargs:
         "interval_seconds": _entry_opt_float(entry, "interval_seconds"),
         "include_previous_result": bool(entry.get("include_previous_result")),
         "depends_on_ticket_id": _entry_opt_str(entry, "depends_on_ticket_id"),
+        "run_timeout_seconds": _entry_opt_float(entry, "run_timeout_seconds"),
     }
 
 

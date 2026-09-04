@@ -73,6 +73,7 @@ def test_snapshot_round_trips_every_field() -> None:
         "consecutive_errored_runs": 0,
         "retry_count": 0,
         "event_timeout_seconds": None,
+        "run_timeout_seconds": None,
     }
 
 

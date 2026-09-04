@@ -565,6 +565,7 @@ class SubsessionRegistry:
         depends_on_ticket_id: str | None = None,
         retry_count: int = 0,
         event_timeout_seconds: float | None = None,
+        run_timeout_seconds: float | None = None,
         inbox: list[InboxMessage] | None = None,
     ) -> SubsessionInfo:
         """Register a new subsession and publish ``subsession_started``.
@@ -636,6 +637,7 @@ class SubsessionRegistry:
             depends_on_ticket_id=depends_on_ticket_id,
             retry_count=retry_count,
             event_timeout_seconds=event_timeout_seconds,
+            run_timeout_seconds=run_timeout_seconds,
         )
         self._subs[info.id] = info
         self._inboxes[info.id] = deque(inbox) if inbox else deque()

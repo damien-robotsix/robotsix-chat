@@ -450,6 +450,7 @@ def spawn_subsession(
     depends_on_ticket_id: str | None = None,
     retry_count: int = 0,
     event_timeout_seconds: float | None = None,
+    run_timeout_seconds: float | None = None,
     inbox: list[InboxMessage] | None = None,
     resume_waiting: bool = False,
 ) -> str:
@@ -478,6 +479,13 @@ def spawn_subsession(
     for long-lived ticket monitors that naturally progress over days
     (waiting on human review or CI) so they are not auto-stopped after
     a handful of ``NO_CHANGE`` runs.
+
+    *run_timeout_seconds* optionally overrides the global
+    ``subsessions.run_timeout_seconds`` (default 600 s) per-run timeout
+    for this subsession's agent turns — declare a longer budget for long
+    batch work (e.g. 1800 for a 20-minute search batch).  Values above
+    ``subsessions.max_run_timeout_seconds`` (default 3600) are clamped to
+    the cap.  ``None`` (the default) falls back to the global value.
 
     *inbox* seeds queued inbox messages (re-enqueued on resume) and
     wakes the inbox event so they are drained at the next turn
@@ -510,6 +518,22 @@ def spawn_subsession(
                 return cp_match
 
     cfg = env.settings.subsessions
+
+    # Per-subsession run timeout override — bound it by the operator's cap.
+    # A spawn declaring a longer budget than the ceiling is clamped (never
+    # silently exceeded): a task that plans around 2h would otherwise be
+    # cut short at the cap and burn the whole budget before failing.
+    if run_timeout_seconds is not None:
+        cap = cfg.max_run_timeout_seconds
+        if run_timeout_seconds > cap:
+            logger.info(
+                "Subsession %r requested run_timeout_seconds=%.0fs — "
+                "clamped to subsessions.max_run_timeout_seconds (%.0fs)",
+                title,
+                run_timeout_seconds,
+                cap,
+            )
+            run_timeout_seconds = cap
 
     if auto_stop_no_change_runs is not None and (
         isinstance(auto_stop_no_change_runs, bool)
@@ -578,6 +602,7 @@ def spawn_subsession(
                         "depends_on_ticket_id": depends_on_ticket_id,
                         "retry_count": retry_count,
                         "event_timeout_seconds": event_timeout_seconds,
+                        "run_timeout_seconds": run_timeout_seconds,
                     },
                 )
             except SlotBudgetQueueFullError as exc:
@@ -743,6 +768,7 @@ def spawn_subsession(
             depends_on_ticket_id=depends_on_ticket_id,
             retry_count=retry_count,
             event_timeout_seconds=event_timeout_seconds,
+            run_timeout_seconds=run_timeout_seconds,
             inbox=inbox,
         )
     except SubsessionDedupError as exc:
@@ -1195,7 +1221,11 @@ async def _run_turn_with_timeout(
     On timeout the run is marked failed for TASK/USER_CHAT kinds, or the
     schedule continues with the failure recorded for PERIODIC kinds.
     """
-    timeout = env.settings.subsessions.run_timeout_seconds
+    timeout = (
+        info.run_timeout_seconds
+        if info.run_timeout_seconds is not None
+        else env.settings.subsessions.run_timeout_seconds
+    )
     try:
         async with asyncio.timeout(timeout + _RUN_TIMEOUT_GRACE):
             return await _run_turn(
@@ -1845,10 +1875,20 @@ async def _subsession_worker(
 
         # -- retry for user_chat / task kinds --------------------------
         info = registry.get(sub_id)
-        if info is not None and info.kind in (
-            SubsessionKind.USER_CHAT,
-            SubsessionKind.TASK,
-            SubsessionKind.ON_CLOSE,
+        if (
+            info is not None
+            and info.kind
+            in (
+                SubsessionKind.USER_CHAT,
+                SubsessionKind.TASK,
+                SubsessionKind.ON_CLOSE,
+            )
+            # A turn that hit the hard run timeout will hit it again with
+            # the identical input — fail fast instead of burning the retry
+            # budget on a doomed turn (2026-09-04: three 10-minute retries
+            # of the same timed-out Hexarchy batch).  kind-specific timeout
+            # handling for monitors already happens inside the run loop.
+            and not isinstance(exc, _RunTimeoutError)
         ):
             max_retries = env.settings.subsessions.user_chat_max_retries
             if info.retry_count < max_retries:
@@ -1897,9 +1937,14 @@ async def _subsession_worker(
         # monitor_error_max_retries times before failing permanently.
         # Each retry re-launches the worker so the agent can
         # self-correct with the error context.
-        if info is not None and info.kind in (
-            SubsessionKind.PERIODIC,
-            SubsessionKind.WAIT_FOR_EVENT,
+        if (
+            info is not None
+            and info.kind
+            in (
+                SubsessionKind.PERIODIC,
+                SubsessionKind.WAIT_FOR_EVENT,
+            )
+            and not isinstance(exc, _RunTimeoutError)
         ):
             max_monitor_retries = env.settings.subsessions.monitor_error_max_retries
             if info.retry_count < max_monitor_retries:

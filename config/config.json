@@ -88,6 +88,7 @@
     "human_approval_timeout_runs": 5,
     "auto_drive_promote_ready_drafts": false,
     "run_timeout_seconds": 600.0,
+    "max_run_timeout_seconds": 3600.0,
     "store_path": "/data/subsessions.json",
     "transcript_max_entries": 200,
     "human_approval_timeout_seconds": 300.0,

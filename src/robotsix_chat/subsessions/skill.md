@@ -23,7 +23,7 @@ children would still be within the configured `max_depth`.
 
 Start a background subsession and return its id immediately. Required: `kind`, `title`,
 `instructions`. Optional: `model_level`, `interval_seconds`, `max_runs`, `auto_stop_no_change_runs`,
-`include_previous_result`, `inherit_context`, `dedup_key`.
+`include_previous_result`, `inherit_context`, `dedup_key`, `run_timeout_seconds`.
 
 - `model_level` picks capability 1 (cheap/frequent) to 3 (frontier); 1 covers monitors and routine
   checks, 2 is the workhorse for general work, 3 is frontier-only. Which provider serves a level is
@@ -38,6 +38,11 @@ Start a background subsession and return its id immediately. Required: `kind`, `
   consecutive `NO_CHANGE` runs.
 - `dedup_key` prevents duplicate `user_chat`, `periodic`, and `wait_for_event` subsessions — use the
   ticket id as the dedup key for monitors. Always check `list_subsessions` first.
+- `run_timeout_seconds` (seconds, optional) overrides the global per-run timeout (default 600 s) for
+  this subsession — declare a longer budget (e.g. 1800 for a 20-minute batch) for long search /
+  tournament / batch work. Bounded by `subsessions.max_run_timeout_seconds` (default 3600 s);
+  requests above the cap are clamped to it. A turn that exceeds its budget is failed fast and NOT
+  retried, so size it to the longest single step of the job.
 
 ### `message_subsession`
 
