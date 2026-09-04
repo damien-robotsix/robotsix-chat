@@ -37,6 +37,7 @@ class _CountingAgent:
         trace_metadata: dict[str, str] | None = None,
         trace_name: str | None = None,
         model_level: int | None = None,
+        skip_recall: bool = False,
     ) -> AsyncIterator[str]:
         self.calls += 1
         self.prompts.append(message)

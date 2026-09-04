@@ -54,6 +54,7 @@ class FakeAgent:
         trace_metadata: dict[str, str] | None = None,
         trace_name: str | None = None,
         model_level: int | None = None,
+        skip_recall: bool = False,
     ) -> AsyncIterator[str]:
         """Record the call, optionally wait on the gate, yield one reply."""
         self.calls.append(
@@ -64,6 +65,7 @@ class FakeAgent:
                 "client_id": client_id,
                 "images": images,
                 "trace_metadata": trace_metadata,
+                "skip_recall": skip_recall,
             }
         )
         if self.gate is not None:

@@ -66,6 +66,7 @@ class _FakeAgent:
         trace_metadata: dict[str, str] | None = None,
         trace_name: str | None = None,
         model_level: int | None = None,
+        skip_recall: bool = False,
     ) -> AsyncIterator[str]:
         """Yield tokens or raise the configured error."""
         self.call_count += 1

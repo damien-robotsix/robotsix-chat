@@ -300,6 +300,54 @@ async def test_periodic_preamble_stripped_from_recall_query() -> None:
     assert memory.recall_queries == ["Review today's unread inbox."]
 
 
+# A realistic wait_for_event monitor wake turn input: ~1.5 KB of fixed,
+# machine-generated instruction boilerplate. Recalling on it churns the
+# memory component for near-random matches, so monitor wakes pass
+# skip_recall=True.
+_MONITOR_WAKE_INPUT = (
+    "You are an event-driven ticket monitor. DETECTION-ONLY: report matching "
+    "events; never mutate the board. Reporting contract: emit one line per "
+    "detected event with ticket id and title. Safety-net: if no event fires "
+    "before the timeout, wake anyway and re-scan. Your prompt is fully "
+    "self-contained; do not rely on any prior conversation or recalled "
+    "context. owner_id=operator. "
+) * 4
+
+
+@pytest.mark.asyncio
+async def test_skip_recall_suppresses_recall_for_monitor_wake() -> None:
+    """A monitor wake with ``skip_recall=True`` performs no recall call.
+
+    Event-driven / periodic monitor turn inputs are fixed boilerplate; a
+    recall on them retrieves noise while hammering the memory component on
+    every wake. ``skip_recall`` suppresses it entirely.
+    """
+    create_model, _ = _patched_create_model("ok")
+    memory = _RecordingMemory(recall="Damien prefers Python.")
+
+    with patch("robotsix_chat.llm.agent.get_provider_for_identifier", create_model):
+        agent = LlmioChatAgent(model_level=3, instruction="Be helpful.", memory=memory)
+        _ = [c async for c in agent.stream(_MONITOR_WAKE_INPUT, skip_recall=True)]
+
+    # No /recall call at all for a monitor wake.
+    assert memory.recall_queries == []
+    # And the boilerplate turn input reaches the model verbatim — no
+    # recalled-memory block is prepended.
+    handle = create_model.return_value.build_agent.return_value
+    assert handle.run_calls[0]["message"] == _MONITOR_WAKE_INPUT
+
+
+@pytest.mark.asyncio
+async def test_interactive_turn_keeps_full_recall() -> None:
+    """Interactive operator turns (skip_recall defaults False) recall fully."""
+    _, _, _, memory = await _agent_with_memory(
+        output="ok", recall="Damien prefers Python.", message="what did we decide?"
+    )
+
+    # Full, un-distilled query — interactive recall is unchanged.
+    assert memory.recall_queries == ["what did we decide?"]
+
+
 @pytest.mark.asyncio
 async def test_no_recall_adds_no_memory_block() -> None:
     """With no recalled memory the message and system prompt are untouched."""

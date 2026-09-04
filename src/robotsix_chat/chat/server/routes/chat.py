@@ -73,8 +73,15 @@ class ChatAgent(Protocol):
         trace_metadata: dict[str, str] | None = None,
         trace_name: str | None = None,
         model_level: int | None = None,
+        skip_recall: bool = False,
     ) -> AsyncIterator[str]:
         """Yield tokens from the LLM in response to ``message``.
+
+        *skip_recall* suppresses automatic long-term memory recall for this
+        turn — set by callers whose turn input is machine-generated
+        boilerplate (event-driven / periodic monitor wakes), which are
+        self-contained by design and gain nothing from operator-bank recall.
+        Interactive operator turns leave it ``False`` and keep full recall.
 
         *images* is an optional list of ``(media_type, raw_bytes)`` pairs
         representing attached images (e.g. ``[("image/png", b"...")]``).
