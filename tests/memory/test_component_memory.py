@@ -132,32 +132,20 @@ async def test_render_unknown_shape_is_empty() -> None:
     assert _render_recall_block({"results": "nope"}) == ""
 
 
-async def test_build_memory_prefers_component(monkeypatch: pytest.MonkeyPatch) -> None:
+async def test_build_memory_prefers_component() -> None:
     reset_build_memory_cache()
-    from robotsix_chat.config import MemorySettings
-
-    memory = build_memory(
-        MemorySettings(enabled=True),
-        memory_component=MemoryComponentSettings(enabled=True, url=URL),
-    )
+    memory = build_memory(MemoryComponentSettings(enabled=True, url=URL))
     assert isinstance(memory, ComponentMemory)
     # Same settings -> cached instance.
-    again = build_memory(
-        MemorySettings(enabled=True),
-        memory_component=MemoryComponentSettings(enabled=True, url=URL),
-    )
+    again = build_memory(MemoryComponentSettings(enabled=True, url=URL))
     assert again is memory
     reset_build_memory_cache()
 
 
-async def test_build_memory_component_disabled_falls_through() -> None:
+async def test_build_memory_component_disabled_is_null() -> None:
     reset_build_memory_cache()
-    from robotsix_chat.config import MemorySettings
     from robotsix_chat.memory import NullMemory
 
-    memory = build_memory(
-        MemorySettings(enabled=False),
-        memory_component=MemoryComponentSettings(enabled=False),
-    )
-    assert isinstance(memory, NullMemory)
+    assert isinstance(build_memory(MemoryComponentSettings(enabled=False)), NullMemory)
+    assert isinstance(build_memory(None), NullMemory)
     reset_build_memory_cache()

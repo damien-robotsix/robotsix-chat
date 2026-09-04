@@ -33,11 +33,11 @@ COPY src ./src
 
 # Install into the system interpreter (/usr/local) — NOT `uv sync`, which
 # builds a project venv the runtime COPY would miss. Extras: claude-sdk for
-# the LLM transport, tracing for Langfuse observability, memory for cognee.
+# the LLM transport, tracing for Langfuse observability.
 # --no-hashes: the git-sourced first-party deps cannot carry hashes.
 # hadolint ignore=DL3066
 RUN uv export --frozen --no-emit-project --no-hashes \
-        --extra claude-sdk --extra tracing --extra memory --extra render-url \
+        --extra claude-sdk --extra tracing --extra render-url \
         --extra github-actions \
         -o /tmp/requirements.txt \
     && uv pip install --system --no-cache -r /tmp/requirements.txt \
@@ -156,9 +156,6 @@ RUN groupadd --gid ${APP_GID} app \
 WORKDIR /home/app
 USER 1000
 
-# Cache the HuggingFace tokenizer (bge-m3) on the persistent /data mount so
-# the cognee `memory` extra doesn't re-download it on every redeploy.
-ENV HF_HOME=/data/huggingface
 EXPOSE 8080
 
 # Probe the in-container /health route using only the Python stdlib.

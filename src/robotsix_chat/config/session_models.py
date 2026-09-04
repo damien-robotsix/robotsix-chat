@@ -604,7 +604,7 @@ class LifecycleSettings(BaseModel):
             deploy server has no bare ``/self/restart`` route, so a service
             restarts itself by naming itself at
             ``POST /chat/services/{service_name}/restart``.  When empty,
-            ``self_restart`` (and the cognee frozen-store auto-recovery that
+            ``self_restart`` (and the legacy frozen-store auto-recovery that
             depends on it) is unavailable.
         timeout: Per-request HTTP timeout in seconds.
         self_restart_max_retries: How many times ``self_restart`` retries the

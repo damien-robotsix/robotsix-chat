@@ -11,10 +11,6 @@ from pydantic import BaseModel, ConfigDict, Field, SecretStr, model_validator
 #: standard fixes a component's main project name as ``<repo>``.
 PROJECT_MAIN = "robotsix-chat"
 
-#: Langfuse project for the cognee memory subsystem's own LLM traffic.  Per
-#: the one-project-per-function rule each LLM-generating subsystem traces to
-#: its own ``<repo>-<function>`` project, never the component's main one.
-PROJECT_MEMORY = "robotsix-chat-cognee"
 
 _logger = logging.getLogger(__name__)
 
@@ -50,7 +46,7 @@ class LangfuseSettings(BaseModel):
     **name**.  The component standard fixes those names as ``<repo>`` for
     the component's main LLM function and ``<repo>-<function>`` for each
     additional LLM-generating subsystem — so this component declares
-    ``robotsix-chat`` (main agent) and ``robotsix-chat-cognee`` (memory).
+    ``robotsix-chat`` (main agent).
 
     Keeping every project in one standard block is what lets central-deploy
     enumerate the fleet's credentials uniformly and dispatch them to the

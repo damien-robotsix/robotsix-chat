@@ -24,7 +24,6 @@ from robotsix_chat.config.constants import (
     drop_blank_numeric_sentinels,
 )
 from robotsix_chat.config.models import (
-    PROJECT_MEMORY,
     CentralDeploySettings,
     ComponentClientSettings,
     ContinuationSettings,
@@ -45,7 +44,6 @@ from robotsix_chat.config.models import (
     LangfuseSettings,
     LifecycleSettings,
     MemoryComponentSettings,
-    MemorySettings,
     MobileAuthSettings,
     NotificationSettings,
     OpenRouterSettings,
@@ -81,7 +79,7 @@ class ConfigValidationError(ValueError):
 # Version stamp for the agent_instruction default literal.
 # Bump on every change to Settings.agent_instruction and update
 # docs/system_prompt_changelog.md with a new entry + SHA256.
-SYSTEM_PROMPT_VERSION = 160
+SYSTEM_PROMPT_VERSION = 161
 
 
 class Settings(BaseModel):
@@ -225,7 +223,7 @@ class Settings(BaseModel):
             "findings to it. Unlike the stable, human-governed system "
             "prompt (which you must not modify), these notes are yours to "
             "author and revise by id. This store is distinct from the "
-            "automatic cognee conversation memory — cognee recalls past "
+            "automatic long-term conversation memory — it recalls past "
             "exchanges by similarity, while these notes you explicitly "
             "create and address by id. "
             "– Knowledge notes store **operational facts and findings** "
@@ -648,7 +646,7 @@ class Settings(BaseModel):
             "API (GET /tickets) for the current state of open tickets, queued "
             "work, and blocked items.  Also load your own knowledge notes "
             "(list_knowledge_notes, search_knowledge_notes) for any relevant "
-            "prior findings.  Recalled session memories (cognee similarity "
+            "prior findings.  Recalled session memories (similarity-recall "
             "blocks) are a fallible cache — they may contain stale or incorrect "
             "identifiers (wrong repo owners, phantom ticket ids, closed items "
             "remembered as open) as well as stale plans, solution options, and "
@@ -1831,7 +1829,6 @@ class Settings(BaseModel):
     langfuse_inspect: LangfuseInspectSettings = Field(
         default_factory=LangfuseInspectSettings
     )
-    memory: MemorySettings = Field(default_factory=MemorySettings)
     central_deploy: CentralDeploySettings = Field(default_factory=CentralDeploySettings)
     conversation: ConversationSettings = Field(default_factory=ConversationSettings)
     diagnostics: DiagnosticsSettings = Field(default_factory=DiagnosticsSettings)
@@ -1931,19 +1928,6 @@ class Settings(BaseModel):
         # load — create_agent_from_settings falls back to a keyless level
         # (see cli.py) so a keyed level never breaks a deployment that has
         # not configured an OpenRouter key.
-        if self.memory.enabled:
-            alias = self.memory.langfuse_project or PROJECT_MEMORY
-            if not self.openrouter.key(alias).get_secret_value():
-                failures.append(
-                    f"openrouter.keys[{alias!r}] must be set when memory is enabled — "
-                    "provide it via the `openrouter.keys` field of your config file"
-                )
-            if not self.memory.embedding.endpoint:
-                failures.append(
-                    "memory.embedding.endpoint must be set when memory is enabled "
-                    "(e.g. http://host:11434/v1) — provide it via "
-                    "the config file"
-                )
         err = self._require_min(self.idle_timeout_minutes, 0, "idle_timeout_minutes")
         if err:
             failures.append(err)
@@ -2138,17 +2122,6 @@ class Settings(BaseModel):
 
         return data
 
-    @model_validator(mode="before")
-    @classmethod
-    def _migrate_legacy_memory_openrouter_key(cls, data: Any) -> Any:
-        """Delegate to :func:`_migrate_legacy_memory_api_key`.
-
-        Covers the paths that do not go through
-        ``robotsix_config.load_config`` — ``Settings.model_validate`` on a raw
-        dict, which the config routes and the tests use.
-        """
-        return _migrate_legacy_memory_api_key(data)
-
     @classmethod
     def migrate_legacy_config(cls, data: dict[str, Any]) -> dict[str, Any]:
         """Pre-strip hook for ``robotsix_config.load_config``.
@@ -2168,9 +2141,6 @@ class Settings(BaseModel):
         dict, which the config routes and tests use). Both delegate to the same
         function, which pops the legacy key, so running twice is a no-op.
         """
-        migrated = _migrate_legacy_memory_api_key(data)
-        data = migrated if isinstance(migrated, dict) else data
-
         # Strip removed autonomy/authorization keys.
         if "autonomy" in data:
             logger.info("migrate_legacy_config: dropping removed key 'autonomy'")
@@ -2297,13 +2267,6 @@ class Settings(BaseModel):
             if cv == "" or (isinstance(cv, str) and cv in _bad):
                 data["component_client"]["components"] = []
 
-        # Nested object fields inside MemorySettings
-        if isinstance(data.get("memory"), dict):
-            for key in ("llm", "embedding"):
-                mv = data["memory"].get(key)
-                if mv == "" or (isinstance(mv, str) and mv in _bad):
-                    data["memory"][key] = {}
-
         # Numeric fields across the whole config tree — tolerate legacy ""
         # sentinels so a cleared numeric input in the settings UI falls back
         # to its default (or null for optional numerics) instead of failing
@@ -2350,6 +2313,17 @@ def _migrate_legacy_deploy_and_mail(data: Any) -> Any:
             "Dropping removed config block 'mail' (superseded by the component roster)"
         )
 
+    # Drop the retired ``memory`` block (the in-process cognee backend was
+    # replaced by the robotsix-memory component, 2026-09-04). Deployed
+    # configs still pin it; extra="forbid" would crash-loop the boot.
+    if "memory" in data:
+        data = dict(data)
+        del data["memory"]
+        logger.info(
+            "Dropping removed config block 'memory' (cognee replaced by the "
+            "robotsix-memory component)"
+        )
+
     central = data.get("central_deploy")
     central = dict(central) if isinstance(central, dict) else {}
     changed = False
@@ -2380,57 +2354,4 @@ def _migrate_legacy_deploy_and_mail(data: Any) -> Any:
         data = dict(data)
         data["central_deploy"] = central
 
-    return data
-
-
-def _migrate_legacy_memory_api_key(data: Any) -> Any:
-    """Move the legacy ``memory.llm.api_key`` into ``openrouter.keys``.
-
-    Before the canonical top-level ``openrouter`` block existed, the
-    cognee extraction-LLM key lived at ``memory.llm.api_key``.  Deployed
-    configs still carry that nested key; with the field removed from the
-    schema, ``extra="forbid"`` would otherwise reject the whole file and
-    crash-loop the container on the first start after an image upgrade.
-
-    The legacy value is migrated into ``openrouter.keys`` under the same
-    alias the subsystem's Langfuse traffic uses (``memory.langfuse_project``,
-    default ``robotsix-chat-cognee``) so operators do not re-enter the
-    secret.  An explicitly-configured canonical key always wins.
-    """
-    if not isinstance(data, dict):
-        return data
-
-    memory = data.get("memory")
-    if not isinstance(memory, dict):
-        return data
-    llm = memory.get("llm")
-    if not isinstance(llm, dict):
-        return data
-
-    legacy_key = llm.pop("api_key", None)
-    if not legacy_key:
-        return data
-
-    alias = memory.get("langfuse_project") or PROJECT_MEMORY
-    openrouter = data.get("openrouter")
-    if not isinstance(openrouter, dict):
-        openrouter = {}
-        data["openrouter"] = openrouter
-    keys = openrouter.get("keys")
-    if not isinstance(keys, dict):
-        keys = {}
-        openrouter["keys"] = keys
-
-    if not keys.get(alias):
-        keys[alias] = legacy_key
-        logger.info(
-            "Migrated legacy memory.llm.api_key into openrouter.keys[%r]",
-            alias,
-        )
-    else:
-        logger.info(
-            "Ignoring legacy memory.llm.api_key — openrouter.keys[%r] "
-            "is already configured",
-            alias,
-        )
     return data

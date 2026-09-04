@@ -16,8 +16,8 @@ class KnowledgeSettings(BaseModel):
     ``read_knowledge_note``)
     and can re-read and revise them by id across sessions.
 
-    This store is **complementary to**, not a duplicate of, the optional cognee
-    episodic memory system (``memory/``).  cognee automatically recalls past
+    This store is **complementary to**, not a duplicate of, the long-term
+    memory component (``memory/``), which automatically recalls past
     conversations by similarity; this knowledge base holds notes the agent
     deliberately authors and addresses by id.
 
@@ -41,7 +41,7 @@ class SelfReviewSettings(BaseModel):
     reads the in-process :class:`~robotsix_chat.chat.conversation.ConversationStore`
     (short-lived per-client conversation turns) and returns a human-readable
     multi-session digest.  This is a deliberate, explicit, cross-client
-    snapshot — complementary to, but independent of, the optional cognee
+    snapshot — complementary to, but independent of, the long-term
     episodic memory subsystem (``src/robotsix_chat/memory/``).
 
     Default-disabled so behaviour is unchanged unless explicitly turned on.

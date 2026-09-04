@@ -122,13 +122,13 @@ class ReadOnlyMemory:
     """Wraps a :class:`ChatMemory` so it can recall but never write.
 
     Recall and cognify have wildly different costs. Recall is a retrieval-only
-    vector lookup (~0.4 s warm, no LLM call); ``remember`` runs cognee's
+    vector lookup (~0.4 s warm, no LLM call); ``remember`` historically ran an
     multi-minute LLM extraction pipeline and contends with every concurrent
     recall for the same stores.
 
     Background agents — subsessions and periodic session turns —
     run unattended around the clock, so letting them cognify every turn is
-    what produced the ~$22/day cognee bill and the write contention that
+    what produced the ~$22/day bill and the write contention that
     slows interactive chat. But there is no reason to deny them *reading*
     what the main conversation has already learned.
 

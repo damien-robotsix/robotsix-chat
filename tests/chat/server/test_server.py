@@ -1099,12 +1099,7 @@ def test_create_agent_from_settings_gated_memory_still_reads_component() -> None
     ) as build:
         agent = create_agent_from_settings(settings=settings, memory_enabled=False)
 
-    build.assert_called_once_with(
-        settings.memory,
-        settings.langfuse,
-        settings.openrouter,
-        memory_component=settings.memory_component,
-    )
+    build.assert_called_once_with(settings.memory_component)
     from robotsix_chat.memory import ReadOnlyMemory
 
     assert isinstance(agent._memory, ReadOnlyMemory)
@@ -1124,12 +1119,7 @@ def test_create_agent_from_settings_memory_enabled_builds_memory() -> None:
     ) as build:
         agent = create_agent_from_settings(settings=settings)
 
-    build.assert_called_once_with(
-        settings.memory,
-        settings.langfuse,
-        settings.openrouter,
-        memory_component=settings.memory_component,
-    )
+    build.assert_called_once_with(settings.memory_component)
     assert agent._memory is sentinel
 
 

@@ -69,7 +69,7 @@ class HealthSettings(BaseModel):
     When enabled, a background scheduler runs every *check_interval_seconds*
     (default 300 s / 5 min) and verifies that critical subsystems are
     reachable and producing expected output:
-    memory (cognee recall), knowledge store, feedback runner, and
+    memory (long-term recall), knowledge store, feedback runner, and
     diagnostics store.  It also watches the container's cgroup memory
     usage and warns *before* the OOM killer fires.  Results are exposed
     via ``GET /health`` and logged.
