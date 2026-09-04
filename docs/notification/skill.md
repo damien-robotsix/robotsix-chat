@@ -1,1 +1,0 @@
-../../src/robotsix_chat/notification/skill.md

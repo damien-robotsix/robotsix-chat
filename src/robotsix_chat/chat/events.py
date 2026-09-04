@@ -467,20 +467,18 @@ class EventBus:
     def subscriber_count(self, session_id: str) -> int:
         """Return the number of queues currently subscribed for *session_id*.
 
-        Lets callers (e.g. the ``notify_user`` tool) decide whether a
-        publish reaches a live SSE client without reaching into the private
-        registry — a count of ``0`` means the frame would be silently
-        dropped.
+        Lets callers decide whether a publish reaches a live SSE client
+        without reaching into the private registry — a count of ``0``
+        means the frame would be silently dropped.
         """
         return len(self._subscribers.get(session_id, ()))
 
     def total_subscriber_count(self) -> int:
         """Return the number of queues currently subscribed across all sessions.
 
-        Lets a broadcast caller (e.g. the ``notify_user`` tool, which delivers
-        via :meth:`publish_all` regardless of session) decide whether the frame
-        reaches any live SSE client — a count of ``0`` means it would be
-        dropped for every connected browser.
+        Lets a broadcast caller via :meth:`publish_all` decide whether the
+        frame reaches any live SSE client — a count of ``0`` means it would
+        be dropped for every connected browser.
         """
         return sum(len(queues) for queues in self._subscribers.values())
 
@@ -496,14 +494,13 @@ class EventBus:
     def publish_all(self, frame: dict[str, object]) -> None:
         """Put *frame* on EVERY queue currently subscribed, any session.
 
-        Broadcast delivery for session-agnostic frames (notifications):
-        ``notify_user`` may fire from a periodic/background session that no
-        browser is viewing, so scoping to that session's id would drop the
-        frame even with the browser connected.  Every ``/events`` subscriber
-        watches exactly one session, so iterating every subscriber set
-        delivers the frame once to each connected client regardless of which
-        session it is viewing.  Frames are dropped silently when nothing is
-        connected — the persistent store handles replay on reconnect.
+        Broadcast delivery for session-agnostic frames (notifications),
+        e.g. from a periodic/background subsession that no browser is
+        viewing, so scoping to that session's id would drop the frame even
+        with the browser connected.  Every ``/events`` subscriber watches
+        exactly one session, so iterating every subscriber set delivers the
+        frame once to each connected client regardless of which session it
+        is viewing.  Frames are dropped silently when nothing is connected.
         """
         for queues in self._subscribers.values():
             for queue in queues:
