@@ -138,13 +138,15 @@ async def fetch_roster(
             resp.raise_for_status()
             entries = resp.json()
     except Exception as exc:
-        logger.warning("Failed to fetch component roster: %s", exc)
+        # str() of httpx timeouts is often empty — always name the type.
+        err = f"{type(exc).__name__}: {exc}" if str(exc) else type(exc).__name__
+        logger.warning("Failed to fetch component roster: %s", err)
         entries = [
             {
                 "id": "_error",
                 "base_url": "",
                 "skill": "",
-                "_error": f"Roster unavailable: {exc}",
+                "_error": f"Roster unavailable: {err}",
             }
         ]
 
