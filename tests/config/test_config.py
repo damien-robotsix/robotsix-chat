@@ -1123,7 +1123,7 @@ _PREEXISTING_ALLOWLIST: set[tuple[str, int, str]] = {
     ("src/robotsix_chat/config/settings.py", 98, "claude-fable"),
     # config/settings.py — vision_model default (OpenRouter captioning model)
     ("src/robotsix_chat/config/settings.py", 157, "gpt-"),
-    ("src/robotsix_chat/config/settings.py", 1868, "gpt-"),
+    ("src/robotsix_chat/config/settings.py", 1852, "gpt-"),
     # config/memory_models.py — gpt-5-nano / gpt-5-mini / deepseek-v4-flash
     ("src/robotsix_chat/config/memory_models.py", 26, "gpt-"),
     ("src/robotsix_chat/config/memory_models.py", 50, "gpt-"),
@@ -1216,6 +1216,22 @@ def test_legacy_llmio_task_budget_tokens_is_stripped() -> None:
     """
     settings = Settings.model_validate({"llmio_task_budget_tokens": 30_000})
     assert not hasattr(settings, "llmio_task_budget_tokens")
+
+
+def test_legacy_compaction_keys_are_stripped() -> None:
+    """A deployed config still carrying the removed compaction keys loads.
+
+    Idle-timeout compaction was removed and the periodic summary scheduler
+    (evergoing) is now the single context-reduction mechanism. Stale
+    ``compaction_min_turns`` / ``compaction_keep_recent_turns`` keys must be
+    dropped by the ``mode="before"`` migration instead of tripping
+    ``extra="forbid"`` and crash-looping the container after an image upgrade.
+    """
+    settings = Settings.model_validate(
+        {"compaction_min_turns": 3, "compaction_keep_recent_turns": 2}
+    )
+    assert not hasattr(settings, "compaction_min_turns")
+    assert not hasattr(settings, "compaction_keep_recent_turns")
 
 
 def test_production_config_with_blank_numeric_sentinels_loads_cleanly() -> None:

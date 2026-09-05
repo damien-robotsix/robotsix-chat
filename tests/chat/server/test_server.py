@@ -1285,8 +1285,6 @@ async def test_run_server_from_config_creates_agent_from_settings(
             "host": "127.0.0.1",
             "port": 8080,
             "idle_timeout_minutes": 30,
-            "compaction_min_turns": 3,
-            "compaction_keep_recent_turns": 2,
             "max_images_per_message": 8,
             "max_image_bytes": 5_242_880,
             "allowed_image_media_types": [
@@ -2911,7 +2909,6 @@ async def test_chat_turn_persists_actions() -> None:
     async with mock_app(
         conversation_store=store,
         idle_timeout_minutes=30,
-        compaction_min_turns=1,
     ) as f:
         f.app.state.agent = ActingAgent(tokens=["Filed."])
         await f.client.post(

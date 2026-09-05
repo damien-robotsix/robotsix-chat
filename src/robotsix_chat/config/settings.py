@@ -1800,22 +1800,6 @@ class Settings(BaseModel):
     server_host: str = Field(default="0.0.0.0")  # noqa: S104  # nosec B104
     server_port: int = Field(default=8000)
     idle_timeout_minutes: int = 30
-    compaction_min_turns: int = Field(
-        default=3,
-        description=(
-            "DEPRECATED — unused. Idle-timeout compaction was removed; the "
-            "periodic summary scheduler is the single context-reduction "
-            "mechanism (see evergoing.keep_recent_runs)."
-        ),
-    )
-    compaction_keep_recent_turns: int = Field(
-        default=2,
-        description=(
-            "DEPRECATED — unused. Idle-timeout compaction was removed; the "
-            "periodic summary scheduler keeps evergoing.keep_recent_runs "
-            "recent runs verbatim instead."
-        ),
-    )
     log_level: str = "INFO"
     log_json_format: bool = True
     cors_allow_origins: list[str] = Field(default_factory=list)
@@ -1925,14 +1909,6 @@ class Settings(BaseModel):
         # (see cli.py) so a keyed level never breaks a deployment that has
         # not configured an OpenRouter key.
         err = self._require_min(self.idle_timeout_minutes, 0, "idle_timeout_minutes")
-        if err:
-            failures.append(err)
-        err = self._require_min(self.compaction_min_turns, 0, "compaction_min_turns")
-        if err:
-            failures.append(err)
-        err = self._require_min(
-            self.compaction_keep_recent_turns, 0, "compaction_keep_recent_turns"
-        )
         if err:
             failures.append(err)
         err = self._require_min(
@@ -2101,6 +2077,22 @@ class Settings(BaseModel):
             )
             data = dict(data)
             del data["llmio_task_budget_tokens"]
+
+        # Strip the removed compaction_min_turns / compaction_keep_recent_turns
+        # keys — idle-timeout compaction was removed and the periodic summary
+        # scheduler (evergoing) is the single context-reduction mechanism.
+        # Deployed configs still carry these, which extra="forbid" would
+        # otherwise reject and crash-loop the boot.
+        for _compaction_key in ("compaction_min_turns", "compaction_keep_recent_turns"):
+            if _compaction_key in data:
+                logger.info(
+                    "Dropping removed config key '%s' (idle-timeout compaction "
+                    "was removed; the periodic summary scheduler is the single "
+                    "context-reduction mechanism)",
+                    _compaction_key,
+                )
+                data = dict(data)
+                del data[_compaction_key]
 
         # Strip the removed chat_model_level override — the main chat agent
         # now always uses the unified ``chat_default_model_level``.

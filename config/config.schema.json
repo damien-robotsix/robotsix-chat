@@ -1461,18 +1461,6 @@
       "title": "Idle Timeout Minutes",
       "type": "integer"
     },
-    "compaction_min_turns": {
-      "default": 3,
-      "description": "DEPRECATED \u2014 unused. Idle-timeout compaction was removed; the periodic summary scheduler is the single context-reduction mechanism (see evergoing.keep_recent_runs).",
-      "title": "Compaction Min Turns",
-      "type": "integer"
-    },
-    "compaction_keep_recent_turns": {
-      "default": 2,
-      "description": "DEPRECATED \u2014 unused. Idle-timeout compaction was removed; the periodic summary scheduler keeps evergoing.keep_recent_runs recent runs verbatim instead.",
-      "title": "Compaction Keep Recent Turns",
-      "type": "integer"
-    },
     "log_level": {
       "default": "INFO",
       "title": "Log Level",
