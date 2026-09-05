@@ -631,10 +631,12 @@ async def test_resume_user_chat_waiting_survives_consecutive_restarts(
 ) -> None:
     """A second restart with no turn in between must not re-ask either.
 
-    A resume re-creates the registry entry without its transcript; since the
-    waiting path runs no agent turn, nothing repopulates it.  The question is
-    still recoverable from ``turn_history``, which does survive resumes —
-    observed live 2026-08-28: restart #1 skipped the turn, restart #2 re-asked.
+    A resume re-creates the registry entry with an empty transcript; the
+    waiting path runs no agent turn, so ``restore_transcript`` re-seeds the
+    pending question from durable storage (and re-persists it) so the box is
+    never blank and the question survives every subsequent restart.  Before
+    the fix, restart #1 skipped the turn but blanked the transcript and
+    restart #2 re-asked (observed live 2026-08-28).
     """
     store_path = tmp_path / "subsessions.json"
     registry1 = SubsessionRegistry(store_path=store_path)
@@ -677,7 +679,11 @@ async def test_resume_user_chat_waiting_survives_consecutive_restarts(
     registry2 = await _restart(agent1)
     assert agent1.calls == []
     resumed = registry2.get(user_chat.id)
-    assert resumed is not None and resumed.transcript == []  # the trigger
+    # The pending question is re-rendered exactly once — never a blank box.
+    assert resumed is not None
+    assert [(e.role, e.text) for e in resumed.transcript] == [
+        ("assistant", "Which env?")
+    ]
 
     agent2 = FakeAgent()
     registry3 = await _restart(agent2)
@@ -686,6 +692,71 @@ async def test_resume_user_chat_waiting_survives_consecutive_restarts(
     assert resumed3 is not None
     assert resumed3.prompt == "Ask the user about the deployment strategy"
     assert [reply for _, reply in resumed3.turn_history] == ["Which env?"]
+    # Still exactly one copy after the second restart (idempotent re-render).
+    assert [(e.role, e.text) for e in resumed3.transcript] == [
+        ("assistant", "Which env?")
+    ]
+
+
+@pytest.mark.asyncio
+async def test_resume_user_chat_waiting_rerenders_opening_question(
+    tmp_path: Path,
+) -> None:
+    """Re-render the opening question exactly once on restart, staying WAITING.
+
+    Covers the lived incident: a waiting ``user_chat`` whose persisted
+    transcript was already dropped by an earlier resume must recover its
+    pending question from the durable replay window so the operator's
+    decision box is never blank ("No messages yet.").
+    """
+    store_path = tmp_path / "subsessions.json"
+    registry1 = SubsessionRegistry(store_path=store_path)
+    user_chat = registry1.create(
+        kind=SubsessionKind.USER_CHAT,
+        owner_session_id=OWNER,
+        parent_id=None,
+        depth=1,
+        title="decision chat",
+        prompt="Ask the user which environment to deploy to",
+        model_level=3,
+    )
+    registry1.set_status(user_chat.id, SubsessionStatus.WAITING)
+    # Question recorded in the durable replay window, but the transcript was
+    # already blanked by a pre-fix resume — the exact incident state.
+    registry1.append_turn_history(
+        user_chat.id,
+        "Ask the user which environment to deploy to",
+        "Which environment should I deploy to?",
+    )
+    staged = registry1.get(user_chat.id)
+    assert staged is not None and staged.transcript == []
+
+    agent = FakeAgent()
+    registry2 = SubsessionRegistry(store_path=store_path)
+    env = build_env(agent=agent, registry=registry2, settings=make_settings())
+    resume_subsessions(env)
+    await wait_until(
+        lambda: (
+            (registry2.get(user_chat.id) or user_chat).status
+            is SubsessionStatus.WAITING
+        )
+    )
+
+    resumed = registry2.get(user_chat.id)
+    assert resumed is not None
+    assert resumed.status is SubsessionStatus.WAITING
+    # No agent turn ran (question not re-asked) ...
+    assert agent.calls == []
+    # ... but the outstanding question is now visible again — exactly once.
+    assert [(e.role, e.text) for e in resumed.transcript] == [
+        ("assistant", "Which environment should I deploy to?")
+    ]
+
+    worker = registry2._running.get(user_chat.id)
+    if worker is not None:
+        registry2.cancel_and_close(user_chat.id, reason="teardown", closed_by="system")
+        with contextlib.suppress(asyncio.CancelledError):
+            await asyncio.wait_for(worker, 2.0)
 
 
 @pytest.mark.asyncio

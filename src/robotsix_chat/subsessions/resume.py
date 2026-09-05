@@ -153,6 +153,32 @@ def _restore_inbox(
     registry.restore_inbox(sub_id, _rebuild_inbox(entry))
 
 
+def _rebuild_transcript(entry: Mapping[str, object]) -> list[TranscriptEntry]:
+    """Reconstruct persisted transcript entries from a persisted entry."""
+    raw = entry.get("transcript")
+    if not isinstance(raw, list):
+        return []
+    entries: list[TranscriptEntry] = []
+    for item in raw:
+        if not isinstance(item, dict):
+            continue
+        role = item.get("role")
+        text = item.get("text")
+        timestamp = item.get("timestamp")
+        if not isinstance(role, str) or not isinstance(text, str):
+            continue
+        entries.append(
+            TranscriptEntry(
+                role=role,
+                text=text,
+                timestamp=(
+                    float(timestamp) if isinstance(timestamp, (int, float)) else 0.0
+                ),
+            )
+        )
+    return entries
+
+
 # -- typed dicts ----------------------------------------------------------
 
 
@@ -500,6 +526,23 @@ def _resume_user_chat_entry(
             resume_waiting=True,
         )
         _restore_inbox(env.registry, sub_id, entry)
+        # Re-render the transcript so the operator's decision box is never
+        # blank while a question is outstanding (criterion: never re-ask, but
+        # always re-render).  Prefer the persisted transcript; if an earlier
+        # (pre-fix) resume already dropped it, reconstruct the pending
+        # question from the durable replay window.  ``restore_transcript`` is
+        # idempotent — it seeds only when the live transcript is empty — so
+        # the question is shown exactly once and survives further restarts.
+        transcript = _rebuild_transcript(entry)
+        if not transcript and last_text:
+            transcript = [
+                TranscriptEntry(
+                    role="assistant",
+                    text=last_text,
+                    timestamp=_entry_float(entry, "last_activity_at"),
+                )
+            ]
+        env.registry.restore_transcript(sub_id, transcript)
         return _ResumeFate(
             owner_session_id=owner,
             sub_id=sub_id,
@@ -542,6 +585,9 @@ def _resume_user_chat_entry(
         turn_history=turn_history,
     )
     _restore_inbox(env.registry, sub_id, entry)
+    # Carry the persisted transcript across the resume so the conversation
+    # history stays visible to the operator (create() starts it empty).
+    env.registry.restore_transcript(sub_id, _rebuild_transcript(entry))
     return _ResumeFate(
         owner_session_id=owner,
         sub_id=sub_id,
