@@ -720,6 +720,45 @@ def test_put_preserves_nested_object_keys(tmp_path: Path) -> None:
     assert on_disk["memory"]["embedding"]["dimensions"] == 1024  # preserved
 
 
+def test_put_drops_repinned_default_agent_instruction(tmp_path: Path) -> None:
+    """A Save echoing the code-default ``agent_instruction`` is not persisted.
+
+    The settings panel GETs the effective config (defaults merged in) and PUTs
+    it back wholesale; without the guard this pins the default and freezes the
+    system prompt (incident 2026-09-05). The guard drops a re-pinned default.
+    """
+    from robotsix_chat.config import Settings
+
+    config_path = tmp_path / "config.json"
+    _write_config(config_path, {"chat_default_model_level": 2})
+    client = _make_app(config_path)
+
+    default = Settings.model_fields["agent_instruction"].default
+    resp = client.put(
+        "/config",
+        json={"agent_instruction": default, "server_port": 9000},
+    )
+    assert resp.status_code == 200
+
+    on_disk = _read_config_json(config_path)
+    assert "agent_instruction" not in on_disk  # re-pinned default dropped
+    assert on_disk["server_port"] == 9000  # unrelated change persisted
+
+
+def test_put_keeps_custom_agent_instruction(tmp_path: Path) -> None:
+    """A genuine ``agent_instruction`` override (≠ default) is still persisted."""
+    config_path = tmp_path / "config.json"
+    _write_config(config_path, {"chat_default_model_level": 2})
+    client = _make_app(config_path)
+
+    custom = "You are a helpful assistant. Bespoke operator override."
+    resp = client.put("/config", json={"agent_instruction": custom})
+    assert resp.status_code == 200
+
+    on_disk = _read_config_json(config_path)
+    assert on_disk["agent_instruction"] == custom
+
+
 # ---------------------------------------------------------------------------
 # PUT /config — validation-before-persist
 # ---------------------------------------------------------------------------
