@@ -3849,6 +3849,65 @@ import {
   }
 
   let _configPanelReady = false;
+
+  // ---- Long free-text settings as large textareas ----------------------
+  // The @robotsix/ui config renderer emits every string field as a
+  // single-line <input>, which is unusable for long instruction text
+  // (agent_instruction is ~6,300 chars; a periodic preset's initial_prompt
+  // is a full sub-agent instruction).  The renderer has no per-field widget
+  // override, so we promote those fields to large, resizable <textarea>s
+  // after it mounts.  The <textarea> keeps the renderer's `data-key`, so the
+  // panel's collector reads its value exactly as it would an <input>'s
+  // (exact whitespace, no truncation), and an input/change event re-enables
+  // the Save button just like the renderer's own onChange.  Re-renders
+  // (save, history tab) re-create the fields, so the upgrade is re-applied
+  // through a MutationObserver on the panel root.
+  var CONFIG_LONG_TEXT_KEY = /^(agent_instruction|.*\.initial_prompt)$/;
+
+  function _upgradeConfigLongTextField(input) {
+    if (input.tagName !== "INPUT" || input.type !== "text") return;
+    var key = input.getAttribute("data-key");
+    if (!key || !CONFIG_LONG_TEXT_KEY.test(key)) return;
+    var panel = input.closest(".rsu-config-panel");
+    var saveBtn = panel ? panel.querySelector(".rsu-config-save") : null;
+    var ta = document.createElement("textarea");
+    ta.className = input.className + " rsu-config-textarea";
+    ta.setAttribute("data-key", key);
+    ta.value = input.value;
+    ta.spellcheck = false;
+    input.replaceWith(ta);
+    var enableSave = function () { if (saveBtn) saveBtn.disabled = false; };
+    ta.addEventListener("input", enableSave);
+    ta.addEventListener("change", enableSave);
+  }
+
+  function _wireConfigLongTextFieldUpgrades(panel) {
+    var observer = new MutationObserver(function (mutations) {
+      for (var i = 0; i < mutations.length; i++) {
+        var nodes = mutations[i].addedNodes;
+        for (var j = 0; j < nodes.length; j++) {
+          var node = nodes[j];
+          if (!node || node.nodeType !== 1) continue;
+          if (node.matches && node.matches('input[data-key]')) {
+            _upgradeConfigLongTextField(node);
+          }
+          if (node.querySelectorAll) {
+            var inputs = node.querySelectorAll('input[data-key]');
+            for (var k = 0; k < inputs.length; k++) {
+              _upgradeConfigLongTextField(inputs[k]);
+            }
+          }
+        }
+      }
+    });
+    observer.observe(panel, { childList: true, subtree: true });
+    // Upgrade fields rendered before the observer was attached.
+    var existing = panel.querySelectorAll('input[data-key]');
+    for (var e = 0; e < existing.length; e++) {
+      _upgradeConfigLongTextField(existing[e]);
+    }
+  }
+
   async function _initConfigPanel() {
     if (_configPanelReady) return;
     const el = document.getElementById('config-panel-mount');
@@ -3856,6 +3915,7 @@ import {
     try {
       const { mountConfigPanel } = await import('/static/vendor/vanilla.js');
       mountConfigPanel(el, { title: 'Settings' });
+      _wireConfigLongTextFieldUpgrades(el);
       _configPanelReady = true;
     } catch (_err) {
       el.textContent =

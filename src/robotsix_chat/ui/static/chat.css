@@ -970,6 +970,16 @@ body {
   font-size: 0.72rem; color: #fca5a5; margin-top: 0.1rem;
 }
 
+/* ---- Config panel: large free-text fields (rsu-config) ---------------- */
+
+.rsu-config-row textarea.rsu-config-value.rsu-config-textarea {
+  min-height: 12rem;
+  resize: vertical;
+  line-height: 1.4;
+  white-space: pre-wrap;
+  box-sizing: border-box;
+}
+
 .settings-empty {
   color: #64748b; font-style: italic; padding: 1rem 0;
   text-align: center;
