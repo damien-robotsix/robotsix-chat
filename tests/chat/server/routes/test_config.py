@@ -820,6 +820,79 @@ def test_put_model_level_preserves_tier_overrides(tmp_path: Path) -> None:
     assert on_disk["llmio_tier_overrides"] == stored_overrides
 
 
+def test_put_accepts_llmio_tier_overrides_as_json_string(tmp_path: Path) -> None:
+    """A JSON-text submission for llmio_tier_overrides is parsed and saved.
+
+    The panel renders dict-typed fields as an editable JSON textarea whose
+    raw text is submitted as a JSON *string*; the server must coerce it back
+    into a dict so the field validates and persists as an object.
+    """
+    from robotsix_llmio.config import FALLBACK_LEVEL3
+
+    config_path = tmp_path / "config.json"
+    _write_config(config_path, {"llmio_tier_overrides": {}})
+    client = _make_app(config_path)
+
+    new_overrides = {"fallback": {"level2": FALLBACK_LEVEL3.model_dump()}}
+    resp = client.put(
+        "/config",
+        json={"llmio_tier_overrides": json.dumps(new_overrides)},
+    )
+    assert resp.status_code == 200, resp.json()
+    assert resp.json()["config"]["llmio_tier_overrides"] == new_overrides
+
+    on_disk = _read_config_json(config_path)
+    assert on_disk["llmio_tier_overrides"] == new_overrides
+
+
+def test_put_rejects_invalid_json_for_llmio_tier_overrides(tmp_path: Path) -> None:
+    """Invalid JSON is rejected with clear feedback and never persisted."""
+    config_path = tmp_path / "config.json"
+    stored_overrides = {"fallback": {"level2": {"model": "openrouter/x"}}}
+    _write_config(config_path, {"llmio_tier_overrides": stored_overrides})
+    client = _make_app(config_path)
+
+    resp = client.put(
+        "/config",
+        json={"llmio_tier_overrides": '{"fallback": {"level2": {"model": '},
+    )
+    assert resp.status_code == 422
+    error_data = resp.json()
+    assert "Invalid JSON" in error_data["title"]
+    assert "llmio_tier_overrides" in error_data["detail"]
+
+    # The stored config must be untouched — nothing was corrupted.
+    on_disk = _read_config_json(config_path)
+    assert on_disk["llmio_tier_overrides"] == stored_overrides
+
+
+def test_put_llmio_tier_overrides_round_trip(tmp_path: Path) -> None:
+    """Load → edit → save round-trips an existing valid value correctly."""
+    from robotsix_llmio.config import FALLBACK_LEVEL3
+
+    config_path = tmp_path / "config.json"
+    original = {"fallback": {"level2": FALLBACK_LEVEL3.model_dump()}}
+    _write_config(config_path, {"llmio_tier_overrides": original})
+    client = _make_app(config_path)
+
+    # GET returns the value as a dict (what the textarea is seeded from).
+    get_resp = client.get("/config")
+    assert get_resp.status_code == 200
+    assert get_resp.json()["config"]["llmio_tier_overrides"] == original
+
+    # Edit one field, submit as JSON text, save.
+    edited = {"fallback": {"level2": FALLBACK_LEVEL3.model_dump()}}
+    edited["fallback"]["level2"]["max_tokens"] = 100000
+    resp = client.put(
+        "/config",
+        json={"llmio_tier_overrides": json.dumps(edited)},
+    )
+    assert resp.status_code == 200, resp.json()
+
+    on_disk = _read_config_json(config_path)
+    assert on_disk["llmio_tier_overrides"] == edited
+
+
 def test_strip_corrupt_object_sentinels_recurses() -> None:
     """The sentinel is stripped at any depth; real values are kept."""
     from robotsix_chat.chat.server.routes.config import (

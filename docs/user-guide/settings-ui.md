@@ -71,6 +71,12 @@ is empty while `memory.enabled` is `true` — the save is **rejected** with HTTP
 [RFC 9457](https://www.rfc-editor.org/rfc/rfc9457) `application/problem+json` response is returned
 to the UI. The on-disk config file and the running server are **untouched**.
 
+For object fields edited as a JSON textarea (e.g. `llmio_tier_overrides`), the panel submits the raw
+text as a JSON string; the server parses it before merging. If the text is not valid JSON — or is
+valid JSON but not an object (e.g. a bare string or array) — the save is rejected with a `422
+Invalid JSON` response naming the field and the parse error, and nothing is persisted. Existing
+valid values round-trip through this path unchanged.
+
 ### Secret round-tripping
 
 When the UI receives a secret field (e.g. `llmio_api_key`), the `GET /config` response masks it as
@@ -112,6 +118,9 @@ data no longer validates.
    - **Number fields** — numeric input (step "1" for integers, "any" for floats).
    - **Boolean fields** — checkbox.
    - **Array fields** — text area containing JSON; edit the JSON directly.
+   - **Object fields** — e.g. `llmio_tier_overrides` — rendered as an editable JSON textarea (the
+     JSON is submitted as text and parsed by the server on save). Enter a valid JSON object; invalid
+     JSON is rejected with a clear error before anything is persisted.
    - **Periodic session presets** — the `periodic.sessions` array renders as a dedicated presets
      editor (see [Editing periodic-session presets](#editing-periodic-session-presets)) instead of a
      raw JSON text area.
