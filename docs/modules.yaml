@@ -165,6 +165,7 @@ modules:
       - src/robotsix_chat/config/session_models.py
       - src/robotsix_chat/config/settings.py
       - src/robotsix_chat/config/storage_models.py
+      - src/robotsix_chat/config/system_prompt_history.py
       - docs/config/api.md
       - tests/config/__init__.py
       - tests/config/test_config.py

@@ -6,6 +6,7 @@ loads from a single JSON file located by ``ROBOTSIX_CONFIG_FILE``.
 
 from __future__ import annotations
 
+import hashlib
 import logging
 from typing import Any
 
@@ -57,6 +58,7 @@ from robotsix_chat.config.models import (
     VersionCheckSettings,
     VolumeToolsSettings,
 )
+from robotsix_chat.config.system_prompt_history import KNOWN_SYSTEM_PROMPT_SHA256S
 
 logger = logging.getLogger(__name__)
 
@@ -2144,6 +2146,63 @@ class Settings(BaseModel):
             data = dict(data)
             data["subsessions"] = subsessions
 
+        return data
+
+    @model_validator(mode="before")
+    @classmethod
+    def _reconcile_stale_agent_instruction(cls, data: Any) -> Any:
+        """Auto-upgrade a stored ``agent_instruction`` that pins a FORMER default.
+
+        A deployed config volume can freeze ``agent_instruction`` to whatever the
+        code default was when the pin was first written. Because a stored key
+        shadows the code default, every later ``SYSTEM_PROMPT_VERSION`` bump is
+        then inert in production until someone manually removes the key — this is
+        the 2026-09-05 incident, where a v-frozen pin (sha256 ``82f1e66a…``, ~6 KB,
+        describing the removed cognee backend) shadowed the current ~91 KB v161
+        default for six weeks.
+
+        At boot: if the stored value's SHA256 matches any recorded governed
+        default (the ``**SHA256:**`` records in ``docs/system_prompt_changelog.md``,
+        mirrored at runtime in :data:`KNOWN_SYSTEM_PROMPT_SHA256S`), the pin is a
+        stale former default — drop it so the current code default fills in, and
+        log the upgrade. A value matching **no** recorded default is a genuine
+        operator customization: keep it, but warn about the version drift so the
+        operator knows it will not track ``SYSTEM_PROMPT_VERSION``.
+        """
+        if not isinstance(data, dict):
+            return data
+        stored = data.get("agent_instruction")
+        if not isinstance(stored, str):
+            return data
+
+        current_default = cls.model_fields["agent_instruction"].default
+        if stored == current_default:
+            # Already the current default (or a bare echo of it) — nothing to do.
+            return data
+
+        stored_sha = hashlib.sha256(stored.encode()).hexdigest()
+        if stored_sha in KNOWN_SYSTEM_PROMPT_SHA256S:
+            data = dict(data)
+            del data["agent_instruction"]
+            logger.info(
+                "Auto-upgrading stale pinned 'agent_instruction' (sha256 %s…) to "
+                "the current governed default v%d: the stored value is a former "
+                "default frozen by a config volume; dropping the pin so the code "
+                "default applies",
+                stored_sha[:8],
+                SYSTEM_PROMPT_VERSION,
+            )
+            return data
+
+        logger.warning(
+            "Keeping customized 'agent_instruction' (sha256 %s…): it matches no "
+            "recorded governed default, so it is treated as a genuine operator "
+            "customization and will NOT track SYSTEM_PROMPT_VERSION (currently "
+            "v%d). Remove the key from the config to return to the managed "
+            "default.",
+            stored_sha[:8],
+            SYSTEM_PROMPT_VERSION,
+        )
         return data
 
     @classmethod

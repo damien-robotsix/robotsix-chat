@@ -12,7 +12,10 @@ import hashlib
 import re
 from pathlib import Path
 
+import pytest
+
 from robotsix_chat.config import SYSTEM_PROMPT_VERSION, Settings
+from robotsix_chat.config.system_prompt_history import KNOWN_SYSTEM_PROMPT_SHA256S
 
 
 def _read_changelog() -> str:
@@ -300,6 +303,89 @@ def _parse_all_version_headers(text: str) -> list[str]:
     return [
         m.group(1) for m in re.finditer(r"^## v(\d+(?:-[b-g])?) ", text, re.MULTILINE)
     ]
+
+
+def _all_changelog_sha256s(text: str) -> set[str]:
+    """Return every ``**SHA256:**`` fingerprint recorded in the changelog."""
+    return {
+        m.group(1).lower()
+        for m in re.finditer(r"\*\*SHA256:\*\*\s*`([0-9a-f]{64})`", text, re.IGNORECASE)
+    }
+
+
+def test_known_sha256_set_mirrors_changelog() -> None:
+    """``KNOWN_SYSTEM_PROMPT_SHA256S`` is the exact set of changelog fingerprints.
+
+    The changelog lives under ``docs/`` and is NOT shipped in the runtime
+    container image, so the boot-time reconciliation reads the code-side
+    mirror instead. This test fails whenever the two drift — e.g. a prompt
+    bump added a changelog SHA256 but forgot to mirror it into
+    ``system_prompt_history.py`` (or vice versa).
+    """
+    recorded = _all_changelog_sha256s(_read_changelog())
+    assert recorded == KNOWN_SYSTEM_PROMPT_SHA256S, (
+        "KNOWN_SYSTEM_PROMPT_SHA256S does not match the SHA256 records in "
+        "docs/system_prompt_changelog.md. When bumping SYSTEM_PROMPT_VERSION, "
+        "add the new hash to src/robotsix_chat/config/system_prompt_history.py "
+        "as well.\n"
+        f"Missing from code mirror: {sorted(recorded - KNOWN_SYSTEM_PROMPT_SHA256S)}\n"
+        f"Extra in code mirror: {sorted(KNOWN_SYSTEM_PROMPT_SHA256S - recorded)}"
+    )
+
+
+def test_current_default_sha_in_known_set() -> None:
+    """The live ``agent_instruction`` default's SHA256 is a recorded default."""
+    default = Settings.model_fields["agent_instruction"].default
+    sha = hashlib.sha256(default.encode()).hexdigest()
+    assert sha in KNOWN_SYSTEM_PROMPT_SHA256S, (
+        "The current agent_instruction default is not recorded in "
+        "KNOWN_SYSTEM_PROMPT_SHA256S — bump SYSTEM_PROMPT_VERSION, add a "
+        "changelog entry, and mirror the hash into system_prompt_history.py."
+    )
+
+
+def test_reconcile_upgrades_stale_former_default(
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    """A stored value matching a FORMER default is upgraded to the code default.
+
+    Simulates the 2026-09-05 incident: a config volume froze a prior default
+    in place. At boot the reconciler must detect the stale pin (its SHA256 is
+    a recorded former default) and drop it so the current code default applies.
+    """
+    stale = "You are a helpful assistant. STALE FORMER DEFAULT — v0."
+    stale_sha = hashlib.sha256(stale.encode()).hexdigest()
+
+    import robotsix_chat.config.settings as settings_mod
+
+    # Pretend ``stale`` was once a governed default.
+    monkeypatch.setattr(
+        settings_mod,
+        "KNOWN_SYSTEM_PROMPT_SHA256S",
+        frozenset({stale_sha}),
+    )
+
+    settings = Settings.model_validate({"agent_instruction": stale})
+    current_default = Settings.model_fields["agent_instruction"].default
+    assert settings.agent_instruction == current_default
+
+
+def test_reconcile_keeps_genuine_customization() -> None:
+    """A value matching NO recorded default is kept as an operator customization."""
+    custom = "You are a helpful assistant. Bespoke operator override, keep me."
+    # Guard: the arbitrary text must not collide with a recorded default.
+    custom_sha = hashlib.sha256(custom.encode()).hexdigest()
+    assert custom_sha not in KNOWN_SYSTEM_PROMPT_SHA256S
+
+    settings = Settings.model_validate({"agent_instruction": custom})
+    assert settings.agent_instruction == custom
+
+
+def test_reconcile_no_op_when_current_default_stored() -> None:
+    """Storing the current default verbatim is preserved (identity no-op)."""
+    default = Settings.model_fields["agent_instruction"].default
+    settings = Settings.model_validate({"agent_instruction": default})
+    assert settings.agent_instruction == default
 
 
 def test_no_duplicate_version_numbers() -> None:

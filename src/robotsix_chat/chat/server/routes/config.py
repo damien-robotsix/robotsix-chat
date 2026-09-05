@@ -673,6 +673,34 @@ async def config_deploy_get_endpoint(request: Request) -> JSONResponse:
     )
 
 
+def _strip_repinned_agent_instruction(merged: dict[str, Any]) -> dict[str, Any]:
+    """Drop ``agent_instruction`` from *merged* when it re-pins the code default.
+
+    The settings panel GETs the *effective* config (code defaults merged in),
+    so ``agent_instruction`` arrives pre-filled with the full current default; a
+    Save would then persist that value, pinning it in the config file. Once
+    pinned, the stored key shadows the code default and freezes the system
+    prompt at that version — the exact clobber that made every later
+    ``SYSTEM_PROMPT_VERSION`` bump inert in production (incident 2026-09-05).
+
+    Stripping the key when it equals the current code default keeps the config
+    file free of a redundant pin while leaving a genuine operator override (any
+    value that differs from the default) untouched.
+    """
+    if not isinstance(merged, dict) or "agent_instruction" not in merged:
+        return merged
+    current_default = Settings.model_fields["agent_instruction"].default
+    if merged.get("agent_instruction") == current_default:
+        merged = dict(merged)
+        del merged["agent_instruction"]
+        logger.info(
+            "Dropping re-pinned 'agent_instruction' from config save: the "
+            "submitted value equals the current code default, so it is not "
+            "persisted (prevents freezing the system prompt at this version)"
+        )
+    return merged
+
+
 async def config_save_endpoint(request: Request) -> JSONResponse:
     """Deep-merge the submitted form over the existing config, validate, and persist.
 
@@ -701,6 +729,11 @@ async def config_save_endpoint(request: Request) -> JSONResponse:
 
     # 3. Restore on-disk secrets that were submitted as masked or blank.
     merged = _preserve_masked_secrets(merged, existing, body)
+
+    # 3b. Drop a re-pinned agent_instruction that merely echoes the code
+    # default so a panel Save cannot freeze the system prompt at this version
+    # (incident 2026-09-05). A genuine override (value != default) is kept.
+    merged = _strip_repinned_agent_instruction(merged)
 
     # 4. Validate the merged config through Settings.
     try:
