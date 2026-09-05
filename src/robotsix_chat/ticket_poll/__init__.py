@@ -1947,7 +1947,7 @@ def build_resolve_repo_tool(
                         return [r for r in rows if isinstance(r, dict)]
         return await board_client.list_repos()
 
-    async def resolve_repo(repo_id: str) -> str:
+    async def resolve_repo(repo_id: str = "", query: str = "") -> str:
         """Map a mill ticket ``repo_id`` to its GitHub ``owner/repo`` full name.
 
         Use this BEFORE calling any GitHub tool (``list_open_prs``,
@@ -1960,6 +1960,7 @@ def build_resolve_repo_tool(
         Args:
             repo_id: A mill repo id (``"robotsix-chat"``), a board id, or an
                 already-qualified ``owner/repo`` (returned as-is).
+            query: Alias for ``repo_id`` — pass one of the two.
 
         Returns:
             A JSON string: ``{"repo_id": ..., "full_name": "owner/repo",
@@ -1968,6 +1969,18 @@ def build_resolve_repo_tool(
             ``known_repo_ids`` when the id is not in the mill registry.
 
         """
+        # ``query`` is what agents guess when they haven't seen the schema
+        # (live incident 2026-09-05); accept it instead of burning a turn.
+        repo_id = repo_id or query
+        if not repo_id:
+            return json.dumps(
+                {
+                    "repo_id": "",
+                    "full_name": None,
+                    "error": "pass the mill repo id as repo_id",
+                },
+                ensure_ascii=False,
+            )
         wanted = repo_id.strip()
         if "/" in wanted or "://" in wanted or ":" in wanted:
             full = parse_owner_repo(wanted)
