@@ -149,54 +149,6 @@ async def test_keyed_slot_forwards_api_key() -> None:
 
 
 @pytest.mark.asyncio
-async def test_task_budget_forwarded_to_keyless_slot() -> None:
-    """``task_budget_tokens`` becomes ``max_tokens`` on the keyless slot.
-
-    llmio maps it onto the SDK's advisory task_budget.
-    """
-    get_provider, _ = _patched_create_model()
-
-    with patch("robotsix_chat.llm.agent.get_provider_for_identifier", get_provider):
-        agent = LlmioChatAgent(
-            model_level=2,
-            instruction="Be helpful.",
-            task_budget_tokens=30_000,
-        )
-        _ = [c async for c in agent.stream("hi")]
-
-    get_provider.assert_called_once_with("claudeSDK-opus", max_tokens=30_000)
-
-
-@pytest.mark.asyncio
-async def test_task_budget_not_forwarded_to_keyed_slot() -> None:
-    """``task_budget_tokens`` must not clobber a keyed slot's own max_tokens."""
-    from robotsix_llmio.config.tier import FALLBACK_LEVEL1
-    from robotsix_llmio.core.failover import get_failover_tracker
-    from robotsix_llmio.exceptions import ProviderExhaustedError
-
-    get_failover_tracker().record_failure(
-        "default", ProviderExhaustedError("weekly cap")
-    )
-    get_provider, _ = _patched_create_model()
-
-    with patch("robotsix_chat.llm.agent.get_provider_for_identifier", get_provider):
-        agent = LlmioChatAgent(
-            model_level=1,
-            instruction="Be helpful.",
-            api_key="k",
-            task_budget_tokens=30_000,
-        )
-        _ = [c async for c in agent.stream("hi")]
-
-    get_provider.assert_called_once_with(
-        FALLBACK_LEVEL1.model,
-        **FALLBACK_LEVEL1.provider_kwargs,
-        max_tokens=FALLBACK_LEVEL1.max_tokens,
-        api_key="k",
-    )
-
-
-@pytest.mark.asyncio
 async def test_empty_output_yields_nothing() -> None:
     """An empty reply yields no chunks (and still closes the handle)."""
     create_model, handle = _patched_create_model("")

@@ -1514,7 +1514,6 @@ def create_agent_from_settings(
         tools=tools,
         request_tools_factory=request_tools_factory,
         event_sink=event_sink,
-        task_budget_tokens=settings.llmio_task_budget_tokens,
         failover_window_seconds=settings.llmio_failover_window_seconds,
         tier_overrides=settings.llmio_tier_overrides,
     )

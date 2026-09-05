@@ -113,10 +113,6 @@ class Settings(BaseModel):
             summary and conversation titles. Defaults to ``1`` (cheap,
             frequent — Claude haiku on the default slot): a summary is a
             bounded text transformation that runs once per idle gap.
-        llmio_task_budget_tokens: Optional advisory per-task token budget
-            forwarded to the keyless Claude SDK tiers as ``task_budget`` so
-            the model sees a live budget-remaining countdown. ``None``
-            (default) sends no budget.
         llmio_failover_window_seconds: How long llmio routes calls straight
             to the fallback (OpenRouter) provider slot after the default
             (Claude) slot fails repeatedly, before automatically returning
@@ -171,19 +167,6 @@ class Settings(BaseModel):
         default=SecretStr(""), json_schema_extra=_LLMIO_GROUP
     )
     summary_model_level: int = Field(default=1, json_schema_extra=_LLMIO_GROUP)
-    llmio_task_budget_tokens: int | None = Field(
-        default=None,
-        json_schema_extra=_LLMIO_GROUP,
-        description=(
-            "Optional advisory per-task token budget forwarded to the keyless "
-            "Claude SDK tiers as ``task_budget`` — the countdown the model "
-            "reads so it can pace itself and wrap up gracefully instead of "
-            "being cut off mid-task. Minimum 20000 (the Claude Agent SDK "
-            "floor); values below it are ignored with a warning. Not "
-            "forwarded to keyed OpenRouter tiers, which keep their own "
-            "per-response ``max_tokens`` caps. ``None`` means no budget."
-        ),
-    )
     llmio_failover_window_seconds: float = Field(
         default=900.0,
         ge=1,
@@ -2106,6 +2089,18 @@ class Settings(BaseModel):
             )
             data = dict(data)
             del data["low_risk_actions"]
+
+        # Strip the removed llmio_task_budget_tokens — the task_budget /
+        # max_tokens self-pacing countdown on keyless tiers was decommissioned
+        # (2026-09-05). Deployed configs still carry it, which extra="forbid"
+        # would otherwise reject and crash-loop the boot.
+        if "llmio_task_budget_tokens" in data:
+            logger.info(
+                "Dropping removed config key 'llmio_task_budget_tokens' "
+                "(the task_budget self-pacing mechanism was decommissioned)"
+            )
+            data = dict(data)
+            del data["llmio_task_budget_tokens"]
 
         # Strip the removed chat_model_level override — the main chat agent
         # now always uses the unified ``chat_default_model_level``.

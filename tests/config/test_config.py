@@ -76,7 +76,6 @@ _LLMIO_GROUP_FIELDS = {
     "chat_default_model_level",
     "llmio_api_key",
     "summary_model_level",
-    "llmio_task_budget_tokens",
     "llmio_failover_window_seconds",
     "llmio_tier_overrides",
     "vision_model",
@@ -1123,8 +1122,8 @@ _PREEXISTING_ALLOWLIST: set[tuple[str, int, str]] = {
     ("src/robotsix_chat/config/settings.py", 98, "-opus"),
     ("src/robotsix_chat/config/settings.py", 98, "claude-fable"),
     # config/settings.py — vision_model default (OpenRouter captioning model)
-    ("src/robotsix_chat/config/settings.py", 161, "gpt-"),
-    ("src/robotsix_chat/config/settings.py", 1885, "gpt-"),
+    ("src/robotsix_chat/config/settings.py", 157, "gpt-"),
+    ("src/robotsix_chat/config/settings.py", 1868, "gpt-"),
     # config/memory_models.py — gpt-5-nano / gpt-5-mini / deepseek-v4-flash
     ("src/robotsix_chat/config/memory_models.py", 26, "gpt-"),
     ("src/robotsix_chat/config/memory_models.py", 50, "gpt-"),
@@ -1207,13 +1206,16 @@ def test_file_hub_tools_blank_numeric_sentinel_loads_cleanly() -> None:
     assert settings.timeout == 60.0
 
 
-def test_top_level_optional_numeric_blank_sentinel_becomes_null() -> None:
-    """A cleared optional numeric (``int | None``) round-trips to JSON ``null``."""
-    settings = Settings.model_validate({"llmio_task_budget_tokens": ""})
+def test_legacy_llmio_task_budget_tokens_is_stripped() -> None:
+    """A deployed config still carrying the removed ``llmio_task_budget_tokens`` loads.
 
-    assert settings.llmio_task_budget_tokens is None
-    dumped = settings.model_dump(mode="json")
-    assert dumped["llmio_task_budget_tokens"] is None
+    The task_budget / max_tokens self-pacing countdown was decommissioned; a
+    stale key must be dropped by the ``mode="before"`` migration instead of
+    tripping ``extra="forbid"`` and crash-looping the container after an image
+    upgrade.
+    """
+    settings = Settings.model_validate({"llmio_task_budget_tokens": 30_000})
+    assert not hasattr(settings, "llmio_task_budget_tokens")
 
 
 def test_production_config_with_blank_numeric_sentinels_loads_cleanly() -> None:
@@ -1225,7 +1227,6 @@ def test_production_config_with_blank_numeric_sentinels_loads_cleanly() -> None:
     """
     raw = {
         "chat_default_model_level": 2,
-        "llmio_task_budget_tokens": "",
         "idle_timeout_minutes": "",
         "central_deploy": {
             "component_request_timeout": "",
@@ -1264,7 +1265,6 @@ def test_production_config_with_blank_numeric_sentinels_loads_cleanly() -> None:
     dumped = settings.model_dump(mode="json")
     # No numeric field that carried a "" sentinel may re-serialize as "".
     numeric_checks = [
-        dumped["llmio_task_budget_tokens"],
         dumped["idle_timeout_minutes"],
         dumped["central_deploy"]["component_request_timeout"],
         dumped["central_deploy"]["roster_cache_ttl"],
