@@ -658,3 +658,48 @@ async def test_fetch_failure_no_store_no_crash(tmp_path: Path) -> None:
     by_name = {t.__name__: t for t in tools}
     result = await by_name["fetch_repo_for_study"]("bad name")
     assert result.startswith("Error:")
+
+
+@respx.mock
+@pytest.mark.asyncio
+async def test_factory_fetch_accepts_repo_id_and_full_name_aliases(
+    tmp_path: Path,
+) -> None:
+    """Agents guess ``repo_id``/``full_name`` (sibling-tool names); both work."""
+    tools = build_repo_study_tools(
+        RepoStudySettings(enabled=True, data_dir=str(tmp_path / "ws")),
+        DirectRepoSettings(),
+    )
+    by_name = {t.__name__: t for t in tools}
+    respx.get(TARBALL_URL).mock(
+        return_value=Response(200, content=make_tarball(SAMPLE_FILES))
+    )
+    assert "acme--widget--default" in await by_name["fetch_repo_for_study"](
+        repo_id="acme/widget"
+    )
+    assert "acme--widget--default" in await by_name["fetch_repo_for_study"](
+        full_name="acme/widget"
+    )
+    assert (await by_name["fetch_repo_for_study"]()).startswith("Error:")
+
+
+@respx.mock
+@pytest.mark.asyncio
+async def test_factory_search_accepts_query_alias(tmp_path: Path) -> None:
+    """``query`` is accepted as an alias for ``pattern``."""
+    tools = build_repo_study_tools(
+        RepoStudySettings(enabled=True, data_dir=str(tmp_path / "ws")),
+        DirectRepoSettings(),
+    )
+    by_name = {t.__name__: t for t in tools}
+    respx.get(TARBALL_URL).mock(
+        return_value=Response(200, content=make_tarball(SAMPLE_FILES))
+    )
+    await by_name["fetch_repo_for_study"]("acme/widget")
+    out = await by_name["search_repo_files"](
+        "acme--widget--default", query="frobnicate"
+    )
+    assert "core.py" in out
+    assert (await by_name["search_repo_files"]("acme--widget--default")).startswith(
+        "Error:"
+    )

@@ -141,3 +141,26 @@ async def test_resolve_repo_component_failure_falls_back_to_direct(
     (resolve_repo,) = build_resolve_repo_tool(_settings(), component_request=_req)
     out = json.loads(await resolve_repo("robotsix-chat"))
     assert out["full_name"] == "damien-robotsix/robotsix-chat"
+
+
+@pytest.mark.asyncio
+async def test_resolve_repo_accepts_query_alias(
+    respx_mock: respx.MockRouter,
+) -> None:
+    """``query`` is accepted as an alias for ``repo_id`` (agents guess it)."""
+    respx_mock.get("http://board:8077/repos").mock(
+        return_value=httpx.Response(200, text=json.dumps(_REGISTRY))
+    )
+    (resolve_repo,) = build_resolve_repo_tool(_settings())
+    out = json.loads(await resolve_repo(query="robotsix-chat"))
+    assert out["error"] == ""
+    assert out["full_name"] == "damien-robotsix/robotsix-chat"
+
+
+@pytest.mark.asyncio
+async def test_resolve_repo_empty_args_is_a_soft_error() -> None:
+    """No repo at all returns a JSON error string, not a validation crash."""
+    (resolve_repo,) = build_resolve_repo_tool(_settings())
+    out = json.loads(await resolve_repo())
+    assert out["full_name"] is None
+    assert "repo_id" in out["error"]

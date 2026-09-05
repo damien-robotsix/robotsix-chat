@@ -95,7 +95,9 @@ def build_repo_study_tools(
             "do not guess an organisation."
         )
 
-    async def fetch_repo_for_study(repo: str, ref: str = "") -> str:
+    async def fetch_repo_for_study(
+        repo: str = "", ref: str = "", repo_id: str = "", full_name: str = ""
+    ) -> str:
         """Download a GitHub repo snapshot into a temporary local workspace.
 
         Use this when you need to actually study a codebase — follow imports,
@@ -112,13 +114,26 @@ def build_repo_study_tools(
                 GitHub App installation.  Never pass a guessed owner.
             ref: Optional branch, tag, or commit SHA (default branch when
                 empty).
+            repo_id: Alias for ``repo`` — pass one of the two.
+            full_name: Alias for ``repo`` — pass one of the two.
 
         Returns:
             A summary with the workspace id to pass to the other repo-study
             tools, or a clear error message.
 
         """
-        full_name, resolve_error = await _resolve_repo(repo)
+        # ``repo_id`` / ``full_name`` exist because sibling tools
+        # (resolve_repo, the mill ticket tools) use those names, so agents
+        # reach for them here too — and used to get a hard "Additional
+        # properties are not allowed" validation failure, one wasted turn
+        # per guess (live incident 2026-09-05, correlation 630aee98…).
+        repo = repo or full_name or repo_id
+        if not repo:
+            return (
+                "Error: pass the repository as repo — an 'owner/name' full "
+                "name or a mill repo_id."
+            )
+        resolved_full_name, resolve_error = await _resolve_repo(repo)
         if resolve_error:
             if diagnostic_store is not None:
                 diagnostic_store.record_event(
@@ -127,7 +142,7 @@ def build_repo_study_tools(
                     details={"repo": repo, "ref": ref, "error": resolve_error},
                 )
             return resolve_error
-        repo = full_name or repo
+        repo = resolved_full_name or repo
         try:
             return await manager.fetch(repo, ref)
         except WorkspaceError as exc:
@@ -196,9 +211,10 @@ def build_repo_study_tools(
 
     async def search_repo_files(
         workspace_id: str,
-        pattern: str,
+        pattern: str = "",
         glob: str = "**/*",
         max_matches: int = 50,
+        query: str = "",
     ) -> str:
         """Regex-search across the files of a fetched repo workspace.
 
@@ -207,11 +223,17 @@ def build_repo_study_tools(
             pattern: Python regular expression, matched per line.
             glob: Workspace-relative glob restricting which files to search.
             max_matches: Cap on the number of matches returned.
+            query: Alias for ``pattern`` — pass one of the two.
 
         Returns:
             ``path:line: text`` matches, or an error message.
 
         """
+        # ``query`` is what agents guess when they haven't seen the schema
+        # (live incident 2026-09-05); accept it instead of burning a turn.
+        pattern = pattern or query
+        if not pattern:
+            return "Error: pass the regular expression as pattern."
         try:
             return manager.search(workspace_id, pattern, glob, max_matches)
         except WorkspaceError as exc:
