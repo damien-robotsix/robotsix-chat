@@ -299,8 +299,6 @@ SHARED_PARAMS: frozenset[str] = frozenset(
         "summary_agent",
         "serve_ui",
         "idle_timeout_minutes",
-        "compaction_min_turns",
-        "compaction_keep_recent_turns",
         "max_images_per_message",
         "max_image_bytes",
         "allowed_image_media_types",
@@ -338,8 +336,6 @@ def create_app(
     summary_agent: ChatAgent | None = None,
     serve_ui: bool = True,
     idle_timeout_minutes: int = 30,
-    compaction_min_turns: int = 3,
-    compaction_keep_recent_turns: int = 2,
     max_images_per_message: int = 8,
     max_image_bytes: int = 5_242_880,
     allowed_image_media_types: list[str] | None = None,
@@ -393,13 +389,6 @@ def create_app(
             UI at ``GET /`` so the UI and ``/chat`` share one origin.
         idle_timeout_minutes: Minutes of no user activity before the UI
             auto-restarts the conversation; ``0`` disables.
-        compaction_min_turns: Minimum fresh (not yet summarized) turns a
-            conversation needs before an idle timeout triggers in-place
-            compaction; below this the summary agent is not invoked.
-        compaction_keep_recent_turns: Number of the most recent turns left
-            verbatim in the agent-facing replay after compaction.  This is
-            what keeps a pending proposal and its exact identifiers intact;
-            the summary only covers turns older than this window.
         max_images_per_message: Maximum number of images a client may attach
             to a single ``POST /chat`` request.  Default ``8``.
         max_image_bytes: Maximum decoded size (bytes) of a single attached
@@ -702,8 +691,6 @@ def create_app(
     # unavailable. Read from the agent so create_app needs no new parameter.
     app.state.chat_api_key_available = bool(getattr(agent, "has_api_key", False))
     app.state.idle_timeout_minutes = idle_timeout_minutes
-    app.state.compaction_min_turns = compaction_min_turns
-    app.state.compaction_keep_recent_turns = compaction_keep_recent_turns
     app.state.max_images_per_message = max_images_per_message
     app.state.max_image_bytes = max_image_bytes
     app.state.allowed_image_media_types = (

@@ -99,17 +99,15 @@ pipelines (summary, vision captioning).
 
 ### Server
 
-| JSON key                       | Type            | Default          | Description                                                                                        |
-| ------------------------------ | --------------- | ---------------- | -------------------------------------------------------------------------------------------------- |
-| `server_host`                  | `string`        | `"0.0.0.0"`      | Host the server binds to.                                                                          |
-| `server_port`                  | `integer`       | `8000`           | Port the server listens on.                                                                        |
-| `idle_timeout_minutes`         | `integer`       | `30`             | Minutes of inactivity before closing the connection.                                               |
-| `compaction_min_turns`         | `integer`       | `3`              | DEPRECATED — unused. Idle compaction was removed; see `evergoing.min_fresh_turns`.                 |
-| `compaction_keep_recent_turns` | `integer`       | `2`              | DEPRECATED — unused. Idle compaction was removed; see `evergoing.keep_min_recent`.                 |
-| `log_level`                    | `string`        | `"INFO"`         | Python logging level.                                                                              |
-| `log_json_format`              | `boolean`       | `true`           | When `true`, log lines are structured JSON (structlog); `false` for human-readable console output. |
-| `cors_allow_origins`           | `array[string]` | `[]`             | Origins allowed to call `/chat` cross-origin.                                                      |
-| `correlation_id_header`        | `string`        | `"X-Request-ID"` | Header name for request correlation ids.                                                           |
+| JSON key                | Type            | Default          | Description                                                                                        |
+| ----------------------- | --------------- | ---------------- | -------------------------------------------------------------------------------------------------- |
+| `server_host`           | `string`        | `"0.0.0.0"`      | Host the server binds to.                                                                          |
+| `server_port`           | `integer`       | `8000`           | Port the server listens on.                                                                        |
+| `idle_timeout_minutes`  | `integer`       | `30`             | Minutes of inactivity before closing the connection.                                               |
+| `log_level`             | `string`        | `"INFO"`         | Python logging level.                                                                              |
+| `log_json_format`       | `boolean`       | `true`           | When `true`, log lines are structured JSON (structlog); `false` for human-readable console output. |
+| `cors_allow_origins`    | `array[string]` | `[]`             | Origins allowed to call `/chat` cross-origin.                                                      |
+| `correlation_id_header` | `string`        | `"X-Request-ID"` | Header name for request correlation ids.                                                           |
 
 **Context reduction — one mechanism.** Idle-timeout compaction was removed. The subject-aware trim
 scheduler (see the Evergoing section) is the single way ANY session's context shrinks: every
