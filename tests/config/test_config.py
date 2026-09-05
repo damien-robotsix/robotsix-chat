@@ -201,6 +201,21 @@ def test_legacy_llmio_api_key_alias() -> None:
     assert settings.openrouter_api_key.get_secret_value() == "sk-legacy"
 
 
+def test_constructor_form_legacy_llmio_api_key_alias() -> None:
+    """The legacy ``llmio_api_key`` key also aliases via the direct constructor.
+
+    Pydantic v2's ``Settings(...)`` constructor routes keyword arguments
+    through ``model_validate``, so the ``mode="before"`` migration validator
+    renames ``llmio_api_key`` onto ``openrouter_api_key`` here too. Several
+    test helpers (e.g. ``make_settings``) still pass the legacy keyword; this
+    pins that form so a future migration refactor cannot silently break them.
+    """
+    settings = Settings(llmio_api_key="sk-test")  # type: ignore[call-arg]  # pragma: allowlist secret
+    # pragma: allowlist secret
+    assert settings.openrouter_api_key.get_secret_value() == "sk-test"
+    assert not hasattr(settings, "llmio_api_key")
+
+
 def test_invalid_model_level_raises() -> None:
     """A model_level outside llmio's levels (1-3) is rejected."""
     with pytest.raises(ValueError, match="model_level"):
