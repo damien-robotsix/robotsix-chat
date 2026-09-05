@@ -96,6 +96,18 @@ async def _component_request_impl(
             break
 
     if entry is None:
+        # Agents habitually pass the REPO name for a component (e.g.
+        # 'robotsix-mill' for component 'mill'), burning a turn on the
+        # error message every time (live: two sessions on 2026-09-05
+        # alone). Resolve the obvious alias: strip or add the
+        # 'robotsix-' prefix when exactly one roster entry matches.
+        aliases = {component_id.removeprefix("robotsix-"), f"robotsix-{component_id}"}
+        alias_hits = [e for e in roster_entries if e.get("id") in aliases]
+        if len(alias_hits) == 1:
+            entry = alias_hits[0]
+            component_id = str(entry.get("id"))
+
+    if entry is None:
         known = [e.get("id", "?") for e in non_error]
         msg = (
             f"Error: unknown component_id '{component_id}'. "
