@@ -239,6 +239,113 @@ def test_load_from_json_file(tmp_path: Path, monkeypatch: pytest.MonkeyPatch) ->
 
 
 # ---------------------------------------------------------------------------
+# Legacy production-config migration through the FULL load path
+#
+# These are integration tests: they go through ``Settings.load()`` →
+# ``robotsix_config.load_config`` → ``migrate_legacy_config`` rather than
+# calling ``Settings.model_validate`` directly. This matters because
+# ``load_config`` strips keys the model no longer declares *before* running
+# ``model_validate``, so a legacy key handled ONLY by a ``mode="before"``
+# validator would be silently dropped before the validator ever saw it (the
+# incident recorded in ``Settings.migrate_legacy_config``'s docstring). The
+# ``migrate_legacy_config`` pre-strip hook is what covers the production path;
+# these tests pin that behaviour so a future settings change cannot regress it.
+# ---------------------------------------------------------------------------
+
+
+def test_load_from_file_migrates_legacy_llmio_api_key(
+    tmp_path: Path, monkeypatch: pytest.MonkeyPatch
+) -> None:
+    """An early-deployment config file with ``llmio_api_key`` loads via the alias.
+
+    Reads a JSON file with the pre-audit key name through the real production
+    path and asserts the secret is preserved under (and accessible via) the
+    canonical ``openrouter_api_key`` field.
+    """
+    config_path = _write_config_json(
+        tmp_path,
+        {"llmio_api_key": "sk-early-deploy"},  # pragma: allowlist secret
+    )
+    monkeypatch.setenv("ROBOTSIX_CONFIG_FILE", str(config_path))
+
+    settings = Settings.load()
+
+    # pragma: allowlist secret
+    assert settings.openrouter_api_key.get_secret_value() == "sk-early-deploy"
+    assert not hasattr(settings, "llmio_api_key")
+
+
+def test_load_from_file_ignores_removed_settings(
+    tmp_path: Path, monkeypatch: pytest.MonkeyPatch
+) -> None:
+    """A config file still carrying the removed settings loads without error.
+
+    ``llmio_task_budget_tokens`` (the decommissioned self-pacing budget) and
+    the two idle-timeout compaction keys were removed from the model; a
+    deployed config volume still pins them. The full load path must drop them
+    gracefully instead of tripping ``extra="forbid"`` and crash-looping boot.
+    """
+    config_path = _write_config_json(
+        tmp_path,
+        {
+            "llmio_task_budget_tokens": 30_000,
+            "compaction_min_turns": 3,
+            "compaction_keep_recent_turns": 2,
+        },
+    )
+    monkeypatch.setenv("ROBOTSIX_CONFIG_FILE", str(config_path))
+
+    settings = Settings.load()
+
+    assert settings.chat_default_model_level == 2
+    for removed in (
+        "llmio_task_budget_tokens",
+        "compaction_min_turns",
+        "compaction_keep_recent_turns",
+    ):
+        assert not hasattr(settings, removed)
+
+
+def test_load_early_deployment_config_migrates_and_ignores(
+    tmp_path: Path, monkeypatch: pytest.MonkeyPatch
+) -> None:
+    """A real-shaped early-deployment config carrying BOTH legacy cases loads.
+
+    Mirrors a production config volume frozen before the settings audit: the
+    legacy ``llmio_api_key`` must survive as ``openrouter_api_key`` while the
+    removed self-pacing / compaction keys are silently dropped — a single load
+    exercising the rename and the removals together, as a real config would.
+    """
+    config_path = _write_config_json(
+        tmp_path,
+        {
+            "server_host": "0.0.0.0",
+            "server_port": 8080,
+            "llmio_api_key": "sk-early-deploy",  # pragma: allowlist secret
+            "llmio_task_budget_tokens": 30_000,
+            "compaction_min_turns": 3,
+            "compaction_keep_recent_turns": 2,
+        },
+    )
+    monkeypatch.setenv("ROBOTSIX_CONFIG_FILE", str(config_path))
+
+    settings = Settings.load()
+
+    # The renamed key is preserved and accessible under the canonical name.
+    # pragma: allowlist secret
+    assert settings.openrouter_api_key.get_secret_value() == "sk-early-deploy"
+    assert settings.server_port == 8080
+    # The removed keys are gone, and no legacy alias leaked onto the model.
+    for removed in (
+        "llmio_api_key",
+        "llmio_task_budget_tokens",
+        "compaction_min_turns",
+        "compaction_keep_recent_turns",
+    ):
+        assert not hasattr(settings, removed)
+
+
+# ---------------------------------------------------------------------------
 # Memory
 # ---------------------------------------------------------------------------
 
