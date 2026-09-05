@@ -73,12 +73,16 @@ def _strip_corrupt_object_sentinels(update: dict[str, Any]) -> dict[str, Any]:
 
     The browser settings panel occasionally serialises an object field with
     ``String(value)`` instead of ``JSON.stringify(value)``, yielding the
-    literal ``"[object Object]"`` string (observed for
-    ``llmio_tier_overrides``).  That value is never a legitimate config leaf;
-    dropping the key here lets the deep-merge preserve the stored value
-    instead of overwriting it — and later failing validation with a
-    ``dict_type`` error.  Recurses into nested dicts so the fix covers
-    object fields inside sub-models too.
+    literal ``"[object Object]"`` string.  That value is never a legitimate
+    config leaf; dropping the key here lets the deep-merge preserve the
+    stored value instead of overwriting it — and later failing validation
+    with a ``dict_type`` error.  Recurses into nested dicts so the fix
+    covers object fields inside sub-models too.
+
+    ``llmio_tier_overrides`` is now handled as a validated JSON field (see
+    :func:`_coerce_object_json_fields`), so a well-formed JSON submission
+    never reaches this sentinel check; this remains a general safety net
+    for the remaining object fields and any residual corrupt submissions.
     """
     result: dict[str, Any] = {}
     for key, value in update.items():
@@ -89,6 +93,39 @@ def _strip_corrupt_object_sentinels(update: dict[str, Any]) -> dict[str, Any]:
         else:
             result[key] = value
     return result
+
+
+def _coerce_object_json_fields(body: dict[str, Any]) -> dict[str, Any]:
+    """Parse object-typed settings submitted as JSON text.
+
+    The config panel renders dict-typed settings (e.g.
+    ``llmio_tier_overrides``) as an editable JSON textarea; on save the text
+    is submitted as a JSON *string* rather than a parsed object.  Parse it
+    here so the deep-merge persists a real dict and the field validates
+    correctly, and raise :class:`ValueError` with a clear, user-visible
+    message when the text is not valid JSON — the save is then rejected
+    before anything is written, so the stored config is never corrupted.
+    """
+    value = body.get("llmio_tier_overrides")
+    if not isinstance(value, str):
+        return body
+
+    try:
+        parsed: Any = json.loads(value)
+    except json.JSONDecodeError as exc:
+        raise ValueError(
+            f"llmio_tier_overrides is not valid JSON: {exc.msg} "
+            f"(line {exc.lineno}, column {exc.colno})"
+        ) from exc
+
+    if not isinstance(parsed, dict):
+        raise ValueError(
+            f"llmio_tier_overrides must be a JSON object, got {type(parsed).__name__}"
+        )
+
+    body = dict(body)
+    body["llmio_tier_overrides"] = parsed
+    return body
 
 
 def _deep_merge(existing: dict[str, Any], update: dict[str, Any]) -> dict[str, Any]:
@@ -718,11 +755,18 @@ async def config_save_endpoint(request: Request) -> JSONResponse:
     # 1. Read the current on-disk config (raw JSON, not model-dumped).
     existing = _read_config_json(config_path)
 
-    # Drop JS ``String(obj)`` sentinels ("[object Object]") the settings
-    # panel sometimes submits for object fields (e.g. llmio_tier_overrides)
-    # so the deep-merge preserves the stored value instead of corrupting it.
     if isinstance(body, dict):
+        # Drop JS ``String(obj)`` sentinels ("[object Object]") the settings
+        # panel sometimes submits for object fields so the deep-merge
+        # preserves the stored value instead of corrupting it.
         body = _strip_corrupt_object_sentinels(body)
+        # Coerce dict-typed settings submitted as JSON text (the panel's
+        # JSON textarea) into real dicts, rejecting invalid JSON with a
+        # clear error before anything is persisted.
+        try:
+            body = _coerce_object_json_fields(body)
+        except ValueError as exc:
+            return _problem_response(422, "Invalid JSON", str(exc))
 
     # 2. Deep-merge the submitted form over the existing config.
     merged = _deep_merge(existing, body)
