@@ -693,6 +693,31 @@ class SubsessionRegistry:
             event.set()
         self._store.persist()
 
+    def restore_transcript(self, sub_id: str, entries: list[TranscriptEntry]) -> None:
+        """Restore a resumed subsession's persisted transcript after a restart.
+
+        Called by the startup resume hook immediately after a resumed
+        subsession is re-registered/spawned.  ``create`` starts every entry
+        with an empty transcript, so a resumed ``user_chat`` still waiting
+        for the operator would otherwise render an empty box ("No messages
+        yet.") even though its pending question was persisted before the
+        restart.  Re-seeding the transcript from durable storage — and
+        persisting it — keeps the outstanding question visible and lets it
+        survive every subsequent restart.
+
+        Idempotent: only seeds when the live transcript is empty, so it never
+        duplicates entries already present.  Does not publish SSE frames (a
+        startup restore has no live listener; the operator's UI reads the
+        transcript from the detail snapshot when it reconnects).
+        """
+        if not entries:
+            return
+        info = self._subs.get(sub_id)
+        if info is None or info.transcript:
+            return
+        info.transcript.extend(entries)
+        self._store.persist()
+
     def set_status(
         self,
         sub_id: str,
