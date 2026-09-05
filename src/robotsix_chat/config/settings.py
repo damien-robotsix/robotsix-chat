@@ -82,12 +82,21 @@ class ConfigValidationError(ValueError):
 # docs/system_prompt_changelog.md with a new entry + SHA256.
 SYSTEM_PROMPT_VERSION = 161
 
-# Settings-panel group label collecting every llmio knob (model-level
-# selection, OpenRouter key, task-budget, failover window, tier overrides,
-# vision model) under one collapsible header instead of the generic
-# "General" bucket.  The shared ConfigPanel buckets fields by this
-# ``json_schema_extra["group"]`` label.
+# Settings-panel group labels.  The shared ConfigPanel buckets fields by their
+# ``json_schema_extra["group"]`` label, rendering each distinct label under a
+# collapsible header instead of the generic "General" bucket.  Every top-level
+# setting must carry exactly one group label; names are human-readable and
+# mirror the docs/configuration.md sections so operators can find a knob.
 _LLMIO_GROUP: dict[str, Any] = {"group": "LLM I/O"}
+_SERVER_GROUP: dict[str, Any] = {"group": "Server"}
+_CONVERSATION_GROUP: dict[str, Any] = {"group": "Conversation / UI"}
+_LOGGING_GROUP: dict[str, Any] = {"group": "Logging"}
+_TRACING_GROUP: dict[str, Any] = {"group": "Tracing"}
+_MEMORY_GROUP: dict[str, Any] = {"group": "Memory"}
+_SUBSESSIONS_GROUP: dict[str, Any] = {"group": "Subsessions"}
+_DEPLOY_GROUP: dict[str, Any] = {"group": "Deploy"}
+_TOOLS_GROUP: dict[str, Any] = {"group": "Agent Tools"}
+_AUTH_GROUP: dict[str, Any] = {"group": "Auth"}
 
 
 class Settings(BaseModel):
@@ -220,6 +229,7 @@ class Settings(BaseModel):
         return v
 
     agent_instruction: str = Field(
+        json_schema_extra=_CONVERSATION_GROUP,
         default=(
             "You are a helpful assistant. "
             "You have a local, durable knowledge base "
@@ -1810,60 +1820,164 @@ class Settings(BaseModel):
             "perform actions you cannot take."
         ),
     )
-    server_host: str = Field(default="0.0.0.0")  # noqa: S104  # nosec B104
-    server_port: int = Field(default=8000)
-    idle_timeout_minutes: int = 30
-    log_level: str = "INFO"
-    log_json_format: bool = True
-    cors_allow_origins: list[str] = Field(default_factory=list)
-    correlation_id_header: str = Field(default="X-Request-ID")
-    langfuse: LangfuseSettings = Field(default_factory=LangfuseSettings)
-    openrouter: OpenRouterSettings = Field(default_factory=OpenRouterSettings)
-    langfuse_inspect: LangfuseInspectSettings = Field(
-        default_factory=LangfuseInspectSettings
+    server_host: str = Field(
+        default="0.0.0.0",  # noqa: S104  # nosec B104
+        json_schema_extra=_SERVER_GROUP,
     )
-    central_deploy: CentralDeploySettings = Field(default_factory=CentralDeploySettings)
-    conversation: ConversationSettings = Field(default_factory=ConversationSettings)
-    diagnostics: DiagnosticsSettings = Field(default_factory=DiagnosticsSettings)
-    refdocs: RefDocsSettings = Field(default_factory=RefDocsSettings)
-    render_url: RenderUrlSettings = Field(default_factory=RenderUrlSettings)
-    knowledge: KnowledgeSettings = Field(default_factory=KnowledgeSettings)
-    self_review: SelfReviewSettings = Field(default_factory=SelfReviewSettings)
-    version_check: VersionCheckSettings = Field(default_factory=VersionCheckSettings)
+    server_port: int = Field(default=8000, json_schema_extra=_SERVER_GROUP)
+    idle_timeout_minutes: int = Field(
+        default=30,
+        json_schema_extra=_CONVERSATION_GROUP,
+    )
+    log_level: str = Field(default="INFO", json_schema_extra=_LOGGING_GROUP)
+    log_json_format: bool = Field(default=True, json_schema_extra=_LOGGING_GROUP)
+    cors_allow_origins: list[str] = Field(
+        default_factory=list,
+        json_schema_extra=_SERVER_GROUP,
+    )
+    correlation_id_header: str = Field(
+        default="X-Request-ID",
+        json_schema_extra=_SERVER_GROUP,
+    )
+    langfuse: LangfuseSettings = Field(
+        default_factory=LangfuseSettings,
+        json_schema_extra=_TRACING_GROUP,
+    )
+    openrouter: OpenRouterSettings = Field(
+        default_factory=OpenRouterSettings,
+        json_schema_extra=_TRACING_GROUP,
+    )
+    langfuse_inspect: LangfuseInspectSettings = Field(
+        default_factory=LangfuseInspectSettings,
+        json_schema_extra=_TRACING_GROUP,
+    )
+    central_deploy: CentralDeploySettings = Field(
+        default_factory=CentralDeploySettings,
+        json_schema_extra=_DEPLOY_GROUP,
+    )
+    conversation: ConversationSettings = Field(
+        default_factory=ConversationSettings,
+        json_schema_extra=_CONVERSATION_GROUP,
+    )
+    diagnostics: DiagnosticsSettings = Field(
+        default_factory=DiagnosticsSettings,
+        json_schema_extra=_TOOLS_GROUP,
+    )
+    refdocs: RefDocsSettings = Field(
+        default_factory=RefDocsSettings,
+        json_schema_extra=_TOOLS_GROUP,
+    )
+    render_url: RenderUrlSettings = Field(
+        default_factory=RenderUrlSettings,
+        json_schema_extra=_TOOLS_GROUP,
+    )
+    knowledge: KnowledgeSettings = Field(
+        default_factory=KnowledgeSettings,
+        json_schema_extra=_MEMORY_GROUP,
+    )
+    self_review: SelfReviewSettings = Field(
+        default_factory=SelfReviewSettings,
+        json_schema_extra=_TOOLS_GROUP,
+    )
+    version_check: VersionCheckSettings = Field(
+        default_factory=VersionCheckSettings,
+        json_schema_extra=_TOOLS_GROUP,
+    )
     component_client: ComponentClientSettings = Field(
         default_factory=ComponentClientSettings,
+        json_schema_extra=_TOOLS_GROUP,
     )
-    subsessions: SubsessionsSettings = Field(default_factory=SubsessionsSettings)
-    direct_repo: DirectRepoSettings = Field(default_factory=DirectRepoSettings)
+    subsessions: SubsessionsSettings = Field(
+        default_factory=SubsessionsSettings,
+        json_schema_extra=_SUBSESSIONS_GROUP,
+    )
+    direct_repo: DirectRepoSettings = Field(
+        default_factory=DirectRepoSettings,
+        json_schema_extra=_TOOLS_GROUP,
+    )
     github_security: GitHubSecuritySettings = Field(
         default_factory=GitHubSecuritySettings,
+        json_schema_extra=_TOOLS_GROUP,
     )
-    github_actions: GitHubActionsSettings = Field(default_factory=GitHubActionsSettings)
-    repo_study: RepoStudySettings = Field(default_factory=RepoStudySettings)
-    lifecycle: LifecycleSettings = Field(default_factory=LifecycleSettings)
-    http_probe: HttpProbeSettings = Field(default_factory=HttpProbeSettings)
-    docker_digest: DockerDigestSettings = Field(default_factory=DockerDigestSettings)
-    gateway_route: GatewayRouteSettings = Field(default_factory=GatewayRouteSettings)
-    public_fetch: PublicFetchSettings = Field(default_factory=PublicFetchSettings)
-    sftp: SftpSettings = Field(default_factory=SftpSettings)
-    file_hub_tools: FileHubToolsSettings = Field(default_factory=FileHubToolsSettings)
-    volume_tools: VolumeToolsSettings = Field(default_factory=VolumeToolsSettings)
-    feedback: FeedbackSettings = Field(default_factory=FeedbackSettings)
-    health: HealthSettings = Field(default_factory=HealthSettings)
-    periodic: PeriodicSettings = Field(default_factory=PeriodicSettings)
-    continuation: ContinuationSettings = Field(default_factory=ContinuationSettings)
-    evergoing: EvergoingSettings = Field(default_factory=EvergoingSettings)
+    github_actions: GitHubActionsSettings = Field(
+        default_factory=GitHubActionsSettings,
+        json_schema_extra=_TOOLS_GROUP,
+    )
+    repo_study: RepoStudySettings = Field(
+        default_factory=RepoStudySettings,
+        json_schema_extra=_TOOLS_GROUP,
+    )
+    lifecycle: LifecycleSettings = Field(
+        default_factory=LifecycleSettings,
+        json_schema_extra=_DEPLOY_GROUP,
+    )
+    http_probe: HttpProbeSettings = Field(
+        default_factory=HttpProbeSettings,
+        json_schema_extra=_TOOLS_GROUP,
+    )
+    docker_digest: DockerDigestSettings = Field(
+        default_factory=DockerDigestSettings,
+        json_schema_extra=_TOOLS_GROUP,
+    )
+    gateway_route: GatewayRouteSettings = Field(
+        default_factory=GatewayRouteSettings,
+        json_schema_extra=_DEPLOY_GROUP,
+    )
+    public_fetch: PublicFetchSettings = Field(
+        default_factory=PublicFetchSettings,
+        json_schema_extra=_TOOLS_GROUP,
+    )
+    sftp: SftpSettings = Field(
+        default_factory=SftpSettings,
+        json_schema_extra=_TOOLS_GROUP,
+    )
+    file_hub_tools: FileHubToolsSettings = Field(
+        default_factory=FileHubToolsSettings,
+        json_schema_extra=_TOOLS_GROUP,
+    )
+    volume_tools: VolumeToolsSettings = Field(
+        default_factory=VolumeToolsSettings,
+        json_schema_extra=_TOOLS_GROUP,
+    )
+    feedback: FeedbackSettings = Field(
+        default_factory=FeedbackSettings,
+        json_schema_extra=_TOOLS_GROUP,
+    )
+    health: HealthSettings = Field(
+        default_factory=HealthSettings,
+        json_schema_extra=_SERVER_GROUP,
+    )
+    periodic: PeriodicSettings = Field(
+        default_factory=PeriodicSettings,
+        json_schema_extra=_SUBSESSIONS_GROUP,
+    )
+    continuation: ContinuationSettings = Field(
+        default_factory=ContinuationSettings,
+        json_schema_extra=_CONVERSATION_GROUP,
+    )
+    evergoing: EvergoingSettings = Field(
+        default_factory=EvergoingSettings,
+        json_schema_extra=_CONVERSATION_GROUP,
+    )
     memory_component: MemoryComponentSettings = Field(
-        default_factory=MemoryComponentSettings
+        default_factory=MemoryComponentSettings,
+        json_schema_extra=_MEMORY_GROUP,
     )
-    max_images_per_message: int = Field(default=8)
-    max_image_bytes: int = Field(default=5_242_880)
+    max_images_per_message: int = Field(
+        default=8,
+        json_schema_extra=_CONVERSATION_GROUP,
+    )
+    max_image_bytes: int = Field(
+        default=5_242_880,
+        json_schema_extra=_CONVERSATION_GROUP,
+    )
     allowed_image_media_types: list[str] = Field(
         default_factory=lambda: ["image/png", "image/jpeg", "image/gif", "image/webp"],
+        json_schema_extra=_CONVERSATION_GROUP,
     )
     vision_model: str = Field(
         default="openrouter/openai/gpt-4o-mini",
-        json_schema_extra=_LLMIO_GROUP,
+        json_schema_extra=_CONVERSATION_GROUP,
         description=(
             "OpenRouter model id used to caption attached images when the "
             "active chat model lacks vision support. Empty string means "
@@ -1871,7 +1985,10 @@ class Settings(BaseModel):
             "no-image-support failure path."
         ),
     )
-    mobile_auth: MobileAuthSettings = Field(default_factory=MobileAuthSettings)
+    mobile_auth: MobileAuthSettings = Field(
+        default_factory=MobileAuthSettings,
+        json_schema_extra=_AUTH_GROUP,
+    )
 
     @property
     def vision_model_configured(self) -> bool:
