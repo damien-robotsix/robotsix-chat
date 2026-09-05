@@ -515,6 +515,7 @@ modules:
       - src/robotsix_chat/ui/static/suggestions.js
       - docs/user-guide/chat-interface.md
       - docs/user-guide/settings-ui.md
+      - docs/user-guide/settings-audit-upgrade.md
       - tests/js/memory-banner.test.js
       - tests/js/message-queue.test.js
       - tests/js/notify-gating.test.js
