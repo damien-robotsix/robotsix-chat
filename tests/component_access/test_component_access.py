@@ -689,6 +689,31 @@ async def test_component_request_unknown_id() -> None:
 
 
 @pytest.mark.asyncio
+@pytest.mark.parametrize(
+    ("given_id", "roster_id"),
+    [
+        ("robotsix-mill", "mill"),  # repo name → component id
+        ("browser", "robotsix-browser"),  # bare id → prefixed roster id
+    ],
+)
+async def test_component_request_repo_name_alias(
+    respx_mock, given_id: str, roster_id: str
+) -> None:
+    """A 'robotsix-' prefix mismatch resolves to the roster entry instead of erroring.
+
+    Agents habitually pass the repo name for a component (two live sessions
+    on 2026-09-05 burned a turn each on 'robotsix-mill').
+    """
+    respx_mock.get("http://m:8080/tickets").mock(
+        return_value=httpx.Response(200, json=[])
+    )
+    roster = [{"id": roster_id, "base_url": "http://m:8080", "skill": "..."}]
+    result = await _component_request_impl(roster, given_id, "GET", "/tickets")
+    assert "unknown component_id" not in result.lower()
+    assert "200" in result
+
+
+@pytest.mark.asyncio
 async def test_component_request_empty_roster() -> None:
     """Empty roster returns an explicit unavailable message, not unknown id."""
     result = await _component_request_impl([], "mill", "GET", "/tickets")
