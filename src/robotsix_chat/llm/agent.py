@@ -438,7 +438,6 @@ class LlmioChatAgent:
         tools: list[Any] | None = None,
         request_tools_factory: Callable[[str], list[Any]] | None = None,
         event_sink: EventSink | None = None,
-        task_budget_tokens: int | None = None,
         failover_window_seconds: float | None = None,
         tier_overrides: dict[str, Any] | None = None,
     ) -> None:
@@ -449,15 +448,6 @@ class LlmioChatAgent:
         llmio's provider failover reach the keyed fallback slot when the
         shared Claude credential or subscription quota is the thing that
         failed.
-
-        *task_budget_tokens*, when set, is forwarded as ``max_tokens`` to
-        keyless (claudeSDK) slot attempts only. llmio maps that onto the
-        Claude Agent SDK ``task_budget`` advisory allowance — the countdown
-        the model reads so it can pace itself against a real
-        budget-remaining signal instead of being cut off at the subscription
-        limit. Keyed (OpenRouter) slots are deliberately left alone: their
-        own per-response ``max_tokens`` caps live in llmio's tier config and
-        must not be clobbered.
 
         *failover_window_seconds*, when set, overrides how long llmio routes
         calls straight to the fallback (OpenRouter) slot after the default
@@ -489,7 +479,6 @@ class LlmioChatAgent:
         self._tools = list(tools) if tools is not None else None
         self._request_tools_factory = request_tools_factory
         self._event_sink = event_sink
-        self._task_budget_tokens = task_budget_tokens
         # The two-slot tier config every turn resolves against; its failover
         # section is adopted by llmio's process-wide tracker on each call.
         # Binding overrides come from the llmio_tier_overrides setting; the
@@ -513,17 +502,13 @@ class LlmioChatAgent:
         Starts from the slot's own ``provider_kwargs`` + ``max_tokens`` (a
         real per-response cap on OpenRouter). Forwards the configured
         api_key only to keyed (OpenRouter) slots — keyless providers reject
-        it. On keyless (claudeSDK) slots, ``task_budget_tokens`` becomes the
-        advisory ``task_budget`` via ``max_tokens``.
+        it.
         """
         kwargs: dict[str, Any] = dict(tlc.provider_kwargs)
         if tlc.max_tokens is not None:
             kwargs.setdefault("max_tokens", tlc.max_tokens)
-        if slot_needs_api_key(tlc):
-            if self._api_key:
-                kwargs["api_key"] = self._api_key
-        elif self._task_budget_tokens is not None:
-            kwargs["max_tokens"] = self._task_budget_tokens
+        if slot_needs_api_key(tlc) and self._api_key:
+            kwargs["api_key"] = self._api_key
         return kwargs
 
     def _activity_callback(
