@@ -70,15 +70,15 @@ def test_log_level_default() -> None:
 # Settings-panel field grouping
 # ---------------------------------------------------------------------------
 
-# Every llmio-related top-level field renders under one dedicated
-# settings-panel group instead of the generic "General" bucket.
+# Every top-level setting renders under a named settings-panel group.  The
+# shared ConfigPanel buckets fields by their ``json_schema_extra["group"]``
+# label, so a missing label drops the field into the generic "General" bucket.
 _LLMIO_GROUP_FIELDS = {
     "chat_default_model_level",
     "openrouter_api_key",
     "summary_model_level",
     "llmio_failover_window_seconds",
     "llmio_tier_overrides",
-    "vision_model",
 }
 
 
@@ -90,20 +90,54 @@ def test_llmio_fields_share_one_settings_panel_group() -> None:
     props = schema["properties"]
     for name in _LLMIO_GROUP_FIELDS:
         assert props[name].get("group") == "LLM I/O", name
+    # Exactly the llmio knob set is tagged "LLM I/O" — vision_model is a
+    # chat-conversation concern and lives in "Conversation / UI".
+    tagged = {n for n, p in props.items() if p.get("group") == "LLM I/O"}
+    assert tagged == _LLMIO_GROUP_FIELDS
 
 
-def test_non_llmio_fields_stay_ungrouped() -> None:
-    """Non-llmio top-level fields carry no group (they render under General)."""
+def test_every_setting_carries_a_group_label() -> None:
+    """No top-level setting falls into the ungrouped 'General' bucket."""
     from robotsix_config import config_schema
 
     schema = config_schema(Settings)
     props = schema["properties"]
-    # Representative non-llmio top-level fields must not leak into the group.
-    for name in ("server_host", "server_port", "log_level", "agent_instruction"):
-        assert "group" not in props[name], name
-    # No top-level field outside the llmio set is tagged "LLM I/O".
-    tagged = {n for n, p in props.items() if p.get("group") == "LLM I/O"}
-    assert tagged == _LLMIO_GROUP_FIELDS
+    ungrouped = {n for n, p in props.items() if not p.get("group")}
+    assert ungrouped == set()
+
+
+def test_proposed_groups_bucket_their_settings() -> None:
+    """The four proposal groups hold exactly their named settings."""
+    from robotsix_config import config_schema
+
+    schema = config_schema(Settings)
+    props = schema["properties"]
+
+    expected = {
+        "LLM I/O": _LLMIO_GROUP_FIELDS,
+        "Server": {
+            "server_host",
+            "server_port",
+            "cors_allow_origins",
+            "correlation_id_header",
+            "health",
+        },
+        "Conversation / UI": {
+            "agent_instruction",
+            "idle_timeout_minutes",
+            "max_images_per_message",
+            "max_image_bytes",
+            "allowed_image_media_types",
+            "vision_model",
+            "conversation",
+            "continuation",
+            "evergoing",
+        },
+        "Logging": {"log_level", "log_json_format"},
+    }
+    for group, fields in expected.items():
+        for name in fields:
+            assert props[name].get("group") == group, name
 
 
 def test_vision_model_defaults_to_vision_capable_model() -> None:
@@ -1138,8 +1172,8 @@ _PREEXISTING_ALLOWLIST: set[tuple[str, int, str]] = {
     ("src/robotsix_chat/config/settings.py", 98, "-opus"),
     ("src/robotsix_chat/config/settings.py", 98, "claude-fable"),
     # config/settings.py — vision_model default (OpenRouter captioning model)
-    ("src/robotsix_chat/config/settings.py", 158, "gpt-"),
-    ("src/robotsix_chat/config/settings.py", 1865, "gpt-"),
+    ("src/robotsix_chat/config/settings.py", 167, "gpt-"),
+    ("src/robotsix_chat/config/settings.py", 1979, "gpt-"),
     # config/memory_models.py — gpt-5-nano / gpt-5-mini / deepseek-v4-flash
     ("src/robotsix_chat/config/memory_models.py", 26, "gpt-"),
     ("src/robotsix_chat/config/memory_models.py", 50, "gpt-"),
