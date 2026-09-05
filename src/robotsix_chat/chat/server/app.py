@@ -1178,7 +1178,7 @@ def _build_static_tools(
         *build_file_hub_tools(
             settings.file_hub_tools,
             vision_model=settings.vision_model,
-            vision_api_key=settings.llmio_api_key.get_secret_value(),
+            vision_api_key=settings.openrouter_api_key.get_secret_value(),
         ),
         *build_volume_tools(settings.volume_tools),
         *build_ticket_poll_tools(settings, component_request=component_request),
@@ -1357,7 +1357,7 @@ def create_agent_from_settings(
 
     The backend is chosen by robotsix-llmio's capability level: *model_level*
     when given, else ``settings.chat_default_model_level``.  The level encodes the
-    transport + model; ``settings.llmio_api_key`` is forwarded only when the
+    transport + model; ``settings.openrouter_api_key`` is forwarded only when the
     effective level's transport needs a key (keyless claudeSDK levels 2, 4, 5
     never receive one).
 
@@ -1429,7 +1429,7 @@ def create_agent_from_settings(
     # llmio's provider failover to reach the keyed fallback slot when the
     # shared Claude credential or quota is what failed — the mode that takes
     # the whole default slot down at once.
-    api_key = settings.llmio_api_key.get_secret_value()
+    api_key = settings.openrouter_api_key.get_secret_value()
 
     tools = _build_static_tools(
         settings,

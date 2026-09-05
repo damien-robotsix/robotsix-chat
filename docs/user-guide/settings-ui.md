@@ -79,8 +79,8 @@ valid values round-trip through this path unchanged.
 
 ### Secret round-tripping
 
-When the UI receives a secret field (e.g. `llmio_api_key`), the `GET /config` response masks it as
-`"**********"`. The form renders these fields as password inputs with the placeholder "Leave
+When the UI receives a secret field (e.g. `openrouter_api_key`), the `GET /config` response masks it
+as `"**********"`. The form renders these fields as password inputs with the placeholder "Leave
 unchanged to keep current secret".
 
 When the operator saves, the UI sends `"**********"` back for any secret the operator did not
@@ -176,7 +176,7 @@ JSON Schema for the `Settings` model and the current version number.
 {
   "config": {
     "server_port": 8000,
-    "llmio_api_key": "**********",
+    "openrouter_api_key": "**********",
     "memory": {
       "enabled": true,
       "embedding": {
@@ -227,7 +227,7 @@ client can re-render straight from the response:
 {
   "config": {
     "server_port": 9000,
-    "llmio_api_key": "**********",
+    "openrouter_api_key": "**********",
     "memory": {
       "enabled": false
     }
@@ -307,7 +307,7 @@ restored:
 {
   "config": {
     "server_port": 8000,
-    "llmio_api_key": "**********"
+    "openrouter_api_key": "**********"
   },
   "version": 4
 }

@@ -38,10 +38,10 @@ exactly as OpenRouter lists them.
 ### Credentials
 
 Captioning runs through the **keyed OpenRouter provider slot**, so it needs
-[`llmio_api_key`](configuration.md) (your OpenRouter API key) to be set. No separate credential is
-introduced: the vision call bills under the same OpenRouter key as the level 1–2 chat slots. A
-vision model configured without an `llmio_api_key` cannot run — captioning then falls back to the
-curated no-image-support error (see [Behavior](#behavior)).
+[`openrouter_api_key`](configuration.md) (your OpenRouter API key) to be set. No separate credential
+is introduced: the vision call bills under the same OpenRouter key as the level 1–2 chat slots. A
+vision model configured without an `openrouter_api_key` cannot run — captioning then falls back to
+the curated no-image-support error (see [Behavior](#behavior)).
 
 ## Supported vision models
 
@@ -79,8 +79,9 @@ string means "captioning enabled", an empty string means "unconfigured".
 - **Unconfigured** (`vision_model: ""`) on a text-only model → the Phase 1 curated error message
   telling the user the active model cannot process images and how to proceed (switch to a
   vision-capable level, or configure `vision_model`). No raw provider error is surfaced.
-- **Configured but the caption call fails** (bad slug, missing `llmio_api_key`, upstream outage) →
-  the failure degrades to the same curated no-image-support message rather than crashing the turn.
+- **Configured but the caption call fails** (bad slug, missing `openrouter_api_key`, upstream
+  outage) → the failure degrades to the same curated no-image-support message rather than crashing
+  the turn.
 
 ## Examples
 
@@ -91,7 +92,7 @@ The committed `config/config.json` template already enables the fallback with a 
 ```jsonc
 {
   "chat_default_model_level": 2,          // a text-only OpenRouter level
-  "llmio_api_key": "sk-or-...",           // pragma: allowlist secret — OpenRouter key
+  "openrouter_api_key": "sk-or-...",      // pragma: allowlist secret — OpenRouter key
   "vision_model": "openrouter/openai/gpt-4o-mini"
 }
 ```
@@ -104,7 +105,7 @@ error.
 ```jsonc
 {
   "chat_default_model_level": 2,
-  "llmio_api_key": "sk-or-...",           // pragma: allowlist secret
+  "openrouter_api_key": "sk-or-...",      // pragma: allowlist secret
   "vision_model": "openrouter/openai/gpt-4o"
 }
 ```
@@ -125,7 +126,7 @@ message rather than captioning:
 
 ### Enabling vision fallback for an existing deployment
 
-1. Ensure `llmio_api_key` (your OpenRouter key) is set — the caption call bills under it.
+1. Ensure `openrouter_api_key` (your OpenRouter key) is set — the caption call bills under it.
 1. Set `vision_model` to a supported OpenRouter vision model, e.g. `openrouter/openai/gpt-4o-mini`.
 1. Restart the service (or save via the Settings panel). Attachments on text-only levels are now
    captioned automatically.
