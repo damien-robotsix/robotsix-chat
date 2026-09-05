@@ -59,7 +59,7 @@ a gitignored local file, and set the key there (never in the committed template)
 ```bash
 uv sync --extra openrouter
 cp config/config.json config/config.local.json
-# Edit config/config.local.json: set chat_default_model_level to 1 and llmio_api_key
+# Edit config/config.local.json: set chat_default_model_level to 1 and openrouter_api_key
 ROBOTSIX_CONFIG_FILE=config/config.local.json uv run robotsix-chat
 ```
 
@@ -127,7 +127,7 @@ at that file.
 ```jsonc
 {
   "chat_default_model_level": 3,
-  // "llmio_api_key": "sk-or-...",  // pragma: allowlist secret
+  // "openrouter_api_key": "sk-or-...",  // pragma: allowlist secret
   "server": {
     "host": "127.0.0.1",
     "port": 8000
@@ -147,18 +147,18 @@ The LLM is configured the [`robotsix-llmio`](https://github.com/damien-robotsix/
 `robotsix_llmio.config.create_model`). robotsix-chat never names a concrete provider or model. The
 default level → provider-model mapping:
 
-| `model_level` | provider-model identifier               | needs API key?         |
-| ------------- | --------------------------------------- | ---------------------- |
-| 1 (cheapest)  | `openrouter-deepseek/deepseek-v4-flash` | yes (`llmio_api_key`)  |
-| 2             | `openrouter-deepseek/deepseek-v4-pro`   | yes (`llmio_api_key`)  |
-| 3 (default)   | `claudeSDK-opus`                        | no (subscription auth) |
-| 4 (frontier)  | `claudeSDK-claude-fable-5`              | no (subscription auth) |
+| `model_level` | provider-model identifier               | needs API key?             |
+| ------------- | --------------------------------------- | -------------------------- |
+| 1 (cheapest)  | `openrouter-deepseek/deepseek-v4-flash` | yes (`openrouter_api_key`) |
+| 2             | `openrouter-deepseek/deepseek-v4-pro`   | yes (`openrouter_api_key`) |
+| 3 (default)   | `claudeSDK-opus`                        | no (subscription auth)     |
+| 4 (frontier)  | `claudeSDK-claude-fable-5`              | no (subscription auth)     |
 
 - **Levels 3–4 / `claudeSDK`** — the [Claude Agent SDK](https://code.claude.com/docs/en/agent-sdk)
   authenticates via your local `claude login` subscription, so **no API key**. Install with
   `uv sync --extra claude-sdk` and run `claude login` (needs Node.js on PATH).
-- **Levels 1–2 / `openrouter`** — install with `uv sync --extra openrouter` and set `llmio_api_key`
-  in your `config/config.json`.
+- **Levels 1–2 / `openrouter`** — install with `uv sync --extra openrouter` and set
+  `openrouter_api_key` in your `config/config.json`.
 
 Each backend dependency is pulled **through** robotsix-llmio's own extras
 (`robotsix-llmio[claude-sdk]` / `robotsix-llmio[openrouter]`), so the stack owns those deps in one
@@ -173,7 +173,8 @@ The browser UI provides a dropdown model selector in the header, so operators ca
 session to a different capability level without restarting. The selected model applies to all
 subsequent turns in that session only — other sessions retain their own configured level or
 selection. Every level is served by the keyless claudeSDK default slot; llmio fails over to the
-keyed OpenRouter slot automatically (the header badge flags it), which requires `llmio_api_key`.
+keyed OpenRouter slot automatically (the header badge flags it), which requires
+`openrouter_api_key`.
 
 ### Image attachments (vision fallback)
 
@@ -184,12 +185,12 @@ that captions it and substitutes the caption as text.
 
 The `vision_model` setting names that fallback model — an OpenRouter model id of the form
 `openrouter/<vendor>/<model-slug>` (default `openrouter/openai/gpt-4o-mini`). It bills under the
-same `llmio_api_key` as the level 1–2 chat slots.
+same `openrouter_api_key` as the level 1–2 chat slots.
 
 ```jsonc
 {
   "chat_default_model_level": 2,
-  // "llmio_api_key": "sk-or-...",  // pragma: allowlist secret
+  // "openrouter_api_key": "sk-or-...",  // pragma: allowlist secret
   "vision_model": "openrouter/openai/gpt-4o-mini"  // "" disables captioning
 }
 ```

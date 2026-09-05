@@ -148,15 +148,15 @@ def test_mask_secrets_preserves_non_secret() -> None:
 
 def test_mask_secrets_empty_string_not_masked() -> None:
     """Empty string secret values are not masked (no secret to hide)."""
-    data = {"llmio_api_key": ""}
+    data = {"openrouter_api_key": ""}
     result = _mask_secrets(data)
-    assert result["llmio_api_key"] == ""
+    assert result["openrouter_api_key"] == ""
 
 
 def test_mask_secrets_masks_multiple_keys() -> None:
     """Multiple secret keys at different nesting levels are all masked."""
     data = {
-        "llmio_api_key": "sk-abc",  # pragma: allowlist secret
+        "openrouter_api_key": "sk-abc",  # pragma: allowlist secret
         "memory": {
             "llm": {"api_key": "sk-def"},  # pragma: allowlist secret
             "embedding": {"api_key": "sk-ghi"},  # pragma: allowlist secret
@@ -168,7 +168,7 @@ def test_mask_secrets_masks_multiple_keys() -> None:
         "direct_repo": {"github_app_private_key": "pk"},  # pragma: allowlist secret
     }
     result = _mask_secrets(data)
-    assert result["llmio_api_key"] == "**********"
+    assert result["openrouter_api_key"] == "**********"
     assert (
         result["memory"]["llm"]["api_key"] == "**********"
     )  # pragma: allowlist secret
@@ -341,7 +341,7 @@ def test_get_config_returns_masked_data(tmp_path: Path) -> None:
         config_path,
         {
             "chat_default_model_level": 2,
-            "llmio_api_key": "sk-real",  # pragma: allowlist secret
+            "openrouter_api_key": "sk-real",  # pragma: allowlist secret
             "server_port": 8080,
             "memory": {
                 "embedding": {"endpoint": "http://box:11434/v1"},
@@ -359,7 +359,7 @@ def test_get_config_returns_masked_data(tmp_path: Path) -> None:
     config = data["config"]
 
     assert config["chat_default_model_level"] == 2
-    assert config["llmio_api_key"] == "**********"
+    assert config["openrouter_api_key"] == "**********"
     assert config["server_port"] == 8080
     assert (  # pragma: allowlist secret
         config["openrouter"]["keys"]["robotsix-chat-cognee"] == "**********"
@@ -457,7 +457,7 @@ def _config_with_secrets(config_path: Path) -> None:
         config_path,
         {
             "chat_default_model_level": 2,
-            "llmio_api_key": "sk-real",  # pragma: allowlist secret
+            "openrouter_api_key": "sk-real",  # pragma: allowlist secret
             "agent_instruction": "You are helpful.",
             "periodic": {
                 "sessions": [{"name": "nightly", "schedule_interval_seconds": 86400}],
@@ -536,7 +536,7 @@ def test_get_config_path_masks_secret(tmp_path: Path) -> None:
     _config_with_secrets(config_path)
     client = _make_app(config_path)
 
-    resp = client.get("/config?path=llmio_api_key")
+    resp = client.get("/config?path=openrouter_api_key")
     assert resp.status_code == 200
     assert resp.json()["config"] == "**********"
 
@@ -566,7 +566,7 @@ def test_get_config_include_schema_false_omits_schema(tmp_path: Path) -> None:
     assert "schema" not in data
     assert data["version"] == 1
     assert data["config"]["agent_instruction"] == "You are helpful."
-    assert data["config"]["llmio_api_key"] == "**********"
+    assert data["config"]["openrouter_api_key"] == "**********"
 
 
 def test_get_config_keys_only_and_path_conflict_returns_400(tmp_path: Path) -> None:
@@ -1420,7 +1420,7 @@ def test_put_returns_effective_config(tmp_path: Path) -> None:
         {
             "chat_default_model_level": 2,
             "server_port": 8080,
-            "llmio_api_key": "sk-real",  # pragma: allowlist secret
+            "openrouter_api_key": "sk-real",  # pragma: allowlist secret
         },
     )
     client = _make_app(config_path)
@@ -1432,7 +1432,7 @@ def test_put_returns_effective_config(tmp_path: Path) -> None:
     assert set(body) == {"config", "version"}
     assert body["config"]["server_port"] == 9000
     assert body["config"]["chat_default_model_level"] == 2  # untouched key round-trips
-    assert body["config"]["llmio_api_key"] == "**********"
+    assert body["config"]["openrouter_api_key"] == "**********"
     assert "sk-real" not in resp.text  # pragma: allowlist secret
 
 

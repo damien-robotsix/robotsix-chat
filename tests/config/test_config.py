@@ -52,7 +52,7 @@ def test_defaults() -> None:
     settings = Settings()
 
     assert settings.chat_default_model_level == 2
-    assert settings.llmio_api_key.get_secret_value() == ""
+    assert settings.openrouter_api_key.get_secret_value() == ""
     assert settings.server_host == "0.0.0.0"
     assert settings.server_port == 8000
     assert settings.log_level == "INFO"
@@ -74,7 +74,7 @@ def test_log_level_default() -> None:
 # settings-panel group instead of the generic "General" bucket.
 _LLMIO_GROUP_FIELDS = {
     "chat_default_model_level",
-    "llmio_api_key",
+    "openrouter_api_key",
     "summary_model_level",
     "llmio_failover_window_seconds",
     "llmio_tier_overrides",
@@ -128,7 +128,7 @@ def test_default_level_is_keyless() -> None:
     """The default level (2, workhorse) is keyless — constructs with no key."""
     settings = Settings()
     assert settings.chat_default_model_level == 2
-    assert settings.llmio_api_key.get_secret_value() == ""
+    assert settings.openrouter_api_key.get_secret_value() == ""
 
 
 def test_no_level_requires_api_key() -> None:
@@ -145,10 +145,26 @@ def test_no_level_requires_api_key() -> None:
 
 def test_key_bearing_config_with_key_ok() -> None:
     """A configured key is kept for the failover slot."""
-    settings = Settings(chat_default_model_level=1, llmio_api_key=SecretStr("sk-x"))
+    settings = Settings(
+        chat_default_model_level=1, openrouter_api_key=SecretStr("sk-x")
+    )
     assert settings.chat_default_model_level == 1
     # pragma: allowlist secret
-    assert settings.llmio_api_key.get_secret_value() == "sk-x"
+    assert settings.openrouter_api_key.get_secret_value() == "sk-x"
+
+
+def test_legacy_llmio_api_key_alias() -> None:
+    """The legacy ``llmio_api_key`` config key still loads via the alias.
+
+    A raw rename would trip ``extra="forbid"`` and brick config load for
+    deployed configs serialized with the old key name; the before-validator
+    maps it onto the canonical ``openrouter_api_key`` field instead.
+    """
+    settings = Settings.model_validate(
+        {"llmio_api_key": "sk-legacy"}  # pragma: allowlist secret
+    )
+    # pragma: allowlist secret
+    assert settings.openrouter_api_key.get_secret_value() == "sk-legacy"
 
 
 def test_invalid_model_level_raises() -> None:
@@ -170,7 +186,7 @@ def test_load_from_json_file(tmp_path: Path, monkeypatch: pytest.MonkeyPatch) ->
         tmp_path,
         {
             "chat_default_model_level": 2,
-            "llmio_api_key": "sk-json",  # pragma: allowlist secret
+            "openrouter_api_key": "sk-json",  # pragma: allowlist secret
             "server_host": "0.0.0.0",
             "server_port": 9000,
             "log_level": "DEBUG",
@@ -182,7 +198,7 @@ def test_load_from_json_file(tmp_path: Path, monkeypatch: pytest.MonkeyPatch) ->
 
     assert settings.chat_default_model_level == 2
     # pragma: allowlist secret
-    assert settings.llmio_api_key.get_secret_value() == "sk-json"
+    assert settings.openrouter_api_key.get_secret_value() == "sk-json"
     assert settings.server_host == "0.0.0.0"
     assert settings.server_port == 9000
     assert settings.log_level == "DEBUG"
@@ -1122,8 +1138,8 @@ _PREEXISTING_ALLOWLIST: set[tuple[str, int, str]] = {
     ("src/robotsix_chat/config/settings.py", 98, "-opus"),
     ("src/robotsix_chat/config/settings.py", 98, "claude-fable"),
     # config/settings.py — vision_model default (OpenRouter captioning model)
-    ("src/robotsix_chat/config/settings.py", 157, "gpt-"),
-    ("src/robotsix_chat/config/settings.py", 1852, "gpt-"),
+    ("src/robotsix_chat/config/settings.py", 158, "gpt-"),
+    ("src/robotsix_chat/config/settings.py", 1865, "gpt-"),
     # config/memory_models.py — gpt-5-nano / gpt-5-mini / deepseek-v4-flash
     ("src/robotsix_chat/config/memory_models.py", 26, "gpt-"),
     ("src/robotsix_chat/config/memory_models.py", 50, "gpt-"),

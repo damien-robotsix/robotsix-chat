@@ -104,10 +104,11 @@ class Settings(BaseModel):
             axis — the keyless Claude SDK default slot (haiku / opus /
             fable) in normal operation, the keyed OpenRouter fallback slot
             (DeepSeek) while failover is active.
-        llmio_api_key: OpenRouter API key, forwarded to llmio only for
+        openrouter_api_key: OpenRouter API key, forwarded to llmio only for
             keyed (OpenRouter) slot attempts; unused while the keyless
             ``claudeSDK`` default slot serves calls. Without it, provider
-            failover is unavailable.
+            failover is unavailable. Accepts the legacy config key
+            ``llmio_api_key`` as a backward-compatible alias.
         summary_model_level: Capability level of the dedicated summariser
             agent — the idle-timeout compaction summary, the carryover
             summary and conversation titles. Defaults to ``1`` (cheap,
@@ -163,8 +164,20 @@ class Settings(BaseModel):
     """
 
     chat_default_model_level: int = Field(default=2, json_schema_extra=_LLMIO_GROUP)
-    llmio_api_key: SecretStr = Field(
-        default=SecretStr(""), json_schema_extra=_LLMIO_GROUP
+    openrouter_api_key: SecretStr = Field(
+        default=SecretStr(""),
+        json_schema_extra=_LLMIO_GROUP,
+        description=(
+            "OpenRouter API key forwarded to llmio's keyed OpenRouter "
+            "fallback provider slot (and to the vision caption model). "
+            "This is a separate credential from the top-level ``openrouter`` "
+            "block: that block holds OpenRouter keys for the memory (cognee) "
+            "subsystem, keyed by the Langfuse project alias they bill under. "
+            "Both are the same provider but distinct credentials for "
+            "different consumers, so they are intentionally not merged. "
+            "Accepts the legacy config key ``llmio_api_key`` as a "
+            "backward-compatible alias."
+        ),
     )
     summary_model_level: int = Field(default=1, json_schema_extra=_LLMIO_GROUP)
     llmio_failover_window_seconds: float = Field(
@@ -2117,6 +2130,24 @@ class Settings(BaseModel):
             legacy_level = data.pop("llmio_model_level")
             data.setdefault("chat_default_model_level", legacy_level)
 
+        # Rename legacy ``llmio_api_key`` → ``openrouter_api_key``. The field
+        # is the OpenRouter fallback-slot key; the old name was misleading.
+        # Configs serialized before the rename still carry the old key; map
+        # its value over so the secret is preserved (extra="forbid" would
+        # otherwise reject the stale key and brick config load).
+        if "llmio_api_key" in data:
+            logger.info(
+                "Renaming legacy config key 'llmio_api_key' → 'openrouter_api_key'"
+            )
+            data = dict(data)
+            legacy_key = data.pop("llmio_api_key")
+            # Prefer an explicitly-set (non-empty) canonical value, else fall
+            # back to the legacy key. A plain ``setdefault`` would lose the
+            # legacy value when the default-merged effective config injects an
+            # empty ``openrouter_api_key`` before validation.
+            if not data.get("openrouter_api_key"):
+                data["openrouter_api_key"] = legacy_key
+
         # Strip pre_authorized_ticket_patterns from subsessions.
         subsessions = data.get("subsessions")
         if (
@@ -2235,6 +2266,14 @@ class Settings(BaseModel):
             )
             legacy_level = data.pop("llmio_model_level")
             data.setdefault("chat_default_model_level", legacy_level)
+        if "llmio_api_key" in data:
+            logger.info(
+                "migrate_legacy_config: renaming legacy key 'llmio_api_key' "
+                "→ 'openrouter_api_key'"
+            )
+            legacy_key = data.pop("llmio_api_key")
+            if not data.get("openrouter_api_key"):
+                data["openrouter_api_key"] = legacy_key
         subsessions = data.get("subsessions")
         if (
             isinstance(subsessions, dict)

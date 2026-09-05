@@ -259,7 +259,7 @@ def run_server_from_config(agent: ChatAgent | None = None) -> None:
         "llmio provider-failover window configured: %.0f seconds",
         settings.llmio_failover_window_seconds,
     )
-    if not settings.llmio_api_key.get_secret_value():
+    if not settings.openrouter_api_key.get_secret_value():
         logger.warning(
             "no llmio.api_key configured — provider failover to the keyed "
             "OpenRouter slot is unavailable; turns fail if the Claude "

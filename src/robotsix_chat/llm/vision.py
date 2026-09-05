@@ -119,7 +119,7 @@ async def generate_caption(
         logger.debug("generate_caption: no vision_model configured; skipping caption")
         return ""
 
-    api_key = cfg.llmio_api_key.get_secret_value()
+    api_key = cfg.openrouter_api_key.get_secret_value()
 
     try:
         identifier = _to_llmio_identifier(vision_model)
