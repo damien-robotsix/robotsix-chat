@@ -1009,7 +1009,9 @@ async def test_chat_endpoint_rejects_invalid_image_input(
 
 def test_create_agent_from_settings_explicit() -> None:
     """``create_agent_from_settings`` wires llmio fields from a ``Settings``."""
-    settings = Settings(chat_default_model_level=2, llmio_api_key="sk-from-settings")
+    settings = Settings(
+        chat_default_model_level=2, openrouter_api_key="sk-from-settings"
+    )
 
     agent = create_agent_from_settings("Be concise.", settings=settings)
 
@@ -1175,7 +1177,7 @@ async def test_create_agent_from_settings_uses_load_when_none(
     with patch(
         "robotsix_chat.config.settings.load_config",
         return_value=Settings(
-            chat_default_model_level=1, llmio_api_key=SecretStr("sk-env-test")
+            chat_default_model_level=1, openrouter_api_key=SecretStr("sk-env-test")
         ),
     ):
         result = create_agent_from_settings("Helpful bot.")
@@ -1926,7 +1928,7 @@ async def test_subsessions_close_cancels_worker_and_delivers_summary() -> None:
 
 def test_create_agent_model_level_override() -> None:
     """``model_level`` overrides ``settings.chat_default_model_level``."""
-    settings = Settings(chat_default_model_level=2, llmio_api_key="sk-key")
+    settings = Settings(chat_default_model_level=2, openrouter_api_key="sk-key")
 
     agent = create_agent_from_settings("Be terse.", settings=settings, model_level=2)
 
@@ -2019,7 +2021,7 @@ def test_cheap_tier_subsession_has_no_orchestration_directive() -> None:
     )
     from tests.common.subsession_fakes import build_env
 
-    settings = Settings(llmio_api_key="sk-key")
+    settings = Settings(openrouter_api_key="sk-key")
     env = build_env()
     ctx = SubsessionContext(owner_session_id="sess-1", subsession_id="sub-1", depth=1)
 
