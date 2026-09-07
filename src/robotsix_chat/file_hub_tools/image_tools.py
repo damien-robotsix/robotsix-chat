@@ -80,6 +80,23 @@ def _resolve_quality(operations: dict[str, Any]) -> int:
     return quality
 
 
+def _resolve_dimension(value: Any, fallback: int, key: str) -> int:
+    """Return a validated positive resize dimension.
+
+    ``None`` (the key was omitted) falls back to *fallback* — the source
+    dimension.  Any other value must be a positive, non-bool integer;
+    strings, floats, negatives and ``0`` raise :class:`ImageError` rather
+    than escaping as a raw ``TypeError``/``ValueError``.
+    """
+    if value is None:
+        return fallback
+    if isinstance(value, bool) or not isinstance(value, int):
+        raise ImageError(f"resize {key} must be a positive integer.")
+    if value <= 0:
+        raise ImageError(f"resize {key} must be a positive integer.")
+    return value
+
+
 def transform_image(
     src_path: Path,
     operations: dict[str, Any],
@@ -160,10 +177,8 @@ def transform_image(
         max_width = resize.get("max_width")
         max_height = resize.get("max_height")
         if max_width is not None or max_height is not None:
-            target_w = int(max_width) if max_width else input_width
-            target_h = int(max_height) if max_height else input_height
-            if target_w <= 0 or target_h <= 0:
-                raise ImageError("resize dimensions must be positive.")
+            target_w = _resolve_dimension(max_width, input_width, "max_width")
+            target_h = _resolve_dimension(max_height, input_height, "max_height")
             image.thumbnail((target_w, target_h), Image.Resampling.LANCZOS)
 
     save_kwargs: dict[str, Any] = {}

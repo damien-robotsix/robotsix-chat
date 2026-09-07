@@ -161,6 +161,27 @@ class TestTransformImageHelper:
         with pytest.raises(ImageError):
             transform_image(src, {"format": "gif"}, tmp_path / "out")
 
+    @pytest.mark.parametrize(
+        "bad_dimension",
+        ["800", 12.5, -100, 0, True, [800]],
+    )
+    def test_malformed_resize_dimension_rejected(
+        self, tmp_path: Path, bad_dimension: Any
+    ) -> None:
+        """A non-positive-integer resize dimension raises ImageError.
+
+        Regression guard: a string/float/negative/zero/bool dimension must
+        surface as a clean ``ImageError`` (caught by the tool wrapper) rather
+        than escaping as a raw ``TypeError``/``ValueError``.
+        """
+        src = _make_png(tmp_path / "logo.png")
+        with pytest.raises(ImageError):
+            transform_image(
+                src,
+                {"resize": {"max_width": bad_dimension}},
+                tmp_path / "out",
+            )
+
 
 # ---------------------------------------------------------------------------
 # transform_image tool (file-hub round-trip)
