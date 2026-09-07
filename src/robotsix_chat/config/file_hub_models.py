@@ -12,7 +12,7 @@ from robotsix_chat.config.constants import drop_blank_numeric_sentinels
 class FileHubToolsSettings(BaseModel):
     """File-hub integration — fetch, fill, and upload documents via file-hub.
 
-    When enabled, the agent gains five tools:
+    When enabled, the agent gains six tools:
 
     - ``file_hub_get`` — download a file from file-hub by id to a local
       working directory, returning the local path and metadata.
@@ -20,6 +20,8 @@ class FileHubToolsSettings(BaseModel):
     - ``render_pdf_page`` — render a PDF page to a viewable raster image.
     - ``fill_pdf_document`` — fill a PDF: set AcroForm field values by name,
       or overlay text at given page/x/y coordinates for flat PDFs.
+    - ``transform_image`` — resize, compress, convert, or strip metadata
+      from an image stored in file-hub, returning the new file-hub id.
     - ``file_hub_put`` — upload a local file to file-hub, preserving
       filename and content-type, returning the new file-hub id.
 

@@ -3401,3 +3401,91 @@ async def test_ticket_poll_batch_no_closed_fallback_when_all_resolve(
     await tools[1](["0629"])
 
     assert list_route.call_count == 1
+
+
+@pytest.mark.asyncio
+async def test_mark_ticket_ready_waits_out_classifying_then_retries(
+    monkeypatch,
+) -> None:
+    """Wait for a ``classifying`` ticket to reach draft, then retry once.
+
+    A just-filed ticket is still ``classifying``; mill answers the transition
+    with ``409 classifying -> ready`` (2026-09-07: two approvals in two
+    minutes each burned a turn on this 409).
+    """
+    from robotsix_chat import ticket_poll as tp
+
+    monkeypatch.setattr(tp, "_CLASSIFY_WAIT_SECONDS", 1.0)
+    monkeypatch.setattr(tp, "_CLASSIFY_POLL_SECONDS", 0.01)
+
+    calls: list[tuple[str, str]] = []
+    states = iter(["classifying", "classifying", "draft"])
+
+    async def _req(
+        component: str,
+        method: str,
+        path: str,
+        json_body: dict[str, Any] | None = None,
+    ) -> str:
+        calls.append((method, path))
+        if method == "GET":
+            return "HTTP 200\n" + json.dumps(
+                {"id": "mr-classifying", "state": next(states)}
+            )
+        posts = sum(1 for m, _ in calls if m == "POST")
+        if posts == 1:
+            return "HTTP 409\n" + json.dumps(
+                {
+                    "title": "Conflict",
+                    "status": 409,
+                    "detail": (
+                        "mr-classifying: classifying -> ready is not an "
+                        "allowed transition"
+                    ),
+                }
+            )
+        return "HTTP 200 OK\n" + json.dumps({"state": "ready"})
+
+    tools = build_mark_ticket_ready_tool(_settings(), component_request=_req)
+    result = await tools[0]("mr-classifying", justification="operator asked")
+
+    assert "HTTP 200" in result and "ready" in result
+    assert [m for m, _ in calls] == ["POST", "GET", "GET", "GET", "POST"]
+    assert all(p == "/tickets/mr-classifying" for m, p in calls if m == "GET")
+
+
+@pytest.mark.asyncio
+async def test_mark_ticket_ready_still_classifying_returns_guidance(
+    monkeypatch,
+) -> None:
+    """Return guidance when classification outlasts the bounded wait.
+
+    The tool must not retry forever nor fall back to the direct path, which
+    would 409 identically.
+    """
+    from robotsix_chat import ticket_poll as tp
+
+    monkeypatch.setattr(tp, "_CLASSIFY_WAIT_SECONDS", 0.05)
+    monkeypatch.setattr(tp, "_CLASSIFY_POLL_SECONDS", 0.01)
+
+    calls: list[tuple[str, str]] = []
+
+    async def _req(
+        component: str,
+        method: str,
+        path: str,
+        json_body: dict[str, Any] | None = None,
+    ) -> str:
+        calls.append((method, path))
+        if method == "GET":
+            return "HTTP 200\n" + json.dumps({"state": "classifying"})
+        return "HTTP 409\n" + json.dumps(
+            {"detail": "x: classifying -> ready is not an allowed transition"}
+        )
+
+    tools = build_mark_ticket_ready_tool(_settings(), component_request=_req)
+    result = await tools[0]("mr-stuck", justification="operator asked")
+
+    assert "still in mill's `classifying` state" in result
+    assert "Do not retry in this turn" in result
+    assert sum(1 for m, _ in calls if m == "POST") == 1

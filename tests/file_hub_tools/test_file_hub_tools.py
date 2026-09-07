@@ -101,16 +101,17 @@ class TestBuildFileHubTools:
         tools = build_file_hub_tools(settings)
         assert tools == []
 
-    def test_enabled_returns_five_tools(self, tmp_path: Path) -> None:
-        """Enabled settings returns all five tools."""
+    def test_enabled_returns_six_tools(self, tmp_path: Path) -> None:
+        """Enabled settings returns all six tools."""
         settings = _settings(working_dir=str(tmp_path))
         tools = build_file_hub_tools(settings)
-        assert len(tools) == 5
+        assert len(tools) == 6
         names = [t.__name__ for t in tools]
         assert "file_hub_get" in names
         assert "fill_pdf_document" in names
         assert "list_pdf_form_fields" in names
         assert "render_pdf_page" in names
+        assert "transform_image" in names
         assert "file_hub_put" in names
 
 
