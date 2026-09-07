@@ -152,12 +152,16 @@ class Settings(BaseModel):
             to the fallback (OpenRouter) provider slot after the default
             (Claude) slot fails repeatedly, before automatically returning
             to the default.  Default ``900`` (15 minutes).
-        agent_instruction: System instruction handed to the LLM agent.
-            Includes guidance on spawning subsessions for background work.
+        agent_instruction: System instruction handed to the LLM agent as
+            its base system prompt. The built-in default sets the assistant
+            persona and its operating rules (knowledge-base usage, output
+            formatting, and tool-use conventions).
         server_host: Host address the chat SSE server binds to.
         server_port: Port the chat SSE server listens on.
-        idle_timeout_minutes: Minutes of no user activity before the UI
-            auto-restarts the conversation; ``0`` disables the feature.
+        idle_timeout_minutes: Minutes of client-side inactivity before the
+            browser UI compacts the conversation — it starts a fresh session
+            while keeping earlier messages visible above; ``0`` disables the
+            idle timer.
         subsessions: Unified subsession system (background/periodic/user-chat
             sub-agents) — see :class:`SubsessionsSettings`.
         log_level: Python logging level name.
