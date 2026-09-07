@@ -61,7 +61,7 @@ from robotsix_chat.llm.capabilities import (
     set_model_supports_images,
 )
 from robotsix_chat.memory import ChatMemory, NullMemory
-from robotsix_chat.periodic.prompts import strip_periodic_scaffolding
+from robotsix_chat.periodic.prompts import strip_recall_scaffolding
 
 logger = logging.getLogger(__name__)
 
@@ -713,11 +713,12 @@ class LlmioChatAgent:
             )
             # A periodic session's first message starts with fixed scheduler
             # scaffolding (the preamble plus the injected current-date/time
-            # block); recalling on it retrieves chunks about "scheduled
-            # periodic session" instead of the preset's actual task, so strip
-            # the scaffolding from the recall query (the agent still gets the
+            # block) and a user_chat subsession's first turn starts with the
+            # side-chat system note; recalling on either retrieves chunks
+            # about the boilerplate instead of the actual task, so strip the
+            # scaffolding from the recall query (the agent still gets the
             # full message).
-            recall_query = strip_periodic_scaffolding(message)
+            recall_query = strip_recall_scaffolding(message)
             recalled = await self._memory.recall(recall_query, session_id=session_id)
             self._publish_synthetic_activity(
                 session_id,

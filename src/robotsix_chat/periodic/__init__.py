@@ -10,6 +10,7 @@ from .prompts import (
     PERIODIC_PREAMBLE,
     build_initial_message,
     strip_periodic_scaffolding,
+    strip_recall_scaffolding,
 )
 from .scheduler import (
     PERIODIC_OWNER,
@@ -24,4 +25,5 @@ __all__ = [
     "PeriodicScheduler",
     "build_initial_message",
     "strip_periodic_scaffolding",
+    "strip_recall_scaffolding",
 ]

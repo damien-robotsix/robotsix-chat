@@ -1408,7 +1408,8 @@ def create_agent_from_settings(
     # gets the standing suggestion-chip contract so multiple-choice decisions
     # render as clickable answer buttons.  Bare text-transformation agents and
     # subsession children are excluded — subsessions get their own suggestion
-    # directive via ``_USER_CHAT_FIRST_TURN_NOTE`` in the worker.
+    # directive via ``USER_CHAT_FIRST_TURN_NOTE`` (subsessions/prompts.py) in
+    # the worker.
     if not bare and subsession_ctx is None:
         instruction = instruction + _SUGGESTIONS_INSTRUCTION
 
