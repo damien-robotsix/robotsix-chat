@@ -3341,3 +3341,63 @@ def test_agent_instruction_carries_the_approval_gate_policy():
     assert "human_issue_approval" in instruction
     assert "draft then closed" in instruction
     assert "Never spawn a subsession that merely waits for a human" in instruction
+
+
+@pytest.mark.asyncio
+async def test_ticket_poll_batch_resolves_closed_ticket_via_fallback(
+    respx_mock: respx.MockRouter,
+) -> None:
+    """An abbreviated id of a CLOSED ticket resolves via the closed fallback.
+
+    Mill's default ``GET /tickets`` hides closed tickets, so a shipped
+    ticket's hash suffix never matched and chat re-filed shipped work
+    (2026-09-07, a9bc dup of c64a).  The resolver must retry once against
+    ``?include_closed=true&updated_after=…`` and report the closed state.
+    """
+    closed_id = "20260907T064354Z-bump-llmio-pin-a9bc"
+    open_id = "20260907T072712Z-worker-stop-duplicate-stage-runs-0629"
+
+    def _list(request: httpx.Request) -> httpx.Response:
+        if request.url.params.get("include_closed") == "true":
+            assert request.url.params.get("updated_after", "").endswith("Z")
+            return httpx.Response(
+                200,
+                json=[
+                    {"id": open_id, "state": "implement"},
+                    {"id": closed_id, "state": "closed"},
+                ],
+            )
+        return httpx.Response(200, json=[{"id": open_id, "state": "implement"}])
+
+    list_route = respx_mock.get("http://board:8077/tickets").mock(side_effect=_list)
+    detail = respx_mock.get(f"http://board:8077/tickets/{closed_id}").mock(
+        return_value=httpx.Response(200, json={"state": "closed"})
+    )
+
+    tools = build_ticket_poll_tools(_settings())
+    batch_tool = tools[1]
+    result = json.loads(await batch_tool(["a9bc"]))
+
+    assert list_route.call_count == 2
+    assert detail.called
+    assert result["tickets"][0]["ticket_id"] == closed_id
+    assert result["tickets"][0]["state"] == "closed"
+
+
+@pytest.mark.asyncio
+async def test_ticket_poll_batch_no_closed_fallback_when_all_resolve(
+    respx_mock: respx.MockRouter,
+) -> None:
+    """The (slow) closed listing is only fetched when something is unresolved."""
+    open_id = "20260907T072712Z-worker-stop-duplicate-stage-runs-0629"
+    list_route = respx_mock.get("http://board:8077/tickets").mock(
+        return_value=httpx.Response(200, json=[{"id": open_id, "state": "ready"}])
+    )
+    respx_mock.get(f"http://board:8077/tickets/{open_id}").mock(
+        return_value=httpx.Response(200, json={"state": "ready"})
+    )
+
+    tools = build_ticket_poll_tools(_settings())
+    await tools[1](["0629"])
+
+    assert list_route.call_count == 1
