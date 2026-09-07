@@ -1542,11 +1542,42 @@ async def test_mark_ticket_ready_roster_first_success() -> None:
 
 
 @pytest.mark.asyncio
+async def test_mark_ticket_ready_posts_real_transition_body() -> None:
+    """The request hits mill's real ``/transition`` route with state=ready.
+
+    Regression for 2026-09-07: the tool POSTed to a ``/mark-ready`` route
+    that mill never had, so every approval attempt 404'd and burned a turn.
+    """
+    calls: list[tuple[str, str, str, dict[str, Any] | None]] = []
+
+    async def _req(
+        component: str,
+        method: str,
+        path: str,
+        json_body: dict[str, Any] | None = None,
+    ) -> str:
+        calls.append((component, method, path, json_body))
+        return "HTTP 200 OK\n" + json.dumps({"state": "ready"})
+
+    tools = build_mark_ticket_ready_tool(_settings(), component_request=_req)
+    await tools[0]("mr-body", justification="operator approved in chat")
+
+    assert calls == [
+        (
+            "mill",
+            "POST",
+            "/tickets/mr-body/transition",
+            {"state": "ready", "note": "operator approved in chat"},
+        )
+    ]
+
+
+@pytest.mark.asyncio
 async def test_mark_ticket_ready_roster_falls_back_to_direct(
     respx_mock: respx.MockRouter,
 ) -> None:
     """When roster path returns an error, fall back to direct POST."""
-    route = respx_mock.post("http://board:8077/tickets/mr-fallback/mark-ready").mock(
+    route = respx_mock.post("http://board:8077/tickets/mr-fallback/transition").mock(
         return_value=httpx.Response(200, json={"state": "READY"})
     )
 
@@ -1566,7 +1597,7 @@ async def test_mark_ticket_ready_roster_http_error_falls_back_to_direct(
 ) -> None:
     """Roster 502 (no ``Error:`` prefix) still triggers the direct fallback."""
     route = respx_mock.post(
-        "http://board:8077/tickets/mr-http-fallback/mark-ready"
+        "http://board:8077/tickets/mr-http-fallback/transition"
     ).mock(return_value=httpx.Response(200, json={"state": "READY"}))
 
     tools = build_mark_ticket_ready_tool(
@@ -1586,7 +1617,7 @@ async def test_mark_ticket_ready_direct_only(
     respx_mock: respx.MockRouter,
 ) -> None:
     """Without component_request, the direct POST path works."""
-    route = respx_mock.post("http://board:8077/tickets/mr-direct/mark-ready").mock(
+    route = respx_mock.post("http://board:8077/tickets/mr-direct/transition").mock(
         return_value=httpx.Response(200, json={"state": "READY"})
     )
 
@@ -1602,7 +1633,7 @@ async def test_mark_ticket_ready_with_auth_token(
     respx_mock: respx.MockRouter,
 ) -> None:
     """Auth token is sent as Bearer in the Authorization header."""
-    route = respx_mock.post("http://board:8077/tickets/mr-auth/mark-ready").mock(
+    route = respx_mock.post("http://board:8077/tickets/mr-auth/transition").mock(
         return_value=httpx.Response(200, json={"state": "READY"})
     )
 
@@ -1621,7 +1652,7 @@ async def test_mark_ticket_ready_strips_trailing_slash(
     respx_mock: respx.MockRouter,
 ) -> None:
     """Trailing slash on board_api_base_url is stripped correctly."""
-    route = respx_mock.post("http://board:8077/tickets/mr-slash/mark-ready").mock(
+    route = respx_mock.post("http://board:8077/tickets/mr-slash/transition").mock(
         return_value=httpx.Response(200, json={"state": "READY"})
     )
 
@@ -1638,7 +1669,7 @@ async def test_mark_ticket_ready_http_404(
     respx_mock: respx.MockRouter,
 ) -> None:
     """HTTP 404 → error message includes the status code."""
-    respx_mock.post("http://board:8077/tickets/mr-404/mark-ready").mock(
+    respx_mock.post("http://board:8077/tickets/mr-404/transition").mock(
         return_value=httpx.Response(404, json={"detail": "Not found"})
     )
 
@@ -1666,7 +1697,7 @@ async def test_mark_ticket_ready_resolves_paraphrased_id(
         )
     )
 
-    route = respx_mock.post(f"http://board:8077/tickets/{real_id}/mark-ready").mock(
+    route = respx_mock.post(f"http://board:8077/tickets/{real_id}/transition").mock(
         return_value=httpx.Response(200, json={"state": "READY"})
     )
 
