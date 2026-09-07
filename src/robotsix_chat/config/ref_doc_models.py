@@ -95,9 +95,11 @@ class DiagnosticsSettings(BaseModel):
         observation_window_days: Days after a fix is applied to wait before
             generating an effectiveness report.  The pre-fix and post-fix
             windows are both this many days.  Default ``30``.
-        mill_events_path: Path to the mill's JSONL diagnostic event store,
-            used by ``read_diagnostic_events`` to inspect events emitted
-            by the mill.  Default ``/data/robotsix-mill/diagnostic_events.jsonl``.
+        mill_events_path: DEPRECATED, unused since 2026-09-07 —
+            ``read_diagnostic_events`` queries the mill board API
+            (``GET /diagnostic-events``) because the mill's data volume is
+            not mounted in the chat container.  Kept so pinned configs
+            still load (``extra="forbid"``).
 
     """
 

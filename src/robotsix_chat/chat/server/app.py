@@ -1164,7 +1164,11 @@ def _build_static_tools(
         *build_continuation_tools(
             settings.continuation, continuation_store=continuation_store
         ),
-        *build_diagnostics_tools(settings.diagnostics, store=diagnostic_store),
+        *build_diagnostics_tools(
+            settings.diagnostics,
+            store=diagnostic_store,
+            direct_repo=settings.direct_repo,
+        ),
         *build_recent_activity_tools(settings.self_review, conversation_store),
         *build_version_check_tools(settings.version_check, settings.direct_repo),
         *build_lifecycle_tools(settings.lifecycle, settings.central_deploy.url),

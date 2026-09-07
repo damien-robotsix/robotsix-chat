@@ -335,6 +335,7 @@ modules:
       - src/robotsix_chat/diagnostics/verification.py
       - tests/diagnostics/__init__.py
       - tests/diagnostics/test_fixes.py
+      - tests/diagnostics/test_read_events.py
       - tests/diagnostics/test_verification.py
   - id: knowledge
     description: "Writable knowledge-base tools for the agent — exposes build_knowledge_tools(), a factory that returns five tools the agent can call to add, append, update, list, and read durable notes across sessions. Entirely local JSON storage, no embeddings."
