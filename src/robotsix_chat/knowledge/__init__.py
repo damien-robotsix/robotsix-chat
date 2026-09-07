@@ -30,6 +30,13 @@ __all__ = ["build_knowledge_tools"]
 
 # Maximum content length returned by list_knowledge_notes snippets.
 _LIST_SNIPPET_LENGTH = 200
+_LIST_DEFAULT_LIMIT = 40
+"""Default cap on entries a single ``list_knowledge_notes`` call returns.
+
+The store grows without bound (291 notes / 700 KB in prod on 2026-09-07):
+an uncapped listing was 102 KB and exceeded the tool-result token cap, so
+the agent got an error instead of a list — a wasted turn every time.
+"""
 
 
 def _format_entries(entries: list[Any]) -> str:
@@ -128,11 +135,19 @@ def build_knowledge_tools(
             return entry.content
         return f"Updated knowledge note {entry.id} (updated: {entry.updated_at})"
 
-    async def list_knowledge_notes(topic: str = "") -> str:
+    async def list_knowledge_notes(
+        topic: str = "", limit: int = _LIST_DEFAULT_LIMIT
+    ) -> str:
         """List knowledge notes, optionally filtered by topic.
+
+        Most recently updated notes come first.  The listing is capped at
+        *limit* entries: when more exist, a trailing line says how many
+        were omitted — narrow with *topic*, raise *limit*, or use
+        ``search_knowledge_notes`` instead of asking for everything.
 
         Args:
             topic: Optional category filter. Omit or pass ``""`` to list all.
+            limit: Maximum number of notes to return (default 40).
 
         Returns:
             A formatted listing with id, topic, timestamps and a content
@@ -143,7 +158,19 @@ def build_knowledge_tools(
         if not entries:
             return "No knowledge notes found." + (f" (topic: {topic})" if topic else "")
 
-        return _format_entries(entries)
+        entries = sorted(entries, key=lambda e: e.updated_at, reverse=True)
+        total = len(entries)
+        cap = max(1, limit)
+        shown = entries[:cap]
+        text = _format_entries(shown)
+        if total > len(shown):
+            topics = sorted({e.topic for e in entries})
+            text += (
+                f"\n\n({total - len(shown)} more note(s) not shown — {total} total. "
+                f"Narrow with topic= (topics: {', '.join(topics)}), raise limit=, "
+                "or use search_knowledge_notes.)"
+            )
+        return text
 
     async def search_knowledge_notes(query: str) -> str:
         """Search your knowledge base for notes matching a query.
