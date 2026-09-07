@@ -7,15 +7,15 @@ when diagnostics is disabled.
 
 from __future__ import annotations
 
-import json
 import logging
 from collections.abc import Callable
 from datetime import datetime
-from pathlib import Path
 from typing import TYPE_CHECKING, Any
 
+import httpx
+
 if TYPE_CHECKING:
-    from robotsix_chat.config import DiagnosticsSettings
+    from robotsix_chat.config import DiagnosticsSettings, DirectRepoSettings
 
 from .fixes import FixProposalStore, FixSurfacer, RecurrenceDetector
 from .store import DiagnosticStore
@@ -43,15 +43,23 @@ def build_diagnostics_tools(
     settings: DiagnosticsSettings,
     *,
     store: DiagnosticStore | None = None,
+    direct_repo: DirectRepoSettings | None = None,
 ) -> list[Callable[..., Any]]:
     """Return diagnostics tools, or ``[]`` when disabled.
 
     When *store* is given it is reused — this lets an HTTP endpoint share
     the same in-memory instance so events posted via the API are visible to
-    agent tools immediately.
+    agent tools immediately.  *direct_repo* supplies the mill board API
+    base URL/token used by ``read_diagnostic_events``.
     """
     if not settings.enabled:
         return []
+
+    mill_base_url = (
+        direct_repo.board_api_base_url.strip().rstrip("/") if direct_repo else ""
+    )
+    mill_token = direct_repo.board_api_token.get_secret_value() if direct_repo else ""
+    mill_timeout = direct_repo.timeout if direct_repo else 30.0
 
     if store is None:
         store = DiagnosticStore(settings.store_path)
@@ -226,105 +234,98 @@ def build_diagnostics_tools(
         return "\n".join(lines)
 
     async def read_diagnostic_events(
-        event_type: str = "",
+        board_id: str = "",
+        category: str = "",
         since: str = "",
-        until: str = "",
         limit: int = 100,
+        event_type: str = "",
+        until: str = "",
     ) -> str:
-        """Read diagnostic events from the mill's JSONL event store.
+        """Read the mill's diagnostic events (``GET /diagnostic-events``).
 
-        Reads the JSONL file at ``settings.mill_events_path`` and returns
-        matching events.  Each line must be a JSON object; the tool
-        recognises ``category``, ``type``, or ``event_type`` as the event
-        type field and ``timestamp``, ``created_at``, or ``time`` as the
-        timestamp field.
+        Queries the mill board API directly — the mill's event store lives
+        in the mill's data volume, which chat does not mount, so this tool
+        must go through the API (until 2026-09-07 it read a local file
+        path that never existed inside the chat container and always
+        answered "No mill diagnostic events file found").
 
         Args:
-            event_type: Optional filter (e.g. ``CI_FAILURE``, ``CLONE_TARGET``).
-                Omit or pass ``""`` to list all.
-            since: Optional ISO-8601 lower bound (inclusive).  Omit for no
-                lower bound.
-            until: Optional ISO-8601 upper bound (inclusive).  Omit for no
-                upper bound.
+            board_id: Optional board / repo filter (e.g. ``hexarchy``).
+            category: Optional event category filter (e.g. ``CI_FAILURE``,
+                ``OPS_CLASSIFY``, ``CI_FIX_RESOLVED``).  Omit for all.
+            since: Optional ISO-8601 lower bound (inclusive), forwarded to
+                the mill.
             limit: Maximum number of events to return.  Default ``100``.
+            event_type: Deprecated alias of *category*.
+            until: Optional ISO-8601 upper bound (inclusive), applied
+                client-side.
 
         Returns:
             Formatted listing of matching diagnostic events, or an error
-            message when the file is missing or unreadable.
+            message when the mill is unreachable.
 
         """
-        path = Path(settings.mill_events_path)
-        if not path.is_file():
+        if not mill_base_url:
             return (
-                f"No mill diagnostic events file found at {path}.\n"
-                "The mill may not have emitted any events yet, or the "
-                "path may be misconfigured (see diagnostics.mill_events_path)."
+                "Mill board API is not configured "
+                "(direct_repo.board_api_base_url) — cannot read diagnostic events."
             )
 
-        since_dt: datetime | None = None
+        category = (category or event_type).strip()
         until_dt: datetime | None = None
         try:
-            if since:
-                since_dt = datetime.fromisoformat(since)
             if until:
                 until_dt = datetime.fromisoformat(until)
+            if since:
+                datetime.fromisoformat(since)
         except ValueError as exc:
             return f"Invalid ISO-8601 timestamp: {exc}"
 
+        params: dict[str, str] = {"limit": str(max(1, limit))}
+        if board_id.strip():
+            params["board_id"] = board_id.strip()
+        if category:
+            params["category"] = category
+        if since:
+            params["since"] = since
+
+        headers: dict[str, str] = {"Accept": "application/json"}
+        if mill_token:
+            headers["Authorization"] = f"Bearer {mill_token}"
+        url = f"{mill_base_url}/diagnostic-events"
         try:
-            raw = path.read_text(encoding="utf-8")
-        except OSError as exc:
+            async with httpx.AsyncClient(timeout=mill_timeout) as client:
+                response = await client.get(url, params=params, headers=headers)
+                response.raise_for_status()
+                payload = response.json()
+        except Exception as exc:
             logger.warning("read_diagnostic_events: %s", exc)
-            return f"Could not read {path}: {exc}"
+            return f"Could not read diagnostic events from {url}: {exc}"
+
+        events = payload.get("events", []) if isinstance(payload, dict) else payload
+        if not isinstance(events, list):
+            kind = type(payload).__name__
+            return f"Unexpected /diagnostic-events response shape: {kind}"
 
         matched: list[dict[str, Any]] = []
-        for line in raw.splitlines():
-            line = line.strip()
-            if not line:
+        for obj in events:
+            if not isinstance(obj, dict):
                 continue
-            try:
-                obj = json.loads(line)
-            except json.JSONDecodeError:
-                continue
-
-            # --- event-type filter ---
-            if event_type:
-                obj_type = (
-                    obj.get("category")
-                    or obj.get("type")
-                    or obj.get("event_type")
-                    or ""
-                )
-                if str(obj_type).strip().lower() != event_type.strip().lower():
-                    continue
-
-            # --- time-range filter ---
-            if since_dt or until_dt:
-                ts_raw = (
-                    obj.get("timestamp")
-                    or obj.get("created_at")
-                    or obj.get("time")
-                    or ""
-                )
+            if until_dt is not None:
+                ts_raw = obj.get("timestamp") or obj.get("created_at") or ""
                 try:
-                    ts = datetime.fromisoformat(str(ts_raw))
+                    if datetime.fromisoformat(str(ts_raw)) > until_dt:
+                        continue
                 except ValueError, TypeError:
-                    # cannot parse timestamp — include the event
                     pass
-                else:
-                    if since_dt and ts < since_dt:
-                        continue
-                    if until_dt and ts > until_dt:
-                        continue
-
             matched.append(obj)
-            if len(matched) >= limit:
-                break
 
         if not matched:
-            parts = [f"No matching diagnostic events found in {path}."]
-            if event_type:
-                parts.append(f"event_type: {event_type}")
+            parts = ["No matching diagnostic events."]
+            if board_id:
+                parts.append(f"board_id: {board_id}")
+            if category:
+                parts.append(f"category: {category}")
             if since:
                 parts.append(f"since: {since}")
             if until:
@@ -333,20 +334,13 @@ def build_diagnostics_tools(
 
         lines_out: list[str] = []
         for i, obj in enumerate(matched, start=1):
-            ev_type = (
-                obj.get("category")
-                or obj.get("type")
-                or obj.get("event_type")
-                or "(no type)"
+            ev_type = obj.get("category") or obj.get("type") or "(no type)"
+            ev_ts = obj.get("timestamp") or obj.get("created_at") or "(no timestamp)"
+            ev_msg = obj.get("reason") or obj.get("message") or "(no detail)"
+            where = " ".join(
+                f"{k}={obj[k]}" for k in ("repo_id", "ticket_id") if obj.get(k)
             )
-            ev_ts = (
-                obj.get("timestamp")
-                or obj.get("created_at")
-                or obj.get("time")
-                or "(no timestamp)"
-            )
-            ev_msg = obj.get("message", "(no message)")
-            lines_out.append(f"[{i}] {ev_type} @ {ev_ts}\n  {ev_msg}")
+            lines_out.append(f"[{i}] {ev_type} @ {ev_ts} {where}\n  {ev_msg}")
         if len(matched) >= limit:
             lines_out.append(f"\n(result truncated to {limit} events)")
         return "\n".join(lines_out)
