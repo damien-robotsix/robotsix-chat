@@ -12,11 +12,11 @@ not the lifecycle API. All secret values in environment responses are masked as 
 | Tool                           | HTTP                                 | Description                                                                |
 | ------------------------------ | ------------------------------------ | -------------------------------------------------------------------------- |
 | `list_lifecycle_services`      | `GET /services`                      | List all managed services and status.                                      |
-| `get_lifecycle_service_status` | `GET /services/{name}/status`        | Live status + health-check history.                                        |
+| `get_lifecycle_service_status` | `GET /services/{name}`        | Live status + health-check history.                                        |
 | `get_lifecycle_service_env`    | `GET /services/{name}/env`           | Runtime environment (secrets masked).                                      |
 | `restart_lifecycle_service`    | `POST /services/{name}/restart`      | Restart a service (requires per-repo access toggle).                       |
 | `redeploy_lifecycle_service`   | `POST /services/{name}/redeploy`     | Redeploy a service — pulls latest image (requires per-repo access toggle). |
-| `verify_lifecycle_deployment`  | `GET /services/{name}/status` (poll) | Poll service until healthy and (optionally) image matches expected ref.    |
+| `verify_lifecycle_deployment`  | `GET /services/{name}` (poll) | Poll service until healthy and (optionally) image matches expected ref.    |
 | `self_restart`                 | `POST /chat/services/{name}/restart` | Restart this service (named via `lifecycle.service_name`).                 |
 | `update_lifecycle_service_env` | `PUT /services/{name}/env`           | Update service environment (requires per-repo access toggle).              |
 
