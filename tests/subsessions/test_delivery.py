@@ -99,8 +99,13 @@ async def _await_reaction_tasks(delivery: ParentDelivery) -> None:
 
 
 def _fake_agent(chunks: list[str]) -> MagicMock:
-    """Build a ChatAgent stub whose ``stream()`` yields the given chunks."""
+    """Build a ChatAgent stub whose ``stream()`` yields the given chunks.
+
+    Every call's keyword arguments are appended to ``agent.calls`` so tests
+    can assert the turn shape (e.g. ``skip_recall``).
+    """
     agent = MagicMock()
+    agent.calls = []
 
     async def _stream(
         message: str,
@@ -111,7 +116,16 @@ def _fake_agent(chunks: list[str]) -> MagicMock:
         images=None,
         trace_metadata=None,
         trace_name=None,
+        model_level=None,
+        skip_recall=False,
     ):
+        agent.calls.append(
+            {
+                "message": message,
+                "trace_name": trace_name,
+                "skip_recall": skip_recall,
+            }
+        )
         for chunk in chunks:
             yield chunk
 
@@ -132,6 +146,8 @@ def _raising_agent(exc: Exception) -> MagicMock:
         images=None,
         trace_metadata=None,
         trace_name=None,
+        model_level=None,
+        skip_recall=False,
     ):
         raise exc
         yield  # pragma: no cover — makes this an async generator
@@ -203,6 +219,28 @@ async def test_deliver_summary_with_agent_runs_reaction_turn() -> None:
     # output, not the raw summary text.
     assert "all done" in args[1]
     assert args[2] == "Got it, moving on."
+
+
+@pytest.mark.asyncio
+async def test_deliver_summary_reaction_turn_skips_memory_recall() -> None:
+    """Reaction prompts must not run long-term memory recall.
+
+    They are machine-built ``[System notice]`` text; regression for
+    2026-09-07 when the outcome digest was recalled verbatim and rejected
+    with a 400 by the memory backend, wasting the recall round-trip.
+    """
+    store = MagicMock()
+    store.history.return_value = []
+    agent = _fake_agent(["ok"])
+    delivery = _build_delivery(store=store, registry=MagicMock(), agent=agent)
+    info = _make_info(parent_id=None)
+
+    await delivery.deliver_summary(info, "all done", "completed")
+    await _await_reaction_tasks(delivery)
+
+    assert agent.calls, "the outcome must trigger a reaction turn"
+    assert all(call["skip_recall"] is True for call in agent.calls)
+    assert all("[System notice]" in call["message"] for call in agent.calls)
 
 
 @pytest.mark.asyncio
