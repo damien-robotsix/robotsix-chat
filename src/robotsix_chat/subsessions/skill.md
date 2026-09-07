@@ -146,3 +146,91 @@ were changed.
 | `closed`      | Finished normally, summary delivered.                      |
 | `failed`      | Terminated with an error.                                  |
 | `interrupted` | Server restarted while work was live — resumes on restart. |
+
+## Operating rules (moved from the system prompt, 2026-09-08)
+
+These rules complement the tool reference above. The spawning conversation keeps the short version
+(one subsession per subject, self-contained instructions, reporting contract, pre-spawn guard);
+everything about running INSIDE a subsession, monitor hygiene and user_chat decision etiquette is
+here.
+
+### Monitors and periodic subsessions
+
+– Monitor existence check: NEVER claim a monitor is active, or that no monitor is needed because the
+work already finished, without first checking live state. Before making any claim about a monitor's
+existence or status, call check_monitor and list_subsessions (and, when a specific ticket is named,
+component_request GET /tickets/{id}) to verify what is actually spawned and what state it is in. If
+check_monitor returns terminal_report=true, a previous monitor already tracked the ticket to an end
+state — spawn a new monitor only if GET /tickets/{id} shows it active again (not DONE/CLOSED), and
+do NOT claim the work is unfinished. If no monitor was spawned and no terminal report exists, say so
+directly and offer to start one — do NOT invent a reason for why no monitor exists. Treat the work
+as unfinished (and the monitor as still needed) until the ticket is merged AND its endpoints are
+confirmed live. – Inside a subsession, call complete_subsession(summary) as soon as your goal is
+reached — for periodic work, that means as soon as the monitored condition reaches a verified
+terminal state. Also call complete_subsession when user intervention is required (ticket blocked on
+a decision, escalation needed). Do NOT call complete_subsession for intermediate progress — only the
+final summary reaches the parent. Reply exactly NO_CHANGE on a periodic run where nothing changed. –
+Periodic subsessions poll directly on every cycle and cannot spawn child subsessions — they perform
+all monitoring, polling, and checking inline in their own replies. Being spawned as a periodic
+monitor directly from a conversation (without going through a task subsession) is fully supported —
+it is the preferred way to launch a ticket monitor. – When monitoring a ticket that involves a code
+change deployed to a component, periodic subsessions must track deploy status alongside board
+status. After the PR merges, the fix is not yet live — the monitor must verify the component is
+running the new image. Use get_lifecycle_service_status to confirm rollout completed, and
+component_request GET /health to verify the component is healthy. A merged PR whose image is not yet
+deployed is not a terminal state — keep the monitor open until deploy is confirmed. This prevents
+redundant fix proposals for issues already resolved in the running image. – If a periodic subsession
+attempts spawn_subsession and receives a 'periodic subsessions cannot spawn' error, do NOT present
+options to the user or ask how to proceed. This is a hard code-level restriction, not a transient
+failure — retry will hit the same gate. Fall back immediately: perform the monitoring, polling, or
+checking inline in the current reply. If the work is too large for one cycle, spread it across
+multiple cycles using NO_CHANGE replies to hold intermediate state — the periodic monitor's own
+reply loop is the correct vehicle for ongoing inline work. The user should never see the error or be
+asked to choose a recovery path. – Subsessions can spawn their own subsessions (nesting is
+depth-limited) — split genuinely independent subtasks, do not chain for its own sake. – Spawn
+periodic monitors directly — do NOT create a child task subsession whose only job is to call
+spawn_subsession(kind='periodic', ...). A task that exists solely to launch a monitor wastes a model
+round-trip and duplicates the spawning logic you already own. If you need a periodic monitor, spawn
+it from your own context. – When spawning a subsession to report a known global process error (e.g.
+'asyncio.run() cannot be called from a running event loop', or any error that affects multiple
+tickets/subsessions at once), set dedup_key to the exact error message prefix (first 80 chars). When
+spawning a periodic monitor for a ticket, set dedup_key to the ticket id (e.g. '5f1c') — this
+prevents duplicate monitors for the same ticket. The system will suppress duplicate spawns for the
+same key — only the first spawn creates a new subsession; subsequent spawns return the existing id.
+Always pair this with list_subsessions to check what is already running.
+
+### Subsession pool budget
+
+– Subsession pool budget (check before spawning any monitor): the global subsession pool is finite —
+all active subsessions (monitors, tasks, side-chats) share one process-wide capacity cap
+(`subsessions.max_concurrent` in the server config). Spawning past the cap forces eviction of an
+existing paused subsession, so an unplanned spawn can silently kill a monitor you still need. Treat
+every spawn as consuming a scarce slot, and plan monitor count against the cap: • Count before
+spawning: call list_subsessions and count current active AND paused subsessions, then check headroom
+against the cap. If the pool is full, do not spawn — reuse an existing monitor (see below) or ask
+the operator which monitor to pause. • Reuse slots: if an existing monitor already covers the same
+or a related ticket, resume or reuse it instead of spawning a duplicate. One monitor can watch a
+related set of tickets; duplicates waste a slot. • Skip draft tickets: do not spawn monitors for
+tickets still in `draft` status — they are unlikely to change state and the board-drain periodic
+picks those up instead. Monitor only tickets that have entered the active pipeline. • No
+evict-and-respawn thrash: do not pause/evict a low-priority monitor to free a slot and then forget
+to respawn it. If you must evict to make room, note the evicted monitor's ticket id and respawn it
+explicitly once a slot frees — never leave it evicted silently.
+
+### user_chat decision subsessions
+
+– In a user_chat subsession, ask a pending question ONCE and wait for the user's reply; close with a
+summary once the discussion reaches a conclusion. The user can also close it at any time. – CRITICAL
+for user_chat decision subsessions: the operator sees ONLY the messages you write in the panel —
+they do NOT see your instructions. Every time you reference an option label (Option A, Option B, …)
+you MUST restate its full definition inline. For example, write "Option B (phased: cleanup now,
+warning-first gate, fail-closed only after auto-mail migrates)" — never just "Option B." This
+applies to every turn: the initial recommendation and any follow-up confirmation. When presenting a
+decision, show ALL options with definitions so the operator can compare. – CRITICAL for user_chat
+decision subsessions: present at most ONE decision per message. When multiple independent decisions
+are pending, present them SEQUENTIALLY — state the first decision with its options, wait for the
+operator's answer, confirm the choice (echo the selected option back and ask for explicit
+acknowledgement), then and only then present the next decision. Never batch multiple unrelated
+decisions into a single message; a human operator cannot process a list of choices reliably and will
+miss or misread options. If the operator raises a new question mid-sequence, answer it but return to
+the pending decision queue afterward.

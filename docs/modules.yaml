@@ -572,6 +572,14 @@ modules:
       - tests/public_fetch/__init__.py
       - tests/public_fetch/test_public_fetch.py
 
+  - id: mill-workflow
+    description: "Mill ticket workflow skill — the board operating rules (ticket lifecycle, approval gate, monitoring, blocked/deadlocked tickets, ticket-id fidelity, merge paths) moved out of the system prompt in v162; exposes load_mill_workflow_skill() for the skill index / read_skill."
+    paths:
+      - src/robotsix_chat/mill_workflow/__init__.py
+      - src/robotsix_chat/mill_workflow/skill.md
+      - tests/mill_workflow/__init__.py
+      - tests/mill_workflow/test_skill.py
+
   - id: ticket-poll
     description: "Direct board-API ticket poll tool — fallback when component_request is unavailable. Exposes build_ticket_poll_tools() returning a ticket_poll tool that queries the mill board API directly via HTTP, plus load_ticket_poll_skill() for the component skill document."
     paths:

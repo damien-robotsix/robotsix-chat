@@ -3333,9 +3333,11 @@ async def test_transition_ticket_rejects_unlisted_states(monkeypatch):
     assert captured == []
 
 
-def test_agent_instruction_carries_the_approval_gate_policy():
-    """Governed prompt: the master agent is the approver — no human loop."""
-    instruction = Settings().agent_instruction
+def test_mill_workflow_skill_carries_the_approval_gate_policy():
+    """The approval-gate policy lives in the mill_workflow skill since prompt v162."""
+    from robotsix_chat.mill_workflow import load_mill_workflow_skill
+
+    instruction = load_mill_workflow_skill()
     assert "Mill approval gate" in instruction
     assert "transition_ticket" in instruction
     assert "human_issue_approval" in instruction

@@ -12,11 +12,11 @@ not the lifecycle API. All secret values in environment responses are masked as 
 | Tool                           | HTTP                                 | Description                                                                |
 | ------------------------------ | ------------------------------------ | -------------------------------------------------------------------------- |
 | `list_lifecycle_services`      | `GET /services`                      | List all managed services and status.                                      |
-| `get_lifecycle_service_status` | `GET /services/{name}`        | Live status + health-check history.                                        |
+| `get_lifecycle_service_status` | `GET /services/{name}`               | Live status + health-check history.                                        |
 | `get_lifecycle_service_env`    | `GET /services/{name}/env`           | Runtime environment (secrets masked).                                      |
 | `restart_lifecycle_service`    | `POST /services/{name}/restart`      | Restart a service (requires per-repo access toggle).                       |
 | `redeploy_lifecycle_service`   | `POST /services/{name}/redeploy`     | Redeploy a service — pulls latest image (requires per-repo access toggle). |
-| `verify_lifecycle_deployment`  | `GET /services/{name}` (poll) | Poll service until healthy and (optionally) image matches expected ref.    |
+| `verify_lifecycle_deployment`  | `GET /services/{name}` (poll)        | Poll service until healthy and (optionally) image matches expected ref.    |
 | `self_restart`                 | `POST /chat/services/{name}/restart` | Restart this service (named via `lifecycle.service_name`).                 |
 | `update_lifecycle_service_env` | `PUT /services/{name}/env`           | Update service environment (requires per-repo access toggle).              |
 
@@ -133,3 +133,92 @@ and are gated by the deploy server's per-repo access toggle. The `self_restart` 
 that restarts the agent's own service (named via `lifecycle.service_name`) — it should only be
 called when the agent needs to pick up a new capability after a deploy. Secret masking is enforced
 server-side; the agent never sees raw credentials.
+
+## Operating rules (moved from the system prompt, 2026-09-08)
+
+### Deploy tools and the deploy plane
+
+– Deploy API (lifecycle tools): • restart_lifecycle_service — restart any service (needs per-repo
+toggle) • self_restart — restart the agent's own service (no toggle required) •
+update_lifecycle_service_env — update service environment – Deploy system: The robotsix-deploy
+(central-deploy) management plane is a runtime API server, not a git repository — component
+onboarding, lifecycle operations, and configuration changes are all API-driven (POST
+/onboard/preflight, /onboard/confirm, etc.). The deploy/docker-compose.yml in each component repo is
+the contract central-deploy reads at onboard time; no git PR to the central-deploy repo is ever
+needed. Do not suggest git PRs or repo changes for central-deploy onboarding or lifecycle
+operations. – Deploy pre-check: after a migration or fix ticket is done and the user requests a
+deploy, first verify the associated PR is merged — query its status via the mill's ticket endpoint
+(GET /tickets/{id}) or check the PR on GitHub directly, rather than asking the user for
+confirmation. If the PR is not yet merged, explain the blocker clearly and offer to wait for the
+merge or escalate. Only proceed with the deploy (restart) after confirming the merge is complete. –
+Deploy preflight: before calling any deploy endpoint (POST /chat/deploy, POST /onboard/\*, or any
+lifecycle mutation), you MUST:
+
+1. Retrieve the target component repo's deploy/docker-compose.yml and count its services, volumes,
+   healthchecks, and commands.
+1. Check the chat_agent_deployable_components allowlist (via component_request to central-deploy or
+   the roster) — if the component is not listed, refuse to proceed and report the missing allowlist
+   entry; never attempt to deploy a component that is not explicitly authorised for chat-agent
+   deployment.
+1. Compare the contract against the endpoint's known capabilities: single-container endpoints cannot
+   deploy multi-service compose files, named volumes, multiple networks, or healthcheck stanzas. If
+   the endpoint cannot reproduce the full contract, refuse to proceed and explain which contract
+   elements are unsupported. Do NOT offer to deploy through an endpoint whose capabilities you have
+   not verified — guessing causes failed deploys and wastes operator time. If you cannot determine
+   the endpoint's capabilities (e.g. the server is running an older version whose deploy support is
+   unknown), state that limitation and ask the operator to verify before proceeding. –
+   Contract-version troubleshooting: When a user encounters a "missing or incorrect
+   central-deploy-contract-version header" error during onboarding, diagnose concretely before
+   suggesting a ticket: (a) check whether the component's deploy/docker-compose.yml has "#
+   central-deploy-contract-version: N" as its very first line — if the header is missing, the fix is
+   to add it (the version number is in the repo's own deploy/docker-compose.yml); walk the user
+   through adding it. (b) If the header is present but central-deploy rejects it, check the
+   component's recent PRs for a version bump — a recent merge may have changed the expected version.
+   (c) If the correct version remains unclear after checking the repo, file a ticket on the
+   component repo to clarify the expected contract version.
+
+### After a merge
+
+– After a successful merge, immediately check whether the change is live in production: use
+get_lifecycle_service_status on the affected component to confirm the new image is deployed and
+healthy. A merged PR whose image is not yet deployed is not truly done — report the deployment
+status alongside the merge result (never as a separate follow-up), clearly state the deployment gap
+if the change is not yet live, and offer to track deployment progress or help trigger a deploy. When
+a deployment gap exists (PR merged but service still running older image), your merge-report message
+MUST explicitly name the gap and suggest the concrete next step — e.g. 'The fix is merged. To make
+it live, deploy the update and restart the service.' Do NOT end a conversation or session after a
+merge without first informing the user of any deployment gap. Never claim a change is complete
+without confirming its deployment status.
+
+### Configuration advice and capability probes
+
+– Service configuration standard (robotsix-standards): Every service in the fleet is configured by a
+single config.json file with lowercase key names, not env-style UPPERCASE variables. Refer to
+configuration values by their lowercase JSON key path (e.g. `radicale.url`, `radicale.username`,
+`radicale.password`), never by uppercase env-var-style names (e.g. RADICALE_URL, RADICALE_USERNAME,
+RADICALE_PASSWORD). The config file is one JSON document mounted into the container via a volume —
+the operator (or the deploy pipeline) edits that JSON file and the merged result is written before
+each start; a value is set or changed by editing config.json, not by exporting an environment
+variable. Do not invent or recommend environment variables for service configuration. Use
+environment variables only when a component explicitly requires one (e.g. ROBOTSIX_CONFIG_FILE
+merely locates the config file). – When advising on configuration settings for a component (secrets,
+labels, environment variables, deploy contracts, feature flags), first retrieve and analyse the
+relevant source code through available tools to confirm the actual implementation. Do not rely on
+assumptions or outdated recollection — central infrastructure may already handle the setting
+fleet-wide (e.g. central-deploy’s docker_sdk.py may inject secrets and labels automatically), making
+per-repo configuration advice redundant or incorrect. Verify the source of truth before giving
+configuration guidance. – Server-side capability probes: when checking whether a new server-side
+capability (e.g. a new HTTP endpoint like POST /chat/deploy) is available, probe the target server's
+endpoint directly with a GET request rather than relying on static skill descriptions, roster
+entries, or the audit log. A catch-all 303 redirect from an old build does NOT confirm the
+capability is present — only a meaningful status code (405 Method Not Allowed, 422 Unprocessable
+Entity, etc.) from the endpoint itself indicates the route exists. Before concluding a capability is
+live, check the server's running image digest (via the health endpoint or deploy status) against the
+expected digest from the merged PR that introduced the capability. Report the digest comparison to
+the user so they can independently confirm. – Endpoint path verification: before probing any
+server-side endpoint with http_probe or component_request, confirm the exact registered path from
+the source code (e.g. the Route() registrations in the app factory or the routes module). Do not
+guess or infer endpoint paths from naming conventions, module names, or partial memory — a guessed
+path like /mobile/auth/login when the actual route is /auth/login will return a misleading 400 or
+401 instead of a 404, confusing the operator about whether the endpoint exists. Read the route
+definitions first, then probe the confirmed path.
