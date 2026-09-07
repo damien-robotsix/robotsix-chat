@@ -14,8 +14,8 @@ merging PRs for tickets in ``waiting_auto_merge`` or ``human_mr_approval``
 state.
 
 Also provides ``mark_ticket_ready(ticket_id)`` — a dedicated state-transition
-tool that calls ``POST /tickets/{id}/mark-ready`` to force a stalled ticket
-out of ``draft`` / ``human_issue_approval`` into ``ready``.
+tool that calls ``POST /tickets/{id}/transition`` (state ``ready``) to force a
+stalled ticket out of ``draft`` / ``human_issue_approval`` into ``ready``.
 
 Also provides ``file_ticket(title, description, kind, repo_id)`` — a
 dedicated ticket-creation tool that calls ``POST /tickets/ingest`` on
@@ -696,12 +696,12 @@ def build_mark_ticket_ready_tool(
 ) -> list[Callable[..., Any]]:
     """Return the ``mark_ticket_ready`` tool.
 
-    The tool calls the mill board's ``POST /tickets/{id}/mark-ready`` endpoint
-    to force a ticket out of ``draft`` / ``human_issue_approval`` into the
-    ``ready`` state — the manual nudge for tickets whose drafting/approval
-    worker never picked them up.  It routes through *component_request*
-    (roster-based connectivity) when available, falling back to the direct
-    ``board_api_base_url`` otherwise.
+    The tool calls the mill board's ``POST /tickets/{id}/transition``
+    endpoint with ``{"state": "ready"}`` to force a ticket out of ``draft``
+    / ``human_issue_approval`` into the ``ready`` state — the manual nudge
+    for tickets whose drafting/approval worker never picked them up.  It
+    routes through *component_request* (roster-based connectivity) when
+    available, falling back to the direct ``board_api_base_url`` otherwise.
 
     Use this only after confirming the ticket is genuinely stuck (still in
     ``draft`` with no event beyond ``created``) and only when the transition
@@ -730,8 +730,9 @@ def build_mark_ticket_ready_tool(
     ) -> str:
         """Force a stalled draft ticket forward into the ``ready`` state.
 
-        Calls the mill board's mark-ready endpoint to transition the given
-        ticket out of ``draft`` / ``human_issue_approval``.  Use this when
+        Calls the mill board's generic transition endpoint (state
+        ``ready``) to move the ticket out of ``draft`` /
+        ``human_issue_approval``.  Use this when
         a monitored ticket remains stuck in ``draft`` with no event beyond
         ``created`` (the drafting/approval worker never picked it up), or
         to approve a user-requested ticket in the same turn it was filed.
@@ -747,8 +748,8 @@ def build_mark_ticket_ready_tool(
                 abbreviated IDs are resolved via hash-suffix or
                 slug-substring match against the live board.
             justification: Optional human-readable reason for the forced
-                transition, sent as the request body's ``justification``
-                field for auditability.
+                transition, recorded as the transition ``note`` on the
+                ticket's history for auditability.
 
         Returns:
             A status message from the mill API — success confirmation or
@@ -764,10 +765,15 @@ def build_mark_ticket_ready_tool(
         )
         effective_id = resolved_map.get(ticket_id) or ticket_id
 
-        path = f"/tickets/{effective_id}/mark-ready"
-        json_body: dict[str, str] | None = (
-            {"justification": justification} if justification else None
-        )
+        # Mill has no ``mark-ready`` route (every call 404'd — 3 wasted turns
+        # per approval on 2026-09-07 alone). The real primitive is the generic
+        # state transition: ``draft`` and ``human_issue_approval`` both allow
+        # ``ready``, and the route enqueues the ticket for implement.
+        path = f"/tickets/{effective_id}/transition"
+        json_body: dict[str, str] | None = {
+            "state": "ready",
+            "note": justification or "marked ready via chat (mark_ticket_ready)",
+        }
 
         # Try component_request (roster-based) first.
         if component_request is not None:
