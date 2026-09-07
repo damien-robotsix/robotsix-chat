@@ -102,6 +102,15 @@ Semantics worth knowing before you call it:
 - **Deep merge.** The payload is merged over the existing config; keys you
   omit keep their current values. Send only what you are changing — you do
   not need to (and should not) echo back a full document.
+- **Named lists merge by `name`.** `periodic.sessions` and
+  `autonomous.sessions` are lists of presets; an entry you send is merged
+  into the existing entry with the same `name` (the example above edits
+  only `nightly`'s interval), a new `name` is appended, and the entries you
+  do not mention are KEPT. To remove one, send
+  `{"name": "nightly", "__delete__": true}`. Never try to "replace the
+  list": before 2026-09-07 a one-entry payload dropped every other preset.
+  Lists without `name`d objects (e.g. `allowed_image_media_types`) are
+  still replaced as a whole.
 - **Secrets are preserved.** A masked (`"**********"`) or blank value for a
   secret keeps the stored secret. Only a real, non-empty value overwrites it.
 - **Validated as a whole.** The merged result is checked against your
