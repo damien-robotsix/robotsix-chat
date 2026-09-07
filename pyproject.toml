@@ -90,7 +90,9 @@ dev = [
     "mdformat-frontmatter",
     "mdformat-gfm",
     "mypy",
-
+    # OTel SDK (in-memory exporter) for span-tree assertions in tests; the
+    # runtime gets it through the ``tracing`` extra, CI syncs only groups.
+    "opentelemetry-sdk",
     "pre-commit",
     "pytest",
     "pytest-asyncio",
