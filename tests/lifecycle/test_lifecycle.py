@@ -149,7 +149,7 @@ async def test_service_status_returns_json(
     respx_mock: respx.MockRouter,
 ) -> None:
     """get_lifecycle_service_status returns formatted status JSON."""
-    respx_mock.get("http://lifecycle:9000/services/chat/status").mock(
+    respx_mock.get("http://lifecycle:9000/services/chat").mock(
         return_value=httpx.Response(
             200,
             json={
@@ -212,7 +212,7 @@ async def test_service_status_network_error_returns_string(
     respx_mock: respx.MockRouter,
 ) -> None:
     """A network/connection error is returned as a string, never raised."""
-    respx_mock.get("http://lifecycle:9000/services/chat/status").mock(
+    respx_mock.get("http://lifecycle:9000/services/chat").mock(
         side_effect=ConnectionError("connection refused")
     )
 
@@ -1068,7 +1068,7 @@ async def test_verify_deployment_healthy_no_image_ref(
     respx_mock: respx.MockRouter,
 ) -> None:
     """verify_deployment returns verified=True when healthy, no image ref."""
-    respx_mock.get("http://lifecycle:9000/services/chat/status").mock(
+    respx_mock.get("http://lifecycle:9000/services/chat").mock(
         return_value=httpx.Response(
             200,
             json={
@@ -1088,7 +1088,7 @@ async def test_verify_deployment_image_match(
     respx_mock: respx.MockRouter,
 ) -> None:
     """verify_deployment returns verified=True when image matches expected."""
-    respx_mock.get("http://lifecycle:9000/services/chat/status").mock(
+    respx_mock.get("http://lifecycle:9000/services/chat").mock(
         return_value=httpx.Response(
             200,
             json={
@@ -1136,9 +1136,7 @@ async def test_verify_deployment_image_mismatch_polls(
             },
         )
 
-    respx_mock.get("http://lifecycle:9000/services/chat/status").mock(
-        side_effect=side_effect
-    )
+    respx_mock.get("http://lifecycle:9000/services/chat").mock(side_effect=side_effect)
 
     client = LifecycleClient(_settings(), _LIFECYCLE_BASE_URL)
     result = await client.verify_deployment(
@@ -1155,7 +1153,7 @@ async def test_verify_deployment_timeout(
     respx_mock: respx.MockRouter,
 ) -> None:
     """verify_deployment returns verified=False when poll_timeout is reached."""
-    respx_mock.get("http://lifecycle:9000/services/chat/status").mock(
+    respx_mock.get("http://lifecycle:9000/services/chat").mock(
         return_value=httpx.Response(
             200,
             json={"status": "stopped"},
@@ -1176,7 +1174,7 @@ async def test_verify_deployment_api_error(
     respx_mock: respx.MockRouter,
 ) -> None:
     """verify_deployment returns immediately when the API returns an error."""
-    respx_mock.get("http://lifecycle:9000/services/chat/status").mock(
+    respx_mock.get("http://lifecycle:9000/services/chat").mock(
         return_value=httpx.Response(500, json={"error": "internal"})
     )
 
