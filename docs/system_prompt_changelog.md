@@ -3,6 +3,41 @@
 Governed artifact: `Settings.agent_instruction` default literal in
 `src/robotsix_chat/config/settings.py`. Version stamp: `SYSTEM_PROMPT_VERSION` in the same module.
 
+## v162 — 2026-09-08 — prompt-skills-split
+
+**Summary:** Restructure the default instruction from a 91 KB monolith into a ~40 KB core plus
+domain skills served on demand through `read_skill`. Moved OUT of the prompt (verbatim, not
+rewritten): the whole "Mill & Deploy Endpoints" section and every mill-board rule of the
+"Autonomy" section (ticket lifecycle steps 1–6 — re-assembled into one contiguous block after
+three later insertions had interleaved them —, approval gate, ticket-id fidelity, superseded
+auto-close, deadlocked closure, bulk-resume classification, unresolved prerequisites, block
+cascade, infrastructure denylist, hand-authored mill PRs, multiple-MR prompt, conflict
+resolution, filing quality, recall retirement) → new `mill_workflow` skill; monitor / periodic /
+user_chat / pool-budget rules → `subsessions` skill; deploy tools, deploy system, pre-check,
+preflight, contract-version troubleshooting, post-merge live check, service-configuration
+standard, configuration-advice and endpoint-probe rules → `lifecycle` skill; merge/PR
+management, credential verification before merge, direct_fix, repo bootstrap → `direct_repo`
+skill; reusable-workflow startup_failure heuristic → `github_actions` skill; periodic-speed
+Langfuse fast path → `langfuse_inspect` skill. Added a "Skills (read on demand)" paragraph
+mapping domains to skill names and a generic "Live state first" bullet replacing the
+mill-specific board-loading bullet. Renamed the two "Cognee" verification bullets to "Memory
+recall" (cognee was removed 2026-09-04) and turned a stray sentence fragment inside the
+knowledge-note-contradiction bullet ("re-verify against the live system immediately…") back
+into its own bullet. Kept in the core: identity + knowledge-base rules, delegated-action
+preferences, the short subsession contract and every user-facing reporting rule (consolidation,
+hard filtering, state verification), Model Policy, generic autonomy/safety gates, Efficiency,
+generic Verification, Halt and Re-scope, Secret handling.
+
+**Rationale:** Operator request 2026-09-08: the generic instruction had grown to 91 KB and
+carried domain playbooks (mill usage, deploys, GitHub) that belong in skills. Every turn of
+every session paid for all of it, and the prompt was one large edit away from the claude CLI
+argv ceiling again. Skills are progressive disclosure: the index advertises them for a few
+hundred bytes and the body is read once per session when the domain comes up.
+
+**SHA256:** `5155557afae310f4db0142a55b2e4bbaa44b5c61f87f1f6adc465686a1a52108`
+
+______________________________________________________________________
+
 ## v161 — 2026-09-04 — cognee-removed-memory-component
 
 **Summary:** Reword the two memory references in the default instruction after the cognee

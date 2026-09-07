@@ -3,10 +3,10 @@
 ## Agent tool: `open_simple_repo_pr` (ungated — no ticket required)
 
 **Lightweight direct-PR path for simple, low-risk changes.** Creates a branch, commits the given
-files, and opens a reviewable pull request in one call — **without requiring a mill ticket in BLOCKED
-state**. The opened PR is the review gate: a human approves and merges it, so this path stays safe
-and reversible. Use this so an operator does NOT have to file a ticket just to get a trivial change
-reviewed.
+files, and opens a reviewable pull request in one call — **without requiring a mill ticket in
+BLOCKED state**. The opened PR is the review gate: a human approves and merges it, so this path
+stays safe and reversible. Use this so an operator does NOT have to file a ticket just to get a
+trivial change reviewed.
 
 **Eligible task classes (use this tool):**
 
@@ -293,8 +293,8 @@ state. Results are limited to the repositories the robotsix-mill GitHub App is i
 ### Parameters
 
 - `repo` — mill `repo_id` or `owner/repo`; empty for account-wide.
-- `repo_full_name` — alias of `repo` (`owner/repo`), the same argument name every other GitHub
-  tool takes; pass one or the other (both with different values is an error).
+- `repo_full_name` — alias of `repo` (`owner/repo`), the same argument name every other GitHub tool
+  takes; pass one or the other (both with different values is an error).
 - `owner` — account to search when `repo` is empty (default: the installation's account).
 - `state` — `open`, `closed` or `all` (default).
 - `since_days` — only PRs updated within this many days (default 30, `0` disables; ignored for
@@ -568,3 +568,35 @@ For a user-installed App:
 
 After the grant is saved, call `inspect_github_installation_token` again to confirm the permission
 now appears in the fresh token's scope before retrying the original operation.
+
+## Operating rules (moved from the system prompt, 2026-09-08)
+
+– Merge / PR management: push_direct_repo_branch and open_direct_repo_pr push branches and open PRs
+for blocked tickets, but these PRs require human review before merge. When a PR is approved and
+ready to merge and the ticket is in BLOCKED state, prefer `merge_direct_repo_pr` (direct-repo) — it
+merges the PR and returns the merge commit SHA. For pre-BLOCKED tickets or when
+`merge_direct_repo_pr` is unavailable, use the mill's merge endpoint via component_request (the mill
+API has merge-now and related endpoints for merging approved MRs). Do NOT claim you lack merge
+capability — you can merge through either path. Do NOT claim merged without verifying the merge
+commit SHA. – Credential verification before merge: when a PR modifies stored credentials, secrets,
+or password hashes, inspect the diff to confirm it does not contain a well-known default value (e.g.
+the hash of 'password', 'admin', 'root', '123456', or similar). If the diff contains a well-known
+default, block the merge and file a corrective ticket with the intended credential value. –
+direct_fix (LAST RESORT ONLY): when a ticket is BLOCKED and has exhausted the mill’s implement cycle
+limit (≥3 failed implement attempts), you may use direct_fix to push a commit directly to the target
+branch, bypassing the PR flow. This is an escape hatch for mechanically simple, validated-correct
+fixes (e.g. stale-SHA replacements, file deletions, find-replace) that are blocked on rebase churn.
+Before calling direct_fix: (a) confirm the ticket has ≥3 implement cycles; (b) verify the fix is
+deterministic, reviewable, and low-risk; (c) get explicit human operator approval via a user_chat
+subsession — never call direct_fix unilaterally. Every direct_fix invocation is audited at WARNING
+level. – Repo creation bootstrap: when creating a new repository (or working with a freshly created
+empty repo), tool-chains that require an existing commit or branch to push to (e.g.
+push_direct_repo_branch, open_direct_repo_pr) will deadlock if the repo has no commits. Proactively
+seed an initial commit during repo creation that includes every
+[repo-baseline](https://damien-robotsix.github.io/robotsix-standards/repo-baseline/) file:
+SECURITY.md, AGENT.md, README.md (with a robotsix-standards link), .gitignore,
+.github/dependabot.yml (at minimum the github-actions ecosystem and the repo's language ecosystem),
+and a .github/workflows/ci.yml with a top-level `permissions: read-all` block. Seeding every
+baseline file in the initial commit prevents follow-up standards-enforcement tickets that add
+missing files one at a time. Never create an empty repo and then attempt a push workflow without
+first seeding a commit.

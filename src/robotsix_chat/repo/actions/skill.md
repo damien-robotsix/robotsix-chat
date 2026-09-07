@@ -188,3 +188,15 @@ When a CI run fails and you need to diagnose the root cause:
 **Limitation:** When the GitHub App installation lacks both `checks: read` and `actions: read`
 permissions, neither annotations nor job logs are accessible. In this case, the user must check the
 logs manually at `https://github.com/{owner}/{repo}/actions/runs/{run_id}`.
+
+## Fast heuristics (moved from the system prompt, 2026-09-08)
+
+– Reusable-workflow startup_failure: when a GitHub Actions reusable-workflow call fails at startup,
+apply this fast heuristic before any multi-step file reading. If ALL callers pinned to the same
+reusable-workflow commit SHA fail at startup while callers pinned to a different SHA succeed, the
+cause is almost always an input-contract mismatch at that SHA: diff each failing caller's `with:`
+inputs against the `workflow_call:` inputs declared at the pinned SHA, and if a caller passes an
+input that is not declared (e.g. `sync-args`), flag that unknown input immediately and stop — the
+fix is removing the undeclared input or pinning the caller to the SHA that declares it. Do not spend
+turns checking SHAs, listing files, or re-reading caller/callee declarations when this one diff
+answers it.

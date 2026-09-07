@@ -61,6 +61,7 @@ from robotsix_chat.langfuse import (
 from robotsix_chat.lifecycle import build_lifecycle_tools, load_lifecycle_skill
 from robotsix_chat.llm import LlmioChatAgent
 from robotsix_chat.memory import ChatMemory, NullMemory, ReadOnlyMemory, build_memory
+from robotsix_chat.mill_workflow import load_mill_workflow_skill
 from robotsix_chat.public_fetch import build_public_fetch_tools, load_public_fetch_skill
 from robotsix_chat.refdocs import build_refdocs_tools
 from robotsix_chat.render_url import build_render_url_tools, load_render_url_skill
@@ -902,6 +903,7 @@ def _skill_registry(
 
     return [
         (True, "subsessions", load_subsessions_skill),
+        (True, "mill_workflow", load_mill_workflow_skill),
         (
             settings.evergoing.enabled,
             "evergoing_cross_session",

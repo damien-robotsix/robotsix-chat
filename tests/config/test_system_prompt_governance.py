@@ -103,6 +103,22 @@ def test_agent_instruction_starts_with_helpful_prefix() -> None:
     )
 
 
+# Ceiling for the core instruction. v161 had grown to 91 KB by carrying every
+# domain playbook inline; v162 moved those into skills (read on demand). A new
+# rule that is domain-specific (mill board, deploys, repositories, CI) belongs in
+# the matching skill, not here — raise this only for genuinely cross-cutting rules.
+CORE_INSTRUCTION_BUDGET_CHARS = 45_000
+
+
+def test_agent_instruction_stays_within_core_budget() -> None:
+    default = Settings.model_fields["agent_instruction"].default
+    assert len(default) <= CORE_INSTRUCTION_BUDGET_CHARS, (
+        f"agent_instruction default is {len(default)} chars "
+        f"(> {CORE_INSTRUCTION_BUDGET_CHARS}). Domain-specific rules belong in a "
+        "skill (read_skill), not in the core prompt."
+    )
+
+
 def test_agent_instruction_carries_consolidation_precedence_clause() -> None:
     """The live default carries the reinforced consolidation gate clause.
 

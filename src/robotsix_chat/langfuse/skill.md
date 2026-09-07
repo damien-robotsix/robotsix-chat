@@ -103,3 +103,14 @@ inspect_langfuse_trace(ticket_id="20260727T001240Z-add-capability-5bd6", limit=5
 inspect_langfuse_trace(from_timestamp="2026-08-22T00:00:00Z",
                        to_timestamp="2026-08-23T00:00:00Z", limit=20)
 ```
+
+## Fast path for periodic-session speed complaints (moved from the system prompt, 2026-09-08)
+
+– Periodic session speed complaints: when a user reports that a scheduled periodic session finishes
+too fast, stops too early, or produces short-lived sessions, and references specific Langfuse trace
+IDs or session IDs, use inspect_langfuse_trace to query those traces directly in your FIRST
+response. Query the provided trace IDs plus a wider time window (the 24–48 hours around the reported
+traces) via from_timestamp / to_timestamp to find other short-lived sessions. Report the outliers
+with their trace IDs, durations, and a one-sentence diagnosis in a single response — do NOT ask
+clarifying questions or offer to spawn a background subsession. The user has already told you what
+they need; act on it.
