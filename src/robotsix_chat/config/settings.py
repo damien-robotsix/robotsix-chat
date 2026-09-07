@@ -99,6 +99,31 @@ _TOOLS_GROUP: dict[str, Any] = {"group": "Agent Tools"}
 _AUTH_GROUP: dict[str, Any] = {"group": "Auth"}
 
 
+# Unambiguous old-scheme model levels and their new-scheme equivalents.  The
+# v0.21.0 rework collapsed the old 1..5 capability ladder to 1..3 using
+# ``{1->1, 2->1, 3->2, 4->2, 5->3}``.  Only the values 4 and 5 are unambiguously
+# old-scheme (they never existed in the new 1..3 range), so only they are
+# remapped; new-scheme pins 1..3 are indistinguishable from a deliberate choice
+# and any other value (e.g. a garbage 6) is left for the range checks to reject.
+# Mirrors the ``_LEGACY_MODEL_LEVEL_MAP`` convention in
+# :mod:`robotsix_chat.config.constants`.
+_LEGACY_LEVEL_REMAP: dict[int, int] = {4: 2, 5: 3}
+
+
+def _remap_legacy_model_level(value: Any) -> Any:
+    """Remap an unambiguous old-scheme model level to the new 1..3 scheme.
+
+    Only the old-scheme values ``4`` and ``5`` are remapped (``4 -> 2``,
+    ``5 -> 3``); every other value — including new-scheme ``1..3`` pins,
+    genuinely invalid levels like ``6``, and any non-int value — passes
+    through untouched so the downstream range checks still reject real
+    garbage.
+    """
+    if isinstance(value, bool) or not isinstance(value, int):
+        return value
+    return _LEGACY_LEVEL_REMAP.get(value, value)
+
+
 class Settings(BaseModel):
     """Application settings, loaded from a single JSON config file.
 
@@ -2224,6 +2249,31 @@ class Settings(BaseModel):
                 data = dict(data)
                 del data[_compaction_key]
 
+        # Strip the removed llmio_cooldown_seconds — the llmio cooldown knob
+        # was removed in v0.21.0. Deployed configs still carry it, which
+        # extra="forbid" would otherwise reject and crash-loop the boot.
+        if "llmio_cooldown_seconds" in data:
+            logger.info(
+                "Dropping removed config key 'llmio_cooldown_seconds' "
+                "(removed in v0.21.0)"
+            )
+            data = dict(data)
+            del data["llmio_cooldown_seconds"]
+
+        # Strip any leftover ``cognee`` block. The in-process cognee memory
+        # backend was replaced by the robotsix-memory component in v0.21.0;
+        # its live config lived under ``memory`` (stripped in
+        # ``_migrate_legacy_deploy_and_mail``), but older configs can still
+        # carry a top-level ``cognee`` block, which extra="forbid" would
+        # otherwise reject and crash-loop the boot.
+        if "cognee" in data:
+            logger.info(
+                "Dropping removed config block 'cognee' (cognee replaced by "
+                "the robotsix-memory component in v0.21.0)"
+            )
+            data = dict(data)
+            del data["cognee"]
+
         # Strip the removed chat_model_level override — the main chat agent
         # now always uses the unified ``chat_default_model_level``.
         if "chat_model_level" in data:
@@ -2280,6 +2330,68 @@ class Settings(BaseModel):
             del subsessions["pre_authorized_ticket_patterns"]
             data = dict(data)
             data["subsessions"] = subsessions
+
+        return data
+
+    @model_validator(mode="before")
+    @classmethod
+    def _remap_legacy_model_levels(cls, data: Any) -> Any:
+        """Remap persisted model-level fields from the old 1..5 scheme.
+
+        The v0.21.0 rework collapsed the old 1..5 capability ladder to 1..3
+        (``{1->1, 2->1, 3->2, 4->2, 5->3}``). A config serialized before the
+        collapse can still carry a level ``4`` or ``5`` in any of its
+        integer level fields (the chat default, the summariser, the
+        subsession spawn defaults, feedback, per-periodic-preset levels);
+        the post-init range checks would reject those. Remap every such
+        field through :func:`_remap_legacy_model_level`, which only touches
+        out-of-range old-scheme values and leaves new-scheme ``1..3`` pins
+        untouched.
+        """
+        if not isinstance(data, dict):
+            return data
+
+        def _remap_in(container: dict[str, Any], key: str) -> None:
+            if key not in container:
+                return
+            new_value = _remap_legacy_model_level(container[key])
+            if new_value != container[key]:
+                logger.info(
+                    "Remapping legacy model level '%s': %r -> %r "
+                    "(old 1..5 ladder collapsed to 1..3 in v0.21.0)",
+                    key,
+                    container[key],
+                    new_value,
+                )
+                container[key] = new_value
+
+        # Top-level capability levels.
+        for key in ("chat_default_model_level", "summary_model_level"):
+            _remap_in(data, key)
+
+        # Subsession spawn-default levels.
+        subsessions = data.get("subsessions")
+        if isinstance(subsessions, dict):
+            for key in (
+                "default_model_level",
+                "delegated_read_model_level",
+                "monitor_max_model_level",
+            ):
+                _remap_in(subsessions, key)
+
+        # Feedback analyser level.
+        feedback = data.get("feedback")
+        if isinstance(feedback, dict):
+            _remap_in(feedback, "model_level")
+
+        # Per-preset periodic session levels.
+        periodic = data.get("periodic")
+        if isinstance(periodic, dict):
+            sessions = periodic.get("sessions")
+            if isinstance(sessions, list):
+                for session in sessions:
+                    if isinstance(session, dict):
+                        _remap_in(session, "model_level")
 
         return data
 
