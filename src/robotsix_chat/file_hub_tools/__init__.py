@@ -44,8 +44,8 @@ def build_file_hub_tools(
 
     Returns:
         A list of async callables (``file_hub_get``, ``fill_pdf_document``,
-        ``list_pdf_form_fields``, ``file_hub_put``), or ``[]`` when
-        *settings.enabled* is ``False``.
+        ``list_pdf_form_fields``, ``render_pdf_page``, ``transform_image``,
+        ``file_hub_put``), or ``[]`` when *settings.enabled* is ``False``.
 
     """
     if not settings.enabled:
@@ -57,6 +57,12 @@ def build_file_hub_tools(
         FileHubNotFoundError,
         FileHubUnavailableError,
     )
+    from .image_tools import (
+        ImageError,
+        ImageNotDecodableError,
+        ImageTooLargeError,
+    )
+    from .image_tools import transform_image as _transform_image
     from .pdf_tools import (
         PdfError,
         PdfFieldNotFoundError,
@@ -358,6 +364,96 @@ def build_file_hub_tools(
             BinaryContent(data=image_bytes, media_type="image/png"),
         ]
 
+    async def transform_image(
+        file_id: str,
+        operations: str = "",
+        output_filename: str = "",
+    ) -> str:
+        """Resize, compress, convert, or strip metadata from a file-hub image.
+
+        Fetches the source image from file-hub by id, applies a constrained
+        set of transforms locally with Pillow, uploads the result back to
+        file-hub, and returns the new file-hub id plus before/after byte
+        sizes and pixel dimensions.  Runs the whole file-hub round-trip
+        itself, so you do NOT need to call ``file_hub_get``/``file_hub_put``
+        around it.
+
+        **Use when:** you need a trivial binary-asset operation on an image,
+        such as shrinking/compressing a large photo before adding it to a
+        website, converting between formats, or stripping metadata.
+
+        Args:
+            file_id: The file-hub UUID of the source image.
+            operations: JSON object of transforms, all optional. Keys:
+                ``resize`` (``{"max_width": 1600, "max_height": 1200}`` with
+                either key optional; preserves aspect ratio and never
+                upscales), ``quality`` (JPEG/WebP quality 1-100, default
+                75), ``format`` (``"jpeg"``, ``"png"``, or ``"webp"``;
+                default keeps the source format), and ``strip_metadata``
+                (bool, default ``true``; strips EXIF/ICC/other metadata).
+                Example: ``{"resize": {"max_width": 1600}, "quality": 75}``.
+            output_filename: Optional filename for the uploaded result (its
+                extension is normalised to the output format).
+
+        Returns:
+            A summary including the new file-hub id, output format, and the
+            before/after dimensions and byte sizes, or an error description.
+
+        """
+        import json
+
+        ops: dict[str, Any] = {}
+        if operations:
+            try:
+                ops = json.loads(operations)
+            except json.JSONDecodeError as exc:
+                return f"Invalid operations JSON: {exc}"
+            if not isinstance(ops, dict):
+                return "operations must be a JSON object."
+
+        try:
+            local_path, _metadata = await client.download_file(file_id, work_dir)
+        except FileHubNotFoundError as exc:
+            return f"File not found: {exc}"
+        except FileHubUnavailableError as exc:
+            return f"File-hub unavailable: {exc}"
+        except FileHubError as exc:
+            return f"Download error: {exc}"
+
+        try:
+            result = _transform_image(
+                local_path,
+                ops,
+                work_dir,
+                output_filename=output_filename or None,
+            )
+        except ImageTooLargeError as exc:
+            return f"Image too large: {exc}"
+        except ImageNotDecodableError as exc:
+            return f"Not a decodable image: {exc}"
+        except ImageError as exc:
+            return f"Image processing error: {exc}"
+
+        try:
+            uploaded = await client.upload_file(result["output_path"])
+        except FileHubUnavailableError as exc:
+            return f"File-hub unavailable: {exc}"
+        except FileHubError as exc:
+            return f"Upload error: {exc}"
+
+        return "\n".join(
+            [
+                "Image transformed and uploaded.",
+                f"New file-hub ID: {uploaded.get('id', 'unknown')}",
+                f"Output format: {result['output_format']}",
+                (
+                    f"Dimensions: {result['input_width']}x{result['input_height']}"
+                    f" -> {result['output_width']}x{result['output_height']} px"
+                ),
+                (f"Size: {result['input_bytes']} -> {result['output_bytes']} bytes"),
+            ]
+        )
+
     async def file_hub_put(
         file_path: str,
         content_type: str = "",
@@ -405,6 +501,7 @@ def build_file_hub_tools(
         list_pdf_form_fields,
         render_pdf_page,
         file_hub_put,
+        transform_image,
     ]
 
 

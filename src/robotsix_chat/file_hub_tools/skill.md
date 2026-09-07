@@ -1,6 +1,6 @@
 ## File-hub tools — document fetch, fill, render, and upload
 
-You have five tools for working with files via the robotsix-file-hub service:
+You have six tools for working with files via the robotsix-file-hub service:
 
 ### `file_hub_get` — download a file from file-hub
 
@@ -104,6 +104,37 @@ fill_pdf_document(
 )
 ```
 
+### `transform_image` — resize, compress, convert, or strip metadata from an image
+
+Runs a trivial binary-asset transform on an image stored in file-hub. Fetches the source by file-hub
+id, processes it locally with Pillow, uploads the result back to file-hub, and returns the new
+file-hub id plus before/after byte sizes and pixel dimensions. It does the whole file-hub round-trip
+itself — you do **not** need `file_hub_get`/`file_hub_put` around it.
+
+**Use when:** you need to shrink/compress a large photo before adding it to a website, convert
+between formats (JPEG/PNG/WebP), or strip EXIF/ICC metadata.
+
+Pass `operations` as a JSON object; every field is optional:
+
+- `resize` — `{"max_width": 1600, "max_height": 1200}` (either key optional). Preserves aspect ratio
+  and never upscales.
+- `quality` — JPEG/WebP quality 1–100 (default 75).
+- `format` — `"jpeg"`, `"png"`, or `"webp"` (default: keep the source format).
+- `strip_metadata` — bool (default `true`); strip EXIF/ICC/other metadata.
+
+**Constraints:** input images larger than 50 MB are rejected; non-image objects return a clear
+error. Only the transforms above are available (no arbitrary processing).
+
+**Example:**
+
+```text
+transform_image(
+    file_id="e0367d94-1895-4756-8730-3867f694fd05",
+    operations='{"resize": {"max_width": 1600}, "quality": 75}',
+    output_filename="hero.jpg"
+)
+```
+
 ### `file_hub_put` — upload a file to file-hub
 
 Uploads a local file to file-hub, preserving the filename and content-type. Returns the new file-hub
@@ -130,3 +161,5 @@ operator to download, sign, or forward.
   connection error details.
 - **Non-PDF input** — `fill_pdf_document` and `list_pdf_form_fields` return a clear "Not a valid
   PDF" message when the file lacks a `%PDF` header.
+- **Non-image / oversize input** — `transform_image` returns a clear "Not a decodable image" message
+  for non-image objects and an "Image too large" message when the source exceeds 50 MB.
