@@ -128,10 +128,64 @@ def _coerce_object_json_fields(body: dict[str, Any]) -> dict[str, Any]:
     return body
 
 
+#: Marker an update entry in a named list may carry to remove that entry.
+NAMED_LIST_DELETE_MARKER = "__delete__"
+
+
+def _is_named_list(value: Any) -> bool:
+    """Return whether *value* is a non-empty list of dicts that all carry a ``name``."""
+    return (
+        isinstance(value, list)
+        and len(value) > 0
+        and all(
+            isinstance(item, dict) and isinstance(item.get("name"), str)
+            for item in value
+        )
+    )
+
+
+def _merge_named_list(
+    existing: list[dict[str, Any]], update: list[dict[str, Any]]
+) -> list[dict[str, Any]]:
+    """Merge *update* into *existing* by each entry's ``name``.
+
+    Existing entries are kept in order; an update entry with a matching
+    name is deep-merged into it (so a partial entry — e.g. only ``name`` +
+    ``initial_prompt`` — edits that field and keeps the rest); update
+    entries with new names are appended; an update entry carrying
+    ``{"__delete__": true}`` removes the entry of that name.
+
+    Why not replace the list: ``periodic.sessions`` and
+    ``autonomous.sessions`` are lists of independent presets, and every
+    caller that edits one preset naturally sends just that preset.  On
+    2026-09-07 a self-edit ``PUT /config`` carrying one preset silently
+    dropped the other six (config version 46) and reset the surviving
+    preset's ``enabled`` / ``model_level`` / ``schedule_interval_seconds``
+    to their defaults.
+    """
+    by_name = {item["name"]: deepcopy(item) for item in existing}
+    order = [item["name"] for item in existing]
+    for item in update:
+        name = item["name"]
+        if item.get(NAMED_LIST_DELETE_MARKER):
+            if name in by_name:
+                del by_name[name]
+                order.remove(name)
+            continue
+        if name in by_name:
+            by_name[name] = _deep_merge(by_name[name], item)
+        else:
+            by_name[name] = deepcopy(item)
+            order.append(name)
+    return [by_name[name] for name in order]
+
+
 def _deep_merge(existing: dict[str, Any], update: dict[str, Any]) -> dict[str, Any]:
     """Recursively merge *update* into *existing*.
 
-    Dicts are merged recursively; all other types are overwritten by the
+    Dicts are merged recursively; lists whose items are all named dicts
+    (``[{"name": ...}, ...]`` on both sides) are merged by name via
+    :func:`_merge_named_list`; all other types are overwritten by the
     update value.  The *existing* dict is never mutated — a fresh copy is
     returned.
     """
@@ -139,6 +193,8 @@ def _deep_merge(existing: dict[str, Any], update: dict[str, Any]) -> dict[str, A
     for key, value in update.items():
         if key in result and isinstance(result[key], dict) and isinstance(value, dict):
             result[key] = _deep_merge(result[key], value)
+        elif key in result and _is_named_list(result[key]) and _is_named_list(value):
+            result[key] = _merge_named_list(result[key], value)
         else:
             result[key] = deepcopy(value)
     return result

@@ -1581,3 +1581,106 @@ def test_get_config_deploy_secret_masked(tmp_path: Path) -> None:
     creds = data["config"].get("component_credentials", {})
     if creds:
         assert creds["mill"]["header_token"] == "**********"  # pragma: allowlist secret
+
+
+# ---------------------------------------------------------------------------
+# _deep_merge — named lists (periodic.sessions / autonomous.sessions)
+# ---------------------------------------------------------------------------
+
+
+def _seven_presets() -> list[dict]:
+    names = [
+        "mail-triage",
+        "fleet-cost-review",
+        "daily-calendar-digest",
+        "board-gates-drain",
+        "repo-hygiene",
+        "release-gate",
+        "website-status-check",
+    ]
+    return [
+        {
+            "name": n,
+            "enabled": True,
+            "initial_prompt": f"prompt for {n}",
+            "schedule_interval_seconds": 14400 if n == "board-gates-drain" else 86400,
+            "model_level": 2,
+        }
+        for n in names
+    ]
+
+
+def test_deep_merge_named_list_one_entry_edits_only_that_entry() -> None:
+    """Edit one preset by name without touching the other six.
+
+    The exact self-edit shape of 2026-09-07 (config version 46): a
+    ``PUT /config`` carrying only the board-gates-drain preset with a new
+    prompt must edit that prompt and keep the other six presets and the
+    drain's own schedule/level/enabled fields.
+    """
+    existing = {
+        "periodic": {"sessions": _seven_presets(), "ready_staleness_minutes": 30}
+    }
+    update = {
+        "periodic": {
+            "sessions": [
+                {
+                    "name": "board-gates-drain",
+                    "initial_prompt": "drain v2 with 48h rule",
+                }
+            ]
+        }
+    }
+    result = _deep_merge(existing, update)
+    sessions = result["periodic"]["sessions"]
+    assert [s["name"] for s in sessions] == [s["name"] for s in _seven_presets()]
+    drain = next(s for s in sessions if s["name"] == "board-gates-drain")
+    assert drain["initial_prompt"] == "drain v2 with 48h rule"
+    assert drain["enabled"] is True
+    assert drain["schedule_interval_seconds"] == 14400
+    assert drain["model_level"] == 2
+    assert result["periodic"]["ready_staleness_minutes"] == 30
+    # existing input untouched
+    assert (
+        existing["periodic"]["sessions"][3]["initial_prompt"]
+        == "prompt for board-gates-drain"
+    )
+
+
+def test_deep_merge_named_list_appends_new_name_and_deletes_marked() -> None:
+    existing = {"periodic": {"sessions": _seven_presets()}}
+    update = {
+        "periodic": {
+            "sessions": [
+                {
+                    "name": "nightly",
+                    "initial_prompt": "new preset",
+                    "schedule_interval_seconds": 86400,
+                },
+                {"name": "website-status-check", "__delete__": True},
+            ]
+        }
+    }
+    names = [s["name"] for s in _deep_merge(existing, update)["periodic"]["sessions"]]
+    assert names[-1] == "nightly"
+    assert "website-status-check" not in names
+    assert len(names) == 7
+    assert all(
+        "__delete__" not in s
+        for s in _deep_merge(existing, update)["periodic"]["sessions"]
+    )
+
+
+def test_deep_merge_plain_lists_are_still_replaced() -> None:
+    existing = {"allowed_image_media_types": ["image/png", "image/jpeg"]}
+    update = {"allowed_image_media_types": ["image/webp"]}
+    assert _deep_merge(existing, update) == {
+        "allowed_image_media_types": ["image/webp"]
+    }
+
+
+def test_deep_merge_mixed_list_without_names_is_replaced() -> None:
+    """A list where some items lack ``name`` is not a named list — replace."""
+    existing = {"x": [{"name": "a"}, {"other": 1}]}
+    update = {"x": [{"name": "a", "v": 2}]}
+    assert _deep_merge(existing, update) == {"x": [{"name": "a", "v": 2}]}
