@@ -183,10 +183,18 @@ class PeriodicScheduler:
 
         session = self._store.create_session(PERIODIC_OWNER)
         session_id = str(session["session_id"])
-        date = datetime.now(UTC).strftime("%Y-%m-%d %H:%M")
-        self._store.set_title(session_id, f"{defn.name} — {date}")
+        now = datetime.now(UTC)
+        self._store.set_title(
+            session_id, f"{defn.name} — {now.strftime('%Y-%m-%d %H:%M')}"
+        )
 
-        message = build_initial_message(defn.initial_prompt)
+        message = build_initial_message(defn.initial_prompt, now=now)
+        logger.info(
+            "Periodic preset %r: injecting current date/time %s UTC into "
+            "the initial message",
+            name,
+            now.strftime("%Y-%m-%d %H:%M"),
+        )
         entry = self._state.setdefault(defn.name, {})
         entry["last_fired_at"] = self._clock()
         entry["last_session_id"] = session_id

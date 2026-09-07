@@ -9,6 +9,13 @@ session.
 
 from __future__ import annotations
 
+from datetime import UTC, datetime
+
+CURRENT_DATETIME_HEADER = (
+    "=== CURRENT DATE/TIME (system context — extract 'today' from here) ==="
+)
+CURRENT_DATETIME_FOOTER = "=== END CURRENT DATE/TIME ==="
+
 PERIODIC_PREAMBLE = (
     "You are running a scheduled periodic session. Complete the task below "
     "in this turn: do the work now, then finish with a concise report of "
@@ -24,6 +31,50 @@ PERIODIC_PREAMBLE = (
 )
 
 
-def build_initial_message(initial_prompt: str) -> str:
-    """Return the first user message for a periodic session."""
-    return PERIODIC_PREAMBLE + initial_prompt.strip()
+def _current_datetime_context(now: datetime) -> str:
+    """Return the fenced system-context block stating the current instant.
+
+    Periodic sessions run headless with no operator to supply "today", so the
+    scheduler injects the firing instant here. The agent must derive today's
+    date and any date ranges from this block rather than from memory or
+    training-cutoff assumptions — the failure that motivated this
+    (2026-09-07 calendar-agenda returned events for 2026-09-05).
+    """
+    now = now.astimezone(UTC)
+    return (
+        f"{CURRENT_DATETIME_HEADER}\n"
+        f"The current date and time is {now:%Y-%m-%d %H:%M} UTC ({now:%A}).\n"
+        "Treat this instant as 'now'/'today' for any date-relative task below. "
+        "Derive today's date and any date ranges (e.g. start-of-day "
+        "00:00:00 to end-of-day 23:59:59 UTC) from this line — never from "
+        "memory or assumptions. Before reporting date-scoped results, confirm "
+        "the returned items fall within the range you derived from this date.\n"
+        f"{CURRENT_DATETIME_FOOTER}\n\n"
+    )
+
+
+def build_initial_message(initial_prompt: str, *, now: datetime | None = None) -> str:
+    """Return the first user message for a periodic session.
+
+    ``now`` is the firing instant (defaults to the current UTC time); it is
+    rendered into a fenced system-context block so the agent extracts "today"
+    from context instead of guessing.
+    """
+    if now is None:
+        now = datetime.now(UTC)
+    return PERIODIC_PREAMBLE + _current_datetime_context(now) + initial_prompt.strip()
+
+
+def strip_periodic_scaffolding(message: str) -> str:
+    """Return *message* with the scheduler scaffolding removed.
+
+    Strips the fixed preamble and the injected current-date/time block so
+    memory recall queries the preset's actual task, not the scaffolding.
+    Messages without the scaffolding are returned unchanged.
+    """
+    body = message.removeprefix(PERIODIC_PREAMBLE)
+    marker = f"{CURRENT_DATETIME_FOOTER}\n\n"
+    idx = body.find(marker)
+    if idx != -1:
+        body = body[idx + len(marker) :]
+    return body

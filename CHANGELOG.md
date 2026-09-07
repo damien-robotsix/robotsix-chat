@@ -69,6 +69,16 @@ Everything below predates the release-please migration and was
 maintained by hand or by towncrier. It is kept verbatim; new entries
 are added above by release-please.
 
+## [0.21.1](https://github.com/damien-robotsix/robotsix-chat/compare/v0.21.0...v0.21.1) (2026-09-07)
+
+
+### Bug Fixes
+
+* **lifecycle:** read service status from GET /services/{name}, not a /status sub-route ([#1902](https://github.com/damien-robotsix/robotsix-chat/issues/1902)) ([9d0c91e](https://github.com/damien-robotsix/robotsix-chat/commit/9d0c91e06b3dc97e87cdd6d223742599e8f7052a))
+* Periodic calendar agenda task returns wrong date — Sept 5 instead of today (20260907T065838Z-periodic-calendar-agenda-task-returns-wr-4464) ([#1900](https://github.com/damien-robotsix/robotsix-chat/issues/1900)) ([ab94ba5](https://github.com/damien-robotsix/robotsix-chat/commit/ab94ba5077a305c9b78e1de13125130531162dbc))
+* **subsessions:** skip memory recall on system-notice reaction turns ([#1903](https://github.com/damien-robotsix/robotsix-chat/issues/1903)) ([fe3a0f6](https://github.com/damien-robotsix/robotsix-chat/commit/fe3a0f608778336a35e6a687f57050fac3c16825))
+* **ticket_poll:** mark_ticket_ready must call mill's real transition route ([#1899](https://github.com/damien-robotsix/robotsix-chat/issues/1899)) ([2a17aa1](https://github.com/damien-robotsix/robotsix-chat/commit/2a17aa1bbadd8eb75e5e19bb997e162a3d79fd9b))
+
 ## [0.21.0](https://github.com/damien-robotsix/robotsix-chat/compare/v0.20.0...v0.21.0) (2026-09-06)
 
 

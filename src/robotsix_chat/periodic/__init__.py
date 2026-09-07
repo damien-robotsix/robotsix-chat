@@ -6,7 +6,11 @@ prompt through the same code path as an operator message. Nothing else is
 special about these sessions.
 """
 
-from .prompts import PERIODIC_PREAMBLE, build_initial_message
+from .prompts import (
+    PERIODIC_PREAMBLE,
+    build_initial_message,
+    strip_periodic_scaffolding,
+)
 from .scheduler import (
     PERIODIC_OWNER,
     PERIODIC_SCHEDULER_PERSIST_PATH,
@@ -19,4 +23,5 @@ __all__ = [
     "PERIODIC_SCHEDULER_PERSIST_PATH",
     "PeriodicScheduler",
     "build_initial_message",
+    "strip_periodic_scaffolding",
 ]
