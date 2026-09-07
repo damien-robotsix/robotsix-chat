@@ -337,8 +337,15 @@ class LifecycleClient:
         return await self._get("/services")
 
     async def service_status(self, service_name: str) -> str:
-        """``GET /services/{name}/status`` — status and health."""
-        return await self._get(f"/services/{service_name}/status")
+        """``GET /services/{name}`` — state, image, health, digests.
+
+        The deploy server has no ``/status`` sub-route: that guess 404s
+        (live 2026-09-07, a chat turn probed ``/services/browser/status``
+        right after a redeploy and got the route-hint 404). The bare
+        service path is the state read; ``/chat/services/{name}/status``
+        returns the same ``ServiceStatus`` shape for allowlisted services.
+        """
+        return await self._get(f"/services/{service_name}")
 
     async def service_env(self, service_name: str) -> str:
         """``GET /services/{name}/env`` — environment (secrets masked)."""
@@ -457,7 +464,7 @@ class LifecycleClient:
     ) -> str:
         """Poll *service_name* status until healthy and image matches.
 
-        Calls ``GET /services/{name}/status`` in a loop, waiting up to
+        Calls ``GET /services/{name}`` in a loop, waiting up to
         *poll_timeout_seconds*.  Returns a JSON verdict with
         ``verified`` (bool), ``service_status``, and ``detail``.
         """
