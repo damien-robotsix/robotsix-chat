@@ -217,11 +217,17 @@ def test_constructor_form_legacy_llmio_api_key_alias() -> None:
 
 
 def test_invalid_model_level_raises() -> None:
-    """A model_level outside llmio's levels (1-3) is rejected."""
+    """A model_level that is neither valid nor a known old-scheme value is rejected.
+
+    ``6`` and ``0`` are garbage in both the old 1..5 and new 1..3 ladders, so
+    the v0.21.0 remap leaves them untouched and the range check rejects them.
+    (The unambiguous old-scheme values ``4`` and ``5`` are instead remapped —
+    see ``test_migrate_v021_full_old_scheme_config``.)
+    """
     with pytest.raises(ValueError, match="model_level"):
         Settings(chat_default_model_level=6)
     with pytest.raises(ValueError, match="model_level"):
-        Settings(chat_default_model_level=4)
+        Settings(chat_default_model_level=0)
 
 
 # ---------------------------------------------------------------------------
@@ -357,6 +363,104 @@ def test_load_early_deployment_config_migrates_and_ignores(
         "compaction_min_turns",
         "compaction_keep_recent_turns",
     ):
+        assert not hasattr(settings, removed)
+
+
+# ---------------------------------------------------------------------------
+# v0.21.0 load-time migration (removed keys + 1..5 -> 1..3 level collapse)
+# ---------------------------------------------------------------------------
+
+
+def test_migrate_v021_full_old_scheme_config() -> None:
+    """A full pre-0.21.0 config loads cleanly: removed keys stripped, levels remapped.
+
+    Mirrors a production config volume frozen before v0.21.0: it still carries
+    the retired ``autonomous`` block, ``llmio_cooldown_seconds``, a ``cognee``
+    block, and integer level fields on the old 1..5 ladder (4 and 5). The
+    ``mode="before"`` migrations must drop the removed keys (rather than
+    tripping ``extra="forbid"``) and remap the old-scheme levels through
+    ``{4->2, 5->3}`` so the model validates without a ValidationError.
+    """
+    settings = Settings.model_validate(
+        {
+            "chat_default_model_level": 4,
+            "summary_model_level": 5,
+            "llmio_cooldown_seconds": 30,
+            "autonomous": {"enabled": True, "max_idle_auto_turns": 5},
+            "cognee": {"enabled": True, "data_dir": "/data/cognee"},
+            "subsessions": {
+                "default_model_level": 4,
+                "delegated_read_model_level": 5,
+                "monitor_max_model_level": 5,
+            },
+            "feedback": {"enabled": False, "model_level": 4},
+            "periodic": {
+                "sessions": [
+                    {
+                        "name": "nightly",
+                        "initial_prompt": "do the thing",
+                        "model_level": 5,
+                    }
+                ]
+            },
+        }
+    )
+
+    # Removed keys / blocks are gone from the model entirely.
+    for removed in ("llmio_cooldown_seconds", "autonomous", "cognee"):
+        assert not hasattr(settings, removed)
+
+    # Old-scheme levels remapped per {4->2, 5->3}.
+    assert settings.chat_default_model_level == 2
+    assert settings.summary_model_level == 3
+    assert settings.subsessions.default_model_level == 2
+    assert settings.subsessions.delegated_read_model_level == 3
+    assert settings.subsessions.monitor_max_model_level == 3
+    assert settings.feedback.model_level == 2
+    assert settings.periodic.sessions[0].model_level == 3
+
+
+def test_migrate_v021_new_scheme_levels_left_untouched() -> None:
+    """New-scheme 1..3 level pins are preserved (only out-of-range values remap)."""
+    settings = Settings.model_validate(
+        {
+            "chat_default_model_level": 3,
+            "summary_model_level": 1,
+            "subsessions": {"default_model_level": 2},
+        }
+    )
+    assert settings.chat_default_model_level == 3
+    assert settings.summary_model_level == 1
+    assert settings.subsessions.default_model_level == 2
+
+
+def test_load_v021_old_scheme_config_via_full_path(
+    tmp_path: Path, monkeypatch: pytest.MonkeyPatch
+) -> None:
+    """A pre-0.21.0 config file loads cleanly through the real production path.
+
+    Exercises ``Settings.load()`` → ``robotsix_config.load_config`` →
+    ``migrate_legacy_config`` on a config that carries the removed
+    ``autonomous`` / ``llmio_cooldown_seconds`` / ``cognee`` surfaces and
+    old-scheme level values, matching how a deployed config volume upgrades.
+    """
+    config_path = _write_config_json(
+        tmp_path,
+        {
+            "chat_default_model_level": 5,
+            "llmio_cooldown_seconds": 30,
+            "autonomous": {"enabled": True},
+            "cognee": {"enabled": True},
+            "subsessions": {"default_model_level": 4},
+        },
+    )
+    monkeypatch.setenv("ROBOTSIX_CONFIG_FILE", str(config_path))
+
+    settings = Settings.load()
+
+    assert settings.chat_default_model_level == 3
+    assert settings.subsessions.default_model_level == 2
+    for removed in ("llmio_cooldown_seconds", "autonomous", "cognee"):
         assert not hasattr(settings, removed)
 
 
@@ -1294,8 +1398,8 @@ _PREEXISTING_ALLOWLIST: set[tuple[str, int, str]] = {
     ("src/robotsix_chat/config/settings.py", 98, "-opus"),
     ("src/robotsix_chat/config/settings.py", 98, "claude-fable"),
     # config/settings.py — vision_model default (OpenRouter captioning model)
-    ("src/robotsix_chat/config/settings.py", 167, "gpt-"),
-    ("src/robotsix_chat/config/settings.py", 1979, "gpt-"),
+    ("src/robotsix_chat/config/settings.py", 192, "gpt-"),
+    ("src/robotsix_chat/config/settings.py", 2004, "gpt-"),
     # config/memory_models.py — gpt-5-nano / gpt-5-mini / deepseek-v4-flash
     ("src/robotsix_chat/config/memory_models.py", 26, "gpt-"),
     ("src/robotsix_chat/config/memory_models.py", 50, "gpt-"),
