@@ -829,14 +829,7 @@ class LlmioChatAgent:
                     not slot_needs_api_key(tlc)
                 )
                 try:
-                    with (
-                        _trace_session(
-                            session_id,
-                            effective_trace_metadata,
-                            trace_name=trace_name,
-                        ),
-                        _activity_context(on_activity),
-                    ):
+                    with _activity_context(on_activity):
                         limits = _keyed_usage_limits(tlc)
                         if limits is not None:
                             return await handle.run(
@@ -882,12 +875,23 @@ class LlmioChatAgent:
 
             return _run_slot
 
-        result = await acall_with_failover(
-            _fn_factory,
-            tier_config=self._tier_config,
-            level=level,
-            what="chat turn",
-        )
+        # The named trace wraps the WHOLE failover loop so the turn (not an
+        # llmio-internal ``llmio.failover.attempt`` span) is the Langfuse trace
+        # root. Opening it inside each slot attempt made every chat trace
+        # surface as "llmio.failover.attempt" (2026-09-07: the fleet cost
+        # review read that name as paid-backup failover spend and spawned an
+        # investigation of a provider degradation that never happened).
+        with _trace_session(
+            session_id,
+            effective_trace_metadata,
+            trace_name=trace_name,
+        ):
+            result = await acall_with_failover(
+                _fn_factory,
+                tier_config=self._tier_config,
+                level=level,
+                what="chat turn",
+            )
 
         self._record_actions_from_result(result)
         text = result.output

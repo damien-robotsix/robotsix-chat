@@ -1728,3 +1728,46 @@ def test_merge_tier_overrides_layers_window_over_setting() -> None:
 
     merged = _merge_tier_overrides({"failover": {"failure_threshold": 5}}, 600.0)
     assert merged["failover"] == {"failure_threshold": 5, "window_seconds": 600.0}
+
+
+@pytest.mark.asyncio
+async def test_named_trace_is_root_above_failover_attempt_span() -> None:
+    """The ``trace_name`` root span must enclose llmio's failover loop.
+
+    Regression for 2026-09-07: the named trace was opened inside each slot
+    attempt, so the llmio-internal ``llmio.failover.attempt`` span became the
+    Langfuse trace root and every chat trace was named after it. Uses a real
+    OTel SDK provider so the assertion mirrors the exported span tree, not a
+    patched context manager.
+    """
+    from opentelemetry import trace as otel_trace
+    from opentelemetry.sdk.trace import TracerProvider
+    from opentelemetry.sdk.trace.export import SimpleSpanProcessor
+    from opentelemetry.sdk.trace.export.in_memory_span_exporter import (
+        InMemorySpanExporter,
+    )
+
+    exporter = InMemorySpanExporter()
+    provider = otel_trace.get_tracer_provider()
+    if not isinstance(provider, TracerProvider):
+        provider = TracerProvider()
+        otel_trace.set_tracer_provider(provider)
+    provider.add_span_processor(SimpleSpanProcessor(exporter))
+
+    create_model, _ = _patched_create_model("reply")
+    with patch("robotsix_chat.llm.agent.get_provider_for_identifier", create_model):
+        agent = LlmioChatAgent(model_level=3, instruction="Be helpful.")
+        _ = [
+            c
+            async for c in agent.stream(
+                "hi", session_id="sess-root", trace_name="chat-turn"
+            )
+        ]
+
+    spans = {s.name: s for s in exporter.get_finished_spans()}
+    assert "chat-turn" in spans and "llmio.failover.attempt" in spans
+    turn = spans["chat-turn"]
+    attempt = spans["llmio.failover.attempt"]
+    assert turn.parent is None, "the named turn span must be the trace root"
+    assert attempt.parent is not None
+    assert attempt.parent.span_id == turn.context.span_id
