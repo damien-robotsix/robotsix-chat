@@ -906,6 +906,11 @@ class ParentDelivery:
                             client_id=session_id,
                             trace_metadata={"subsession_batch": "true"},
                             trace_name="subsession-reaction-batch",
+                            # The prompt is a machine-built "[System notice]"
+                            # digest, not an operator utterance: recalling on
+                            # it retrieves noise and, past the backend's query
+                            # cap, a 400 (live 2026-09-07 06:34Z).
+                            skip_recall=True,
                         )
                     ]
                 except Exception:
@@ -1050,6 +1055,7 @@ class ParentDelivery:
                             client_id=session_id,
                             trace_metadata={"subsession_id": info.id},
                             trace_name="subsession-reaction",
+                            skip_recall=True,
                         )
                     ]
                 except Exception:
