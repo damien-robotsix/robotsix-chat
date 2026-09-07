@@ -293,6 +293,8 @@ state. Results are limited to the repositories the robotsix-mill GitHub App is i
 ### Parameters
 
 - `repo` — mill `repo_id` or `owner/repo`; empty for account-wide.
+- `repo_full_name` — alias of `repo` (`owner/repo`), the same argument name every other GitHub
+  tool takes; pass one or the other (both with different values is an error).
 - `owner` — account to search when `repo` is empty (default: the installation's account).
 - `state` — `open`, `closed` or `all` (default).
 - `since_days` — only PRs updated within this many days (default 30, `0` disables; ignored for

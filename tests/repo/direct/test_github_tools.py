@@ -433,3 +433,114 @@ class TestOpenSimpleRepoPr:
         )
         assert result == "Error pushing branch: boom"
         assert client.created is None
+
+
+# ---------------------------------------------------------------------------
+# list_open_prs — repo_full_name alias
+# ---------------------------------------------------------------------------
+
+
+class _SearchClient(_FakeClient):
+    """Fake client recording ``search_prs`` kwargs and returning no items."""
+
+    def __init__(self) -> None:
+        """Start with no recorded search."""
+        super().__init__()
+        self.searched: dict[str, Any] | None = None
+
+    async def search_prs(self, **kwargs: Any) -> list[dict[str, Any]]:
+        """Record the search kwargs and return an empty result set."""
+        self.searched = kwargs
+        return []
+
+
+class _FakeBoard:
+    """Fake board resolving ``owner/repo`` names verbatim (and recording them)."""
+
+    def __init__(self) -> None:
+        """Start with no recorded lookups."""
+        self.resolved: list[str] = []
+
+    async def resolve_repo_full_name(self, repo: str) -> str | None:
+        """Accept ``owner/repo`` verbatim; anything else is unknown."""
+        self.resolved.append(repo)
+        return repo if "/" in repo else None
+
+
+def _build_list_open_prs() -> tuple[Any, _SearchClient, _FakeBoard]:
+    async def _pass(*_a: Any, **_k: Any) -> str | None:
+        return None
+
+    client = _SearchClient()
+    board = _FakeBoard()
+    tools = build_github_tools(
+        client=cast(Any, client),
+        board=cast(Any, board),
+        settings=cast(Any, object()),
+        component_request=None,
+        assert_blocked_and_scoped=_pass,
+        assert_in_scope=_pass,
+    )
+    fn = {t.__name__: t for t in tools}["list_open_prs"]
+    return fn, client, board
+
+
+@pytest.mark.asyncio
+async def test_list_open_prs_accepts_repo_full_name_alias() -> None:
+    """``repo_full_name=`` behaves exactly like ``repo=`` (the 2026-09-07 call shape).
+
+    Every other GitHub tool takes ``repo_full_name``; the model guessed it
+    here too and burned a turn on "Additional properties are not allowed
+    ('repo_full_name' was unexpected)".
+    """
+    fn, client, board = _build_list_open_prs()
+    out = await fn(repo_full_name="damien-robotsix/x")
+    assert board.resolved == ["damien-robotsix/x"]
+    assert client.searched is not None
+    assert client.searched["repo_full_name"] == "damien-robotsix/x"
+    assert client.searched["owner"] is None
+    assert "for damien-robotsix/x" in out
+
+    fn2, client2, board2 = _build_list_open_prs()
+    out2 = await fn2(repo="damien-robotsix/x")
+    assert board2.resolved == board.resolved
+    assert client2.searched == client.searched
+    assert out2 == out
+
+
+@pytest.mark.asyncio
+async def test_list_open_prs_repo_and_repo_full_name_may_agree() -> None:
+    """Passing both with the same value is harmless."""
+    fn, client, _board = _build_list_open_prs()
+    await fn(repo="damien-robotsix/x", repo_full_name="damien-robotsix/x")
+    assert client.searched is not None
+    assert client.searched["repo_full_name"] == "damien-robotsix/x"
+
+
+@pytest.mark.asyncio
+async def test_list_open_prs_repo_and_repo_full_name_disagree_is_error() -> None:
+    """Two different repositories is ambiguous — refuse without searching."""
+    fn, client, board = _build_list_open_prs()
+    out = await fn(repo="damien-robotsix/x", repo_full_name="damien-robotsix/y")
+    assert out.startswith("Error:")
+    assert "disagree" in out
+    assert board.resolved == []
+    assert client.searched is None
+
+
+def test_list_open_prs_schema_lists_repo_full_name() -> None:
+    """The claude_sdk path validates the JSON schema BEFORE the tool body runs.
+
+    So the alias must exist in the generated ``parameters_json_schema``
+    (i.e. in the function signature) — an in-body ``**kwargs`` shim would
+    never see the call.
+    """
+    import pydantic_ai
+
+    fn, _client, _board = _build_list_open_prs()
+    schema = pydantic_ai.Tool(fn).tool_def.parameters_json_schema
+    props = schema["properties"]
+    assert "repo_full_name" in props
+    assert "repo" in props
+    assert props["repo_full_name"]["type"] == "string"
+    assert "repo_full_name" not in schema.get("required", [])

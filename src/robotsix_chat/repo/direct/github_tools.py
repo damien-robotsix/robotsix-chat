@@ -1353,6 +1353,7 @@ def build_github_tools(
         owner: str = "",
         state: str = "all",
         since_days: int = 30,
+        repo_full_name: str = "",
     ) -> str:
         """List pull requests for a repository or the whole GitHub account in one batch.
 
@@ -1381,6 +1382,11 @@ def build_github_tools(
             since_days: Only PRs updated within this many days (default 30;
                 ``0`` disables the window).  Ignored when *state* is
                 ``"open"``.
+            repo_full_name: Alias of *repo* (``owner/repo``), accepted so
+                this tool takes the same repository argument as every
+                other GitHub tool.  Pass either *repo* or
+                *repo_full_name*; giving both with different values is an
+                error.
 
         Returns:
             A summary grouped by repository listing each PR's number,
@@ -1393,11 +1399,23 @@ def build_github_tools(
         if state_norm not in ("open", "closed", "all"):
             return f"Error: state must be 'open', 'closed' or 'all' (got {state!r})."
 
-        repo_full_name: str | None = None
+        # ``repo_full_name`` is the argument name every other GitHub tool
+        # uses; accept it here as an alias so the model does not burn a
+        # turn on "Additional properties are not allowed" when it guesses.
+        repo_arg = repo.strip()
+        alias_arg = repo_full_name.strip()
+        if repo_arg and alias_arg and repo_arg != alias_arg:
+            return (
+                f"Error: repo={repo!r} and repo_full_name={repo_full_name!r} "
+                "disagree; pass only one of them."
+            )
+        repo = repo_arg or alias_arg
+
+        resolved_full_name: str | None = None
         scope_owner: str | None = None
-        if repo.strip():
-            repo_full_name = await board.resolve_repo_full_name(repo)
-            if repo_full_name is None:
+        if repo:
+            resolved_full_name = await board.resolve_repo_full_name(repo)
+            if resolved_full_name is None:
                 return (
                     f"Error: {repo!r} is neither a registered mill repo_id nor "
                     "an 'owner/repo' full name.  Call resolve_repo(repo_id) "
@@ -1425,11 +1443,11 @@ def build_github_tools(
                 "%Y-%m-%d"
             )
 
-        scope_label = repo_full_name or f"account '{scope_owner}'"
+        scope_label = resolved_full_name or f"account '{scope_owner}'"
         try:
             items = await client.search_prs(
                 owner=scope_owner,
-                repo_full_name=repo_full_name,
+                repo_full_name=resolved_full_name,
                 state=state_norm,
                 since=since,
             )
