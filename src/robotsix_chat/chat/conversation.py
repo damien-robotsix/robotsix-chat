@@ -46,6 +46,14 @@ logger = logging.getLogger(__name__)
 # A single exchanged turn: ``(user_message, assistant_reply)``.
 Turn = tuple[str, str]
 
+# Internal safety bounds for the store — fixed constants, not operator-tunable.
+# ``DEFAULT_MAX_HISTORY_TURNS`` caps the most recent user/assistant turns kept
+# per session and replayed to the agent (bounds prompt size);
+# ``DEFAULT_MAX_CONVERSATIONS`` caps the total number of distinct sessions
+# tracked at once (global LRU eviction; bounds the in-memory store).
+DEFAULT_MAX_HISTORY_TURNS = 50
+DEFAULT_MAX_CONVERSATIONS = 1000
+
 # Default title for a freshly-created session.
 _DEFAULT_TITLE = "New chat"
 
@@ -547,8 +555,8 @@ class ConversationStore:
     def __init__(
         self,
         *,
-        max_history_turns: int = 50,
-        max_conversations: int = 1000,
+        max_history_turns: int = DEFAULT_MAX_HISTORY_TURNS,
+        max_conversations: int = DEFAULT_MAX_CONVERSATIONS,
         session_factory: Callable[[], str] | None = None,
         persist_path: Path | None = None,
         wall_clock: Callable[[], float] = time.time,

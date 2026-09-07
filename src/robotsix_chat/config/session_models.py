@@ -577,19 +577,29 @@ class ConversationSettings(BaseModel):
     idle — sessions are persistent when ``persist_path`` is configured.
 
     Attributes:
-        max_history_turns: Most recent user/assistant turns kept per
-            session and replayed to the agent (bounds prompt size).
-        max_conversations: Maximum number of distinct sessions tracked at once
-            (LRU-evicted); bounds the in-memory store.
         persist_path: Path to the JSON persistence file. Default
             ``/data/conversations.json``. Set to an empty string to disable.
 
     """
 
-    max_history_turns: int = 50
-    max_conversations: int = 1000
     persist_path: str = "/data/conversations.json"
     model_config = ConfigDict(extra="forbid")
+
+    @model_validator(mode="before")
+    @classmethod
+    def _strip_removed_cap_fields(cls, data: object) -> object:
+        """Strip de-exposed fields so old configs load.
+
+        ``max_history_turns``/``max_conversations`` were removed in favour of
+        the fixed internal constants ``DEFAULT_MAX_HISTORY_TURNS`` /
+        ``DEFAULT_MAX_CONVERSATIONS`` in ``robotsix_chat.chat.conversation``.
+        Deployed config volumes still carrying the keys must not trip
+        ``extra="forbid"`` on startup.
+        """
+        if isinstance(data, dict):
+            data.pop("max_history_turns", None)
+            data.pop("max_conversations", None)
+        return data
 
 
 class LifecycleSettings(BaseModel):

@@ -30,8 +30,6 @@
     "component_fallbacks": {}
   },
   "conversation": {
-    "max_history_turns": 50,
-    "max_conversations": 1000,
     "persist_path": "/data/conversations.json"
   },
   "diagnostics": {
