@@ -142,6 +142,28 @@ def _extract_ingested_ticket_id(response_data: Any) -> str:
     return ""
 
 
+#: mark_ticket_ready: a ticket filed moments ago is still in mill's
+#: ``classifying`` state (ops/scope/dedup classification), from which the only
+#: legal exit is ``draft`` — ``classifying -> ready`` is a 409. Rather than
+#: burning a turn per approval (observed 2026-09-07: two 409s in two minutes,
+#: both on tickets the operator had just asked to file-and-approve), the tool
+#: waits for classification to finish, bounded so a busy worker cannot stall a
+#: chat turn, then retries the transition once.
+_CLASSIFY_WAIT_SECONDS: float = 45.0
+_CLASSIFY_POLL_SECONDS: float = 3.0
+
+
+def _response_status(resp: str) -> int | None:
+    """Return the HTTP status code from a ``"HTTP <code> ..."`` response string."""
+    match = re.match(r"\s*HTTP\s+(\d{3})", resp or "")
+    return int(match.group(1)) if match else None
+
+
+def _is_classifying_conflict(resp: str) -> bool:
+    """Return whether *resp* is mill's ``409 classifying -> ready`` refusal."""
+    return _response_status(resp) == 409 and "classifying" in (resp or "").lower()
+
+
 def _component_response_is_error(resp: str) -> bool:
     r"""Return True when a ``component_request`` response indicates failure.
 
@@ -839,58 +861,126 @@ def build_mark_ticket_ready_tool(
             "state": "ready",
             "note": justification or "marked ready via chat (mark_ticket_ready)",
         }
-
-        # Try component_request (roster-based) first.
-        if component_request is not None:
-            resp = await component_request(
-                "mill",
-                "POST",
-                path,
-                json_body=json_body,
-            )
-            if not _component_response_is_error(resp):
-                return str(resp)
-            logger.info(
-                "mark_ticket_ready: roster path failed for %s; "
-                "falling back to direct board API",
-                effective_id,
-            )
-
-        # Direct fallback via board API.
-        url = f"{board_url}{path}"
         headers: dict[str, str] = {"Accept": "application/json"}
         if board_token:
             headers["Authorization"] = f"Bearer {board_token}"
 
-        try:
-            async with httpx.AsyncClient(timeout=timeout) as client:
-                retry_client = RetryClient(client, config=_TICKET_POLL_RETRY_CONFIG)
-                response = await retry_client.post(url, headers=headers, json=json_body)
+        async def _send_transition() -> str:
+            # Try component_request (roster-based) first.
+            if component_request is not None:
+                resp = await component_request(
+                    "mill",
+                    "POST",
+                    path,
+                    json_body=json_body,
+                )
+                if not _component_response_is_error(resp):
+                    return str(resp)
+                if _is_classifying_conflict(str(resp)):
+                    # A real answer from mill, not a connectivity failure —
+                    # the direct path would only repeat the same 409.
+                    return str(resp)
+                logger.info(
+                    "mark_ticket_ready: roster path failed for %s; "
+                    "falling back to direct board API",
+                    effective_id,
+                )
+
+            # Direct fallback via board API.
+            url = f"{board_url}{path}"
+            try:
+                async with httpx.AsyncClient(timeout=timeout) as client:
+                    retry_client = RetryClient(client, config=_TICKET_POLL_RETRY_CONFIG)
+                    response = await retry_client.post(
+                        url, headers=headers, json=json_body
+                    )
+                    try:
+                        body = response.json()
+                        body_str = json.dumps(body)
+                    except Exception:
+                        body_str = response.text
+                    return f"HTTP {response.status_code}\n{body_str}"
+            except httpx.HTTPStatusError as exc:
                 try:
-                    body = response.json()
+                    body = exc.response.json()
                     body_str = json.dumps(body)
                 except Exception:
-                    body_str = response.text
-                return f"HTTP {response.status_code}\n{body_str}"
-        except httpx.HTTPStatusError as exc:
+                    body_str = exc.response.text
+                return f"HTTP {exc.response.status_code}\n{body_str}"
+            except httpx.ConnectError, httpx.ConnectTimeout, httpx.TimeoutException:
+                return (
+                    f"Error marking ticket {effective_id} ready: "
+                    f"board API request timed out after {timeout}s"
+                )
+            except Exception as exc:
+                logger.warning(
+                    "mark_ticket_ready direct path failed for %s: %s",
+                    effective_id,
+                    exc,
+                )
+                return f"Error marking ticket {effective_id} ready: {exc}"
+
+        async def _current_state() -> str | None:
+            """Return the ticket's current state, or ``None`` when unreadable."""
+            ticket_path = f"/tickets/{effective_id}"
+            raw: str | None = None
+            if component_request is not None:
+                resp = await component_request("mill", "GET", ticket_path)
+                if not _component_response_is_error(resp):
+                    raw = str(resp)
+            if raw is None:
+                try:
+                    async with httpx.AsyncClient(timeout=timeout) as client:
+                        response = await client.get(
+                            f"{board_url}{ticket_path}", headers=headers
+                        )
+                        if response.status_code == 200:
+                            raw = response.text
+                except Exception as exc:
+                    logger.debug(
+                        "mark_ticket_ready: state read failed for %s: %s",
+                        effective_id,
+                        exc,
+                    )
+                    return None
+            if raw is None:
+                return None
+            brace = raw.find("{")
             try:
-                body = exc.response.json()
-                body_str = json.dumps(body)
-            except Exception:
-                body_str = exc.response.text
-            return f"HTTP {exc.response.status_code}\n{body_str}"
-        except httpx.ConnectError, httpx.ConnectTimeout, httpx.TimeoutException:
-            return (
-                f"Error marking ticket {effective_id} ready: "
-                f"board API request timed out after {timeout}s"
-            )
-        except Exception as exc:
-            logger.warning(
-                "mark_ticket_ready direct path failed for %s: %s",
-                effective_id,
-                exc,
-            )
-            return f"Error marking ticket {effective_id} ready: {exc}"
+                data = json.loads(raw[brace:] if brace >= 0 else raw)
+            except ValueError, TypeError:
+                return None
+            state = data.get("state") if isinstance(data, dict) else None
+            return str(state).lower() if state else None
+
+        resp = await _send_transition()
+        if not _is_classifying_conflict(resp):
+            return resp
+
+        # Freshly filed ticket, still being classified: wait (bounded) for
+        # the worker to move it to draft, then retry once.
+        loop = asyncio.get_running_loop()
+        deadline = loop.time() + _CLASSIFY_WAIT_SECONDS
+        logger.info(
+            "mark_ticket_ready: %s is still classifying — waiting up to %.0fs",
+            effective_id,
+            _CLASSIFY_WAIT_SECONDS,
+        )
+        while loop.time() < deadline:
+            await asyncio.sleep(_CLASSIFY_POLL_SECONDS)
+            state = await _current_state()
+            if state is not None and state != "classifying":
+                return await _send_transition()
+        return (
+            f"Ticket {effective_id} is still in mill's `classifying` state after "
+            f"{_CLASSIFY_WAIT_SECONDS:.0f}s (the worker is busy). Mill only allows "
+            "classifying -> draft; `ready` is legal from draft / "
+            "human_issue_approval, so the transition cannot be forced yet. Do "
+            "not retry in this turn: the ticket's wait_for_event monitor wakes "
+            "when classification completes — have it call mark_ticket_ready "
+            "then (spawn one with that instruction if none is tracking the "
+            "ticket)."
+        )
 
     return [mark_ticket_ready]
 
