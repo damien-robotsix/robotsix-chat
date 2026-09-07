@@ -11,6 +11,8 @@ from __future__ import annotations
 
 from datetime import UTC, datetime
 
+from robotsix_chat.subsessions.prompts import USER_CHAT_FIRST_TURN_NOTE
+
 CURRENT_DATETIME_HEADER = (
     "=== CURRENT DATE/TIME (system context — extract 'today' from here) ==="
 )
@@ -78,3 +80,21 @@ def strip_periodic_scaffolding(message: str) -> str:
     if idx != -1:
         body = body[idx + len(marker) :]
     return body
+
+
+def strip_recall_scaffolding(message: str) -> str:
+    """Return *message* with every fixed first-turn preamble removed.
+
+    This is the scrubber for the memory recall query: it strips the periodic
+    scheduler scaffolding (see :func:`strip_periodic_scaffolding`) and the
+    ``user_chat`` side-chat system note the subsession worker prepends to
+    its first turn.  Recalling on either preamble retrieves junk — on
+    2026-09-07 three consecutive recalls ran on ``'[System note: this is a
+    side-chat with the operato...'`` and paid a 10-30 s rerank for nothing.
+    Messages without either preamble are returned unchanged; a message that
+    merely mentions the note mid-text is left alone.
+    """
+    note = USER_CHAT_FIRST_TURN_NOTE + "\n\n"
+    body = message.removeprefix(note)
+    body = strip_periodic_scaffolding(body)
+    return body.removeprefix(note)

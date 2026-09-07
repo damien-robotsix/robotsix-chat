@@ -10,7 +10,9 @@ from robotsix_chat.periodic.prompts import (
     PERIODIC_PREAMBLE,
     build_initial_message,
     strip_periodic_scaffolding,
+    strip_recall_scaffolding,
 )
+from robotsix_chat.subsessions.prompts import USER_CHAT_FIRST_TURN_NOTE
 
 
 def test_initial_message_prepends_the_preamble():
@@ -61,6 +63,54 @@ def test_strip_periodic_scaffolding_without_date_block():
 def test_strip_periodic_scaffolding_leaves_plain_messages_untouched():
     plain = "just a normal message"
     assert strip_periodic_scaffolding(plain) == plain
+
+
+def test_strip_recall_scaffolding_removes_user_chat_note():
+    """The user_chat first-turn note is boilerplate, not the task.
+
+    Regression: 2026-09-07 the memory engine logged three consecutive
+    recalls whose query was ``'[System note: this is a side-chat with the
+    operato...'`` — junk memories plus a wasted 10–30 s rerank each.
+    """
+    msg = USER_CHAT_FIRST_TURN_NOTE + "\n\n" + "ask the user about the deploy window"
+    assert strip_recall_scaffolding(msg) == "ask the user about the deploy window"
+
+
+def test_strip_recall_scaffolding_also_strips_periodic_scaffolding():
+    now = datetime(2026, 9, 7, 6, 0, tzinfo=UTC)
+    msg = build_initial_message("Produce today's calendar agenda.", now=now)
+    assert strip_recall_scaffolding(msg) == "Produce today's calendar agenda."
+
+
+def test_strip_recall_scaffolding_handles_note_and_periodic_combos():
+    now = datetime(2026, 9, 7, 6, 0, tzinfo=UTC)
+    periodic = build_initial_message("Review the mail queue.", now=now)
+    note_first = USER_CHAT_FIRST_TURN_NOTE + "\n\n" + periodic
+    periodic_first = (
+        PERIODIC_PREAMBLE
+        + USER_CHAT_FIRST_TURN_NOTE
+        + "\n\n"
+        + "Review the mail queue."
+    )
+    assert strip_recall_scaffolding(note_first) == "Review the mail queue."
+    assert strip_recall_scaffolding(periodic_first) == "Review the mail queue."
+
+
+def test_strip_recall_scaffolding_leaves_plain_and_mid_text_mentions_alone():
+    plain = "just a normal message"
+    assert strip_recall_scaffolding(plain) == plain
+    mid = "please explain what the [System note: this is a side-chat …] means"
+    assert strip_recall_scaffolding(mid) == mid
+    # A bracketed note that is not the exact worker constant is content.
+    other = "[System note: unrelated]\n\nreal task"
+    assert strip_recall_scaffolding(other) == other
+
+
+def test_user_chat_note_is_a_single_bracketed_block():
+    """The stripper matches the exact constant; keep its shape honest."""
+    assert USER_CHAT_FIRST_TURN_NOTE.startswith("[System note: ")
+    assert USER_CHAT_FIRST_TURN_NOTE.endswith(".]")
+    assert "]\n\n" not in USER_CHAT_FIRST_TURN_NOTE
 
 
 def test_preamble_sets_the_single_turn_contract():
