@@ -52,6 +52,7 @@ import json
 import logging
 import re
 from collections.abc import Callable
+from datetime import UTC, datetime, timedelta
 from pathlib import Path
 from typing import TYPE_CHECKING, Any
 
@@ -234,54 +235,35 @@ async def _fetch_board_repo_ids(
     return None
 
 
-async def _resolve_ticket_ids(
-    board_url: str,
-    board_token: str,
-    timeout: float,
-    candidate_ids: list[str],
-) -> dict[str, str | None]:
-    """Resolve candidate ticket IDs against the live board.
+_CLOSED_LOOKBACK_DAYS = 14
+"""How far back the closed-ticket fallback looks when an id fails to resolve.
 
-    Fetches ``GET /tickets`` and for each candidate ID tries, in order:
+Mill's default ``GET /tickets`` hides closed tickets, so an abbreviated id
+of a ticket that already shipped could never resolve — chat then re-filed
+already-shipped work (a9bc dup of c64a, 2026-09-07) or fell through to a
+bare 404.  The full closed list is ~950 tickets / 26 s; restricting to
+recently updated tickets keeps the fallback well inside the tool timeout.
+"""
 
-    1. **Exact match** — the candidate ID appears verbatim in the board.
-    2. **Hash-suffix match** — the last 4 hex chars of the candidate
-       (e.g. ``a3f2`` from ``...-my-ticket-a3f2``) uniquely match one
-       ticket's hash suffix.
-    3. **Slug-substring match** — the non-timestamp, non-hash portion
-       of the candidate appears as a substring of exactly one ticket's
-       full ID.
 
-    Returns a dict mapping each candidate ID to its resolved full
-    ticket ID, or ``None`` when the candidate could not be resolved.
-
-    Resolution uses the direct board API and is best-effort: when the
-    board is unreachable or the response is unparsable, every candidate
-    maps to ``None`` and callers fall back to the original IDs.
-    """
-    if not candidate_ids:
-        return {}
-
-    if not board_url:
-        return {cid: None for cid in candidate_ids}
-
-    url = f"{board_url}/tickets"
-    headers: dict[str, str] = {"Accept": "application/json"}
-    if board_token:
-        headers["Authorization"] = f"Bearer {board_token}"
-
+async def _fetch_ticket_ids(
+    client: httpx.AsyncClient,
+    url: str,
+    headers: dict[str, str],
+    params: dict[str, str] | None = None,
+) -> list[str] | None:
+    """Return the ticket ids listed by ``GET /tickets`` or ``None`` on failure."""
     try:
-        async with httpx.AsyncClient(timeout=timeout) as client:
-            retry_client = RetryClient(client, config=_TICKET_POLL_RETRY_CONFIG)
-            response = await retry_client.get(url, headers=headers)
-            response.raise_for_status()
-            tickets_data = response.json()
+        retry_client = RetryClient(client, config=_TICKET_POLL_RETRY_CONFIG)
+        response = await retry_client.get(url, headers=headers, params=params)
+        response.raise_for_status()
+        tickets_data = response.json()
     except Exception as exc:
         logger.warning(
             "ticket_poll: failed to fetch ticket list for ID resolution: %s",
             exc,
         )
-        return {cid: None for cid in candidate_ids}
+        return None
 
     # Extract ticket IDs from the response.  The board may return a
     # JSON array of ticket objects or an object with a "tickets" key.
@@ -294,18 +276,18 @@ async def _resolve_ticket_ids(
                 "ticket_poll: unexpected GET /tickets response "
                 "format — expected list or {tickets: [...]}"
             )
-            return {cid: None for cid in candidate_ids}
+            return None
     else:
         logger.warning(
             "ticket_poll: unexpected GET /tickets response type %s",
             type(tickets_data).__name__,
         )
-        return {cid: None for cid in candidate_ids}
+        return None
 
     # The mill board returns tickets keyed ``id``; older/other boards used
     # ``ticket_id``.  Accepting only the latter made every resolution fail
     # with "(0 tickets listed)" against mill (live logs 2026-09-01).
-    all_ids: list[str] = [
+    return [
         tid
         for t in ticket_objects
         if isinstance(t, dict)
@@ -313,6 +295,11 @@ async def _resolve_ticket_ids(
         if isinstance(tid, str) and tid
     ]
 
+
+def _match_candidates(
+    candidate_ids: list[str], all_ids: list[str]
+) -> dict[str, str | None]:
+    """Match each candidate against *all_ids* (exact → hash suffix → slug)."""
     # Build a reverse index: hash-suffix → list of matching full IDs.
     suffix_index: dict[str, list[str]] = {}
     for tid in all_ids:
@@ -378,13 +365,91 @@ async def _resolve_ticket_ids(
                     slug_matches,
                 )
 
-        # Unresolvable — the caller will attempt the original ID.
-        logger.warning(
-            "ticket_poll: could not resolve %r against the board (%d tickets listed)",
-            cid,
-            len(all_ids),
-        )
         result[cid] = None
+
+    return result
+
+
+async def _resolve_ticket_ids(
+    board_url: str,
+    board_token: str,
+    timeout: float,
+    candidate_ids: list[str],
+) -> dict[str, str | None]:
+    """Resolve candidate ticket IDs against the live board.
+
+    Fetches ``GET /tickets`` and for each candidate ID tries, in order:
+
+    1. **Exact match** — the candidate ID appears verbatim in the board.
+    2. **Hash-suffix match** — the last 4 hex chars of the candidate
+       (e.g. ``a3f2`` from ``...-my-ticket-a3f2``) uniquely match one
+       ticket's hash suffix.
+    3. **Slug-substring match** — the non-timestamp, non-hash portion
+       of the candidate appears as a substring of exactly one ticket's
+       full ID.
+
+    Candidates that stay unresolved against the open board are retried
+    once against recently updated CLOSED tickets
+    (``?include_closed=true&updated_after=<now - 14 days>``): the default
+    listing hides closed tickets, so an abbreviated id of a ticket that
+    already shipped could otherwise never resolve.
+
+    Returns a dict mapping each candidate ID to its resolved full
+    ticket ID, or ``None`` when the candidate could not be resolved.
+
+    Resolution uses the direct board API and is best-effort: when the
+    board is unreachable or the response is unparsable, every candidate
+    maps to ``None`` and callers fall back to the original IDs.
+    """
+    if not candidate_ids:
+        return {}
+
+    if not board_url:
+        return {cid: None for cid in candidate_ids}
+
+    url = f"{board_url}/tickets"
+    headers: dict[str, str] = {"Accept": "application/json"}
+    if board_token:
+        headers["Authorization"] = f"Bearer {board_token}"
+
+    async with httpx.AsyncClient(timeout=timeout) as client:
+        open_ids = await _fetch_ticket_ids(client, url, headers)
+        if open_ids is None:
+            return {cid: None for cid in candidate_ids}
+
+        result = _match_candidates(candidate_ids, open_ids)
+        unresolved = [cid for cid, full in result.items() if full is None]
+        if unresolved:
+            since = datetime.now(UTC) - timedelta(days=_CLOSED_LOOKBACK_DAYS)
+            closed_ids = await _fetch_ticket_ids(
+                client,
+                url,
+                headers,
+                params={
+                    "include_closed": "true",
+                    "updated_after": since.strftime("%Y-%m-%dT%H:%M:%SZ"),
+                },
+            )
+            if closed_ids:
+                combined = list(dict.fromkeys([*open_ids, *closed_ids]))
+                for cid, full in _match_candidates(unresolved, combined).items():
+                    if full is not None:
+                        logger.info(
+                            "ticket_poll: %r resolved against closed tickets → %r",
+                            cid,
+                            full,
+                        )
+                        result[cid] = full
+
+    for cid, full in result.items():
+        if full is None and isinstance(cid, str) and cid.strip():
+            # Unresolvable — the caller will attempt the original ID.
+            logger.warning(
+                "ticket_poll: could not resolve %r against the board "
+                "(%d open tickets listed, closed fallback tried)",
+                cid,
+                len(open_ids),
+            )
 
     return result
 

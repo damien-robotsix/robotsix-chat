@@ -480,3 +480,34 @@ async def test_list_knowledge_notes_truncates_long_content(tmp_path: Path) -> No
     assert "…" in result
     # The full long content should NOT appear.
     assert long_content not in result
+
+
+@pytest.mark.asyncio
+async def test_list_knowledge_notes_caps_output_and_reports_remainder(
+    tmp_path: Path,
+) -> None:
+    """A large store must not be dumped whole.
+
+    2026-09-07: 291 notes = 102 KB, over the tool-result token cap. The
+    listing is capped, newest first, with a trailing hint naming the
+    omitted count and available topics.
+    """
+    tools = build_knowledge_tools(KnowledgeSettings(path=str(tmp_path / "k.json")))
+    add_tool = [t for t in tools if t.__name__ == "add_knowledge_note"][0]
+    list_tool = [t for t in tools if t.__name__ == "list_knowledge_notes"][0]
+
+    for i in range(60):
+        await add_tool("bulk" if i % 2 else "other", f"note number {i:03d}")
+
+    result = await list_tool()
+    shown = result.count("snippet:")
+    assert shown == 40
+    assert "20 more note(s) not shown — 60 total" in result
+    assert "topics: bulk, other" in result
+
+    # An explicit limit is honoured, and a topic filter narrows the pool.
+    result_small = await list_tool(limit=5)
+    assert result_small.count("snippet:") == 5
+    result_topic = await list_tool("bulk")
+    assert result_topic.count("snippet:") == 30
+    assert "not shown" not in result_topic
