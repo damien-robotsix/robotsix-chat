@@ -5,7 +5,9 @@ from __future__ import annotations
 import asyncio
 import logging
 import tempfile
+from collections.abc import Awaitable, Callable
 from pathlib import Path
+from typing import cast
 from unittest.mock import MagicMock, patch
 
 import pytest
@@ -542,7 +544,10 @@ class TestAutoContinueInterruptedSessions:
             ):
                 run_server_from_config(agent=fake_agent)
 
-                on_startup_async = mock_run_server.call_args.kwargs["on_startup_async"]
+                on_startup_async = cast(
+                    Callable[[], Awaitable[None]],
+                    mock_run_server.call_args.kwargs["on_startup_async"],
+                )
                 assert callable(on_startup_async)
 
                 await on_startup_async()
