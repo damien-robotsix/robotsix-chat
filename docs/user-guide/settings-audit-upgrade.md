@@ -22,6 +22,17 @@ drove any behaviour — and have been removed:
 Context reduction is now handled solely by the periodic summary scheduler; the compaction knobs no
 longer had any effect.
 
+The following key was **de-exposed** — it still exists internally but is no longer an operator knob:
+
+- `continuation.store_path` — the post-restart continuation now persists to a fixed internal path on
+  the `/data` volume (`/data/continuation.json`), so there is no reason to configure it. The path
+  never needed to change, and the auto-continue redesign made the location an implementation detail.
+
+**Impact on your config: none.** A deployed config file that still carries `continuation.store_path`
+**loads normally** — the continuation model strips the stale key before validation, so a startup
+crash is not possible even though the model otherwise forbids unknown keys. You may delete the key
+from your config file at your leisure, but you are not required to.
+
 **Impact on your config: none.** These keys had no effect before removal, so dropping them changes
 no behaviour. A deployed config file that still carries any of them **loads normally** — the loader
 strips the stale key before validation and logs an informational message, so a startup crash is not

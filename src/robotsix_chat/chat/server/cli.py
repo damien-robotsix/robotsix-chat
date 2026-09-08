@@ -305,7 +305,6 @@ def run_server_from_config(agent: ChatAgent | None = None) -> None:
     # Continuation store — shared instance so the startup hook and the
     # agent tool read/write the same pending-continuation state.
     continuation_store = ContinuationStore(
-        path=settings.continuation.store_path,
         max_consecutive=settings.continuation.max_consecutive,
     )
 

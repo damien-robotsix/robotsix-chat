@@ -191,19 +191,15 @@ class TestContinuationTools:
 
     def test_enabled_returns_three_tools(self) -> None:
         """When enabled, three tools are returned."""
+        settings = ContinuationSettings(enabled=True, max_consecutive=3)
         with tempfile.TemporaryDirectory() as tmp:
-            path = Path(tmp) / "continuation.json"
-            settings = ContinuationSettings(
-                enabled=True,
-                store_path=str(path),
-                max_consecutive=3,
-            )
-            tools = build_continuation_tools(settings)
-            assert len(tools) == 3
-            names = [t.__name__ for t in tools]
-            assert "schedule_continuation" in names
-            assert "cancel_continuation" in names
-            assert "get_continuation_status" in names
+            store = ContinuationStore(path=Path(tmp) / "continuation.json")
+        tools = build_continuation_tools(settings, continuation_store=store)
+        assert len(tools) == 3
+        names = [t.__name__ for t in tools]
+        assert "schedule_continuation" in names
+        assert "cancel_continuation" in names
+        assert "get_continuation_status" in names
 
     @pytest.mark.asyncio
     async def test_schedule_tool(self) -> None:
@@ -213,7 +209,6 @@ class TestContinuationTools:
             store = ContinuationStore(path=path)
             settings = ContinuationSettings(
                 enabled=True,
-                store_path=str(path),
                 max_consecutive=3,
             )
             tools = build_continuation_tools(settings, continuation_store=store)
@@ -231,7 +226,6 @@ class TestContinuationTools:
             store.schedule("sess-1", "work")
             settings = ContinuationSettings(
                 enabled=True,
-                store_path=str(path),
                 max_consecutive=3,
             )
             tools = build_continuation_tools(settings, continuation_store=store)
@@ -249,7 +243,6 @@ class TestContinuationTools:
             store = ContinuationStore(path=path)
             settings = ContinuationSettings(
                 enabled=True,
-                store_path=str(path),
                 max_consecutive=3,
             )
             tools = build_continuation_tools(settings, continuation_store=store)

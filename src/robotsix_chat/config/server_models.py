@@ -45,11 +45,11 @@ class ContinuationSettings(BaseModel):
     ``self_restart``, the agent schedules a continuation with the current
     session id and a resume prompt.
 
+    Persistence is an internal detail: the continuation is stored at a fixed
+    path on the ``/data`` volume, so there is no operator-facing knob for it.
+
     Attributes:
         enabled: Master switch.  Default ``False``.
-        store_path: Path to the JSON persistence file.  Must be on a
-            persistent volume so the continuation survives container
-            recreation.  Default ``/data/continuation.json``.
         max_consecutive: Maximum number of consecutive auto-continuations
             before the guardrail blocks further automatic firing.  This
             prevents a restart→continue→restart→continue loop from running
@@ -58,9 +58,22 @@ class ContinuationSettings(BaseModel):
     """
 
     enabled: bool = False
-    store_path: str = "/data/continuation.json"
     max_consecutive: int = Field(default=3, ge=1)
     model_config = ConfigDict(extra="forbid")
+
+    @model_validator(mode="before")
+    @classmethod
+    def _drop_removed_fields(cls, data: Any) -> Any:
+        """Drop the removed ``store_path`` key so old configs still load.
+
+        ``store_path`` was de-exposed — continuation now persists to a fixed
+        internal path — but deployed config files serialized before the
+        removal still carry it.  Strip it before validation so
+        ``extra="forbid"`` does not crash the container on boot.
+        """
+        if isinstance(data, dict) and "store_path" in data:
+            data = {k: v for k, v in data.items() if k != "store_path"}
+        return data
 
 
 class HealthSettings(BaseModel):

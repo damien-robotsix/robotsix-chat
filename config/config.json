@@ -230,7 +230,6 @@
   },
   "continuation": {
     "enabled": false,
-    "store_path": "/data/continuation.json",
     "max_consecutive": 3
   },
   "evergoing": {
