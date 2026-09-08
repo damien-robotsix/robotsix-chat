@@ -21,7 +21,6 @@ from pathlib import Path
 from typing import TYPE_CHECKING, Any, cast
 from urllib.parse import quote
 
-from robotsix_chat.common.github_auth import _build_github_app_auth_headers
 from robotsix_chat.common.http import safe_http_request
 
 if TYPE_CHECKING:
@@ -45,24 +44,166 @@ def _b64encode(data: bytes) -> str:
 # ---------------------------------------------------------------------------
 
 
+# Installation access tokens, keyed by the EFFECTIVE installation id
+# (the pinned id in override mode, or the per-repo resolved id otherwise).
 _INSTALLATION_TOKEN_CACHE: dict[str, str] = {}
+# Per-repo installation resolution cache: ``"owner/repo"`` -> installation id.
+_RESOLVED_INSTALLATION_CACHE: dict[str, str] = {}
+# Configured (pinned) installation ids that returned HTTP 404 when minting a
+# token.  Once an id lands here it is abandoned for the rest of the process
+# lifetime and tokens are resolved per repository instead — never retried.
+_DEAD_PINNED_IDS: set[str] = set()
 
 
-async def _get_installation_token(settings: DirectRepoSettings) -> str:
-    """Mint a short-lived GitHub App installation access token.
+def _owner_repo_from_path(path: str) -> tuple[str, str] | None:
+    """Extract ``(owner, repo)`` from a ``/repos/{owner}/{repo}/...`` API path.
 
-    Delegates to the shared ``_build_github_app_auth_headers`` helper.
-    Results are cached by installation id.
+    Returns ``None`` for non-repo-scoped paths (``/search/...``,
+    ``/app/...``, ``/installation/...``, ``/orgs/...``) so the caller can
+    supply the repository context explicitly (or fall back).
     """
-    token = await _build_github_app_auth_headers(
-        settings, "direct_repo:", token_cache=_INSTALLATION_TOKEN_CACHE
-    )
-    if token is None:
+    parts = path.lstrip("/").split("/")
+    if len(parts) >= 3 and parts[0] == "repos" and parts[1] and parts[2]:
+        return parts[1], parts[2]
+    return None
+
+
+def _require_app_credentials(settings: DirectRepoSettings) -> tuple[str, str]:
+    """Return ``(app_id, private_key)`` or raise when either is missing."""
+    app_id = settings.github_app_id
+    private_key = settings.github_app_private_key.get_secret_value()
+    if not (app_id and private_key):
         raise RuntimeError(
             "Failed to mint GitHub App installation token. "
-            "Check that github_app_id, github_app_private_key, "
-            "and github_app_installation_id are correct."
+            "Check that github_app_id and github_app_private_key are set."
         )
+    return app_id, private_key
+
+
+def _resolve_installation_id_for_repo(
+    app_id: str, private_key: str, owner: str, repo: str
+) -> str:
+    """Resolve (and cache) the installation id GitHub uses for ``owner/repo``.
+
+    Mirrors robotsix-github-auth's ``_resolve_installation_id`` (a
+    ``GET /repos/{owner}/{repo}/installation`` with the App JWT).  Runs
+    synchronously (blocking httpx); call it via ``asyncio.to_thread``.
+    """
+    key = f"{owner}/{repo}"
+    cached = _RESOLVED_INSTALLATION_CACHE.get(key)
+    if cached is not None:
+        return cached
+    from robotsix_github_auth._auth import (
+        _build_app_jwt,
+        _resolve_installation_id,
+    )
+
+    jwt_token = _build_app_jwt(app_id, private_key)
+    resolved = str(_resolve_installation_id(jwt_token, owner, repo))
+    _RESOLVED_INSTALLATION_CACHE[key] = resolved
+    return resolved
+
+
+async def _get_installation_token(
+    settings: DirectRepoSettings,
+    *,
+    owner: str | None = None,
+    repo: str | None = None,
+) -> str:
+    """Mint a short-lived GitHub App installation access token.
+
+    Two modes, selected by ``github_app_installation_id``:
+
+    - **empty** (recommended): the installation is resolved per repository
+      from ``owner``/``repo`` (``GET /repos/{owner}/{repo}/installation``),
+      exactly as robotsix-github-auth does when no id is pinned — so a
+      GitHub App re-install (which mints a *new* installation id) needs no
+      config edit.
+    - **set** (override): the pinned id is used as-is.  If it returns
+      HTTP 404 (the installation no longer exists, e.g. after a re-install)
+      the pinned id is abandoned for the rest of the process lifetime and
+      the installation is resolved per repository instead — logged once at
+      WARNING naming both ids.  The pinned id is never retried.
+
+    Tokens are cached by the effective installation id.
+    """
+    app_id, private_key = _require_app_credentials(settings)
+    pinned = settings.github_app_installation_id
+
+    from robotsix_github_auth import mint_installation_token
+
+    def _mint(installation_id: str) -> str:
+        return mint_installation_token(
+            app_id=app_id,
+            private_key=private_key,
+            installation_id=installation_id,
+        ).token
+
+    # -- override mode: a live pinned id -----------------------------------
+    if pinned and pinned not in _DEAD_PINNED_IDS:
+        cached = _INSTALLATION_TOKEN_CACHE.get(pinned)
+        if cached is not None:
+            return cached
+        try:
+            token = await asyncio.to_thread(_mint, pinned)
+        except Exception as exc:  # 404 handled below; other errors re-raised
+            if "404" not in str(exc) or not (owner and repo):
+                raise
+            # The pinned installation no longer exists — fall back to
+            # per-repo resolution ONCE and keep it for the process lifetime.
+            resolved = await asyncio.to_thread(
+                _resolve_installation_id_for_repo,
+                app_id,
+                private_key,
+                owner,
+                repo,
+            )
+            _DEAD_PINNED_IDS.add(pinned)
+            logger.warning(
+                "direct_repo: configured github_app_installation_id %s "
+                "returned HTTP 404 when minting a token (the installation no "
+                "longer exists); falling back to per-repository resolution "
+                "(resolved installation %s for %s/%s) for the rest of the "
+                "process lifetime — the pinned id will not be retried.",
+                pinned,
+                resolved,
+                owner,
+                repo,
+            )
+            token = await asyncio.to_thread(_mint, resolved)
+            _INSTALLATION_TOKEN_CACHE[resolved] = token
+            return token
+        _INSTALLATION_TOKEN_CACHE[pinned] = token
+        return token
+
+    # -- per-repo resolution: empty id, or a dead pinned id ----------------
+    if not (owner and repo):
+        # No repository context (an installation-scoped call, e.g. listing
+        # the installation's repos).  Reuse any installation already
+        # resolved this process, else there is nothing to resolve against.
+        if _RESOLVED_INSTALLATION_CACHE:
+            fallback_id = next(iter(_RESOLVED_INSTALLATION_CACHE.values()))
+            cached = _INSTALLATION_TOKEN_CACHE.get(fallback_id)
+            if cached is not None:
+                return cached
+            token = await asyncio.to_thread(_mint, fallback_id)
+            _INSTALLATION_TOKEN_CACHE[fallback_id] = token
+            return token
+        raise RuntimeError(
+            "Cannot resolve a GitHub App installation: "
+            "github_app_installation_id is empty and this operation was "
+            "invoked without a repository. Perform a repository-scoped "
+            "operation first, or set github_app_installation_id."
+        )
+
+    resolved = await asyncio.to_thread(
+        _resolve_installation_id_for_repo, app_id, private_key, owner, repo
+    )
+    cached = _INSTALLATION_TOKEN_CACHE.get(resolved)
+    if cached is not None:
+        return cached
+    token = await asyncio.to_thread(_mint, resolved)
+    _INSTALLATION_TOKEN_CACHE[resolved] = token
     return token
 
 
@@ -160,18 +301,35 @@ class DirectRepoClient:
 
     # -- helpers -----------------------------------------------------------
 
-    async def _token(self) -> str:
-        """Return a valid installation access token (cached)."""
-        return await _get_installation_token(self._s)
+    async def _token(self, *, owner: str | None = None, repo: str | None = None) -> str:
+        """Return a valid installation access token (cached).
 
-    def _invalidate_token(self) -> None:
-        """Clear the cached installation token so the next call re-fetches it."""
-        iid = self._s.github_app_installation_id
-        _INSTALLATION_TOKEN_CACHE.pop(iid, None)
+        *owner*/*repo* let the token be minted via per-repository
+        installation resolution when no fixed installation id is pinned.
+        """
+        return await _get_installation_token(self._s, owner=owner, repo=repo)
 
-    async def _gh_headers(self) -> dict[str, str]:
+    def _invalidate_token(
+        self, *, owner: str | None = None, repo: str | None = None
+    ) -> None:
+        """Clear the cached installation token so the next call re-fetches it.
+
+        Clears the pinned id and any installation resolved for *owner*/*repo*
+        so a 401-refresh re-mints the effective token regardless of mode.
+        """
+        pinned = self._s.github_app_installation_id
+        if pinned:
+            _INSTALLATION_TOKEN_CACHE.pop(pinned, None)
+        if owner and repo:
+            resolved = _RESOLVED_INSTALLATION_CACHE.get(f"{owner}/{repo}")
+            if resolved:
+                _INSTALLATION_TOKEN_CACHE.pop(resolved, None)
+
+    async def _gh_headers(
+        self, *, owner: str | None = None, repo: str | None = None
+    ) -> dict[str, str]:
         """Return headers for a GitHub API call (with installation token)."""
-        token = await self._token()
+        token = await self._token(owner=owner, repo=repo)
         return {
             "Accept": "application/vnd.github+json",
             "Authorization": f"Bearer {token}",
@@ -182,6 +340,9 @@ class DirectRepoClient:
         self,
         method: str,
         url: str,
+        *,
+        owner: str | None = None,
+        repo: str | None = None,
         **kwargs: Any,
     ) -> Any:
         """Make an HTTP request with retry on 401 / 429 / rate-limit 403.
@@ -201,14 +362,14 @@ class DirectRepoClient:
             logger.info(
                 "GitHub API returned 401 — refreshing installation token and retrying"
             )
-            self._invalidate_token()
+            self._invalidate_token(owner=owner, repo=repo)
             if "headers" in kwargs:
                 # Preserve any caller-supplied Accept header (e.g. the
                 # diff media type set by get_pr_diff) when refreshing
                 # the installation token, so the retry carries the same
                 # media type as the original request.
                 caller_accept = kwargs["headers"].get("Accept")
-                kwargs["headers"] = await self._gh_headers()
+                kwargs["headers"] = await self._gh_headers(owner=owner, repo=repo)
                 if caller_accept:
                     kwargs["headers"]["Accept"] = caller_accept
             return await safe_http_request(method, url, **kwargs)
@@ -265,17 +426,31 @@ class DirectRepoClient:
 
         return result
 
-    async def _get_json(self, path: str) -> Any:
+    async def _get_json(
+        self,
+        path: str,
+        *,
+        owner: str | None = None,
+        repo: str | None = None,
+    ) -> Any:
         """GET *path* on the GitHub API and return the parsed JSON body.
 
         Raises RuntimeError on any failure (never returns error strings —
-        callers catch and format).
+        callers catch and format).  *owner*/*repo* default to the values
+        parsed from a ``/repos/{owner}/{repo}/...`` path so the installation
+        token can be resolved per repository when no id is pinned.
         """
+        if owner is None and repo is None:
+            derived = _owner_repo_from_path(path)
+            if derived is not None:
+                owner, repo = derived
         url = f"{self._base_url}{path}"
         result = await self._http_with_retry(
             "GET",
             url,
-            headers=await self._gh_headers(),
+            owner=owner,
+            repo=repo,
+            headers=await self._gh_headers(owner=owner, repo=repo),
             timeout=self._s.timeout,
             label="GitHub API",
         )
@@ -286,17 +461,34 @@ class DirectRepoClient:
         except json.JSONDecodeError as exc:
             raise RuntimeError(f"GitHub API GET {path}: invalid JSON: {exc}") from exc
 
-    async def _request_json(self, method: str, path: str, body: dict[str, Any]) -> Any:
+    async def _request_json(
+        self,
+        method: str,
+        path: str,
+        body: dict[str, Any],
+        *,
+        owner: str | None = None,
+        repo: str | None = None,
+    ) -> Any:
         """Issue *method* on the GitHub API and return the parsed JSON body.
 
         Returns an empty dict for HTTP 204 No Content (used by
-        ``set_actions_secret`` and ``dispatch_workflow``).
+        ``set_actions_secret`` and ``dispatch_workflow``).  *owner*/*repo*
+        default to the values parsed from a ``/repos/{owner}/{repo}/...``
+        path so the installation token can be resolved per repository when
+        no id is pinned.
         """
+        if owner is None and repo is None:
+            derived = _owner_repo_from_path(path)
+            if derived is not None:
+                owner, repo = derived
         url = f"{self._base_url}{path}"
         result = await self._http_with_retry(
             method,
             url,
-            headers=await self._gh_headers(),
+            owner=owner,
+            repo=repo,
+            headers=await self._gh_headers(owner=owner, repo=repo),
             timeout=self._s.timeout,
             json_body=body,
             label="GitHub API",
@@ -530,7 +722,9 @@ class DirectRepoClient:
         except Exception as exc:
             return f"Error creating repo: {exc}"
 
-    async def list_installation_repos(self) -> list[str]:
+    async def list_installation_repos(
+        self, *, owner: str | None = None, repo: str | None = None
+    ) -> list[str]:
         """Return the set of ``owner/name`` repos in the installation scope.
 
         Resolved dynamically from the GitHub App installation — NOT a static
@@ -539,7 +733,10 @@ class DirectRepoClient:
 
         Paginates through all pages to capture every repo in the installation
         (the API defaults to ``per_page=30`` and installations routinely have
-        more repos than that).
+        more repos than that).  *owner*/*repo* provide the repository context
+        used to resolve the installation token per repository when no fixed
+        installation id is pinned (the ``/installation/repositories`` path has
+        none of its own).
         """
         per_page = 100
         page = 1
@@ -547,7 +744,9 @@ class DirectRepoClient:
 
         while True:
             data = await self._get_json(
-                f"/installation/repositories?per_page={per_page}&page={page}"
+                f"/installation/repositories?per_page={per_page}&page={page}",
+                owner=owner,
+                repo=repo,
             )
             repos: list[dict[str, Any]] = data.get("repositories", [])
             all_repos.extend(r["full_name"] for r in repos if "full_name" in r)
@@ -570,7 +769,10 @@ class DirectRepoClient:
             ``None`` if the repo is in the installation scope.
 
         """
-        allowed = await self.list_installation_repos()
+        owner, _, repo = repo_full_name.partition("/")
+        allowed = await self.list_installation_repos(
+            owner=owner or None, repo=repo or None
+        )
         if repo_full_name in allowed:
             return None
         if allowed:
@@ -605,6 +807,14 @@ class DirectRepoClient:
         GitHub actually uses for the repo).  When these differ, the repo is
         installed under a different installation of the App than the one in
         config — the permission map reflects the resolved one.
+
+        It further reports ``installation_mode`` (``"per_repository"`` when
+        no id is pinned or the pinned id was abandoned after a 404, else
+        ``"override"``) and, when an id is configured,
+        ``configured_installation_exists`` (``True``/``False`` from probing
+        the pinned installation, or ``None`` when the probe was inconclusive)
+        so an operator can tell whether a pinned override still points at a
+        live installation.
 
         Raises:
             RuntimeError: When GitHub App credentials are missing or the
@@ -661,10 +871,46 @@ class DirectRepoClient:
                 f"'{repo_full_name}': {exc}"
             ) from exc
 
+        # Which token-resolution mode is active, and — in override mode —
+        # whether the pinned installation still exists (a re-install mints a
+        # new id, orphaning the old one).
+        configured_id = self._s.github_app_installation_id
+        override_active = bool(configured_id) and configured_id not in _DEAD_PINNED_IDS
+        installation_mode = "override" if override_active else "per_repository"
+
+        configured_installation_exists: bool | None = None
+        if configured_id:
+            if configured_id in _DEAD_PINNED_IDS:
+                configured_installation_exists = False
+            else:
+
+                def _probe_configured() -> bool:
+                    """Return True if the pinned id can mint, False on HTTP 404."""
+                    try:
+                        mint_installation_token(
+                            app_id=app_id,
+                            private_key=private_key,
+                            installation_id=configured_id,
+                        )
+                    except Exception as exc:  # HTTP 404 → installation is gone
+                        if "404" in str(exc):
+                            return False
+                        raise
+                    return True
+
+                try:
+                    configured_installation_exists = await asyncio.to_thread(
+                        _probe_configured
+                    )
+                except Exception:  # best-effort probe — inconclusive on error
+                    configured_installation_exists = None
+
         return {
             "app_id": app_id,
-            "configured_installation_id": self._s.github_app_installation_id,
+            "configured_installation_id": configured_id,
             "resolved_installation_id": resolved_installation_id,
+            "installation_mode": installation_mode,
+            "configured_installation_exists": configured_installation_exists,
             "expires_at": result.expires_at.isoformat(),
             "seconds_remaining": round(result.seconds_remaining, 1),
             "permissions": dict(result.permissions),
@@ -784,10 +1030,13 @@ class DirectRepoClient:
                 f"{self._base_url}/repos/{repo_full_name}"
                 f"/pulls/{pr_number}/update-branch"
             )
+            owner, _, repo = repo_full_name.partition("/")
             result = await self._http_with_retry(
                 "PUT",
                 url,
-                headers=await self._gh_headers(),
+                owner=owner or None,
+                repo=repo or None,
+                headers=await self._gh_headers(owner=owner or None, repo=repo or None),
                 timeout=self._s.timeout,
                 label="GitHub API (update-branch)",
             )
@@ -1001,11 +1250,14 @@ class DirectRepoClient:
         """
         path = f"/repos/{repo_full_name}/pulls/{pr_number}"
         url = f"{self._base_url}{path}"
-        headers = await self._gh_headers()
+        owner, _, repo = repo_full_name.partition("/")
+        headers = await self._gh_headers(owner=owner or None, repo=repo or None)
         headers["Accept"] = "application/vnd.github.v3.diff"
         result = await self._http_with_retry(
             "GET",
             url,
+            owner=owner or None,
+            repo=repo or None,
             headers=headers,
             timeout=self._s.timeout,
             label="GitHub API",
@@ -1066,7 +1318,19 @@ class DirectRepoClient:
             raise RuntimeError("search_prs needs an owner or a repo_full_name")
         if since:
             terms.append(f"updated:>={since}")
-        return await self._search_issues(" ".join(terms), per_page=per_page)
+        # Thread the repository (or account owner) so the installation token
+        # can be resolved per repository when no fixed id is pinned — the
+        # ``/search/issues`` path itself carries no owner/repo to derive.
+        search_owner: str | None = None
+        search_repo: str | None = None
+        if repo_full_name:
+            search_owner, _, search_repo = repo_full_name.partition("/")
+        return await self._search_issues(
+            " ".join(terms),
+            per_page=per_page,
+            owner=search_owner or owner,
+            repo=search_repo or None,
+        )
 
     async def search_open_prs(
         self,
@@ -1082,20 +1346,34 @@ class DirectRepoClient:
         Raises RuntimeError on failure (callers catch and format).
         """
         return await self._search_issues(
-            f"type:pr state:open org:{org_name}", per_page=per_page
+            f"type:pr state:open org:{org_name}",
+            per_page=per_page,
+            owner=org_name,
         )
 
     async def _search_issues(
-        self, raw_query: str, *, per_page: int = 100
+        self,
+        raw_query: str,
+        *,
+        per_page: int = 100,
+        owner: str | None = None,
+        repo: str | None = None,
     ) -> list[dict[str, Any]]:
-        """Run *raw_query* against ``/search/issues`` and gather every page."""
+        """Run *raw_query* against ``/search/issues`` and gather every page.
+
+        *owner*/*repo* carry the repository context (the ``/search`` path has
+        none) so the installation token resolves per repository when no id is
+        pinned.
+        """
         query = quote(raw_query, safe="")
         all_items: list[dict[str, Any]] = []
         page = 1
 
         while page <= 10:
             data = await self._get_json(
-                f"/search/issues?q={query}&per_page={per_page}&page={page}"
+                f"/search/issues?q={query}&per_page={per_page}&page={page}",
+                owner=owner,
+                repo=repo,
             )
             items: list[dict[str, Any]] = data.get("items", [])
             all_items.extend(items)
@@ -1275,11 +1553,16 @@ class DirectRepoClient:
                 f"Error: build_type must be 'workflow' or 'legacy', got {build_type!r}"
             )
 
+        owner_part, _, repo_part = repo_full_name.partition("/")
+        owner = owner_part or None
+        repo = repo_part or None
         try:
             result = await self._http_with_retry(
                 "POST",
                 f"{self._base_url}/repos/{repo_full_name}/pages",
-                headers=await self._gh_headers(),
+                owner=owner,
+                repo=repo,
+                headers=await self._gh_headers(owner=owner, repo=repo),
                 timeout=self._s.timeout,
                 json_body={"build_type": build_type},
                 label="GitHub API",
@@ -1313,7 +1596,9 @@ class DirectRepoClient:
                 updated = await self._http_with_retry(
                     "PUT",
                     f"{self._base_url}/repos/{repo_full_name}/pages",
-                    headers=await self._gh_headers(),
+                    owner=owner,
+                    repo=repo,
+                    headers=await self._gh_headers(owner=owner, repo=repo),
                     timeout=self._s.timeout,
                     json_body={"build_type": build_type},
                     label="GitHub API",

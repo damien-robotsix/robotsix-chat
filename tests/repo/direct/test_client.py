@@ -163,41 +163,148 @@ async def test_tree_items_local_path_without_work_dir_rejected(tmp_path: Any) ->
 
 
 @pytest.mark.asyncio
-async def test_get_installation_token_success(
-    monkeypatch: pytest.MonkeyPatch,
-) -> None:
+async def test_get_installation_token_pinned_success() -> None:
+    """A pinned installation id mints a token via the shared library."""
     from tests.repo.direct.conftest import _settings
 
-    settings = _settings()
-
-    async def _fake_build(dr: Any, label: str, token_cache: Any = None) -> str | None:
-        return "ghs_fresh_token"
-
-    monkeypatch.setattr(
-        "robotsix_chat.repo.direct.client._build_github_app_auth_headers",
-        _fake_build,
-    )
+    settings = _settings()  # github_app_installation_id="67890"
     token = await _get_installation_token(settings)
-    assert token == "ghs_fresh_token"
+    # The conftest fake mint returns this constant.
+    assert token == "ghs_test_installation_token"
 
 
 @pytest.mark.asyncio
-async def test_get_installation_token_none_raises(
-    monkeypatch: pytest.MonkeyPatch,
-) -> None:
+async def test_get_installation_token_missing_credentials_raises() -> None:
+    """Missing app_id / private_key raises a clear RuntimeError."""
     from tests.repo.direct.conftest import _settings
 
-    settings = _settings()
-
-    async def _fake_build(dr: Any, label: str, token_cache: Any = None) -> str | None:
-        return None
-
-    monkeypatch.setattr(
-        "robotsix_chat.repo.direct.client._build_github_app_auth_headers",
-        _fake_build,
-    )
+    settings = _settings(github_app_id="", github_app_private_key="")
     with pytest.raises(RuntimeError, match="Failed to mint GitHub App"):
         await _get_installation_token(settings)
+
+
+@pytest.mark.asyncio
+async def test_get_installation_token_empty_id_resolves_per_repo() -> None:
+    """An empty pinned id resolves the installation per repository."""
+    from tests.repo.direct.conftest import _settings
+
+    settings = _settings(github_app_installation_id="")
+    token = await _get_installation_token(
+        settings, owner="damien-robotsix", repo="robotsix-chat"
+    )
+    assert token == "ghs_test_installation_token"
+
+
+@pytest.mark.asyncio
+async def test_get_installation_token_empty_id_needs_repo() -> None:
+    """An empty pinned id with no repo context raises a clear error."""
+    from robotsix_chat.repo.direct.client import (
+        _INSTALLATION_TOKEN_CACHE,
+        _RESOLVED_INSTALLATION_CACHE,
+    )
+    from tests.repo.direct.conftest import _settings
+
+    _INSTALLATION_TOKEN_CACHE.clear()
+    _RESOLVED_INSTALLATION_CACHE.clear()
+    settings = _settings(github_app_installation_id="")
+    with pytest.raises(RuntimeError, match="invoked without a repository"):
+        await _get_installation_token(settings)
+
+
+@pytest.mark.asyncio
+async def test_empty_id_mints_per_repo_never_pinned(
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    """With an empty id, two repos resolve+mint per repository, never a pinned id."""
+    from types import SimpleNamespace
+
+    import robotsix_github_auth as gh
+    import robotsix_github_auth._auth as gh_auth
+
+    from tests.repo.direct.conftest import _settings
+
+    mint_calls: list[dict[str, Any]] = []
+    resolve_calls: list[tuple[str, str]] = []
+
+    def _record_mint(**kw: Any) -> Any:
+        mint_calls.append(kw)
+        return SimpleNamespace(token="ghs_per_repo_token")
+
+    def _record_resolve(jwt_token: str, owner: str, repo: str) -> str:
+        resolve_calls.append((owner, repo))
+        return "159804921"
+
+    monkeypatch.setattr(gh, "mint_installation_token", _record_mint)
+    monkeypatch.setattr(gh_auth, "_resolve_installation_id", _record_resolve)
+
+    settings = _settings(github_app_installation_id="")
+    for repo in ("robotsix-chat", "robotsix-chat-mobile"):
+        token = await _get_installation_token(
+            settings, owner="damien-robotsix", repo=repo
+        )
+        assert token == "ghs_per_repo_token"
+
+    # Both repositories were resolved via /repos/{o}/{r}/installation.
+    assert resolve_calls == [
+        ("damien-robotsix", "robotsix-chat"),
+        ("damien-robotsix", "robotsix-chat-mobile"),
+    ]
+    # Every mint used the resolved id — never the (empty) pinned id.
+    assert mint_calls, "expected at least one mint"
+    assert all(c.get("installation_id") == "159804921" for c in mint_calls)
+
+
+@pytest.mark.asyncio
+async def test_pinned_404_falls_back_and_is_not_retried(
+    monkeypatch: pytest.MonkeyPatch,
+    caplog: pytest.LogCaptureFixture,
+) -> None:
+    """A pinned id that 404s falls back to per-repo resolution once, then sticks."""
+    import logging
+    from types import SimpleNamespace
+
+    import robotsix_github_auth as gh
+    import robotsix_github_auth._auth as gh_auth
+
+    from tests.repo.direct.conftest import _settings
+
+    mint_calls: list[str | None] = []
+
+    def _mint(**kw: Any) -> Any:
+        iid = kw.get("installation_id")
+        mint_calls.append(iid)
+        if iid == "133316919":
+            raise RuntimeError(
+                "Failed to mint token for installation 133316919: HTTP 404"
+            )
+        return SimpleNamespace(token="ghs_resolved_token")
+
+    def _resolve(jwt_token: str, owner: str, repo: str) -> str:
+        return "159804921"
+
+    monkeypatch.setattr(gh, "mint_installation_token", _mint)
+    monkeypatch.setattr(gh_auth, "_resolve_installation_id", _resolve)
+
+    settings = _settings(github_app_installation_id="133316919")
+
+    with caplog.at_level(logging.WARNING):
+        token = await _get_installation_token(
+            settings, owner="damien-robotsix", repo="robotsix-chat"
+        )
+    assert token == "ghs_resolved_token"
+    # First call: pinned attempted once (404), then resolved id minted.
+    assert mint_calls == ["133316919", "159804921"]
+    # The warning names both ids.
+    assert "133316919" in caplog.text
+    assert "159804921" in caplog.text
+
+    # Second call: pinned id is NOT retried.
+    mint_calls.clear()
+    token2 = await _get_installation_token(
+        settings, owner="damien-robotsix", repo="robotsix-chat"
+    )
+    assert token2 == "ghs_resolved_token"
+    assert "133316919" not in mint_calls
 
 
 # ============================================================================
@@ -1972,6 +2079,72 @@ async def test_get_installation_token_diagnostics_success(
     assert details["expires_at"] == "2030-01-02T03:04:05+00:00"
     assert details["seconds_remaining"] == 12345.6
     assert details["permissions"] == {"pages": "write", "contents": "read"}
+
+
+@pytest.mark.asyncio
+async def test_get_installation_token_diagnostics_reports_mode(
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    """Diagnostics report per-repository mode when no id is pinned."""
+    import sys
+    from datetime import UTC, datetime
+    from types import SimpleNamespace
+
+    from tests.repo.direct.conftest import _settings
+
+    client = DirectRepoClient(_settings(github_app_installation_id=""))
+    monkeypatch.setattr(
+        sys.modules["robotsix_github_auth"],
+        "mint_installation_token",
+        lambda **kw: SimpleNamespace(
+            token="ghs_fresh",
+            expires_at=datetime(2030, 1, 2, 3, 4, 5, tzinfo=UTC),
+            seconds_remaining=1.0,
+            permissions={},
+        ),
+    )
+    details = await client.get_installation_token_diagnostics("org/repo")
+    assert details["installation_mode"] == "per_repository"
+    # No id configured → existence is not applicable.
+    assert details["configured_installation_exists"] is None
+
+
+@pytest.mark.asyncio
+async def test_get_installation_token_diagnostics_override_gone(
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    """Diagnostics flag a pinned id that no longer exists (probe 404s)."""
+    import sys
+    from datetime import UTC, datetime
+    from types import SimpleNamespace
+
+    from tests.repo.direct.conftest import _settings
+
+    client = DirectRepoClient(_settings(github_app_installation_id="133316919"))
+
+    def _mint(**kw: Any) -> Any:
+        if kw.get("installation_id") == "133316919":
+            raise RuntimeError(
+                "Failed to mint token for installation 133316919: HTTP 404"
+            )
+        return SimpleNamespace(
+            token="ghs_fresh",
+            expires_at=datetime(2030, 1, 2, 3, 4, 5, tzinfo=UTC),
+            seconds_remaining=1.0,
+            permissions={},
+        )
+
+    monkeypatch.setattr(
+        sys.modules["robotsix_github_auth"], "mint_installation_token", _mint
+    )
+    monkeypatch.setattr(
+        sys.modules["robotsix_github_auth._auth"],
+        "_resolve_installation_id",
+        lambda jwt_token, owner, repo: "159804921",
+    )
+    details = await client.get_installation_token_diagnostics("org/repo")
+    assert details["installation_mode"] == "override"
+    assert details["configured_installation_exists"] is False
 
 
 @pytest.mark.asyncio

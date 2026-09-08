@@ -8,7 +8,11 @@ from typing import Any
 import pytest
 
 from robotsix_chat.config import DirectRepoSettings
-from robotsix_chat.repo.direct.client import _INSTALLATION_TOKEN_CACHE
+from robotsix_chat.repo.direct.client import (
+    _DEAD_PINNED_IDS,
+    _INSTALLATION_TOKEN_CACHE,
+    _RESOLVED_INSTALLATION_CACHE,
+)
 
 
 def _prepopulate_installation_token(settings: DirectRepoSettings) -> None:
@@ -34,6 +38,13 @@ def _settings(**kw: Any) -> DirectRepoSettings:
 def _mock_github_auth(monkeypatch: pytest.MonkeyPatch) -> None:
     """Mock mint_installation_token so the shared library is never imported."""
     import sys
+
+    # Clear the process-lifetime installation caches so state does not leak
+    # between tests (a pinned-id 404 fallback, in particular, would otherwise
+    # switch later tests into per-repo resolution mode).
+    _INSTALLATION_TOKEN_CACHE.clear()
+    _RESOLVED_INSTALLATION_CACHE.clear()
+    _DEAD_PINNED_IDS.clear()
 
     def _fake_mint(**kw: object) -> object:
         return SimpleNamespace(token="ghs_test_installation_token")
