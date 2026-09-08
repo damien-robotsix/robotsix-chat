@@ -19,6 +19,7 @@ from robotsix_chat.chat.conversation import ConversationStore
 from robotsix_chat.chat.events import EventBus
 from robotsix_chat.chat.summarize import SUMMARY_SYSTEM_PROMPT
 from robotsix_chat.config import PROJECT_MAIN, Settings
+from robotsix_chat.continuation import build_restart_continuation_prompt
 from robotsix_chat.continuation.store import ContinuationStore
 from robotsix_chat.diagnostics import DiagnosticStore
 from robotsix_chat.knowledge.store import KnowledgeStore
@@ -540,6 +541,8 @@ def run_server_from_config(agent: ChatAgent | None = None) -> None:
         await _start_watcher()
         # Fire any pending post-restart continuation.
         await _fire_continuation()
+        # Auto-resume any session interrupted mid-turn by the restart.
+        await _auto_continue_interrupted()
 
     async def _fire_continuation() -> None:
         """Check for a pending continuation and fire it if present.
@@ -606,6 +609,77 @@ def run_server_from_config(agent: ChatAgent | None = None) -> None:
         task = asyncio.create_task(_run())
         env._tasks.add(task)
         task.add_done_callback(env._tasks.discard)
+
+    async def _auto_continue_interrupted() -> None:
+        """Auto-resume every session interrupted mid-turn by the restart.
+
+        Unlike :func:`_fire_continuation` (the explicit stored-prompt arm),
+        this needs no agent call ahead of time: any session the conversation
+        store still marks as having an in-flight (accepted-but-unfinished)
+        turn is detected automatically and resumed.  The original user
+        message is re-handed to the agent wrapped in a restart notice so it
+        picks up the work it never finished.
+
+        Gated by ``continuation.enabled``.  One-shot per interruption: each
+        marker is consumed (cleared) before the resume turn runs, so a crash
+        during the resume cannot spin a restart loop.  Failures are logged,
+        never fatal to startup.
+        """
+        if not settings.continuation.enabled:
+            return
+
+        interrupted = conversation_store.interrupted_sessions()
+        if not interrupted:
+            return
+
+        logger.info(
+            "Auto-continuing %d interrupted session(s) after restart",
+            len(interrupted),
+        )
+
+        for sid, owner, pending_message in interrupted:
+            # Consume the marker up-front so a crash mid-resume cannot loop.
+            conversation_store.clear_in_flight(sid)
+            resolved_owner = owner or "operator"
+            prompt = build_restart_continuation_prompt(pending_message)
+
+            async def _run(
+                sid: str = sid,
+                owner_id: str = resolved_owner,
+                prompt: str = prompt,
+                original: str = pending_message,
+            ) -> None:
+                try:
+                    async with run_serializer.for_owner(owner_id):
+                        history = conversation_store.agent_history(sid)
+                        reply_parts: list[str] = []
+                        async for token in agent.stream(
+                            prompt,
+                            history=history,
+                            session_id=sid,
+                            client_id=sid,
+                            trace_name="auto-continuation",
+                        ):
+                            reply_parts.append(token)
+                        full_reply = "".join(reply_parts)
+                        # Record the original (interrupted) message as the user
+                        # turn so the transcript reads as if it completed.
+                        conversation_store.record(sid, owner_id, original, full_reply)
+                        logger.info(
+                            "Auto-continuation completed: session_id=%s reply_chars=%d",
+                            sid,
+                            len(full_reply),
+                        )
+                except asyncio.CancelledError:
+                    logger.debug("Auto-continuation task cancelled for session %s", sid)
+                except Exception:
+                    logger.exception(
+                        "Auto-continuation failed for session %s — dropping", sid
+                    )
+
+            task = asyncio.create_task(_run())
+            env._tasks.add(task)
+            task.add_done_callback(env._tasks.discard)
 
     # -- flush pending traces on shutdown ----------------------------------
     async def _flush_traces() -> None:

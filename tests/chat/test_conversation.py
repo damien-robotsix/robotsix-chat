@@ -351,6 +351,75 @@ def test_persist_roundtrip_preserves_all_metadata() -> None:
         persist_path.unlink(missing_ok=True)
 
 
+# -- in-flight / restart-resume markers ---------------------------------
+
+
+def test_mark_in_flight_lists_interrupted_session() -> None:
+    """A marked-in-flight session shows up in ``interrupted_sessions``."""
+    store = _store()
+    sid = cast(str, store.create_session("c1")["session_id"])
+
+    store.mark_in_flight(sid, "deploy component X")
+
+    interrupted = store.interrupted_sessions()
+    assert interrupted == [(sid, OPERATOR_OWNER, "deploy component X")]
+
+
+def test_record_clears_in_flight_marker() -> None:
+    """Completing a turn with ``record`` clears the in-flight marker."""
+    store = _store()
+    sid = cast(str, store.create_session("c1")["session_id"])
+    store.mark_in_flight(sid, "deploy component X")
+
+    store.record(sid, "c1", "deploy component X", "done")
+
+    assert store.interrupted_sessions() == []
+
+
+def test_clear_in_flight_drops_marker_without_recording() -> None:
+    """``clear_in_flight`` removes the marker but records no turn."""
+    store = _store()
+    sid = cast(str, store.create_session("c1")["session_id"])
+    store.mark_in_flight(sid, "deploy component X")
+
+    store.clear_in_flight(sid)
+
+    assert store.interrupted_sessions() == []
+    assert store.history(sid) == []
+
+
+def test_interrupted_sessions_empty_by_default() -> None:
+    """A session with no in-flight turn is never reported as interrupted."""
+    store = _store()
+    sid = cast(str, store.create_session("c1")["session_id"])
+    store.record(sid, "c1", "hello", "hi there")
+
+    assert store.interrupted_sessions() == []
+
+
+def test_in_flight_marker_survives_persistence_roundtrip() -> None:
+    """A restart (reload from disk) preserves the in-flight marker.
+
+    This is the durable-state hook the boot-time auto-continue pass relies
+    on: a turn accepted but never completed before the process exited is
+    still detectable after reload.
+    """
+    with tempfile.NamedTemporaryFile(suffix=".json", delete=False) as f:
+        persist_path = Path(f.name)
+    try:
+        store = _store(persist_path=persist_path)
+        sid = cast(str, store.create_session("c1")["session_id"])
+        store.mark_in_flight(sid, "finish deploying component X")
+
+        # Fresh store reading the same file (simulates a process restart).
+        store2 = _store(persist_path=persist_path)
+        assert store2.interrupted_sessions() == [
+            (sid, OPERATOR_OWNER, "finish deploying component X")
+        ]
+    finally:
+        persist_path.unlink(missing_ok=True)
+
+
 def test_load_missing_file_is_graceful() -> None:
     """A missing persist file is not an error — store starts empty."""
     store = _store(persist_path=Path("/nonexistent/conversations.json"))

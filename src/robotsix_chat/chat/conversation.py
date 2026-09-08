@@ -181,6 +181,14 @@ class Session:
     # whether any new input has arrived since — if equal, the pass is skipped
     # and no LLM call is made.
     last_trim_turn_count: int = 0
+    # In-flight turn marker: the user message of a turn that was accepted but
+    # whose assistant reply never completed — e.g. the process was restarted
+    # mid-turn.  ``None`` means the session has no unfinished turn.  Persisted
+    # so a boot-time auto-continue pass can detect the interrupted session and
+    # resume it without an explicit stored-prompt arm.  Set by
+    # :meth:`ConversationStore.mark_in_flight` when a turn starts and cleared
+    # by :meth:`ConversationStore.record` when the turn completes.
+    pending_user_message: str | None = None
 
 
 def _session_metadata(session: Session) -> dict[str, object]:
@@ -437,6 +445,12 @@ class ConversationStoreSerializer:
                     if isinstance(last_trim_turn_count_raw, int | float)
                     else 0
                 )
+                pending_user_message_raw = sraw.get("pending_user_message")
+                pending_user_message = (
+                    str(pending_user_message_raw)
+                    if isinstance(pending_user_message_raw, str)
+                    else None
+                )
 
                 session = Session(
                     session_id=sid,
@@ -459,6 +473,7 @@ class ConversationStoreSerializer:
                     evergoing=bool(sraw.get("evergoing", False)),
                     trimmed_turn_index=min(trimmed_turn_index, len(turns)),
                     last_trim_turn_count=last_trim_turn_count,
+                    pending_user_message=pending_user_message,
                 )
                 sessions[sid] = session
                 session_ids.add(sid)
@@ -520,6 +535,8 @@ class ConversationStoreSerializer:
                     session_dict["trimmed_turn_index"] = session.trimmed_turn_index
                 if session.last_trim_turn_count:
                     session_dict["last_trim_turn_count"] = session.last_trim_turn_count
+                if session.pending_user_message is not None:
+                    session_dict["pending_user_message"] = session.pending_user_message
                 sessions_list.append(session_dict)
             if sessions_list:
                 data[owner_id] = {
@@ -736,6 +753,9 @@ class ConversationStore:
                 0, session.compacted_turn_index - trimmed
             )
             session.trimmed_turn_index = max(0, session.trimmed_turn_index - trimmed)
+        # The turn completed: clear any in-flight marker so a later restart
+        # does not mistake this session for interrupted work.
+        session.pending_user_message = None
         session.turn_count += 1
         session.wall_last_active = self._wall_clock()
         self._sessions.move_to_end(session_id)
@@ -747,6 +767,55 @@ class ConversationStore:
                 owner.session_ids.add(session_id)
 
         self._persist()
+
+    def mark_in_flight(self, session_id: str, user_message: str) -> None:
+        """Mark *session_id* as having an accepted-but-unfinished turn.
+
+        Called when a turn starts running, before the assistant reply is
+        produced.  The *user_message* is persisted durably so that, if the
+        process is restarted before :meth:`record` completes the turn, a
+        boot-time auto-continue pass can detect the interruption and resume
+        the work.  No-op for an unknown (evicted) session.
+        """
+        session = self._sessions.get(session_id)
+        if session is None:
+            return
+        session.pending_user_message = user_message
+        self._persist()
+
+    def clear_in_flight(self, session_id: str) -> None:
+        """Clear any in-flight marker on *session_id* without recording a turn.
+
+        Used by the boot-time auto-continue pass to consume an interrupted
+        marker before resuming it, so a crash during the resume cannot spin
+        a restart loop.  No-op when the session is unknown or unmarked.
+        """
+        session = self._sessions.get(session_id)
+        if session is None or session.pending_user_message is None:
+            return
+        session.pending_user_message = None
+        self._persist()
+
+    def interrupted_sessions(self) -> list[tuple[str, str | None, str]]:
+        """Return ``(session_id, owner_id, user_message)`` per interrupted turn.
+
+        A session is *interrupted* when it still carries a
+        ``pending_user_message`` marker — i.e. a turn was accepted but its
+        assistant reply never completed before the process exited.  The
+        returned owner id is the session's canonical owner (or ``None`` when
+        it cannot be resolved).  Used by the startup auto-continue pass.
+        """
+        interrupted: list[tuple[str, str | None, str]] = []
+        for session_id, session in self._sessions.items():
+            if session.pending_user_message is not None:
+                interrupted.append(
+                    (
+                        session_id,
+                        self.owner_for_session(session_id),
+                        session.pending_user_message,
+                    )
+                )
+        return interrupted
 
     def record_for_owner(
         self, owner_id: str, user_message: str, assistant_reply: str

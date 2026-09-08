@@ -2,12 +2,16 @@
 
 from __future__ import annotations
 
+import asyncio
 import logging
+import tempfile
+from pathlib import Path
 from unittest.mock import MagicMock, patch
 
 import pytest
 import structlog
 
+from robotsix_chat.chat.conversation import ConversationStore
 from robotsix_chat.chat.server.cli import (
     _configure_logging,
     _setup_observability,
@@ -15,6 +19,7 @@ from robotsix_chat.chat.server.cli import (
     run_server_from_config,
 )
 from robotsix_chat.config import Settings
+from robotsix_chat.config.models import ContinuationSettings, ConversationSettings
 
 # ---------------------------------------------------------------------------
 # _configure_logging
@@ -451,3 +456,175 @@ class TestRunServerFromConfig:
         # Call the startup callback and verify resume_subsessions is invoked.
         on_startup()
         assert len(resume_calls) == 1
+
+
+class _FakeStreamAgent:
+    """Minimal agent double whose ``stream`` yields a fixed reply.
+
+    Records the prompts it was asked to stream so a test can assert the
+    restart-continuation prompt reached it.
+    """
+
+    def __init__(self, reply_tokens: tuple[str, ...] = ("resumed ", "work")) -> None:
+        self._reply_tokens = reply_tokens
+        self.prompts: list[str] = []
+
+    async def stream(self, prompt: str, **_kwargs: object):
+        """Yield the canned reply tokens, recording *prompt*."""
+        self.prompts.append(prompt)
+        for token in self._reply_tokens:
+            yield token
+
+
+class TestAutoContinueInterruptedSessions:
+    """The startup hook auto-resumes sessions interrupted mid-turn."""
+
+    @pytest.fixture(autouse=True)
+    def _reset_structlog(self) -> None:
+        """Reset structlog between tests."""
+        structlog.reset_defaults()
+        root = logging.getLogger()
+        root.handlers.clear()
+
+    @pytest.mark.asyncio
+    async def test_startup_resumes_interrupted_session(self) -> None:
+        """A persisted in-flight turn is auto-resumed on the startup hook."""
+        with tempfile.TemporaryDirectory() as tmp:
+            conv_path = Path(tmp) / "conversations.json"
+            cont_path = Path(tmp) / "continuation.json"
+
+            # Seed a session that was interrupted mid-turn (a user message was
+            # accepted but no assistant reply was ever recorded).
+            seed = ConversationStore(persist_path=conv_path)
+            sid = str(seed.create_session("operator")["session_id"])
+            seed.mark_in_flight(sid, "finish deploying component X")
+
+            settings = Settings(
+                conversation=ConversationSettings(persist_path=str(conv_path)),
+                continuation=ContinuationSettings(
+                    enabled=True, store_path=str(cont_path)
+                ),
+            )
+            fake_agent = _FakeStreamAgent()
+
+            async def _noop_connectivity(_settings: object) -> None:
+                return None
+
+            async def _noop_watcher(_env: object) -> None:
+                return None
+
+            with (
+                patch(
+                    "robotsix_chat.chat.server.cli.Settings.load",
+                    return_value=settings,
+                ),
+                patch("robotsix_chat.chat.server.cli._configure_logging"),
+                patch("robotsix_chat.chat.server.cli._export_langfuse_env"),
+                patch("robotsix_chat.chat.server.cli._setup_observability"),
+                patch(
+                    "robotsix_chat.chat.server.cli.check_component_connectivity",
+                    new=_noop_connectivity,
+                ),
+                patch(
+                    "robotsix_chat.subsessions.watch_paused_monitors",
+                    new=_noop_watcher,
+                ),
+                patch(
+                    "robotsix_chat.subsessions.SubsessionRegistry",
+                    return_value=MagicMock(),
+                ),
+                patch(
+                    "robotsix_chat.subsessions.ParentDelivery",
+                    return_value=MagicMock(),
+                ),
+                patch("robotsix_chat.subsessions.resume_subsessions"),
+                patch("robotsix_chat.chat.server.run_server") as mock_run_server,
+            ):
+                run_server_from_config(agent=fake_agent)
+
+                on_startup_async = mock_run_server.call_args.kwargs["on_startup_async"]
+                assert callable(on_startup_async)
+
+                await on_startup_async()
+                # Drain the background auto-continuation task.
+                pending = [
+                    t for t in asyncio.all_tasks() if t is not asyncio.current_task()
+                ]
+                if pending:
+                    await asyncio.wait(pending, timeout=5)
+
+            # The interrupted turn was resumed: the restart prompt reached the
+            # agent and the completed turn was recorded to the durable store.
+            assert fake_agent.prompts, "agent.stream was never invoked"
+            assert "finish deploying component X" in fake_agent.prompts[0]
+
+            reloaded = ConversationStore(persist_path=conv_path)
+            assert reloaded.interrupted_sessions() == []
+            assert reloaded.history(sid) == [
+                ("finish deploying component X", "resumed work")
+            ]
+
+    @pytest.mark.asyncio
+    async def test_startup_noop_when_continuation_disabled(self) -> None:
+        """With continuation disabled, an interrupted marker is left untouched."""
+        with tempfile.TemporaryDirectory() as tmp:
+            conv_path = Path(tmp) / "conversations.json"
+
+            seed = ConversationStore(persist_path=conv_path)
+            sid = str(seed.create_session("operator")["session_id"])
+            seed.mark_in_flight(sid, "finish deploying component X")
+
+            settings = Settings(
+                conversation=ConversationSettings(persist_path=str(conv_path)),
+                continuation=ContinuationSettings(enabled=False),
+            )
+            fake_agent = _FakeStreamAgent()
+
+            async def _noop_connectivity(_settings: object) -> None:
+                return None
+
+            async def _noop_watcher(_env: object) -> None:
+                return None
+
+            with (
+                patch(
+                    "robotsix_chat.chat.server.cli.Settings.load",
+                    return_value=settings,
+                ),
+                patch("robotsix_chat.chat.server.cli._configure_logging"),
+                patch("robotsix_chat.chat.server.cli._export_langfuse_env"),
+                patch("robotsix_chat.chat.server.cli._setup_observability"),
+                patch(
+                    "robotsix_chat.chat.server.cli.check_component_connectivity",
+                    new=_noop_connectivity,
+                ),
+                patch(
+                    "robotsix_chat.subsessions.watch_paused_monitors",
+                    new=_noop_watcher,
+                ),
+                patch(
+                    "robotsix_chat.subsessions.SubsessionRegistry",
+                    return_value=MagicMock(),
+                ),
+                patch(
+                    "robotsix_chat.subsessions.ParentDelivery",
+                    return_value=MagicMock(),
+                ),
+                patch("robotsix_chat.subsessions.resume_subsessions"),
+                patch("robotsix_chat.chat.server.run_server") as mock_run_server,
+            ):
+                run_server_from_config(agent=fake_agent)
+                on_startup_async = mock_run_server.call_args.kwargs["on_startup_async"]
+                await on_startup_async()
+                pending = [
+                    t for t in asyncio.all_tasks() if t is not asyncio.current_task()
+                ]
+                if pending:
+                    await asyncio.wait(pending, timeout=5)
+
+            assert fake_agent.prompts == []
+            reloaded = ConversationStore(persist_path=conv_path)
+            # The marker is preserved — nothing consumed it.
+            assert reloaded.interrupted_sessions() == [
+                (sid, "operator", "finish deploying component X")
+            ]

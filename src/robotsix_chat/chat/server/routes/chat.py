@@ -401,6 +401,12 @@ class MessageCoalescer:
             if publish_turn:
                 event_bus.begin_turn(session_id, turn_id, user_message=concatenated)
 
+            # Durably mark the turn in-flight so a restart before store.record()
+            # persists the reply can detect the interruption and auto-resume the
+            # work on the next boot (cleared by store.record when the turn ends).
+            if session_id:
+                store.mark_in_flight(session_id, concatenated)
+
             reply_parts: list[str] = []
             try:
                 # Retry the whole turn transparently when it fails BEFORE any

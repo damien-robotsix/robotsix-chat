@@ -9,7 +9,12 @@ from pathlib import Path
 import pytest
 
 from robotsix_chat.config.models import ContinuationSettings
-from robotsix_chat.continuation import build_continuation_tools, load_continuation_skill
+from robotsix_chat.continuation import (
+    RESTART_CONTINUATION_NOTICE,
+    build_continuation_tools,
+    build_restart_continuation_prompt,
+    load_continuation_skill,
+)
 from robotsix_chat.continuation.store import ContinuationStore
 
 # ---------------------------------------------------------------------------
@@ -256,3 +261,23 @@ class TestContinuationSkill:
         assert "cancel_continuation" in skill
         assert "get_continuation_status" in skill
         assert "Guardrails" in skill
+
+
+# ---------------------------------------------------------------------------
+# Restart-continuation prompt
+# ---------------------------------------------------------------------------
+
+
+class TestRestartContinuationPrompt:
+    """Tests for build_restart_continuation_prompt."""
+
+    def test_wraps_pending_message(self) -> None:
+        """The original interrupted message is embedded in the resume prompt."""
+        prompt = build_restart_continuation_prompt("deploy component X and verify")
+        assert prompt.startswith(RESTART_CONTINUATION_NOTICE)
+        assert "deploy component X and verify" in prompt
+
+    def test_empty_message_falls_back_to_notice(self) -> None:
+        """A blank pending message yields the bare restart notice."""
+        assert build_restart_continuation_prompt("   ") == RESTART_CONTINUATION_NOTICE
+        assert build_restart_continuation_prompt("") == RESTART_CONTINUATION_NOTICE

@@ -20,7 +20,35 @@ from typing import TYPE_CHECKING, Any
 if TYPE_CHECKING:
     from robotsix_chat.config.models import ContinuationSettings
 
-__all__ = ["build_continuation_tools", "load_continuation_skill"]
+__all__ = [
+    "RESTART_CONTINUATION_NOTICE",
+    "build_continuation_tools",
+    "build_restart_continuation_prompt",
+    "load_continuation_skill",
+]
+
+#: Wording prepended when auto-resuming a session that was interrupted
+#: mid-turn by a restart.  The exact phrasing is not load-bearing — the
+#: behaviour (the agent picks its work back up) is what matters.
+RESTART_CONTINUATION_NOTICE = (
+    "You have been restarted. You were in the middle of handling the request "
+    "below but never finished replying. Continue the work you were doing and "
+    "complete it."
+)
+
+
+def build_restart_continuation_prompt(pending_user_message: str) -> str:
+    """Return the synthetic prompt that resumes a turn interrupted by a restart.
+
+    Wraps the original (unfinished) user message in :data:`RESTART_CONTINUATION_NOTICE`
+    so the agent knows it was interrupted mid-work and has the original request
+    to continue from.  When the pending message is empty/whitespace, the notice
+    is returned on its own.
+    """
+    message = pending_user_message.strip()
+    if not message:
+        return RESTART_CONTINUATION_NOTICE
+    return f"{RESTART_CONTINUATION_NOTICE}\n\n--- Interrupted request ---\n{message}"
 
 
 def load_continuation_skill() -> str:
