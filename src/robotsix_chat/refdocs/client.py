@@ -111,7 +111,7 @@ class RefDocsClient:
             return self._repo_denied(repo)
         url = self._build_url(repo, path)
         try:
-            return await self._get_json(url)
+            return await self._get_json(url, repo)
         except Exception as exc:
             logger.debug("refdocs %s failed: %s", action, exc)
             return f"Failed to {action} {repo}/{path}: {exc}"
@@ -131,9 +131,19 @@ class RefDocsClient:
         encoded_path = "/" + httpx.URL(path).path.lstrip("/") if path else ""
         return f"{self._base_url}/repos/{repo}/contents{encoded_path}?ref={s.ref}"
 
-    async def _get_json(self, url: str) -> Any:
+    async def _get_json(self, url: str, repo: str) -> Any:
+        """Fetch JSON from the GitHub API for *url*, authenticating for *repo*.
+
+        *repo* is used to resolve the GitHub App installation per
+        repository when no ``github_app_installation_id`` is pinned, so the
+        recommended empty default authenticates private-repo fetches just
+        like the direct-repo client.
+        """
         headers: dict[str, str] = {"Accept": "application/vnd.github+json"}
-        token = await _build_github_app_auth_headers(self._dr, "refdocs:")
+        owner, _, repo_name = repo.partition("/")
+        token = await _build_github_app_auth_headers(
+            self._dr, "refdocs:", owner=owner, repo=repo_name
+        )
         if token:
             headers["Authorization"] = f"Bearer {token}"
         result = await safe_http_request(

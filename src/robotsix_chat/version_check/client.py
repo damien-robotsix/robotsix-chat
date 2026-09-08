@@ -129,7 +129,10 @@ class VersionCheckClient:
         headers: dict[str, str] = {
             "Accept": "application/vnd.github+json",
         }
-        token = await _build_github_app_auth_headers(self._dr, "version_check:")
+        owner, _, repo_name = self._s.repo.partition("/")
+        token = await _build_github_app_auth_headers(
+            self._dr, "version_check:", owner=owner, repo=repo_name
+        )
         if token:
             headers["Authorization"] = f"Bearer {token}"
 
