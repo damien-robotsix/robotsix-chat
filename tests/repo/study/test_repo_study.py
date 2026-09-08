@@ -703,3 +703,79 @@ async def test_factory_search_accepts_query_alias(tmp_path: Path) -> None:
     assert (await by_name["search_repo_files"]("acme--widget--default")).startswith(
         "Error:"
     )
+
+
+@respx.mock
+@pytest.mark.asyncio
+async def test_factory_fetch_accepts_repo_full_name_url_and_workspace_id(
+    tmp_path: Path,
+) -> None:
+    """Three guessed names resolve to the same fetch.
+
+    2026-09-08: an operator turn burned three schema rejections in a row
+    guessing ``repo_full_name`` (the PR tools' name), ``repo_url`` and
+    ``workspace_id``.
+    """
+    tools = build_repo_study_tools(
+        RepoStudySettings(enabled=True, data_dir=str(tmp_path / "ws")),
+        DirectRepoSettings(),
+    )
+    by_name = {t.__name__: t for t in tools}
+    respx.get(TARBALL_URL).mock(
+        return_value=Response(200, content=make_tarball(SAMPLE_FILES))
+    )
+    fetch = by_name["fetch_repo_for_study"]
+    assert "acme--widget--default" in await fetch(repo_full_name="acme/widget")
+    assert "acme--widget--default" in await fetch(
+        repo_url="https://github.com/acme/widget"
+    )
+    assert "acme--widget--default" in await fetch(workspace_id="acme--widget--default")
+
+
+def test_repo_from_url_and_workspace_id_helpers() -> None:
+    from robotsix_chat.repo.study import _repo_from_url, _repo_from_workspace_id
+
+    assert _repo_from_url("https://github.com/acme/widget", "") == ("acme/widget", "")
+    assert _repo_from_url("https://github.com/acme/widget.git/", "") == (
+        "acme/widget",
+        "",
+    )
+    assert _repo_from_url("https://github.com/acme/widget/tree/dev", "") == (
+        "acme/widget",
+        "dev",
+    )
+    assert _repo_from_url("git@github.com:acme/widget.git", "v1") == (
+        "acme/widget",
+        "v1",
+    )
+    assert _repo_from_url("not a url", "") == ("", "")
+    assert _repo_from_workspace_id("acme--widget--default", "") == ("acme/widget", "")
+    assert _repo_from_workspace_id("acme--widget--feat-x", "") == (
+        "acme/widget",
+        "feat-x",
+    )
+    assert _repo_from_workspace_id("garbage", "") == ("", "")
+
+
+@respx.mock
+@pytest.mark.asyncio
+async def test_factory_search_accepts_workspace_alias(tmp_path: Path) -> None:
+    """``workspace`` is accepted for ``workspace_id``.
+
+    Neither given → a clear error instead of a schema rejection
+    (2026-09-08 ``search_repo_files({})``).
+    """
+    tools = build_repo_study_tools(
+        RepoStudySettings(enabled=True, data_dir=str(tmp_path / "ws")),
+        DirectRepoSettings(),
+    )
+    by_name = {t.__name__: t for t in tools}
+    respx.get(TARBALL_URL).mock(
+        return_value=Response(200, content=make_tarball(SAMPLE_FILES))
+    )
+    await by_name["fetch_repo_for_study"]("acme/widget")
+    out = await by_name["search_repo_files"](
+        workspace="acme--widget--default", pattern="frobnicate"
+    )
+    assert "core.py" in out
+    assert (await by_name["search_repo_files"](pattern="x")).startswith("Error:")
