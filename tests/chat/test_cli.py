@@ -493,7 +493,6 @@ class TestAutoContinueInterruptedSessions:
         """A persisted in-flight turn is auto-resumed on the startup hook."""
         with tempfile.TemporaryDirectory() as tmp:
             conv_path = Path(tmp) / "conversations.json"
-            cont_path = Path(tmp) / "continuation.json"
 
             # Seed a session that was interrupted mid-turn (a user message was
             # accepted but no assistant reply was ever recorded).
@@ -503,9 +502,7 @@ class TestAutoContinueInterruptedSessions:
 
             settings = Settings(
                 conversation=ConversationSettings(persist_path=str(conv_path)),
-                continuation=ContinuationSettings(
-                    enabled=True, store_path=str(cont_path)
-                ),
+                continuation=ContinuationSettings(enabled=True),
             )
             fake_agent = _FakeStreamAgent()
 
