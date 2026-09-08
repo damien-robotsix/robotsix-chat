@@ -65,8 +65,11 @@ async def resolve_pr_ref(
             )
         return m.group(1), int(m.group(2))
     if ticket_id and pr_number is None:
-        get_ticket_data = getattr(board, "get_ticket_data", None)
-        data = await get_ticket_data(ticket_id) if callable(get_ticket_data) else None
+        data = (
+            await board.get_ticket_data(ticket_id)
+            if hasattr(board, "get_ticket_data")
+            else None
+        )
         url = (data or {}).get("pr_url") if isinstance(data, dict) else None
         m = _PR_URL_RE.search(url or "")
         if not m:
@@ -79,8 +82,11 @@ async def resolve_pr_ref(
     if not name or pr_number is None:
         return f"Error: PR reference incomplete — {_PR_REF_HELP}."
     if "/" not in name:
-        resolve = getattr(board, "resolve_repo_full_name", None)
-        resolved = await resolve(name) if callable(resolve) else None
+        resolved = (
+            await board.resolve_repo_full_name(name)
+            if hasattr(board, "resolve_repo_full_name")
+            else None
+        )
         if not resolved:
             return (
                 f"Error: {name!r} is not an owner/name repo and is not on the "
