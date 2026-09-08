@@ -41,9 +41,14 @@ class DirectRepoSettings(BaseModel):
         github_app_private_key: The app's RSA private key in PEM format.
             Required when *enabled*.  Stored in config only — never
             hardcoded.
-        github_app_installation_id: The installation id to act as.  The
-            app must be installed on the target org/account.  Required when
-            *enabled*.
+        github_app_installation_id: Optional installation id to act as.
+            **Leave empty to resolve the installation per repository** (from
+            ``owner``/``repo`` via the GitHub App JWT) — the recommended
+            default, so a GitHub App re-install (which mints a new
+            installation id) needs no config edit.  When set, it acts as an
+            override; if it returns HTTP 404 (the installation no longer
+            exists) the client abandons it for the process lifetime and falls
+            back to per-repository resolution.
         github_api_base_url: Overridable base URL for GitHub Enterprise.
         board_api_base_url: Base URL of the board HTTP API for ticket-state
             lookups (verifying BLOCKED state).

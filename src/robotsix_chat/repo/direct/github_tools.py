@@ -2223,14 +2223,46 @@ def build_github_tools(
         permissions: dict[str, str] = details["permissions"]
         configured_id = details["configured_installation_id"]
         resolved_id = details["resolved_installation_id"]
+        mode = details.get("installation_mode", "per_repository")
+        configured_exists = details.get("configured_installation_exists")
+        mode_label = (
+            "per-repository resolution (no fixed installation id — the "
+            "installation is resolved from each repo, so a re-install needs "
+            "no config change)"
+            if mode == "per_repository"
+            else "override (a fixed `github_app_installation_id` is pinned)"
+        )
+        configured_display = f"`{configured_id}`" if configured_id else "`` (empty)"
         lines = [
             f"GitHub App installation token diagnostic for `{repo_full_name}`:",
             f"- App id: `{details['app_id']}`",
-            f"- Configured installation id: `{configured_id}`",
+            f"- Installation mode: {mode_label}",
+            f"- Configured installation id: {configured_display}",
             f"- Resolved installation id (for `{repo_full_name}`): `{resolved_id}`",
             f"- Token expires at: `{details['expires_at']}` (UTC)",
             f"- Seconds remaining: {details['seconds_remaining']}",
         ]
+        if configured_id and mode == "override":
+            if configured_exists is False:
+                lines.append(
+                    "  ⚠️ The pinned installation id no longer exists on GitHub "
+                    "(minting returned HTTP 404). Clear "
+                    "`github_app_installation_id` to resolve per repository, or "
+                    "update it to the current installation id."
+                )
+            elif configured_exists is True:
+                lines.append("  ✓ The pinned installation id still exists.")
+            else:
+                lines.append(
+                    "  (could not confirm whether the pinned installation "
+                    "still exists.)"
+                )
+        elif configured_id and mode == "per_repository":
+            lines.append(
+                "  ⚠️ The pinned installation id returned HTTP 404 earlier this "
+                "process and has been abandoned — tokens are now resolved per "
+                "repository. Clear `github_app_installation_id` from config."
+            )
         if resolved_id != configured_id:
             lines.append(
                 "  ⚠️ Mismatch: the resolved installation id differs from the "
