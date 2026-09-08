@@ -262,11 +262,9 @@ only the fields matching the declared auth scheme are consulted when authenticat
 
 ### Conversation
 
-| JSON key                         | Type      | Default                      | Description                                |
-| -------------------------------- | --------- | ---------------------------- | ------------------------------------------ |
-| `conversation.max_history_turns` | `integer` | `50`                         | Maximum conversation turns to retain.      |
-| `conversation.max_conversations` | `integer` | `1000`                       | Maximum concurrent conversations.          |
-| `conversation.persist_path`      | `string`  | `"/data/conversations.json"` | Path to the conversation persistence file. |
+| JSON key                    | Type     | Default                      | Description                                |
+| --------------------------- | -------- | ---------------------------- | ------------------------------------------ |
+| `conversation.persist_path` | `string` | `"/data/conversations.json"` | Path to the conversation persistence file. |
 
 ### Diagnostics
 

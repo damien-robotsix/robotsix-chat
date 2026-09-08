@@ -9,6 +9,8 @@ from pathlib import Path
 from typing import cast
 
 from robotsix_chat.chat.conversation import (
+    DEFAULT_MAX_CONVERSATIONS,
+    DEFAULT_MAX_HISTORY_TURNS,
     OPERATOR_OWNER,
     ConversationStore,
     canonical_owner_id,
@@ -130,7 +132,15 @@ def test_returned_history_is_a_copy() -> None:
 def test_default_max_history_turns_is_50() -> None:
     """The default cap matches the acceptance criterion of 50 most recent."""
     store = ConversationStore()
-    assert store._max_history_turns == 50
+    assert DEFAULT_MAX_HISTORY_TURNS == 50
+    assert store._max_history_turns == DEFAULT_MAX_HISTORY_TURNS
+
+
+def test_default_max_conversations_is_1000() -> None:
+    """The default session LRU cap comes from the module constant."""
+    store = ConversationStore()
+    assert DEFAULT_MAX_CONVERSATIONS == 1000
+    assert store._max_conversations == DEFAULT_MAX_CONVERSATIONS
 
 
 # -- owner / multi-session tests ----------------------------------------

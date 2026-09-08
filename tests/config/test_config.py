@@ -470,11 +470,39 @@ def test_load_v021_old_scheme_config_via_full_path(
 
 
 def test_conversation_defaults() -> None:
-    """Conversation continuity defaults to a 30-minute idle reset."""
+    """Conversation continuity exposes only ``persist_path``."""
     settings = Settings()
 
-    assert settings.conversation.max_history_turns == 50
-    assert settings.conversation.max_conversations == 1000
+    assert settings.conversation.persist_path == "/data/conversations.json"
+
+
+def test_load_config_drops_legacy_conversation_caps(
+    tmp_path: Path, monkeypatch: pytest.MonkeyPatch
+) -> None:
+    """A config still pinning the de-exposed conversation caps loads cleanly.
+
+    ``conversation.max_history_turns`` / ``max_conversations`` were removed
+    from the model and are now fixed internal constants. A deployed config
+    volume still carrying them must load without tripping ``extra="forbid"``,
+    and the loaded model must not expose the keys.
+    """
+    config_path = _write_config_json(
+        tmp_path,
+        {
+            "conversation": {
+                "max_history_turns": 25,
+                "max_conversations": 500,
+                "persist_path": "/data/conversations.json",
+            },
+        },
+    )
+    monkeypatch.setenv("ROBOTSIX_CONFIG_FILE", str(config_path))
+
+    settings = Settings.load()
+
+    assert settings.conversation.persist_path == "/data/conversations.json"
+    assert not hasattr(settings.conversation, "max_history_turns")
+    assert not hasattr(settings.conversation, "max_conversations")
 
 
 # ---------------------------------------------------------------------------
