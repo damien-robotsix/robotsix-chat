@@ -296,6 +296,69 @@ class TestVerifyPrCiStatus:
         )
         assert await tools["verify_pr_ci_status"]("o/r", 7) == "out of scope"
 
+    @pytest.mark.asyncio
+    async def test_accepts_repo_pr_url_and_ticket_id_aliases(self) -> None:
+        """Every PR-reference shape the 2026-09-08 drain run sent resolves.
+
+        ``repo``+``pr_number``, ``pr_url`` and ``ticket_id`` all reach the
+        same GitHub call instead of failing schema validation.
+        """
+        from pydantic_ai import Tool
+
+        class _Board:
+            async def get_ticket_data(self, ticket_id: str) -> dict[str, Any]:
+                assert ticket_id == "20260904T195541Z-x-6fd9"
+                return {"pr_url": "https://github.com/o/r/pull/7"}
+
+            async def resolve_repo_full_name(self, repo: str) -> str | None:
+                return "o/r" if repo == "r" else None
+
+        async def _pass(*_a: Any, **_k: Any) -> str | None:
+            return None
+
+        client = _FakeClient(
+            pr={
+                "title": "t",
+                "state": "open",
+                "html_url": "https://github.com/o/r/pull/7",
+            }
+        )
+        tools = {
+            t.__name__: t
+            for t in build_github_tools(
+                client=cast(Any, client),
+                board=cast(Any, _Board()),
+                settings=cast(Any, object()),
+                component_request=object(),
+                assert_blocked_and_scoped=_pass,
+                assert_in_scope=_pass,
+            )
+        }
+        for name in ("verify_pr_ci_status", "inspect_pr_diff"):
+            schema = Tool(tools[name]).tool_def.parameters_json_schema
+            assert {
+                "repo_full_name",
+                "pr_number",
+                "repo",
+                "pr_url",
+                "ticket_id",
+            } <= set(schema["properties"]), name
+            assert not schema.get("required"), name
+
+        verify = tools["verify_pr_ci_status"]
+        by_full = await verify(repo_full_name="o/r", pr_number=7)
+        assert await verify(repo="o/r", pr_number=7) == by_full
+        assert await verify(repo="r", pr_number=7) == by_full
+        assert await verify(pr_url="https://github.com/o/r/pull/7") == by_full
+        assert await verify(ticket_id="20260904T195541Z-x-6fd9") == by_full
+        assert (await verify()).startswith("Error: PR reference incomplete")
+        assert (await verify(repo="unknown", pr_number=1)).startswith(
+            "Error: 'unknown' is not an owner/name repo"
+        )
+        assert (await verify(pr_url="https://example.com/nope")).startswith(
+            "Error: could not parse a GitHub PR url"
+        )
+
 
 # ---------------------------------------------------------------------------
 # check_simple_pr_file_safety (module-level guard)
