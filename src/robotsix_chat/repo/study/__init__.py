@@ -28,6 +28,35 @@ logger = logging.getLogger(__name__)
 __all__ = ["build_repo_study_tools"]
 
 
+def _repo_from_url(repo_url: str, ref: str) -> tuple[str, str]:
+    """``https://github.com/owner/name[.git][/tree/<ref>]`` → (``owner/name``, ref)."""
+    text = repo_url.strip().removeprefix("git@github.com:")
+    if "://" in text:
+        text = text.split("://", 1)[1]
+        text = text.split("/", 1)[1] if "/" in text else ""
+    parts = [p for p in text.split("/") if p]
+    if len(parts) < 2:
+        return "", ref
+    owner, name = parts[0], parts[1].removesuffix(".git")
+    if not ref and len(parts) >= 4 and parts[2] in {"tree", "commit", "blob"}:
+        ref = parts[3]
+    return f"{owner}/{name}", ref
+
+
+def _repo_from_workspace_id(workspace_id: str, ref: str) -> tuple[str, str]:
+    """Map ``owner--name--ref`` (the id ``fetch_repo_for_study`` returns) back.
+
+    Returns (``owner/name``, ref); ``default`` means the default branch.
+    """
+    parts = workspace_id.strip().split("--")
+    if len(parts) < 2 or not parts[0] or not parts[1]:
+        return "", ref
+    ws_ref = "--".join(parts[2:])
+    if not ref and ws_ref and ws_ref != "default":
+        ref = ws_ref
+    return f"{parts[0]}/{parts[1]}", ref
+
+
 def build_repo_study_tools(
     settings: RepoStudySettings,
     direct_repo: DirectRepoSettings,
@@ -96,7 +125,13 @@ def build_repo_study_tools(
         )
 
     async def fetch_repo_for_study(
-        repo: str = "", ref: str = "", repo_id: str = "", full_name: str = ""
+        repo: str = "",
+        ref: str = "",
+        repo_id: str = "",
+        full_name: str = "",
+        repo_full_name: str = "",
+        repo_url: str = "",
+        workspace_id: str = "",
     ) -> str:
         """Download a GitHub repo snapshot into a temporary local workspace.
 
@@ -116,6 +151,11 @@ def build_repo_study_tools(
                 empty).
             repo_id: Alias for ``repo`` — pass one of the two.
             full_name: Alias for ``repo`` — pass one of the two.
+            repo_full_name: Alias for ``repo`` (the PR/CI tools' name).
+            repo_url: A ``https://github.com/owner/name`` URL — the
+                ``owner/name`` part is used.
+            workspace_id: An existing ``owner--name--ref`` workspace id —
+                re-fetches that repo/ref (handy when the snapshot expired).
 
         Returns:
             A summary with the workspace id to pass to the other repo-study
@@ -127,7 +167,15 @@ def build_repo_study_tools(
         # reach for them here too — and used to get a hard "Additional
         # properties are not allowed" validation failure, one wasted turn
         # per guess (live incident 2026-09-05, correlation 630aee98…).
-        repo = repo or full_name or repo_id
+        # ``repo_full_name`` (verify_pr_ci_status/inspect_pr_diff's name),
+        # ``repo_url`` and ``workspace_id`` joined the list on 2026-09-08:
+        # one operator turn burned three consecutive schema rejections
+        # (correlation d7314a81…) guessing them in turn.
+        repo = repo or full_name or repo_id or repo_full_name
+        if not repo and repo_url:
+            repo, ref = _repo_from_url(repo_url, ref)
+        if not repo and workspace_id:
+            repo, ref = _repo_from_workspace_id(workspace_id, ref)
         if not repo:
             return (
                 "Error: pass the repository as repo — an 'owner/name' full "
@@ -210,11 +258,12 @@ def build_repo_study_tools(
             return f"Error: {exc}"
 
     async def search_repo_files(
-        workspace_id: str,
+        workspace_id: str = "",
         pattern: str = "",
         glob: str = "**/*",
         max_matches: int = 50,
         query: str = "",
+        workspace: str = "",
     ) -> str:
         """Regex-search across the files of a fetched repo workspace.
 
@@ -224,6 +273,7 @@ def build_repo_study_tools(
             glob: Workspace-relative glob restricting which files to search.
             max_matches: Cap on the number of matches returned.
             query: Alias for ``pattern`` — pass one of the two.
+            workspace: Alias for ``workspace_id`` — pass one of the two.
 
         Returns:
             ``path:line: text`` matches, or an error message.
@@ -231,6 +281,13 @@ def build_repo_study_tools(
         """
         # ``query`` is what agents guess when they haven't seen the schema
         # (live incident 2026-09-05); accept it instead of burning a turn.
+        # ``workspace`` likewise (2026-09-08, correlation d7314a81…).
+        workspace_id = workspace_id or workspace
+        if not workspace_id:
+            return (
+                "Error: pass the workspace id (from fetch_repo_for_study) as "
+                "workspace_id."
+            )
         pattern = pattern or query
         if not pattern:
             return "Error: pass the regular expression as pattern."
