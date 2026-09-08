@@ -3,6 +3,23 @@
 Governed artifact: `Settings.agent_instruction` default literal in
 `src/robotsix_chat/config/settings.py`. Version stamp: `SYSTEM_PROMPT_VERSION` in the same module.
 
+## v163 — 2026-09-08 — read-skill-tool-not-cli-skill
+
+**Summary:** In the "Skills (read on demand)" paragraph, name the exact tool — `read_skill` /
+`mcp__milltools__read_skill`, called as `read_skill(name)` — and state that the Claude CLI `Skill`
+tool is not how skills are read here (it knows none of these names, every call errors with
+"Unknown skill" and wastes a turn; never call it). No other change.
+
+**Rationale:** Within the first minutes after v162 went live (2026-09-08 00:07Z), 4 of 7 Claude-path
+turns called the CLI `Skill` tool — two with the new names (`Skill({"skill": "mill_workflow"})`,
+`Skill({"skill": "ticket_poll"})`) — and none called `read_skill`. The word "skill" plus a visible
+`Skill` tool invites the detour; llmio #660 will deny that tool at the SDK level once chat's pin is
+bumped, until then the prompt must name the right tool explicitly.
+
+**SHA256:** `c98454cfb68d41fc4ce903b1454b6e532d5f03afcefc064c337e17f1ea765417`
+
+______________________________________________________________________
+
 ## v162 — 2026-09-08 — prompt-skills-split
 
 **Summary:** Restructure the default instruction from a 91 KB monolith into a ~40 KB core plus
