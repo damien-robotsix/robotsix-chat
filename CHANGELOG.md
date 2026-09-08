@@ -69,6 +69,33 @@ Everything below predates the release-please migration and was
 maintained by hand or by towncrier. It is kept verbatim; new entries
 are added above by release-please.
 
+## [0.22.0](https://github.com/damien-robotsix/robotsix-chat/compare/v0.21.1...v0.22.0) (2026-09-08)
+
+
+### Features
+
+* **prompt:** split the agent instruction into a slim core + domain skills (v162) ([#1918](https://github.com/damien-robotsix/robotsix-chat/issues/1918)) ([cb85e0f](https://github.com/damien-robotsix/robotsix-chat/commit/cb85e0f8f99e86f3afe95d64005a3d9a3b20e10d))
+
+
+### Bug Fixes
+
+* **config:** merge named lists (periodic/autonomous sessions) by name in PUT /config ([#1915](https://github.com/damien-robotsix/robotsix-chat/issues/1915)) ([45ea3b7](https://github.com/damien-robotsix/robotsix-chat/commit/45ea3b7291462caf1b45583647b68c7a8a89f8b5))
+* **diagnostics:** read_diagnostic_events queries mill's GET /diagnostic-events ([#1908](https://github.com/damien-robotsix/robotsix-chat/issues/1908)) ([3ce5d14](https://github.com/damien-robotsix/robotsix-chat/commit/3ce5d14288a47a09ec0524b6a669327dc6ab67ff))
+* direct_repo: resolve the GitHub App installation per repository instead of pinning github_app_installation_id (20260907T190405Z-direct-repo-resolve-the-github-app-insta-4c5d) ([#1920](https://github.com/damien-robotsix/robotsix-chat/issues/1920)) ([45ac512](https://github.com/damien-robotsix/robotsix-chat/commit/45ac51238cbdf7cce74141c008b9ea1ce6bb1cef))
+* **github-tools:** accept repo_full_name on list_open_prs like every other GitHub tool ([#1916](https://github.com/damien-robotsix/robotsix-chat/issues/1916)) ([ff2ea2e](https://github.com/damien-robotsix/robotsix-chat/commit/ff2ea2ec882849053521967e40727cbdef7f9798))
+* **knowledge:** cap list_knowledge_notes output instead of dumping the store ([#1905](https://github.com/damien-robotsix/robotsix-chat/issues/1905)) ([8e051be](https://github.com/damien-robotsix/robotsix-chat/commit/8e051be1471d98dcee289058528cd68c0dadc2f8))
+* **llm:** open the named Langfuse trace around the whole failover loop ([#1898](https://github.com/damien-robotsix/robotsix-chat/issues/1898)) ([9bba3bb](https://github.com/damien-robotsix/robotsix-chat/commit/9bba3bbe3220ea52140a88182781eccf596a92d7))
+* **prompt:** name the read_skill tool and forbid the CLI Skill detour (v163) ([#1921](https://github.com/damien-robotsix/robotsix-chat/issues/1921)) ([70312e7](https://github.com/damien-robotsix/robotsix-chat/commit/70312e75b4c0bd4595ccdb4b866d93b104f3a90d))
+* **recall:** strip the user_chat side-chat system note from the memory recall query ([#1917](https://github.com/damien-robotsix/robotsix-chat/issues/1917)) ([c6edd74](https://github.com/damien-robotsix/robotsix-chat/commit/c6edd74f3fe6ff10f53731d845a97d7f54b84e1d))
+* **ticket_poll:** mark_ticket_ready waits out mill's classifying state instead of 409-ing ([#1913](https://github.com/damien-robotsix/robotsix-chat/issues/1913)) ([ce164bc](https://github.com/damien-robotsix/robotsix-chat/commit/ce164bc586f3473430b44d9e0ebe647b75354268))
+* **ticket_poll:** resolve abbreviated ids of closed tickets via a closed-list fallback ([#1906](https://github.com/damien-robotsix/robotsix-chat/issues/1906)) ([7e15856](https://github.com/damien-robotsix/robotsix-chat/commit/7e158560cee83107dec95e88eba991ce23a638e2))
+* **tools:** accept repo/pr_url/ticket_id on the PR inspection tools and a query on list_available_tools ([#1922](https://github.com/damien-robotsix/robotsix-chat/issues/1922)) ([22a4987](https://github.com/damien-robotsix/robotsix-chat/commit/22a4987a2dcd04f0a70cc2be73afacce965116c5))
+
+
+### Documentation
+
+* Fix inaccurate/conflicting config descriptions for agent_instruction and idle_timeout_minutes (20260907T101824Z-fix-inaccurate-conflicting-config-descri-38dd) ([#1914](https://github.com/damien-robotsix/robotsix-chat/issues/1914)) ([993b033](https://github.com/damien-robotsix/robotsix-chat/commit/993b03381bc32ed3b05f32a4a6c3372b5ad942a1))
+
 ## [0.21.1](https://github.com/damien-robotsix/robotsix-chat/compare/v0.21.0...v0.21.1) (2026-09-07)
 
 
