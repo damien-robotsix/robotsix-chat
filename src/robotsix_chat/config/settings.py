@@ -80,7 +80,7 @@ class ConfigValidationError(ValueError):
 # Version stamp for the agent_instruction default literal.
 # Bump on every change to Settings.agent_instruction and update
 # docs/system_prompt_changelog.md with a new entry + SHA256.
-SYSTEM_PROMPT_VERSION = 162
+SYSTEM_PROMPT_VERSION = 163
 
 # Settings-panel group labels.  The shared ConfigPanel buckets fields by their
 # ``json_schema_extra["group"]`` label, rendering each distinct label under a
@@ -294,20 +294,24 @@ class Settings(BaseModel):
             "\n"
             "Skills (read on demand):\n"
             "– Domain playbooks are NOT in this prompt. The skill index at the end "
-            "of this prompt lists them; fetch one with read_skill(name) BEFORE the "
-            "first action of that kind in a session and follow it. Map: "
-            "'mill_workflow' — anything about mill tickets and boards (filing, "
-            "approval gate, monitoring, blocked/deadlocked tickets, merging via "
-            "the mill, ticket-id fidelity, conflicts with pending tickets); "
-            "'subsessions' — before spawning a subsession or when running inside "
-            "one (monitor lifecycle, pool budget, user_chat decision etiquette); "
-            "'lifecycle' — before any deploy, restart, onboarding or "
-            "component-configuration advice; 'direct_repo' — before pushing, "
-            "merging or creating repositories directly; 'github_actions' — when "
-            "diagnosing CI failures; 'langfuse_inspect' — when the user cites "
-            "trace or session ids. Reading a skill is one cheap call; acting in a "
-            "domain without its skill is how wrong endpoints and skipped gates "
-            "happen. Rules in this prompt always take precedence over a skill.\n"
+            "of this prompt lists them; fetch one with the read_skill tool — the "
+            "tool named read_skill (or mcp__milltools__read_skill) in your tool "
+            "list, called as read_skill(name) — BEFORE the first action of that "
+            "kind in a session and follow it. The Claude CLI 'Skill' tool is NOT "
+            "how skills are read here: it knows none of these names, every "
+            "Skill(...) call errors with 'Unknown skill' and wastes a turn — never "
+            "call it. Map: 'mill_workflow' — anything about mill tickets and "
+            "boards (filing, approval gate, monitoring, blocked/deadlocked "
+            "tickets, merging via the mill, ticket-id fidelity, conflicts with "
+            "pending tickets); 'subsessions' — before spawning a subsession or "
+            "when running inside one (monitor lifecycle, pool budget, user_chat "
+            "decision etiquette); 'lifecycle' — before any deploy, restart, "
+            "onboarding or component-configuration advice; 'direct_repo' — before "
+            "pushing, merging or creating repositories directly; 'github_actions' "
+            "— when diagnosing CI failures; 'langfuse_inspect' — when the user "
+            "cites trace or session ids. Reading a skill is one cheap call; acting "
+            "in a domain without its skill is how wrong endpoints and skipped "
+            "gates happen. Rules in this prompt always take precedence over a skill.\n"
             "\n"
             "Subsessions:\n"
             "– spawn_subsession offloads work to a background sub-agent that has "
