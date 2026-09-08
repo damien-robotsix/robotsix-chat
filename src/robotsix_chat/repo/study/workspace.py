@@ -66,12 +66,15 @@ class WorkspaceManager:
 
     # -- auth ---------------------------------------------------------------
 
-    async def _auth_headers(self) -> dict[str, str]:
+    async def _auth_headers(self, repo: str) -> dict[str, str]:
         """GitHub API headers, with an App installation token when configured.
 
         Uses the shared ``_build_github_app_auth_headers`` helper for the
-        token-minting core.  Returns unauthenticated headers when the App is
-        not configured at all; when it IS configured but the token exchange
+        token-minting core, passing ``repo`` so the installation can be
+        resolved per repository (the recommended empty
+        ``github_app_installation_id`` default) just like the direct-repo
+        client.  Returns unauthenticated headers when the App is not
+        configured at all; when it IS configured but the token exchange
         fails the error is raised so the operator can diagnose a credential
         or scope issue rather than getting a misleading 404 from an
         unauthenticated fallback.
@@ -81,22 +84,29 @@ class WorkspaceManager:
             "X-GitHub-Api-Version": "2022-11-28",
         }
         dr = self._direct_repo
-        if (
-            dr.github_app_id
-            and dr.github_app_private_key.get_secret_value()
-            and dr.github_app_installation_id
-        ):
+        if dr.github_app_id and dr.github_app_private_key.get_secret_value():
             from robotsix_chat.common.github_auth import _build_github_app_auth_headers
 
-            token = await _build_github_app_auth_headers(dr, "repo_study:")
-            if token is None:
+            owner, _, repo_name = repo.partition("/")
+            token = await _build_github_app_auth_headers(
+                dr, "repo_study:", owner=owner, repo=repo_name
+            )
+            if token is None and dr.github_app_installation_id:
+                # A pinned installation id was configured but the token
+                # exchange failed — surface it so the operator can diagnose
+                # a credential or scope issue rather than getting a
+                # misleading 404 from an unauthenticated fallback.  With the
+                # recommended empty id the per-repo resolution result is
+                # used as-is: no installation means fall back to
+                # unauthenticated (public repos stay reachable).
                 raise WorkspaceError(
                     "GitHub App installation token request failed. "
                     "Check that github_app_id, github_app_private_key, "
                     "and github_app_installation_id are correct in the "
                     "direct_repo config block."
                 )
-            headers["Authorization"] = f"Bearer {token}"
+            if token:
+                headers["Authorization"] = f"Bearer {token}"
         return headers
 
     # -- TTL sweep ----------------------------------------------------------
@@ -146,7 +156,7 @@ class WorkspaceManager:
             if ref
             else (f"{base}/repos/{repo}/tarball")
         )
-        archive = await self._download(url)
+        archive = await self._download(url, repo)
         workspace_id = _workspace_id(repo, ref)
         dest = self._root / workspace_id
 
@@ -169,7 +179,7 @@ class WorkspaceManager:
             "drop it earlier with drop_repo_workspace."
         )
 
-    async def _download(self, url: str) -> bytes:
+    async def _download(self, url: str, repo: str) -> bytes:
         """Stream the tarball, enforcing the archive-size cap.
 
         Handles the GitHub API → codeload redirect manually so the
@@ -177,7 +187,7 @@ class WorkspaceManager:
         strips it by default).  GitHub's tarball redirect is always a
         single 302 hop; no chain-walking is needed.
         """
-        headers = await self._auth_headers()
+        headers = await self._auth_headers(repo)
         chunks: list[bytes] = []
         total = 0
         authenticated = "Authorization" in headers

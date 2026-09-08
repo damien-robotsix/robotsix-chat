@@ -15,7 +15,10 @@ from unittest.mock import MagicMock, patch
 import pytest
 from pydantic import SecretStr
 
-from robotsix_chat.common.github_auth import _build_github_app_auth_headers
+from robotsix_chat.common.github_auth import (
+    _RESOLVED_INSTALLATION_CACHE,
+    _build_github_app_auth_headers,
+)
 from robotsix_chat.config.models import DirectRepoSettings
 
 # ---------------------------------------------------------------------------
@@ -140,6 +143,93 @@ async def test_mints_and_caches_new_token() -> None:
         private_key="my-key",  # pragma: allowlist secret
         installation_id="inst-2",
     )
+
+
+# ---------------------------------------------------------------------------
+# empty installation id → per-repo resolution
+# ---------------------------------------------------------------------------
+
+
+@pytest.mark.asyncio
+async def test_resolves_installation_per_repo_when_id_empty() -> None:
+    """Empty github_app_installation_id resolves the installation per repo."""
+    _RESOLVED_INSTALLATION_CACHE.clear()
+    settings = _settings(
+        github_app_id="456",
+        github_app_private_key="my-key",  # pragma: allowlist secret
+        github_app_installation_id="",
+    )
+
+    mock_token = MagicMock()
+    mock_token.token = "per-repo-token"  # pragma: allowlist secret
+
+    with (
+        patch(
+            "robotsix_github_auth._auth._build_app_jwt",
+            return_value="app-jwt",
+        ) as mock_jwt,
+        patch(
+            "robotsix_github_auth._auth._resolve_installation_id",
+            return_value="resolved-123",
+        ) as mock_resolve,
+        patch(
+            "robotsix_github_auth.mint_installation_token",
+            return_value=mock_token,
+        ) as mock_mint,
+    ):
+        result = await _build_github_app_auth_headers(
+            settings, "test", owner="damien-robotsix", repo="robotsix-chat"
+        )
+
+    assert result == "per-repo-token"
+    mock_jwt.assert_called_once_with("456", "my-key")  # pragma: allowlist secret
+    mock_resolve.assert_called_once_with("app-jwt", "damien-robotsix", "robotsix-chat")
+    mock_mint.assert_called_once_with(
+        app_id="456",
+        private_key="my-key",  # pragma: allowlist secret
+        installation_id="resolved-123",
+    )
+
+
+@pytest.mark.asyncio
+async def test_resolves_installation_per_repo_and_caches_token() -> None:
+    """Empty id: the resolved installation token is cached by install id."""
+    _RESOLVED_INSTALLATION_CACHE.clear()
+    settings = _settings(
+        github_app_id="456",
+        github_app_private_key="my-key",  # pragma: allowlist secret
+        github_app_installation_id="",
+    )
+    cache: dict[str, str] = {}
+
+    mock_token = MagicMock()
+    mock_token.token = "per-repo-token"  # pragma: allowlist secret
+
+    with (
+        patch(
+            "robotsix_github_auth._auth._build_app_jwt",
+            return_value="app-jwt",
+        ),
+        patch(
+            "robotsix_github_auth._auth._resolve_installation_id",
+            return_value="resolved-123",
+        ),
+        patch(
+            "robotsix_github_auth.mint_installation_token",
+            return_value=mock_token,
+        ) as mock_mint,
+    ):
+        result = await _build_github_app_auth_headers(
+            settings,
+            "test",
+            token_cache=cache,
+            owner="damien-robotsix",
+            repo="robotsix-chat",
+        )
+
+    assert result == "per-repo-token"
+    assert cache == {"resolved-123": "per-repo-token"}
+    mock_mint.assert_called_once()
 
 
 # ---------------------------------------------------------------------------
