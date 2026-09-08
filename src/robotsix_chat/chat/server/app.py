@@ -1209,8 +1209,12 @@ def _build_static_tools(
     # "real" tools; list_available_tools adds itself to the output.
     _tool_names = sorted({getattr(t, "__name__", type(t).__name__) for t in raw_tools})
 
-    async def list_available_tools() -> str:
+    async def list_available_tools(query: str | None = None) -> str:
         """List all tools currently available to the agent.
+
+        ``query`` optionally narrows the list to names containing any of the
+        whitespace-separated terms (models send one by habit — a
+        board-gates-drain turn was schema-rejected for it on 2026-09-08).
 
         Returns a sorted, newline-separated list of tool names.  Use this
         after a restart to verify that expected tools (e.g. newly-added
@@ -1222,11 +1226,18 @@ def _build_static_tools(
             A formatted list of available tool names.
 
         """
-        return (
-            f"Available tools ({len(_tool_names) + 1}):\n"
-            + "\n".join(f"  - {name}" for name in _tool_names)
-            + "\n  - list_available_tools"
-        )
+        names = [*_tool_names, "list_available_tools"]
+        terms = [t.lower() for t in (query or "").split() if t.strip()]
+        if terms:
+            names = [n for n in names if any(t in n.lower() for t in terms)]
+            if not names:
+                return f"No tools match {query!r} (of {len(_tool_names) + 1})."
+            header = (
+                f"Tools matching {query!r} ({len(names)} of {len(_tool_names) + 1}):\n"
+            )
+        else:
+            header = f"Available tools ({len(names)}):\n"
+        return header + "\n".join(f"  - {name}" for name in names)
 
     raw_tools.append(list_available_tools)
 

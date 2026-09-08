@@ -12,6 +12,7 @@ from __future__ import annotations
 
 import json
 import logging
+import re
 from collections.abc import Awaitable, Callable
 from typing import TYPE_CHECKING, Any
 
@@ -22,6 +23,72 @@ if TYPE_CHECKING:
     from .client import DirectRepoClient
 
 logger = logging.getLogger(__name__)
+
+_PR_URL_RE = re.compile(r"github\.com/([^/\s]+/[^/\s#?]+)/pull/(\d+)")
+
+_PR_REF_HELP = (
+    "pass `repo_full_name` (owner/name) + `pr_number`, or `pr_url` "
+    "(https://github.com/owner/name/pull/N), or `ticket_id` of a mill ticket "
+    "that has an open PR"
+)
+
+
+async def resolve_pr_ref(
+    board: Any,
+    *,
+    repo_full_name: str | None,
+    pr_number: int | None,
+    repo: str | None,
+    pr_url: str | None,
+    ticket_id: str | None,
+) -> tuple[str, int] | str:
+    """Normalise the PR-reference shapes models send into ``(repo, number)``.
+
+    Live 2026-09-08 a board-gates-drain run burned 12 turns on
+    ``verify_pr_ci_status`` / ``inspect_pr_diff`` schema rejections: it tried
+    ``repo`` + ``pr_number``, ``pr_url`` and ``ticket_id`` before guessing
+    ``repo_full_name``.  On the claude_sdk path the JSON schema is validated
+    before the tool body, so the aliases must be real parameters.
+
+    Precedence: an explicit ``pr_url`` wins; else ``ticket_id`` is resolved
+    through the board's ``pr_url``; else ``repo_full_name``/``repo`` +
+    ``pr_number``.  A bare repo name (no ``/``) is resolved through the
+    board's repo roster.  Returns an ``Error:`` string when nothing usable
+    was supplied.
+    """
+    if pr_url:
+        m = _PR_URL_RE.search(pr_url)
+        if not m:
+            return (
+                f"Error: could not parse a GitHub PR url from {pr_url!r} — "
+                f"{_PR_REF_HELP}."
+            )
+        return m.group(1), int(m.group(2))
+    if ticket_id and pr_number is None:
+        get_ticket_data = getattr(board, "get_ticket_data", None)
+        data = await get_ticket_data(ticket_id) if callable(get_ticket_data) else None
+        url = (data or {}).get("pr_url") if isinstance(data, dict) else None
+        m = _PR_URL_RE.search(url or "")
+        if not m:
+            return (
+                f"Error: ticket {ticket_id} has no open PR url on the board "
+                f"(state may be closed or pre-implement) — {_PR_REF_HELP}."
+            )
+        return m.group(1), int(m.group(2))
+    name = repo_full_name or repo
+    if not name or pr_number is None:
+        return f"Error: PR reference incomplete — {_PR_REF_HELP}."
+    if "/" not in name:
+        resolve = getattr(board, "resolve_repo_full_name", None)
+        resolved = await resolve(name) if callable(resolve) else None
+        if not resolved:
+            return (
+                f"Error: {name!r} is not an owner/name repo and is not on the "
+                f"board roster — {_PR_REF_HELP}."
+            )
+        name = resolved
+    return name, int(pr_number)
+
 
 # Accepted per-file entry forms for ``files_json``.  Each entry is an
 # object with a ``path`` plus exactly ONE content source:
@@ -513,8 +580,11 @@ def build_github_tools(
         return "\n".join(lines)
 
     async def verify_pr_ci_status(
-        repo_full_name: str,
-        pr_number: int,
+        repo_full_name: str | None = None,
+        pr_number: int | None = None,
+        repo: str | None = None,
+        pr_url: str | None = None,
+        ticket_id: str | None = None,
     ) -> str:
         """Fetch live CI run status and PR state from GitHub.
 
@@ -533,14 +603,29 @@ def build_github_tools(
 
         Args:
             repo_full_name: GitHub ``owner/name`` (e.g.
-                ``"robotsix/robotsix-chat"``).
+                ``"robotsix/robotsix-chat"``). ``repo`` is an accepted
+                alias; a bare repo name is resolved via the board roster.
             pr_number: The PR number to inspect.
+            repo: Alias of ``repo_full_name``.
+            pr_url: Alternative to repo + number — the PR's GitHub url.
+            ticket_id: Alternative — a mill ticket id; its open PR is used.
 
         Returns:
             A multi-line summary: PR state, mergeability, draft status,
             and the latest CI workflow runs for the PR's head branch.
 
         """
+        ref = await resolve_pr_ref(
+            board,
+            repo_full_name=repo_full_name,
+            pr_number=pr_number,
+            repo=repo,
+            pr_url=pr_url,
+            ticket_id=ticket_id,
+        )
+        if isinstance(ref, str):
+            return ref
+        repo_full_name, pr_number = ref
         # Scope check (no BLOCKED-state requirement — this is read-only)
         if component_request is None and (
             scope_error := await client.check_installation_scope(repo_full_name)
@@ -614,8 +699,11 @@ def build_github_tools(
         return "\n".join(lines)
 
     async def inspect_pr_diff(
-        repo_full_name: str,
-        pr_number: int,
+        repo_full_name: str | None = None,
+        pr_number: int | None = None,
+        repo: str | None = None,
+        pr_url: str | None = None,
+        ticket_id: str | None = None,
     ) -> str:
         """Fetch the raw unified diff of an open pull request.
 
@@ -632,8 +720,12 @@ def build_github_tools(
 
         Args:
             repo_full_name: GitHub ``owner/name`` (e.g.
-                ``"robotsix/robotsix-chat"``).
+                ``"robotsix/robotsix-chat"``). ``repo`` is an accepted
+                alias; a bare repo name is resolved via the board roster.
             pr_number: The PR number to inspect.
+            repo: Alias of ``repo_full_name``.
+            pr_url: Alternative to repo + number — the PR's GitHub url.
+            ticket_id: Alternative — a mill ticket id; its open PR is used.
 
         Returns:
             The raw unified diff of the PR as a string.  Large diffs may be
@@ -641,6 +733,17 @@ def build_github_tools(
             when the diff exceeds 8000 characters.
 
         """
+        ref = await resolve_pr_ref(
+            board,
+            repo_full_name=repo_full_name,
+            pr_number=pr_number,
+            repo=repo,
+            pr_url=pr_url,
+            ticket_id=ticket_id,
+        )
+        if isinstance(ref, str):
+            return ref
+        repo_full_name, pr_number = ref
         # Scope check (no BLOCKED-state requirement — this is read-only)
         if component_request is None and (
             scope_error := await client.check_installation_scope(repo_full_name)

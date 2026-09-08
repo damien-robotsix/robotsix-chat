@@ -1157,6 +1157,25 @@ async def test_list_available_tools_returns_tool_names() -> None:
     assert count_str.isdigit()
 
 
+@pytest.mark.asyncio
+async def test_list_available_tools_query_filters_names() -> None:
+    """``query`` narrows the roster; an unmatched query says so.
+
+    A board-gates-drain turn sent ``query`` on 2026-09-08 and was
+    schema-rejected for it.
+    """
+    settings = Settings(agent_instruction="Be terse.")
+    agent = create_agent_from_settings(settings=settings, bare=False)
+    assert agent._tools is not None
+    tool = next(
+        t for t in agent._tools if getattr(t, "__name__", "") == "list_available_tools"
+    )
+    result = await tool(query="list_available")
+    assert result.startswith("Tools matching 'list_available'")
+    assert "list_available_tools" in result
+    assert "No tools match" in await tool(query="zzz_no_such_tool")
+
+
 def test_list_available_tools_absent_in_bare_agent() -> None:
     """``bare=True`` agents have no tools, including ``list_available_tools``."""
     settings = Settings(agent_instruction="Be terse.")
