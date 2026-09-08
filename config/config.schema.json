@@ -127,17 +127,12 @@
     },
     "ContinuationSettings": {
       "additionalProperties": false,
-      "description": "Post-restart continuation \u2014 auto-resume a conversation after a restart.\n\nWhen enabled, the agent gains tools to schedule a continuation that\nfires automatically on the next boot, so work-in-progress resumes\nwithout human intervention.  The primary use case is a self-restart\nto pick up a newly-deployed capability: before calling\n``self_restart``, the agent schedules a continuation with the current\nsession id and a resume prompt.\n\nAttributes:\n    enabled: Master switch.  Default ``False``.\n    store_path: Path to the JSON persistence file.  Must be on a\n        persistent volume so the continuation survives container\n        recreation.  Default ``/data/continuation.json``.\n    max_consecutive: Maximum number of consecutive auto-continuations\n        before the guardrail blocks further automatic firing.  This\n        prevents a restart\u2192continue\u2192restart\u2192continue loop from running\n        indefinitely.  Default ``3``.",
+      "description": "Post-restart continuation \u2014 auto-resume a conversation after a restart.\n\nWhen enabled, the agent gains tools to schedule a continuation that\nfires automatically on the next boot, so work-in-progress resumes\nwithout human intervention.  The primary use case is a self-restart\nto pick up a newly-deployed capability: before calling\n``self_restart``, the agent schedules a continuation with the current\nsession id and a resume prompt.\n\nPersistence is an internal detail: the continuation is stored at a fixed\npath on the ``/data`` volume, so there is no operator-facing knob for it.\n\nAttributes:\n    enabled: Master switch.  Default ``False``.\n    max_consecutive: Maximum number of consecutive auto-continuations\n        before the guardrail blocks further automatic firing.  This\n        prevents a restart\u2192continue\u2192restart\u2192continue loop from running\n        indefinitely.  Default ``3``.",
       "properties": {
         "enabled": {
           "default": false,
           "title": "Enabled",
           "type": "boolean"
-        },
-        "store_path": {
-          "default": "/data/continuation.json",
-          "title": "Store Path",
-          "type": "string"
         },
         "max_consecutive": {
           "default": 3,

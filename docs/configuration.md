@@ -340,11 +340,10 @@ Post-restart auto-resume capability. When enabled, the agent gains tools to sche
 query a continuation that fires automatically on the next boot — used to resume work-in-progress
 after a self-restart without human intervention. Disabled by default.
 
-| JSON key                       | Type      | Default                     | Description                                                                                        |
-| ------------------------------ | --------- | --------------------------- | -------------------------------------------------------------------------------------------------- |
-| `continuation.enabled`         | `boolean` | `false`                     | Master switch. When `false`, no continuation tools are offered.                                    |
-| `continuation.store_path`      | `string`  | `"/data/continuation.json"` | Path to the JSON persistence file. Must be on a persistent volume to survive container recreation. |
-| `continuation.max_consecutive` | `integer` | `3`                         | Maximum consecutive auto-continuations before the guardrail blocks further automatic firing.       |
+| JSON key                       | Type      | Default | Description                                                                                  |
+| ------------------------------ | --------- | ------- | -------------------------------------------------------------------------------------------- |
+| `continuation.enabled`         | `boolean` | `false` | Master switch. When `false`, no continuation tools are offered.                              |
+| `continuation.max_consecutive` | `integer` | `3`     | Maximum consecutive auto-continuations before the guardrail blocks further automatic firing. |
 
 ### Evergoing
 

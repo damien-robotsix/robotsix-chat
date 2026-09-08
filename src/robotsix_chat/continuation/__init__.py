@@ -51,7 +51,6 @@ def build_continuation_tools(
         continuation_store
         if continuation_store is not None
         else ContinuationStore(
-            path=settings.store_path,
             max_consecutive=settings.max_consecutive,
         )
     )
