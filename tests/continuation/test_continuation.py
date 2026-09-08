@@ -189,33 +189,21 @@ class TestContinuationTools:
         tools = build_continuation_tools(settings)
         assert tools == []
 
-    def test_enabled_returns_three_tools(self) -> None:
-        """When enabled, three tools are returned."""
+    def test_enabled_returns_two_tools(self) -> None:
+        """When enabled, the cancel and status tools are returned.
+
+        The explicit-arm ``schedule_continuation`` tool has been removed;
+        interrupted sessions now auto-continue on boot.
+        """
         settings = ContinuationSettings(enabled=True, max_consecutive=3)
         with tempfile.TemporaryDirectory() as tmp:
             store = ContinuationStore(path=Path(tmp) / "continuation.json")
         tools = build_continuation_tools(settings, continuation_store=store)
-        assert len(tools) == 3
+        assert len(tools) == 2
         names = [t.__name__ for t in tools]
-        assert "schedule_continuation" in names
+        assert "schedule_continuation" not in names
         assert "cancel_continuation" in names
         assert "get_continuation_status" in names
-
-    @pytest.mark.asyncio
-    async def test_schedule_tool(self) -> None:
-        """The schedule_continuation tool arms a continuation."""
-        with tempfile.TemporaryDirectory() as tmp:
-            path = Path(tmp) / "continuation.json"
-            store = ContinuationStore(path=path)
-            settings = ContinuationSettings(
-                enabled=True,
-                max_consecutive=3,
-            )
-            tools = build_continuation_tools(settings, continuation_store=store)
-            schedule_tool = tools[0]
-            result = await schedule_tool("sess-1", "resume work")
-            assert "armed" in result.lower()
-            assert store.pending_info()["pending"] is True
 
     @pytest.mark.asyncio
     async def test_cancel_tool(self) -> None:
@@ -229,8 +217,8 @@ class TestContinuationTools:
                 max_consecutive=3,
             )
             tools = build_continuation_tools(settings, continuation_store=store)
-            # cancel_continuation is the second tool.
-            cancel_tool = tools[1]
+            # cancel_continuation is the first tool.
+            cancel_tool = tools[0]
             result = await cancel_tool()
             assert "cancelled" in result.lower()
             assert store.pending_info()["pending"] is False
@@ -246,7 +234,7 @@ class TestContinuationTools:
                 max_consecutive=3,
             )
             tools = build_continuation_tools(settings, continuation_store=store)
-            status_tool = tools[2]
+            status_tool = tools[1]
             result = await status_tool()
             data = json.loads(result)
             assert data["pending"] is False
@@ -264,5 +252,7 @@ class TestContinuationSkill:
         """The skill file exists and returns markdown content."""
         skill = load_continuation_skill()
         assert len(skill) > 0
-        assert "schedule_continuation" in skill
+        assert "schedule_continuation" not in skill
+        assert "cancel_continuation" in skill
+        assert "get_continuation_status" in skill
         assert "Guardrails" in skill

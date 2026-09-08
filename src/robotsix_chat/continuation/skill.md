@@ -1,14 +1,10 @@
 ## Continuation (post-restart auto-resume)
 
-You have tools to schedule a **continuation** — a stored prompt that fires automatically after the
-next server restart, so work-in-progress resumes without human intervention.
+Interrupted sessions **auto-continue** after a server restart — a session that was mid-turn when the
+process exited resumes automatically on the next boot, with no explicit arming call. There is no
+longer an explicit arming tool; the continuation is created for you automatically.
 
 ### Tools
-
-- **`schedule_continuation(session_id, prompt)`** — arm a continuation. Call this BEFORE
-  `self_restart` so the current work resumes after the restart. The prompt is injected into the
-  conversation as if the operator had sent it. Only ONE continuation can be pending at a time —
-  calling this again overwrites any previously scheduled one.
 
 - **`cancel_continuation()`** — cancel the pending continuation. Use when the work that was going to
   be continued is no longer needed.
@@ -18,9 +14,9 @@ next server restart, so work-in-progress resumes without human intervention.
 
 ### When to use
 
-The primary use case is a **self-restart to pick up a newly-deployed capability**: before calling
-`self_restart`, schedule a continuation so the agent picks up right where it left off after the
-restart.
+Continuation is automatic, so you normally do nothing. Reach for these tools only to **inspect** a
+pending continuation (`get_continuation_status`) or to **cancel** one whose work is no longer needed
+(`cancel_continuation`).
 
 ### Guardrails
 

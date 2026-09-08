@@ -336,9 +336,9 @@ HTTP client for inspecting and configuring remote component agents. Disabled by 
 
 ### Continuation
 
-Post-restart auto-resume capability. When enabled, the agent gains tools to schedule, cancel, and
-query a continuation that fires automatically on the next boot — used to resume work-in-progress
-after a self-restart without human intervention. Disabled by default.
+Post-restart auto-resume capability. When enabled, a session that was interrupted mid-turn
+auto-continues on the next boot — no explicit arming call is required. The agent gains tools to
+cancel or query the pending continuation. Disabled by default.
 
 | JSON key                       | Type      | Default | Description                                                                                  |
 | ------------------------------ | --------- | ------- | -------------------------------------------------------------------------------------------- |
