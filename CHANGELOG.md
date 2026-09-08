@@ -69,6 +69,14 @@ Everything below predates the release-please migration and was
 maintained by hand or by towncrier. It is kept verbatim; new entries
 are added above by release-please.
 
+## [0.22.1](https://github.com/damien-robotsix/robotsix-chat/compare/v0.22.0...v0.22.1) (2026-09-08)
+
+
+### Bug Fixes
+
+* **repo-study:** accept repo_full_name/repo_url/workspace_id on fetch_repo_for_study and workspace on search_repo_files ([#1929](https://github.com/damien-robotsix/robotsix-chat/issues/1929)) ([def93c9](https://github.com/damien-robotsix/robotsix-chat/commit/def93c95550e4b5f7f4a874f81b9700bfa3986d8))
+* **subsessions:** one decision panel per ticket, auto-close when the ticket moves, self-close on a settled decision ([#1923](https://github.com/damien-robotsix/robotsix-chat/issues/1923)) ([f31bd2d](https://github.com/damien-robotsix/robotsix-chat/commit/f31bd2da803abd0f66061c04c01a5e95fc34f208))
+
 ## [0.22.0](https://github.com/damien-robotsix/robotsix-chat/compare/v0.21.1...v0.22.0) (2026-09-08)
 
 
