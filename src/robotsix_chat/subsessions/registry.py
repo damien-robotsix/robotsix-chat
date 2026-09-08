@@ -23,6 +23,7 @@ from __future__ import annotations
 import asyncio
 import json
 import logging
+import re
 import time
 import uuid
 from collections import defaultdict, deque
@@ -49,6 +50,36 @@ from .models import (
 )
 
 logger = logging.getLogger(__name__)
+
+# Full mill ticket id: ``<UTC stamp>-<slug>-<4 hex>``. Used to bind operator
+# decision panels (user_chat) to the ticket they are about, whatever
+# ``dedup_key`` the spawning agent chose (2026-09-08: the gate drain used
+# run-scoped keys such as ``0d29-run-20260908T0745Z`` and re-opened a panel
+# for every still-gated ticket every 4 h — 14 panels open, several per ticket).
+TICKET_ID_RE = re.compile(r"\b\d{8}T\d{6}Z-[a-z0-9][a-z0-9-]*-[0-9a-f]{4}\b")
+
+# Mill states in which a ticket is waiting on a human; a decision panel is
+# only meaningful while its ticket sits in one of these. Once a mill event
+# reports the ticket somewhere else (approved → ready, closed, re-running),
+# the decision is moot and the panel is closed on the operator's behalf.
+DECISION_GATE_STATES = frozenset(
+    {"human_issue_approval", "human_mr_approval", "awaiting_user_reply", "blocked"}
+)
+
+
+def user_chat_ticket_id(info: SubsessionInfo) -> str | None:
+    """Return the mill ticket id a user_chat panel is about, if any.
+
+    Prefers a ``dedup_key`` that is itself a ticket id; otherwise the first
+    full ticket id mentioned in the title or prompt.
+    """
+    if info.kind is not SubsessionKind.USER_CHAT:
+        return None
+    if info.dedup_key and TICKET_ID_RE.fullmatch(info.dedup_key):
+        return info.dedup_key
+    m = TICKET_ID_RE.search(f"{info.title or ''}\n{info.prompt or ''}")
+    return m.group(0) if m else None
+
 
 # Subsession kinds that are "monitors" for slot-budget purposes: they
 # persist across turns watching a ticket and occupy a per-conversation
@@ -1465,6 +1496,53 @@ class SubsessionRegistry:
             return None
         return sub_id
 
+    def find_active_user_chat_by_ticket_id(self, ticket_id: str) -> str | None:
+        """Return the id of an active USER_CHAT panel about *ticket_id*, else None.
+
+        Matches on the panel's ``dedup_key`` when that is the ticket id, or on
+        the first full ticket id in its title/prompt — so a second run that
+        picked a different key (or none) still finds the operator's open panel.
+        """
+        for info in self._subs.values():
+            if info.is_active and user_chat_ticket_id(info) == ticket_id:
+                return info.id
+        return None
+
+    def close_user_chats_for_moved_ticket(
+        self, ticket_id: str, old_state: str, new_state: str
+    ) -> int:
+        """Close open decision panels whose ticket left the human gates.
+
+        A panel exists to collect ONE decision about a gated ticket; when the
+        mill reports the ticket in a non-gated state the decision has been
+        taken elsewhere (approved by the drain, resumed, closed) and the panel
+        would otherwise sit in the operator's list until closed by hand.
+        Returns the number of panels closed.
+        """
+        if not new_state or new_state.lower() in DECISION_GATE_STATES:
+            return 0
+        closed = 0
+        for info in list(self._subs.values()):
+            if not info.is_active or user_chat_ticket_id(info) != ticket_id:
+                continue
+            summary = (
+                f"Decision panel closed automatically: ticket {ticket_id} moved "
+                f"from '{old_state}' to '{new_state}', so the decision it asked "
+                f"for is no longer pending."
+            )
+            if self.cancel_and_close(
+                info.id, reason="ticket_moved", closed_by="system", summary=summary
+            ):
+                closed += 1
+                logger.info(
+                    "Closed user_chat %s: ticket %s left the gate (%s -> %s).",
+                    info.id,
+                    ticket_id,
+                    old_state,
+                    new_state,
+                )
+        return closed
+
     def find_active_periodic_by_ticket_id(self, ticket_id: str) -> str | None:
         """Return the id of an active PERIODIC or WAIT_FOR_EVENT.
 
@@ -1547,6 +1625,11 @@ class SubsessionRegistry:
         for info in self.find_paused_periodic_by_ticket_id(ticket_id):
             if self.enqueue_message(info.id, "system", event_text):
                 woken += 1
+        # Operator decision panels about this ticket are moot once it has
+        # left the human gates — close them instead of leaving them waiting.
+        self.close_user_chats_for_moved_ticket(
+            ticket_id, str(old_state or ""), str(new_state or "")
+        )
 
         if woken:
             logger.info(

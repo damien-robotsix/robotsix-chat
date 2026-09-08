@@ -38,7 +38,7 @@ from .models import (
     SubsessionUserChatSpawnError,
     SubsessionWaitForEventSpawnError,
 )
-from .registry import SubsessionRegistry
+from .registry import TICKET_ID_RE, SubsessionRegistry
 from .slot_budget import SLOT_BUDGET_QUEUED
 from .worker import CloseState, SubsessionContext, SubsessionEnv, spawn_subsession
 
@@ -321,6 +321,41 @@ def _build_spawn_and_control_tools(
                 # periodic's own depth (peer, not child).
                 effective_parent_id = agent_info.parent_id
                 effective_depth = agent_info.depth
+
+        # Operator decision panels are bound to the TICKET they are about,
+        # not to whatever key the agent chose: derive the ticket id from the
+        # key/title/instructions and refuse a second open panel for it.
+        # 2026-09-08: the 4-hourly gate drain used run-scoped keys
+        # (``0d29-run-20260908T0745Z``) and re-opened every still-gated
+        # ticket's panel each run — 14 panels waiting, several per ticket.
+        # The later context is appended to the existing panel instead so the
+        # operator keeps ONE live chat per decision.
+        if kind_enum is SubsessionKind.USER_CHAT:
+            ticket_match = TICKET_ID_RE.search(
+                f"{dedup_key or ''}\n{title}\n{instructions}"
+            )
+            if ticket_match is not None:
+                ticket_id = ticket_match.group(0)
+                existing_panel = env.registry.is_dedup_key_active(
+                    ticket_id
+                ) or env.registry.find_active_user_chat_by_ticket_id(ticket_id)
+                if existing_panel is not None:
+                    env.registry.enqueue_message(
+                        existing_panel,
+                        "parent",
+                        f"[A later run re-raised this decision ({title}). "
+                        f"Updated context follows; if it changes the "
+                        f"recommendation, say so in one line.]\n"
+                        f"{instructions[:2000]}",
+                    )
+                    return (
+                        f"Deduplicated: the operator already has an open decision "
+                        f"panel for ticket {ticket_id} ({existing_panel}); your "
+                        f"context was appended to it. Do NOT open another panel "
+                        f"for this ticket and do not post another ESCALATED "
+                        f"comment — the existing chat is the live channel."
+                    )
+                dedup_key = ticket_id
 
         # Check whether a dedup hit is expected before calling
         # spawn_subsession — after a fresh create the new record

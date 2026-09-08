@@ -1966,6 +1966,75 @@ def test_route_mill_event_wakes_paused_periodic_for_ticket() -> None:
     assert registry._wake_events[info.id].is_set() is False
 
 
+_TID = "20260907T234653Z-periodic-task-monitors-get-orphaned-bind-0d29"
+
+
+def test_find_active_user_chat_by_ticket_id_matches_key_title_or_prompt() -> None:
+    """A decision panel is bound to its ticket however the agent keyed it."""
+    registry = SubsessionRegistry(store_path=None)
+    by_key = _create(
+        registry,
+        kind=SubsessionKind.USER_CHAT,
+        dedup_key=_TID,
+        title="Decision",
+    )
+    assert registry.find_active_user_chat_by_ticket_id(_TID) == by_key.id
+    registry.mark_closed(by_key.id, summary="done", reason="completed")
+    # Run-scoped key (the 2026-09-08 drain shape) — the title carries the id.
+    by_title = _create(
+        registry,
+        kind=SubsessionKind.USER_CHAT,
+        dedup_key="0d29-run-20260908T0745Z",
+        title=f"Decision: orphaned-monitor fix ({_TID})",
+    )
+    assert registry.find_active_user_chat_by_ticket_id(_TID) == by_title.id
+    assert (
+        registry.find_active_user_chat_by_ticket_id("20260101T000000Z-other-ffff")
+        is None
+    )
+
+
+def test_route_mill_event_closes_user_chat_panels_when_ticket_leaves_gate() -> None:
+    """Approving/closing a gated ticket elsewhere closes its decision panels."""
+    registry = SubsessionRegistry(store_path=None)
+    panel = _create(
+        registry,
+        kind=SubsessionKind.USER_CHAT,
+        dedup_key=_TID,
+        title="Decision",
+    )
+    other = _create(
+        registry,
+        kind=SubsessionKind.USER_CHAT,
+        dedup_key="20260101T000000Z-other-ticket-ffff",
+        title="Other decision",
+    )
+    # Still gated (blocked -> human_issue_approval): the panel stays open.
+    registry.route_mill_event(
+        _TID,
+        {
+            "ticket_id": _TID,
+            "old_state": "blocked",
+            "new_state": "human_issue_approval",
+        },
+    )
+    assert registry.get(panel.id).is_active
+    # Left the gate (approved -> ready): the panel is closed by the system.
+    registry.route_mill_event(
+        _TID,
+        {
+            "ticket_id": _TID,
+            "old_state": "human_issue_approval",
+            "new_state": "ready",
+        },
+    )
+    closed = registry.get(panel.id)
+    assert not closed.is_active
+    assert closed.close_reason == "ticket_moved"
+    assert "moved from 'human_issue_approval' to 'ready'" in (closed.summary or "")
+    assert registry.get(other.id).is_active
+
+
 def test_route_mill_event_ignores_paused_periodic_for_other_ticket() -> None:
     """A mill event for an untracked ticket does not wake a paused monitor."""
     registry = SubsessionRegistry(store_path=None)
