@@ -23,6 +23,7 @@ import asyncio
 import contextvars
 import fnmatch
 import logging
+import re
 from collections.abc import Callable
 from dataclasses import dataclass, field
 from typing import TYPE_CHECKING, cast
@@ -46,6 +47,7 @@ from .models import (
     SubsessionUserChatSpawnError,
 )
 from .prompts import USER_CHAT_FIRST_TURN_NOTE as _USER_CHAT_FIRST_TURN_NOTE
+from .prompts import USER_CHAT_SETTLED_NOTE as _USER_CHAT_SETTLED_NOTE
 from .registry import OWNER_CLOSED_REASON, SubsessionRegistry
 from .schedule import parse_anchor_time
 from .slot_budget import SLOT_BUDGET_QUEUED, SlotBudget, SlotBudgetQueueFullError
@@ -933,6 +935,41 @@ def _build_ancestor_context(registry: SubsessionRegistry, parent_id: str) -> str
     return "\n\n".join(parts) + "\n\n"
 
 
+_SUGGESTIONS_BLOCK_RE = re.compile(r"```suggestions\s*\n(.*?)```", re.DOTALL)
+
+
+def _offered_suggestions(info: SubsessionInfo) -> list[str]:
+    """Return the option lines of the panel's most recent ```suggestions block."""
+    for entry in reversed(info.transcript):
+        if entry.role != "assistant":
+            continue
+        blocks = _SUGGESTIONS_BLOCK_RE.findall(entry.text or "")
+        if not blocks:
+            return []
+        return [ln.strip() for ln in blocks[-1].splitlines() if ln.strip()]
+    return []
+
+
+def _operator_picked_suggestion(
+    info: SubsessionInfo, pending: list[InboxMessage]
+) -> bool:
+    """Return True when a user_chat operator reply equals an offered option.
+
+    A clicked ```suggestions line is a settled decision: the worker appends
+    :data:`USER_CHAT_SETTLED_NOTE` so the panel completes itself instead of
+    waiting for the operator to close it by hand (operator report 2026-09-08).
+    """
+    if info.kind is not SubsessionKind.USER_CHAT:
+        return False
+    offered = {o.casefold() for o in _offered_suggestions(info)}
+    if not offered:
+        return False
+    return any(
+        m.role == "user" and (m.text or "").strip().casefold() in offered
+        for m in pending
+    )
+
+
 def _render_turn_input(messages: list[InboxMessage]) -> str:
     """Merge an inbox batch into one turn input, labelled by role."""
     if len(messages) == 1:
@@ -1628,6 +1665,8 @@ async def _subsession_worker(
             else:
                 turn_input = _render_turn_input(pending)
                 in_flight_inbox = pending
+                if _operator_picked_suggestion(info, pending):
+                    turn_input += _USER_CHAT_SETTLED_NOTE
             first_turn = False
 
             # -- turn budget soft-warn --------------------------------------

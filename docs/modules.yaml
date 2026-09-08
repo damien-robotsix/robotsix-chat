@@ -415,6 +415,7 @@ modules:
       - tests/subsessions/test_watcher.py
       - tests/subsessions/test_worker.py
       - tests/subsessions/test_worker_mill.py
+      - tests/subsessions/test_worker_settled_note.py
       - tests/subsessions/test_worker_wait_for_event.py
 
   - id: refdocs

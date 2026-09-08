@@ -32,5 +32,22 @@ USER_CHAT_FIRST_TURN_NOTE = (
     "one self-contained option per line (2-5 options, each <= ~80 chars, "
     "actionable as a verbatim reply) so the operator can answer with a single "
     "click; keep the surrounding prose so a typed free-text answer is equally "
-    "valid.]"
+    "valid.  CLOSING THE PANEL: as soon as the operator's reply settles the "
+    "decision (they pick an option, approve/reject, or give a clear "
+    "instruction), acknowledge it in ONE short line and call "
+    "complete_subsession(summary=<the decision plus any instruction, verbatim "
+    "enough for the parent to act>) in the SAME turn — the summary is how the "
+    "decision reaches the main conversation; the operator must never have to "
+    "close the panel by hand.  Ask a follow-up question ONLY when the reply is "
+    "genuinely ambiguous.]"
+)
+
+# Appended to a user_chat turn's input when the operator's reply is one of
+# the ```suggestions lines the panel itself offered — a clicked option is a
+# settled decision, and the panel must close itself in that turn.
+USER_CHAT_SETTLED_NOTE = (
+    "\n\n[System note: the operator's reply is one of the options this panel "
+    "offered verbatim — the decision is settled. Acknowledge in one line and "
+    "call complete_subsession(summary=<the chosen option and what it means>) "
+    "in THIS turn. Do not ask for confirmation.]"
 )

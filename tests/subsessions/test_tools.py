@@ -255,6 +255,49 @@ async def test_check_monitor_terminal_report_for_ticket_terminal_reason() -> Non
 # ---------------------------------------------------------------------------
 
 
+_TID = "20260907T234653Z-periodic-task-monitors-get-orphaned-bind-0d29"
+
+
+@pytest.mark.asyncio
+async def test_spawn_user_chat_dedupes_per_ticket_whatever_the_key() -> None:
+    """One open decision panel per ticket, whatever key the run chose.
+
+    A later run with a run-scoped key (or none) gets the existing panel and
+    its context is appended to it — 2026-09-08 the gate drain re-opened every
+    gated ticket's panel each run.
+    """
+    env = build_env()
+    spawn = _by_name(build_subsession_tools(env, ctx=_ctx()), "spawn_subsession")
+    first = await spawn(
+        kind="user_chat",
+        title="Decision: orphaned-monitor fix (0d29)",
+        instructions=f"Ticket {_TID} — approve or send back?",
+        dedup_key="0d29-run-20260908T0745Z",
+    )
+    assert first.startswith("Started user_chat subsession")
+    panel_id = env.registry.find_active_user_chat_by_ticket_id(_TID)
+    assert panel_id is not None
+    # The stored key was normalised to the ticket id.
+    assert env.registry.get(panel_id).dedup_key == _TID
+    second = await spawn(
+        kind="user_chat",
+        title="0d29 orphaned monitor ownership",
+        instructions=f"Ticket {_TID} still gated; recommend approve.",
+        dedup_key="0d29-run-20260908T1145Z",
+    )
+    assert second.startswith(
+        "Deduplicated: the operator already has an open decision panel"
+    )
+    assert panel_id in second
+    inbox = env.registry.drain_inbox(panel_id)
+    assert len(inbox) == 1 and "re-raised this decision" in inbox[0].text
+    # No ticket id anywhere → ordinary spawn, no dedup applied.
+    third = await spawn(
+        kind="user_chat", title="Free-form question", instructions="Which colour?"
+    )
+    assert third.startswith("Started user_chat subsession")
+
+
 @pytest.mark.asyncio
 async def test_spawn_tool_unknown_kind_polite_refusal() -> None:
     """An unknown kind string returns a refusal, not an exception."""
