@@ -579,6 +579,75 @@ async def test_push_commit_to_branch_updates_ref(
 
 
 # ---------------------------------------------------------------------------
+# push_files_to_branch (create + delete changeset)
+# ---------------------------------------------------------------------------
+
+
+@pytest.mark.asyncio
+async def test_push_files_to_branch_commits_creates_and_deletes(
+    respx_mock: respx.MockRouter,
+) -> None:
+    """A delete + two creates yield ONE commit whose tree carries both."""
+    settings = _settings()
+
+    respx_mock.get(
+        "https://api.github.com/repos/org/repo/git/ref/heads/feat/x"
+    ).mock(
+        return_value=httpx.Response(200, text=json.dumps({"object": {"sha": "abc123"}}))
+    )
+    respx_mock.post("https://api.github.com/repos/org/repo/git/blobs").mock(
+        return_value=httpx.Response(200, text=json.dumps({"sha": "blob-sha"}))
+    )
+    respx_mock.get("https://api.github.com/repos/org/repo/git/commits/abc123").mock(
+        return_value=httpx.Response(
+            200,
+            text=json.dumps({"sha": "abc123", "tree": {"sha": "tree-sha"}}),
+        )
+    )
+    tree_route = respx_mock.post(
+        "https://api.github.com/repos/org/repo/git/trees"
+    ).mock(return_value=httpx.Response(200, text=json.dumps({"sha": "new-tree-sha"})))
+    commit_route = respx_mock.post(
+        "https://api.github.com/repos/org/repo/git/commits"
+    ).mock(return_value=httpx.Response(200, text=json.dumps({"sha": "new-commit-sha"})))
+    patch_route = respx_mock.patch(
+        "https://api.github.com/repos/org/repo/git/refs/heads/feat/x"
+    ).mock(
+        return_value=httpx.Response(200, text=json.dumps({"ref": "refs/heads/feat/x"}))
+    )
+
+    client = DirectRepoClient(settings)
+    result = await client.push_files_to_branch(
+        repo_full_name="org/repo",
+        branch_name="feat/x",
+        files=[
+            {"path": "sitl/a.py", "content": "print(1)"},
+            {"path": "sitl/b.py", "content": "print(2)"},
+        ],
+        deletes=["hil/a.py"],
+        commit_message="refactor: rename hil -> sitl",
+    )
+
+    assert "pushed successfully" in result
+    assert "new-commit-sha" in result
+
+    # Exactly one commit was created.
+    assert commit_route.call_count == 1
+    commit_body = json.loads(commit_route.calls.last.request.content.decode())
+    assert commit_body["parents"] == ["abc123"]
+
+    # The tree carries both create entries and a null-SHA delete entry.
+    tree_body = json.loads(tree_route.calls.last.request.content.decode())
+    entries = {e["path"]: e for e in tree_body["tree"]}
+    assert entries["sitl/a.py"]["sha"] == "blob-sha"
+    assert entries["sitl/b.py"]["sha"] == "blob-sha"
+    assert "hil/a.py" in entries
+    assert entries["hil/a.py"]["sha"] is None
+
+    assert patch_route.called
+
+
+# ---------------------------------------------------------------------------
 # push_patch_to_pr_branch
 # ---------------------------------------------------------------------------
 

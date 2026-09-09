@@ -1234,6 +1234,28 @@ class DirectRepoClient:
         """
         return await self._get_json(f"/repos/{repo_full_name}/pulls/{pr_number}")
 
+    async def find_open_pr_for_branch(
+        self,
+        *,
+        repo_full_name: str,
+        branch_name: str,
+    ) -> Any:
+        """Return the open PR whose head branch is *branch_name*, or ``None``.
+
+        Calls ``GET /repos/{owner}/{repo}/pulls?head={owner}:{branch}&state=open``
+        and returns the first matching PR object (there is at most one open PR
+        per head branch), or ``None`` when no open PR targets that branch.
+
+        Raises RuntimeError on API failure (callers catch and format).
+        """
+        owner = repo_full_name.split("/", 1)[0]
+        prs = await self._get_json(
+            f"/repos/{repo_full_name}/pulls?head={owner}:{branch_name}&state=open"
+        )
+        if isinstance(prs, list) and prs:
+            return prs[0]
+        return None
+
     async def get_pr_diff(
         self,
         *,
@@ -1431,6 +1453,91 @@ class DirectRepoClient:
                 f"Commit pushed successfully to {repo_full_name}/{branch_name}.\n"
                 f"Commit SHA: {commit_sha}\n"
                 f"Ticket: {ticket_id}"
+            )
+        except RuntimeError as exc:
+            return f"Error pushing commit: {exc}"
+        except Exception as exc:
+            return f"Error pushing commit: {exc}"
+
+    async def push_files_to_branch(
+        self,
+        *,
+        repo_full_name: str,
+        branch_name: str,
+        files: list[dict[str, str]],
+        deletes: list[str],
+        commit_message: str,
+    ) -> str:
+        """Push a multi-file changeset (create/overwrite + delete) to a branch.
+
+        Commits *files* (each ``{"path": ..., <content source>}``) and removes
+        every path in *deletes* in a SINGLE commit on the existing
+        *branch_name*.  Deletions are expressed as tree entries with a ``null``
+        SHA, overlaid on the branch head's tree, so a rename/move is
+        expressible as (delete old path + create new path).
+
+        Uses the Git database API: get branch HEAD SHA → create blobs for the
+        content entries → build a tree (blobs + null-SHA deletes) overlaid on
+        the head tree → create commit → fast-forward the ref.
+
+        Never raises — returns a success/error message string.
+        """
+        try:
+            # 1. Resolve the branch HEAD SHA (the update's parent).
+            ref_data = await self._get_json(
+                f"/repos/{repo_full_name}/git/ref/heads/{branch_name}"
+            )
+            base_sha: str = ref_data["object"]["sha"]
+
+            # 2. Blobs for content entries, plus null-SHA entries for deletes.
+            tree_items = await self._git_create_tree_items(repo_full_name, files)
+            for path in deletes:
+                if not path:
+                    raise ValueError("Each delete entry must have a 'path' field.")
+                tree_items.append(
+                    {
+                        "path": path,
+                        "mode": "100644",
+                        "type": "blob",
+                        "sha": None,
+                    }
+                )
+
+            # 3. Overlay the tree on the branch head's tree.
+            base_commit = await self._get_json(
+                f"/repos/{repo_full_name}/git/commits/{base_sha}"
+            )
+            tree_data = await self._post_json(
+                f"/repos/{repo_full_name}/git/trees",
+                {
+                    "base_tree": base_commit["tree"]["sha"],
+                    "tree": tree_items,
+                },
+            )
+
+            # 4. Create the commit with the branch head as its parent.
+            commit_data = await self._post_json(
+                f"/repos/{repo_full_name}/git/commits",
+                {
+                    "message": commit_message,
+                    "tree": tree_data["sha"],
+                    "parents": [base_sha],
+                },
+            )
+            commit_sha = str(commit_data["sha"])
+
+            # 5. Fast-forward the branch ref to the new commit.
+            await self._patch_json(
+                f"/repos/{repo_full_name}/git/refs/heads/{branch_name}",
+                {
+                    "sha": commit_sha,
+                    "force": False,
+                },
+            )
+
+            return (
+                f"Commit pushed successfully to {repo_full_name}/{branch_name}.\n"
+                f"Commit SHA: {commit_sha}"
             )
         except RuntimeError as exc:
             return f"Error pushing commit: {exc}"
