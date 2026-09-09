@@ -590,9 +590,7 @@ async def test_push_files_to_branch_commits_creates_and_deletes(
     """A delete + two creates yield ONE commit whose tree carries both."""
     settings = _settings()
 
-    respx_mock.get(
-        "https://api.github.com/repos/org/repo/git/ref/heads/feat/x"
-    ).mock(
+    respx_mock.get("https://api.github.com/repos/org/repo/git/ref/heads/feat/x").mock(
         return_value=httpx.Response(200, text=json.dumps({"object": {"sha": "abc123"}}))
     )
     respx_mock.post("https://api.github.com/repos/org/repo/git/blobs").mock(

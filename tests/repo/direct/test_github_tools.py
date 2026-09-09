@@ -593,9 +593,7 @@ class TestUpdateSimpleRepoPr:
     @pytest.mark.asyncio
     async def test_closed_pr_returns_not_open_error(self) -> None:
         """A closed PR yields a clear not-open error, no push."""
-        client = _FakeClient(
-            pr={"state": "closed", "head": {"ref": "feat/rename"}}
-        )
+        client = _FakeClient(pr={"state": "closed", "head": {"ref": "feat/rename"}})
         tools = _build(client=client)
         result = await tools["update_simple_repo_pr"](
             "o/r", '[{"path": "x.md", "content": "hi"}]', 42
