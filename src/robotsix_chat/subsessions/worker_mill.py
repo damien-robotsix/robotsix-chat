@@ -461,14 +461,9 @@ async def _check_resume_status(
             # Stale-worker cap reached — subsession already closed.
             return (False, stale_context)
 
-        # Resolve the reblock caps from settings (with sensible defaults
-        # for backward compatibility with config files that predate
-        # these keys).
-        max_reblock = getattr(
-            env.settings.subsessions, "paused_monitor_max_reblock_resumes", 3
-        )
-        notify_threshold = getattr(
-            env.settings.subsessions, "paused_monitor_reblock_notify_threshold", 2
+        max_reblock = env.settings.subsessions.paused_monitor_max_reblock_resumes
+        notify_threshold = (
+            env.settings.subsessions.paused_monitor_reblock_notify_threshold
         )
 
         # -- SSE notification: surface reblock loops to the operator --
