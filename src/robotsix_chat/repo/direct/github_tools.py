@@ -131,6 +131,56 @@ def validate_file_entries(files: list[Any]) -> str | None:
     return None
 
 
+# Accepted per-file entry forms for a changeset that also supports deletion
+# (used by ``update_simple_repo_pr``).  Each entry carries a ``path`` plus
+# EITHER exactly one content source OR ``delete: true``:
+#   {"path": "...", "content": "..."}      — text, committed as-is
+#   {"path": "...", "content_b64": "..."}  — base64 bytes (binary files)
+#   {"path": "...", "local_path": "..."}   — read bytes from a file inside
+#                                            the file-hub work directory
+#   {"path": "...", "delete": true}        — remove the path from the tree
+FILES_JSON_CHANGESET_FORMS = (
+    "{path, content} (text), {path, content_b64} (base64 bytes), "
+    "{path, local_path} (a file inside the file-hub work directory), or "
+    "{path, delete: true} (remove the path)"
+)
+
+
+def validate_changeset_entries(files: list[Any]) -> str | None:
+    """Return an error string if any changeset entry is malformed.
+
+    Each entry must be an object carrying a non-empty ``path`` and EITHER a
+    ``delete: true`` flag OR exactly one content source (``content``,
+    ``content_b64``, or ``local_path``).  A delete entry must NOT also carry a
+    content source.  Returns ``None`` when every entry is well-formed.
+    """
+    for f in files:
+        if not isinstance(f, dict):
+            return (
+                f"Error: files_json entries must be objects: "
+                f"{FILES_JSON_CHANGESET_FORMS}."
+            )
+        if not f.get("path"):
+            return "Error: each files_json entry must have a non-empty 'path'."
+        sources = [k for k in ("content", "content_b64", "local_path") if k in f]
+        if f.get("delete"):
+            if sources:
+                return (
+                    f"Error: files_json delete entry for '{f.get('path')}' must "
+                    f"not also carry a content source — "
+                    f"{FILES_JSON_CHANGESET_FORMS}."
+                )
+            continue
+        if len(sources) != 1:
+            found = ", ".join(sources) if sources else "none"
+            return (
+                f"Error: files_json entry for '{f.get('path')}' must carry "
+                f"exactly one content source or 'delete: true' — "
+                f"{FILES_JSON_CHANGESET_FORMS} (found: {found})."
+            )
+    return None
+
+
 # ---------------------------------------------------------------------------
 # Ungated "simple PR" path — risky-file guard
 # ---------------------------------------------------------------------------
@@ -470,6 +520,148 @@ def build_github_tools(
             body=pr_body,
         )
         return f"{push_result}\n\n{pr_result}"
+
+    async def update_simple_repo_pr(
+        repo_full_name: str,
+        files_json: str,
+        pr_number: int = 0,
+        branch_name: str = "",
+        commit_message: str = "",
+    ) -> str:
+        """Commit a multi-file changeset to an open PR's branch — NO ticket.
+
+        **Lightweight ungated companion to ``open_simple_repo_pr``.**  Adds a
+        commit to an EXISTING open pull request's head branch in one call,
+        updating the PR in place (no close/reopen), *without* requiring a mill
+        ticket in BLOCKED state.  The open PR is itself the human review gate,
+        so this path stays safe and reversible.  Use it to iterate on a PR you
+        opened with ``open_simple_repo_pr`` — including a directory/module
+        rename, expressed as (delete old paths + create new paths) in one
+        commit.  Merging stays confirmation-gated via ``merge_direct_repo_pr``.
+
+        **Not eligible on this path (refused by the tool):** CI workflow /
+        composite-action files (``.github/workflows/``, ``.github/actions/``)
+        and credential/secret-shaped files (private keys, ``.env`` files) —
+        the guard applies to both added AND deleted paths.
+
+        **Scope:** When called through the component roster the GitHub App
+        installation scope check is bypassed.  For direct board-API calls,
+        *repo_full_name* must be within the robotsix-mill GitHub App's current
+        installation scope (checked dynamically at call time).
+
+        Args:
+            repo_full_name: GitHub ``owner/name`` (e.g.
+                ``"robotsix/robotsix-website"``).
+            files_json: JSON array of changeset entries.  Reuses the
+                ``open_simple_repo_pr`` content forms —
+                ``{"path": "...", "content": "..."}`` for text,
+                ``{"path": "...", "content_b64": "..."}`` for base64 bytes,
+                ``{"path": "...", "local_path": "..."}`` for a file inside the
+                file-hub work directory — plus a delete form
+                ``{"path": "...", "delete": true}`` to remove a path.  A
+                rename is (delete old path + create new path).
+            pr_number: The open PR number to update.  Provide EITHER this or
+                *branch_name*.
+            branch_name: The head branch name of an open PR to update.
+                Provide EITHER this or *pr_number*.
+            commit_message: Commit message.  Defaults to a message naming the
+                target branch.
+
+        Returns:
+            A status message with the commit SHA on success, or an error
+            message describing why the change was refused or failed.
+
+        """
+        try:
+            files: list[dict[str, str]] = json.loads(files_json)
+        except json.JSONDecodeError, TypeError:
+            return (
+                "Error: files_json must be a valid JSON array of changeset "
+                f"entries — {FILES_JSON_CHANGESET_FORMS}."
+            )
+
+        if not isinstance(files, list):
+            return "Error: files_json must be a JSON array."
+
+        if entry_error := validate_changeset_entries(files):
+            return entry_error
+
+        # --- guard: reject workflow/secret files (added OR deleted) ---
+        if safety_error := check_simple_pr_file_safety(files):
+            return safety_error
+
+        if not pr_number and not branch_name:
+            return (
+                "Error: provide either 'pr_number' or 'branch_name' of an open "
+                "PR to update."
+            )
+
+        # --- scope check only (NO BLOCKED-state / ticket gate) ---
+        if error := await assert_in_scope(client, repo_full_name):
+            return error
+
+        # --- resolve the target head branch from the PR number or branch ---
+        head_branch: str
+        if pr_number:
+            try:
+                pr = await client.get_pr(
+                    repo_full_name=repo_full_name,
+                    pr_number=pr_number,
+                )
+            except Exception as exc:
+                return f"Error fetching PR #{pr_number} in {repo_full_name}: {exc}"
+            state = pr.get("state", "unknown")
+            if state != "open":
+                return (
+                    f"Error: PR #{pr_number} in {repo_full_name} is {state}, "
+                    f"not open — cannot update a closed PR."
+                )
+            head_info = pr.get("head", {})
+            resolved_branch = head_info.get("ref")
+            head_repo_full_name = head_info.get("repo", {}).get("full_name")
+            if not resolved_branch:
+                return (
+                    f"Error: PR #{pr_number} in {repo_full_name} has no head "
+                    f"branch — cannot determine where to push."
+                )
+            if head_repo_full_name and head_repo_full_name != repo_full_name:
+                return (
+                    f"Refused: PR #{pr_number} head branch '{resolved_branch}' "
+                    f"belongs to '{head_repo_full_name}', not "
+                    f"'{repo_full_name}'. Cross-repo PR updates are not "
+                    f"permitted."
+                )
+            head_branch = resolved_branch
+        else:
+            try:
+                pr = await client.find_open_pr_for_branch(
+                    repo_full_name=repo_full_name,
+                    branch_name=branch_name,
+                )
+            except Exception as exc:
+                return (
+                    f"Error looking up open PR for branch '{branch_name}' in "
+                    f"{repo_full_name}: {exc}"
+                )
+            if not pr:
+                return (
+                    f"Error: no open PR found with head branch '{branch_name}' "
+                    f"in {repo_full_name}."
+                )
+            head_branch = branch_name
+
+        # --- split the changeset into content writes and deletions ---
+        changes = [f for f in files if not f.get("delete")]
+        deletes = [str(f.get("path")) for f in files if f.get("delete")]
+
+        msg = commit_message or f"chore: update PR on branch '{head_branch}'"
+        return await client.push_files_to_branch(
+            repo_full_name=repo_full_name,
+            branch_name=head_branch,
+            files=changes,
+            deletes=deletes,
+            commit_message=msg,
+        )
 
     async def update_pr_branch(
         ticket_id: str,
@@ -2393,6 +2585,7 @@ def build_github_tools(
         push_direct_repo_branch,
         open_direct_repo_pr,
         open_simple_repo_pr,
+        update_simple_repo_pr,
         update_pr_branch,
         check_pr_merge_conflict,
         verify_pr_ci_status,

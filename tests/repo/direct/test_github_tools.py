@@ -62,6 +62,15 @@ class _FakeClient:
         assert self._pr is not None
         return self._pr
 
+    async def find_open_pr_for_branch(self, **kwargs: Any) -> dict[str, Any] | None:
+        """Return the canned PR dict (or ``None``) for branch-name lookups."""
+        return self._pr
+
+    async def push_files_to_branch(self, **kwargs: Any) -> str:
+        """Record the changeset-push kwargs and return a canned status."""
+        self.pushed = kwargs
+        return "changeset-pushed"
+
     async def check_installation_scope(self, repo_full_name: str) -> str | None:
         """Return the configured scope error (or ``None`` to pass)."""
         return self._scope_error
@@ -112,7 +121,7 @@ def test_build_github_tools_returns_all_named_async_tools() -> None:
         assert_in_scope=_pass,
     )
     names = [t.__name__ for t in tools]
-    assert len(tools) == 24
+    assert len(tools) == 25
     # No duplicate registrations.
     assert len(names) == len(set(names))
     assert all(callable(t) for t in tools)
@@ -496,6 +505,112 @@ class TestOpenSimpleRepoPr:
         )
         assert result == "Error pushing branch: boom"
         assert client.created is None
+
+
+# ---------------------------------------------------------------------------
+# update_simple_repo_pr (ungated: multi-file changeset onto an open PR branch)
+# ---------------------------------------------------------------------------
+
+
+class TestUpdateSimpleRepoPr:
+    """The lightweight ungated PR-update tool."""
+
+    @staticmethod
+    def _open_pr() -> dict[str, Any]:
+        """Return a canned open PR whose head branch belongs to the repo."""
+        return {
+            "state": "open",
+            "head": {"ref": "feat/rename", "repo": {"full_name": "o/r"}},
+        }
+
+    @pytest.mark.asyncio
+    async def test_happy_path_creates_and_deletes(self) -> None:
+        """A delete + two creates are committed to the PR's head branch."""
+        client = _FakeClient(pr=self._open_pr())
+        tools = _build(client=client)
+        result = await tools["update_simple_repo_pr"](
+            "o/r",
+            '[{"path": "sitl/a.py", "content": "1"}, '
+            '{"path": "sitl/b.py", "content": "2"}, '
+            '{"path": "hil/a.py", "delete": true}]',
+            42,
+        )
+        assert "changeset-pushed" in result
+        assert client.pushed is not None
+        assert client.pushed["branch_name"] == "feat/rename"
+        assert [f["path"] for f in client.pushed["files"]] == [
+            "sitl/a.py",
+            "sitl/b.py",
+        ]
+        assert client.pushed["deletes"] == ["hil/a.py"]
+
+    @pytest.mark.asyncio
+    async def test_resolves_by_branch_name(self) -> None:
+        """A branch_name reference is accepted when an open PR exists."""
+        client = _FakeClient(pr=self._open_pr())
+        tools = _build(client=client)
+        result = await tools["update_simple_repo_pr"](
+            "o/r",
+            '[{"path": "x.md", "content": "hi"}]',
+            0,
+            "feat/rename",
+        )
+        assert "changeset-pushed" in result
+        assert client.pushed is not None
+        assert client.pushed["branch_name"] == "feat/rename"
+
+    @pytest.mark.asyncio
+    async def test_invalid_json_returns_error(self) -> None:
+        """Non-JSON ``files_json`` yields a validation error, not a crash."""
+        tools = _build()
+        result = await tools["update_simple_repo_pr"]("o/r", "not-json", 1)
+        assert "valid JSON array" in result
+
+    @pytest.mark.asyncio
+    async def test_workflow_file_delete_refused(self) -> None:
+        """Deleting a workflow file is refused before any push."""
+        client = _FakeClient(pr=self._open_pr())
+        tools = _build(client=client)
+        result = await tools["update_simple_repo_pr"](
+            "o/r",
+            '[{"path": ".github/workflows/ci.yml", "delete": true}]',
+            42,
+        )
+        assert "Refused" in result
+        assert client.pushed is None
+
+    @pytest.mark.asyncio
+    async def test_missing_pr_reference_errors(self) -> None:
+        """Neither pr_number nor branch_name → a clear error, no push."""
+        client = _FakeClient(pr=self._open_pr())
+        tools = _build(client=client)
+        result = await tools["update_simple_repo_pr"](
+            "o/r", '[{"path": "x.md", "content": "hi"}]'
+        )
+        assert "either 'pr_number' or 'branch_name'" in result
+        assert client.pushed is None
+
+    @pytest.mark.asyncio
+    async def test_closed_pr_returns_not_open_error(self) -> None:
+        """A closed PR yields a clear not-open error, no push."""
+        client = _FakeClient(pr={"state": "closed", "head": {"ref": "feat/rename"}})
+        tools = _build(client=client)
+        result = await tools["update_simple_repo_pr"](
+            "o/r", '[{"path": "x.md", "content": "hi"}]', 42
+        )
+        assert "not open" in result
+        assert client.pushed is None
+
+    @pytest.mark.asyncio
+    async def test_unknown_branch_pr_returns_not_found(self) -> None:
+        """A branch with no open PR yields a clear not-found error, no push."""
+        client = _FakeClient(pr=None)
+        tools = _build(client=client)
+        result = await tools["update_simple_repo_pr"](
+            "o/r", '[{"path": "x.md", "content": "hi"}]', 0, "no-such-branch"
+        )
+        assert "no open PR found" in result
+        assert client.pushed is None
 
 
 # ---------------------------------------------------------------------------

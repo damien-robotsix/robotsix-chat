@@ -143,6 +143,7 @@ def test_merge_tools_returned() -> None:
         "reset_implement_spawn_counter",
         "resolve_pr_conflict",
         "update_pr_branch",
+        "update_simple_repo_pr",
         "verify_pr_ci_status",
     ]
 

@@ -53,6 +53,60 @@ trivial change reviewed.
 
 ______________________________________________________________________
 
+## Agent tool: `update_simple_repo_pr` (ungated — no ticket required)
+
+**Lightweight companion to `open_simple_repo_pr` for adding a commit to an already-open PR.** Commits
+a multi-file changeset to an EXISTING open pull request's head branch in one call, updating the PR
+in place (no close/reopen) — **without requiring a mill ticket in BLOCKED state**. The open PR is
+itself the review gate. Use this to iterate on a PR you opened via `open_simple_repo_pr`, including a
+directory/module rename expressed as (delete old paths + create new paths) in a single commit.
+Merging stays confirmation-gated via `merge_direct_repo_pr`.
+
+The changeset supports **create, overwrite, AND delete** in one commit. Reuse the `open_simple_repo_pr`
+content forms and add a delete form:
+
+- `{"path": "...", "content": "..."}` — text.
+- `{"path": "...", "content_b64": "..."}` — base64 bytes (binary files).
+- `{"path": "...", "local_path": "..."}` — a file inside the file-hub work directory.
+- `{"path": "...", "delete": true}` — remove the path from the tree.
+
+**NOT eligible — refused by the tool (guard applies to added AND deleted paths):**
+
+- CI workflow / composite-action files (`.github/workflows/`, `.github/actions/`).
+- Credential/secret-shaped files (private keys `*.pem`/`*.key`/`*.pfx`/`*.p12`, `.env` files, SSH
+  keys).
+
+### Preconditions
+
+- `direct_repo.enabled` must be true.
+- Repository must be within the GitHub App installation scope (checked at call time; bypassed when
+  the change is orchestrated through the component roster).
+- An OPEN PR must exist, identified by either `pr_number` or `branch_name`.
+- Every `files_json` entry must be one of the accepted forms above and must pass the risky-file
+  guard.
+
+### Arguments
+
+- `repo_full_name` — GitHub `owner/name` (e.g. `robotsix/robotsix-website`).
+- `files_json` — JSON array of changeset entries (create/overwrite/delete).
+- `pr_number` — the open PR number to update. Provide EITHER this or `branch_name`.
+- `branch_name` — the head branch name of an open PR to update. Provide EITHER this or `pr_number`.
+- `commit_message` — optional; defaults to a message naming the target branch.
+
+### Error responses
+
+| Condition                        | Message                                                            |
+| -------------------------------- | ------------------------------------------------------------------ |
+| Malformed `files_json`           | `Error: files_json must be a valid JSON array of changeset entries …` |
+| Neither PR reference given       | `Error: provide either 'pr_number' or 'branch_name' of an open PR …`  |
+| Workflow/action file in the diff | `Refused: '<path>' is a CI workflow/action file …`                 |
+| Secret/credential file           | `Refused: '<path>' looks like a credential/secret file …`          |
+| Repo not in installation scope   | `The robotsix-mill GitHub App is not installed on 'owner/name'`    |
+| PR number unknown / closed       | `Error: PR #<n> in owner/name is <state>, not open …`              |
+| Branch has no open PR            | `Error: no open PR found with head branch '<branch>' in owner/name.` |
+
+______________________________________________________________________
+
 ## Agent tool: `verify_pr_ci_status`
 
 Fetch live CI run status and PR state from GitHub — PR metadata (state, mergeability, draft status)
