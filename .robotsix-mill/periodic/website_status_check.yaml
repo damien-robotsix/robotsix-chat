@@ -1,0 +1,62 @@
+name: website_status_check
+prompt_overlay: |
+  ## Monthly website content-source verification
+
+  Client-facing project descriptions (e.g., website cards, detail pages)
+  can drift silently from their approved source documents (client emails,
+  specifications, SOWs). A published page might use different terminology,
+  drop technical details, add unapproved caveats, or omit specific deliverables
+  — and these changes go undetected without periodic verification against
+  the source.
+
+  **Rule:** every website-status check MUST include source-document verification
+  for published project descriptions.
+
+  ### Reference documents to maintain
+
+  Keep a working list of projects and their source documents:
+  - Project name
+  - Source document type (client email, specification, SOW, internal spec)
+  - Source document identifier or date (e.g., "Renato email 31 Aug 2026")
+  - Stored location (file-hub, memory note, or external reference)
+
+  ### What to compare
+
+  For each project, read:
+  1. **Published copy** on the live website (EN + FR if multilingual)
+  2. **Source document** — the client-approved specification
+  3. **Report differences** — flag any significant drift
+
+  ### Drift detection criteria
+
+  Flag and report when published copy deviates in these ways:
+  - **Terminology shifts**: singular/plural mismatches, different language
+    (e.g., "rovers" plural vs. "un robot" singular)
+  - **Dropped technical details**: missing specific technologies, tools,
+    or deliverables mentioned in the source (e.g., ROS2, C++, PX4 integration)
+  - **Added content not in source**: new qualifiers, caveats, NDA/anonymization
+    frames, or framing not in the original specification
+  - **Reordered or generalized deliverables**: specific technical items
+    replaced by generic placeholders (e.g., "4 specific technical deliverables"
+    → "3 generic deliverables")
+  - **Changed project scope or scale**: different number of targets, phases,
+    or capabilities from the source
+
+  ### Reporting
+
+  - Reply `NO_CHANGE` only when all projects pass verification (published
+    copy matches the source).
+  - When drift is detected, report:
+    - Project name
+    - The drift type (terminology, dropped details, added content, etc.)
+    - Quoted text from both source and published copy showing the difference
+    - Recommendation: re-sync with client or fix the published copy to match
+      the approved source
+
+  ### Action on detection
+
+  Do not auto-fix published content. Surface the drift to the operator with
+  evidence, then await guidance on whether to:
+  1. Update the published copy to match the source
+  2. Update the source to reflect intentional changes on the live site
+  3. Document the drift as a known discrepancy pending client sign-off
