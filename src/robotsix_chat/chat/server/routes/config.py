@@ -40,12 +40,16 @@ import json
 import logging
 import stat
 from copy import deepcopy
-from datetime import datetime, timezone
 from pathlib import Path
 from typing import Any
 
 from pydantic import ValidationError
-from robotsix_config import config_schema, resolve_config_path
+from robotsix_config import (
+    InvalidConfigError,
+    config_schema,
+    history,
+    resolve_config_path,
+)
 from starlette.requests import Request
 from starlette.responses import JSONResponse
 
@@ -354,62 +358,8 @@ def _write_config_json(path: Path, data: dict[str, Any]) -> None:
 
 
 # ---------------------------------------------------------------------------
-# Version history (append-only JSONL alongside the config file)
+# Version history (managed by robotsix_config.history)
 # ---------------------------------------------------------------------------
-
-
-def _versions_path(config_path: Path) -> Path:
-    """Return the path to the append-only version-history file."""
-    return config_path.with_suffix(config_path.suffix + ".versions")
-
-
-def _read_versions(versions_file: Path) -> list[dict[str, Any]]:
-    """Read all version entries from the JSONL file.
-
-    Returns an empty list when the file does not exist or is empty.
-    """
-    try:
-        raw = versions_file.read_text(encoding="utf-8")
-    except FileNotFoundError:
-        return []
-    entries: list[dict[str, Any]] = []
-    for line in raw.splitlines():
-        line = line.strip()
-        if not line:
-            continue
-        try:
-            entry: Any = json.loads(line)
-            if isinstance(entry, dict):
-                entries.append(entry)
-        except json.JSONDecodeError:
-            logger.warning("Skipping corrupt version line in %s", versions_file)
-    return entries
-
-
-def _append_version(
-    versions_file: Path,
-    version: int,
-    data: dict[str, Any],
-    changed_keys: list[str],
-) -> None:
-    """Append a new version entry to the JSONL file."""
-    entry = {
-        "version": version,
-        "timestamp": datetime.now(timezone.utc).isoformat(),  # noqa: UP017
-        "changed_keys": changed_keys,
-        "data": data,
-    }
-    line = json.dumps(entry, ensure_ascii=False) + "\n"
-    with versions_file.open("a", encoding="utf-8") as f:
-        f.write(line)
-
-
-def _current_version(versions_file: Path) -> int:
-    """Return the current version number (0 if no history exists)."""
-    entries = _read_versions(versions_file)
-    if not entries:
-        return 0
-    return int(entries[-1]["version"])
 
 
 def _bootstrap_version_history(config_path: Path, config_data: dict[str, Any]) -> int:
@@ -418,26 +368,11 @@ def _bootstrap_version_history(config_path: Path, config_data: dict[str, Any]) -
     Returns the new version number (1).  No-op if a version history
     already exists.
     """
-    vp = _versions_path(config_path)
-    current = _current_version(vp)
+    current = history.current_version(config_path)
     if current > 0:
         return current
-    # Build the list of top-level keys that have non-default values.
-    _append_version(vp, 1, deepcopy(config_data), ["initial"])
+    history.record_version(config_data, ["initial"], Settings, config_path)
     return 1
-
-
-def _compute_changed_keys(before: dict[str, Any], after: dict[str, Any]) -> list[str]:
-    """Compute the list of top-level keys that differ between two dicts.
-
-    Only reports top-level key names; nested changes report the parent key.
-    """
-    all_keys = set(before.keys()) | set(after.keys())
-    changed: list[str] = []
-    for key in sorted(all_keys):
-        if before.get(key) != after.get(key):
-            changed.append(key)
-    return changed
 
 
 def _find_version_entry(
@@ -865,7 +800,7 @@ async def config_save_endpoint(request: Request) -> JSONResponse:
         )
 
     # 5. Compute changed keys for version history.
-    changed_keys = _compute_changed_keys(existing, merged)
+    changed_keys = history.compute_changed_keys(existing, merged, Settings)
 
     # 6. Persist the merged (valid) config.
     try:
@@ -877,11 +812,8 @@ async def config_save_endpoint(request: Request) -> JSONResponse:
             status_code=500,
         )
 
-    # 7. Increment version and record history.
-    vp = _versions_path(config_path)
-    current_ver = _current_version(vp)
-    new_ver = current_ver + 1
-    _append_version(vp, new_ver, deepcopy(merged), changed_keys)
+    # 7. Record the merged (valid) config as the new version.
+    new_ver = history.record_version(merged, changed_keys, Settings, config_path)
 
     logger.info(
         "Config saved to %s (version %d, %d top-level keys)",
@@ -899,13 +831,12 @@ async def config_versions_endpoint(request: Request) -> JSONResponse:
     a ``{version, timestamp, changed_keys}`` record, newest first.
     """
     config_path = _resolve_config_path_from_app(request)
-    vp = _versions_path(config_path)
     # Bootstrap if needed so the first GET /config/versions always
     # returns at least one entry.
     existing = _read_config_json(config_path)
     _bootstrap_version_history(config_path, existing)
 
-    entries = _read_versions(vp)
+    entries = history.read_versions(config_path, include_data=False)
     # Return entries newest-first, without the full data payload.
     result: list[dict[str, Any]] = []
     for entry in reversed(entries):
@@ -929,8 +860,7 @@ async def config_version_get_endpoint(request: Request) -> JSONResponse:
     """
     config_path = _resolve_config_path_from_app(request)
     version = request.path_params["version"]
-    vp = _versions_path(config_path)
-    entries = _read_versions(vp)
+    entries = history.read_versions(config_path)
 
     _index, entry = _find_version_entry(entries, version)
     if entry is None:
@@ -964,8 +894,7 @@ async def config_version_diff_endpoint(request: Request) -> JSONResponse:
     """
     config_path = _resolve_config_path_from_app(request)
     version = request.path_params["version"]
-    vp = _versions_path(config_path)
-    entries = _read_versions(vp)
+    entries = history.read_versions(config_path)
 
     index, entry = _find_version_entry(entries, version)
     if entry is None:
@@ -1014,8 +943,7 @@ async def config_rollback_endpoint(request: Request) -> JSONResponse:
             "version must be a positive integer",
         )
 
-    vp = _versions_path(config_path)
-    entries = _read_versions(vp)
+    entries = history.read_versions(config_path, include_data=False)
     if not entries:
         return _problem_response(
             404,
@@ -1023,28 +951,23 @@ async def config_rollback_endpoint(request: Request) -> JSONResponse:
             "no version history exists to roll back from",
         )
 
-    # Find the target version entry.
-    target_entry: dict[str, Any] | None = None
-    for entry in entries:
-        if entry["version"] == target_version:
-            target_entry = entry
-            break
-
-    if target_entry is None:
-        available = [e["version"] for e in entries]
+    if not any(int(entry["version"]) == target_version for entry in entries):
+        available = sorted(int(e["version"]) for e in entries)
         return _problem_response(
             404,
             "Version not found",
-            f"version {target_version} not found; available: {sorted(available)}",
+            f"version {target_version} not found; available: {available}",
         )
 
-    target_data: dict[str, Any] = target_entry["data"]
-
-    # Validate the target data still passes Settings validation (the schema
-    # may have changed since that version was recorded).
+    # Restore the target version as a *new* version (append-only, never
+    # destructive).  robotsix_config.history validates the restored document,
+    # writes the config atomically, carries live secrets forward, and records
+    # the new version in the managed sidecar.
     try:
-        Settings.model_validate(target_data)
-    except ValidationError as exc:
+        restored, _changed_keys, new_ver = history.rollback(
+            Settings, target_version, config_path
+        )
+    except InvalidConfigError as exc:
         logger.warning(
             "Rollback rejected: version %d fails current validation", target_version
         )
@@ -1054,34 +977,12 @@ async def config_rollback_endpoint(request: Request) -> JSONResponse:
             f"version {target_version} fails current config validation: {exc}",
         )
 
-    # Compute changed keys vs current on-disk config.
-    existing = _read_config_json(config_path)
-    changed_keys = _compute_changed_keys(existing, target_data)
-
-    # Write the target data as the current config.
-    try:
-        _write_config_json(config_path, target_data)
-    except OSError as exc:
-        logger.exception("Failed to write rollback config to %s", config_path)
-        return JSONResponse(
-            _error_body(f"failed to write config: {exc}"),
-            status_code=500,
-        )
-
-    # Append a new version entry for the rollback.
-    current_ver = _current_version(vp)
-    new_ver = current_ver + 1
-    rollback_keys = [f"rollback to v{target_version}"]
-    if changed_keys:
-        rollback_keys.extend(changed_keys)
-    _append_version(vp, new_ver, deepcopy(target_data), rollback_keys)
-
     logger.info(
         "Config rolled back to version %d (now at version %d)",
         target_version,
         new_ver,
     )
-    return JSONResponse({"config": _effective_config(target_data), "version": new_ver})
+    return JSONResponse({"config": _effective_config(restored), "version": new_ver})
 
 
 def _resolve_config_path_from_app(request: Request) -> Path:
