@@ -69,6 +69,19 @@ Everything below predates the release-please migration and was
 maintained by hand or by towncrier. It is kept verbatim; new entries
 are added above by release-please.
 
+## [0.23.0](https://github.com/damien-robotsix/robotsix-chat/compare/v0.22.1...v0.23.0) (2026-09-11)
+
+
+### Features
+
+* Add ungated tool to push a multi-file commit (incl. deletes/renames) to an existing PR branch (20260909T032046Z-add-ungated-tool-to-push-a-multi-file-co-9d32) ([#1933](https://github.com/damien-robotsix/robotsix-chat/issues/1933)) ([3522d60](https://github.com/damien-robotsix/robotsix-chat/commit/3522d6095314795e1da5732934d6c895395e98c5))
+* **skills:** serve component skills on demand through the skill index instead of pasting them into every turn ([#1943](https://github.com/damien-robotsix/robotsix-chat/issues/1943)) ([42733c4](https://github.com/damien-robotsix/robotsix-chat/commit/42733c4d784747e9ac05e22a698de1e783561ab0))
+
+
+### Bug Fixes
+
+* **ci:** push Auto-format fixes with a scoped App token, not GITHUB_TOKEN ([#1942](https://github.com/damien-robotsix/robotsix-chat/issues/1942)) ([95473d0](https://github.com/damien-robotsix/robotsix-chat/commit/95473d0deeca11ab61e3c3ee797a34f13b9dec3a))
+
 ## [0.22.1](https://github.com/damien-robotsix/robotsix-chat/compare/v0.22.0...v0.22.1) (2026-09-08)
 
 
