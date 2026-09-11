@@ -1141,8 +1141,13 @@ def test_get_versions_no_history(tmp_path: Path) -> None:
 # ---------------------------------------------------------------------------
 
 
-def test_get_version_document_returns_masked_document(tmp_path: Path) -> None:
-    """GET /config/versions/{version} returns the stored doc, secrets masked."""
+def test_get_version_document_strips_secrets(tmp_path: Path) -> None:
+    """GET /config/versions/{version} returns the stored doc, secrets stripped.
+
+    The fleet-standard ``robotsix_config.history`` never writes secret
+    values into the append-only sidecar (``record_version`` strips them), so
+    the version document carries no secret key at all — not even masked.
+    """
     config_path = tmp_path / "config.json"
     _write_config(
         config_path,
@@ -1164,13 +1169,14 @@ def test_get_version_document_returns_masked_document(tmp_path: Path) -> None:
     assert doc["version"] == 1
     assert "timestamp" in doc
     assert doc["config"]["memory"]["llm"]["model"] == "openrouter/openai/gpt-5-mini"
-    # Set secrets are masked; no plaintext ever appears.
-    assert doc["config"]["openrouter"]["keys"]["robotsix-chat-cognee"] == "**********"
+    # The stored version has the secret stripped entirely — the key is
+    # absent (not masked), and no plaintext ever appears.
+    assert "robotsix-chat-cognee" not in doc["config"]["openrouter"]["keys"]
     assert "plain-secret-a" not in resp.text
 
 
-def test_get_version_document_empty_secret_stays_empty(tmp_path: Path) -> None:
-    """Unset secret values stay unmasked (empty string) in the document."""
+def test_get_version_document_empty_secret_is_stripped(tmp_path: Path) -> None:
+    """An unset secret is stripped from the stored version document too."""
     config_path = tmp_path / "config.json"
     _write_config(config_path, {"openrouter": {"keys": {"robotsix-chat-cognee": ""}}})
     client = _make_app(config_path)
@@ -1178,7 +1184,7 @@ def test_get_version_document_empty_secret_stays_empty(tmp_path: Path) -> None:
 
     resp = client.get("/config/versions/1")
     assert resp.status_code == 200
-    assert resp.json()["config"]["openrouter"]["keys"]["robotsix-chat-cognee"] == ""
+    assert "robotsix-chat-cognee" not in resp.json()["config"]["openrouter"]["keys"]
 
 
 def test_get_version_document_unknown_version_returns_404(tmp_path: Path) -> None:
@@ -1205,7 +1211,10 @@ def test_version_diff_reports_nested_changed_paths(tmp_path: Path) -> None:
 
     Mirrors the incident: v2 changed several nested fields (continuation,
     memory.llm.model, openrouter key), v3 reverted the model.  The v2 diff
-    surfaces all three changes; the v3 diff shows only the reversion.
+    surfaces the non-secret changes; the v3 diff shows only the reversion.
+    Secret values are stripped from the stored version documents by
+    ``robotsix_config.history`` (the fleet standard), so a secret rotation
+    never appears in the value-level diff.
     """
     config_path = tmp_path / "config.json"
     _write_config(
@@ -1235,7 +1244,7 @@ def test_version_diff_reports_nested_changed_paths(tmp_path: Path) -> None:
         json={"memory": {"llm": {"model": "openrouter/openai/gpt-5-mini"}}},
     )
 
-    # --- v2 diff: three changed paths ---
+    # --- v2 diff: the non-secret changes ---
     resp2 = client.get("/config/versions/2/diff")
     assert resp2.status_code == 200
     body2 = resp2.json()
@@ -1250,11 +1259,9 @@ def test_version_diff_reports_nested_changed_paths(tmp_path: Path) -> None:
     }
     assert by_path2["memory.llm.model"]["old"] == "openrouter/openai/gpt-5-mini"
     assert by_path2["memory.llm.model"]["new"] == "openrouter/openai/gpt-5-nano"
-    # Secret key rotation: changed-only, no old/new values.
-    assert by_path2["openrouter.keys.robotsix-chat-cognee"] == {
-        "path": "openrouter.keys.robotsix-chat-cognee",
-        "changed": True,
-    }
+    # The secret rotation is stripped from the stored version documents, so
+    # it is not surfaced in the value-level diff; no plaintext ever appears.
+    assert "openrouter.keys.robotsix-chat-cognee" not in by_path2
     assert "secret-a" not in resp2.text
     assert "secret-b" not in resp2.text
 
