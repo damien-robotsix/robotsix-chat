@@ -18,6 +18,7 @@ from robotsix_chat.component_access.roster import (
     _augment_with_fallbacks,
     _cache_valid,
     build_skill_prompt,
+    component_skill_entries,
     fetch_roster,
     fetch_roster_sync,
 )
@@ -566,12 +567,15 @@ def test_build_skill_prompt_error_only() -> None:
 
 
 def test_build_skill_prompt_single_entry() -> None:
-    """Single valid entry produces skill prompt with summary and skill."""
+    """Yield a one-line router entry (id, URL, summary), never the body.
+
+    Bodies are served by ``read_skill``.
+    """
     entries = [
         {
             "id": "mill",
             "base_url": "http://m:8080",
-            "skill": "# Mill Skill\n\nDo stuff.",
+            "skill": "# Mill Skill\n\nDo stuff.\n\n## GET /tickets\n\nlong reference…",
         }
     ]
     result = build_skill_prompt(entries)
@@ -579,24 +583,60 @@ def test_build_skill_prompt_single_entry() -> None:
     assert "## Component summary" in result
     assert "**mill**" in result
     assert "http://m:8080" in result
-    assert "## mill" in result
-    assert "# Mill Skill" in result
-    assert "Do stuff." in result
+    assert "Do stuff." in result  # routing summary
+    assert "read_skill(<id>)" in result
+    assert "## GET /tickets" not in result  # body stays out of the prompt
+    assert "long reference" not in result
+
+
+def test_build_skill_prompt_uses_frontmatter_description() -> None:
+    """Use the chat-access-standard frontmatter description as the summary."""
+    entries = [
+        {
+            "id": "mail",
+            "base_url": "http://mail:8080",
+            "skill": (
+                "---\nname: robotsix-auto-mail\n"
+                "description: Mail triage board — read state, manage archives.\n---\n\n"
+                "robotsix-auto-mail is a deployable mail-triage component…\n"
+            ),
+        }
+    ]
+    result = build_skill_prompt(entries)
+    assert "**mail**" in result
+    assert "Mail triage board — read state, manage archives." in result
+    assert "deployable mail-triage" not in result
 
 
 def test_build_skill_prompt_multiple_entries() -> None:
-    """Multiple entries all appear in summary and detail sections."""
+    """Multiple entries all appear in the summary, bodies in none."""
     entries = [
-        {"id": "mill", "base_url": "http://m:8080", "skill": "Skill A"},
-        {"id": "board", "base_url": "http://b:8080", "skill": "Skill B"},
+        {"id": "mill", "base_url": "http://m:8080", "skill": "Skill A body"},
+        {"id": "board", "base_url": "http://b:8080", "skill": "Skill B body"},
     ]
     result = build_skill_prompt(entries)
     assert "**mill**" in result
     assert "**board**" in result
-    assert "## mill" in result
-    assert "## board" in result
-    assert "Skill A" in result
-    assert "Skill B" in result
+    assert result.count("Skill A body") == 1  # the summary IS the one-line body
+    assert "## mill" not in result
+    assert "## board" not in result
+
+
+def test_component_skill_entries_names_by_component_id() -> None:
+    """Serve the verbatim skill keyed by component id; skip error/empty entries.
+
+    The id is what ``component_request`` takes.
+    """
+    entries = [
+        {"id": "_error", "base_url": "", "skill": "", "_error": "fail"},
+        {"id": "mill", "base_url": "http://m:8080", "skill": "Skill A body"},
+        {"id": "", "base_url": "http://x", "skill": "nameless"},
+        {"id": "mail", "base_url": "http://mail", "skill": "Skill B body"},
+    ]
+    pairs = component_skill_entries(entries)
+    assert [n for n, _ in pairs] == ["mill", "mail"]
+    assert pairs[0][1]() == "Skill A body"
+    assert pairs[1][1]() == "Skill B body"
 
 
 def test_build_skill_prompt_mixed_error_and_valid() -> None:

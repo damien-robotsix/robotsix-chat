@@ -888,19 +888,60 @@ def _load_prompt_style() -> str:
     return body
 
 
+def _component_skill_registry(
+    settings: Settings,
+) -> list[tuple[bool, str, Callable[[], str]]]:
+    """Return ``(enabled, name, loader)`` for every component skill on the roster.
+
+    Same shape as :func:`_skill_registry` so both halves of progressive
+    disclosure see the component skills too. The roster fetch is cached
+    (``central_deploy.roster_cache_ttl``), so the index build and the
+    ``read_skill`` tool build — seconds apart — hit the network once.
+    Returns ``[]`` when component access is off or the roster is unreachable
+    (the agent then only sees the bundled skills, as before).
+    """
+    if not settings.central_deploy.url:
+        return []
+    from robotsix_chat.component_access.roster import (
+        component_skill_entries,
+        fetch_roster_sync,
+    )
+
+    try:
+        roster = fetch_roster_sync(settings.central_deploy)
+    except Exception:
+        logging.getLogger(__name__).warning(
+            "component skill registry: roster unavailable", exc_info=True
+        )
+        return []
+    return [(True, name, loader) for name, loader in component_skill_entries(roster)]
+
+
 def _skill_registry(
     settings: Settings,
 ) -> list[tuple[bool, str, Callable[[], str]]]:
-    """Return ``(enabled, name, loader)`` for every bundled skill.
+    """Return ``(enabled, name, loader)`` for every bundled and component skill.
 
     Single source of truth for both halves of progressive disclosure: the
     index built into the system prompt and the ``read_skill`` tool that
     serves bodies on demand. Keeping them on one list is what stops the
-    index from advertising a skill the tool cannot fetch.
+    index from advertising a skill the tool cannot fetch. Component skills
+    (from the central-deploy roster, named by component id) come last.
     """
     from robotsix_chat.evergoing import load_cross_session_skill
     from robotsix_chat.subsessions import load_subsessions_skill
 
+    return _bundled_skill_registry(
+        settings, load_cross_session_skill, load_subsessions_skill
+    ) + _component_skill_registry(settings)
+
+
+def _bundled_skill_registry(
+    settings: Settings,
+    load_cross_session_skill: Callable[[], str],
+    load_subsessions_skill: Callable[[], str],
+) -> list[tuple[bool, str, Callable[[], str]]]:
+    """Return the in-repo skills; see :func:`_skill_registry`."""
     return [
         (True, "subsessions", load_subsessions_skill),
         (True, "mill_workflow", load_mill_workflow_skill),
@@ -1016,8 +1057,10 @@ def _inject_skills(
             "– You have one generic tool for calling external components: "
             "component_request(component_id, method, path, json_body=None, "
             "params=None). "
-            "Each component declares its own API surface as a skill — read "
-            "the skill descriptions below for allowed operations.\n"
+            "Each component declares its own API surface as a skill named by "
+            "its component id in the skill index at the end of this prompt — "
+            "read_skill(<component id>) before the first component_request to "
+            "it in a session, and follow it.\n"
             "– Obey each component skill's safety section. When a skill marks "
             "an operation as requiring confirmation, ask the user in "
             "conversation before calling it.\n"

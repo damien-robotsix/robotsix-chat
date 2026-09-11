@@ -20,6 +20,7 @@ from __future__ import annotations
 
 import logging
 import time
+from collections.abc import Callable
 from typing import Any
 
 import httpx
@@ -218,11 +219,46 @@ def fetch_roster_sync(settings: CentralDeploySettings) -> list[dict[str, Any]]:
         return pool.submit(asyncio.run, fetch_roster(settings)).result()
 
 
-def build_skill_prompt(entries: list[dict[str, Any]]) -> str:
-    """Build a system-prompt section from the roster's skill manifests.
+def component_skill_entries(
+    entries: list[dict[str, Any]],
+) -> list[tuple[str, Callable[[], str]]]:
+    """Return ``(name, loader)`` pairs for the roster's skill manifests.
 
-    Each component's skill is included verbatim. The prompt also
-    includes a summary of available component ids and base URLs.
+    Feeds the same progressive-disclosure machinery as the bundled skills
+    (:mod:`robotsix_chat.skill_index` + ``read_skill``): the system prompt
+    carries one summary line per component and the agent fetches a body on
+    demand. Before 2026-09-11 every component skill was pasted verbatim into
+    every turn — 85 KB (mail 21 KB, mill 18 KB) on top of the 40 KB core.
+
+    The name is the component id, i.e. what ``component_request`` takes, so
+    "read the skill, then call the component" needs no translation.
+    """
+    valid = [e for e in entries if e.get("skill") and not e.get("_error")]
+    out: list[tuple[str, Callable[[], str]]] = []
+    for entry in valid:
+        cid = str(entry.get("id", "")).strip()
+        if not cid:
+            continue
+        out.append((cid, _constant_loader(str(entry["skill"]))))
+    return out
+
+
+def _constant_loader(body: str) -> Callable[[], str]:
+    """Return a zero-arg loader serving *body* (the roster is already fetched)."""
+
+    def _load() -> str:
+        return body
+
+    return _load
+
+
+def build_skill_prompt(entries: list[dict[str, Any]]) -> str:
+    """Build the compact component summary for the system prompt.
+
+    One line per component: id, base URL and the skill's routing summary
+    (frontmatter ``description`` or opening paragraph). The full skill body
+    is NOT included — it is served by ``read_skill(<component id>)`` through
+    the shared skill index (see :func:`component_skill_entries`).
 
     Args:
         entries: Roster entries as returned by :func:`fetch_roster`.
@@ -232,6 +268,8 @@ def build_skill_prompt(entries: list[dict[str, Any]]) -> str:
         when no valid skill entries exist.
 
     """
+    from robotsix_chat.skill_index import summarize_skill
+
     valid = [e for e in entries if e.get("skill") and not e.get("_error")]
     if not valid:
         return ""
@@ -239,25 +277,22 @@ def build_skill_prompt(entries: list[dict[str, Any]]) -> str:
     lines: list[str] = [
         "# Available component skills",
         "",
-        "The following components are accessible via `component_request`. ",
-        "Each section describes the component's API and safety rules. ",
+        "The following components are accessible via `component_request`. "
+        "Each component's API reference and safety rules are a skill named by "
+        'its id in "Available skills" below — call `read_skill(<id>)` before '
+        "the first `component_request` to that component in a session. The "
+        "summary here is a router, not a reference: never guess an endpoint "
+        "from it.",
+        "",
+        "## Component summary",
         "",
     ]
-    lines.append("## Component summary")
-    lines.append("")
     for entry in valid:
         cid = entry.get("id", "?")
         base_url = entry.get("base_url", "?")
-        lines.append(f"- **{cid}** — `{base_url}`")
+        _, summary = summarize_skill(str(entry["skill"]), max_chars=160)
+        tail = f" — {summary}" if summary else ""
+        lines.append(f"- **{cid}** — `{base_url}`{tail}")
     lines.append("")
-
-    for entry in valid:
-        cid = entry["id"]
-        skill = entry["skill"]
-        lines.append("---")
-        lines.append(f"## {cid}")
-        lines.append("")
-        lines.append(skill)
-        lines.append("")
 
     return "\n".join(lines)

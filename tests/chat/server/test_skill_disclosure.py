@@ -7,6 +7,7 @@ fetchable — that agreement is what these tests pin.
 
 from __future__ import annotations
 
+from typing import ClassVar
 from unittest.mock import patch
 
 # Pre-existing import cycle: ``subsessions/__init__`` -> ``delivery`` ->
@@ -191,3 +192,59 @@ class TestReadSkillRetryAndCache:
         assert "could not be loaded after multiple attempts" in result
         assert "Inform the user" in result
         assert "temporarily unavailable" in result
+
+
+class TestComponentSkills:
+    """Roster component skills ride the same two halves as bundled skills."""
+
+    _ROSTER: ClassVar[list[dict[str, str]]] = [
+        {
+            "id": "mail",
+            "base_url": "http://mail:8080",
+            "skill": (
+                "---\nname: robotsix-auto-mail\n"
+                "description: Mail triage board over HTTP.\n---\n\n"
+                "## Read-only HTTP API\n\n- `GET /accounts` → …\n" + "x" * 20_000
+            ),
+        },
+        {"id": "_error", "base_url": "", "skill": "", "_error": "fail"},
+    ]
+
+    def _settings(self) -> Settings:
+        return Settings(central_deploy={"url": "http://cd:8100"})
+
+    def test_prompt_indexes_component_skill_but_not_its_body(self) -> None:
+        """Names in, bodies out — for component skills too."""
+        settings = self._settings()
+        with patch(
+            "robotsix_chat.component_access.roster.fetch_roster_sync",
+            return_value=self._ROSTER,
+        ):
+            prompt = _inject_skills(settings, "Base instruction.")
+        assert "**mail**" in prompt
+        assert "Mail triage board over HTTP." in prompt
+        assert "read_skill(<component id>)" in prompt
+        assert "GET /accounts" not in prompt
+        assert "x" * 200 not in prompt
+
+    def test_read_skill_serves_the_component_body(self) -> None:
+        """The tool serves the roster skill verbatim, keyed by component id."""
+        settings = self._settings()
+        with patch(
+            "robotsix_chat.component_access.roster.fetch_roster_sync",
+            return_value=self._ROSTER,
+        ):
+            read_skill = _read_skill(settings)
+            body = read_skill("mail")
+        assert body == self._ROSTER[0]["skill"]
+
+    def test_unreachable_roster_leaves_bundled_skills_intact(self) -> None:
+        """A roster outage degrades to bundled skills only, never to a crash."""
+        settings = self._settings()
+        with patch(
+            "robotsix_chat.component_access.roster.fetch_roster_sync",
+            side_effect=RuntimeError("boom"),
+        ):
+            names = [n for on, n, _ in _skill_registry(settings) if on]
+        assert "subsessions" in names
+        assert "mail" not in names
