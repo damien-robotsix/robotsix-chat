@@ -29,12 +29,46 @@ logger = logging.getLogger(__name__)
 _SUMMARY_CHARS = 320
 
 
+def _parse_frontmatter(lines: list[str]) -> tuple[str, str, int]:
+    """Return ``(name, description, next_index)`` for a leading YAML block.
+
+    Only the flat ``key: value`` shape the chat-access standard prescribes is
+    recognised; anything else leaves ``next_index`` at 0 so the caller reads
+    the body from the top. No YAML library: the two keys are plain strings.
+    """
+    if not lines or lines[0].strip() != "---":
+        return "", "", 0
+    name = description = ""
+    for i in range(1, len(lines)):
+        stripped = lines[i].strip()
+        if stripped == "---":
+            return name, description, i + 1
+        key, sep, value = stripped.partition(":")
+        if not sep:
+            continue
+        key = key.strip().lower()
+        value = value.strip().strip("\"'")
+        if key == "name":
+            name = value
+        elif key == "description":
+            description = value
+    # Unterminated block: not frontmatter after all.
+    return "", "", 0
+
+
 def summarize_skill(body: str, *, max_chars: int = _SUMMARY_CHARS) -> tuple[str, str]:
     """Return ``(title, summary)`` for a skill body.
 
     Skills open with a Markdown ``# Title`` followed by a paragraph saying what
     the skill is for. That opening is exactly the routing information the index
     needs, so it is taken verbatim rather than re-summarised.
+
+    Component skills served over ``/chat-skill`` follow the chat-access
+    standard: YAML frontmatter with ``name`` and ``description``. When that
+    frontmatter is present the description IS the routing summary (and the
+    name the title) — it was written for exactly this purpose. Bodies that
+    open with a ``## Heading`` instead of ``# Title`` (several deployed
+    component skills do) use that heading as the title.
 
     Falls back gracefully: a body with no heading yields an empty title, and a
     body with no blank-line paragraph break uses whatever text precedes the
@@ -43,9 +77,27 @@ def summarize_skill(body: str, *, max_chars: int = _SUMMARY_CHARS) -> tuple[str,
     title = ""
     lines = body.lstrip().splitlines()
     start = 0
-    if lines and lines[0].startswith("# "):
-        title = lines[0][2:].strip()
-        start = 1
+
+    fm_title, fm_summary, start = _parse_frontmatter(lines)
+    if fm_summary:
+        title = fm_title
+        summary = fm_summary
+        if len(summary) > max_chars:
+            summary = summary[: max_chars - 1].rstrip() + "…"
+        return title, summary
+    title = fm_title
+
+    # Skip blank lines left after the frontmatter (or at the top).
+    while start < len(lines) and not lines[start].strip():
+        start += 1
+    if start < len(lines) and lines[start].startswith("# "):
+        if not title:
+            title = lines[start][2:].strip()
+        start += 1
+    elif start < len(lines) and lines[start].startswith("## "):
+        if not title:
+            title = lines[start][3:].strip()
+        start += 1
 
     para: list[str] = []
     for line in lines[start:]:

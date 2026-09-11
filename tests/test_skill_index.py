@@ -62,6 +62,37 @@ class TestSummarizeSkill:
         """An empty body yields empty strings, never a crash."""
         assert summarize_skill("") == ("", "")
 
+    def test_frontmatter_description_is_the_summary(self) -> None:
+        """Use the chat-access-standard frontmatter description verbatim."""
+        body = (
+            "---\nname: robotsix-auto-mail\n"
+            "description: Mail triage and archive-proposal board over HTTP.\n"
+            "---\n\nrobotsix-auto-mail is a deployable mail-triage component.\n"
+        )
+        title, summary = summarize_skill(body)
+        assert title == "robotsix-auto-mail"
+        assert summary == "Mail triage and archive-proposal board over HTTP."
+
+    def test_frontmatter_description_is_truncated(self) -> None:
+        """Apply the summary budget to frontmatter descriptions too."""
+        body = "---\nname: x\ndescription: " + "y" * 999 + "\n---\nbody\n"
+        _, summary = summarize_skill(body, max_chars=50)
+        assert len(summary) == 50 and summary.endswith("…")
+
+    def test_unterminated_frontmatter_is_prose(self) -> None:
+        """A lone leading --- is a horizontal rule, not frontmatter."""
+        title, summary = summarize_skill("---\nnot yaml really\n\nmore\n")
+        assert title == ""
+        assert summary == "not yaml really"
+
+    def test_h2_opening_heading_is_the_title(self) -> None:
+        """Several deployed component skills open with ``##`` (mill-board)."""
+        title, summary = summarize_skill(
+            "## mill-board — Chat Agent Skill\n\nTicket board API.\n\n### Base URL\n"
+        )
+        assert title == "mill-board — Chat Agent Skill"
+        assert summary == "Ticket board API."
+
 
 class TestBuildSkillIndex:
     """The index advertises skills without embedding their bodies."""
