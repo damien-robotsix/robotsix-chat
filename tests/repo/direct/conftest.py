@@ -8,18 +8,17 @@ from typing import Any
 import pytest
 
 from robotsix_chat.config import DirectRepoSettings
-from robotsix_chat.repo.direct.client import (
-    _DEAD_PINNED_IDS,
-    _INSTALLATION_TOKEN_CACHE,
-    _RESOLVED_INSTALLATION_CACHE,
-)
 
 
 def _prepopulate_installation_token(settings: DirectRepoSettings) -> None:
-    """Seed the installation token cache so tests bypass the token exchange."""
-    _INSTALLATION_TOKEN_CACHE[settings.github_app_installation_id] = (
-        "ghs_prepopulated_token"
-    )
+    """Compatibility no-op.
+
+    The client owns no token cache — robotsix-github-auth's public
+    ``mint_installation_token`` handles minting and caching, and the autouse
+    ``_mock_github_auth`` fixture fakes it to return a constant token.  So
+    tests no longer need to seed a local cache; this helper is retained so
+    the call sites across the test modules keep compiling unchanged.
+    """
 
 
 def _settings(**kw: Any) -> DirectRepoSettings:
@@ -36,30 +35,16 @@ def _settings(**kw: Any) -> DirectRepoSettings:
 
 @pytest.fixture(autouse=True)
 def _mock_github_auth(monkeypatch: pytest.MonkeyPatch) -> None:
-    """Mock mint_installation_token so the shared library is never imported."""
+    """Mock robotsix-github-auth so the shared library is never imported."""
     import sys
-
-    # Clear the process-lifetime installation caches so state does not leak
-    # between tests (a pinned-id 404 fallback, in particular, would otherwise
-    # switch later tests into per-repo resolution mode).
-    _INSTALLATION_TOKEN_CACHE.clear()
-    _RESOLVED_INSTALLATION_CACHE.clear()
-    _DEAD_PINNED_IDS.clear()
 
     def _fake_mint(**kw: object) -> object:
         return SimpleNamespace(token="ghs_test_installation_token")
 
-    def _fake_build_app_jwt(app_id: str, private_key: str) -> str:
-        return "fake-app-jwt"
-
-    def _fake_resolve_installation_id(jwt_token: str, owner: str, repo: str) -> str:
-        return "67890"
-
     fake = SimpleNamespace()
     fake.mint_installation_token = _fake_mint
-    fake._auth = SimpleNamespace(
-        _build_app_jwt=_fake_build_app_jwt,
-        _resolve_installation_id=_fake_resolve_installation_id,
-    )
+    # The client delegates 401-refresh invalidation to the library's public
+    # token-cache API.
+    fake.clear_token_cache = lambda: None
+    fake.invalidate_token_cache = lambda installation_id: None
     monkeypatch.setitem(sys.modules, "robotsix_github_auth", fake)
-    monkeypatch.setitem(sys.modules, "robotsix_github_auth._auth", fake._auth)

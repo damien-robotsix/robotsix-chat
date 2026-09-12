@@ -44,15 +44,12 @@ def _b64encode(data: bytes) -> str:
 # ---------------------------------------------------------------------------
 
 
-# Installation access tokens, keyed by the EFFECTIVE installation id
-# (the pinned id in override mode, or the per-repo resolved id otherwise).
-_INSTALLATION_TOKEN_CACHE: dict[str, str] = {}
-# Per-repo installation resolution cache: ``"owner/repo"`` -> installation id.
-_RESOLVED_INSTALLATION_CACHE: dict[str, str] = {}
-# Configured (pinned) installation ids that returned HTTP 404 when minting a
-# token.  Once an id lands here it is abandoned for the rest of the process
-# lifetime and tokens are resolved per repository instead — never retried.
-_DEAD_PINNED_IDS: set[str] = set()
+# All token minting, installation resolution, and token caching are owned by
+# robotsix-github-auth's public ``mint_installation_token`` — the same path
+# the refdocs/version-check/repo-study clients use via
+# ``common.github_app_token``.  This client keeps no local token/installation
+# caches; routing through the public API is exactly what the consolidation
+# removed the private ``robotsix_github_auth._auth`` reach for.
 
 
 def _owner_repo_from_path(path: str) -> tuple[str, str] | None:
@@ -80,30 +77,6 @@ def _require_app_credentials(settings: DirectRepoSettings) -> tuple[str, str]:
     return app_id, private_key
 
 
-def _resolve_installation_id_for_repo(
-    app_id: str, private_key: str, owner: str, repo: str
-) -> str:
-    """Resolve (and cache) the installation id GitHub uses for ``owner/repo``.
-
-    Mirrors robotsix-github-auth's ``_resolve_installation_id`` (a
-    ``GET /repos/{owner}/{repo}/installation`` with the App JWT).  Runs
-    synchronously (blocking httpx); call it via ``asyncio.to_thread``.
-    """
-    key = f"{owner}/{repo}"
-    cached = _RESOLVED_INSTALLATION_CACHE.get(key)
-    if cached is not None:
-        return cached
-    from robotsix_github_auth._auth import (
-        _build_app_jwt,
-        _resolve_installation_id,
-    )
-
-    jwt_token = _build_app_jwt(app_id, private_key)
-    resolved = str(_resolve_installation_id(jwt_token, owner, repo))
-    _RESOLVED_INSTALLATION_CACHE[key] = resolved
-    return resolved
-
-
 async def _get_installation_token(
     settings: DirectRepoSettings,
     *,
@@ -112,83 +85,34 @@ async def _get_installation_token(
 ) -> str:
     """Mint a short-lived GitHub App installation access token.
 
-    Two modes, selected by ``github_app_installation_id``:
+    Delegates to robotsix-github-auth's public ``mint_installation_token`` —
+    the same verified path the refdocs/version-check/repo-study clients use
+    via ``common.github_app_token``.  The library owns all installation
+    resolution and token caching, so this wrapper only selects the mode:
 
+    - **set** (``github_app_installation_id``): the pinned id is minted
+      as-is.  If it returns HTTP 404 (the installation no longer exists,
+      e.g. after a re-install) and a repository is available, the token is
+      re-minted via per-repository resolution instead.
     - **empty** (recommended): the installation is resolved per repository
       from ``owner``/``repo`` (``GET /repos/{owner}/{repo}/installation``),
       exactly as robotsix-github-auth does when no id is pinned — so a
       GitHub App re-install (which mints a *new* installation id) needs no
       config edit.
-    - **set** (override): the pinned id is used as-is.  If it returns
-      HTTP 404 (the installation no longer exists, e.g. after a re-install)
-      the pinned id is abandoned for the rest of the process lifetime and
-      the installation is resolved per repository instead — logged once at
-      WARNING naming both ids.  The pinned id is never retried.
-
-    Tokens are cached by the effective installation id.
     """
     app_id, private_key = _require_app_credentials(settings)
     pinned = settings.github_app_installation_id
 
     from robotsix_github_auth import mint_installation_token
 
-    def _mint(installation_id: str) -> str:
+    def _mint(**kwargs: Any) -> str:
         return mint_installation_token(
             app_id=app_id,
             private_key=private_key,
-            installation_id=installation_id,
+            **kwargs,
         ).token
 
-    # -- override mode: a live pinned id -----------------------------------
-    if pinned and pinned not in _DEAD_PINNED_IDS:
-        cached = _INSTALLATION_TOKEN_CACHE.get(pinned)
-        if cached is not None:
-            return cached
-        try:
-            token = await asyncio.to_thread(_mint, pinned)
-        except Exception as exc:  # 404 handled below; other errors re-raised
-            if "404" not in str(exc) or not (owner and repo):
-                raise
-            # The pinned installation no longer exists — fall back to
-            # per-repo resolution ONCE and keep it for the process lifetime.
-            resolved = await asyncio.to_thread(
-                _resolve_installation_id_for_repo,
-                app_id,
-                private_key,
-                owner,
-                repo,
-            )
-            _DEAD_PINNED_IDS.add(pinned)
-            logger.warning(
-                "direct_repo: configured github_app_installation_id %s "
-                "returned HTTP 404 when minting a token (the installation no "
-                "longer exists); falling back to per-repository resolution "
-                "(resolved installation %s for %s/%s) for the rest of the "
-                "process lifetime — the pinned id will not be retried.",
-                pinned,
-                resolved,
-                owner,
-                repo,
-            )
-            token = await asyncio.to_thread(_mint, resolved)
-            _INSTALLATION_TOKEN_CACHE[resolved] = token
-            return token
-        _INSTALLATION_TOKEN_CACHE[pinned] = token
-        return token
-
-    # -- per-repo resolution: empty id, or a dead pinned id ----------------
-    if not (owner and repo):
-        # No repository context (an installation-scoped call, e.g. listing
-        # the installation's repos).  Reuse any installation already
-        # resolved this process, else there is nothing to resolve against.
-        if _RESOLVED_INSTALLATION_CACHE:
-            fallback_id = next(iter(_RESOLVED_INSTALLATION_CACHE.values()))
-            cached = _INSTALLATION_TOKEN_CACHE.get(fallback_id)
-            if cached is not None:
-                return cached
-            token = await asyncio.to_thread(_mint, fallback_id)
-            _INSTALLATION_TOKEN_CACHE[fallback_id] = token
-            return token
+    if not (pinned or (owner and repo)):
         raise RuntimeError(
             "Cannot resolve a GitHub App installation: "
             "github_app_installation_id is empty and this operation was "
@@ -196,15 +120,25 @@ async def _get_installation_token(
             "operation first, or set github_app_installation_id."
         )
 
-    resolved = await asyncio.to_thread(
-        _resolve_installation_id_for_repo, app_id, private_key, owner, repo
-    )
-    cached = _INSTALLATION_TOKEN_CACHE.get(resolved)
-    if cached is not None:
-        return cached
-    token = await asyncio.to_thread(_mint, resolved)
-    _INSTALLATION_TOKEN_CACHE[resolved] = token
-    return token
+    # -- override mode: a live pinned id -----------------------------------
+    if pinned:
+        try:
+            return await asyncio.to_thread(_mint, installation_id=pinned)
+        except Exception as exc:  # 404 handled below; other errors re-raised
+            if "404" not in str(exc) or not (owner and repo):
+                raise
+            logger.warning(
+                "direct_repo: configured github_app_installation_id %s "
+                "returned HTTP 404 when minting a token (the installation no "
+                "longer exists); falling back to per-repository resolution "
+                "for %s/%s.",
+                pinned,
+                owner,
+                repo,
+            )
+
+    # -- per-repo resolution: empty id, or a dead pinned id ----------------
+    return await asyncio.to_thread(_mint, owner=owner, repo=repo)
 
 
 # ---------------------------------------------------------------------------
@@ -314,16 +248,16 @@ class DirectRepoClient:
     ) -> None:
         """Clear the cached installation token so the next call re-fetches it.
 
-        Clears the pinned id and any installation resolved for *owner*/*repo*
-        so a 401-refresh re-mints the effective token regardless of mode.
+        Delegates to robotsix-github-auth's public token-cache invalidation.
+        In per-repository mode (or after a pinned id was abandoned on a 404)
+        the effective installation id is only known inside the library, so
+        the whole library token cache is cleared — harmless for this single
+        App/installation client, and the next mint simply re-resolves from
+        the library's short-TTL resolution cache.
         """
-        pinned = self._s.github_app_installation_id
-        if pinned:
-            _INSTALLATION_TOKEN_CACHE.pop(pinned, None)
-        if owner and repo:
-            resolved = _RESOLVED_INSTALLATION_CACHE.get(f"{owner}/{repo}")
-            if resolved:
-                _INSTALLATION_TOKEN_CACHE.pop(resolved, None)
+        from robotsix_github_auth import clear_token_cache
+
+        clear_token_cache()
 
     async def _gh_headers(
         self, *, owner: str | None = None, repo: str | None = None
@@ -795,22 +729,26 @@ class DirectRepoClient:
         """Mint a fresh installation token and return its expiry and scope.
 
         Mints a fresh installation token for *repo_full_name* and returns its
-        expiry and permission scope for diagnosis.  Resolves the installation
-        id from the repository (bypassing any cached token) so the returned
+        expiry and permission scope for diagnosis.  Mints via the public
+        ``mint_installation_token(owner=, repo=)`` path so the returned
         ``permissions`` reflect the GitHub App's **current** grant — not a
         possibly-stale cached token.  This lets the agent distinguish "the
         token was cached/stale" from "the App genuinely lacks the
         permission" when a GitHub API call fails with a 403 permission error.
 
-        The returned dict also carries both ``configured_installation_id``
-        (from settings) and ``resolved_installation_id`` (the installation
-        GitHub actually uses for the repo).  When these differ, the repo is
-        installed under a different installation of the App than the one in
-        config — the permission map reflects the resolved one.
+        The returned dict carries ``configured_installation_id`` (from
+        settings) and ``resolved_installation_id``.  The public
+        ``mint_installation_token`` resolves the effective installation
+        internally but does not expose it on the returned
+        ``InstallationToken``, so the separate per-repo resolution that used
+        to reach into robotsix-github-auth private internals has been dropped
+        (documented fallback): in override mode the effective installation is
+        the configured id and that is reported; in per-repository mode the
+        effective id is not surfaced and ``resolved_installation_id`` mirrors
+        the (empty) configured value.
 
-        It further reports ``installation_mode`` (``"per_repository"`` when
-        no id is pinned or the pinned id was abandoned after a 404, else
-        ``"override"``) and, when an id is configured,
+        It further reports ``installation_mode`` (``"override"`` when an id
+        is pinned, else ``"per_repository"``) and, when an id is configured,
         ``configured_installation_exists`` (``True``/``False`` from probing
         the pinned installation, or ``None`` when the probe was inconclusive)
         so an operator can tell whether a pinned override still points at a
@@ -835,29 +773,11 @@ class DirectRepoClient:
             raise ValueError("repo_full_name must be 'owner/repo'.")
 
         from robotsix_github_auth import mint_installation_token
-        from robotsix_github_auth._auth import (
-            _build_app_jwt,
-            _resolve_installation_id,
-        )
 
         app_id = self._s.github_app_id
         private_key = self._s.github_app_private_key.get_secret_value()
 
-        def _resolve_installation() -> str:
-            """Resolve the installation id GitHub uses for ``owner/repo``.
-
-            ``mint_installation_token`` resolves the id internally when no
-            ``installation_id`` is passed, but does not expose it on the
-            returned ``InstallationToken``.  We resolve it separately so the
-            report can surface the *effective* installation — the one the
-            token (and its permission map) actually belongs to — rather than
-            only the configured value.
-            """
-            jwt_token = _build_app_jwt(app_id, private_key)
-            return str(_resolve_installation_id(jwt_token, owner, repo))
-
         try:
-            resolved_installation_id = await asyncio.to_thread(_resolve_installation)
             result = await asyncio.to_thread(
                 mint_installation_token,
                 app_id=app_id,
@@ -875,35 +795,35 @@ class DirectRepoClient:
         # whether the pinned installation still exists (a re-install mints a
         # new id, orphaning the old one).
         configured_id = self._s.github_app_installation_id
-        override_active = bool(configured_id) and configured_id not in _DEAD_PINNED_IDS
-        installation_mode = "override" if override_active else "per_repository"
+        installation_mode = "override" if configured_id else "per_repository"
+        # The effective (per-repo) installation id is not exposed by the
+        # public token path; in override mode it *is* the configured id, so
+        # that is reported (see the docstring's documented fallback).
+        resolved_installation_id = configured_id
 
         configured_installation_exists: bool | None = None
         if configured_id:
-            if configured_id in _DEAD_PINNED_IDS:
-                configured_installation_exists = False
-            else:
 
-                def _probe_configured() -> bool:
-                    """Return True if the pinned id can mint, False on HTTP 404."""
-                    try:
-                        mint_installation_token(
-                            app_id=app_id,
-                            private_key=private_key,
-                            installation_id=configured_id,
-                        )
-                    except Exception as exc:  # HTTP 404 → installation is gone
-                        if "404" in str(exc):
-                            return False
-                        raise
-                    return True
-
+            def _probe_configured() -> bool:
+                """Return True if the pinned id can mint, False on HTTP 404."""
                 try:
-                    configured_installation_exists = await asyncio.to_thread(
-                        _probe_configured
+                    mint_installation_token(
+                        app_id=app_id,
+                        private_key=private_key,
+                        installation_id=configured_id,
                     )
-                except Exception:  # best-effort probe — inconclusive on error
-                    configured_installation_exists = None
+                except Exception as exc:  # HTTP 404 → installation is gone
+                    if "404" in str(exc):
+                        return False
+                    raise
+                return True
+
+            try:
+                configured_installation_exists = await asyncio.to_thread(
+                    _probe_configured
+                )
+            except Exception:  # best-effort probe — inconclusive on error
+                configured_installation_exists = None
 
         return {
             "app_id": app_id,

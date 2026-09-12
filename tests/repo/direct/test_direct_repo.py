@@ -18,7 +18,6 @@ import respx
 from robotsix_chat.config import DirectRepoSettings
 from robotsix_chat.repo.direct import build_direct_repo_tools
 from robotsix_chat.repo.direct.client import (
-    _INSTALLATION_TOKEN_CACHE,
     DirectRepoClient,
     _count_cycles_from_data,
 )
@@ -29,10 +28,11 @@ from robotsix_chat.repo.direct.client import (
 
 
 def _prepopulate_installation_token(settings: DirectRepoSettings) -> None:
-    """Seed the installation token cache so tests bypass the token exchange."""
-    _INSTALLATION_TOKEN_CACHE[settings.github_app_installation_id] = (
-        "ghs_prepopulated_token"  # pragma: allowlist secret
-    )
+    """Compatibility no-op.
+
+    The client owns no local token cache; the autouse ``_mock_github_auth``
+    fixture fakes ``mint_installation_token`` to return a constant token.
+    """
 
 
 def _settings(**kw: Any) -> DirectRepoSettings:
@@ -60,6 +60,9 @@ def _mock_github_auth(monkeypatch: pytest.MonkeyPatch) -> None:
 
     fake = SimpleNamespace()
     fake.mint_installation_token = _fake_mint
+    # The client delegates 401-refresh invalidation to the library's public
+    # token-cache API.
+    fake.clear_token_cache = lambda: None
     monkeypatch.setitem(sys.modules, "robotsix_github_auth", fake)
 
 
