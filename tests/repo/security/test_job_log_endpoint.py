@@ -17,9 +17,6 @@ from robotsix_chat.config import (
     DirectRepoSettings,
     GitHubSecuritySettings,
 )
-from robotsix_chat.repo.direct.client import (
-    _INSTALLATION_TOKEN_CACHE as _token_cache,
-)
 
 
 def _gh_sec_settings(**kw: object) -> GitHubSecuritySettings:
@@ -46,6 +43,23 @@ def _direct_repo_settings(**kw: object) -> DirectRepoSettings:
     }
     base.update(kw)
     return DirectRepoSettings(**base)
+
+
+@pytest.fixture(autouse=True)
+def _mock_github_auth(monkeypatch: pytest.MonkeyPatch) -> None:
+    """Mock mint_installation_token so the shared library is never imported."""
+    import sys
+    from types import SimpleNamespace
+
+    def _fake_mint(**kw: object) -> object:
+        return SimpleNamespace(token="ghs_test_installation_token")
+
+    fake = SimpleNamespace()
+    fake.mint_installation_token = _fake_mint
+    # The client delegates 401-refresh invalidation to the library's public
+    # token-cache API.
+    fake.clear_token_cache = lambda: None
+    monkeypatch.setitem(sys.modules, "robotsix_github_auth", fake)
 
 
 # ---------------------------------------------------------------------------
@@ -202,8 +216,6 @@ async def test_job_log_404_when_repo_not_in_scope(
     gh = _gh_sec_settings()
     dr = _direct_repo_settings()
 
-    _token_cache["67890"] = "ghs_test_token"
-
     respx_mock.get("https://api.github.com/installation/repositories").mock(
         return_value=httpx.Response(
             200,
@@ -236,8 +248,6 @@ async def test_job_log_404_when_job_not_found(
 
     gh = _gh_sec_settings()
     dr = _direct_repo_settings()
-
-    _token_cache["67890"] = "ghs_test_token"
 
     respx_mock.get("https://api.github.com/installation/repositories").mock(
         return_value=httpx.Response(
@@ -276,8 +286,6 @@ async def test_job_log_200_returns_log_text(
     gh = _gh_sec_settings()
     dr = _direct_repo_settings()
     log_content = "Run lftp deploy...\nTransfer complete.\nDone."
-
-    _token_cache["67890"] = "ghs_test_token"
 
     respx_mock.get("https://api.github.com/installation/repositories").mock(
         return_value=httpx.Response(
@@ -324,8 +332,6 @@ async def test_job_log_200_different_org(
     gh = _gh_sec_settings()
     dr = _direct_repo_settings()
     log_content = "Build output here."
-
-    _token_cache["67890"] = "ghs_test_token"
 
     respx_mock.get("https://api.github.com/installation/repositories").mock(
         return_value=httpx.Response(

@@ -597,10 +597,12 @@ Instead:
      still fails, re-check below.
    - **Permission missing** → the App installation genuinely lacks the permission; caching is NOT
      the cause. Give the user the exact steps below to grant it.
-1. Compare the reported **resolved installation id** with the App/installation the user changed —
-   and note any mismatch with the **configured installation id** (the report calls it out). If the
-   grant was made on a different App or installation, the resolved installation still lacks the
-   permission — point the user at the right one.
+1. Read the reported **installation mode** and **configured installation id**. The report no longer
+   surfaces a separately-resolved per-repo installation id — the public token path does not expose
+   it on the returned token, so ``resolved_installation_id`` mirrors the configured value. A pinned
+   override that no longer exists on GitHub is called out explicitly via
+   ``configured_installation_exists``. If the grant was made on a different App or installation,
+   point the user at the right one.
 
 **Granting a permission (exact GitHub UI paths):**
 
