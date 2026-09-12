@@ -171,6 +171,74 @@ async def test_fetch_sends_app_token_when_configured(
 
 @respx.mock
 @pytest.mark.asyncio
+async def test_fetch_resolves_installation_per_repo_when_no_id_pinned(
+    tmp_path: Path, monkeypatch: pytest.MonkeyPatch
+) -> None:
+    """Empty installation id: mint_installation_token is called with owner/repo."""
+    direct_repo = DirectRepoSettings(
+        github_app_id="42",
+        github_app_private_key="fake-pem",  # pragma: allowlist secret
+        # github_app_installation_id left empty → per-repo resolution
+    )
+
+    import sys
+    from types import SimpleNamespace
+
+    minted: list[tuple[object, object]] = []
+
+    def fake_token(**kw: object) -> object:
+        minted.append((kw["owner"], kw["repo"]))
+        return SimpleNamespace(token="per-repo-token")
+
+    fake = SimpleNamespace()
+    fake.mint_installation_token = fake_token
+    monkeypatch.setitem(sys.modules, "robotsix_github_auth", fake)
+    manager = WorkspaceManager(
+        RepoStudySettings(enabled=True, data_dir=str(tmp_path / "ws")), direct_repo
+    )
+    route = respx.get(TARBALL_URL).mock(
+        return_value=Response(200, content=make_tarball(SAMPLE_FILES))
+    )
+    await manager.fetch("acme/widget")
+    assert minted == [("acme", "widget")]
+    auth = route.calls.last.request.headers.get("Authorization")
+    assert auth == "Bearer per-repo-token"
+
+
+@respx.mock
+@pytest.mark.asyncio
+async def test_fetch_falls_back_unauthenticated_on_per_repo_mint_failure(
+    tmp_path: Path, monkeypatch: pytest.MonkeyPatch
+) -> None:
+    """Per-repo mint failure with no pinned id falls back unauthenticated."""
+    direct_repo = DirectRepoSettings(
+        github_app_id="42",
+        github_app_private_key="fake-pem",  # pragma: allowlist secret
+        # github_app_installation_id left empty → per-repo resolution
+    )
+
+    import sys
+    from types import SimpleNamespace
+
+    def failing_token(**kw: object) -> object:
+        raise RuntimeError("no token for you")
+
+    fake = SimpleNamespace()
+    fake.mint_installation_token = failing_token
+    monkeypatch.setitem(sys.modules, "robotsix_github_auth", fake)
+    manager = WorkspaceManager(
+        RepoStudySettings(enabled=True, data_dir=str(tmp_path / "ws")), direct_repo
+    )
+    route = respx.get(TARBALL_URL).mock(
+        return_value=Response(200, content=make_tarball(SAMPLE_FILES))
+    )
+    summary = await manager.fetch("acme/widget")
+    assert "acme--widget--default" in summary
+    assert route.calls.last.request.headers.get("Authorization") is None
+
+
+@respx.mock
+@pytest.mark.asyncio
 async def test_fetch_raises_on_token_failure(
     tmp_path: Path, monkeypatch: pytest.MonkeyPatch
 ) -> None:
