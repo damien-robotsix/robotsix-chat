@@ -274,10 +274,16 @@ async def test_pinned_404_falls_back_to_per_repo(
         )
     assert token == "ghs_resolved_token"
     # First call: the pinned mint 404s, then the per-repo (owner/repo) path
-    # is used via the public ``mint_installation_token``.
+    # is used via the public ``mint_installation_token``.  The wrapper passes
+    # the App credentials through on every call.
     assert mint_calls == [
-        {"installation_id": "133316919"},
-        {"owner": "damien-robotsix", "repo": "robotsix-chat"},
+        {"app_id": "12345", "private_key": "fake-key", "installation_id": "133316919"},
+        {
+            "app_id": "12345",
+            "private_key": "fake-key",
+            "owner": "damien-robotsix",
+            "repo": "robotsix-chat",
+        },
     ]
     # The warning names the abandoned pinned id.
     assert "133316919" in caplog.text
@@ -290,7 +296,12 @@ async def test_pinned_404_falls_back_to_per_repo(
         settings, owner="damien-robotsix", repo="robotsix-chat"
     )
     assert token2 == "ghs_resolved_token"
-    assert mint_calls[-1] == {"owner": "damien-robotsix", "repo": "robotsix-chat"}
+    assert mint_calls[-1] == {
+        "app_id": "12345",
+        "private_key": "fake-key",
+        "owner": "damien-robotsix",
+        "repo": "robotsix-chat",
+    }
 
 
 # ============================================================================
