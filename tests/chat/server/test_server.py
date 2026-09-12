@@ -91,6 +91,62 @@ async def test_health_endpoint() -> None:
 
 
 # ---------------------------------------------------------------------------
+# OpenAPI schema & versioned API prefix
+# ---------------------------------------------------------------------------
+
+
+@pytest.mark.asyncio
+async def test_openapi_json_endpoint() -> None:
+    """Serve an OpenAPI document covering every route, root and /api/v1.
+
+    The schema is derived from the same route table that registers the
+    handlers, so every endpoint is contract-discoverable.
+    """
+    async with mock_app() as f:
+        response = await f.client.get("/openapi.json")
+
+    assert response.status_code == 200
+    data = response.json()
+    assert data["openapi"] == "3.0.2"
+    paths = data["paths"]
+    # Root paths and their versioned aliases are both documented.
+    assert "/chat" in paths
+    assert "/api/v1/chat" in paths
+    assert "/sessions/{session_id}" in paths
+    assert "/api/v1/sessions/{session_id}" in paths
+    # Path converters are normalized to plain placeholders.
+    assert "/config/versions/{version}" in paths
+    assert "/api/v1/config/versions/{version}" in paths
+    # Ops probes are intentionally root-only.
+    assert "/api/v1/health" not in paths
+    # Operation objects carry a summary.
+    assert paths["/api/v1/chat"]["post"]["summary"]
+
+
+@pytest.mark.asyncio
+async def test_docs_swaggerui_endpoint() -> None:
+    """Serve a SwaggerUI HTML page wired to /openapi.json."""
+    async with mock_app() as f:
+        response = await f.client.get("/docs")
+
+    assert response.status_code == 200
+    assert "text/html" in response.headers["content-type"]
+    assert '"/openapi.json"' in response.text
+    assert "swagger-ui" in response.text
+
+
+@pytest.mark.asyncio
+async def test_versioned_api_prefix_route() -> None:
+    """The stable /api/v1 prefix serves the same handlers as the root paths."""
+    async with mock_app() as f:
+        response = await f.client.get("/api/v1/models")
+
+    assert response.status_code == 200
+    data = response.json()
+    assert "models" in data
+
+
+# ---------------------------------------------------------------------------
 # Chat endpoint — SSE streaming
 # ---------------------------------------------------------------------------
 
