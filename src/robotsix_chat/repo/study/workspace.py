@@ -12,6 +12,7 @@ configured; otherwise only public repositories are reachable.
 
 from __future__ import annotations
 
+import asyncio
 import io
 import json
 import logging
@@ -47,6 +48,53 @@ def _workspace_id(repo: str, ref: str) -> str:
     return f"{owner}--{name}--{ref_part}"
 
 
+async def _github_app_token(
+    dr: DirectRepoSettings,
+    *,
+    owner: str,
+    repo: str,
+) -> str | None:
+    """Mint a GitHub App installation token, or ``None`` on any failure.
+
+    Delegates to robotsix-github-auth's public ``mint_installation_token``,
+    which resolves the installation per repository when no id is pinned
+    (the recommended default) and caches tokens internally.  When an
+    installation id *is* pinned it is used directly, preserving the local
+    helper's behaviour.  Returns ``None`` when credentials are missing or
+    minting fails — the caller decides whether to fall back to an
+    unauthenticated request or surface the error.
+    """
+    if not (dr.github_app_id and dr.github_app_private_key.get_secret_value()):
+        return None
+    from robotsix_github_auth import mint_installation_token
+
+    try:
+        if dr.github_app_installation_id:
+            result = await asyncio.to_thread(
+                mint_installation_token,
+                app_id=dr.github_app_id,
+                private_key=dr.github_app_private_key.get_secret_value(),
+                installation_id=dr.github_app_installation_id,
+            )
+        else:
+            result = await asyncio.to_thread(
+                mint_installation_token,
+                app_id=dr.github_app_id,
+                private_key=dr.github_app_private_key.get_secret_value(),
+                owner=owner,
+                repo=repo,
+            )
+    except Exception as exc:
+        logger.warning(
+            "GitHub App token unavailable for %s/%s: %s",
+            owner,
+            repo,
+            exc,
+        )
+        return None
+    return result.token
+
+
 class WorkspaceError(Exception):
     """A repo-study operation failed; the message is agent-relayable."""
 
@@ -69,15 +117,15 @@ class WorkspaceManager:
     async def _auth_headers(self, repo: str) -> dict[str, str]:
         """GitHub API headers, with an App installation token when configured.
 
-        Uses the shared ``_build_github_app_auth_headers`` helper for the
-        token-minting core, passing ``repo`` so the installation can be
-        resolved per repository (the recommended empty
-        ``github_app_installation_id`` default) just like the direct-repo
-        client.  Returns unauthenticated headers when the App is not
-        configured at all; when it IS configured but the token exchange
-        fails the error is raised so the operator can diagnose a credential
-        or scope issue rather than getting a misleading 404 from an
-        unauthenticated fallback.
+        Mints the token via robotsix-github-auth's public
+        ``mint_installation_token`` (through :func:`_github_app_token`),
+        passing ``repo`` so the installation can be resolved per repository
+        (the recommended empty ``github_app_installation_id`` default) just
+        like the direct-repo client.  Returns unauthenticated headers when
+        the App is not configured at all; when it IS configured but the
+        token exchange fails the error is raised so the operator can
+        diagnose a credential or scope issue rather than getting a
+        misleading 404 from an unauthenticated fallback.
         """
         headers = {
             "Accept": "application/vnd.github+json",
@@ -85,12 +133,8 @@ class WorkspaceManager:
         }
         dr = self._direct_repo
         if dr.github_app_id and dr.github_app_private_key.get_secret_value():
-            from robotsix_chat.common.github_auth import _build_github_app_auth_headers
-
             owner, _, repo_name = repo.partition("/")
-            token = await _build_github_app_auth_headers(
-                dr, "repo_study:", owner=owner, repo=repo_name
-            )
+            token = await _github_app_token(dr, owner=owner, repo=repo_name)
             if token is None and dr.github_app_installation_id:
                 # A pinned installation id was configured but the token
                 # exchange failed — surface it so the operator can diagnose

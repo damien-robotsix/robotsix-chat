@@ -7,6 +7,7 @@ returned as concise strings — nothing raises to the agent loop.
 
 from __future__ import annotations
 
+import asyncio
 import base64
 import json
 import logging
@@ -14,11 +15,55 @@ from typing import Any
 
 import httpx
 
-from robotsix_chat.common.github_auth import _build_github_app_auth_headers
 from robotsix_chat.common.http import safe_http_request
 from robotsix_chat.config import DirectRepoSettings, RefDocsSettings
 
 logger = logging.getLogger(__name__)
+
+
+async def _github_app_token(
+    dr: DirectRepoSettings,
+    *,
+    owner: str,
+    repo: str,
+) -> str | None:
+    """Mint a GitHub App installation token, or ``None`` on any failure.
+
+    Delegates to robotsix-github-auth's public ``mint_installation_token``,
+    which resolves the installation per repository when no id is pinned
+    (the recommended default) and caches tokens internally.  When an
+    installation id *is* pinned it is used directly, preserving the local
+    helper's behaviour.  Returns ``None`` (so the caller falls back to an
+    unauthenticated request) when credentials are missing or minting fails.
+    """
+    if not (dr.github_app_id and dr.github_app_private_key.get_secret_value()):
+        return None
+    from robotsix_github_auth import mint_installation_token
+
+    try:
+        if dr.github_app_installation_id:
+            result = await asyncio.to_thread(
+                mint_installation_token,
+                app_id=dr.github_app_id,
+                private_key=dr.github_app_private_key.get_secret_value(),
+                installation_id=dr.github_app_installation_id,
+            )
+        else:
+            result = await asyncio.to_thread(
+                mint_installation_token,
+                app_id=dr.github_app_id,
+                private_key=dr.github_app_private_key.get_secret_value(),
+                owner=owner,
+                repo=repo,
+            )
+    except Exception as exc:
+        logger.warning(
+            "GitHub App token unavailable, falling back to unauthenticated fetch: %s",
+            exc,
+        )
+        return None
+    return result.token
+
 
 # Truncation guard: returned file content is capped at this many characters.
 # Larger files get a clear truncation marker appended so the model knows the
@@ -141,9 +186,7 @@ class RefDocsClient:
         """
         headers: dict[str, str] = {"Accept": "application/vnd.github+json"}
         owner, _, repo_name = repo.partition("/")
-        token = await _build_github_app_auth_headers(
-            self._dr, "refdocs:", owner=owner, repo=repo_name
-        )
+        token = await _github_app_token(self._dr, owner=owner, repo=repo_name)
         if token:
             headers["Authorization"] = f"Bearer {token}"
         result = await safe_http_request(
