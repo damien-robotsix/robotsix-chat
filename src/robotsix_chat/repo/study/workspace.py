@@ -12,7 +12,6 @@ configured; otherwise only public repositories are reachable.
 
 from __future__ import annotations
 
-import asyncio
 import io
 import json
 import logging
@@ -25,6 +24,8 @@ from typing import TYPE_CHECKING
 from urllib.parse import quote
 
 import httpx
+
+from robotsix_chat.common.github_app_token import github_app_token
 
 if TYPE_CHECKING:
     from robotsix_chat.config import DirectRepoSettings, RepoStudySettings
@@ -46,53 +47,6 @@ def _workspace_id(repo: str, ref: str) -> str:
     owner, name = repo.split("/", 1)
     ref_part = _ID_SANITIZE_RE.sub("-", ref) if ref else "default"
     return f"{owner}--{name}--{ref_part}"
-
-
-async def _github_app_token(
-    dr: DirectRepoSettings,
-    *,
-    owner: str,
-    repo: str,
-) -> str | None:
-    """Mint a GitHub App installation token, or ``None`` on any failure.
-
-    Delegates to robotsix-github-auth's public ``mint_installation_token``,
-    which resolves the installation per repository when no id is pinned
-    (the recommended default) and caches tokens internally.  When an
-    installation id *is* pinned it is used directly, preserving the local
-    helper's behaviour.  Returns ``None`` when credentials are missing or
-    minting fails — the caller decides whether to fall back to an
-    unauthenticated request or surface the error.
-    """
-    if not (dr.github_app_id and dr.github_app_private_key.get_secret_value()):
-        return None
-    from robotsix_github_auth import mint_installation_token
-
-    try:
-        if dr.github_app_installation_id:
-            result = await asyncio.to_thread(
-                mint_installation_token,
-                app_id=dr.github_app_id,
-                private_key=dr.github_app_private_key.get_secret_value(),
-                installation_id=dr.github_app_installation_id,
-            )
-        else:
-            result = await asyncio.to_thread(
-                mint_installation_token,
-                app_id=dr.github_app_id,
-                private_key=dr.github_app_private_key.get_secret_value(),
-                owner=owner,
-                repo=repo,
-            )
-    except Exception as exc:
-        logger.warning(
-            "GitHub App token unavailable for %s/%s: %s",
-            owner,
-            repo,
-            exc,
-        )
-        return None
-    return result.token
 
 
 class WorkspaceError(Exception):
@@ -118,7 +72,7 @@ class WorkspaceManager:
         """GitHub API headers, with an App installation token when configured.
 
         Mints the token via robotsix-github-auth's public
-        ``mint_installation_token`` (through :func:`_github_app_token`),
+        ``mint_installation_token`` (through :func:`github_app_token`),
         passing ``repo`` so the installation can be resolved per repository
         (the recommended empty ``github_app_installation_id`` default) just
         like the direct-repo client.  Returns unauthenticated headers when
@@ -134,7 +88,7 @@ class WorkspaceManager:
         dr = self._direct_repo
         if dr.github_app_id and dr.github_app_private_key.get_secret_value():
             owner, _, repo_name = repo.partition("/")
-            token = await _github_app_token(dr, owner=owner, repo=repo_name)
+            token = await github_app_token(dr, owner=owner, repo=repo_name)
             if token is None and dr.github_app_installation_id:
                 # A pinned installation id was configured but the token
                 # exchange failed — surface it so the operator can diagnose
