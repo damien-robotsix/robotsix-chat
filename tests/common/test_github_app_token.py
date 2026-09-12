@@ -211,7 +211,7 @@ def test_pinned_library_resolves_installation_per_repo(
     else:
         # Pinned rev: the resolver is keyed on (owner, repo) and minting is
         # _mint_token behind an explicit token cache + per-key lock.
-        def _resolver(jwt_token: str, owner: str, repo: str) -> str:
+        def _legacy_resolver(jwt_token: str, owner: str, repo: str) -> str:
             resolved.append(f"{owner}/{repo}")
             return "999"
 
@@ -222,7 +222,7 @@ def test_pinned_library_resolves_installation_per_repo(
                 token="per-repo-token", expires_at=datetime.now(UTC)
             )
 
-        monkeypatch.setattr(_auth, "_resolve_installation_id", _resolver)
+        monkeypatch.setattr(_auth, "_resolve_installation_id", _legacy_resolver)
         monkeypatch.setattr(_auth, "_mint_token", _mint)
         monkeypatch.setattr(
             _auth,
