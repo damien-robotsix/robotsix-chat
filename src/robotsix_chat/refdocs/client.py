@@ -14,11 +14,12 @@ from typing import Any
 
 import httpx
 
-from robotsix_chat.common.github_auth import _build_github_app_auth_headers
+from robotsix_chat.common.github_app_token import github_app_token
 from robotsix_chat.common.http import safe_http_request
 from robotsix_chat.config import DirectRepoSettings, RefDocsSettings
 
 logger = logging.getLogger(__name__)
+
 
 # Truncation guard: returned file content is capped at this many characters.
 # Larger files get a clear truncation marker appended so the model knows the
@@ -141,9 +142,7 @@ class RefDocsClient:
         """
         headers: dict[str, str] = {"Accept": "application/vnd.github+json"}
         owner, _, repo_name = repo.partition("/")
-        token = await _build_github_app_auth_headers(
-            self._dr, "refdocs:", owner=owner, repo=repo_name
-        )
+        token = await github_app_token(self._dr, owner=owner, repo=repo_name)
         if token:
             headers["Authorization"] = f"Bearer {token}"
         result = await safe_http_request(

@@ -271,6 +271,74 @@ async def test_app_token_header_when_configured(
     assert route.calls.last.request.headers["authorization"] == "Bearer app-token-456"
 
 
+@pytest.mark.asyncio
+async def test_app_token_resolves_installation_per_repo_when_no_id_pinned(
+    respx_mock: respx.MockRouter,
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    """Empty installation id: mint_installation_token is called with owner/repo."""
+    route = respx_mock.get(
+        "https://api.github.com/repos/org/my-repo/releases/latest"
+    ).mock(return_value=httpx.Response(200, json={"tag_name": "0.1.0"}))
+
+    import sys
+    from types import SimpleNamespace
+
+    minted: list[tuple[object, object]] = []
+
+    def _fake_mint(**kw: object) -> object:
+        minted.append((kw["owner"], kw["repo"]))
+        return SimpleNamespace(token="per-repo-token")
+
+    fake = SimpleNamespace()
+    fake.mint_installation_token = _fake_mint
+    monkeypatch.setitem(sys.modules, "robotsix_github_auth", fake)
+
+    dr = _direct_repo(
+        github_app_id="12345",
+        github_app_private_key="fake-key",  # pragma: allowlist secret
+        # github_app_installation_id left empty → per-repo resolution
+    )
+    client = VersionCheckClient(_settings(), dr)
+    await client.latest_version()
+
+    assert minted == [("org", "my-repo")]
+    assert route.calls.last.request.headers["authorization"] == "Bearer per-repo-token"
+
+
+@pytest.mark.asyncio
+async def test_app_token_falls_back_unauthenticated_on_mint_failure(
+    respx_mock: respx.MockRouter,
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    """A minting failure falls back to an unauthenticated fetch — never raises."""
+    route = respx_mock.get(
+        "https://api.github.com/repos/org/my-repo/releases/latest"
+    ).mock(return_value=httpx.Response(200, json={"tag_name": "0.1.0"}))
+
+    import sys
+    from types import SimpleNamespace
+
+    def _failing_mint(**kw: object) -> object:
+        raise RuntimeError("no token")
+
+    fake = SimpleNamespace()
+    fake.mint_installation_token = _failing_mint
+    monkeypatch.setitem(sys.modules, "robotsix_github_auth", fake)
+
+    dr = _direct_repo(
+        github_app_id="12345",
+        github_app_private_key="fake-key",  # pragma: allowlist secret
+        github_app_installation_id="67890",
+    )
+    client = VersionCheckClient(_settings(), dr)
+    version, source = await client.latest_version()
+
+    assert version == "0.1.0"
+    assert source == "releases/latest"
+    assert "authorization" not in route.calls.last.request.headers
+
+
 # ---------------------------------------------------------------------------
 # Caching
 # ---------------------------------------------------------------------------

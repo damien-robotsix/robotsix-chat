@@ -127,6 +127,73 @@ async def test_read_file_uses_app_token_when_configured(
 
 
 @pytest.mark.asyncio
+async def test_read_file_resolves_installation_per_repo_when_no_id_pinned(
+    respx_mock: respx.MockRouter,
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    """Empty installation id: mint_installation_token is called with owner/repo."""
+    route = respx_mock.get("https://api.github.com/repos/org/r/contents/f.txt").mock(
+        return_value=httpx.Response(200, json={"content": "YQ==", "encoding": "base64"})
+    )
+
+    import sys
+    from types import SimpleNamespace
+
+    minted: list[tuple[object, object]] = []
+
+    def _fake_mint(**kw: object) -> object:
+        minted.append((kw["owner"], kw["repo"]))
+        return SimpleNamespace(token="per-repo-token")
+
+    fake = SimpleNamespace()
+    fake.mint_installation_token = _fake_mint
+    monkeypatch.setitem(sys.modules, "robotsix_github_auth", fake)
+
+    dr = _direct_repo(
+        github_app_id="12345",
+        github_app_private_key="fake-key",  # pragma: allowlist secret
+        # github_app_installation_id left empty → per-repo resolution
+    )
+    client = RefDocsClient(_settings(repos=["org/r"]), dr)
+    await client.read_file("org/r", "f.txt")
+
+    assert minted == [("org", "r")]
+    assert route.calls.last.request.headers["authorization"] == "Bearer per-repo-token"
+
+
+@pytest.mark.asyncio
+async def test_read_file_falls_back_unauthenticated_on_mint_failure(
+    respx_mock: respx.MockRouter,
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    """A minting failure falls back to an unauthenticated fetch — never raises."""
+    route = respx_mock.get("https://api.github.com/repos/org/r/contents/f.txt").mock(
+        return_value=httpx.Response(200, json={"content": "YQ==", "encoding": "base64"})
+    )
+
+    import sys
+    from types import SimpleNamespace
+
+    def _failing_mint(**kw: object) -> object:
+        raise RuntimeError("no token")
+
+    fake = SimpleNamespace()
+    fake.mint_installation_token = _failing_mint
+    monkeypatch.setitem(sys.modules, "robotsix_github_auth", fake)
+
+    dr = _direct_repo(
+        github_app_id="12345",
+        github_app_private_key="fake-key",  # pragma: allowlist secret
+        github_app_installation_id="67890",
+    )
+    client = RefDocsClient(_settings(repos=["org/r"]), dr)
+    out = await client.read_file("org/r", "f.txt")
+
+    assert out == "a"  # decoded base64 "YQ=="
+    assert "authorization" not in route.calls.last.request.headers
+
+
+@pytest.mark.asyncio
 async def test_read_file_no_token_header_when_empty(
     respx_mock: respx.MockRouter,
 ) -> None:

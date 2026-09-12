@@ -25,6 +25,8 @@ from urllib.parse import quote
 
 import httpx
 
+from robotsix_chat.common.github_app_token import github_app_token
+
 if TYPE_CHECKING:
     from robotsix_chat.config import DirectRepoSettings, RepoStudySettings
 
@@ -69,15 +71,15 @@ class WorkspaceManager:
     async def _auth_headers(self, repo: str) -> dict[str, str]:
         """GitHub API headers, with an App installation token when configured.
 
-        Uses the shared ``_build_github_app_auth_headers`` helper for the
-        token-minting core, passing ``repo`` so the installation can be
-        resolved per repository (the recommended empty
-        ``github_app_installation_id`` default) just like the direct-repo
-        client.  Returns unauthenticated headers when the App is not
-        configured at all; when it IS configured but the token exchange
-        fails the error is raised so the operator can diagnose a credential
-        or scope issue rather than getting a misleading 404 from an
-        unauthenticated fallback.
+        Mints the token via robotsix-github-auth's public
+        ``mint_installation_token`` (through :func:`github_app_token`),
+        passing ``repo`` so the installation can be resolved per repository
+        (the recommended empty ``github_app_installation_id`` default) just
+        like the direct-repo client.  Returns unauthenticated headers when
+        the App is not configured at all; when it IS configured but the
+        token exchange fails the error is raised so the operator can
+        diagnose a credential or scope issue rather than getting a
+        misleading 404 from an unauthenticated fallback.
         """
         headers = {
             "Accept": "application/vnd.github+json",
@@ -85,12 +87,8 @@ class WorkspaceManager:
         }
         dr = self._direct_repo
         if dr.github_app_id and dr.github_app_private_key.get_secret_value():
-            from robotsix_chat.common.github_auth import _build_github_app_auth_headers
-
             owner, _, repo_name = repo.partition("/")
-            token = await _build_github_app_auth_headers(
-                dr, "repo_study:", owner=owner, repo=repo_name
-            )
+            token = await github_app_token(dr, owner=owner, repo=repo_name)
             if token is None and dr.github_app_installation_id:
                 # A pinned installation id was configured but the token
                 # exchange failed — surface it so the operator can diagnose

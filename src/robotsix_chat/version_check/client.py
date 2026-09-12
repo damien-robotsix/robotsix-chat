@@ -13,7 +13,7 @@ import logging
 import time
 from typing import Any
 
-from robotsix_chat.common.github_auth import _build_github_app_auth_headers
+from robotsix_chat.common.github_app_token import github_app_token
 from robotsix_chat.common.http import safe_http_request
 from robotsix_chat.config import DirectRepoSettings, VersionCheckSettings
 
@@ -130,9 +130,7 @@ class VersionCheckClient:
             "Accept": "application/vnd.github+json",
         }
         owner, _, repo_name = self._s.repo.partition("/")
-        token = await _build_github_app_auth_headers(
-            self._dr, "version_check:", owner=owner, repo=repo_name
-        )
+        token = await github_app_token(self._dr, owner=owner, repo=repo_name)
         if token:
             headers["Authorization"] = f"Bearer {token}"
 
