@@ -98,6 +98,7 @@ async def test_helper_returns_none_on_mint_failure(
     monkeypatch: pytest.MonkeyPatch,
 ) -> None:
     """A minting failure becomes ``None`` — the helper never raises."""
+
     def _failing_mint(**kw: object) -> object:
         raise RuntimeError("no token")
 
@@ -148,7 +149,9 @@ def test_pinned_library_requires_owner_repo_when_no_installation_id() -> None:
     from robotsix_github_auth import TokenMintError
 
     with pytest.raises(TokenMintError, match="owner and repo"):
-        real.mint_installation_token(app_id="12345", private_key="fake-key")  # pragma: allowlist secret
+        real.mint_installation_token(
+            app_id="12345", private_key="fake-key"
+        )  # pragma: allowlist secret
 
 
 def test_pinned_library_accepts_owner_repo_kwargs() -> None:
@@ -196,8 +199,12 @@ def test_pinned_library_resolves_installation_per_repo(
             resolved.append(repo_full_name)
             return "999"
 
-        def _mint(jwt_token: str, resolved_id: str, scopes: object = None) -> InstallationToken:
-            return InstallationToken(token="per-repo-token", expires_at=datetime.now(UTC))
+        def _mint(
+            jwt_token: str, resolved_id: str, scopes: object = None
+        ) -> InstallationToken:
+            return InstallationToken(
+                token="per-repo-token", expires_at=datetime.now(UTC)
+            )
 
         monkeypatch.setattr(_auth, "_resolve_installation_id_for_repo", _resolver)
         monkeypatch.setattr(_auth, "_mint_with_cache", _mint)
@@ -208,8 +215,12 @@ def test_pinned_library_resolves_installation_per_repo(
             resolved.append(f"{owner}/{repo}")
             return "999"
 
-        def _mint(jwt_token: str, resolved_id: str, scopes: object = None) -> InstallationToken:
-            return InstallationToken(token="per-repo-token", expires_at=datetime.now(UTC))
+        def _mint(
+            jwt_token: str, resolved_id: str, scopes: object = None
+        ) -> InstallationToken:
+            return InstallationToken(
+                token="per-repo-token", expires_at=datetime.now(UTC)
+            )
 
         monkeypatch.setattr(_auth, "_resolve_installation_id", _resolver)
         monkeypatch.setattr(_auth, "_mint_token", _mint)
@@ -219,7 +230,9 @@ def test_pinned_library_resolves_installation_per_repo(
             SimpleNamespace(get=lambda *a: None, put=lambda *a: None),
         )
         monkeypatch.setattr(
-            _auth, "_acquire_mint_lock", lambda key: SimpleNamespace(release=lambda: None)
+            _auth,
+            "_acquire_mint_lock",
+            lambda key: SimpleNamespace(release=lambda: None),
         )
 
     token = real.mint_installation_token(
