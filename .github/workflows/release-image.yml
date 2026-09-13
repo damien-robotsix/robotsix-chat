@@ -193,5 +193,6 @@ jobs:
         env:
           COSIGN_YES: "true"
           DIGEST: ${{ steps.push.outputs.digest }}
+          REPOSITORY: ${{ github.repository }}
         run: |
-          cosign sign --recursive "ghcr.io/${{ github.repository }}@${DIGEST}"
+          cosign sign --recursive "ghcr.io/${REPOSITORY}@${DIGEST}"
