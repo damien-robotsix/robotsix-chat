@@ -98,6 +98,7 @@ dev = [
     "pytest-asyncio",
     "pytest-benchmark",
     "pytest-cov",
+    "pytest-randomly",
     "pytest-xdist[psutil]",
     "respx",
     "robotsix-modules",
