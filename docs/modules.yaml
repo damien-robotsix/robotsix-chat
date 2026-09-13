@@ -90,6 +90,7 @@ modules:
       - .markdownlintignore
       - .pre-commit-config.yaml
       - .python-version
+      - .trivyignore
       - .trufflehog.yaml
       - AGENT.md
       - CHANGELOG.md

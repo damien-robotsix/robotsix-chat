@@ -5,7 +5,7 @@
 # system interpreter (/usr/local), exactly what the runtime stage copies.
 # Standard robotsix Dockerfile pattern — see robotsix-standards, docker page.
 # ---------------------------------------------------------------------------
-FROM python:3.14-slim@sha256:83ff1d245a3d57d04152252d3ef9cb361494d0b3395abd65a5ebe91c401c8e83 AS builder
+FROM python:3.14-slim@sha256:cad9a2c871761c413caa6fdd6441c783451e740a48aaeba60ae62a8b53525ef6 AS builder
 
 SHELL ["/bin/bash", "-o", "pipefail", "-c"]
 
@@ -69,7 +69,7 @@ RUN apk add --no-cache git && \
 # builder — no uv, no git, no compilers. Node.js + the claude CLI are the one
 # genuine runtime system dependency (claude-sdk transport spawns the CLI).
 # ---------------------------------------------------------------------------
-FROM python:3.14-slim@sha256:83ff1d245a3d57d04152252d3ef9cb361494d0b3395abd65a5ebe91c401c8e83 AS runtime
+FROM python:3.14-slim@sha256:cad9a2c871761c413caa6fdd6441c783451e740a48aaeba60ae62a8b53525ef6 AS runtime
 
 SHELL ["/bin/bash", "-o", "pipefail", "-c"]
 
@@ -99,6 +99,13 @@ RUN rm -rf /usr/local/lib/python3.14/site-packages/pip \
 # (one source package, three binaries — all three must move together or the
 # scan still flags the laggard) covers CVE-2026-14456: the base image ships
 # 3.5.6-1~deb13u2, trixie-security has 3.5.7-1~deb13u2.
+# perl-base and libsqlite3-0 are likewise upgraded to their +deb13u* update
+# builds to clear the Trivy findings the base image still carries at the older
+# trixie/main versions. libpcre2-8-0, libc6, libc-bin and gzip are NOT listed
+# here: their base builds use a `-` separator (e.g. 2.41-12+deb13u3), so an
+# `X.YZ.*` version glob never matches and apt-get aborts the build with
+# "Version ... not found"; their CVEs are handled via .trivyignore until the
+# patched builds land in the trixie apt mirror.
 RUN apt-get update \
     && apt-get install --only-upgrade -y --no-install-recommends \
         liblzma5="5.8.*" \
@@ -110,6 +117,8 @@ RUN apt-get update \
         libssl3t64="3.5.*" \
         openssl="3.5.*" \
         openssl-provider-legacy="3.5.*" \
+        perl-base="5.40.*" \
+        libsqlite3-0="3.46.*" \
     && apt-get install -y --no-install-recommends curl="8.*" gnupg="2.*" \
     && mkdir -p /etc/apt/keyrings \
     && curl -fsSL https://deb.nodesource.com/gpgkey/nodesource-repo.gpg.key \
