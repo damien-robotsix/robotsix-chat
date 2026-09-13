@@ -99,6 +99,9 @@ RUN rm -rf /usr/local/lib/python3.14/site-packages/pip \
 # (one source package, three binaries — all three must move together or the
 # scan still flags the laggard) covers CVE-2026-14456: the base image ships
 # 3.5.6-1~deb13u2, trixie-security has 3.5.7-1~deb13u2.
+# perl-base, libsqlite3-0, libpcre2-8-0, libc6, libc-bin and gzip are likewise
+# upgraded to their +deb13u* update builds to clear the Trivy findings the base
+# image still carries at the older trixie/main versions.
 RUN apt-get update \
     && apt-get install --only-upgrade -y --no-install-recommends \
         liblzma5="5.8.*" \
@@ -110,6 +113,12 @@ RUN apt-get update \
         libssl3t64="3.5.*" \
         openssl="3.5.*" \
         openssl-provider-legacy="3.5.*" \
+        perl-base="5.40.*" \
+        libsqlite3-0="3.46.*" \
+        libpcre2-8-0="10.46.*" \
+        libc6="2.41.*" \
+        libc-bin="2.41.*" \
+        gzip="1.13.*" \
     && apt-get install -y --no-install-recommends curl="8.*" gnupg="2.*" \
     && mkdir -p /etc/apt/keyrings \
     && curl -fsSL https://deb.nodesource.com/gpgkey/nodesource-repo.gpg.key \
