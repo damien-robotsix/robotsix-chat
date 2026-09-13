@@ -294,6 +294,10 @@ jobs:
           ignore-unfixed: true
           exit-code: 1
           vuln-type: os,library
+          # Explicitly point trivy-action at the committed .trivyignore.
+          # The action only exports TRIVY_IGNOREFILE when trivyignores is set;
+          # without it the justified base-image CVE suppressions are not applied.
+          trivyignores: .trivyignore
       - name: Trivy scan (SARIF for code-scanning)
         if: always()
         uses: aquasecurity/trivy-action@ed142fd0673e97e23eac54620cfb913e5ce36c25  # v0.36.0
@@ -303,6 +307,7 @@ jobs:
           output: trivy-ci-results.sarif
           ignore-unfixed: true
           vuln-type: os,library
+          trivyignores: .trivyignore
       - name: Upload SARIF
         uses: github/codeql-action/upload-sarif@cdf488f595d80d6e07e03d4674febd5ab45fa938  # v4.37.9
         if: always()
