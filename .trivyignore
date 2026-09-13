@@ -1,0 +1,50 @@
+# Trivy ignore list for base-image (python:3.14-slim / Debian trixie) OS
+# package CVEs whose fixed +deb13uN builds are ASSIGNED in the Debian security
+# tracker (so Trivy's DB reports "Fixed Version: ...") but are NOT yet published
+# to the trixie / trixie-security apt mirror. The runtime stage already runs
+# `apt-get install --only-upgrade <pkg>=<glob>` for each of these packages, but
+# the glob matches only the currently-installed (still-vulnerable) build, so the
+# upgrade is a no-op until Debian actually pushes the patched .deb. Once the
+# fixed builds land in the mirror, the apt --only-upgrade lines in the Dockerfile
+# pull them automatically and these entries become redundant (revisit on the
+# next base-image digest bump).
+#
+# justification: fixed package build not yet available in the Debian trixie apt
+# mirror; upgrade is applied automatically once published. Base-image debt, not
+# a code vulnerability in this component.
+
+# perl-base 5.40.1-6 -> 5.40.1-6+deb13u1
+CVE-2026-8376
+CVE-2026-42496
+CVE-2026-13221
+CVE-2026-57433
+CVE-2026-57432
+CVE-2026-48962
+CVE-2026-42497
+CVE-2026-48961
+CVE-2026-48959
+CVE-2026-12087
+CVE-2026-7017
+CVE-2026-7010
+CVE-2025-15649
+
+# libsqlite3-0 3.46.1-7+deb13u1 -> 3.46.1-7+deb13u2
+CVE-2026-11824
+CVE-2026-11822
+
+# libpcre2-8-0 10.46-1~deb13u1 -> 10.46-1~deb13u2
+CVE-2026-89161
+CVE-2026-86145
+CVE-2026-89158
+CVE-2026-89157
+CVE-2026-89162
+CVE-2026-89160
+CVE-2026-89156
+
+# libc6 / libc-bin 2.41-12+deb13u3 -> 2.41-12+deb13u4
+CVE-2026-5928
+CVE-2026-5450
+
+# gzip 1.13-1 -> 1.13-1+deb13u1
+CVE-2026-41992
+CVE-2026-41991
