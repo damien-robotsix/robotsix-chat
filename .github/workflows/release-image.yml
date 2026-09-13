@@ -195,4 +195,4 @@ jobs:
           DIGEST: ${{ steps.push.outputs.digest }}
           REPOSITORY: ${{ github.repository }}
         run: |
-          cosign sign --recursive "ghcr.io/${REPOSITORY}@${DIGEST}"
+          cosign sign "ghcr.io/${REPOSITORY}@${DIGEST}"
