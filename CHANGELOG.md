@@ -69,6 +69,13 @@ Everything below predates the release-please migration and was
 maintained by hand or by towncrier. It is kept verbatim; new entries
 are added above by release-please.
 
+## [0.23.1](https://github.com/damien-robotsix/robotsix-chat/compare/v0.23.0...v0.23.1) (2026-09-13)
+
+
+### Bug Fixes
+
+* ci_fix: out-of-scope CI failure — CodeQL code-scanning, All CI checks passed, Container image scan (Trivy) (20260913T094620Z-ci-fix-out-of-scope-ci-failure-codeql-co-c983) ([#1950](https://github.com/damien-robotsix/robotsix-chat/issues/1950)) ([75b82e2](https://github.com/damien-robotsix/robotsix-chat/commit/75b82e28e7cd22b0e8e66fe0b2b05d9f411dd181))
+
 ## [0.23.0](https://github.com/damien-robotsix/robotsix-chat/compare/v0.22.1...v0.23.0) (2026-09-11)
 
 
