@@ -89,6 +89,21 @@ class _FakeSubsessionRegistry:
         return [i for i in self._infos if i.owner_session_id == owner_session_id]
 
 
+class _FakeConversationStore:
+    """Stub :class:`ConversationStore` — only ``get_session`` is exercised.
+
+    Sessions whose ids are in *present* are reported as still existing; every
+    other id is reported absent (``None``), mirroring a deleted session.
+    """
+
+    def __init__(self, present: set[str] | None = None) -> None:
+        self._present: set[str] = present or set()
+
+    def get_session(self, session_id: str) -> object | None:
+        """Return a sentinel when the session exists, else ``None``."""
+        return object() if session_id in self._present else None
+
+
 def _make_info(
     id: str = "ss-1",
     *,
@@ -122,6 +137,8 @@ def _make_runner(
     *,
     subsession_registry: Any = None,
     subsession_spawner: Any = None,
+    conversation_store: Any = None,
+    knowledge_store: Any = None,
 ) -> FeedbackRunner:
     """Build a :class:`FeedbackRunner` with fakes; typed as the real class.
 
@@ -133,6 +150,8 @@ def _make_runner(
         agent or _FakeAgent(),  # type: ignore[arg-type]
         subsession_registry=subsession_registry,
         subsession_spawner=subsession_spawner,
+        conversation_store=conversation_store,
+        knowledge_store=knowledge_store,
     )
 
 
@@ -784,7 +803,7 @@ class TestFileTickets:
     async def test_returns_zero_when_board_url_empty(self) -> None:
         """An empty board URL short-circuits and returns (0, 0)."""
         runner = _make_runner(_settings(board_url=""))
-        filed, failed, _routed = await runner._file_tickets(
+        filed, failed, _routed, _dropped = await runner._file_tickets(
             [
                 {
                     "title": "T",
@@ -850,7 +869,7 @@ class TestFileTickets:
                 "target_repo": "robotsix-chat",
             },
         ]
-        filed, failed, _routed = await runner._file_tickets(
+        filed, failed, _routed, _dropped = await runner._file_tickets(
             tickets, trigger_type="compaction", session_id="sess-1"
         )
         assert filed == 2
@@ -933,7 +952,7 @@ class TestFileTickets:
         )
         runner = _make_runner()
         with caplog.at_level(logging.WARNING):
-            filed, failed, _routed = await runner._file_tickets(
+            filed, failed, _routed, _dropped = await runner._file_tickets(
                 [
                     {
                         "title": "T",
@@ -973,7 +992,7 @@ class TestFileTickets:
         spawner = MagicMock(return_value="ss-routed-1")
         runner = _make_runner(subsession_spawner=spawner)
         with caplog.at_level(logging.INFO):
-            filed, failed, routed = await runner._file_tickets(
+            filed, failed, routed, _dropped = await runner._file_tickets(
                 [
                     {
                         "title": "Add PATCH endpoint to enable "
@@ -1016,7 +1035,7 @@ class TestFileTickets:
         )
         runner = _make_runner()  # no spawner
         with caplog.at_level(logging.WARNING):
-            filed, failed, routed = await runner._file_tickets(
+            filed, failed, routed, _dropped = await runner._file_tickets(
                 [
                     {
                         "title": "T",
@@ -1051,7 +1070,7 @@ class TestFileTickets:
         )
         runner = _make_runner()
         with caplog.at_level(logging.WARNING):
-            filed, failed, _routed = await runner._file_tickets(
+            filed, failed, _routed, _dropped = await runner._file_tickets(
                 [
                     {
                         "title": "Ghost ticket",
@@ -1087,7 +1106,7 @@ class TestFileTickets:
         )
         runner = _make_runner()
         with caplog.at_level(logging.WARNING):
-            filed, failed, _routed = await runner._file_tickets(
+            filed, failed, _routed, _dropped = await runner._file_tickets(
                 [
                     {
                         "title": "Network flake",
@@ -1114,7 +1133,7 @@ class TestFileTickets:
         )
         runner = _make_runner()
         with caplog.at_level(logging.WARNING):
-            filed, failed, _routed = await runner._file_tickets(
+            filed, failed, _routed, _dropped = await runner._file_tickets(
                 [
                     {
                         "title": "HTML ticket",
@@ -1143,7 +1162,7 @@ class TestFileTickets:
         # ingest_max_retries=0 → a single attempt, no backoff sleep.
         runner = _make_runner(_settings(ingest_max_retries=0))
         with caplog.at_level(logging.ERROR):
-            filed, failed, _routed = await runner._file_tickets(
+            filed, failed, _routed, _dropped = await runner._file_tickets(
                 [
                     {
                         "title": "T",
@@ -1187,7 +1206,7 @@ class TestFileTickets:
             "robotsix_chat.feedback.runner.asyncio.sleep",
             new_callable=AsyncMock,
         ) as sleep_mock:
-            filed, failed, _routed = await runner._file_tickets(
+            filed, failed, _routed, _dropped = await runner._file_tickets(
                 [
                     {
                         "title": "Fix X",
@@ -1242,7 +1261,7 @@ class TestFileTickets:
             ) as sleep_mock,
             caplog.at_level(logging.INFO),
         ):
-            filed, failed, _routed = await runner._file_tickets(
+            filed, failed, _routed, _dropped = await runner._file_tickets(
                 [
                     {
                         "title": "Fix X",
@@ -1271,7 +1290,7 @@ class TestFileTickets:
             return_value=httpx.Response(201)
         )
         runner = _make_runner(_settings())
-        filed, failed, _routed = await runner._file_tickets(
+        filed, failed, _routed, _dropped = await runner._file_tickets(
             [
                 {
                     "title": "Fix mill bug",
@@ -1307,7 +1326,7 @@ class TestFileTickets:
             "robotsix_chat.feedback.runner.start_span",
             return_value=fake_span,
         ):
-            filed, failed, _routed = await runner._file_tickets(
+            filed, failed, _routed, _dropped = await runner._file_tickets(
                 [
                     {
                         "title": "T",
@@ -1346,7 +1365,7 @@ class TestFileTickets:
             "robotsix_chat.feedback.runner.start_span",
             return_value=fake_span,
         ):
-            filed, failed, _routed = await runner._file_tickets(
+            filed, failed, _routed, _dropped = await runner._file_tickets(
                 [
                     {
                         "title": "T",
@@ -1382,7 +1401,7 @@ class TestFileTickets:
             "robotsix_chat.feedback.runner.start_span",
             return_value=fake_span,
         ):
-            filed, failed, _routed = await runner._file_tickets(
+            filed, failed, _routed, _dropped = await runner._file_tickets(
                 [
                     {
                         "title": "T",
@@ -1414,7 +1433,7 @@ class TestFileTickets:
             "kind": "code",
             "target_repo": "robotsix-chat",
         }
-        filed, failed, _routed = await runner._file_tickets(
+        filed, failed, _routed, _dropped = await runner._file_tickets(
             [ticket, ticket],
             trigger_type="compaction",
             session_id="s1",
@@ -1447,7 +1466,7 @@ class TestFileTickets:
                 "target_repo": "robotsix-chat",
             },
         ]
-        filed, failed, _routed = await runner._file_tickets(
+        filed, failed, _routed, _dropped = await runner._file_tickets(
             tickets, trigger_type="compaction", session_id="s1"
         )
         assert filed == 2  # dedup returns True
@@ -1469,7 +1488,7 @@ class TestFileTickets:
             "kind": "code",
             "target_repo": "robotsix-chat",
         }
-        filed, failed, _routed = await runner._file_tickets(
+        filed, failed, _routed, _dropped = await runner._file_tickets(
             [ticket, ticket],
             trigger_type="compaction",
             session_id="s1",
@@ -1573,6 +1592,90 @@ class TestRun:
         runner = _make_runner(agent=agent, subsession_registry=registry)
         await runner._run("compaction", "sess-1", [("q", "a")])
         assert "work done" in (agent.called_with or "")
+
+    @pytest.mark.asyncio
+    async def test_deleted_owner_session_end_parks_finding_instead_of_routing(
+        self,
+        respx_mock: respx.MockRouter,
+        caplog: pytest.LogCaptureFixture,
+        tmp_path: Any,
+    ) -> None:
+        """A ``session_end`` run for a deleted owner does not spawn a subsession.
+
+        Mirrors the real shape (operator deletes a session, then its
+        ``session_end`` feedback run surfaces a finding the board rejects with
+        its admission policy).  Because the owner conversation no longer
+        exists, the finding must NOT be routed to an orphan investigation
+        subsession; instead it is parked as a knowledge note for a later
+        periodic review.
+        """
+        from robotsix_chat.knowledge.store import KnowledgeStore
+
+        policy_detail = (
+            "source_tag robotsix-chat-feedback is not admitted on this board: "
+            "mill admits deployment tickets only. Run this investigation as a "
+            "chat subsession agent instead of filing a ticket."
+        )
+        respx_mock.post("http://test-board/tickets/ingest").mock(
+            return_value=httpx.Response(400, json={"detail": policy_detail})
+        )
+        agent = _FakeAgent(tokens=[_ticket_json()])
+        spawner = MagicMock(return_value="ss-should-not-happen")
+        knowledge_store = KnowledgeStore(path=str(tmp_path / "knowledge.json"))
+        # The fake store reports the owner session as absent (deleted).
+        conversation_store = _FakeConversationStore(present=set())
+        runner = _make_runner(
+            agent=agent,
+            subsession_spawner=spawner,
+            conversation_store=conversation_store,
+            knowledge_store=knowledge_store,
+        )
+
+        with caplog.at_level(logging.INFO):
+            await runner._run("session_end", "deleted-sess", [("hi", "hello")])
+
+        # The spawner was NOT called — no orphan investigation.
+        spawner.assert_not_called()
+        assert (
+            "Feedback finding not routed - owner session deleted-sess deleted"
+            in caplog.text
+        )
+        # The dropped finding is reflected in the summary line.
+        assert "dropped=1" in caplog.text
+
+        # The finding was parked as a single knowledge note.
+        notes = knowledge_store.list(topic="feedback-orphan-findings")
+        assert len(notes) == 1
+        payload = json.loads(notes[0].content)
+        assert len(payload["findings"]) == 1
+        assert payload["findings"][0]["title"] == "Fix X"
+        assert payload["findings"][0]["session_id"] == "deleted-sess"
+
+    @pytest.mark.asyncio
+    async def test_closed_but_present_owner_still_routes(
+        self,
+        respx_mock: respx.MockRouter,
+    ) -> None:
+        """A closed-but-present owner session still routes (non-goal guard)."""
+        policy_detail = (
+            "source_tag robotsix-chat-feedback is not admitted on this board: "
+            "mill admits deployment tickets only. Run this investigation as a "
+            "chat subsession agent instead of filing a ticket."
+        )
+        respx_mock.post("http://test-board/tickets/ingest").mock(
+            return_value=httpx.Response(400, json={"detail": policy_detail})
+        )
+        agent = _FakeAgent(tokens=[_ticket_json()])
+        spawner = MagicMock(return_value="ss-routed-1")
+        # Owner session still present in the store (merely closed).
+        conversation_store = _FakeConversationStore(present={"closed-sess"})
+        runner = _make_runner(
+            agent=agent,
+            subsession_spawner=spawner,
+            conversation_store=conversation_store,
+        )
+        await runner._run("session_end", "closed-sess", [("hi", "hello")])
+        spawner.assert_called_once()
 
 
 # ===========================================================================
@@ -1765,12 +1868,13 @@ def test_stamp_outcome_sets_attributes() -> None:
         "robotsix_chat.feedback.runner.get_recording_span",
         return_value=fake_span,
     ):
-        FeedbackRunner._stamp_outcome(filed=3, total=5, failed=2, routed=1)
+        FeedbackRunner._stamp_outcome(filed=3, total=5, failed=2, routed=1, dropped=1)
 
-    assert fake_span.set_attribute.call_count == 4
+    assert fake_span.set_attribute.call_count == 5
     fake_span.set_attribute.assert_any_call("feedback.filed_tickets", 3)
     fake_span.set_attribute.assert_any_call("feedback.failed_tickets", 2)
     fake_span.set_attribute.assert_any_call("feedback.routed_tickets", 1)
+    fake_span.set_attribute.assert_any_call("feedback.dropped_tickets", 1)
     fake_span.set_attribute.assert_any_call("feedback.total_tickets", 5)
 
 
@@ -1872,7 +1976,7 @@ class TestMaxTicketsPerRun:
             return_value=httpx.Response(201)
         )
         runner = _make_runner(_settings(max_tickets_per_run=3))
-        filed, failed, _routed = await runner._file_tickets(
+        filed, failed, _routed, _dropped = await runner._file_tickets(
             _tickets(9), trigger_type="compaction", session_id="s1"
         )
         assert (filed, failed) == (3, 0)
@@ -1907,7 +2011,7 @@ class TestMaxTicketsPerRun:
         )
         runner = _make_runner(_settings(max_tickets_per_run=3))
         with caplog.at_level(logging.WARNING):
-            filed, _, _ = await runner._file_tickets(
+            filed, _, _, _ = await runner._file_tickets(
                 _tickets(2), trigger_type="session_end", session_id="s1"
             )
         assert filed == 2
@@ -1921,7 +2025,7 @@ class TestMaxTicketsPerRun:
             return_value=httpx.Response(201)
         )
         runner = _make_runner(_settings(max_tickets_per_run=0))
-        filed, failed, _routed = await runner._file_tickets(
+        filed, failed, _routed, _dropped = await runner._file_tickets(
             _tickets(4), trigger_type="compaction", session_id="s1"
         )
         assert (filed, failed) == (0, 0)

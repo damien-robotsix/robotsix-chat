@@ -445,6 +445,29 @@ the feedback run never auto-approves. Disabled by default.
 
 Both caches are in-process only (no persistence), so a server restart resets them.
 
+#### Policy-blocked findings and deleted owner sessions
+
+The board no longer admits feedback findings as ingest tickets; it answers `POST /tickets/ingest`
+with an admission-policy `HTTP 400` and instructs the runner to investigate the finding as a chat
+subsession agent instead. The runner normally **routes** such a finding to a one-shot investigation
+subsession owned by the originating chat session, which reports its summary back to that
+conversation.
+
+When the owner session has been **deleted** (e.g. `DELETE /sessions/{id}` — the feedback run is
+still scheduled from the deletion, but the conversation is gone), routing would spawn an orphan
+investigation whose summary is delivered to a conversation that no longer exists — reaching nobody,
+while consuming a scarce subsession pool slot. To prevent that, before spawning the runner checks
+whether the owner session still exists in the conversation store:
+
+1. **Owner still present** (open, or closed via `POST /sessions/{id}/close`, or a compaction
+   trigger) — the finding is routed as before; the parent conversation is still there to receive the
+   result.
+1. **Owner deleted / evicted** — the finding is **not** routed. The runner logs one INFO line per
+   finding (`Feedback finding not routed - owner session <id> deleted`), counts it under the
+   `dropped=` field of the `Feedback run complete` summary line, and parks it as a single knowledge
+   note (topic `feedback-orphan-findings`, one entry of title + body per finding, capped at the most
+   recent 50) so a later periodic review can still read it. The finding is never silently lost.
+
 #### Observability (Langfuse traces)
 
 Each feedback run produces a named Langfuse trace (`feedback-{trigger}`) tagged `feedback` and
