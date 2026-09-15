@@ -246,6 +246,13 @@ _UNSEEN_MESSAGES_NOTE_HEADER = (
     "turn and may not have been seen by the assistant yet:]"
 )
 
+# System message injected into the parent conversation when a waiting
+# user_chat resumes, to alert the operator of the pending decision.
+DECISION_PENDING_ALERT_TEMPLATE = (
+    "[System notice: subsession '{title}' is waiting for your input. "
+    "Your pending decision or response is ready for you to provide.]"
+)
+
 
 def _strip_restart_notes(prompt: str) -> str:
     """Return *prompt* without any resume-appended system notes.
@@ -398,41 +405,26 @@ def _resume_periodic_entry(
         return None
 
     checkpoint = _rebuild_checkpoint(entry)
-    completed_runs = _rebuild_completed_runs(entry)
-    runs = max(completed_runs) if completed_runs else _entry_int(entry, "runs")
+    common = _entry_to_common_kwargs(entry)
     dedup_key = _entry_opt_str(entry, "dedup_key")
     retry_count = _entry_retry_count(entry)
     spawn_subsession(
         env=env,
         kind=SubsessionKind.PERIODIC,
         owner_session_id=owner,
-        **_entry_to_common_kwargs(entry),
-        max_runs=_entry_opt_int(entry, "max_runs"),
+        **common,
         sub_id=sub_id,
-        runs=runs,
-        completed_runs=completed_runs,
-        turn_history=_rebuild_turn_history(entry),
         checkpoint=checkpoint,
         dedup_key=dedup_key,
         retry_count=retry_count,
-        inbox=_rebuild_inbox(entry),
     )
-    # Restore PAUSED state so the worker enters the wait loop instead of
-    # running an agent turn on a subsession that was auto-paused.
-    if original_status == "paused":
-        info = env.registry.get(sub_id)
-        if info is not None and info.status is SubsessionStatus.RUNNING:
-            info.status = SubsessionStatus.PAUSED
-            info.close_reason = _entry_opt_str(entry, "close_reason") or "paused"
-            info.summary = _entry_opt_str(entry, "summary")
-            env.registry.persist()
     return _ResumeFate(
         owner_session_id=owner,
         sub_id=sub_id,
         kind="periodic",
         title=title,
         fate="resumed",
-        detail="Will continue ticking on its normal schedule.",
+        detail="Resumed — polling continues from the last checkpoint.",
     )
 
 
@@ -443,33 +435,25 @@ def _resume_wait_for_event_entry(
     owner: str,
     title: str,
     *,
-    original_status: str = "",  # noqa: ARG001
+    original_status: str = "",
 ) -> _ResumeFate | None:
     """Respawn a wait_for_event subsession under its original id."""
     if _handle_terminal_on_resume(env, entry, sub_id):
         return None
 
     checkpoint = _rebuild_checkpoint(entry)
-    completed_runs = _rebuild_completed_runs(entry)
-    runs = max(completed_runs) if completed_runs else _entry_int(entry, "runs")
+    common = _entry_to_common_kwargs(entry)
     dedup_key = _entry_opt_str(entry, "dedup_key")
     retry_count = _entry_retry_count(entry)
-    event_timeout_seconds = _entry_opt_float(entry, "event_timeout_seconds")
     spawn_subsession(
         env=env,
         kind=SubsessionKind.WAIT_FOR_EVENT,
         owner_session_id=owner,
-        **_entry_to_common_kwargs(entry),
-        max_runs=_entry_opt_int(entry, "max_runs"),
+        **common,
         sub_id=sub_id,
-        runs=runs,
-        completed_runs=completed_runs,
-        turn_history=_rebuild_turn_history(entry),
         checkpoint=checkpoint,
         dedup_key=dedup_key,
         retry_count=retry_count,
-        event_timeout_seconds=event_timeout_seconds,
-        inbox=_rebuild_inbox(entry),
     )
     return _ResumeFate(
         owner_session_id=owner,
@@ -477,7 +461,7 @@ def _resume_wait_for_event_entry(
         kind="wait_for_event",
         title=title,
         fate="resumed",
-        detail="Will wait for the next ticket state-change event.",
+        detail="Resumed — waiting for the monitored ticket to update.",
     )
 
 
@@ -543,6 +527,16 @@ def _resume_user_chat_entry(
                 )
             ]
         env.registry.restore_transcript(sub_id, transcript)
+        
+        # Alert the parent conversation that a pending decision awaits.
+        # This ensures the operator is notified even if they haven't looked
+        # at the subsession panel since the restart.
+        alert_msg = DECISION_PENDING_ALERT_TEMPLATE.format(title=title or "(untitled)")
+        # Only inject if it's not already in the conversation history.
+        history = env.conversation_store.history(owner)
+        if not any(alert_msg in turn[0] for turn in history):
+            env.conversation_store.record_for_session(owner, alert_msg, "")
+        
         return _ResumeFate(
             owner_session_id=owner,
             sub_id=sub_id,
