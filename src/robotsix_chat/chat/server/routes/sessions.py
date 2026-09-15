@@ -53,16 +53,80 @@ def _app_tier_config(request: Request) -> Any:
         return None
 
 
-def _cleanup_session(session_id: str, request: Request) -> int:
+def _cleanup_session(session_id: str, app: Any) -> int:
     """Close every subsession owned by *session_id* (best-effort).
 
     Returns the number of subsessions closed; ``0`` when the subsession
-    registry is not wired.
+    registry is not wired.  *app* is the Starlette application (its
+    ``state`` carries the registry).
     """
-    registry: SubsessionRegistry | None = request.app.state.subsession_registry
+    registry: SubsessionRegistry | None = app.state.subsession_registry
     if registry is None:
         return 0
     return registry.close_all_for_owner(session_id, reason=OWNER_CLOSED_REASON)
+
+
+async def close_session_fully(
+    app: Any, owner_id: str, session_id: str
+) -> dict[str, object]:
+    """Close *session_id* for *owner_id* with every side effect of the UI close.
+
+    This is the ONE close path — ``POST /sessions/{id}/close`` and the
+    periodic scheduler (closing a preset's previous run when the next one
+    fires) both call it, so an auto-closed periodic run gets exactly the
+    treatment a hand-closed one gets:
+
+    1. every subsession owned by the session is closed (best-effort, even
+       when the session itself is unknown, so orphaned work is cleaned up);
+    2. the session is marked ``closed`` in the conversation store (history
+       and metadata preserved);
+    3. a ``session_end`` feedback run is scheduled when the session has
+       turns;
+    4. the memory component receives the final rolling summary;
+    5. for non-periodic owners, a carryover action-plan note is persisted
+       so the operator's next session can pick up pending work — periodic
+       runs never write it (the note is a single operator-scoped record and
+       a preset's plan would clobber it).
+
+    Returns ``{"closed": bool, "session_id": ..., "subsessions_closed": N}``;
+    ``closed`` is ``False`` when the session is not found / not owned by
+    *owner_id* (steps 3-5 are skipped then).
+    """
+    subsessions_closed = _cleanup_session(session_id, app)
+
+    store: ConversationStore = app.state.conversation_store
+    result = store.close_session(owner_id, session_id)
+    if not result.get("closed"):
+        return {
+            "closed": False,
+            "session_id": session_id,
+            "subsessions_closed": subsessions_closed,
+        }
+
+    # Schedule a feedback run for the closed session.
+    feedback_runner = app.state.feedback_runner
+    if feedback_runner is not None:
+        turns = store.history(session_id)
+        if turns:
+            feedback_runner.schedule("session_end", session_id, turns)
+
+    # Final memory push: summarise the full conversation (including the
+    # fresh runs the periodic scheduler never covered) and replace the
+    # session's rolling-summary document in the memory component.
+    scheduler = getattr(app.state, "evergoing_scheduler", None)
+    if scheduler is not None:
+        task = asyncio.create_task(scheduler.finalize_session(session_id))
+        _finalize_tasks.add(task)
+        task.add_done_callback(_finalize_tasks.discard)
+
+    if owner_id != PERIODIC_OWNER:
+        await _persist_carryover(app, store, session_id, owner_id)
+
+    return {
+        "closed": True,
+        "session_id": session_id,
+        "subsessions_closed": subsessions_closed,
+    }
 
 
 def _require_owner_id(request: Request) -> str:
@@ -241,7 +305,7 @@ async def sessions_delete_endpoint(request: Request) -> JSONResponse:
     owner_id = _require_owner_id(request)
 
     # 1. Close the session's subsessions.
-    subsessions_closed = _cleanup_session(session_id, request)
+    subsessions_closed = _cleanup_session(session_id, request.app)
 
     # 2. Delete the conversation/session itself.
     store: ConversationStore = request.app.state.conversation_store
@@ -274,7 +338,7 @@ async def sessions_delete_endpoint(request: Request) -> JSONResponse:
     # -- session carryover persistence ------------------------------------
     # Save an action-plan summary to the knowledge store so the assistant
     # can pick up pending work in a new session.
-    await _persist_carryover(request, store, session_id, delete_owner_id)
+    await _persist_carryover(request.app, store, session_id, delete_owner_id)
 
     return JSONResponse(
         {
@@ -310,51 +374,17 @@ async def sessions_close_endpoint(request: Request) -> JSONResponse:
     session_id = request.path_params["session_id"]
     owner_id = _require_owner_id(request)
 
-    # 1. Close the session's subsessions.
-    subsessions_closed = _cleanup_session(session_id, request)
-
-    # 2. Mark the session as closed in the conversation store.
-    store: ConversationStore = request.app.state.conversation_store
-    result = store.close_session(owner_id, session_id)
-
-    if not result.get("closed"):
+    result = await close_session_fully(request.app, owner_id, session_id)
+    if not result["closed"]:
         return JSONResponse(
             {
                 "error": "session not found",
                 "session_id": session_id,
-                "subsessions_closed": subsessions_closed,
+                "subsessions_closed": result["subsessions_closed"],
             },
             status_code=404,
         )
-
-    # Schedule a feedback run for the closed session.
-    feedback_runner = request.app.state.feedback_runner
-    if feedback_runner is not None:
-        turns = store.history(session_id)
-        if turns:
-            feedback_runner.schedule("session_end", session_id, turns)
-
-    # Final memory push: summarise the full conversation (including the
-    # fresh runs the periodic scheduler never covered) and replace the
-    # session's rolling-summary document in the memory component.
-    scheduler = getattr(request.app.state, "evergoing_scheduler", None)
-    if scheduler is not None:
-        task = asyncio.create_task(scheduler.finalize_session(session_id))
-        _finalize_tasks.add(task)
-        task.add_done_callback(_finalize_tasks.discard)
-
-    # -- session carryover persistence ------------------------------------
-    # Save an action-plan summary to the knowledge store so the assistant
-    # can pick up pending work in a new session.
-    await _persist_carryover(request, store, session_id, owner_id)
-
-    return JSONResponse(
-        {
-            "closed": True,
-            "session_id": session_id,
-            "subsessions_closed": subsessions_closed,
-        }
-    )
+    return JSONResponse(result)
 
 
 # -- session carryover -----------------------------------------------------
@@ -364,7 +394,7 @@ _CARRYOVER_TOPIC = "session-carryover"
 
 
 async def _persist_carryover(
-    request: Request,
+    app: Any,
     store: ConversationStore,
     session_id: str,
     owner_id: str,
@@ -375,11 +405,11 @@ async def _persist_carryover(
     new session can pick up pending work.  A no-op when knowledge is
     disabled, the summary agent is missing, or the session has no turns.
     """
-    knowledge_store = request.app.state.knowledge_store
+    knowledge_store = app.state.knowledge_store
     if knowledge_store is None:
         return
 
-    summary_agent: ChatAgent | None = request.app.state.summary_agent
+    summary_agent: ChatAgent | None = app.state.summary_agent
     if summary_agent is None:
         return
 

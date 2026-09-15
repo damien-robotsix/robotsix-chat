@@ -60,6 +60,12 @@ arbitrary end-of-day time.
 If a preset comes due while its previous session is still processing a turn, that firing is skipped
 (logged, not queued).
 
+A firing supersedes the preset's previous run: once the new session exists, the previous run's
+session is closed through the same path as `POST /sessions/{id}/close` (its subsessions are closed,
+a `session_end` feedback run is scheduled, the memory component receives the final summary). Only
+the latest run of each preset is ever open, so periodic runs never pile up as sessions to close by
+hand. A failure to close the previous run is logged and never blocks the new firing.
+
 ## Shipped presets
 
 ### `dependabot-drain`
@@ -67,8 +73,7 @@ If a preset comes due while its previous session is still processing a turn, tha
 The committed `config/config.json` ships one preset, `dependabot-drain`, which keeps the repository's
 dependency-update pull requests from piling up. On each firing it enumerates the open
 Dependabot/Renovate PRs (`list_open_prs`), judges each one's impact (`inspect_pr_diff`,
-`verify_pr_ci_status`), merges the safe non-breaking bumps, and files a migration ticket (`POST
-/tickets/ingest`) for every breaking change. It complements — never duplicates — any CI-level
+`verify_pr_ci_status`), merges the safe non-breaking bumps, and files a migration ticket (`POST /tickets/ingest`) for every breaking change. It complements — never duplicates — any CI-level
 auto-merge: PRs already armed to auto-merge are skipped. It finishes with a report of the PRs
 merged, migration tickets filed, and PRs skipped.
 
@@ -77,8 +82,7 @@ merged, migration tickets filed, and PRs skipped.
 - **Ships disabled** — the preset ships with `"enabled": false` per the feature-flag convention, so
   it never fires on a fresh checkout.
 - **Activation** — set `"enabled": true` on the `dependabot-drain` entry under `periodic.sessions`
-  in the deployment's config, then redeploy. To prove it live, fire it once with `POST
-  /periodic/definitions/dependabot-drain/run` and read the report, and confirm it appears enabled in
+  in the deployment's config, then redeploy. To prove it live, fire it once with `POST /periodic/definitions/dependabot-drain/run` and read the report, and confirm it appears enabled in
   `GET /periodic/definitions`.
 
 ## Endpoints
