@@ -16,6 +16,12 @@ typing into a periodic session later is just… using a session.
 
 If a preset comes due while its previous session's turn is still being
 processed, the firing is skipped with a log line (no queueing).
+
+A firing SUPERSEDES the preset's previous run: once the new session exists
+the previous run's session is closed through the injected ``close_previous``
+callback (the same path as ``POST /sessions/{id}/close`` — subsessions
+cleaned up, feedback run, memory finalised) so periodic runs never pile up
+as open sessions the operator has to close by hand.
 """
 
 from __future__ import annotations
@@ -54,6 +60,10 @@ SubmitTurn = Callable[[str, str, int | None], Awaitable[None]]
 #: IsBusy reports whether a session currently has a turn in flight.
 IsBusy = Callable[[str], bool]
 
+#: ClosePrevious closes the superseded previous run's session (best-effort;
+#: exceptions are logged and never block the new firing).
+ClosePrevious = Callable[[str], Awaitable[Any]]
+
 
 class PeriodicScheduler:
     """Create-and-seed scheduler for periodic session presets."""
@@ -67,12 +77,19 @@ class PeriodicScheduler:
         is_busy: IsBusy,
         persist_path: str = PERIODIC_SCHEDULER_PERSIST_PATH,
         clock: Callable[[], float] = time.time,
+        close_previous: ClosePrevious | None = None,
     ) -> None:
-        """*conversation_store* needs ``create_session`` and ``set_title``."""
+        """*conversation_store* needs ``create_session`` and ``set_title``.
+
+        *close_previous*, when given, is awaited with the previous run's
+        session id each time a preset fires again (``None`` keeps the old
+        runs open — tests and callers without a session-close path).
+        """
         self._definitions = {d.name: d for d in definitions if d.enabled}
         self._store = conversation_store
         self._submit_turn = submit_turn
         self._is_busy = is_busy
+        self._close_previous = close_previous
         self._persist_path = Path(persist_path)
         self._clock = clock
         #: name -> {"last_fired_at": float, "last_session_id": str, "runs": int}
@@ -196,10 +213,34 @@ class PeriodicScheduler:
             now.strftime("%Y-%m-%d %H:%M"),
         )
         entry = self._state.setdefault(defn.name, {})
+        previous_session = entry.get("last_session_id")
         entry["last_fired_at"] = self._clock()
         entry["last_session_id"] = session_id
         entry["runs"] = int(entry.get("runs", 0)) + 1
         self._save_state()
+
+        # The new run supersedes the previous one: close its session so
+        # periodic runs never accumulate as open sessions.
+        if (
+            self._close_previous is not None
+            and isinstance(previous_session, str)
+            and previous_session
+            and previous_session != session_id
+        ):
+            try:
+                await self._close_previous(previous_session)
+                logger.info(
+                    "Periodic preset %r: closed superseded previous session %s",
+                    name,
+                    previous_session,
+                )
+            except Exception:
+                logger.exception(
+                    "Periodic preset %r: closing previous session %s failed — "
+                    "continuing with the new firing",
+                    name,
+                    previous_session,
+                )
 
         logger.info(
             "Periodic preset %r fired%s — session %s",
