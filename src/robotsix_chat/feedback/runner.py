@@ -38,7 +38,9 @@ except ImportError:  # pragma: no cover — tracing extra absent in minimal inst
     StatusCode = None  # type: ignore[assignment, misc]
 
 if TYPE_CHECKING:
+    from robotsix_chat.chat.conversation import ConversationStore
     from robotsix_chat.config.models import FeedbackSettings
+    from robotsix_chat.knowledge.store import KnowledgeStore
     from robotsix_chat.llm import LlmioChatAgent
     from robotsix_chat.subsessions import SubsessionRegistry
 
@@ -369,6 +371,16 @@ class FeedbackRunner:
     #: boilerplate / low-value noise and filtered out before filing.
     _MIN_DESCRIPTION_LENGTH: int = 10
 
+    #: Knowledge-store topic under which findings for a deleted owner session
+    #: are parked (so a later periodic review can still read them) instead of
+    #: being routed to an orphan investigation subsession that would deliver
+    #: its summary to a conversation that no longer exists.
+    _ORPHAN_FINDINGS_TOPIC: str = "feedback-orphan-findings"
+
+    #: Keep only the most recent N orphan findings in the shared note so it
+    #: cannot grow without bound.
+    _ORPHAN_FINDINGS_CAP: int = 50
+
     def __init__(
         self,
         settings: FeedbackSettings,
@@ -376,6 +388,8 @@ class FeedbackRunner:
         *,
         subsession_registry: SubsessionRegistry | None = None,
         subsession_spawner: Callable[..., str | None] | None = None,
+        conversation_store: ConversationStore | None = None,
+        knowledge_store: KnowledgeStore | None = None,
         deploy_base_url: str = "",
         deploy_api_key: str = "",
     ) -> None:
@@ -402,6 +416,8 @@ class FeedbackRunner:
         self._agent = feedback_agent
         self._registry = subsession_registry
         self._spawner = subsession_spawner
+        self._conversation_store = conversation_store
+        self._knowledge_store = knowledge_store
         self._deploy_base_url = deploy_base_url
         self._deploy_api_key = deploy_api_key
         self._board_url = settings.board_url.rstrip("/") if settings.board_url else ""
@@ -555,22 +571,25 @@ class FeedbackRunner:
                     return
 
                 # 5. File each ticket.
-                filed, failed, routed = await self._file_tickets(
+                filed, failed, routed, dropped = await self._file_tickets(
                     tickets, trigger_type=trigger_type, session_id=session_id
                 )
                 logger.info(
                     "Feedback run complete: trigger=%s session=%s filed=%d/%d"
-                    " failed=%d routed=%d",
+                    " failed=%d routed=%d dropped=%d",
                     trigger_type,
                     session_id,
                     filed,
                     len(tickets),
                     failed,
                     routed,
+                    dropped,
                 )
 
                 # 6. Stamp outcome metadata on the trace root span.
-                self._stamp_outcome(filed, len(tickets), failed=failed, routed=routed)
+                self._stamp_outcome(
+                    filed, len(tickets), failed=failed, routed=routed, dropped=dropped
+                )
         except Exception:
             logger.exception(
                 "Feedback run failed: trigger=%s session=%s",
@@ -664,7 +683,7 @@ class FeedbackRunner:
 
     @staticmethod
     def _stamp_outcome(
-        filed: int, total: int, *, failed: int = 0, routed: int = 0
+        filed: int, total: int, *, failed: int = 0, routed: int = 0, dropped: int = 0
     ) -> None:
         """Stamp feedback outcome metadata on the current recording span."""
         if get_recording_span is None:
@@ -674,6 +693,7 @@ class FeedbackRunner:
             span.set_attribute("feedback.filed_tickets", filed)
             span.set_attribute("feedback.failed_tickets", failed)
             span.set_attribute("feedback.routed_tickets", routed)
+            span.set_attribute("feedback.dropped_tickets", dropped)
             span.set_attribute("feedback.total_tickets", total)
 
     @staticmethod
@@ -788,6 +808,9 @@ class FeedbackRunner:
           policy (HTTP 400, investigation-tickets no longer accepted); the
           finding was handed to a chat subsession agent instead.  A policy
           outcome, *not* a failure.
+        * ``"dropped"`` — a policy-blocked finding whose owner session was
+          deleted; parked as a knowledge note instead of spawning an orphan
+          investigation subsession.  A policy outcome, *not* a failure.
         * ``"failed"`` — a genuine failure (non-policy error, exhausted
           retries, or an unexpected exception).
         """
@@ -878,12 +901,11 @@ class FeedbackRunner:
                     )
                     if _span is not None:
                         _span.set_attribute("feedback.admission_policy_block", True)
-                    self._route_finding_to_subsession(
+                    return self._route_finding_to_subsession(
                         ticket,
                         session_id=session_id,
                         trigger_type=trigger_type,
                     )
-                    return "routed"
                 else:
                     logger.warning(
                         "Feedback ticket ingest returned %d for %r: %s",
@@ -952,19 +974,37 @@ class FeedbackRunner:
         *,
         session_id: str,
         trigger_type: str,
-    ) -> None:
+    ) -> str:
         """Hand a policy-blocked finding to a chat subsession agent.
 
-        Best-effort: a missing spawner or a spawn error is logged and the
-        finding dropped rather than raised into the filing loop.
+        Returns the run-tally outcome: ``"routed"`` when the finding was
+        handed to an investigation subsession (or a missing spawner / spawn
+        error meant it was best-effort dropped in place), or ``"dropped"``
+        when the owner session has been deleted from the conversation store
+        — in that case an investigation would deliver its summary to a
+        parent conversation that no longer exists, so instead the finding is
+        parked as a knowledge note for a later periodic review to pick up.
         """
+        # Guard: never route an orphan investigation.  When the owner session
+        # was deleted (e.g. DELETE /sessions/{id}) the spawned subsession
+        # would run a full investigation and then deliver its summary to a
+        # conversation that no longer exists — the result reaches nobody.
+        if self._owner_session_deleted(session_id):
+            logger.info(
+                "Feedback finding not routed - owner session %s deleted",
+                session_id,
+            )
+            self._record_orphan_finding(
+                ticket, session_id=session_id, trigger_type=trigger_type
+            )
+            return "dropped"
         if self._spawner is None:
             logger.warning(
                 "Feedback finding %r blocked by board admission policy but no "
                 "subsession spawner is configured — finding dropped",
                 ticket["title"],
             )
-            return
+            return "routed"
         prompt = _build_investigation_prompt(
             ticket, session_id=session_id, trigger_type=trigger_type
         )
@@ -979,7 +1019,7 @@ class FeedbackRunner:
                 "Failed to spawn investigation subsession for feedback finding %r",
                 ticket["title"],
             )
-            return
+            return "routed"
         logger.info(
             "Feedback finding routed to chat subsession agent: title=%r "
             "target_repo=%r subsession=%s",
@@ -987,6 +1027,87 @@ class FeedbackRunner:
             ticket.get("target_repo", ""),
             sub_id,
         )
+        return "routed"
+
+    def _owner_session_deleted(self, session_id: str) -> bool:
+        """Return ``True`` when *session_id* is absent from the conversation store.
+
+        A finding whose owner session has been deleted (or evicted) has no
+        parent conversation left to deliver an investigation to.  A
+        closed-but-present session (``POST /sessions/{id}/close``) still
+        exists in the store, so ``get_session`` returns it and this returns
+        ``False`` — those findings are still routed.
+
+        When no conversation store is wired we cannot tell, so we return
+        ``False`` and let routing proceed unchanged.
+        """
+        store = self._conversation_store
+        if store is None:
+            return False
+        try:
+            return store.get_session(session_id) is None
+        except Exception:
+            logger.exception(
+                "Failed to check owner session %s existence — proceeding to route",
+                session_id,
+            )
+            return False
+
+    def _record_orphan_finding(
+        self,
+        ticket: dict[str, Any],
+        *,
+        session_id: str,
+        trigger_type: str,
+    ) -> None:
+        """Park a deleted-owner finding as a single capped knowledge note.
+
+        The findings are stored under the :data:`_ORPHAN_FINDINGS_TOPIC`
+        topic as a JSON ``{"findings": [...]}`` payload, keeping only the
+        most recent :data:`_ORPHAN_FINDINGS_CAP` entries so the note cannot
+        grow without bound.  Best-effort: a missing store or any persistence
+        error is logged and swallowed.
+        """
+        store = self._knowledge_store
+        if store is None:
+            logger.debug(
+                "No knowledge store wired — orphan feedback finding %r not parked",
+                ticket["title"],
+            )
+            return
+        finding = {
+            "title": ticket["title"],
+            "body": ticket["description"],
+            "session_id": session_id,
+            "trigger": trigger_type,
+            "target_repo": ticket.get("target_repo", ""),
+        }
+        try:
+            existing = store.list(topic=self._ORPHAN_FINDINGS_TOPIC)
+            findings: list[dict[str, Any]] = []
+            note_id: str | None = None
+            if existing:
+                note_id = existing[0].id
+                try:
+                    payload = json.loads(existing[0].content)
+                except json.JSONDecodeError, ValueError:
+                    payload = None
+                if isinstance(payload, dict) and isinstance(
+                    payload.get("findings"), list
+                ):
+                    findings = list(payload["findings"])
+            findings.append(finding)
+            findings = findings[-self._ORPHAN_FINDINGS_CAP :]
+            content = json.dumps({"findings": findings}, indent=2)
+            if note_id is not None:
+                store.update(note_id, content)
+            else:
+                store.add(self._ORPHAN_FINDINGS_TOPIC, content)
+        except Exception:
+            logger.exception(
+                "Failed to park orphan feedback finding %r as a knowledge note",
+                ticket["title"],
+            )
 
     @staticmethod
     def _record_span_exception(span: Any, exc: Exception, ticket_title: str) -> None:
@@ -1204,19 +1325,22 @@ class FeedbackRunner:
         *,
         trigger_type: str,
         session_id: str,
-    ) -> tuple[int, int, int]:
-        """POST each ticket to ``/tickets/ingest``; return (filed, failed, routed).
+    ) -> tuple[int, int, int, int]:
+        """POST each ticket; return ``(filed, failed, routed, dropped)``.
 
         ``routed`` counts findings the board rejected with its admission
         policy that were handed to a chat subsession agent instead — a
-        policy outcome, not a failure.
+        policy outcome, not a failure.  ``dropped`` counts policy-blocked
+        findings whose owner session was deleted (no parent conversation to
+        deliver an investigation to): they are parked as a knowledge note
+        instead of spawning an orphan subsession.
         """
         if not self._board_url:
-            return (0, 0, 0)
+            return (0, 0, 0, 0)
 
         tickets = self._apply_cap(tickets, session_id=session_id)
         if not tickets:
-            return (0, 0, 0)
+            return (0, 0, 0, 0)
 
         ingest_url = f"{self._board_url}/tickets/ingest"
         headers: dict[str, str] = {
@@ -1246,6 +1370,7 @@ class FeedbackRunner:
         filed = 0
         failed = 0
         routed = 0
+        dropped = 0
         async with httpx.AsyncClient(timeout=self._timeout) as client:
             for ticket in tickets:
                 outcome = await self._file_one_ticket(
@@ -1261,6 +1386,8 @@ class FeedbackRunner:
                     filed += 1
                 elif outcome == "routed":
                     routed += 1
+                elif outcome == "dropped":
+                    dropped += 1
                 else:
                     failed += 1
-        return (filed, failed, routed)
+        return (filed, failed, routed, dropped)
