@@ -814,6 +814,7 @@ def build_mark_ticket_ready_tool(
     async def mark_ticket_ready(
         ticket_id: str,
         justification: str = "",
+        note: str = "",
     ) -> str:
         """Force a stalled draft ticket forward into the ``ready`` state.
 
@@ -837,6 +838,11 @@ def build_mark_ticket_ready_tool(
             justification: Optional human-readable reason for the forced
                 transition, recorded as the transition ``note`` on the
                 ticket's history for auditability.
+            note: Alias of ``justification`` — the name the mill API and
+                the drain prompts use; models pass it habitually (3 times per
+                drain run on 2026-09-14) and the claude_sdk schema check
+                rejected the call before the body ran.  When both are
+                given, ``justification`` wins.
 
         Returns:
             A status message from the mill API — success confirmation or
@@ -859,7 +865,9 @@ def build_mark_ticket_ready_tool(
         path = f"/tickets/{effective_id}/transition"
         json_body: dict[str, str] | None = {
             "state": "ready",
-            "note": justification or "marked ready via chat (mark_ticket_ready)",
+            "note": justification
+            or note
+            or "marked ready via chat (mark_ticket_ready)",
         }
         headers: dict[str, str] = {"Accept": "application/json"}
         if board_token:

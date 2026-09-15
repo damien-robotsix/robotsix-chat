@@ -10,6 +10,7 @@ forwarding through ``_call_agent``.
 
 from __future__ import annotations
 
+import asyncio
 import json
 import logging
 from collections.abc import AsyncIterator
@@ -1976,3 +1977,73 @@ class TestResolveAllowedRepos:
         monkeypatch.setattr(runner_mod, "safe_http_request", fake_request)
         allowed = await runner_mod._do_resolve_allowed_repos("key", "http://d:8100")
         assert allowed == ["file-hub", "robotsix-chat"]
+
+
+# ---------------------------------------------------------------------------
+# Concurrency cap (max_concurrent_runs)
+# ---------------------------------------------------------------------------
+
+
+class _GatedAgent(_FakeAgent):
+    """Agent whose stream blocks on an event — models a long analysis call."""
+
+    def __init__(self) -> None:
+        super().__init__([_ticket_json([])])
+        self.release = asyncio.Event()
+        self.started = 0
+
+    async def stream(self, message: str, **kwargs: Any) -> AsyncIterator[str]:
+        self.started += 1
+        await self.release.wait()
+        async for tok in super().stream(message, **kwargs):
+            yield tok
+
+
+async def _settle(agent: _GatedAgent, expected: int) -> None:
+    """Spin the loop until *expected* runs reached the agent (or time out)."""
+    for _ in range(200):
+        if agent.started >= expected:
+            break
+        await asyncio.sleep(0.005)
+    # A few more spins: anything queued behind the cap must NOT start.
+    for _ in range(20):
+        await asyncio.sleep(0.001)
+
+
+@pytest.mark.asyncio
+async def test_runs_beyond_max_concurrent_runs_wait_for_a_slot() -> None:
+    """With cap 1, the 2nd scheduled run starts only after the 1st finishes.
+
+    Mirrors 2026-09-15: ~70 session_end runs scheduled within minutes must
+    serialise instead of spawning ~70 analysis agents at once.
+    """
+    agent = _GatedAgent()
+    runner = _make_runner(_settings(max_concurrent_runs=1), agent)
+
+    runner.schedule("session_end", "sess-a", [("u", "a")])
+    runner.schedule("session_end", "sess-b", [("u", "b")])
+    await _settle(agent, 1)
+    assert agent.started == 1  # second run is queued behind the cap
+
+    agent.release.set()
+    await asyncio.gather(*runner._background_tasks)
+    assert agent.started == 2  # ran once the slot freed — never dropped
+
+
+@pytest.mark.asyncio
+async def test_max_concurrent_runs_allows_that_many_in_flight() -> None:
+    agent = _GatedAgent()
+    runner = _make_runner(_settings(max_concurrent_runs=2), agent)
+    for sid in ("sess-a", "sess-b", "sess-c"):
+        runner.schedule("session_end", sid, [("u", sid)])
+    await _settle(agent, 2)
+    assert agent.started == 2
+    agent.release.set()
+    await asyncio.gather(*runner._background_tasks)
+    assert agent.started == 3
+
+
+def test_max_concurrent_runs_default_and_floor() -> None:
+    assert _settings().max_concurrent_runs == 2
+    with pytest.raises(ValueError):
+        _settings(max_concurrent_runs=0)
