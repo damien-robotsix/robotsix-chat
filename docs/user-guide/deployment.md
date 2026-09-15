@@ -70,7 +70,11 @@ calls the fleet's shared `docker-release.yml` to build and push the image to
 | Manual (`workflow_dispatch`)  | same as branch/tag     |
 
 Every build also produces provenance and SBOM attestations, and a Trivy publish gate blocks on
-fixable CRITICAL findings. There is no `latest` tag.
+fixable CRITICAL findings. The image is also signed with cosign (via keyless GitHub OIDC signing),
+so operators can verify image authenticity by running `cosign verify --certificate-identity-regexp
+'https://github.com/damien-robotsix' --certificate-oidc-issuer 'https://token.actions.githubusercontent.com'
+'ghcr.io/damien-robotsix/robotsix-chat:<tag>'` to establish the image was built and signed by this
+repo's CI (independent of the provenance/SBOM subjects). There is no `latest` tag.
 
 `v*` tags are cut by the shared **auto-release** workflow (weekly + on demand) via release-please —
 versions are not tagged by hand.
