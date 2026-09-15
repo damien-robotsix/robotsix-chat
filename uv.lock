@@ -1878,7 +1878,7 @@ wheels = [
 
 [[package]]
 name = "robotsix-chat"
-version = "0.23.1"
+version = "0.24.0"
 source = { editable = "." }
 dependencies = [
     { name = "asgi-correlation-id" },
