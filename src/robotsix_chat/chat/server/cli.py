@@ -479,6 +479,8 @@ def run_server_from_config(agent: ChatAgent | None = None) -> None:
             feedback_agent,
             subsession_registry=subsession_registry,
             subsession_spawner=_spawn_feedback_investigation,
+            conversation_store=conversation_store,
+            knowledge_store=knowledge_store,
             deploy_base_url=settings.central_deploy.url,
             deploy_api_key=settings.central_deploy.deploy_api_key.get_secret_value(),
         )
