@@ -981,8 +981,9 @@ def build_github_tools(
         )
 
     async def check_ci_health(
-        repo_full_name: str,
+        repo_full_name: str = "",
         branch: str = "",
+        repo: str = "",
     ) -> str:
         """Check recent CI history for a repository branch and classify failures.
 
@@ -997,6 +998,10 @@ def build_github_tools(
         to be in BLOCKED state.
 
         Args:
+            repo: Alias of ``repo_full_name`` (bare repo names are
+                resolved via the board roster like the other GitHub tools);
+                the claude_sdk schema check rejected ``repo=`` calls before
+                the body ran (2026-09-14 drain runs).
             repo_full_name: GitHub ``owner/name`` (e.g.
                 ``"robotsix/robotsix-chat"``).
             branch: Branch to inspect.  Defaults to the repository's default
@@ -1008,6 +1013,24 @@ def build_github_tools(
             and whether a rerun or escalation is recommended.
 
         """
+        repo_arg = repo.strip()
+        alias_arg = repo_full_name.strip()
+        if repo_arg and alias_arg and repo_arg != alias_arg:
+            return (
+                f"Error: repo={repo!r} and repo_full_name={repo_full_name!r} "
+                "disagree; pass only one of them."
+            )
+        repo_full_name = alias_arg or repo_arg
+        if not repo_full_name:
+            return "Error: repo_full_name is required."
+        if "/" not in repo_full_name:
+            resolved = await board.resolve_repo_full_name(repo_full_name)
+            if resolved is None:
+                return (
+                    f"Error: could not resolve repo {repo_full_name!r} via the "
+                    "board roster; pass the full GitHub owner/name."
+                )
+            repo_full_name = resolved
         if component_request is None and (
             scope_error := await client.check_installation_scope(repo_full_name)
         ):

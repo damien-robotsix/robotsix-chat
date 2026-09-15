@@ -122,6 +122,46 @@ async def test_check_ci_health_flags_pre_existing_failure(
 
 
 @pytest.mark.asyncio
+async def test_check_ci_health_accepts_repo_alias(
+    respx_mock: respx.MockRouter,
+) -> None:
+    """``repo=`` is accepted as an alias of ``repo_full_name``.
+
+    Regression for 2026-09-14: ``check_ci_health({"repo": "robotsix-memory"})``
+    was rejected at the claude_sdk schema level before the body ran.
+    """
+    settings = _settings()
+    _prepopulate_installation_token(settings)
+    respx_mock.get(
+        url__startswith="https://api.github.com/installation/repositories"
+    ).mock(
+        return_value=httpx.Response(
+            200,
+            text=json.dumps({"repositories": [{"full_name": "org/repo"}]}),
+        )
+    )
+    respx_mock.get("https://api.github.com/repos/org/repo").mock(
+        return_value=httpx.Response(200, text=json.dumps({"default_branch": "main"}))
+    )
+    respx_mock.get(
+        url__startswith="https://api.github.com/repos/org/repo/actions/runs"
+    ).mock(return_value=httpx.Response(200, text=json.dumps({"workflow_runs": []})))
+
+    tools = build_direct_repo_tools(settings)
+    fn = [t for t in tools if t.__name__ == "check_ci_health"][0]
+
+    out = await fn(repo="org/repo")
+    assert "org/repo" in out
+    assert "Error" not in out
+
+    disagree = await fn(repo="org/other", repo_full_name="org/repo")
+    assert "disagree" in disagree
+
+    missing = await fn()
+    assert "repo_full_name is required" in missing
+
+
+@pytest.mark.asyncio
 async def test_check_ci_health_reports_green(
     respx_mock: respx.MockRouter,
 ) -> None:
