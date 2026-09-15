@@ -1573,6 +1573,34 @@ async def test_mark_ticket_ready_posts_real_transition_body() -> None:
 
 
 @pytest.mark.asyncio
+async def test_mark_ticket_ready_accepts_note_alias() -> None:
+    """``note=`` (the mill API's own field name) is accepted as an alias.
+
+    Regression for 2026-09-14: three drain-run approvals per pass were
+    rejected at the schema level with "Additional properties are not
+    allowed ('note' was unexpected)" and burned a turn each.
+    """
+    calls: list[dict[str, Any] | None] = []
+
+    async def _req(
+        component: str,
+        method: str,
+        path: str,
+        json_body: dict[str, Any] | None = None,
+    ) -> str:
+        calls.append(json_body)
+        return "HTTP 200 OK\n" + json.dumps({"state": "ready"})
+
+    tools = build_mark_ticket_ready_tool(_settings(), component_request=_req)
+    await tools[0]("mr-note", note="Approved (drain-run)")
+    assert calls == [{"state": "ready", "note": "Approved (drain-run)"}]
+
+    # justification wins when both are given.
+    await tools[0]("mr-note", justification="j", note="n")
+    assert calls[-1] == {"state": "ready", "note": "j"}
+
+
+@pytest.mark.asyncio
 async def test_mark_ticket_ready_roster_falls_back_to_direct(
     respx_mock: respx.MockRouter,
 ) -> None:
