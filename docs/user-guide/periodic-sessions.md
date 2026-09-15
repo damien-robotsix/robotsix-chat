@@ -85,6 +85,31 @@ merged, migration tickets filed, and PRs skipped.
   in the deployment's config, then redeploy. To prove it live, fire it once with `POST /periodic/definitions/dependabot-drain/run` and read the report, and confirm it appears enabled in
   `GET /periodic/definitions`.
 
+### `gate-drain`
+
+The committed `config/config.json` also ships a `gate-drain` preset, which keeps human-gated and
+blocked tickets from silently piling up across boards. On each firing it enumerates every ticket in
+the gated states — `human_issue_approval`, `human_mr_approval`, `awaiting_user_reply`, and `blocked`
+— across all boards, and its **first output is a scope report emitted in the main conversation**:
+the total count of gated tickets discovered, a per-state count summary, and an explicit flag when it
+will only analyze a subset (the discovered-vs-analyzed mismatch). Only after that scope report does
+it begin detailed per-ticket processing.
+
+- **Scope reporting belongs in the primary conversation.** Subsession summaries capture follow-up
+  work items, not top-line scope. The total discovered count, the per-state summary, and any
+  discovered-vs-analyzed mismatch must appear in the main conversation where the operator sees them
+  immediately — never buried in a closed subsession summary. This preset exists because a
+  2026-09-09 gate-drain run reported ~14 tickets in the main conversation while a subsession had
+  actually discovered 47 across multiple boards; the 3× scope expansion never reached the operator.
+- **Cadence** — every four hours (`schedule_interval_seconds: 14400`), at `model_level: 2`.
+- **Ships disabled** — `"enabled": false` per the feature-flag convention, so it never fires on a
+  fresh checkout.
+- **Activation** — set `"enabled": true` on the `gate-drain` entry under `periodic.sessions` in the
+  deployment's config, then redeploy. To prove it live, fire it once with `POST
+  /periodic/definitions/gate-drain/run` and confirm the main-conversation report leads with the
+  total discovered count and the state-by-state summary (with no scope mismatch left silent), and
+  that it appears enabled in `GET /periodic/definitions`.
+
 ## Endpoints
 
 - `GET /periodic/definitions` — presets with their firing state (`last_fired_at`, `last_session_id`,
