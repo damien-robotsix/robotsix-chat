@@ -46,6 +46,7 @@ def _make(
     definitions=None,
     busy=False,
     clock=None,
+    close_previous=None,
 ):
     store = _FakeStore()
     submitted: list[tuple[str, str, int | None]] = []
@@ -69,8 +70,83 @@ def _make(
         is_busy=lambda sid: busy,
         persist_path=str(tmp_path / "state.json"),
         clock=clock or (lambda: now["t"]),
+        close_previous=close_previous,
     )
     return scheduler, store, submitted, now
+
+
+@pytest.mark.asyncio
+async def test_refire_closes_the_superseded_previous_run(tmp_path):
+    """The 2nd firing closes the 1st run's session; the 1st firing closes nothing."""
+    closed: list[str] = []
+
+    async def close_previous(session_id: str) -> None:
+        closed.append(session_id)
+
+    scheduler, store, submitted, now = _make(tmp_path, close_previous=close_previous)
+
+    first = await scheduler.fire("mail-triage")
+    await asyncio.sleep(0)  # let the first turn task finish
+    assert closed == []  # nothing to supersede yet
+
+    now["t"] += 3600
+    second = await scheduler.fire("mail-triage")
+    await asyncio.sleep(0)
+    assert second != first
+    assert closed == [first]
+    assert scheduler.state_for("mail-triage")["last_session_id"] == second
+    # Both runs were still submitted — closing is a side effect, not a gate.
+    assert [s[0] for s in submitted] == [first, second]
+
+
+@pytest.mark.asyncio
+async def test_refire_close_failure_does_not_block_the_new_firing(tmp_path, caplog):
+    async def close_previous(session_id: str) -> None:
+        raise RuntimeError("close path down")
+
+    scheduler, _store, submitted, now = _make(tmp_path, close_previous=close_previous)
+    first = await scheduler.fire("mail-triage")
+    await asyncio.sleep(0)
+    now["t"] += 3600
+    with caplog.at_level("ERROR", logger="robotsix_chat.periodic.scheduler"):
+        second = await scheduler.fire("mail-triage")
+    await asyncio.sleep(0)
+    assert second is not None and second != first
+    assert [s[0] for s in submitted] == [first, second]
+    assert any("closing previous session" in r.getMessage() for r in caplog.records)
+
+
+@pytest.mark.asyncio
+async def test_refire_closes_previous_run_recorded_in_persisted_state(tmp_path):
+    """A restart in between still closes the run recorded in the state file."""
+    closed: list[str] = []
+
+    async def close_previous(session_id: str) -> None:
+        closed.append(session_id)
+
+    scheduler, _store, _submitted, now = _make(tmp_path)
+    first = await scheduler.fire("mail-triage")
+    await asyncio.sleep(0)
+
+    # New scheduler instance over the same state file (a chat restart).
+    now["t"] += 3600
+    scheduler2, store2, _sub2, _now2 = _make(
+        tmp_path, close_previous=close_previous, clock=lambda: now["t"]
+    )
+    store2._n = 10  # fresh store: keep the new id distinct from "sess-1"
+    await scheduler2.fire("mail-triage")
+    assert closed == [first]
+
+
+@pytest.mark.asyncio
+async def test_no_close_callback_keeps_previous_runs_open(tmp_path):
+    scheduler, _store, submitted, now = _make(tmp_path)
+    await scheduler.fire("mail-triage")
+    await asyncio.sleep(0)
+    now["t"] += 3600
+    await scheduler.fire("mail-triage")
+    await asyncio.sleep(0)
+    assert len(submitted) == 2  # no callback, no error, plain old behaviour
 
 
 @pytest.mark.asyncio

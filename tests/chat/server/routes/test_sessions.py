@@ -114,7 +114,7 @@ def test_cleanup_session_none_registry() -> None:
     state = MagicMock(subsession_registry=None)
     request = _make_request(app_state=state)
 
-    result = _cleanup_session("sess-1", request)
+    result = _cleanup_session("sess-1", request.app)
     assert result == 0
 
 
@@ -125,7 +125,7 @@ def test_cleanup_session_delegates_to_registry() -> None:
     state = MagicMock(subsession_registry=mock_registry)
     request = _make_request(app_state=state)
 
-    result = _cleanup_session("sess-1", request)
+    result = _cleanup_session("sess-1", request.app)
     assert result == 3
     mock_registry.close_all_for_owner.assert_called_once_with(
         "sess-1", reason="session closed"
@@ -139,7 +139,7 @@ def test_cleanup_session_registry_returns_zero() -> None:
     state = MagicMock(subsession_registry=mock_registry)
     request = _make_request(app_state=state)
 
-    result = _cleanup_session("sess-x", request)
+    result = _cleanup_session("sess-x", request.app)
     assert result == 0
 
 
