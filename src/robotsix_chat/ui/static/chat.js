@@ -790,12 +790,6 @@ import {
       if (s._owner === PERIODIC_OWNER) {
         row.classList.add("session-periodic");
         titleDiv.textContent = "[PERIODIC] " + (s.title || "Untitled");
-      } else if (s.evergoing) {
-        // The single never-ending session: leading turns from finished,
-        // off-subject topics are physically trimmed (they disappear from the
-        // transcript — distinct from the summary/compaction card).
-        row.classList.add("session-evergoing");
-        titleDiv.textContent = "[EVERGOING] " + (s.title || "Untitled");
       } else {
         titleDiv.textContent = s.title || "Untitled";
       }

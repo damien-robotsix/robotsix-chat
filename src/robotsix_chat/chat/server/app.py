@@ -914,10 +914,9 @@ def create_app(
             the default settings are used (enabled, 300 s interval).
         evergoing_settings: Optional
             :class:`~robotsix_chat.config.models.EvergoingSettings` controlling
-            the single never-ending session and its periodic summarising
-            compaction scheduler.  When ``None`` (default), the default
-            settings are used (disabled), so no evergoing session is created
-            on boot.
+            the periodic summarising compaction scheduler (interval, runs
+            kept verbatim).  When ``None`` (default), the default settings
+            are used.
         memory_component_settings: Optional
             :class:`~robotsix_chat.config.models.MemoryComponentSettings` —
             summary pushes to the robotsix-memory component.
@@ -1096,17 +1095,10 @@ def create_app(
     else:
         app.state.health_scheduler = None
     app.state.health_status = None  # populated after first check cycle
-    # Evergoing session — the single never-ending session.  When enabled, it
-    # is created on boot (idempotent) and a periodic subject-aware trim
-    # scheduler runs against it; started during the lifespan async phase.
-    _eg = evergoing_settings or EvergoingSettings()
-    if _eg.enabled:
-        from robotsix_chat.chat.conversation import OPERATOR_OWNER
-
-        app.state.conversation_store.ensure_evergoing_session(OPERATOR_OWNER)
     # The periodic summary scheduler is the single context-reduction
-    # mechanism for ALL sessions (idle compaction removed), so it runs
-    # regardless of whether the evergoing session itself is enabled.
+    # mechanism for ALL sessions (idle compaction removed); started during
+    # the lifespan async phase.
+    _eg = evergoing_settings or EvergoingSettings()
     if app.state.summary_agent is not None:
         from robotsix_chat.evergoing import EvergoingSummaryScheduler
         from robotsix_chat.memory_push import MemoryPush
@@ -1243,28 +1235,21 @@ def _skill_registry(
     index from advertising a skill the tool cannot fetch. Component skills
     (from the central-deploy roster, named by component id) come last.
     """
-    from robotsix_chat.evergoing import load_cross_session_skill
     from robotsix_chat.subsessions import load_subsessions_skill
 
     return _bundled_skill_registry(
-        settings, load_cross_session_skill, load_subsessions_skill
+        settings, load_subsessions_skill
     ) + _component_skill_registry(settings)
 
 
 def _bundled_skill_registry(
     settings: Settings,
-    load_cross_session_skill: Callable[[], str],
     load_subsessions_skill: Callable[[], str],
 ) -> list[tuple[bool, str, Callable[[], str]]]:
     """Return the in-repo skills; see :func:`_skill_registry`."""
     return [
         (True, "subsessions", load_subsessions_skill),
         (True, "mill_workflow", load_mill_workflow_skill),
-        (
-            settings.evergoing.enabled,
-            "evergoing_cross_session",
-            load_cross_session_skill,
-        ),
         (settings.lifecycle.enabled, "lifecycle", load_lifecycle_skill),
         (settings.http_probe.enabled, "http_probe", load_http_probe_skill),
         (settings.docker_digest.enabled, "docker_digest", load_docker_digest_skill),
@@ -1612,7 +1597,7 @@ def _build_request_tools_factory(
     """Build a per-request tools factory for the main chat agent.
 
     Combines subsession tools (built per ``stream()`` call so closures
-    capture the request's session id) with the evergoing/escalation tools.
+    capture the request's session id) with the escalation tools.
     Returns ``None`` when no per-request tools are configured.
     """
     req_factories: list[Callable[[str], list[Any]]] = []
@@ -1634,19 +1619,6 @@ def _build_request_tools_factory(
             )
 
         req_factories.append(_make_request_tools)
-
-    if settings.evergoing.enabled and conversation_store is not None:
-        from robotsix_chat.evergoing import build_cross_session_tools
-
-        cross_session_store = conversation_store
-
-        def _make_cross_session_tools(session_id: str) -> list[Any]:
-            return build_cross_session_tools(
-                conversation_store=cross_session_store,
-                session_id=session_id,
-            )
-
-        req_factories.append(_make_cross_session_tools)
 
     if conversation_store is not None and configured_level is not None:
         from robotsix_llmio.config import load_tier_config

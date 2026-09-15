@@ -136,13 +136,10 @@ class MemoryComponentSettings(BaseModel):
 
 
 class EvergoingSettings(BaseModel):
-    """Evergoing-session settings — the single never-ending chat session.
+    """Summary-compaction settings (config block ``evergoing``).
 
-    When enabled, exactly one *evergoing* session is created on boot and
-    kept alive across restarts: it is never auto-closed or auto-evicted and
-    always appears in the operator's session list flagged ``evergoing``.  A
-    background scheduler runs every *trim_interval_seconds* over **every
-    session** (the single context-reduction mechanism — idle compaction was
+    A background scheduler runs every *trim_interval_seconds* over **every
+    session** — the single context-reduction mechanism (idle compaction was
     removed).  The gate is deterministic (no decision LLM): a session is
     compacted only when new turns arrived since the last pass AND more
     than *keep_recent_runs* completed runs accumulated beyond the previous
@@ -150,10 +147,12 @@ class EvergoingSettings(BaseModel):
     into the session's summary; the recent runs stay verbatim and are not
     shown to the summariser.  A no-input interval performs zero LLM calls.
 
+    The block keeps its historical name: it once also switched on the
+    "evergoing session" (a single never-ending operator session with
+    cross-session tools), removed on 2026-09-15 — ``enabled`` is dropped
+    on load so pinned deployed configs still boot.
+
     Attributes:
-        enabled: Master switch.  When ``False`` (default) no evergoing
-            session is created and the summary scheduler does not run.  Set
-            to ``true`` to activate the feature.
         trim_interval_seconds: Seconds between scheduled compaction passes.
             Default ``1800`` (30 minutes) — a session is summarised at most
             once per interval.
@@ -165,7 +164,6 @@ class EvergoingSettings(BaseModel):
 
     """
 
-    enabled: bool = False
     trim_interval_seconds: float = Field(default=1800.0, gt=0)
     keep_recent_runs: int = Field(default=5, ge=1)
     model_config = ConfigDict(extra="forbid")
@@ -177,13 +175,14 @@ class EvergoingSettings(BaseModel):
 
         Blank ``""`` numeric sentinels are stripped as everywhere else.
         ``keep_min_recent`` and ``min_fresh_turns`` belonged to the removed
-        subject-aware trim design; deployed configs that still pin them
-        must not crash the boot (``extra="forbid"``), so they are dropped.
+        subject-aware trim design and ``enabled`` to the removed evergoing
+        session; deployed configs that still pin them must not crash the
+        boot (``extra="forbid"``), so they are dropped.
         """
         if isinstance(data, dict):
             data = {
                 k: v
                 for k, v in data.items()
-                if k not in ("keep_min_recent", "min_fresh_turns")
+                if k not in ("keep_min_recent", "min_fresh_turns", "enabled")
             }
         return drop_blank_numeric_sentinels(cls, data)

@@ -950,40 +950,14 @@ def test_load_folds_legacy_per_browser_owners_into_one_pool() -> None:
         persist_path.unlink(missing_ok=True)
 
 
-# -- evergoing session + subject-aware trim -----------------------------
+# -- subject-aware trim ---------------------------------------------------
 
 
-def test_ensure_evergoing_session_creates_single_flagged_session() -> None:
-    """The first call creates one evergoing session; repeats return the same one."""
-    store = _store()
-
-    first = store.ensure_evergoing_session(OPERATOR_OWNER)
-    assert first["evergoing"] is True
-    sid = cast(str, first["session_id"])
-
-    # Idempotent — a second call returns the same session, not a new one.
-    second = store.ensure_evergoing_session(OPERATOR_OWNER)
-    assert second["session_id"] == sid
-    assert store.evergoing_session_id() == sid
-
-
-def test_evergoing_session_appears_in_owner_list() -> None:
-    """The evergoing session is registered under the owner and flagged in metadata."""
-    store = _store()
-    ever = store.ensure_evergoing_session(OPERATOR_OWNER)
-    sid = cast(str, ever["session_id"])
-
-    sessions, _ = store.list_sessions(OPERATOR_OWNER)
-    flagged = [s for s in sessions if s["session_id"] == sid]
-    assert len(flagged) == 1
-    assert flagged[0]["evergoing"] is True
-
-
-def test_normal_session_is_not_evergoing() -> None:
-    """A regular session carries ``evergoing == False`` in its metadata."""
+def test_session_metadata_has_no_evergoing_flag() -> None:
+    """The evergoing-session flag was removed (2026-09-15); metadata omits it."""
     store = _store()
     meta = store.create_session("c1")
-    assert meta["evergoing"] is False
+    assert "evergoing" not in meta
 
 
 def test_trim_session_removes_leading_turns_from_agent_view_only() -> None:
@@ -1053,30 +1027,24 @@ def test_has_new_input_since_trim_tracks_watermark() -> None:
     assert store.has_new_input_since_trim("s0") is True
 
 
-def test_evergoing_session_survives_lru_eviction() -> None:
-    """The evergoing session is never evicted even when the cap is exceeded."""
+def test_lru_eviction_drops_the_oldest_session() -> None:
+    """Past the cap the least-recently-used session is evicted — no exemptions."""
     store = _store(max_conversations=2)
-    ever = store.ensure_evergoing_session(OPERATOR_OWNER)
-    ever_sid = cast(str, ever["session_id"])
-
-    # Create enough sessions to force eviction past the cap.
-    for _ in range(5):
+    first = cast(str, store.create_session("c1")["session_id"])
+    for _ in range(3):
         store.create_session("c1")
-
-    assert store.evergoing_session_id() == ever_sid
-    assert store.get_session(ever_sid) is not None
+    assert store.get_session(first) is None
 
 
 def test_trim_state_survives_persist_roundtrip() -> None:
-    """Evergoing flag and trim watermark round-trip through persistence."""
+    """Trim watermark round-trips through persistence."""
     wall_clock = _FakeWallClock()
     with tempfile.NamedTemporaryFile(suffix=".json", delete=False) as f:
         persist_path = Path(f.name)
 
     try:
         store = _store(wall_clock=wall_clock, persist_path=persist_path)
-        ever = store.ensure_evergoing_session("c1")
-        sid = cast(str, ever["session_id"])
+        sid = cast(str, store.create_session("c1")["session_id"])
         store.record(sid, "c1", "q1", "a1")
         store.record(sid, "c1", "q2", "a2")
         store.trim_session(sid, 1, reason="subject change")
@@ -1084,7 +1052,6 @@ def test_trim_state_survives_persist_roundtrip() -> None:
         store2 = _store(wall_clock=wall_clock, persist_path=persist_path)
         reloaded = store2.get_session(sid)
         assert reloaded is not None
-        assert reloaded.evergoing is True
         assert reloaded.trimmed_turn_index == 1
         assert reloaded.last_trim_turn_count == 2
         assert store2.agent_history(sid) == [("q2", "a2")]

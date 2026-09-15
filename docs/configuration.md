@@ -109,12 +109,11 @@ pipelines (summary, vision captioning).
 | `cors_allow_origins`    | `array[string]` | `[]`             | Origins allowed to call `/chat` cross-origin.                                                      |
 | `correlation_id_header` | `string`        | `"X-Request-ID"` | Header name for request correlation ids.                                                           |
 
-**Context reduction — one mechanism.** Idle-timeout compaction was removed. The subject-aware trim
-scheduler (see the Evergoing section) is the single way ANY session's context shrinks: every
-`evergoing.trim_interval_seconds` it inspects each session with new input, and only when a cheap
-decision model judges the subject clearly changed does it drop the finished leading turns.
-`evergoing.min_fresh_turns` gates the decision model so tiny or freshly-trimmed sessions are never
-summarised or churned.
+**Context reduction — one mechanism.** Idle-timeout compaction was removed. The summary-compaction
+scheduler (see the Summary compaction section) is the single way ANY session's context shrinks:
+every `evergoing.trim_interval_seconds` it inspects each session with new input and, when more than
+`evergoing.keep_recent_runs` fresh runs accumulated beyond the previous summary, folds the older runs
+into the session summary. Nothing is dropped from the UI transcript.
 
 ### Langfuse (tracing)
 
@@ -345,25 +344,22 @@ cancel or query the pending continuation. Disabled by default.
 | `continuation.enabled`         | `boolean` | `false` | Master switch. When `false`, no continuation tools are offered.                              |
 | `continuation.max_consecutive` | `integer` | `3`     | Maximum consecutive auto-continuations before the guardrail blocks further automatic firing. |
 
-### Evergoing
+### Summary compaction (`evergoing`)
 
-The single never-ending "evergoing" session. When enabled, exactly one evergoing session is created
-on boot (idempotent, kept across restarts): it appears in the operator's session list flagged
-`evergoing` and is never auto-closed or auto-evicted. A background scheduler runs every
-`evergoing.trim_interval_seconds` and calls the new-input gate **first** — a no-input interval makes
-zero LLM calls. When new turns have arrived, a cheap summary-tier model decides whether the
-conversation's subject has clearly changed and how many finished leading turns to drop, then those
-turns are physically trimmed from both the agent view and the UI transcript (distinct from the
-summary/compaction card, which keeps the full transcript). The most-recent `keep_min_recent` turns
-are never trimmed, so the in-flight turn is always preserved. Disabled by default — set
-`evergoing.enabled` to `true` to activate.
+A background scheduler runs every `evergoing.trim_interval_seconds` over **every** session and calls
+the new-input gate **first** — a no-input interval makes zero LLM calls. When new turns have arrived
+and more than `evergoing.keep_recent_runs` completed runs (operator message + assistant answer)
+accumulated beyond the previous summary, a cheap summary-tier model folds the older runs into the
+session's summary; the recent runs stay verbatim in the agent replay and the UI transcript is never
+touched. Each summary is also pushed to the memory component (see `memory_component`). The block
+keeps its historical name: it used to switch on the "evergoing session" (one never-ending operator
+session with cross-session tools), which was removed on 2026-09-15 — a pinned `evergoing.enabled`
+is ignored on load.
 
-| JSON key                          | Type      | Default  | Description                                                                                                                                                                  |
-| --------------------------------- | --------- | -------- | ---------------------------------------------------------------------------------------------------------------------------------------------------------------------------- |
-| `evergoing.enabled`               | `boolean` | `false`  | Master switch for the evergoing session itself. The subject-aware trim scheduler always runs over all sessions.                                                              |
-| `evergoing.trim_interval_seconds` | `number`  | `1800.0` | Seconds between scheduled subject-aware trim passes. Must be >0. Default 1800 (30 minutes).                                                                                  |
-| `evergoing.keep_min_recent`       | `integer` | `2`      | Minimum most-recent turns the trim pass always keeps — guarantees the in-flight turn is never trimmed.                                                                       |
-| `evergoing.min_fresh_turns`       | `integer` | `3`      | Minimum fresh turns since the last trim before the decision model is consulted; the skip does not advance the watermark, so short exchanges accumulate until the gate opens. |
+| JSON key                          | Type      | Default  | Description                                                                                       |
+| --------------------------------- | --------- | -------- | ------------------------------------------------------------------------------------------------- |
+| `evergoing.trim_interval_seconds` | `number`  | `1800.0` | Seconds between scheduled compaction passes. Must be >0. Default 1800 (30 minutes).               |
+| `evergoing.keep_recent_runs`      | `integer` | `5`      | Most-recent completed runs kept verbatim; a session is compacted only when MORE have accumulated. |
 
 ### Subsessions
 

@@ -1,22 +1,18 @@
-"""Evergoing session: activation + periodic summarising compaction scheduler.
+"""Periodic summarising compaction scheduler (config block ``evergoing``).
 
-Wires the storage-layer evergoing/compaction primitives on
+Wires the storage-layer compaction primitives on
 :class:`robotsix_chat.chat.conversation.ConversationStore` into the running
-app: an activation path (create-on-boot behind ``evergoing.enabled``) and a
-background scheduler that folds everything before the last few runs into
-the session summary on a deterministic gate (interval + fresh-run count).
+app: a background scheduler that folds everything before the last few runs
+into the session summary on a deterministic gate (interval + fresh-run
+count) and pushes each summary to the memory component.
+
+The package keeps its historical name; the "evergoing session" it once
+activated (one never-ending operator session with cross-session tools) was
+removed on 2026-09-15.
 """
 
 from __future__ import annotations
 
-from robotsix_chat.evergoing.cross_session_tools import (
-    build_cross_session_tools,
-    load_cross_session_skill,
-)
 from robotsix_chat.evergoing.scheduler import EvergoingSummaryScheduler
 
-__all__ = [
-    "EvergoingSummaryScheduler",
-    "build_cross_session_tools",
-    "load_cross_session_skill",
-]
+__all__ = ["EvergoingSummaryScheduler"]

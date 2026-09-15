@@ -1226,7 +1226,6 @@ def test_roundtrip_nested_object_field_preserves_structure() -> None:
     original = Settings()
     dumped = original.model_dump()
     reloaded = Settings.model_validate(dumped)
-    assert reloaded.evergoing.enabled == original.evergoing.enabled
     assert (
         reloaded.evergoing.trim_interval_seconds
         == original.evergoing.trim_interval_seconds
