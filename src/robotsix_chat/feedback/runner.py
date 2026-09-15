@@ -410,6 +410,11 @@ class FeedbackRunner:
         self._max_tickets_per_run = settings.max_tickets_per_run
         self._dedup_window = settings.dedup_window_seconds
         self._ingest_max_retries = settings.ingest_max_retries
+        #: Bounds concurrent runs — a burst of session closes must not fan
+        #: out into dozens of analysis agents at once (see
+        #: ``FeedbackSettings.max_concurrent_runs``).
+        self._max_concurrent_runs = settings.max_concurrent_runs
+        self._run_slots = asyncio.Semaphore(self._max_concurrent_runs)
 
         # In-process dedup caches: (key → monotonic timestamp of last event).
         # Shared across ALL sessions — a single FeedbackRunner instance
@@ -479,7 +484,30 @@ class FeedbackRunner:
         session_id: str,
         turns: list[tuple[str, str]],
     ) -> None:
-        """Execute the full feedback analysis cycle (background task)."""
+        """Run the cycle under the concurrency cap (background task).
+
+        Runs beyond ``max_concurrent_runs`` wait for a slot instead of
+        starting; nothing is dropped, only serialised.
+        """
+        if self._run_slots.locked():
+            logger.info(
+                "Feedback run queued: trigger=%s session=%s — %d run(s) already "
+                "in flight (cap max_concurrent_runs=%d)",
+                trigger_type,
+                session_id,
+                self._max_concurrent_runs,
+                self._max_concurrent_runs,
+            )
+        async with self._run_slots:
+            await self._execute(trigger_type, session_id, turns)
+
+    async def _execute(
+        self,
+        trigger_type: str,
+        session_id: str,
+        turns: list[tuple[str, str]],
+    ) -> None:
+        """Execute the full feedback analysis cycle."""
         logger.info(
             "Feedback run starting: trigger=%s session=%s turns=%d",
             trigger_type,
