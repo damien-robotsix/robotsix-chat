@@ -1064,12 +1064,19 @@ def create_app(
                 if frame_type in (SSE_DONE_TYPE, SSE_ERROR_TYPE):
                     break
 
+        async def _periodic_close_previous(session_id: str) -> None:
+            """Close a superseded periodic run through the UI close path."""
+            from .routes.sessions import close_session_fully
+
+            await close_session_fully(app, PERIODIC_OWNER, session_id)
+
         app.state.periodic_scheduler = PeriodicScheduler(
             definitions=periodic_definitions,
             conversation_store=_p_store,
             submit_turn=_periodic_submit_turn,
             is_busy=_p_coalescer.is_busy,
             persist_path=periodic_state_path or PERIODIC_SCHEDULER_PERSIST_PATH,
+            close_previous=_periodic_close_previous,
         )
     else:
         app.state.periodic_scheduler = None
