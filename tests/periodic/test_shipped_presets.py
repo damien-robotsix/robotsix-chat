@@ -48,3 +48,35 @@ def test_dependabot_drain_preset_parses() -> None:
     # The initial prompt is a self-contained task brief.
     assert "list_open_prs" in preset.initial_prompt
     assert "/tickets/ingest" in preset.initial_prompt
+
+
+def test_gate_drain_preset_parses_and_demands_scope_report() -> None:
+    """The ``gate-drain`` preset parses and requires up-front scope reporting.
+
+    The prompt must instruct the agent to enumerate every gated state, report
+    the total discovered count and per-state summary in the main conversation
+    before detailed processing, and flag any discovered-vs-analyzed mismatch —
+    the behaviour missed by the 2026-09-09 run that motivated this preset.
+    """
+    preset = _preset(_load_settings(), "gate-drain")
+
+    assert preset.schedule_interval_seconds == 14400  # every four hours
+    assert preset.model_level == 2
+    # Ships disabled per the feature-flag convention (AGENT.md).
+    assert preset.enabled is False
+
+    prompt = preset.initial_prompt
+    # Every gated state is enumerated.
+    for state in (
+        "human_issue_approval",
+        "human_mr_approval",
+        "awaiting_user_reply",
+        "blocked",
+    ):
+        assert state in prompt
+    # Scope reporting is mandated up front, in the main conversation.
+    assert "TOTAL" in prompt
+    assert "main conversation" in prompt
+    assert "mismatch" in prompt
+    # Subsession summaries must not swallow the scope report.
+    assert "subsession" in prompt.lower()
