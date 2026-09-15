@@ -4,7 +4,7 @@ from __future__ import annotations
 
 from typing import Any
 
-from pydantic import BaseModel, ConfigDict, SecretStr, model_validator
+from pydantic import BaseModel, ConfigDict, Field, SecretStr, model_validator
 
 from robotsix_chat.config.constants import drop_blank_numeric_sentinels
 
@@ -52,6 +52,14 @@ class FeedbackSettings(BaseModel):
             timed-out request already created the ticket, so a retry
             never files a duplicate.  ``0`` disables retrying (a single
             attempt).  Default ``2`` (up to three attempts total).
+        max_concurrent_runs: Ceiling on feedback runs executing at the
+            same time; further runs wait for a slot (never dropped).  Each
+            run is a full analysis-agent call and every finding it routes
+            spawns an investigation subsession, so an unbounded burst —
+            an operator deleting dozens of stale sessions in one sweep
+            (2026-09-15: ~70 ``session_end`` runs in ten minutes, 17
+            investigation agents at once, chat at 3.8 GB of its 4 GiB
+            limit) — starves the host.  Default ``2``.
 
     The deploy-roster lookup uses the canonical ``central_deploy.url`` and
     ``central_deploy.deploy_api_key`` (the per-block ``deploy_api_key`` was
@@ -67,6 +75,7 @@ class FeedbackSettings(BaseModel):
     max_tickets_per_run: int = 3
     dedup_window_seconds: float = 60.0
     ingest_max_retries: int = 2
+    max_concurrent_runs: int = Field(default=2, ge=1)
     model_config = ConfigDict(extra="forbid")
 
     @model_validator(mode="before")

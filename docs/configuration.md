@@ -435,6 +435,7 @@ the feedback run never auto-approves. Disabled by default.
 | `feedback.max_tickets_per_run`  | `integer`         | `3`     | Ceiling on tickets filed by one feedback run. `0` disables filing.         |
 | `feedback.dedup_window_seconds` | `number`          | `60.0`  | Seconds to suppress duplicate runs (per session) and duplicate titles.     |
 | `feedback.ingest_max_retries`   | `integer`         | `2`     | Idempotent retries when an ingest POST hits a transport error/timeout.     |
+| `feedback.max_concurrent_runs`  | `integer`         | `2`     | Feedback runs executing at once; further runs wait for a slot (queued).    |
 
 **Deduplication.** Two guards prevent near-simultaneous feedback runs from filing duplicate tickets:
 
