@@ -20,7 +20,7 @@ from robotsix_chat.chat.conversation import OPERATOR_OWNER, ConversationStore
 from robotsix_chat.evergoing import EvergoingSummaryScheduler
 from robotsix_chat.memory_push import MemoryPush, session_document_id
 
-from .test_scheduler import _CountingAgent, _store_with_evergoing
+from .test_scheduler import _CountingAgent, _store_with_session
 
 MEMORY_URL = "http://memory:8080"
 
@@ -144,7 +144,7 @@ async def test_empty_summary_is_not_pushed() -> None:
 
 
 async def test_compaction_pushes_summary_to_memory() -> None:
-    store, sid = _store_with_evergoing(turns=8)
+    store, sid = _store_with_session(turns=8)
     agent = _CountingAgent("SUMMARY TEXT")
     push = _RecordingPush()
     scheduler = EvergoingSummaryScheduler(
@@ -167,7 +167,7 @@ async def test_compaction_pushes_summary_to_memory() -> None:
 
 
 async def test_no_push_when_gate_skips() -> None:
-    store, _sid = _store_with_evergoing(turns=3)  # at most keep_recent_runs
+    store, _sid = _store_with_session(turns=3)  # at most keep_recent_runs
     agent = _CountingAgent("SUMMARY TEXT")
     push = _RecordingPush()
     scheduler = EvergoingSummaryScheduler(
@@ -183,7 +183,7 @@ async def test_no_push_when_gate_skips() -> None:
 
 
 async def test_no_push_without_memory_push_configured() -> None:
-    store, _sid = _store_with_evergoing(turns=8)
+    store, _sid = _store_with_session(turns=8)
     agent = _CountingAgent("SUMMARY TEXT")
     scheduler = EvergoingSummaryScheduler(
         interval_seconds=3600, store=store, agent=agent, keep_recent_runs=5
@@ -194,7 +194,7 @@ async def test_no_push_without_memory_push_configured() -> None:
 
 
 async def test_finalize_session_pushes_full_summary() -> None:
-    store, sid = _store_with_evergoing(turns=4)
+    store, sid = _store_with_session(turns=4)
     agent = _CountingAgent("FINAL SUMMARY")
     push = _RecordingPush()
     scheduler = EvergoingSummaryScheduler(

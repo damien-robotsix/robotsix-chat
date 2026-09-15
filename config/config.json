@@ -234,7 +234,6 @@
     "max_consecutive": 3
   },
   "evergoing": {
-    "enabled": false,
     "trim_interval_seconds": 1800.0,
     "keep_recent_runs": 5
   },

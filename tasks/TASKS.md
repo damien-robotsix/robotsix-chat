@@ -13,7 +13,7 @@ Tasks that are pending, in-progress, or blocked.
 
 ## T-0001 — Idle-timeout duplicates issue
 
-- status: pending
+- status: dropped
 - created: 2026-06-23T12:40:00Z
 - updated: 2026-06-23T12:40:00Z
 - notes: After the 50-message history cap was added (20260623T163048Z), investigate whether
@@ -21,18 +21,21 @@ Tasks that are pending, in-progress, or blocked.
 
 ## T-0002 — Terminal-filter ticket
 
-- status: pending
+- status: dropped
 - created: 2026-06-23T12:40:00Z
 - updated: 2026-06-23T12:40:00Z
 - notes: Track the terminal-filter feature request referenced in prior conversations. Add details as
   they become available.
 
-## T-0005 — Evergoing session: cross-session awareness agent tools
+## T-0005 — Evergoing session: cross-session awareness agent tools (DROPPED)
 
-- status: pending
+- status: dropped
 - created: 2026-08-29T07:47:00Z
-- updated: 2026-08-29T07:47:00Z
-- notes: Ticket 20260829T074717Z-wire-up-the-evergoing-session-v2-activat wired the core evergoing
+- updated: 2026-09-15T15:30:00Z
+- notes: DROPPED 2026-09-15 — the operator removed the evergoing session concept from the code
+  (the `evergoing` config block now only holds the summary-compaction scheduler settings); the
+  cross-session tools shipped for it were deleted with it.
+  History: ticket 20260829T074717Z-wire-up-the-evergoing-session-v2-activat wired the core evergoing
   feature (activation on boot behind `evergoing.enabled`, the periodic subject-aware trim scheduler
   with the new-input gate, cheap-tier trim decision, UI marker). The remaining acceptance-criterion
   sub-item — surfacing agent-facing tools to the evergoing session so the agent can *enumerate other
@@ -92,7 +95,7 @@ Tasks that are pending, in-progress, or blocked.
 
 ## T-0006 — Register the browser service in the callable component roster (form-fill API contract)
 
-- status: pending
+- status: dropped
 
 - created: 2026-08-31T13:18:34Z
 
@@ -148,9 +151,12 @@ Tasks that are pending, in-progress, or blocked.
 
 ## T-0007 — Activate the `dependabot-drain` periodic preset on the live deployment
 
-- status: pending
+- status: dropped
+
 - created: 2026-09-03T00:00:00Z
+
 - updated: 2026-09-03T00:00:00Z
+
 - notes: Ticket 20260903T113001Z / follow-up 20260903T114337Z shipped the `dependabot-drain`
   periodic-session preset into `config/config.json` under `periodic.sessions`, documented in
   `docs/user-guide/periodic-sessions.md`. It ships `"enabled": false` per the feature-flag

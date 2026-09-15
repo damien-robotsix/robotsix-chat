@@ -164,11 +164,6 @@ class Session:
     # compaction created.  Kept so persisted chains still reroute; new
     # compactions never set it.
     compacted_into: str | None = None
-    # Marks the single "evergoing" session: a never-ending session whose
-    # context is kept bounded by periodic summarising compaction (see
-    # :meth:`ConversationStore.compact_session`).  Exactly one session
-    # should carry this flag at a time.
-    evergoing: bool = False
     # Index into ``turns`` marking how many leading turns have been physically
     # trimmed out of the active context by the auto-trim pass.  Unlike
     # compaction (which condenses into a summary), trimmed turns are simply
@@ -192,7 +187,6 @@ def _session_metadata(session: Session) -> dict[str, object]:
         "turn_count": session.turn_count,
         "closed": session.closed,
         "model_level": session.model_level,
-        "evergoing": session.evergoing,
     }
 
 
@@ -456,7 +450,8 @@ class ConversationStoreSerializer:
                     compacted_summary=compacted_summary,
                     compacted_turn_index=min(compacted_turn_index, len(turns)),
                     compacted_into=compacted_into,
-                    evergoing=bool(sraw.get("evergoing", False)),
+                    # A legacy ``evergoing`` flag (removed 2026-09-15) is
+                    # simply ignored on load.
                     trimmed_turn_index=min(trimmed_turn_index, len(turns)),
                     last_trim_turn_count=last_trim_turn_count,
                 )
@@ -514,8 +509,6 @@ class ConversationStoreSerializer:
                     session_dict["compacted_turn_index"] = session.compacted_turn_index
                 if session.compacted_into is not None:
                     session_dict["compacted_into"] = session.compacted_into
-                if session.evergoing:
-                    session_dict["evergoing"] = True
                 if session.trimmed_turn_index:
                     session_dict["trimmed_turn_index"] = session.trimmed_turn_index
                 if session.last_trim_turn_count:
@@ -1219,7 +1212,7 @@ class ConversationStore:
 
         These are ``turns[:compacted_turn_index]`` — the "earlier part of the
         conversation" a compaction summary condenses (see :meth:`_agent_view`).
-        Used by the evergoing scheduler's self-heal pass to regenerate a
+        Used by the summary scheduler's self-heal pass to regenerate a
         summary that was never persisted.  Returns ``([], [])`` for unknown
         sessions or when nothing is covered.
         """
@@ -1267,71 +1260,6 @@ class ConversationStore:
         session.compacted_summary = summary
         self._persist()
         return True
-
-    def mark_evergoing(self, session_id: str) -> bool:
-        """Flag *session_id* as the evergoing session. Persist.
-
-        Returns ``False`` for unknown sessions.  The caller is responsible
-        for the single-evergoing-session invariant (see
-        :meth:`ensure_evergoing_session`).
-        """
-        session = self._sessions.get(session_id)
-        if session is None:
-            return False
-        session.evergoing = True
-        self._persist()
-        return True
-
-    def evergoing_session_id(self) -> str | None:
-        """Return the id of the single evergoing session, or ``None``.
-
-        When more than one session is (erroneously) flagged, the
-        most-recently-active one wins so callers get a stable answer.
-        """
-        candidates = [s for s in self._sessions.values() if s.evergoing]
-        if not candidates:
-            return None
-        return max(candidates, key=lambda s: s.wall_last_active).session_id
-
-    def ensure_evergoing_session(self, owner_id: str) -> dict[str, object]:
-        """Return the evergoing session for *owner_id*, creating it if absent.
-
-        Guarantees exactly one evergoing session exists: if one is already
-        flagged it is returned unchanged; otherwise a fresh session is created,
-        flagged evergoing, registered under *owner_id*, and returned.  The
-        evergoing session is never auto-closed or auto-evicted by lifecycle
-        code — callers must not close it.
-        """
-        existing = self.evergoing_session_id()
-        if existing is not None:
-            session = self._sessions.get(existing)
-            if session is not None:
-                return _session_metadata(session)
-
-        owner_id = canonical_owner_id(owner_id)
-        sid = self._session_factory()
-        now = self._wall_clock()
-        session = Session(
-            session_id=sid,
-            title="Evergoing session",
-            wall_last_active=now,
-            evergoing=True,
-        )
-        self._sessions[sid] = session
-
-        owner = self._owners.get(owner_id)
-        if owner is None:
-            self._owners[owner_id] = _OwnerState(
-                active_session_id=sid,
-                session_ids={sid},
-            )
-        else:
-            owner.session_ids.add(sid)
-
-        self._sessions.move_to_end(sid)
-        self._evict_overflow()
-        self._persist()
-        return _session_metadata(session)
 
     def all_session_ids(self) -> list[str]:
         """Return every live session id (any owner), for the trim scheduler."""
@@ -1455,18 +1383,10 @@ class ConversationStore:
         """Pop the least-recently-used session when the cap is exceeded.
 
         Removes the evicted session id from every owner's ``session_ids``
-        registry.  The evergoing session is never evicted — it must survive
-        indefinitely — so it is skipped over when selecting the LRU victim.
+        registry.
         """
         while len(self._sessions) > self._max_conversations:
-            victim_sid: str | None = None
-            for sid, session in self._sessions.items():
-                if not session.evergoing:
-                    victim_sid = sid
-                    break
-            if victim_sid is None:
-                # Only evergoing sessions remain — nothing to evict.
-                break
+            victim_sid = next(iter(self._sessions))
             del self._sessions[victim_sid]
             # Remove from all owner registries.
             for owner_state in self._owners.values():
