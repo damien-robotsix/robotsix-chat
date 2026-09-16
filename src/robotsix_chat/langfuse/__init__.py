@@ -161,6 +161,7 @@ def build_langfuse_inspect_tools(
         limit: int = 5,
         from_timestamp: str = "",
         to_timestamp: str = "",
+        sort_by: str = "timestamp.desc",
     ) -> str:
         """Fetch and summarise Langfuse traces.
 
@@ -184,6 +185,11 @@ def build_langfuse_inspect_tools(
                 configured max).  Ignored when *trace_id* is set.
             from_timestamp: ISO 8601 start of time range (inclusive).
             to_timestamp: ISO 8601 end of time range (inclusive).
+            sort_by: Sort order for results. Supported values:
+                "timestamp.desc" (most recent first, default),
+                "timestamp.asc" (oldest first),
+                "totalCost.desc" (most expensive first),
+                "totalCost.asc" (least expensive first).
 
         Returns:
             A JSON string with a ``traces`` list of summarised trace
@@ -218,6 +224,25 @@ def build_langfuse_inspect_tools(
                     "error": (
                         "Provide at least one of trace_id, ticket_id, "
                         "from_timestamp, or to_timestamp."
+                    ),
+                },
+                ensure_ascii=False,
+            )
+
+        # Validate sort_by parameter
+        valid_sort_orders = {
+            "timestamp.desc",
+            "timestamp.asc",
+            "totalCost.desc",
+            "totalCost.asc",
+        }
+        if sort_by not in valid_sort_orders:
+            return json.dumps(
+                {
+                    "traces": [],
+                    "error": (
+                        f"Invalid sort_by value: {sort_by}. "
+                        f"Supported values: {', '.join(sorted(valid_sort_orders))}"
                     ),
                 },
                 ensure_ascii=False,
@@ -265,7 +290,7 @@ def build_langfuse_inspect_tools(
         # Build query params for list endpoint.
         params: dict[str, str] = {
             "limit": str(effective_limit),
-            "orderBy": "timestamp.desc",
+            "orderBy": sort_by,
         }
         if ticket_id:
             params["tags"] = f"ticket_id:{ticket_id}"

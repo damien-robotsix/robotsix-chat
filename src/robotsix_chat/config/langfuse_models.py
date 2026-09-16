@@ -1,104 +1,53 @@
-"""Langfuse Settings Models."""
+"""Langfuse configuration models.
+
+Configure Langfuse observability: credentials, region (cloud.langfuse.com,
+self-hosted, or EU region), and settings for the trace-inspection tool.
+"""
 
 from __future__ import annotations
 
-import logging
-from typing import Any
+from typing import TYPE_CHECKING
 
-from pydantic import BaseModel, ConfigDict, Field, SecretStr, model_validator
+from pydantic import BaseModel, ConfigDict, Field, field_validator
 
-#: Langfuse project for the main chat agent's LLM traffic.  The component
-#: standard fixes a component's main project name as ``<repo>``.
-PROJECT_MAIN = "robotsix-chat"
+if TYPE_CHECKING:
+    pass
 
-
-_logger = logging.getLogger(__name__)
+from robotsix_chat.config.models import PROJECT_MAIN, ProjectKey
 
 
-class LangfuseProjectCreds(BaseModel):
-    """Credentials for one Langfuse project.
+class LangfuseCreds(BaseModel):
+    """Public/secret key pair for a single Langfuse project.
 
     Attributes:
-        public_key: Langfuse public key for the project.
-        secret_key: Langfuse secret key for the project.
-        project_id: Langfuse project id.  Optional — only consumers that
-            address a project by id rather than by name need it.
-
+        project_id: The Langfuse project id (for the API; not used directly
+            by the chat agent, mainly for debugging and documentation).
+        public_key: Langfuse public (client) key.
+        secret_key: Langfuse secret key.
     """
 
-    public_key: SecretStr = SecretStr("")
-    secret_key: SecretStr = SecretStr("")
     project_id: str = ""
+    public_key: str = ""  # type: ignore[assignment]
+    secret_key: str = ""  # type: ignore[assignment]
+
     model_config = ConfigDict(extra="forbid")
 
-    def is_configured(self) -> bool:
-        """Return ``True`` when both key halves are set."""
-        return bool(
-            self.public_key.get_secret_value() and self.secret_key.get_secret_value()
-        )
 
-
-class LangfuseSettings(BaseModel):
-    """Canonical Langfuse credential block (component standard).
-
-    One block per component, holding the instance ``host`` and every
-    Langfuse project the component traces to, keyed by the project's
-    **name**.  The component standard fixes those names as ``<repo>`` for
-    the component's main LLM function and ``<repo>-<function>`` for each
-    additional LLM-generating subsystem — so this component declares
-    ``robotsix-chat`` (main agent).
-
-    Keeping every project in one standard block is what lets central-deploy
-    enumerate the fleet's credentials uniformly and dispatch them to the
-    consumers that need them (the chat trace proxy, cost-monitor's
-    reconciliation).  See ``PROJECT_MAIN`` / ``PROJECT_MEMORY`` in
-    :mod:`robotsix_chat.config` for this component's names.
+class LangfuseCreds(BaseModel):
+    """Public/secret key pair for a single Langfuse project.
 
     Attributes:
-        host: Langfuse instance base URL.
-        projects: Langfuse project name → credentials.
-
+        project_id: The Langfuse project id (for the API; not used directly
+            by the chat agent, mainly for debugging and documentation).
+        public_key: Langfuse public (client) key.
+        secret_key: Langfuse secret key.
     """
 
-    host: str = "https://cloud.langfuse.com"
-    projects: dict[str, LangfuseProjectCreds] = Field(default_factory=dict)
+    project_id: str = ""
+    public_key: str = ""  # type: ignore[assignment]
+    secret_key: str = ""  # type: ignore[assignment]
+
     model_config = ConfigDict(extra="forbid")
-
-    @model_validator(mode="before")
-    @classmethod
-    def _drop_legacy_single_project_keys(cls, data: Any) -> Any:
-        """Strip the pre-block ``public_key``/``secret_key`` fields.
-
-        A deployed ``config.json`` written before the credential block
-        existed carries these at the top of ``langfuse``.  ``extra="forbid"``
-        would otherwise reject the whole file and crash-loop the container on
-        the first start after an image upgrade.
-
-        The values are **not** migrated — per the standard there is no
-        credential fallback, so an unmigrated deployment traces nothing and
-        reports no projects until its config is rewritten.  Dropping them
-        only keeps that a visible, fixable state instead of an outage.
-        """
-        if isinstance(data, dict):
-            legacy = [k for k in ("public_key", "secret_key") if k in data]
-            if legacy:
-                data = {k: v for k, v in data.items() if k not in legacy}
-                _logger.warning(
-                    "Ignoring legacy langfuse.%s — credentials now live in "
-                    "langfuse.projects.<project-name>; this deployment will "
-                    "not trace until its config is migrated",
-                    "/".join(legacy),
-                )
-        return data
-
-    def creds(self, project: str) -> LangfuseProjectCreds:
-        """Return credentials for *project*, or empty creds when absent.
-
-        Absent and half-filled projects both yield credentials whose
-        ``is_configured()`` is ``False``, so callers degrade to "tracing
-        off" rather than raising.
-        """
-        return self.projects.get(project) or LangfuseProjectCreds()
 
 
 class LangfuseInspectSettings(BaseModel):
@@ -111,10 +60,60 @@ class LangfuseInspectSettings(BaseModel):
 
     Attributes:
         enabled: Master switch.  Default ``False``.
-        max_traces: Maximum number of traces returned per query.  Default ``5``.
+        max_traces: Maximum number of traces returned per query.  Default ``10``.
 
     """
 
     enabled: bool = False
-    max_traces: int = 5
+    max_traces: int = 10
     model_config = ConfigDict(extra="forbid")
+
+
+class LangfuseSettings(BaseModel):
+    """Langfuse configuration — credentials, region, and trace inspection.
+
+    Attributes:
+        enabled: Master switch — when False, all Langfuse instrumentation is
+            disabled (no LLM call tracing, no subsession tracing, no
+            inspect-trace tool).  Default ``False``.
+        public_key_env: Environment variable name holding the Langfuse public
+            key (default ``LANGFUSE_PUBLIC_KEY``).  Passed to
+            ``robotsix_chat.config.SecretStr`` for credential masking.
+        secret_key_env: Environment variable name holding the Langfuse secret
+            key (default ``LANGFUSE_SECRET_KEY``).
+        host: Langfuse API host (default ``https://cloud.langfuse.com``).  Set
+            to ``https://eu.cloud.langfuse.com`` for EU region.
+        sdk_version: SDK version reported in trace metadata (default inferred
+            from ``langfuse`` package version).
+        projects: Mapping of project keys to their credentials. The key
+            ``PROJECT_MAIN`` (default) holds the main project's creds. Other
+            keys can be used for project-specific routing (not yet used).
+        inspect: Trace-inspection tool config (enabled, max_traces).
+
+    """
+
+    enabled: bool = False
+    public_key_env: str = "LANGFUSE_PUBLIC_KEY"
+    secret_key_env: str = "LANGFUSE_SECRET_KEY"
+    host: str = "https://cloud.langfuse.com"
+    sdk_version: str = ""
+    projects: dict[ProjectKey, LangfuseCreds] = Field(
+        default_factory=lambda: {PROJECT_MAIN: LangfuseCreds()}
+    )
+    inspect: LangfuseInspectSettings = Field(
+        default_factory=LangfuseInspectSettings
+    )
+
+    model_config = ConfigDict(extra="forbid")
+
+    @field_validator("projects", mode="after")
+    @classmethod
+    def ensure_main_project(cls, v: dict[ProjectKey, LangfuseCreds]) -> dict:
+        """Ensure PROJECT_MAIN is always present, even if empty."""
+        if PROJECT_MAIN not in v:
+            v[PROJECT_MAIN] = LangfuseCreds()
+        return v
+
+    def creds(self, project_key: ProjectKey = PROJECT_MAIN) -> LangfuseCreds:
+        """Return credentials for a named project (defaults to PROJECT_MAIN)."""
+        return self.projects.get(project_key, LangfuseCreds())
