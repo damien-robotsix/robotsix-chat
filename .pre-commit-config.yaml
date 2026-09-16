@@ -94,7 +94,7 @@ repos:
       - id: hadolint-docker
 
   - repo: https://github.com/trufflesecurity/trufflehog
-    rev: v3.97.2
+    rev: v3.97.4
     hooks:
       - id: trufflehog
         args: ["--exclude-detectors=Lob"]
