@@ -15,6 +15,8 @@ from collections.abc import Callable
 from pathlib import Path
 from typing import Any
 
+from robotsix_llmio.logging import setup_structlog
+
 from robotsix_chat.chat.conversation import ConversationStore
 from robotsix_chat.chat.events import EventBus
 from robotsix_chat.chat.summarize import SUMMARY_SYSTEM_PROMPT
@@ -168,53 +170,26 @@ def _export_langfuse_env(settings: Settings) -> None:
 def _configure_logging(settings: Settings) -> None:
     """Wire Python stdlib logging through structlog.
 
-    Uses ``structlog.stdlib.ProcessorFormatter`` as a bridge so existing
-    ``logging.getLogger(__name__).info(...)`` calls continue to work while
-    all output flows through the configured processor chain.  JSON output
-    is used when *settings.log_json_format* is ``True`` (the default);
-    human-readable console output when ``False``.
+    Delegates the structlog + stdlib ``ProcessorFormatter`` bridge to the
+    shared :func:`robotsix_llmio.logging.setup_structlog` helper, which
+    installs the same processor chain (merge-contextvars, log level,
+    logger name, ISO timestamp, stack info, exc info) plus an OTel
+    trace-id processor and renders JSON when *settings.log_json_format* is
+    ``True`` (the default) or human-readable console output when ``False``.
 
-    Uvicorn's loggers are cleared and set to propagate so access logs
-    flow through the same structured pipeline.
+    Correlation-id support (the contextvars merge processor) is enabled so
+    values bound via request middleware appear on each event, matching the
+    previously hand-rolled chain.
+
+    Uvicorn's loggers are cleared and set to propagate so access logs flow
+    through the same structured pipeline — the shared helper only touches
+    the root bridge, so this chat-specific cleanup is retained here.
     """
-    import structlog
-
-    shared_processors: list[Any] = [
-        structlog.contextvars.merge_contextvars,
-        structlog.stdlib.add_log_level,
-        structlog.stdlib.add_logger_name,
-        structlog.processors.TimeStamper(fmt="iso"),
-        structlog.processors.StackInfoRenderer(),
-        structlog.processors.format_exc_info,
-    ]
-
-    structlog.configure(
-        processors=[
-            *shared_processors,
-            structlog.stdlib.ProcessorFormatter.wrap_for_formatter,
-        ],
-        logger_factory=structlog.stdlib.LoggerFactory(),
-        wrapper_class=structlog.stdlib.BoundLogger,
-        cache_logger_on_first_use=True,
+    setup_structlog(
+        level=settings.log_level,
+        fmt="json" if settings.log_json_format else "console",
+        correlation_id=True,
     )
-
-    if settings.log_json_format:
-        renderer: Any = structlog.processors.JSONRenderer()
-    else:
-        renderer = structlog.dev.ConsoleRenderer()
-
-    formatter = structlog.stdlib.ProcessorFormatter(
-        processor=renderer,
-        foreign_pre_chain=shared_processors,
-    )
-
-    handler = logging.StreamHandler()
-    handler.setFormatter(formatter)
-
-    root_logger = logging.getLogger()
-    root_logger.handlers.clear()
-    root_logger.addHandler(handler)
-    root_logger.setLevel(settings.log_level.upper())
 
     # Let Uvicorn loggers propagate through the same pipeline.
     for name in ("uvicorn", "uvicorn.error", "uvicorn.access"):
