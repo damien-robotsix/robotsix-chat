@@ -16,6 +16,25 @@ from robotsix_chat.chat.server.cli import (
 )
 from robotsix_chat.config import Settings
 
+
+def _structlog_handler() -> logging.Handler:
+    """Return the ``ProcessorFormatter``-backed handler installed on root.
+
+    ``setup_structlog`` attaches its bridge handler additively (it does not
+    clear pre-existing handlers such as pytest's log-capture handlers), so
+    tests must select the configured handler by its formatter type rather
+    than assume it is ``root.handlers[0]``.
+    """
+    root = logging.getLogger()
+    handlers = [
+        h
+        for h in root.handlers
+        if isinstance(h.formatter, structlog.stdlib.ProcessorFormatter)
+    ]
+    assert len(handlers) == 1
+    return handlers[0]
+
+
 # ---------------------------------------------------------------------------
 # _configure_logging
 # ---------------------------------------------------------------------------
@@ -48,8 +67,7 @@ class TestConfigureLogging:
 
         root = logging.getLogger()
         assert root.level == logging.DEBUG
-        assert len(root.handlers) == 1
-        handler = root.handlers[0]
+        handler = _structlog_handler()
         assert isinstance(handler, logging.StreamHandler)
         formatter = handler.formatter
         assert formatter is not None
@@ -69,8 +87,7 @@ class TestConfigureLogging:
 
         root = logging.getLogger()
         assert root.level == logging.INFO
-        assert len(root.handlers) == 1
-        formatter = root.handlers[0].formatter
+        formatter = _structlog_handler().formatter
 
         # Console output contains the message and is NOT valid JSON.
         record = logging.LogRecord("test", logging.INFO, "", 0, "hello", (), None)
@@ -105,7 +122,7 @@ class TestConfigureLogging:
         settings = Settings()
         _configure_logging(settings)
 
-        formatter = logging.getLogger().handlers[0].formatter
+        formatter = _structlog_handler().formatter
         # structlog < 25.0.0: foreign_pre_chain; >= 25.0.0: _foreign_pre_chain
         # (or processors when neither is available).
         chain = (

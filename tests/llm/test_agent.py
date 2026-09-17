@@ -1765,9 +1765,12 @@ async def test_named_trace_is_root_above_failover_attempt_span() -> None:
         ]
 
     spans = {s.name: s for s in exporter.get_finished_spans()}
-    assert "chat-turn" in spans and "llmio.failover.attempt" in spans
+    # The primary (non-failover) attempt succeeds here, so llmio names its
+    # attempt span ``llmio.attempt.primary``; only subsequent failover
+    # attempts surface as ``llmio.failover.attempt``.
+    assert "chat-turn" in spans and "llmio.attempt.primary" in spans
     turn = spans["chat-turn"]
-    attempt = spans["llmio.failover.attempt"]
+    attempt = spans["llmio.attempt.primary"]
     assert turn.parent is None, "the named turn span must be the trace root"
     assert attempt.parent is not None
     assert attempt.parent.span_id == turn.context.span_id
