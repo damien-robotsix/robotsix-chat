@@ -2,7 +2,8 @@
 
 Read-only tool that queries the Langfuse observability API to fetch and summarise recent traces.
 Primarily used to diagnose implement-stage failures by inspecting the agent's own LLM-call traces
-linked to a specific ticket or run.
+linked to a specific ticket or run. Supports querying traces across multiple Langfuse projects for
+fleet-wide analysis.
 
 ## When to use it
 
@@ -12,6 +13,7 @@ linked to a specific ticket or run.
   during that run.
 - When debugging an anomalous LLM response — fetch the trace by its id for a full structured
   summary.
+- For fleet-wide cost analysis — query traces across multiple projects in a single call.
 
 ## Allowed operation
 
@@ -28,6 +30,7 @@ inspect_langfuse_trace(
     limit: int = 5,
     from_timestamp: str = "",
     to_timestamp: str = "",
+    projects: str = "",
 ) -> str
 ```
 
@@ -35,12 +38,14 @@ inspect_langfuse_trace(
   `to_timestamp`.
 - `trace_id` is mutually exclusive with the other criteria.
 - When `trace_id` is given: fetch that single trace and return a detailed summary (name, timestamps,
-  input/output tokens, total cost, top-level observations, scores).
+  input/output tokens, total cost, top-level observations, scores). Searches all specified projects
+  and returns the first match.
 - When `ticket_id` is given: search for traces whose tags include `ticket_id:<value>` (most recent
   first) up to `limit`, and return a summary list (trace id, name, timestamp, duration, cost).
 - `from_timestamp` / `to_timestamp`: filter traces by time range (ISO 8601, e.g.
   `2026-08-01T00:00:00Z`). Either or both may be provided, alone or combined with `ticket_id`.
 - `limit` caps the number of traces returned (default 5, max configured in settings).
+- `projects` (optional): comma-separated list of project names to query (e.g. `"robotsix-chat,robotsix-mill"`). When unspecified, queries all configured Langfuse projects.
 
 ## Return value
 
@@ -59,7 +64,7 @@ A JSON string with a `traces` list. Each trace entry carries:
 | `scores`       | List of `{name, value}` score pairs              |
 
 When `ticket_id` is given, an additional `ticket_id` field echoes the search key and `limit` echoes
-the cap used.
+the cap used. When multiple projects are queried, a `projects` field lists the projects searched.
 
 ## Safety
 
@@ -77,7 +82,7 @@ the cap used.
   a different result.
 - **Do NOT claim credentials are missing.** The tool authenticates via Basic auth using the
   `langfuse.projects` config block — it checks credentials up front and returns an explicit
-  "credentials are not configured" error when they are absent. Any other error (HTTP status,
+  error when projects are not configured or credentials are incomplete. Any other error (HTTP status,
   timeout, network failure) means the credentials *were* sent and the Langfuse host rejected or did
   not receive the request. Blaming a missing credential when the tool did not return the
   credential-specific error message wastes time and erodes trust.
@@ -93,15 +98,22 @@ the cap used.
 ## Example calls
 
 ```text
-# Inspect a specific known trace
+# Inspect a specific known trace (searches all projects by default)
 inspect_langfuse_trace(trace_id="01J...abc")
 
-# Search for traces linked to a ticket
+# Search for traces linked to a ticket across all configured projects
 inspect_langfuse_trace(ticket_id="20260727T001240Z-add-capability-5bd6", limit=5)
 
-# Query the last 24 hours of traces (time-range search)
+# Query the last 24 hours of traces from specific projects
 inspect_langfuse_trace(from_timestamp="2026-08-22T00:00:00Z",
-                       to_timestamp="2026-08-23T00:00:00Z", limit=20)
+                       to_timestamp="2026-08-23T00:00:00Z",
+                       projects="robotsix-mill,robotsix-chat",
+                       limit=20)
+
+# Time-range search in a single project
+inspect_langfuse_trace(from_timestamp="2026-08-22T00:00:00Z",
+                       to_timestamp="2026-08-23T00:00:00Z",
+                       projects="robotsix-mill")
 ```
 
 ## Fast path for periodic-session speed complaints (moved from the system prompt, 2026-09-08)
