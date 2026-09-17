@@ -137,8 +137,8 @@ def build_langfuse_inspect_tools(
     Args:
         inspect_settings: LangfuseInspect configuration (``enabled`` master
             switch, ``max_traces`` cap).
-        langfuse_settings: The canonical Langfuse block; the main project's
-            credentials (``PROJECT_MAIN``) are used for API authentication.
+        langfuse_settings: The canonical Langfuse block; credentials for all
+            configured projects are resolved at build time.
 
     Returns:
         A single-element list containing the ``inspect_langfuse_trace`` async
@@ -148,10 +148,15 @@ def build_langfuse_inspect_tools(
     if not inspect_settings.enabled:
         return []
 
-    # Resolve secrets at build time so the closure captures plain strings.
-    creds = langfuse_settings.creds(PROJECT_MAIN)
-    pk = creds.public_key.get_secret_value()
-    sk = creds.secret_key.get_secret_value()
+    # Resolve project credentials at build time so the closure captures them.
+    # Extract public/secret keys for each configured project.
+    projects_dict: dict[str, tuple[str, str]] = {}  # project -> (pk, sk)
+    for proj_name, proj_creds in langfuse_settings.projects.items():
+        pk = proj_creds.public_key.get_secret_value()
+        sk = proj_creds.secret_key.get_secret_value()
+        if pk and sk:
+            projects_dict[proj_name] = (pk, sk)
+
     host = langfuse_settings.host.rstrip("/")
     max_traces = inspect_settings.max_traces
 
@@ -161,14 +166,17 @@ def build_langfuse_inspect_tools(
         limit: int = 5,
         from_timestamp: str = "",
         to_timestamp: str = "",
+        projects: str = "",
     ) -> str:
-        """Fetch and summarise Langfuse traces.
+        """Fetch and summarise Langfuse traces from one or more projects.
 
         Fetches traces from the configured Langfuse host with one of these
         search modes:
 
-        - *trace_id* — fetch a single trace by its id.
-        - *ticket_id* — search for traces tagged ``ticket_id:<value>``.
+        - *trace_id* — fetch a single trace by its id (searches specified
+          projects, returns first match).
+        - *ticket_id* — search for traces tagged ``ticket_id:<value>`` across
+          projects.
         - *from_timestamp* / *to_timestamp* — time-range search (ISO 8601,
           e.g. ``2026-08-01T00:00:00Z``).  Either or both may be provided.
         - Combine *ticket_id* with time-range filters to narrow results.
@@ -184,6 +192,8 @@ def build_langfuse_inspect_tools(
                 configured max).  Ignored when *trace_id* is set.
             from_timestamp: ISO 8601 start of time range (inclusive).
             to_timestamp: ISO 8601 end of time range (inclusive).
+            projects: Comma-separated list of project names to query. When
+                unspecified, queries all configured projects.
 
         Returns:
             A JSON string with a ``traces`` list of summarised trace
@@ -223,46 +233,67 @@ def build_langfuse_inspect_tools(
                 ensure_ascii=False,
             )
 
-        if not pk or not sk:
+        # Resolve which projects to query.
+        if projects:
+            # User specified projects explicitly.
+            query_projects = [p.strip() for p in projects.split(",") if p.strip()]
+        else:
+            # Default to all configured projects.
+            query_projects = list(projects_dict.keys())
+
+        # Validate that specified projects are configured.
+        unavailable = [p for p in query_projects if p not in projects_dict]
+        if unavailable:
+            return json.dumps(
+                {
+                    "traces": [],
+                    "error": f"Projects not configured: {', '.join(unavailable)}",
+                },
+                ensure_ascii=False,
+            )
+
+        if not query_projects:
             return json.dumps(
                 {
                     "traces": [],
                     "error": (
-                        "Langfuse credentials (public_key + secret_key) are "
-                        "not configured — the inspect tool cannot authenticate."
+                        "No Langfuse projects are configured — the inspect tool "
+                        "cannot query traces."
                     ),
                 },
                 ensure_ascii=False,
             )
 
-        auth = _basic_auth_header(pk, sk)
-        headers = {"Authorization": auth}
-
         # Clamp limit to configured max.
         effective_limit = min(max(1, limit), max_traces)
 
         if trace_id:
-            # Fetch a single trace by id.
-            url = f"{host}/api/public/traces/{trace_id}"
-            result: HttpResult = await _retry_safe_http_request(
-                "GET",
-                url,
-                headers=headers,
-                timeout=30.0,
-                label="Langfuse API",
-            )
-            if result.error:
-                return json.dumps(
-                    {"traces": [], "error": result.error},
-                    ensure_ascii=False,
+            # Fetch a single trace by id — search all specified projects.
+            for proj_name in query_projects:
+                pk, sk = projects_dict[proj_name]
+                auth = _basic_auth_header(pk, sk)
+                headers = {"Authorization": auth}
+                url = f"{host}/api/public/traces/{trace_id}"
+                result: HttpResult = await _retry_safe_http_request(
+                    "GET",
+                    url,
+                    headers=headers,
+                    timeout=30.0,
+                    label="Langfuse API",
                 )
-            trace_data: dict[str, Any] = json.loads(result.text or "{}")
+                if result.ok:
+                    trace_data: dict[str, Any] = json.loads(result.text or "{}")
+                    return json.dumps(
+                        {"traces": [_summarise_trace(trace_data)], "project": proj_name},
+                        ensure_ascii=False,
+                    )
+            # No project had the trace.
             return json.dumps(
-                {"traces": [_summarise_trace(trace_data)]},
+                {"traces": [], "error": f"Trace {trace_id} not found in any project"},
                 ensure_ascii=False,
             )
 
-        # Build query params for list endpoint.
+        # Build query params for list endpoint (shared across projects).
         params: dict[str, str] = {
             "limit": str(effective_limit),
             "orderBy": "timestamp.desc",
@@ -274,28 +305,47 @@ def build_langfuse_inspect_tools(
         if to_timestamp:
             params["toTimestamp"] = to_timestamp
 
-        url = f"{host}/api/public/traces"
-        result = await _retry_safe_http_request(
-            "GET",
-            url,
-            headers=headers,
-            params=params,
-            timeout=30.0,
-            label="Langfuse API",
-        )
-        if result.error:
-            return json.dumps(
-                {"traces": [], "error": result.error},
-                ensure_ascii=False,
-            )
+        # Query all specified projects and merge results.
+        all_traces: list[dict[str, Any]] = []
+        for proj_name in query_projects:
+            pk, sk = projects_dict[proj_name]
+            auth = _basic_auth_header(pk, sk)
+            headers = {"Authorization": auth}
 
-        page: dict[str, Any] = json.loads(result.text or "{}")
-        raw_traces: list[dict[str, Any]] = page.get("data", [])
-        traces = [_summarise_trace(t) for t in raw_traces]
+            url = f"{host}/api/public/traces"
+            result = await _retry_safe_http_request(
+                "GET",
+                url,
+                headers=headers,
+                params=params,
+                timeout=30.0,
+                label="Langfuse API",
+            )
+            if result.error:
+                # If we encounter an error on any project, return it early.
+                return json.dumps(
+                    {"traces": [], "error": result.error},
+                    ensure_ascii=False,
+                )
+
+            page: dict[str, Any] = json.loads(result.text or "{}")
+            raw_traces: list[dict[str, Any]] = page.get("data", [])
+            all_traces.extend(raw_traces)
+
+        # Sort by timestamp descending and truncate to limit.
+        all_traces.sort(
+            key=lambda t: t.get("timestamp", ""),
+            reverse=True,
+        )
+        all_traces = all_traces[:effective_limit]
+
+        traces = [_summarise_trace(t) for t in all_traces]
         response: dict[str, Any] = {
             "traces": traces,
             "limit": effective_limit,
         }
+        if len(query_projects) > 1:
+            response["projects"] = query_projects
         if ticket_id:
             response["ticket_id"] = ticket_id
         if from_timestamp:
