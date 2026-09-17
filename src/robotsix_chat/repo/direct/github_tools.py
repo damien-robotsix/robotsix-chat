@@ -1208,11 +1208,12 @@ def build_github_tools(
         return await actions_client.rerun_workflow_run(repo_full_name, run_id)
 
     async def fetch_ci_job_logs(
-        repo_full_name: str,
+        repo_full_name: str = "",
         run_id: int = 0,
         branch: str = "",
         job_name: str = "",
         max_log_bytes: int = 16_000,
+        repo: str = "",
     ) -> str:
         """Fetch and parse job logs from a CI workflow run.
 
@@ -1229,6 +1230,9 @@ def build_github_tools(
 
         Args:
             repo_full_name: GitHub ``owner/name`` (e.g. ``"org/repo"``).
+            repo: Alias of ``repo_full_name``; the claude_sdk schema check
+                rejected ``repo=`` calls before the body ran (2026-09-17,
+                correlation ab33c37a…).
             run_id: Specific workflow run id (optional; defaults to latest failed).
             branch: Branch to search for failing runs when *run_id* is 0.
             job_name: Optional filter to only return logs from jobs whose name
@@ -1242,6 +1246,17 @@ def build_github_tools(
             (when accessible) the raw log content from each matching job.
 
         """
+        repo_arg = repo.strip()
+        alias_arg = repo_full_name.strip()
+        if repo_arg and alias_arg and repo_arg != alias_arg:
+            return (
+                f"Error: repo={repo!r} and repo_full_name={repo_full_name!r} "
+                "disagree; pass only one of them."
+            )
+        repo_full_name = alias_arg or repo_arg
+        if not repo_full_name:
+            return "Error: repo_full_name is required."
+
         if component_request is None and (
             scope_error := await client.check_installation_scope(repo_full_name)
         ):
@@ -2337,9 +2352,11 @@ def build_github_tools(
         ticket_id: str,
         repo_full_name: str,
         pr_number: int,
-        file_path: str,
-        patch_content: str,
+        file_path: str = "",
+        patch_content: str = "",
         commit_message: str = "",
+        path: str = "",
+        patch: str = "",
     ) -> str:
         """Push a patched commit to an existing pull request's head branch.
 
@@ -2376,8 +2393,12 @@ def build_github_tools(
             pr_number: The PR number to push to.
             file_path: Path to the file to patch, relative to the repo
                 root (e.g. ``"src/dashboard.js"``).
+            path: Alias of ``file_path``; the claude_sdk schema check
+                rejected ``path=``/``patch=`` calls before the body ran
+                (2026-09-17, correlation ab33c37a…).
             patch_content: The unified diff to apply.  Must include at
                 least one ``@@`` hunk header with context lines.
+            patch: Alias of ``patch_content``.
             commit_message: Commit message.  Defaults to a message that
                 references the *ticket_id*.
 
@@ -2386,6 +2407,19 @@ def build_github_tools(
             message describing why the push was refused or failed.
 
         """
+        for supplied, alias, name in (
+            (file_path, path, "file_path"),
+            (patch_content, patch, "patch_content"),
+        ):
+            if supplied.strip() and alias.strip() and supplied != alias:
+                return f"Error: {name} and its alias disagree; pass only one of them."
+        file_path = file_path or path
+        patch_content = patch_content or patch
+        if not file_path:
+            return "Error: file_path is required."
+        if not patch_content:
+            return "Error: patch_content is required."
+
         # --- guard 1+2: BLOCKED + scope ---
         if error := await assert_blocked_and_scoped(client, ticket_id, repo_full_name):
             return error

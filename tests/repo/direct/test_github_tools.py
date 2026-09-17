@@ -722,3 +722,102 @@ def test_list_open_prs_schema_lists_repo_full_name() -> None:
     assert "repo" in props
     assert props["repo_full_name"]["type"] == "string"
     assert "repo_full_name" not in schema.get("required", [])
+
+
+def _build_tool(name: str) -> Any:
+    """Build one GitHub tool with inert collaborators, for schema assertions."""
+
+    async def _pass(*_a: Any, **_k: Any) -> str | None:
+        return None
+
+    tools = build_github_tools(
+        client=cast(Any, _SearchClient()),
+        board=cast(Any, _FakeBoard()),
+        settings=cast(Any, object()),
+        component_request=None,
+        assert_blocked_and_scoped=_pass,
+        assert_in_scope=_pass,
+    )
+    return {t.__name__: t for t in tools}[name]
+
+
+def test_fetch_ci_job_logs_schema_lists_repo_alias() -> None:
+    """``repo=`` must be a real parameter, not an in-body shim.
+
+    Live 2026-09-17 (correlation ab33c37a…) a chat agent called
+    ``fetch_ci_job_logs(repo=…, run_id=…)`` and the claude_sdk path rejected
+    it with "Additional properties are not allowed ('repo' was unexpected)"
+    before the body ran — the same class already fixed for the other GitHub
+    tools.
+    """
+    import pydantic_ai
+
+    schema = pydantic_ai.Tool(_build_tool("fetch_ci_job_logs")).tool_def
+    props = schema.parameters_json_schema["properties"]
+    assert "repo" in props
+    assert "repo_full_name" in props
+    # Neither may be required, or the alias-only call shape still fails.
+    required = schema.parameters_json_schema.get("required", [])
+    assert "repo_full_name" not in required
+    assert "repo" not in required
+
+
+@pytest.mark.asyncio
+async def test_fetch_ci_job_logs_rejects_disagreeing_repo_args() -> None:
+    """Two different repositories is ambiguous — refuse rather than guess."""
+    fn = _build_tool("fetch_ci_job_logs")
+    out = await fn(repo="damien-robotsix/x", repo_full_name="damien-robotsix/y")
+    assert out.startswith("Error:")
+    assert "disagree" in out
+
+
+@pytest.mark.asyncio
+async def test_fetch_ci_job_logs_requires_a_repo() -> None:
+    """Neither name supplied is a usable error, not a crash."""
+    fn = _build_tool("fetch_ci_job_logs")
+    out = await fn(run_id=1)
+    assert out.startswith("Error:")
+    assert "repo_full_name is required" in out
+
+
+def test_push_patch_to_pr_branch_schema_lists_path_and_patch_aliases() -> None:
+    """``path=``/``patch=`` must be real parameters.
+
+    Live 2026-09-17 (correlation ab33c37a…): the agent called
+    ``push_patch_to_pr_branch(repo_full_name=…, pr_number=…, path=…,
+    patch=…)`` and the schema check rejected it before the body ran.
+    """
+    import pydantic_ai
+
+    schema = pydantic_ai.Tool(_build_tool("push_patch_to_pr_branch")).tool_def
+    props = schema.parameters_json_schema["properties"]
+    for name in ("file_path", "patch_content", "path", "patch"):
+        assert name in props, name
+    required = schema.parameters_json_schema.get("required", [])
+    assert "file_path" not in required
+    assert "patch_content" not in required
+
+
+@pytest.mark.asyncio
+async def test_push_patch_to_pr_branch_rejects_disagreeing_aliases() -> None:
+    """A canonical name and its alias that disagree is ambiguous — refuse."""
+    fn = _build_tool("push_patch_to_pr_branch")
+    out = await fn(
+        ticket_id="t",
+        repo_full_name="damien-robotsix/x",
+        pr_number=1,
+        file_path="a.py",
+        path="b.py",
+        patch_content="@@",
+    )
+    assert out.startswith("Error:")
+    assert "disagree" in out
+
+
+@pytest.mark.asyncio
+async def test_push_patch_to_pr_branch_requires_path_and_patch() -> None:
+    """Omitting both the canonical name and its alias is a usable error."""
+    fn = _build_tool("push_patch_to_pr_branch")
+    out = await fn(ticket_id="t", repo_full_name="damien-robotsix/x", pr_number=1)
+    assert out.startswith("Error:")
+    assert "file_path is required" in out
