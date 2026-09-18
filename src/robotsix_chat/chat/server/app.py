@@ -1069,10 +1069,10 @@ def create_app(
                     # distinguish it here. Raising makes the scheduler treat
                     # this run as failed — it is NOT completion-closed, and
                     # is left for the supersede-close safety net.
-                    message = (
+                    err_msg = (
                         payload.get("message") if isinstance(payload, dict) else None
                     )
-                    raise RuntimeError(message or "periodic turn failed")
+                    raise RuntimeError(err_msg or "periodic turn failed")
 
         async def _periodic_close_previous(session_id: str) -> None:
             """Close a superseded periodic run through the UI close path."""
