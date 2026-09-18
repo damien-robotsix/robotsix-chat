@@ -23,7 +23,11 @@ import respx
 from pydantic import SecretStr
 
 from robotsix_chat.config.models import FeedbackSettings
-from robotsix_chat.feedback.runner import FeedbackRunner, _build_feedback_prompt
+from robotsix_chat.feedback.runner import (
+    FeedbackRunner,
+    _build_feedback_prompt,
+    _build_investigation_prompt,
+)
 from robotsix_chat.subsessions.models import (
     SubsessionInfo,
     SubsessionKind,
@@ -1019,6 +1023,172 @@ class TestFileTickets:
         assert "robotsix-chat" in kwargs["prompt"]
         assert "chat subsession agent" in kwargs["prompt"]
         assert "routing to chat subsession agent" in caplog.text
+
+    @pytest.mark.asyncio
+    async def test_chat_config_finding_never_routed_to_component_repo(
+        self, respx_mock: respx.MockRouter, caplog: pytest.LogCaptureFixture
+    ) -> None:
+        """A chat-config finding is never routed to a component repo.
+
+        Regression for the hexarchy #304/#311/#312 mis-targeting: a finding
+        about chat's ``board-gates-drain`` periodic preset was labelled
+        ``target_repo=hexarchy`` and opened cosmetic PRs in the wrong repo.
+        The routing must force the chat repo (robotsix-chat) for such
+        findings so the investigation never points at a component.
+        """
+        policy_detail = (
+            "source_tag robotsix-chat-feedback is not admitted on this board: "
+            "mill admits deployment tickets only. Run this investigation as a "
+            "chat subsession agent instead of filing a ticket."
+        )
+        respx_mock.post("http://test-board/tickets/ingest").mock(
+            return_value=httpx.Response(400, json={"detail": policy_detail})
+        )
+        spawner = MagicMock(return_value="ss-routed-1")
+        runner = _make_runner(subsession_spawner=spawner)
+        await runner._file_tickets(
+            [
+                {
+                    "title": "Drain-the-mill periodic report incomplete",
+                    "description": "The periodic report truncates the per-ticket "
+                    "summary for the board-gates-drain preset.",
+                    "kind": "config",
+                    "target_repo": "hexarchy",
+                }
+            ],
+            trigger_type="session_end",
+            session_id="sess-1",
+        )
+        spawner.assert_called_once()
+        _, kwargs = spawner.call_args
+        # The investigation prompt must target the chat repo, never the
+        # component repo the analysis LLM guessed.
+        assert "robotsix-chat" in kwargs["prompt"]
+        assert "hexarchy" not in kwargs["prompt"]
+
+    @pytest.mark.asyncio
+    async def test_unresolvable_target_escalates_to_user_chat(
+        self, respx_mock: respx.MockRouter
+    ) -> None:
+        """An unresolvable-target finding escalates as a user_chat panel.
+
+        Rather than guessing a repo (which risks a mis-targeted PR), a
+        finding with no confidently-resolvable target is handed to the
+        operator as a user-facing panel.
+        """
+        policy_detail = (
+            "source_tag robotsix-chat-feedback is not admitted on this board: "
+            "mill admits deployment tickets only. Run this investigation as a "
+            "chat subsession agent instead of filing a ticket."
+        )
+        respx_mock.post("http://test-board/tickets/ingest").mock(
+            return_value=httpx.Response(400, json={"detail": policy_detail})
+        )
+        spawner = MagicMock(return_value="ss-escalated-1")
+        runner = _make_runner(subsession_spawner=spawner)
+        # No target_repo and not a chat-config subject → unresolvable.
+        await runner._file_tickets(
+            [
+                {
+                    "title": "Odd behaviour in session",
+                    "description": "Something unexplained happened during the "
+                    "session and the assistant did not surface it.",
+                    "kind": "prompt",
+                }
+            ],
+            trigger_type="session_end",
+            session_id="sess-1",
+        )
+        spawner.assert_called_once()
+        _, kwargs = spawner.call_args
+        assert kwargs["kind"] == "user_chat"
+        assert "escalated to you" in kwargs["prompt"]
+        assert "assign target" in kwargs["title"]
+
+    def test_investigation_prompt_forbids_pr_when_no_in_repo_referent(
+        self,
+    ) -> None:
+        """An investigation that finds no in-repo referent must not open a PR.
+
+        Regression for the junk-PR loop: a subsession that concludes the
+        thing it was sent to fix is not in the target repo must report back
+        and close with outcome "no change needed, wrong target" rather than
+        opening a cosmetic PR.
+        """
+        prompt = _build_investigation_prompt(
+            {
+                "title": "T",
+                "description": "A finding.",
+                "kind": "code",
+                "target_repo": "robotsix-chat",
+            },
+            session_id="s1",
+            trigger_type="session_end",
+        )
+        assert "never open a pull request" in prompt
+        assert "no change needed, wrong target" in prompt
+
+    @pytest.mark.asyncio
+    async def test_resolved_finding_not_reinvestigated_next_session_end(
+        self,
+        respx_mock: respx.MockRouter,
+        tmp_path: Any,
+        caplog: pytest.LogCaptureFixture,
+    ) -> None:
+        """A routed finding is not re-investigated on the next session end.
+
+        The board-admission ticket path that used to make resolution durable
+        is closed, so routing must record its own outcome: after a finding is
+        handed to a subsession, the same finding on a later session-end run is
+        skipped rather than spawning another investigation (and potentially
+        another PR).
+        """
+        from robotsix_chat.knowledge.store import KnowledgeStore
+
+        policy_detail = (
+            "source_tag robotsix-chat-feedback is not admitted on this board: "
+            "mill admits deployment tickets only. Run this investigation as a "
+            "chat subsession agent instead of filing a ticket."
+        )
+        respx_mock.post("http://test-board/tickets/ingest").mock(
+            return_value=httpx.Response(400, json={"detail": policy_detail})
+        )
+        knowledge_store = KnowledgeStore(path=str(tmp_path / "knowledge.json"))
+        spawner = MagicMock(return_value="ss-routed-1")
+        ticket = {
+            "title": "Drain-the-mill periodic report incomplete",
+            "description": "The periodic report truncates the per-ticket summary.",
+            "kind": "config",
+            "target_repo": "hexarchy",
+        }
+
+        # First session-end run: finding is routed to an investigation.
+        runner = _make_runner(
+            subsession_spawner=spawner, knowledge_store=knowledge_store
+        )
+        await runner._file_tickets(
+            [ticket], trigger_type="session_end", session_id="sess-1"
+        )
+        spawner.assert_called_once()
+
+        # Next session-end run (a fresh runner, so in-process dedup is cold):
+        # the resolved finding must not be re-investigated.
+        runner2 = _make_runner(
+            subsession_spawner=spawner, knowledge_store=knowledge_store
+        )
+        with caplog.at_level(logging.INFO):
+            await runner2._file_tickets(
+                [ticket], trigger_type="session_end", session_id="sess-2"
+            )
+        assert spawner.call_count == 1  # not called again
+        assert "already resolved" in caplog.text
+
+        # The resolution was recorded durably in the knowledge store.
+        notes = knowledge_store.list(topic="feedback-resolved-findings")
+        assert len(notes) == 1
+        payload = json.loads(notes[0].content)
+        assert len(payload["resolved"]) == 1
+        assert payload["resolved"][0]["title"] == ticket["title"]
 
     @pytest.mark.asyncio
     async def test_admission_policy_400_no_spawner_drops_finding(
