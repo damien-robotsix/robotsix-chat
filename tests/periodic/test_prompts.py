@@ -70,7 +70,7 @@ def test_strip_recall_scaffolding_removes_user_chat_note():
 
     Regression: 2026-09-07 the memory engine logged three consecutive
     recalls whose query was ``'[System note: this is a side-chat with the
-    operato...'`` — junk memories plus a wasted 10–30 s rerank each.
+    operator...'`` — junk memories plus a wasted 10–30 s rerank each.
     """
     msg = USER_CHAT_FIRST_TURN_NOTE + "\n\n" + "ask the user about the deploy window"
     assert strip_recall_scaffolding(msg) == "ask the user about the deploy window"

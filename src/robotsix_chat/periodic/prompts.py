@@ -90,7 +90,7 @@ def strip_recall_scaffolding(message: str) -> str:
     ``user_chat`` side-chat system note the subsession worker prepends to
     its first turn.  Recalling on either preamble retrieves junk — on
     2026-09-07 three consecutive recalls ran on ``'[System note: this is a
-    side-chat with the operato...'`` and paid a 10-30 s rerank for nothing.
+    side-chat with the operator...'`` and paid a 10-30 s rerank for nothing.
     Messages without either preamble are returned unchanged; a message that
     merely mentions the note mid-text is left alone.
     """
