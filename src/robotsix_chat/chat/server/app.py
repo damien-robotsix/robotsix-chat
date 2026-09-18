@@ -1069,6 +1069,19 @@ def create_app(
 
             await close_session_fully(app, PERIODIC_OWNER, session_id)
 
+        async def _periodic_close_completed(session_id: str) -> None:
+            """Close a periodic run once its turn completes, via the UI close path."""
+            from .routes.sessions import close_session_fully
+
+            await close_session_fully(app, PERIODIC_OWNER, session_id)
+
+        def _periodic_has_live_subsessions(session_id: str) -> bool:
+            """Return True when a session still has a working subsession."""
+            registry = app.state.subsession_registry
+            if registry is None:
+                return False
+            return any(sub.is_active() for sub in registry.list_for_owner(session_id))
+
         app.state.periodic_scheduler = PeriodicScheduler(
             definitions=periodic_definitions,
             conversation_store=_p_store,
@@ -1076,6 +1089,8 @@ def create_app(
             is_busy=_p_coalescer.is_busy,
             persist_path=periodic_state_path or PERIODIC_SCHEDULER_PERSIST_PATH,
             close_previous=_periodic_close_previous,
+            close_completed=_periodic_close_completed,
+            has_live_subsessions=_periodic_has_live_subsessions,
         )
     else:
         app.state.periodic_scheduler = None

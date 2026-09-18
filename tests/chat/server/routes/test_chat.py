@@ -17,6 +17,7 @@ from robotsix_chat.chat.server import (
     SSE_ERROR_TYPE,
     SSE_TOKEN_TYPE,
 )
+from robotsix_chat.chat.server.routes.chat import MessageCoalescer
 from robotsix_chat.chat.server.routes.errors import (
     STREAM_ERROR_NO_IMAGE_SUPPORT,
     STREAM_ERROR_SERVER,
@@ -765,3 +766,28 @@ async def test_status_query_includes_all_subsession_statuses() -> None:
     assert "monitor ticket" in injected
     assert "status=closed" in injected
     assert "ticket resolved" in injected
+
+
+def test_preserve_preset_prefix_keeps_periodic_identity():
+    """A periodic session's rewritten title always keeps its preset name."""
+    preserve = MessageCoalescer._preserve_preset_prefix
+    # Periodic: re-prefix the generated summary with the preset name.
+    assert (
+        preserve(
+            "Run scheduled periodic session",
+            "repo-hygiene — 2026-09-18 07:15",
+            "periodic",
+        )
+        == "repo-hygiene — Run scheduled periodic session"
+    )
+    # Non-periodic sessions are left untouched.
+    assert preserve("Chat about X", "Some title", "user-1") == "Chat about X"
+    # No preset to extract -> keep the generated title.
+    assert preserve("Run scheduled periodic session", "", "periodic") == (
+        "Run scheduled periodic session"
+    )
+    # Summary that already names the preset is not double-prefixed.
+    assert (
+        preserve("repo-hygiene cleanup", "repo-hygiene — 2026-09-18 07:15", "periodic")
+        == "repo-hygiene cleanup"
+    )
