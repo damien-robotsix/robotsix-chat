@@ -2,7 +2,8 @@
 
 Lets the agent fetch recent Langfuse traces by id or by ticket id (tag
 search) via the Langfuse public REST API.  Uses HTTP Basic auth with the
-main ``langfuse`` credentials — no separate credential fields needed.
+per-project ``langfuse.projects`` credentials — no separate credential
+fields needed.
 
 Exposes :func:`build_langfuse_inspect_tools` — a factory returning the LLM
 tool.  Returns no tools when disabled, so the chat runs exactly as before.
@@ -137,8 +138,10 @@ def build_langfuse_inspect_tools(
     Args:
         inspect_settings: LangfuseInspect configuration (``enabled`` master
             switch, ``max_traces`` cap).
-        langfuse_settings: The canonical Langfuse block; the main project's
-            credentials (``PROJECT_MAIN``) are used for API authentication.
+        langfuse_settings: The canonical Langfuse block.  Project credentials
+            are resolved per-call from ``langfuse.projects`` keyed by project
+            name — the caller selects which project's traces to inspect via the
+            tool's ``project`` argument (default ``PROJECT_MAIN``).
 
     Returns:
         A single-element list containing the ``inspect_langfuse_trace`` async
@@ -148,10 +151,9 @@ def build_langfuse_inspect_tools(
     if not inspect_settings.enabled:
         return []
 
-    # Resolve secrets at build time so the closure captures plain strings.
-    creds = langfuse_settings.creds(PROJECT_MAIN)
-    pk = creds.public_key.get_secret_value()
-    sk = creds.secret_key.get_secret_value()
+    # Resolve the shared host and trace cap at build time.  Project credentials
+    # are resolved per-call so the tool can reach ANY project the component has
+    # credentials for — not just the main chat project.
     host = langfuse_settings.host.rstrip("/")
     max_traces = inspect_settings.max_traces
 
@@ -161,6 +163,7 @@ def build_langfuse_inspect_tools(
         limit: int = 5,
         from_timestamp: str = "",
         to_timestamp: str = "",
+        project: str = PROJECT_MAIN,
     ) -> str:
         """Fetch and summarise Langfuse traces.
 
@@ -177,6 +180,12 @@ def build_langfuse_inspect_tools(
         *from_timestamp*, or *to_timestamp*) must be provided.  *trace_id*
         is mutually exclusive with the other criteria.
 
+        The traces are read from the Langfuse *project* named by ``project``
+        (default ``robotsix-chat``, the main chat agent).  Pass the name of
+        another project (e.g. ``mill``, ``ci_fix``, ``robotsix-chat-cognee``)
+        to inspect a different subsystem's traces — the tool authenticates
+        with that project's credentials from ``langfuse.projects``.
+
         Args:
             trace_id: A specific Langfuse trace id to fetch.
             ticket_id: A ticket id to search for in trace tags.
@@ -184,6 +193,8 @@ def build_langfuse_inspect_tools(
                 configured max).  Ignored when *trace_id* is set.
             from_timestamp: ISO 8601 start of time range (inclusive).
             to_timestamp: ISO 8601 end of time range (inclusive).
+            project: Langfuse project whose traces to inspect (default
+                ``PROJECT_MAIN``).
 
         Returns:
             A JSON string with a ``traces`` list of summarised trace
@@ -223,13 +234,18 @@ def build_langfuse_inspect_tools(
                 ensure_ascii=False,
             )
 
+        # Resolve credentials for the requested Langfuse project.
+        creds = langfuse_settings.creds(project)
+        pk = creds.public_key.get_secret_value()
+        sk = creds.secret_key.get_secret_value()
         if not pk or not sk:
             return json.dumps(
                 {
                     "traces": [],
                     "error": (
-                        "Langfuse credentials (public_key + secret_key) are "
-                        "not configured — the inspect tool cannot authenticate."
+                        f"Langfuse project '{project}' has no configured "
+                        "credentials (public_key + secret_key) — the inspect "
+                        "tool cannot authenticate against it."
                     ),
                 },
                 ensure_ascii=False,
@@ -295,6 +311,7 @@ def build_langfuse_inspect_tools(
         response: dict[str, Any] = {
             "traces": traces,
             "limit": effective_limit,
+            "project": project,
         }
         if ticket_id:
             response["ticket_id"] = ticket_id

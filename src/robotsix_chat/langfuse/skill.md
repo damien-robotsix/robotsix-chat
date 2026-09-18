@@ -12,6 +12,8 @@ linked to a specific ticket or run.
   during that run.
 - When debugging an anomalous LLM response — fetch the trace by its id for a full structured
   summary.
+- When analysing cost or behaviour across the fleet, pass a `project` to inspect a LLM subsystem
+  other than the main chat agent (e.g. the mill's `implement` traces).
 
 ## Allowed operation
 
@@ -28,6 +30,7 @@ inspect_langfuse_trace(
     limit: int = 5,
     from_timestamp: str = "",
     to_timestamp: str = "",
+    project: str = "robotsix-chat",
 ) -> str
 ```
 
@@ -41,6 +44,10 @@ inspect_langfuse_trace(
 - `from_timestamp` / `to_timestamp`: filter traces by time range (ISO 8601, e.g.
   `2026-08-01T00:00:00Z`). Either or both may be provided, alone or combined with `ticket_id`.
 - `limit` caps the number of traces returned (default 5, max configured in settings).
+- `project`: name of the Langfuse project whose traces to inspect (default `robotsix-chat`, the
+  main chat agent). Pass e.g. `mill`, `ci_fix`, or `robotsix-chat-cognee` to inspect a different
+  subsystem's traces. The tool authenticates with that project's credentials from `langfuse.projects`.
+  A project with no configured credentials returns an error naming the project.
 
 ## Return value
 
@@ -59,14 +66,14 @@ A JSON string with a `traces` list. Each trace entry carries:
 | `scores`       | List of `{name, value}` score pairs              |
 
 When `ticket_id` is given, an additional `ticket_id` field echoes the search key and `limit` echoes
-the cap used.
+the cap used. The `project` field echoes which project was queried.
 
 ## Safety
 
 - Read-only — never mutates anything in Langfuse.
 - Only reaches the configured Langfuse host (default `https://cloud.langfuse.com`).
-- Authenticates with Basic auth using the configured public/secret key pair — no user credentials
-  are ever exposed to the agent.
+- Authenticates with Basic auth using the selected project's configured public/secret key pair —
+  no user credentials are ever exposed to the agent.
 - The tool is only available when `langfuse_inspect.enabled` is `true` in the server config.
 
 ## Error handling — read before acting on a failure
@@ -93,15 +100,18 @@ the cap used.
 ## Example calls
 
 ```text
-# Inspect a specific known trace
+# Inspect a specific known trace in the main chat project
 inspect_langfuse_trace(trace_id="01J...abc")
+
+# Inspect a trace in a non-chat project (e.g. the mill's implement function)
+inspect_langfuse_trace(trace_id="01J...abc", project="mill")
 
 # Search for traces linked to a ticket
 inspect_langfuse_trace(ticket_id="20260727T001240Z-add-capability-5bd6", limit=5)
 
-# Query the last 24 hours of traces (time-range search)
+# Query the last 24 hours of traces (time-range search), scoped to a project
 inspect_langfuse_trace(from_timestamp="2026-08-22T00:00:00Z",
-                       to_timestamp="2026-08-23T00:00:00Z", limit=20)
+                       to_timestamp="2026-08-23T00:00:00Z", limit=20, project="ci_fix")
 ```
 
 ## Fast path for periodic-session speed complaints (moved from the system prompt, 2026-09-08)

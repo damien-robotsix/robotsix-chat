@@ -20,6 +20,9 @@ from robotsix_chat.langfuse import (
 )
 
 
+PROJECT_COGNEE = "robotsix-chat-cognee"
+
+
 def _inspect_settings(**kw: Any) -> LangfuseInspectSettings:
     base: dict[str, Any] = {"enabled": True, "max_traces": 5}
     base.update(kw)
@@ -37,6 +40,27 @@ def _langfuse_settings(**kw: Any) -> LangfuseSettings:
                 "public_key": "pk-test",
                 "secret_key": "sk-test",  # pragma: allowlist secret
             }
+        },
+    }
+    base.update(kw)
+    return LangfuseSettings(**base)
+
+
+def _multi_project_settings(**kw: Any) -> LangfuseSettings:
+    """Canonical block carrying creds for the MAIN and a second project."""
+    from robotsix_chat.config import PROJECT_MAIN
+
+    base: dict[str, Any] = {
+        "host": "https://cloud.langfuse.com",
+        "projects": {
+            PROJECT_MAIN: {
+                "public_key": "pk-main",
+                "secret_key": "sk-main",  # pragma: allowlist secret
+            },
+            PROJECT_COGNEE: {
+                "public_key": "pk-cognee",
+                "secret_key": "sk-cognee",  # pragma: allowlist secret
+            },
         },
     }
     base.update(kw)
@@ -76,6 +100,7 @@ def test_load_langfuse_inspect_skill_returns_non_empty_markdown() -> None:
     assert len(skill) > 100
     assert "inspect_langfuse_trace" in skill
     assert "read-only" in skill.lower()
+    assert "project" in skill
 
 
 # ---------------------------------------------------------------------------
@@ -216,6 +241,80 @@ async def test_inspect_no_credentials() -> None:
     assert result["error"]
     assert "credentials" in result["error"].lower()
     assert result["traces"] == []
+
+
+@pytest.mark.asyncio
+async def test_inspect_project_without_credentials_returns_config_error() -> None:
+    """A project with no configured credentials returns a per-project error."""
+    settings = _langfuse_settings()  # only has PROJECT_MAIN creds
+    tools = build_langfuse_inspect_tools(_inspect_settings(), settings)
+    result = json.loads(await tools[0](trace_id="abc", project=PROJECT_COGNEE))
+    assert result["error"]
+    assert PROJECT_COGNEE in result["error"]
+    assert "credentials" in result["error"].lower()
+    assert result["traces"] == []
+
+
+# ---------------------------------------------------------------------------
+# inspect_langfuse_trace — project routing
+# ---------------------------------------------------------------------------
+
+
+@pytest.mark.asyncio
+async def test_inspect_default_project_uses_main_creds(
+    respx_mock: respx.MockRouter,
+) -> None:
+    """Default project routes to the main chat project's credentials."""
+    respx_mock.get("https://cloud.langfuse.com/api/public/traces").mock(
+        return_value=httpx.Response(200, json={"data": [], "meta": {}})
+    )
+    tools = build_langfuse_inspect_tools(
+        _inspect_settings(), _multi_project_settings()
+    )
+    result = json.loads(await tools[0](trace_id="abc"))
+    assert result.get("project") == "robotsix-chat"
+    # No network call was made (trace_id path returns early on error? No —
+    # trace_id "abc" would hit the network for the single-trace endpoint; the
+    # empty-trace path above means this test only exercises the default project
+    # echo on the list endpoint. Assert the auth uses the MAIN project's key.
+    req = respx_mock.calls.last.request
+    auth = req.headers.get("Authorization", "")
+    assert auth == "Basic cGstbWFpbjpzay1tYWlu"  # base64("pk-main:sk-main")
+
+
+@pytest.mark.asyncio
+async def test_inspect_explicit_project_uses_that_projects_creds(
+    respx_mock: respx.MockRouter,
+) -> None:
+    """Passing a project routes to that project's credentials for auth."""
+    respx_mock.get("https://cloud.langfuse.com/api/public/traces").mock(
+        return_value=httpx.Response(200, json={"data": [], "meta": {}})
+    )
+    tools = build_langfuse_inspect_tools(
+        _inspect_settings(), _multi_project_settings()
+    )
+    result = json.loads(
+        await tools[0](trace_id="abc", project=PROJECT_COGNEE)
+    )
+    assert result.get("project") == PROJECT_COGNEE
+    req = respx_mock.calls.last.request
+    auth = req.headers.get("Authorization", "")
+    assert auth == "Basic cGstY29nbmVlOnNrLWNvZ25lZQ=="  # base64("pk-cognee:sk-cognee")
+
+
+@pytest.mark.asyncio
+async def test_inspect_project_echoed_in_list_response(
+    respx_mock: respx.MockRouter,
+) -> None:
+    """List responses echo the selected project."""
+    respx_mock.get("https://cloud.langfuse.com/api/public/traces").mock(
+        return_value=httpx.Response(200, json={"data": [], "meta": {}})
+    )
+    tools = build_langfuse_inspect_tools(
+        _inspect_settings(), _multi_project_settings()
+    )
+    result = json.loads(await tools[0](ticket_id="t-1", project=PROJECT_COGNEE))
+    assert result["project"] == PROJECT_COGNEE
 
 
 # ---------------------------------------------------------------------------
