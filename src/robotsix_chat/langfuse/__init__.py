@@ -137,8 +137,9 @@ def build_langfuse_inspect_tools(
     Args:
         inspect_settings: LangfuseInspect configuration (``enabled`` master
             switch, ``max_traces`` cap).
-        langfuse_settings: The canonical Langfuse block; the main project's
-            credentials (``PROJECT_MAIN``) are used for API authentication.
+        langfuse_settings: The canonical Langfuse block; credentials are
+            resolved per-project at call time based on the ``project``
+            parameter. Defaults to PROJECT_MAIN when no project is specified.
 
     Returns:
         A single-element list containing the ``inspect_langfuse_trace`` async
@@ -148,16 +149,14 @@ def build_langfuse_inspect_tools(
     if not inspect_settings.enabled:
         return []
 
-    # Resolve secrets at build time so the closure captures plain strings.
-    creds = langfuse_settings.creds(PROJECT_MAIN)
-    pk = creds.public_key.get_secret_value()
-    sk = creds.secret_key.get_secret_value()
+    # Resolve settings at build time so the closure captures them.
     host = langfuse_settings.host.rstrip("/")
     max_traces = inspect_settings.max_traces
 
     async def inspect_langfuse_trace(
         trace_id: str = "",
         ticket_id: str = "",
+        project: str = "",
         limit: int = 5,
         from_timestamp: str = "",
         to_timestamp: str = "",
@@ -180,6 +179,10 @@ def build_langfuse_inspect_tools(
         Args:
             trace_id: A specific Langfuse trace id to fetch.
             ticket_id: A ticket id to search for in trace tags.
+            project: Langfuse project name (optional, defaults to the chat
+                project when empty). Use this to query traces from other
+                fleet components (e.g. ``project="mill"``,
+                ``project="ci_fix"``).
             limit: Maximum number of traces to return (capped by the
                 configured max).  Ignored when *trace_id* is set.
             from_timestamp: ISO 8601 start of time range (inclusive).
@@ -223,13 +226,19 @@ def build_langfuse_inspect_tools(
                 ensure_ascii=False,
             )
 
+        # Resolve project name: empty string defaults to PROJECT_MAIN.
+        effective_project = project if project else PROJECT_MAIN
+        creds = langfuse_settings.creds(effective_project)
+        pk = creds.public_key.get_secret_value()
+        sk = creds.secret_key.get_secret_value()
+
         if not pk or not sk:
             return json.dumps(
                 {
                     "traces": [],
                     "error": (
-                        "Langfuse credentials (public_key + secret_key) are "
-                        "not configured — the inspect tool cannot authenticate."
+                        f"Langfuse project '{effective_project}' is not "
+                        "configured — the inspect tool cannot authenticate."
                     ),
                 },
                 ensure_ascii=False,
