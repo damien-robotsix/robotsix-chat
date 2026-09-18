@@ -55,15 +55,15 @@ ______________________________________________________________________
 
 ## Agent tool: `update_simple_repo_pr` (ungated — no ticket required)
 
-**Lightweight companion to `open_simple_repo_pr` for adding a commit to an already-open PR.** Commits
-a multi-file changeset to an EXISTING open pull request's head branch in one call, updating the PR
-in place (no close/reopen) — **without requiring a mill ticket in BLOCKED state**. The open PR is
-itself the review gate. Use this to iterate on a PR you opened via `open_simple_repo_pr`, including a
-directory/module rename expressed as (delete old paths + create new paths) in a single commit.
-Merging stays confirmation-gated via `merge_direct_repo_pr`.
+**Lightweight companion to `open_simple_repo_pr` for adding a commit to an already-open PR.**
+Commits a multi-file changeset to an EXISTING open pull request's head branch in one call, updating
+the PR in place (no close/reopen) — **without requiring a mill ticket in BLOCKED state**. The open
+PR is itself the review gate. Use this to iterate on a PR you opened via `open_simple_repo_pr`,
+including a directory/module rename expressed as (delete old paths + create new paths) in a single
+commit. Merging stays confirmation-gated via `merge_direct_repo_pr`.
 
-The changeset supports **create, overwrite, AND delete** in one commit. Reuse the `open_simple_repo_pr`
-content forms and add a delete form:
+The changeset supports **create, overwrite, AND delete** in one commit. Reuse the
+`open_simple_repo_pr` content forms and add a delete form:
 
 - `{"path": "...", "content": "..."}` — text.
 - `{"path": "...", "content_b64": "..."}` — base64 bytes (binary files).
@@ -95,15 +95,15 @@ content forms and add a delete form:
 
 ### Error responses
 
-| Condition                        | Message                                                            |
-| -------------------------------- | ------------------------------------------------------------------ |
+| Condition                        | Message                                                               |
+| -------------------------------- | --------------------------------------------------------------------- |
 | Malformed `files_json`           | `Error: files_json must be a valid JSON array of changeset entries …` |
 | Neither PR reference given       | `Error: provide either 'pr_number' or 'branch_name' of an open PR …`  |
-| Workflow/action file in the diff | `Refused: '<path>' is a CI workflow/action file …`                 |
-| Secret/credential file           | `Refused: '<path>' looks like a credential/secret file …`          |
-| Repo not in installation scope   | `The robotsix-mill GitHub App is not installed on 'owner/name'`    |
-| PR number unknown / closed       | `Error: PR #<n> in owner/name is <state>, not open …`              |
-| Branch has no open PR            | `Error: no open PR found with head branch '<branch>' in owner/name.` |
+| Workflow/action file in the diff | `Refused: '<path>' is a CI workflow/action file …`                    |
+| Secret/credential file           | `Refused: '<path>' looks like a credential/secret file …`             |
+| Repo not in installation scope   | `The robotsix-mill GitHub App is not installed on 'owner/name'`       |
+| PR number unknown / closed       | `Error: PR #<n> in owner/name is <state>, not open …`                 |
+| Branch has no open PR            | `Error: no open PR found with head branch '<branch>' in owner/name.`  |
 
 ______________________________________________________________________
 
@@ -599,10 +599,10 @@ Instead:
      the cause. Give the user the exact steps below to grant it.
 1. Read the reported **installation mode** and **configured installation id**. The report no longer
    surfaces a separately-resolved per-repo installation id — the public token path does not expose
-   it on the returned token, so ``resolved_installation_id`` mirrors the configured value. A pinned
+   it on the returned token, so `resolved_installation_id` mirrors the configured value. A pinned
    override that no longer exists on GitHub is called out explicitly via
-   ``configured_installation_exists``. If the grant was made on a different App or installation,
-   point the user at the right one.
+   `configured_installation_exists`. If the grant was made on a different App or installation, point
+   the user at the right one.
 
 **Granting a permission (exact GitHub UI paths):**
 

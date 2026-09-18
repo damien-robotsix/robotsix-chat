@@ -32,13 +32,13 @@ Tasks that are pending, in-progress, or blocked.
 - status: dropped
 - created: 2026-08-29T07:47:00Z
 - updated: 2026-09-15T15:30:00Z
-- notes: DROPPED 2026-09-15 — the operator removed the evergoing session concept from the code
-  (the `evergoing` config block now only holds the summary-compaction scheduler settings); the
-  cross-session tools shipped for it were deleted with it.
-  History: ticket 20260829T074717Z-wire-up-the-evergoing-session-v2-activat wired the core evergoing
-  feature (activation on boot behind `evergoing.enabled`, the periodic subject-aware trim scheduler
-  with the new-input gate, cheap-tier trim decision, UI marker). The remaining acceptance-criterion
-  sub-item — surfacing agent-facing tools to the evergoing session so the agent can *enumerate other
+- notes: DROPPED 2026-09-15 — the operator removed the evergoing session concept from the code (the
+  `evergoing` config block now only holds the summary-compaction scheduler settings); the
+  cross-session tools shipped for it were deleted with it. History: ticket
+  20260829T074717Z-wire-up-the-evergoing-session-v2-activat wired the core evergoing feature
+  (activation on boot behind `evergoing.enabled`, the periodic subject-aware trim scheduler with the
+  new-input gate, cheap-tier trim decision, UI marker). The remaining acceptance-criterion sub-item
+  — surfacing agent-facing tools to the evergoing session so the agent can *enumerate other
   sessions* and *spawn a new independent session / close an existing one* — is a separate subsystem
   (in-process function tools wired into `create_agent_from_settings` + `skill.md` docs, mirroring
   `repo/direct`). The HTTP endpoints already exist (`GET/POST /sessions`, `DELETE /sessions/{id}`,
@@ -165,7 +165,8 @@ Tasks that are pending, in-progress, or blocked.
   **Activation config change (operator, live deployment):** set `"enabled": true` on the
   `dependabot-drain` entry under `periodic.sessions` in the deployment's merged config (the
   central-deploy config-target `/home/app/config/config.json`), then redeploy. All other fields are
-  already correct (weekly, `anchor_utc: "2026-09-07T06:00:00Z"` = Monday 06:00 UTC, `model_level: 3`).
+  already correct (weekly, `anchor_utc: "2026-09-07T06:00:00Z"` = Monday 06:00 UTC,
+  `model_level: 3`).
 
   **Live-proof step:** after activation, fire it once out-of-band with
   `POST /periodic/definitions/dependabot-drain/run` and read the returned session's report (PRs

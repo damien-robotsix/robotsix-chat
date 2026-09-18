@@ -73,8 +73,8 @@ to the UI. The on-disk config file and the running server are **untouched**.
 
 For object fields edited as a JSON textarea (e.g. `llmio_tier_overrides`), the panel submits the raw
 text as a JSON string; the server parses it before merging. If the text is not valid JSON — or is
-valid JSON but not an object (e.g. a bare string or array) — the save is rejected with a `422
-Invalid JSON` response naming the field and the parse error, and nothing is persisted. Existing
+valid JSON but not an object (e.g. a bare string or array) — the save is rejected with a
+`422 Invalid JSON` response naming the field and the parse error, and nothing is persisted. Existing
 valid values round-trip through this path unchanged.
 
 ### Secret round-tripping
