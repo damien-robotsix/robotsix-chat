@@ -19,7 +19,6 @@ from robotsix_chat.langfuse import (
     load_langfuse_inspect_skill,
 )
 
-
 PROJECT_COGNEE = "robotsix-chat-cognee"
 
 
@@ -268,9 +267,7 @@ async def test_inspect_default_project_uses_main_creds(
     respx_mock.get("https://cloud.langfuse.com/api/public/traces").mock(
         return_value=httpx.Response(200, json={"data": [], "meta": {}})
     )
-    tools = build_langfuse_inspect_tools(
-        _inspect_settings(), _multi_project_settings()
-    )
+    tools = build_langfuse_inspect_tools(_inspect_settings(), _multi_project_settings())
     result = json.loads(await tools[0](trace_id="abc"))
     assert result.get("project") == "robotsix-chat"
     # No network call was made (trace_id path returns early on error? No —
@@ -290,12 +287,8 @@ async def test_inspect_explicit_project_uses_that_projects_creds(
     respx_mock.get("https://cloud.langfuse.com/api/public/traces").mock(
         return_value=httpx.Response(200, json={"data": [], "meta": {}})
     )
-    tools = build_langfuse_inspect_tools(
-        _inspect_settings(), _multi_project_settings()
-    )
-    result = json.loads(
-        await tools[0](trace_id="abc", project=PROJECT_COGNEE)
-    )
+    tools = build_langfuse_inspect_tools(_inspect_settings(), _multi_project_settings())
+    result = json.loads(await tools[0](trace_id="abc", project=PROJECT_COGNEE))
     assert result.get("project") == PROJECT_COGNEE
     req = respx_mock.calls.last.request
     auth = req.headers.get("Authorization", "")
@@ -310,9 +303,7 @@ async def test_inspect_project_echoed_in_list_response(
     respx_mock.get("https://cloud.langfuse.com/api/public/traces").mock(
         return_value=httpx.Response(200, json={"data": [], "meta": {}})
     )
-    tools = build_langfuse_inspect_tools(
-        _inspect_settings(), _multi_project_settings()
-    )
+    tools = build_langfuse_inspect_tools(_inspect_settings(), _multi_project_settings())
     result = json.loads(await tools[0](ticket_id="t-1", project=PROJECT_COGNEE))
     assert result["project"] == PROJECT_COGNEE
 
