@@ -86,6 +86,9 @@ from .sessions import (
     sessions_delete_endpoint,
     sessions_list_endpoint,
 )
+from .sessions_agents_config import (
+    agents_config_endpoint,
+)
 from .subsessions import (
     _get_subsession_registry,
     _resolve_subsession,
@@ -113,6 +116,7 @@ __all__ = [
     "_parse_json_body",
     "_resolve_subsession",
     "_sse_frame",
+    "agents_config_endpoint",
     "auth_callback_endpoint",
     "auth_login_endpoint",
     "cancel_queued_endpoint",
