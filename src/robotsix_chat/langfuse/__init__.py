@@ -227,7 +227,7 @@ def build_langfuse_inspect_tools(
             )
 
         # Resolve project name: empty string defaults to PROJECT_MAIN.
-        effective_project = project if project else PROJECT_MAIN
+        effective_project = project or PROJECT_MAIN
         creds = langfuse_settings.creds(effective_project)
         pk = creds.public_key.get_secret_value()
         sk = creds.secret_key.get_secret_value()
