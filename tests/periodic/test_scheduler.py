@@ -47,6 +47,8 @@ def _make(
     busy=False,
     clock=None,
     close_previous=None,
+    close_completed=None,
+    has_live_subsessions=None,
 ):
     store = _FakeStore()
     submitted: list[tuple[str, str, int | None]] = []
@@ -71,6 +73,8 @@ def _make(
         persist_path=str(tmp_path / "state.json"),
         clock=clock or (lambda: now["t"]),
         close_previous=close_previous,
+        close_completed=close_completed,
+        has_live_subsessions=has_live_subsessions,
     )
     return scheduler, store, submitted, now
 
@@ -166,6 +170,65 @@ async def test_fire_creates_titled_session_and_submits_prompt(tmp_path):
     assert message.startswith(PERIODIC_PREAMBLE)
     assert message.endswith("Review the mail queue. READ-ONLY.")
     assert model_level == 2
+
+
+@pytest.mark.asyncio
+async def test_fire_closes_session_once_run_completes(tmp_path):
+    """A periodic run's session is closed when its turn completes."""
+    closed: list[str] = []
+
+    async def close_completed(session_id: str) -> None:
+        closed.append(session_id)
+
+    scheduler, store, submitted, _ = _make(tmp_path, close_completed=close_completed)
+
+    sid = await scheduler.fire("mail-triage")
+    # The turn has not completed yet — the session must not be closed.
+    assert closed == []
+
+    # Let the background turn task run to completion.
+    await asyncio.sleep(0)
+    assert len(submitted) == 1
+    assert closed == [sid]
+
+
+@pytest.mark.asyncio
+async def test_fire_does_not_close_while_live_subsession(tmp_path):
+    """A completed run with a live subsession stays open."""
+    closed: list[str] = []
+
+    async def close_completed(session_id: str) -> None:
+        closed.append(session_id)
+
+    scheduler, store, submitted, _ = _make(
+        tmp_path,
+        close_completed=close_completed,
+        has_live_subsessions=lambda sid: True,
+    )
+
+    await scheduler.fire("mail-triage")
+    await asyncio.sleep(0)
+    assert len(submitted) == 1
+    assert closed == []  # live subsession -> session left open
+
+
+@pytest.mark.asyncio
+async def test_fire_does_not_close_when_submit_fails(tmp_path):
+    """A run that crashes without completing is not completion-closed."""
+    closed: list[str] = []
+
+    async def close_completed(session_id: str) -> None:
+        closed.append(session_id)
+
+    async def failing_submit(session_id, message, model_level):
+        raise RuntimeError("boom")
+
+    scheduler, store, submitted, _ = _make(tmp_path, close_completed=close_completed)
+    scheduler._submit_turn = failing_submit  # type: ignore[method-assign]
+
+    await scheduler.fire("mail-triage")
+    await asyncio.sleep(0)
+    assert closed == []
 
 
 @pytest.mark.asyncio

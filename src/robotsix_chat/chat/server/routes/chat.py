@@ -19,6 +19,7 @@ from starlette.responses import JSONResponse, StreamingResponse
 
 from robotsix_chat.chat.actions import collect_actions
 from robotsix_chat.chat.conversation import ConversationStore
+from robotsix_chat.periodic import PERIODIC_OWNER
 
 from ._shared import (
     _detect_truncation,
@@ -484,7 +485,12 @@ class MessageCoalescer:
                     )
                     # Generate an LLM title after the first turn.
                     await self._maybe_generate_title(
-                        session_id, summary_agent, concatenated, full_reply, store
+                        session_id,
+                        summary_agent,
+                        concatenated,
+                        full_reply,
+                        store,
+                        owner_id,
                     )
                     for p in pending:
                         if p.message_id:
@@ -542,6 +548,7 @@ class MessageCoalescer:
         concatenated: str,
         full_reply: str,
         store: ConversationStore,
+        owner_id: str | None = None,
     ) -> str:
         """Generate an LLM title after the first turn, if conditions are met.
 
@@ -554,8 +561,29 @@ class MessageCoalescer:
             return ""
         title = await _generate_title(summary_agent, concatenated, full_reply)
         if title:
+            title = self._preserve_preset_prefix(title, session.title, owner_id)
             store.set_title(session_id, title)
         return title
+
+    @staticmethod
+    def _preserve_preset_prefix(
+        generated: str, existing_title: str, owner_id: str | None
+    ) -> str:
+        """Keep a periodic session's preset identity in its rewritten title.
+
+        The scheduler seeds periodic sessions with a ``"<preset> — <date>"``
+        title, but the summary rewrite would otherwise replace it with a
+        generic title that drops the subject. For periodic sessions we
+        re-prefix the generated summary with the preset name so the rewrite
+        can never strip it. Returns *generated* unchanged for non-periodic
+        sessions.
+        """
+        if owner_id != PERIODIC_OWNER:
+            return generated
+        preset = existing_title.split(" — ", 1)[0].strip()
+        if not preset or preset in generated:
+            return generated
+        return f"{preset} — {generated}"
 
     @staticmethod
     async def _fan_out(

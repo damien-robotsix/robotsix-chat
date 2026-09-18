@@ -1059,15 +1059,44 @@ def create_app(
             from .routes.constants import SSE_DONE_TYPE, SSE_ERROR_TYPE
 
             while True:
-                frame_type, _payload = await queue.get()
-                if frame_type in (SSE_DONE_TYPE, SSE_ERROR_TYPE):
+                frame_type, payload = await queue.get()
+                if frame_type == SSE_DONE_TYPE:
                     break
+                if frame_type == SSE_ERROR_TYPE:
+                    # A turn-level error is fanned out as an SSE_ERROR frame
+                    # rather than raised by submit() (the coalescer spawns a
+                    # background processor task that never re-raises), so
+                    # distinguish it here. Raising makes the scheduler treat
+                    # this run as failed — it is NOT completion-closed, and
+                    # is left for the supersede-close safety net.
+                    err_msg = (
+                        payload.get("message") if isinstance(payload, dict) else None
+                    )
+                    raise RuntimeError(err_msg or "periodic turn failed")
 
         async def _periodic_close_previous(session_id: str) -> None:
             """Close a superseded periodic run through the UI close path."""
             from .routes.sessions import close_session_fully
 
             await close_session_fully(app, PERIODIC_OWNER, session_id)
+
+        async def _periodic_close_completed(session_id: str) -> None:
+            """Close a periodic run once its turn completes, via the UI close path."""
+            from .routes.sessions import close_session_fully
+
+            await close_session_fully(app, PERIODIC_OWNER, session_id)
+
+        def _periodic_has_live_subsessions(session_id: str) -> bool:
+            """Return True when a session still has a working subsession."""
+            registry = app.state.subsession_registry
+            if registry is None:
+                return False
+            # ``is_active`` is a @property (status in ACTIVE_STATUSES), not a
+            # method — calling it would raise ``TypeError: 'bool' object is
+            # not callable`` and leak an unhandled task exception, and the
+            # completion-close gate would break for any session that ever
+            # spawned a subsession.
+            return any(sub.is_active for sub in registry.list_for_owner(session_id))
 
         app.state.periodic_scheduler = PeriodicScheduler(
             definitions=periodic_definitions,
@@ -1076,6 +1105,8 @@ def create_app(
             is_busy=_p_coalescer.is_busy,
             persist_path=periodic_state_path or PERIODIC_SCHEDULER_PERSIST_PATH,
             close_previous=_periodic_close_previous,
+            close_completed=_periodic_close_completed,
+            has_live_subsessions=_periodic_has_live_subsessions,
         )
     else:
         app.state.periodic_scheduler = None

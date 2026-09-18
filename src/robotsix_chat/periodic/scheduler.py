@@ -17,11 +17,14 @@ typing into a periodic session later is just… using a session.
 If a preset comes due while its previous session's turn is still being
 processed, the firing is skipped with a log line (no queueing).
 
-A firing SUPERSEDES the preset's previous run: once the new session exists
-the previous run's session is closed through the injected ``close_previous``
-callback (the same path as ``POST /sessions/{id}/close`` — subsessions
-cleaned up, feedback run, memory finalised) so periodic runs never pile up
-as open sessions the operator has to close by hand.
+A run's session is closed once its turn COMPLETES (its report is delivered
+and no live subsession is still working) through the injected
+``close_completed`` callback — the same path as ``POST /sessions/{id}/close``
+(subsessions cleaned up, feedback run, memory finalised) — so periodic runs
+do not pile up as open sessions for the whole interval. A firing also
+SUPERSEDES the preset's previous run: once the new session exists the
+previous run's session is closed through the injected ``close_previous``
+callback, a safety net for runs that crash without completing.
 """
 
 from __future__ import annotations
@@ -64,6 +67,11 @@ IsBusy = Callable[[str], bool]
 #: exceptions are logged and never block the new firing).
 ClosePrevious = Callable[[str], Awaitable[Any]]
 
+#: HasLiveSubsessions reports whether a session still has a working
+#: subsession (e.g. ``wait_for_event`` / ``user_chat``) that must not be
+#: closed while live.
+HasLiveSubsessions = Callable[[str], bool]
+
 
 class PeriodicScheduler:
     """Create-and-seed scheduler for periodic session presets."""
@@ -78,18 +86,32 @@ class PeriodicScheduler:
         persist_path: str = PERIODIC_SCHEDULER_PERSIST_PATH,
         clock: Callable[[], float] = time.time,
         close_previous: ClosePrevious | None = None,
+        close_completed: ClosePrevious | None = None,
+        has_live_subsessions: HasLiveSubsessions | None = None,
     ) -> None:
         """*conversation_store* needs ``create_session`` and ``set_title``.
 
         *close_previous*, when given, is awaited with the previous run's
         session id each time a preset fires again (``None`` keeps the old
         runs open — tests and callers without a session-close path).
+
+        *close_completed*, when given, is awaited with a run's session id
+        once that run's turn completes (its report is delivered), so the
+        session is closed promptly instead of staying open until the next
+        firing supersedes it. ``None`` keeps completed runs open.
+
+        *has_live_subsessions*, when given, gates the completion close: a
+        session whose turn completed but still has a working subsession
+        (``wait_for_event`` / ``user_chat``) is left open until that
+        subsession finishes. ``None`` treats every session as closable.
         """
         self._definitions = {d.name: d for d in definitions if d.enabled}
         self._store = conversation_store
         self._submit_turn = submit_turn
         self._is_busy = is_busy
         self._close_previous = close_previous
+        self._close_completed = close_completed
+        self._has_live_subsessions = has_live_subsessions
         self._persist_path = Path(persist_path)
         self._clock = clock
         #: name -> {"last_fired_at": float, "last_session_id": str, "runs": int}
@@ -258,6 +280,26 @@ class PeriodicScheduler:
                     name,
                     session_id,
                 )
+            else:
+                # The run completed (its report was delivered). Close the
+                # session now so periodic runs don't accumulate as open
+                # sessions, unless a live subsession (wait_for_event /
+                # user_chat) is still working — such sessions stay open
+                # until the subsession finishes. The supersede-close at
+                # fire time remains as a safety net for runs that crash
+                # without completing.
+                if self._close_completed is not None and not (
+                    self._has_live_subsessions is not None
+                    and self._has_live_subsessions(session_id)
+                ):
+                    try:
+                        await self._close_completed(session_id)
+                    except Exception:
+                        logger.exception(
+                            "Periodic preset %r: closing completed session %s failed",
+                            name,
+                            session_id,
+                        )
 
         task = asyncio.create_task(_run())
         self._turn_tasks[name] = task
