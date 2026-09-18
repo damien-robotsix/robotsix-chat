@@ -112,8 +112,8 @@ pipelines (summary, vision captioning).
 **Context reduction — one mechanism.** Idle-timeout compaction was removed. The summary-compaction
 scheduler (see the Summary compaction section) is the single way ANY session's context shrinks:
 every `evergoing.trim_interval_seconds` it inspects each session with new input and, when more than
-`evergoing.keep_recent_runs` fresh runs accumulated beyond the previous summary, folds the older runs
-into the session summary. Nothing is dropped from the UI transcript.
+`evergoing.keep_recent_runs` fresh runs accumulated beyond the previous summary, folds the older
+runs into the session summary. Nothing is dropped from the UI transcript.
 
 ### Langfuse (tracing)
 
@@ -353,8 +353,8 @@ accumulated beyond the previous summary, a cheap summary-tier model folds the ol
 session's summary; the recent runs stay verbatim in the agent replay and the UI transcript is never
 touched. Each summary is also pushed to the memory component (see `memory_component`). The block
 keeps its historical name: it used to switch on the "evergoing session" (one never-ending operator
-session with cross-session tools), which was removed on 2026-09-15 — a pinned `evergoing.enabled`
-is ignored on load.
+session with cross-session tools), which was removed on 2026-09-15 — a pinned `evergoing.enabled` is
+ignored on load.
 
 | JSON key                          | Type      | Default  | Description                                                                                       |
 | --------------------------------- | --------- | -------- | ------------------------------------------------------------------------------------------------- |

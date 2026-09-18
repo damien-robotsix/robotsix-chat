@@ -623,7 +623,7 @@ async def test_push_files_to_branch_commits_creates_and_deletes(
             {"path": "sitl/b.py", "content": "print(2)"},
         ],
         deletes=["hil/a.py"],
-        commit_message="refactor: rename hil -> sitl",
+        commit_message="refactor: rename hil -> still",
     )
 
     assert "pushed successfully" in result

@@ -436,11 +436,18 @@ def run_server_from_config(agent: ChatAgent | None = None) -> None:
         _feedback_subsession_level = settings.feedback.model_level
 
         def _spawn_feedback_investigation(
-            *, owner_session_id: str, title: str, prompt: str
+            *,
+            owner_session_id: str,
+            title: str,
+            prompt: str,
+            kind: str = "task",
         ) -> str | None:
+            # ``kind`` is a string ("task" or "user_chat"); map it to the
+            # enum.  "user_chat" escalates an unresolvable finding to the
+            # operator as a user-facing panel instead of a background TASK.
             return spawn_subsession(
                 env=env,
-                kind=SubsessionKind.TASK,
+                kind=SubsessionKind(kind),
                 owner_session_id=owner_session_id,
                 parent_id=None,
                 depth=1,

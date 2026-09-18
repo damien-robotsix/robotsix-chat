@@ -47,8 +47,8 @@ Presets live under `periodic.sessions` in the config:
 - `anchor_utc` — optional fixed UTC instant (ISO 8601, e.g. `2026-09-03T06:00:00Z`) that anchors the
   schedule. When set, the preset fires at this instant and then every `schedule_interval_seconds`
   thereafter, so `every 24h from <ts>` fires daily at the anchor's UTC time-of-day. An anchored
-  preset never fires off its cadence: if it is registered after the anchor has passed, the first
-  run waits for the next occurrence on/after the current time. Omit it (`null`) to keep the legacy
+  preset never fires off its cadence: if it is registered after the anchor has passed, the first run
+  waits for the next occurrence on/after the current time. Omit it (`null`) to keep the legacy
   cadence — first run promptly after startup, then spaced by the interval from the last firing.
 - `model_level` — optional llmio level override (1–3); `null` follows the global model-level
   resolution, like an operator session.
@@ -70,10 +70,11 @@ hand. A failure to close the previous run is logged and never blocks the new fir
 
 ### `dependabot-drain`
 
-The committed `config/config.json` ships one preset, `dependabot-drain`, which keeps the repository's
-dependency-update pull requests from piling up. On each firing it enumerates the open
+The committed `config/config.json` ships one preset, `dependabot-drain`, which keeps the
+repository's dependency-update pull requests from piling up. On each firing it enumerates the open
 Dependabot/Renovate PRs (`list_open_prs`), judges each one's impact (`inspect_pr_diff`,
-`verify_pr_ci_status`), merges the safe non-breaking bumps, and files a migration ticket (`POST /tickets/ingest`) for every breaking change. It complements — never duplicates — any CI-level
+`verify_pr_ci_status`), merges the safe non-breaking bumps, and files a migration ticket
+(`POST /tickets/ingest`) for every breaking change. It complements — never duplicates — any CI-level
 auto-merge: PRs already armed to auto-merge are skipped. It finishes with a report of the PRs
 merged, migration tickets filed, and PRs skipped.
 
@@ -82,8 +83,9 @@ merged, migration tickets filed, and PRs skipped.
 - **Ships disabled** — the preset ships with `"enabled": false` per the feature-flag convention, so
   it never fires on a fresh checkout.
 - **Activation** — set `"enabled": true` on the `dependabot-drain` entry under `periodic.sessions`
-  in the deployment's config, then redeploy. To prove it live, fire it once with `POST /periodic/definitions/dependabot-drain/run` and read the report, and confirm it appears enabled in
-  `GET /periodic/definitions`.
+  in the deployment's config, then redeploy. To prove it live, fire it once with
+  `POST /periodic/definitions/dependabot-drain/run` and read the report, and confirm it appears
+  enabled in `GET /periodic/definitions`.
 
 ### `gate-drain`
 
@@ -98,17 +100,17 @@ it begin detailed per-ticket processing.
 - **Scope reporting belongs in the primary conversation.** Subsession summaries capture follow-up
   work items, not top-line scope. The total discovered count, the per-state summary, and any
   discovered-vs-analyzed mismatch must appear in the main conversation where the operator sees them
-  immediately — never buried in a closed subsession summary. This preset exists because a
-  2026-09-09 gate-drain run reported ~14 tickets in the main conversation while a subsession had
-  actually discovered 47 across multiple boards; the 3× scope expansion never reached the operator.
+  immediately — never buried in a closed subsession summary. This preset exists because a 2026-09-09
+  gate-drain run reported ~14 tickets in the main conversation while a subsession had actually
+  discovered 47 across multiple boards; the 3× scope expansion never reached the operator.
 - **Cadence** — every four hours (`schedule_interval_seconds: 14400`), at `model_level: 2`.
 - **Ships disabled** — `"enabled": false` per the feature-flag convention, so it never fires on a
   fresh checkout.
 - **Activation** — set `"enabled": true` on the `gate-drain` entry under `periodic.sessions` in the
-  deployment's config, then redeploy. To prove it live, fire it once with `POST
-  /periodic/definitions/gate-drain/run` and confirm the main-conversation report leads with the
-  total discovered count and the state-by-state summary (with no scope mismatch left silent), and
-  that it appears enabled in `GET /periodic/definitions`.
+  deployment's config, then redeploy. To prove it live, fire it once with
+  `POST /periodic/definitions/gate-drain/run` and confirm the main-conversation report leads with
+  the total discovered count and the state-by-state summary (with no scope mismatch left silent),
+  and that it appears enabled in `GET /periodic/definitions`.
 
 ## Endpoints
 

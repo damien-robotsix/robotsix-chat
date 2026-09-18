@@ -322,6 +322,43 @@ def _is_admission_policy_block(resp: httpx.Response) -> bool:
     return any(marker in haystack for marker in _ADMISSION_POLICY_MARKERS)
 
 
+#: Repo id that owns the chat system's own configuration.  A finding about
+#: chat's periodic presets, prompts, or session behaviour belongs to this
+#: repo (or to a config change) — it must never be routed to a component
+#: repo.  Routing such a finding to a component produced mis-targeted PRs on
+#: ``hexarchy`` (#304/#311/#312) for a finding about chat's ``board-gates-drain``
+#: periodic preset, which lives only in chat's config volume under
+#: ``periodic.sessions`` and is not in any repo tree.
+_CHAT_SELF_REPO: str = "robotsix-chat"
+
+#: Lower-cased subject markers that identify a finding as concerning the chat
+#: system's own periodic presets / prompts / session behaviour.  Such findings
+#: are owned by the chat repo regardless of what the analysis LLM guessed for
+#: ``target_repo``.  Kept deliberately narrow — a broad match (e.g. any
+#: ``config`` kind) would mis-route genuine component findings.
+_CHAT_CONFIG_SUBJECT_MARKERS: tuple[str, ...] = (
+    "periodic",
+    "preset",
+    "session behaviour",
+    "session behavior",
+    "system prompt",
+    "drain-the-mill",
+)
+
+
+def _subject_is_chat_config(ticket: dict[str, Any]) -> bool:
+    """Return ``True`` when *ticket* concerns chat's own periodic/session config.
+
+    Matches the finding's title and description against
+    :data:`_CHAT_CONFIG_SUBJECT_MARKERS`.  These findings belong to the chat
+    repo (or a config change) — they must never be routed to a component repo.
+    """
+    subject = (
+        (f"{ticket.get('title', '')}\n{ticket.get('description', '')}").strip().lower()
+    )
+    return any(marker in subject for marker in _CHAT_CONFIG_SUBJECT_MARKERS)
+
+
 def _build_investigation_prompt(
     ticket: dict[str, Any],
     *,
@@ -349,7 +386,48 @@ def _build_investigation_prompt(
         "Investigate the finding in the target repo, then take the smallest "
         "concrete action that addresses it (e.g. open a pull request, file a "
         "properly-scoped deployment ticket, or document why no change is "
-        "needed). Report a short summary of what you did when done."
+        "needed). Report a short summary of what you did when done.\n\n"
+        "CRITICAL — never open a pull request when the finding's subject is "
+        "not present in the target repo. Investigate first; if the thing you "
+        "were sent to fix does not exist in this repo (the finding was "
+        "mis-targeted), do NOT open a PR. Report back and close with the "
+        'outcome "no change needed, wrong target".\n\n'
+        "If the finding concerns the chat system's own configuration "
+        "(periodic presets, prompts, or session behaviour), it belongs to "
+        "the robotsix-chat repo or to a config change — do not route it to "
+        "a component repo."
+    )
+
+
+def _build_escalation_prompt(
+    ticket: dict[str, Any],
+    *,
+    session_id: str,
+    trigger_type: str,
+) -> str:
+    """Build a user-facing panel prompt that escalates an unresolvable finding.
+
+    Used when a policy-blocked finding's target repo cannot be resolved with
+    confidence — the finding is surfaced to the operator as a ``user_chat``
+    panel so a human decides where it belongs, instead of guessing and
+    risking a mis-targeted PR.
+    """
+    return (
+        "A feedback analysis of a chat session surfaced an actionable "
+        "improvement whose target repo could not be resolved with confidence. "
+        "The board no longer accepts these as ingest tickets (it admits "
+        "deployment tickets only).\n\n"
+        f"Title: {ticket['title']}\n"
+        f"Kind: {ticket.get('kind', '')}\n\n"
+        f"Finding:\n{ticket['description']}\n\n"
+        f"(Origin: robotsix-chat feedback run | session: {session_id} | "
+        f"trigger: {trigger_type})\n\n"
+        "The finding has no confidently-resolvable target repo, so rather "
+        "than guessing (which risks a mis-targeted PR in the wrong "
+        "repository), it is escalated to you. Decide where this finding "
+        "belongs — the robotsix-chat repo, a config change, or a specific "
+        "component repo — and route it there. If it is not actionable, mark "
+        "it as resolved so it is not re-raised."
     )
 
 
@@ -376,6 +454,18 @@ class FeedbackRunner:
     #: being routed to an orphan investigation subsession that would deliver
     #: its summary to a conversation that no longer exists.
     _ORPHAN_FINDINGS_TOPIC: str = "feedback-orphan-findings"
+
+    #: Knowledge-store topic under which findings that were handed to an
+    #: investigation subsession (or escalated to the operator) are recorded
+    #: as resolved, keyed by finding title.  Recording the resolution durably
+    #: means the same finding is not re-investigated on the next session-end
+    #: run — the ticket path that used to make this durable is closed by the
+    #: board admission policy, so routing must now record its own outcome.
+    _RESOLVED_FINDINGS_TOPIC: str = "feedback-resolved-findings"
+
+    #: Keep only the most recent N resolved findings in the shared note so it
+    #: cannot grow without bound.
+    _RESOLVED_FINDINGS_CAP: int = 200
 
     #: Keep only the most recent N orphan findings in the shared note so it
     #: cannot grow without bound.
@@ -856,7 +946,7 @@ class FeedbackRunner:
             f" | origin: robotsix-chat"
         )
         payload: dict[str, Any] = {
-            "repo_id": ticket["target_repo"],
+            "repo_id": ticket.get("target_repo", ""),
             "title": ticket["title"],
             "body": "\n".join(body_lines),
             "source_tag": "robotsix-chat-feedback",
@@ -984,6 +1074,14 @@ class FeedbackRunner:
         — in that case an investigation would deliver its summary to a
         parent conversation that no longer exists, so instead the finding is
         parked as a knowledge note for a later periodic review to pick up.
+
+        A finding about the chat system's own periodic/session configuration
+        is always targeted at :data:`_CHAT_SELF_REPO` — never a component
+        repo.  A finding whose target cannot be resolved with confidence is
+        escalated to the operator as a ``user_chat`` panel instead of
+        guessing.  Every routed finding is recorded as resolved (keyed on
+        its title) so the same finding is not re-investigated on the next
+        session-end run.
         """
         # Guard: never route an orphan investigation.  When the owner session
         # was deleted (e.g. DELETE /sessions/{id}) the spawned subsession
@@ -998,6 +1096,16 @@ class FeedbackRunner:
                 ticket, session_id=session_id, trigger_type=trigger_type
             )
             return "dropped"
+        # Durability: a finding already handed to an investigation (or
+        # escalated) is never re-investigated verbatim on a later session
+        # end.  The board-admission ticket path that used to make this
+        # durable is closed, so routing records its own resolution.
+        if self._finding_resolved(ticket):
+            logger.info(
+                "Feedback finding already resolved — not re-investigated: %r",
+                ticket["title"],
+            )
+            return "routed"
         if self._spawner is None:
             logger.warning(
                 "Feedback finding %r blocked by board admission policy but no "
@@ -1005,6 +1113,42 @@ class FeedbackRunner:
                 ticket["title"],
             )
             return "routed"
+        target_repo = self._resolve_target_repo(ticket)
+        if target_repo is None:
+            # Cannot confidently resolve where the finding belongs — escalate
+            # to the operator as a user-facing panel instead of guessing (a
+            # guess is what produced the mis-targeted component PRs).
+            prompt = _build_escalation_prompt(
+                ticket, session_id=session_id, trigger_type=trigger_type
+            )
+            title = f"[feedback] assign target: {ticket['title']}"
+            try:
+                sub_id = self._spawner(
+                    owner_session_id=session_id,
+                    title=title,
+                    prompt=prompt,
+                    kind="user_chat",
+                )
+            except Exception:
+                logger.exception(
+                    "Failed to escalate feedback finding %r to operator panel",
+                    ticket["title"],
+                )
+                return "routed"
+            self._record_resolved_finding(
+                ticket, session_id=session_id, trigger_type=trigger_type
+            )
+            self._last_filed_at[ticket["title"].strip().lower()] = time.monotonic()
+            logger.info(
+                "Feedback finding escalated to operator panel: title=%r subsession=%s",
+                ticket["title"],
+                sub_id,
+            )
+            return "routed"
+        # Apply the resolved target (corrects mis-targeted chat-config
+        # findings) so the investigation prompt never points at a component
+        # repo for chat's own config.
+        ticket["target_repo"] = target_repo
         prompt = _build_investigation_prompt(
             ticket, session_id=session_id, trigger_type=trigger_type
         )
@@ -1020,6 +1164,10 @@ class FeedbackRunner:
                 ticket["title"],
             )
             return "routed"
+        self._record_resolved_finding(
+            ticket, session_id=session_id, trigger_type=trigger_type
+        )
+        self._last_filed_at[ticket["title"].strip().lower()] = time.monotonic()
         logger.info(
             "Feedback finding routed to chat subsession agent: title=%r "
             "target_repo=%r subsession=%s",
@@ -1028,6 +1176,121 @@ class FeedbackRunner:
             sub_id,
         )
         return "routed"
+
+    def _resolve_target_repo(self, ticket: dict[str, Any]) -> str | None:
+        """Return the effective target repo for an investigation, or ``None``.
+
+        A finding about the chat system's own periodic presets, prompts, or
+        session behaviour is owned by :data:`_CHAT_SELF_REPO` — it must
+        never be routed to a component repo, whatever the analysis LLM
+        guessed.  Otherwise the LLM-supplied ``target_repo`` is used when
+        present.  Returns ``None`` when the target cannot be resolved with
+        confidence — the caller should escalate to the operator rather than
+        guess.
+        """
+        if _subject_is_chat_config(ticket):
+            return _CHAT_SELF_REPO
+        target = (ticket.get("target_repo") or "").strip()
+        return target or None
+
+    def _finding_resolved(self, ticket: dict[str, Any]) -> bool:
+        """Return ``True`` when *ticket* (by normalized title) is already resolved.
+
+        Consults the :data:`_RESOLVED_FINDINGS_TOPIC` knowledge note, which
+        records findings that were handed to an investigation subsession or
+        escalated to the operator.  Best-effort: a missing store or any
+        persistence error is logged and returns ``False`` so routing proceeds
+        (the in-process dedup still guards the immediate re-run).
+        """
+        store = self._knowledge_store
+        if store is None:
+            return False
+        norm_title = (ticket.get("title") or "").strip().lower()
+        if not norm_title:
+            return False
+        try:
+            existing = store.list(topic=self._RESOLVED_FINDINGS_TOPIC)
+        except Exception:
+            logger.exception(
+                "Failed to read resolved-findings note — treating %r as unresolved",
+                ticket.get("title"),
+            )
+            return False
+        for entry in existing:
+            try:
+                payload = json.loads(entry.content)
+            except json.JSONDecodeError, ValueError:
+                continue
+            if not isinstance(payload, dict):
+                continue
+            for record in payload.get("resolved", []):
+                if not isinstance(record, dict):
+                    continue
+                if (record.get("title") or "").strip().lower() == norm_title:
+                    return True
+        return False
+
+    def _record_resolved_finding(
+        self,
+        ticket: dict[str, Any],
+        *,
+        session_id: str,
+        trigger_type: str,
+    ) -> None:
+        """Durably record *ticket* as resolved (keyed on its title).
+
+        Appended to the single :data:`_RESOLVED_FINDINGS_TOPIC` knowledge
+        note, keeping only the most recent :data:`_RESOLVED_FINDINGS_CAP`
+        entries.  Best-effort: a missing store or any persistence error is
+        logged and swallowed — the in-process ``_last_filed_at`` dedup still
+        guards the immediate re-run.
+        """
+        store = self._knowledge_store
+        if store is None:
+            logger.debug(
+                "No knowledge store wired — resolved feedback finding %r not recorded",
+                ticket["title"],
+            )
+            return
+        record = {
+            "title": ticket["title"],
+            "body": ticket["description"],
+            "session_id": session_id,
+            "trigger": trigger_type,
+            "target_repo": ticket.get("target_repo", ""),
+        }
+        norm_title = ticket["title"].strip().lower()
+        try:
+            existing = store.list(topic=self._RESOLVED_FINDINGS_TOPIC)
+            resolved: list[dict[str, Any]] = []
+            note_id: str | None = None
+            if existing:
+                note_id = existing[0].id
+                try:
+                    payload = json.loads(existing[0].content)
+                except json.JSONDecodeError, ValueError:
+                    payload = None
+                if isinstance(payload, dict) and isinstance(
+                    payload.get("resolved"), list
+                ):
+                    resolved = list(payload["resolved"])
+            if not any(
+                isinstance(r, dict)
+                and (r.get("title") or "").strip().lower() == norm_title
+                for r in resolved
+            ):
+                resolved.append(record)
+            resolved = resolved[-self._RESOLVED_FINDINGS_CAP :]
+            content = json.dumps({"resolved": resolved}, indent=2)
+            if note_id is not None:
+                store.update(note_id, content)
+            else:
+                store.add(self._RESOLVED_FINDINGS_TOPIC, content)
+        except Exception:
+            logger.exception(
+                "Failed to record resolved feedback finding %r as a knowledge note",
+                ticket["title"],
+            )
 
     def _owner_session_deleted(self, session_id: str) -> bool:
         """Return ``True`` when *session_id* is absent from the conversation store.

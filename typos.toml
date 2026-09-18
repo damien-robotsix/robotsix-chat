@@ -35,6 +35,10 @@ REPL = "REPL"
 BTree = "BTree"
 mutatable = "mutatable"
 nd = "nd"
+# "mis-" is a legitimate English prefix in hyphenated compounds like
+# "mis-targeted" / "mis-route"; typos splits on the hyphen and flags the bare
+# "mis" token as a typo for "miss"/"mist". Accept the prefix.
+mis = "mis"
 
 [default.extend-identifiers]
 mkdocs = "mkdocs"
