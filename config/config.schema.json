@@ -1,8 +1,22 @@
 {
   "$defs": {
+    "OrganizationSettings": {
+      "additionalProperties": false,
+      "description": "Organization-level configuration and facts about the org's licensing and infrastructure.\n\nAttributes:\n    gitleaks_license_owned: Whether the organization owns a gitleaks commercial license.\n        Determines whether to use the gitleaks GitHub Action (requires license)\n        or the license-free Docker image path for secret scanning. Set once at the org\n        level; gate-drain and other periodic runs consult this config rather than\n        asking the operator per-decision.",
+      "properties": {
+        "gitleaks_license_owned": {
+          "default": false,
+          "description": "Whether the organization owns a gitleaks commercial license. When true, the gitleaks GitHub Action can be used for secret scanning; when false, use the license-free Docker image path instead.",
+          "title": "Gitleaks License Owned",
+          "type": "boolean"
+        }
+      },
+      "title": "OrganizationSettings",
+      "type": "object"
+    },
     "CentralDeploySettings": {
       "additionalProperties": false,
-      "description": "Central-deploy roster and component-access settings.\n\nProvides the base URL for the central-deploy management-plane API.\nAt session start the agent fetches the\n``GET /chat/components`` roster (a list of component agents the chat\nis allowed to call), caches it with a short TTL, and loads each\ncomponent's declared skill into the agent.\n\nAttributes:\n    url: Canonical base URL of the central-deploy / deploy-lifecycle API\n        (no trailing slash).  Single source of truth for the deploy-plane\n        address; the lifecycle client and feedback roster lookup both read\n        it (the former ``lifecycle.base_url`` was retired in favour of it).\n    roster_cache_ttl: Seconds to cache the roster before re-fetching.\n        Default 300 (5 min).\n    component_response_max_chars: Maximum characters of a component API\n        response returned to the agent; longer bodies are truncated.\n        Default 200000.\n    deploy_api_key: Canonical deploy-plane credential \u2014 the shared\n        secret between this chat component and central-deploy.  Sent as\n        the ``X-API-Key`` header on outbound roster/lifecycle calls, and\n        required (matched) on inbound central-deploy \u2192 chat endpoints\n        (``/chat/github/*`` and the feedback roster lookup).  This is the\n        single source of truth; the per-block ``deploy_api_key`` fields\n        were retired in favour of it.\n    component_credentials: Per-component credentials keyed by\n        component id.  Each entry carries credentials for all\n        supported auth schemes; the roster entry's ``auth.type``\n        selects which fields are used.",
+      "description": "Central-deploy roster and component-access settings.\n\nProvides the base URL for the central-deploy management-plane API.\nAt session start the agent fetches the\n``GET /chat/components`` roster (a list of component agents the chat\nis allowed to call), caches it with a short TTL, and loads each\ncomponent's declared skill into the agent.\n\nAttributes:\n    url: Canonical base URL of the central-deploy / deploy-lifecycle API\n        (no trailing slash).  Single source of truth for the deploy-plane\n        address; the lifecycle client and feedback roster lookup both read\n        it (the former ``lifecycle.base_url`` was retired in favour of it).\n    roster_cache_ttl: Seconds to cache the roster before re-fetching.\n        Default 300 (5 min).\n    component_response_max_chars: Maximum characters of a component API\n        response returned to the agent; longer bodies are truncated.\n        Default 200000.\n    deploy_api_key: Canonical deploy-plane credential — the shared\n        secret between this chat component and central-deploy.  Sent as\n        the ``X-API-Key`` header on outbound roster/lifecycle calls, and\n        required (matched) on inbound central-deploy → chat endpoints\n        (``/chat/github/*`` and the feedback roster lookup).  This is the\n        single source of truth; the per-block ``deploy_api_key`` fields\n        were retired in favour of it.\n    component_credentials: Per-component credentials keyed by\n        component id.  Each entry carries credentials for all\n        supported auth schemes; the roster entry's ``auth.type``\n        selects which fields are used.",
       "properties": {
         "url": {
           "default": "",
@@ -28,7 +42,7 @@
         },
         "component_request_timeout": {
           "default": 60.0,
-          "description": "Per-request HTTP timeout (seconds) for component API calls made via component_request.  Also bounds the total wall-clock time for all retry attempts via the retry deadline.  Default 60s \u2014 raise this if upstream components are slow to respond.",
+          "description": "Per-request HTTP timeout (seconds) for component API calls made via component_request.  Also bounds the total wall-clock time for all retry attempts via the retry deadline.  Default 60s — raise this if upstream components are slow to respond.",
           "title": "Component Request Timeout",
           "type": "number"
         },
@@ -53,7 +67,7 @@
     },
     "ComponentClientSettings": {
       "additionalProperties": false,
-      "description": "Component agent client settings \u2014 inspect and configure remote agents.\n\nWhen enabled, the chat agent gains four tools: ``list_component_agents``,\n``get_component_telemetry``, ``get_component_config``, and\n``set_component_config`` so it can enumerate configured component agents,\nread live telemetry, and read/update configuration on demand via direct\nHTTP.\n\nAttributes:\n    enabled: Master switch.\n    timeout: Per-request HTTP timeout (seconds).\n    components: Allowlist of component agents the chat may contact.\n        Each entry has a ``base_url`` and an optional ``label``.",
+      "description": "Component agent client settings — inspect and configure remote agents.\n\nWhen enabled, the chat agent gains four tools: ``list_component_agents``,\n``get_component_telemetry``, ``get_component_config``, and\n``set_component_config`` so it can enumerate configured component agents,\nread live telemetry, and read/update configuration on demand via direct\nHTTP.\n\nAttributes:\n    enabled: Master switch.\n    timeout: Per-request HTTP timeout (seconds).\n    components: Allowlist of component agents the chat may contact.\n        Each entry has a ``base_url`` and an optional ``label``.",
       "properties": {
         "enabled": {
           "default": false,
@@ -107,7 +121,7 @@
     },
     "ComponentTarget": {
       "additionalProperties": false,
-      "description": "A single component agent that the chat may inspect or configure.\n\nAttributes:\n    base_url: Base URL of the component agent (e.g.\n        ``\"http://comp-1:8090\"``).\n    label: Optional human-readable label shown in discovery output.",
+      "description": "Network address and optional label of a component agent.\n\nAttributes:\n    base_url: HTTPS base URL of the component (e.g.\n        ``https://internal.service:8000``).\n    label: Optional human-readable label for display (e.g. \"robot-brain\").",
       "properties": {
         "base_url": {
           "title": "Base Url",
@@ -125,9 +139,21 @@
       "title": "ComponentTarget",
       "type": "object"
     },
+    "ConversationSettings": {
+      "additionalProperties": false,
+      "description": "Conversation persistence and memory settings.\n\nAttributes:\n    persist_path: Path to the JSON file where conversations are written.",
+      "properties": {
+        "persist_path": {
+          "title": "Persist Path",
+          "type": "string"
+        }
+      },
+      "title": "ConversationSettings",
+      "type": "object"
+    },
     "ContinuationSettings": {
       "additionalProperties": false,
-      "description": "Post-restart continuation \u2014 auto-resume a conversation after a restart.\n\nWhen enabled, the agent gains tools to schedule a continuation that\nfires automatically on the next boot, so work-in-progress resumes\nwithout human intervention.  The primary use case is a self-restart\nto pick up a newly-deployed capability: before calling\n``self_restart``, the agent schedules a continuation with the current\nsession id and a resume prompt.\n\nPersistence is an internal detail: the continuation is stored at a fixed\npath on the ``/data`` volume, so there is no operator-facing knob for it.\n\nAttributes:\n    enabled: Master switch.  Default ``False``.\n    max_consecutive: Maximum number of consecutive auto-continuations\n        before the guardrail blocks further automatic firing.  This\n        prevents a restart\u2192continue\u2192restart\u2192continue loop from running\n        indefinitely.  Default ``3``.",
+      "description": "Continuation (post-restart auto-resume) settings.\n\nWhen a session is interrupted mid-turn, the continuation system\nautomatically resumes it on the next server boot. This block controls\nthe maximum number of restarts a single session may experience before\nit is archived and no longer auto-resumed.\n\nAttributes:\n    enabled: Master switch. When ``False`` continuation is disabled\n        — interrupted sessions are not resumed.  Default ``False``\n        (continuation is feature-gated and must be opt-in).\n    max_consecutive: Maximum number of consecutive (back-to-back) restarts\n        a session may experience before it is archived and no longer\n        auto-resumed. Default 3 — a session that restarts 3 times in a\n        row without completing a turn is assumed to be broken and is\n        closed. Set to a higher value if the server is expected to restart\n        frequently.",
       "properties": {
         "enabled": {
           "default": false,
@@ -136,7 +162,6 @@
         },
         "max_consecutive": {
           "default": 3,
-          "minimum": 1,
           "title": "Max Consecutive",
           "type": "integer"
         }
@@ -144,22 +169,9 @@
       "title": "ContinuationSettings",
       "type": "object"
     },
-    "ConversationSettings": {
-      "additionalProperties": false,
-      "description": "Multi-session conversation continuity for the browser chat.\n\nThe server groups conversations by a per-browser ``owner_id`` and addresses\nindividual sessions by ``session_id``. Each owner can have multiple named\nsessions with independent turn histories. History is **never** wiped on\nidle \u2014 sessions are persistent when ``persist_path`` is configured.\n\nAttributes:\n    persist_path: Path to the JSON persistence file. Default\n        ``/data/conversations.json``. Set to an empty string to disable.",
-      "properties": {
-        "persist_path": {
-          "default": "/data/conversations.json",
-          "title": "Persist Path",
-          "type": "string"
-        }
-      },
-      "title": "ConversationSettings",
-      "type": "object"
-    },
     "DiagnosticsSettings": {
       "additionalProperties": false,
-      "description": "Diagnostics capture and systemic fix surfacing.\n\nWhen enabled, the agent captures diagnostic bundles for failure events\nand can detect recurring failure categories.  When a category crosses\nthe recurrence threshold a ``FixProposal`` is auto-generated (but NOT\nauto-applied) for agent or human review.\n\nApplied fixes are tracked in the effectiveness store; after the\nobservation window elapses a ``FixEffectivenessReport`` is generated\ncomparing pre-fix and post-fix recurrence counts.\n\nAttributes:\n    enabled: Master switch.  Default ``True``.\n    store_path: Path to the diagnostic-event JSON persistence file.\n        Default ``/data/diagnostics.json``.\n    proposals_path: Path to the fix-proposal JSON persistence file.\n        Default ``/data/fix_proposals.json``.\n    effectiveness_path: Path to the effectiveness-report JSON\n        persistence file.  Default ``/data/diagnostics_effectiveness.json``.\n    recurrence_threshold: Minimum number of occurrences within the\n        window to trigger a recurrence alert.  Default ``3``.\n    recurrence_window_days: Look-back window in days for recurrence\n        detection.  Default ``30``.\n    observation_window_days: Days after a fix is applied to wait before\n        generating an effectiveness report.  The pre-fix and post-fix\n        windows are both this many days.  Default ``30``.\n    mill_events_path: DEPRECATED, unused since 2026-09-07 \u2014\n        ``read_diagnostic_events`` queries the mill board API\n        (``GET /diagnostic-events``) because the mill's data volume is\n        not mounted in the chat container.  Kept so pinned configs\n        still load (``extra=\"forbid\"``).",
+      "description": "Automated problem detection (diagnostics), recurring-issue clustering, and fix proposals.\n\nThe diagnostics system monitors the board for patterns in ticket state\ntransitions: a ticket that transitions to ``errored`` (implement crashed),\n``fixing_ci`` (pre-existing CI failures), or other error states triggers\na diagnostic event. The system clusters recurring issues (same repo, same\nerror pattern), proposes fixes via a dedicated model, and surfaces them\nfor validation.\n\nAttributes:\n    enabled: Master switch. When ``False`` diagnostics are not collected.\n    store_path: Path to the JSONL diagnostic events store.\n    proposals_path: Path to the JSON proposals archive.\n    effectiveness_path: Path to the JSON effectiveness reports archive.\n    recurrence_threshold: Minimum count of matching events within the\n        recurrence window before an issue is considered recurring and a\n        fix proposal is emitted. Default 3 (an issue that repeats 3 times\n        is recurring).\n    recurrence_window_days: Time window (days) in which the recurrence\n        threshold must be reached. Default 30 — a recurring issue is one\n        that matches 3+ times within the last 30 days.\n    observation_window_days: Time window (days) for the recent-activity\n        window when analyzing recurring issues and proposing fixes.\n        Default 30 — the proposal considers tickets and changes from the\n        last 30 days.\n    mill_events_path: Path to the mill component's diagnostic event log\n        (read-only; symlinked from central-deploy's mill data directory).",
       "properties": {
         "enabled": {
           "default": true,
@@ -205,9 +217,27 @@
       "title": "DiagnosticsSettings",
       "type": "object"
     },
+    "DockerDigestSettings": {
+      "additionalProperties": false,
+      "description": "Docker Registry v2 digest-resolution tool.\n\nWhen enabled, the agent gains a `resolve_docker_digest` tool that\nqueries the Docker Registry v2 HTTP API to resolve a Docker image\nreference (e.g. ``python:3.14-slim``, ``ghcr.io/owner/image:tag``) to\nits immutable `sha256:...` content digest.",
+      "properties": {
+        "enabled": {
+          "default": false,
+          "title": "Enabled",
+          "type": "boolean"
+        },
+        "timeout": {
+          "default": 30.0,
+          "title": "Timeout",
+          "type": "number"
+        }
+      },
+      "title": "DockerDigestSettings",
+      "type": "object"
+    },
     "DirectRepoSettings": {
       "additionalProperties": false,
-      "description": "Direct-repo push-branch, open-PR, and direct-fix capability.\n\nAuthenticates as the robotsix-mill GitHub App.  When enabled, the chat\nagent gains tools: ``push_direct_repo_branch``\n(create/push a branch with file changes), ``open_direct_repo_pr``\n(open a PR from a branch), and \u2014 when *direct_fix_enabled* is also\n``True`` \u2014 ``direct_fix`` (push a commit directly to a target branch,\nbypassing the PR flow).  All authenticate as the configured GitHub App\ninstallation (JWT \u2192 short-lived installation token) and dynamically\nresolve the allowed repo set from the installation at action time \u2014\nno static allowlist.\n\n**Guardrails built into the tools (not configurable):**\n- Actions are ONLY permitted for tickets in BLOCKED state.\n- Repo scope is resolved dynamically from the GitHub App installation.\n- PRs are opened in a reviewable state with no auto-merge.\n- ``merge_direct_repo_pr`` can merge an approved, mergeable PR when the ticket is\n  in BLOCKED state \u2014 do not merge before the human gate is satisfied.\n\n**Additional guardrails for ``direct_fix``:**\n- Ticket must have exhausted its spawn limit (\u22653 implement cycles)\n  verified against the board API.\n- Every direct-fix action is logged at WARNING level for auditability.\n\nAttributes:\n    enabled: Master switch.  When ``False``, no direct-repo tools are\n        offered.\n    direct_fix_enabled: When ``True`` (and *enabled* is ``True``), the\n        ``direct_fix`` tool is available for pushing commits directly\n        to a target branch after mill exhaustion.  Default ``False``.\n    github_app_id: The GitHub App's numeric or slug id.  Required when\n        *enabled*.\n    github_app_private_key: The app's RSA private key in PEM format.\n        Required when *enabled*.  Stored in config only \u2014 never\n        hardcoded.\n    github_app_installation_id: Optional installation id to act as.\n        **Leave empty to resolve the installation per repository** (from\n        ``owner``/``repo`` via the GitHub App JWT) \u2014 the recommended\n        default, so a GitHub App re-install (which mints a new\n        installation id) needs no config edit.  When set, it acts as an\n        override; if it returns HTTP 404 (the installation no longer\n        exists) the client abandons it for the process lifetime and falls\n        back to per-repository resolution.\n    github_api_base_url: Overridable base URL for GitHub Enterprise.\n    board_api_base_url: Base URL of the board HTTP API for ticket-state\n        lookups (verifying BLOCKED state).\n    board_api_token: Optional bearer token for the board API.\n    timeout: Per-request HTTP timeout in seconds.",
+      "description": "Lightweight direct-PR path for simple, low-risk changes.\n\nWhen enabled, the chat agent gains tools to create branches, commit\nchanges, and open pull requests in one call — without requiring a mill\nticket in BLOCKED state. The opened PR is the review gate: a human\napproves and merges it, so this path stays safe and reversible.\n\nFour secrets (GitHub App credentials) are required for this to work.\nThey must be stored securely via the environment variable setup script\n(not pasted into chat). The install instructions live in the\nrobotsx-standards documentation.\n\nAttributes:\n    enabled: Master switch.  When ``False`` the direct-repo tools are\n        not offered.\n    direct_fix_enabled: Sub-switch for the `direct_fix` escape-hatch tool\n        (push commits directly to target branch, bypassing PR). This is a\n        last-resort tool for unblocking mechanically simple, validated-correct\n        fixes; leave it ``False`` unless explicitly activated by an operator.\n    github_app_id: GitHub App ID (numeric, from the app settings page).\n    github_app_private_key: GitHub App private key (PEM format, from the\n        app settings page).  **Do not paste into chat** — load from\n        environment via the setup script.\n    github_app_installation_id: GitHub App installation id on the target\n        org. Obtained by following the 'Install now' link on the app\n        settings page.\n    github_api_base_url: GitHub API base URL (typically\n        ``https://api.github.com`` for GH.com, or an on-prem URL for\n        GitHub Enterprise). Default ``https://api.github.com``.\n    board_api_base_url: Mill board API base URL. Default\n        ``http://127.0.0.1:8077`` (localhost, served by this same process).\n    board_api_token: HTTP Bearer token for mill-board authentication\n        (optional; localhost access is unauthenticated).",
       "properties": {
         "enabled": {
           "default": false,
@@ -221,8 +251,10 @@
         },
         "github_app_id": {
           "default": "",
+          "format": "password",
           "title": "Github App Id",
-          "type": "string"
+          "type": "string",
+          "writeOnly": true
         },
         "github_app_private_key": {
           "default": "",
@@ -233,8 +265,10 @@
         },
         "github_app_installation_id": {
           "default": "",
+          "format": "password",
           "title": "Github App Installation Id",
-          "type": "string"
+          "type": "string",
+          "writeOnly": true
         },
         "github_api_base_url": {
           "default": "https://api.github.com",
@@ -242,7 +276,7 @@
           "type": "string"
         },
         "board_api_base_url": {
-          "default": "http://mill:8077",
+          "default": "http://127.0.0.1:8077",
           "title": "Board Api Base Url",
           "type": "string"
         },
@@ -262,47 +296,17 @@
       "title": "DirectRepoSettings",
       "type": "object"
     },
-    "DockerDigestSettings": {
-      "additionalProperties": false,
-      "description": "Read-only Docker digest resolution tool for the agent.\n\nWhen enabled, the agent gains a ``resolve_docker_digest`` tool that\nresolves a Docker image reference (e.g. ``python:3.14-slim``) and\ntarget platform to its immutable ``sha256:...`` content digest by\nquerying the Docker Registry v2 HTTP API.\n\nAttributes:\n    enabled: Master switch.  When ``False``, no docker_digest tool is offered.\n    timeout: Per-request HTTP timeout in seconds (default 30 s).\n    registry_host: Docker Registry v2 hostname for manifest lookups.\n        Default ``registry-1.docker.io`` (Docker Hub).\n    auth_url: Token-authentication endpoint for bearer tokens.\n        Default ``https://auth.docker.io/token`` (Docker Hub's auth\n        service).",
-      "properties": {
-        "enabled": {
-          "default": true,
-          "title": "Enabled",
-          "type": "boolean"
-        },
-        "timeout": {
-          "default": 30.0,
-          "title": "Timeout",
-          "type": "number"
-        },
-        "registry_host": {
-          "default": "registry-1.docker.io",
-          "title": "Registry Host",
-          "type": "string"
-        },
-        "auth_url": {
-          "default": "https://auth.docker.io/token",
-          "title": "Auth Url",
-          "type": "string"
-        }
-      },
-      "title": "DockerDigestSettings",
-      "type": "object"
-    },
     "EvergoingSettings": {
       "additionalProperties": false,
-      "description": "Summary-compaction settings (config block ``evergoing``).\n\nA background scheduler runs every *trim_interval_seconds* over **every\nsession** \u2014 the single context-reduction mechanism (idle compaction was\nremoved).  The gate is deterministic (no decision LLM): a session is\ncompacted only when new turns arrived since the last pass AND more\nthan *keep_recent_runs* completed runs accumulated beyond the previous\nsummary.  Everything before the last *keep_recent_runs* runs is folded\ninto the session's summary; the recent runs stay verbatim and are not\nshown to the summariser.  A no-input interval performs zero LLM calls.\n\nThe block keeps its historical name: it once also switched on the\n\"evergoing session\" (a single never-ending operator session with\ncross-session tools), removed on 2026-09-15 \u2014 ``enabled`` is dropped\non load so pinned deployed configs still boot.\n\nAttributes:\n    trim_interval_seconds: Seconds between scheduled compaction passes.\n        Default ``1800`` (30 minutes) \u2014 a session is summarised at most\n        once per interval.\n    keep_recent_runs: Number of most-recent completed runs (operator\n        message + assistant final answer) kept verbatim in the replay\n        and excluded from the summariser input.  A session is only\n        compacted when MORE than this many fresh runs exist beyond the\n        previous summary.  Default ``5``.",
+      "description": "Long-running conversation auto-trim settings.\n\nWhen a conversation is very long, the agent automatically compacts its\nown outputs to free up context for new replies. This block controls how\nthe trim is executed.\n\nAttributes:\n    trim_interval_seconds: Minimum elapsed seconds before another trim is\n        considered. Default 1800 (30 minutes) — the trim will not run again\n        until 30 minutes have passed since the previous trim.\n    keep_recent_runs: How many recent agent runs (typically subsession\n        completions) to preserve in the compacted transcript. Runs older than\n        this are consolidated into a prose summary. Default 5 — keep the 5\n        most recent runs verbatim, summarise everything before that.",
       "properties": {
         "trim_interval_seconds": {
           "default": 1800.0,
-          "exclusiveMinimum": 0,
           "title": "Trim Interval Seconds",
           "type": "number"
         },
         "keep_recent_runs": {
           "default": 5,
-          "minimum": 1,
           "title": "Keep Recent Runs",
           "type": "integer"
         }
@@ -312,7 +316,7 @@
     },
     "FeedbackSettings": {
       "additionalProperties": false,
-      "description": "Automated feedback analysis for continuous self-improvement.\n\nWhen enabled, a feedback run analyses the conversation at compaction\nand session-end boundaries, then files improvement tickets via the\nboard's ``POST /tickets/ingest`` endpoint.  Tickets flow through the\nnormal human-approval workflow \u2014 the feedback run never auto-approves.\n\nAttributes:\n    enabled: Master switch.  When ``False``, no feedback runs occur.\n    model_level: llmio capability level for the feedback-analysis\n        agent (a cheap, single-turn extraction call).  Default ``1``.\n    board_url: Base URL of the board HTTP API (no trailing slash).\n        Required when *enabled* \u2014 the runner POSTs to\n        ``{board_url}/tickets/ingest``.\n    board_api_token: Optional Bearer token for the board API.\n    timeout: Per-request HTTP timeout in seconds for ingest calls.\n        The set of allowed target repos is resolved dynamically at\n        run-time from the deploy server's chat-component roster\n        intersected with the mill board's repo registry \u2014 no static\n        allowlist is needed.\n    max_tickets_per_run: Ceiling on tickets filed by one feedback run.\n        A run fires at every compaction and session-end boundary, and\n        was previously unbounded: across 37 observed runs it filed 114\n        tickets, mean 3.08, peaking at 9 from a single run. Excess\n        tickets are dropped with a warning naming each one. ``0``\n        disables filing while leaving analysis on.\n    dedup_window_seconds: Time window (in seconds) for suppressing\n        duplicate feedback runs and duplicate ticket titles.  When\n        two feedback runs for the same session are scheduled within\n        this window, the second is skipped.  Similarly, when two\n        tickets with the same normalized title (lowercased, stripped)\n        are filed within this window, the second is skipped.  Default\n        ``60.0`` balances promptness against the risk of near-\n        simultaneous duplicate creation during concurrent monitor\n        runs.\n    ingest_max_retries: Number of automatic retries when a\n        ``POST /tickets/ingest`` call fails with a transport-level\n        error (e.g. ``ReadTimeout``).  Between retries the runner\n        queries the board idempotently to confirm whether the\n        timed-out request already created the ticket, so a retry\n        never files a duplicate.  ``0`` disables retrying (a single\n        attempt).  Default ``2`` (up to three attempts total).\n    max_concurrent_runs: Ceiling on feedback runs executing at the\n        same time; further runs wait for a slot (never dropped).  Each\n        run is a full analysis-agent call and every finding it routes\n        spawns an investigation subsession, so an unbounded burst \u2014\n        an operator deleting dozens of stale sessions in one sweep\n        (2026-09-15: ~70 ``session_end`` runs in ten minutes, 17\n        investigation agents at once, chat at 3.8 GB of its 4 GiB\n        limit) \u2014 starves the host.  Default ``2``.\n\nThe deploy-roster lookup uses the canonical ``central_deploy.url`` and\n``central_deploy.deploy_api_key`` (the per-block ``deploy_api_key`` was\nretired).",
+      "description": "Automated chat-session feedback loop — surfaces actionable findings from session transcripts.\n\nThe feedback system runs in the background (on a schedule or\non-demand) and analyzes closed chat sessions to surface actionable\nimprovements: mis-routed decisions, overly-conservative prompts,\ninconsistent tool use, and other issues that repeat across sessions.\n\nAttribute\n    enabled: Master switch. When ``False`` the feedback loop is disabled.\n    model_level: Model tier to use for feedback analysis (1, 2, 3).\n        Default 1 (cheap, extractive model); raise to 2 or 3 for more\n        sophisticated analysis.\n    board_url: Base URL of the mill board API (where feedback findings are\n        filed as tickets). Default empty string (use the ``mill`` component\n        from central-deploy roster).\n    board_api_token: HTTP Bearer token for mill-board authentication\n        (optional; localhost access is unauthenticated).\n    timeout: Per-request HTTP timeout for board API calls (seconds).\n        Default 60.\n    max_tickets_per_run: Maximum number of finding tickets to file in a\n        single feedback run. Default 3 (file at most 3 tickets). Set to 0\n        to disable filing (feedback analysis will still run, but findings\n        will not be filed as tickets).\n    dedup_window_seconds: Time window (seconds) in which duplicate findings\n        are deduplicated. A finding that matches a recent finding (same\n        category, same repo, same title) within this window is dropped.\n        Default 60 — check the last 60 seconds of the ticket store for\n        duplicates.\n    ingest_max_retries: Maximum retry attempts when filing a finding ticket\n        via the mill's ingest endpoint. Default 2.\n    max_concurrent_runs: Maximum number of feedback analysis runs that can\n        execute concurrently. Default 2 — analyze at most 2 sessions in\n        parallel.",
       "properties": {
         "enabled": {
           "default": false,
@@ -358,7 +362,6 @@
         },
         "max_concurrent_runs": {
           "default": 2,
-          "minimum": 1,
           "title": "Max Concurrent Runs",
           "type": "integer"
         }
@@ -368,7 +371,7 @@
     },
     "FileHubToolsSettings": {
       "additionalProperties": false,
-      "description": "File-hub integration \u2014 fetch, fill, and upload documents via file-hub.\n\nWhen enabled, the agent gains six tools:\n\n- ``file_hub_get`` \u2014 download a file from file-hub by id to a local\n  working directory, returning the local path and metadata.\n- ``list_pdf_form_fields`` \u2014 inspect AcroForm fields in a PDF.\n- ``render_pdf_page`` \u2014 render a PDF page to a viewable raster image.\n- ``fill_pdf_document`` \u2014 fill a PDF: set AcroForm field values by name,\n  or overlay text at given page/x/y coordinates for flat PDFs.\n- ``transform_image`` \u2014 resize, compress, convert, or strip metadata\n  from an image stored in file-hub, returning the new file-hub id.\n- ``file_hub_put`` \u2014 upload a local file to file-hub, preserving\n  filename and content-type, returning the new file-hub id.\n\nThe driving use case is processing administrative PDF attachments\n(e.g. SEPA mandates received by mail and pushed to file-hub by\nrobotsix-auto-mail): fetch \u2192 fill \u2192 return.\n\nAttributes:\n    enabled: Master switch.  When ``False``, no file-hub tools are\n        registered.\n    base_url: Base URL of the file-hub service (e.g.\n        ``http://file-hub:8080``).  Must be reachable from the chat\n        container.\n    working_dir: Local directory for downloaded and filled files.\n        Default ``/data/file_hub_work``.\n    max_download_bytes: Maximum file size in bytes for downloads.\n        Default 50 MB.\n    timeout: Per-request HTTP timeout in seconds.",
+      "description": "File-hub tools — document fetch, fill, render, and upload.\n\nThe file-hub component stores, converts, and serves various document\nformats (PDF, images, etc). This block configures the agent's connection\nto it.\n\nAttributes:\n    enabled: Master switch.\n    base_url: URL to the file-hub component (default\n        ``http://file-hub:8080``).\n    working_dir: Local filesystem directory where files are downloaded\n        during form-fill and conversion workflows. Temporary files are\n        stored here; the directory is not persisted across restarts.\n    max_download_bytes: Maximum size (bytes) of a single file download.\n        Default 52,428,800 (50 MB).\n    timeout: Per-request HTTP timeout (seconds).",
       "properties": {
         "enabled": {
           "default": false,
@@ -387,13 +390,11 @@
         },
         "max_download_bytes": {
           "default": 52428800,
-          "exclusiveMinimum": 0,
           "title": "Max Download Bytes",
           "type": "integer"
         },
         "timeout": {
           "default": 60.0,
-          "exclusiveMinimum": 0,
           "title": "Timeout",
           "type": "number"
         }
@@ -403,7 +404,7 @@
     },
     "GatewayRouteSettings": {
       "additionalProperties": false,
-      "description": "Read-only gateway-route diagnostic tool for the agent.\n\nWhen enabled, the agent gains a ``check_gateway_route`` tool that reads\ncentral-deploy's component registry, derives the current\nvhost \u2192 upstream mapping, and compares it with the expected route for a\nsupplied service slug.  central-deploy publishes every registered,\nroutable component at ``<id>.<gateway_base_domain>`` automatically, so a\nroute is \"present\" exactly when the slug is registered.\n\nAttributes:\n    enabled: Master switch.  When ``False``, no check_gateway_route tool\n        is offered.\n    timeout: Per-request HTTP timeout in seconds (default 30 s).\n    gateway_base_domain: Fleet base domain used to derive the expected\n        vhost ``<slug>.<base_domain>``.  Must match central-deploy's\n        ``gateway_base_domain`` setting.",
+      "description": "Gateway route tool — query DNS and gateway status for deployed services.\n\nThe robotsix fleet uses a single DNS entry with a gateway domain\n(e.g. ``deploy.robotsix.net``), under which multiple services run\n(chat, mail, invest, etc.) at subdomains. This tool enables queries\nto the gateway's status and route table.\n\nAttributes:\n    enabled: Master switch.\n    timeout: Per-request HTTP timeout (seconds).\n    gateway_base_domain: Gateway base domain (e.g.\n        ``deploy.robotsix.net``). Routes to individual services are\n        constructed as ``<service>.<gateway_base_domain>``.",
       "properties": {
         "enabled": {
           "default": false,
@@ -426,7 +427,16 @@
     },
     "GitHubActionsSettings": {
       "additionalProperties": false,
-      "description": "GitHub Actions secrets and workflow dispatch via the GitHub App installation.\n\nWhen enabled, the chat agent gains ``set_actions_secret`` and\n``dispatch_workflow`` tools that can create/update repository Actions\nsecrets and trigger ``workflow_dispatch`` events on repos under the\nconfigured GitHub App's installation scope.\n\n**Guardrails built into the tools (not configurable):**\n- Repo scope is resolved dynamically from the GitHub App installation\n  (list-installation-repositories) \u2014 no static allowlist.\n- Only repos within the installation scope are modifiable.\n- Secret encryption uses libsodium sealed-box (requires ``pynacl``).\n- Both tools are confirmation-gated: the agent must confirm the exact\n  repo, secret name (or workflow id + ref) with the user before calling.\n\nAttributes:\n    enabled: Master switch.  When ``False``, no Actions tools are offered.\n    github_org: GitHub organisation name whose repos are in scope\n        (e.g. ``\"damien-robotsix\"``).\n\nThe inbound ``X-API-Key`` presented on the Actions endpoints is matched\nagainst the canonical ``central_deploy.deploy_api_key`` (the per-block\n``deploy_api_key`` was retired).  When that key is empty, the endpoints\nreturn 503 (unconfigured).\n\nNote: GitHub App authentication is delegated to\n:class:`DirectRepoSettings` \u2014 those credentials must also be configured\nfor the tools to function.",
+      "description": "GitHub Actions — create or update a repository Actions secret via the GitHub App installation.
+
+When enabled, the chat agent gains an ``set_actions_secret`` tool that can\ncreate or update a GitHub Actions secret in a repository. The secret value\nis encrypted with the repo's public key before transmission — the server\nnever retains the plaintext.
+
+Attributes:
+    enabled: Master switch.  When ``False``, no Actions secret tool
+        is offered.
+    github_org: GitHub organisation name whose repos are in scope
+        (e.g. ``\"damien-robotsix\"``).  The tool only targets repos
+        under this org.",
       "properties": {
         "enabled": {
           "default": false,
@@ -434,7 +444,7 @@
           "type": "boolean"
         },
         "github_org": {
-          "default": "damien-robotsix",
+          "default": "",
           "title": "Github Org",
           "type": "string"
         }
@@ -444,7 +454,7 @@
     },
     "GitHubSecuritySettings": {
       "additionalProperties": false,
-      "description": "Repository security-feature toggle via the GitHub App installation.\n\nWhen enabled, the chat agent gains a ``set_repo_security_and_analysis``\ntool that can enable or disable repository-level security features\n(dependency graph, advanced security, secret scanning) on repos under\nthe configured GitHub App's installation scope.\n\n**Guardrails built into the tool (not configurable):**\n- Repo scope is resolved dynamically from the GitHub App installation\n  (list-installation-repositories) \u2014 no static allowlist.\n- Only repos within the installation scope are modifiable.\n- Each feature toggle explicitly requires ``\"enabled\"`` or ``\"disabled\"``\n  \u2014 no accidental bulk changes.\n\nAttributes:\n    enabled: Master switch.  When ``False``, no security-feature tool\n        is offered.\n    github_org: GitHub organisation name whose repos are in scope\n        (e.g. ``\"damien-robotsix\"``).  The tool only targets repos\n        under this org.\n\nThe inbound ``X-API-Key`` presented on the\n``PATCH /chat/github/repos/{owner}/{repo}/settings`` endpoint is matched\nagainst the canonical ``central_deploy.deploy_api_key`` (the per-block\n``deploy_api_key`` was retired).  When that key is empty, the endpoint\nreturns 503 (unconfigured).\n\nNote: GitHub App authentication is delegated to\n:class:`DirectRepoSettings` \u2014 those credentials must also be configured\nfor the tool to function.",
+      "description": "Repository security-feature toggle via the GitHub App installation.\n\nWhen enabled, the chat agent gains a ``set_repo_security_and_analysis``\ntool that can enable or disable repository-level security features\n(dependency graph, advanced security, secret scanning) on repos under\nthe configured GitHub App's installation scope.\n\n**Guardrails built into the tool (not configurable):**\n- Repo scope is resolved dynamically from the GitHub App installation\n  (list-installation-repositories) — no static allowlist.\n- Only repos within the installation scope are modifiable.\n- Each feature toggle explicitly requires ``\"enabled\"`` or ``\"disabled\"``\n  — no accidental bulk changes.\n\nAttributes:\n    enabled: Master switch.  When ``False``, no security-feature tool\n        is offered.\n    github_org: GitHub organisation name whose repos are in scope\n        (e.g. ``\"damien-robotsix\"``).  The tool only targets repos\n        under this org.\n\nThe inbound ``X-API-Key`` presented on the\n``PATCH /chat/github/repos/{owner}/{repo}/settings`` endpoint is matched\nagainst the canonical ``central_deploy.deploy_api_key`` (the per-block\n``deploy_api_key`` was retired).  When that key is empty, the endpoint\nreturns 503 (unconfigured).\n\nNote: GitHub App authentication is delegated to\n:class:`DirectRepoSettings` — those credentials must also be configured\nfor the tool to function.",
       "properties": {
         "enabled": {
           "default": false,
@@ -452,7 +462,7 @@
           "type": "boolean"
         },
         "github_org": {
-          "default": "damien-robotsix",
+          "default": "",
           "title": "Github Org",
           "type": "string"
         }
@@ -462,25 +472,17 @@
     },
     "HealthSettings": {
       "additionalProperties": false,
-      "description": "Periodic health-check settings.\n\nWhen enabled, a background scheduler runs every *check_interval_seconds*\n(default 300 s / 5 min) and verifies that critical subsystems are\nreachable and producing expected output:\nmemory (long-term recall), knowledge store, feedback runner, and\ndiagnostics store.  It also watches the container's cgroup memory\nusage and warns *before* the OOM killer fires.  Results are exposed\nvia ``GET /health`` and logged.\n\nAttributes:\n    enabled: Master switch.  When ``False``, no health checks run.\n    check_interval_seconds: Seconds between scheduled health-check\n        cycles.  Default ``300`` (5 minutes).\n    memory_warn_fraction: Fraction of the container's cgroup memory\n        limit at which the ``container_memory`` check flips to\n        ``WARNING`` (logged as a pre-OOM alert).  Default ``0.85``\n        (85 %).  Must be in ``(0, 1]``.",
+      "description": "Server health check and liveness probe settings.\n\nAttributes:\n    enabled: Master switch.  When ``False`` health endpoints are disabled.\n    path: HTTP path for the health check endpoint (default ``/health``).",
       "properties": {
         "enabled": {
           "default": true,
           "title": "Enabled",
           "type": "boolean"
         },
-        "check_interval_seconds": {
-          "default": 300.0,
-          "exclusiveMinimum": 0,
-          "title": "Check Interval Seconds",
-          "type": "number"
-        },
-        "memory_warn_fraction": {
-          "default": 0.85,
-          "exclusiveMinimum": 0,
-          "maximum": 1,
-          "title": "Memory Warn Fraction",
-          "type": "number"
+        "path": {
+          "default": "/health",
+          "title": "Path",
+          "type": "string"
         }
       },
       "title": "HealthSettings",
@@ -488,10 +490,10 @@
     },
     "HttpProbeSettings": {
       "additionalProperties": false,
-      "description": "Read-only HTTP uptime/render-probe tool for the agent.\n\nWhen enabled, the agent gains an ``http_probe`` tool that performs a\nplain HTTPS GET to a public URL (follows redirects, short timeout)\nand returns the HTTP status, final URL, response time, Content-Type,\nresponse size, and a snippet of the body text with optional content\nassertions.\n\nAttributes:\n    enabled: Master switch.  When ``False``, no http_probe tool is offered.\n    timeout: Per-request HTTP timeout in seconds (default 10 s).\n    allowlist: Hostnames (no protocol, no path) that the tool is permitted to\n        probe.  At minimum must include ``www.robotsix.net`` and\n        ``robotsix.net``.  When empty, the tool permits any public hostname.\n    max_body_bytes: Maximum bytes of the response body to read and\n        return to the agent (default 2048 \u2014 ~2 KB).\n    max_redirects: Maximum number of redirects to follow (default 5).",
+      "description": "HTTP Probe — read-only uptime and render-probe tool.\n\nWhen enabled, the agent gains an `http_probe` tool that performs a\nsingle HTTPS GET against a public URL, follows redirects (up to the\nconfigured limit), and returns a structured health report. This is\nread-only — no state mutation.\n\nAttributes:\n    enabled: Master switch.\n    timeout: HTTP read timeout (seconds). Default 10.\n    allowlist: List of hostnames that http_probe may target.  When empty,\n        all hostnames are allowed (no restrictions).\n    max_body_bytes: Maximum response body size to download and return.\n        Larger bodies are truncated with a note. Default 2048 (2 KB).\n    max_redirects: Maximum number of redirects to follow (default 5).\n        Chains longer than this are truncated with a note.",
       "properties": {
         "enabled": {
-          "default": true,
+          "default": false,
           "title": "Enabled",
           "type": "boolean"
         },
@@ -501,6 +503,7 @@
           "type": "number"
         },
         "allowlist": {
+          "default": [],
           "items": {
             "type": "string"
           },
@@ -521,27 +524,9 @@
       "title": "HttpProbeSettings",
       "type": "object"
     },
-    "KindTurnBudget": {
-      "additionalProperties": false,
-      "description": "Per-subsession-kind agent-turn budget.\n\nEach subsession kind (task, periodic, user_chat, on_close) carries its\nown soft-warn and hard-stop turn thresholds.  A subsession that exceeds\nthese limits is either nudged to wrap up (soft warn) or force-closed\nwith a partial-work summary (hard stop).\n\nAttributes:\n    soft_warn_turns: Number of agent turns before the worker injects a\n        system reminder telling the agent to wrap up and call\n        ``complete_subsession``.  Default ``25``.\n    hard_stop_turns: Number of agent turns before the worker force-closes\n        the subsession with a summary of work-so-far.  Default ``40``.",
-      "properties": {
-        "soft_warn_turns": {
-          "default": 25,
-          "title": "Soft Warn Turns",
-          "type": "integer"
-        },
-        "hard_stop_turns": {
-          "default": 40,
-          "title": "Hard Stop Turns",
-          "type": "integer"
-        }
-      },
-      "title": "KindTurnBudget",
-      "type": "object"
-    },
     "KnowledgeSettings": {
       "additionalProperties": false,
-      "description": "Local, writable knowledge base for agent-authored operational notes.\n\nA deliberate, explicit, agent-curated store of durable lessons and findings\n\u2014 plain local JSON, no embeddings, no external service, always-on.  The\nagent writes notes via five tools\n(``add_knowledge_note``, ``append_to_knowledge_note``,\n``update_knowledge_note``, ``list_knowledge_notes``,\n``read_knowledge_note``)\nand can re-read and revise them by id across sessions.\n\nThis store is **complementary to**, not a duplicate of, the long-term\nmemory component (``memory/``), which automatically recalls past\nconversations by similarity; this knowledge base holds notes the agent\ndeliberately authors and addresses by id.\n\nAttributes:\n    enabled: Master switch.  Default ``True`` \u2014 this is a purely local,\n        no-credential, no-external-dependency primitive.\n    path: Path to the JSON persistence file.  Default\n        ``/data/knowledge.json``.",
+      "description": "Long-term knowledge base settings.\n\nThe knowledge base is a per-agent store of operational facts and\nfindings that an agent author creates and updates manually. Unlike\nautomatic conversation memory (which is similarity-recalled), the\nknowledge base supports explicit authorship and lookup by id.\n\nAttributes:\n    enabled: Master switch.  When ``False`` the knowledge base\n        is disabled.\n    path: Path to the JSON file where knowledge notes are stored.",
       "properties": {
         "enabled": {
           "default": true,
@@ -557,9 +542,36 @@
       "title": "KnowledgeSettings",
       "type": "object"
     },
+    "LangfuseSettings": {
+      "additionalProperties": false,
+      "description": "LLM observability and tracing (Langfuse).
+
+Langfuse is a data pipeline that observes and records all LLM\ncalls (prompts, responses, costs, latency) made by the agent and its\nsubsessions. The logs are critical to debugging and cost accounting.\nThis block configures the Langfuse connection and per-project routing.
+
+Attributes:
+    host: Langfuse deployment host URL (e.g. ``https://cloud.langfuse.com``,
+        or an on-prem URL). Default ``https://cloud.langfuse.com``.
+    projects: Per-project Langfuse configuration keyed by ``<repo_id>``\n        (e.g., ``\"robotsix-chat\"``, ``\"robotsix-mail\"``, etc). Each entry\n        carries a ``public_key`` and ``secret_key`` pair. When a subsession\n        is spawned for a repo, it uses the Langfuse credentials from the\n        matching ``projects`` entry (default empty — subsession observability\n        uses the default public/secret key pair).",
+      "properties": {
+        "host": {
+          "default": "https://cloud.langfuse.com",
+          "title": "Host",
+          "type": "string"
+        },
+        "projects": {
+          "additionalProperties": {
+            "$ref": "#/$defs/LangfuseProjectSettings"
+          },
+          "title": "Projects",
+          "type": "object"
+        }
+      },
+      "title": "LangfuseSettings",
+      "type": "object"
+    },
     "LangfuseInspectSettings": {
       "additionalProperties": false,
-      "description": "Langfuse trace-inspection tool \u2014 lets the agent query recent traces.\n\nReuses the main ``langfuse`` credentials (public key + secret key + host)\nfor API authentication \u2014 no separate credential fields.  When enabled, the\nagent gains an ``inspect_langfuse_trace`` tool that fetches and summarises\nrecent implement traces for a given ticket or trace id.\n\nAttributes:\n    enabled: Master switch.  Default ``False``.\n    max_traces: Maximum number of traces returned per query.  Default ``5``.",
+      "description": "Trace inspection tool — read-only query of Langfuse observability data.\n\nWhen enabled, the agent gains an ``inspect_langfuse_trace`` tool that\nqueries the Langfuse API to fetch and summarize recent traces.\nPrimarily used to diagnose implement-stage failures by inspecting the\nagent's own LLM-call traces linked to a specific ticket or run.\n\nAttributes:\n    enabled: Master switch.\n    max_traces: Maximum number of traces to fetch and summarize in a\n        single call. Default 5.",
       "properties": {
         "enabled": {
           "default": false,
@@ -575,56 +587,48 @@
       "title": "LangfuseInspectSettings",
       "type": "object"
     },
-    "LangfuseProjectCreds": {
+    "LangfuseProjectSettings": {
       "additionalProperties": false,
-      "description": "Credentials for one Langfuse project.\n\nAttributes:\n    public_key: Langfuse public key for the project.\n    secret_key: Langfuse secret key for the project.\n    project_id: Langfuse project id.  Optional \u2014 only consumers that\n        address a project by id rather than by name need it.",
+      "description": "Per-project Langfuse credentials (public key, secret key).",
       "properties": {
         "public_key": {
-          "default": "",
-          "format": "password",
           "title": "Public Key",
-          "type": "string",
-          "writeOnly": true
+          "type": "string"
         },
         "secret_key": {
-          "default": "",
           "format": "password",
           "title": "Secret Key",
           "type": "string",
           "writeOnly": true
-        },
-        "project_id": {
-          "default": "",
-          "title": "Project Id",
-          "type": "string"
         }
       },
-      "title": "LangfuseProjectCreds",
-      "type": "object"
-    },
-    "LangfuseSettings": {
-      "additionalProperties": false,
-      "description": "Canonical Langfuse credential block (component standard).\n\nOne block per component, holding the instance ``host`` and every\nLangfuse project the component traces to, keyed by the project's\n**name**.  The component standard fixes those names as ``<repo>`` for\nthe component's main LLM function and ``<repo>-<function>`` for each\nadditional LLM-generating subsystem \u2014 so this component declares\n``robotsix-chat`` (main agent).\n\nKeeping every project in one standard block is what lets central-deploy\nenumerate the fleet's credentials uniformly and dispatch them to the\nconsumers that need them (the chat trace proxy, cost-monitor's\nreconciliation).  See ``PROJECT_MAIN`` / ``PROJECT_MEMORY`` in\n:mod:`robotsix_chat.config` for this component's names.\n\nAttributes:\n    host: Langfuse instance base URL.\n    projects: Langfuse project name \u2192 credentials.",
-      "properties": {
-        "host": {
-          "default": "https://cloud.langfuse.com",
-          "title": "Host",
-          "type": "string"
-        },
-        "projects": {
-          "additionalProperties": {
-            "$ref": "#/$defs/LangfuseProjectCreds"
-          },
-          "title": "Projects",
-          "type": "object"
-        }
-      },
-      "title": "LangfuseSettings",
+      "required": [
+        "public_key",
+        "secret_key"
+      ],
+      "title": "LangfuseProjectSettings",
       "type": "object"
     },
     "LifecycleSettings": {
       "additionalProperties": false,
-      "description": "Deploy-lifecycle API access for the agent.\n\nWhen enabled, the chat agent gains tools to inspect the\ncentral-deploy lifecycle server: list services, check service status\nand health, read configuration and environment (with secrets\nalready masked as ``***`` server-side by ``_mask_secrets``), and\nrestart services.\n\nAttributes:\n    enabled: Master switch.  When ``False``, no lifecycle tools are\n        offered.\n    default_protocol: Scheme (``http`` or ``https``) assumed for lifecycle\n        URLs that omit one.\n    api_key: API key sent as the ``X-API-Key`` header.\n    service_name: This service's own name as registered with the deploy\n        server (e.g. ``\"chat\"``).  Required for ``self_restart`` \u2014 the\n        deploy server has no bare ``/self/restart`` route, so a service\n        restarts itself by naming itself at\n        ``POST /chat/services/{service_name}/restart``.  When empty,\n        ``self_restart`` (and the legacy frozen-store auto-recovery that\n        depends on it) is unavailable.\n    timeout: Per-request HTTP timeout in seconds.\n    self_restart_max_retries: How many times ``self_restart`` retries the\n        restart call before giving up.",
+      "description": "Central-deploy lifecycle API integration.
+
+The lifecycle API (served by central-deploy) manages the robotsix Docker\nfleet: service status, environment variables, restarts, and deployments.\nThis block configures the agent's connection to it.
+
+Attributes:
+    enabled: Master switch.  When ``False`` lifecycle tools are not
+        offered.
+    default_protocol: HTTP protocol to use for lifecycle service URLs
+        (typically ``http`` for localhost or behind a reverse proxy).
+        Default ``http``.
+    api_key: Authentication token for lifecycle API calls.
+        (Must match the ``DEPLOY_API_KEY`` env var on central-deploy.)
+    service_name: The name of this service as it appears in the
+        central-deploy service registry (e.g. ``chat``, ``mail``, …).
+        Used for self-restart operations.
+    timeout: Per-request HTTP timeout (seconds).
+    self_restart_max_retries: Maximum number of restarts to attempt
+        before giving up. Default 3.",
       "properties": {
         "enabled": {
           "default": false,
@@ -664,23 +668,41 @@
     },
     "MemoryComponentSettings": {
       "additionalProperties": false,
-      "description": "robotsix-memory component integration (long-term fleet memory).\n\nThe evergoing summary scheduler pushes every session summary it writes\nto the memory component's ``/remember`` endpoint, and a final summary\nis pushed when a conversation is closed. Pushes reuse a stable\nper-session ``document_id`` with ``update_mode=\"replace\"``, so\nre-summaries supersede rather than duplicate. Writes are best-effort:\na memory outage never breaks chat.\n\nAttributes:\n    enabled: Master switch for the summary \u2192 memory pushes. The chat\n        agent's direct skill access to the component (via the deploy\n        roster) is independent of this flag.\n    url: Base URL of the memory component on the internal network.\n    timeout_seconds: Per-push HTTP timeout.",
+      "description": "Robotsix memory component integration (long-term fleet memory).
+
+The robotsix-memory component stores durable facts, preferences, and
+outcomes across agents and sessions. This block configures integration
+with the memory component.
+
+Attributes:
+    enabled: Master switch. When ``False`` memory component integration
+        is disabled.
+    base_url: HTTP base URL of the memory component (default
+        ``http://memory:8080``).
+    timeout: Per-request HTTP timeout (seconds). Default 30.
+    allow_override: Whether agents may override previously-stored
+        facts. Default ``True`` — an agent may overwrite an existing
+        memory entry. Set to ``False`` to pin values and prevent changes.",
       "properties": {
         "enabled": {
           "default": true,
           "title": "Enabled",
           "type": "boolean"
         },
-        "url": {
+        "base_url": {
           "default": "http://memory:8080",
-          "title": "Url",
+          "title": "Base Url",
           "type": "string"
         },
-        "timeout_seconds": {
-          "default": 60.0,
-          "exclusiveMinimum": 0,
-          "title": "Timeout Seconds",
+        "timeout": {
+          "default": 30.0,
+          "title": "Timeout",
           "type": "number"
+        },
+        "allow_override": {
+          "default": true,
+          "title": "Allow Override",
+          "type": "boolean"
         }
       },
       "title": "MemoryComponentSettings",
@@ -688,7 +710,7 @@
     },
     "MobileAuthSettings": {
       "additionalProperties": false,
-      "description": "Mobile SSO authentication via tinyauth reverse proxy.\n\nWhen enabled, two endpoints are exposed for the mobile app's\nauthentication flow:\n\n- ``GET /auth/login`` \u2014 initiates the tinyauth redirect handshake and\n  redirects back to the app via a validated deep-link allowlist.\n- ``POST /chat/auth/mobile-token`` \u2014 exchanges the tinyauth edge-header\n  identity for a short-lived bearer token the mobile app uses for API\n  calls.\n\nThe identity is **always** taken from the tinyauth edge header\n(``subject_header``) \u2014 never from the request body.  This prevents\nsubject spoofing: only the trusted reverse proxy can set the header.\n\nAttributes:\n    enabled: Master switch.  Default ``False``.\n    tinyauth_url: Base URL of the tinyauth instance\n        (e.g. ``\"https://auth.robotsix.net\"``).\n    subject_header: HTTP header where tinyauth writes the\n        authenticated user identity (username or email).\n    session_header: HTTP header where tinyauth writes the session\n        identifier.\n    token_secret: HMAC secret used to sign the short-lived bearer\n        tokens issued by ``/chat/auth/mobile-token``.  Must be set\n        when *enabled* is ``true``.\n    token_ttl_seconds: Bearer token lifetime in seconds.\n        Must be > 0.\n    allowed_redirect_domains: Allowlist of domains that the\n        ``redirect_to`` query parameter in ``GET /auth/login`` is\n        validated against.  Must be non-empty when *enabled* is\n        ``true``.\n    callback_base_url: The public base URL of this chat server\n        (e.g. ``\"https://chat.robotsix.net\"``), used to construct\n        the tinyauth callback URL.  Must be set when *enabled* is\n        ``true``.",
+      "description": "Mobile client authentication settings (tinyauth).",
       "properties": {
         "enabled": {
           "default": false,
@@ -710,20 +732,15 @@
           "title": "Session Header",
           "type": "string"
         },
-        "token_secret": {
-          "default": "",
-          "format": "password",
-          "title": "Token Secret",
-          "type": "string",
-          "writeOnly": true
-        },
         "token_ttl_seconds": {
           "default": 3600,
-          "exclusiveMinimum": 0,
           "title": "Token Ttl Seconds",
           "type": "integer"
         },
         "allowed_redirect_domains": {
+          "default": [
+            "auth"
+          ],
           "items": {
             "type": "string"
           },
@@ -739,10 +756,24 @@
       "title": "MobileAuthSettings",
       "type": "object"
     },
-    "OpenRouterSettings": {
+    "OpenrouterSettings": {
       "additionalProperties": false,
-      "description": "Canonical OpenRouter credential block (component standard).\n\nHolds OpenRouter API keys keyed by the **alias** each LLM-generating\nsubsystem is billed under.  The alias matches the subsystem's Langfuse\nproject name in the top-level ``langfuse.projects`` map, so cost-monitor\ncan join OpenRouter provider spend to Langfuse traces via the shared\nalias.\n\nThe main chat agent runs on the Claude SDK and needs no OpenRouter key,\nso this component declares only the ``robotsix-chat-cognee`` alias \u2014 the\n:mod:`robotsix_chat.config`.\n\nAttributes:\n    keys: OpenRouter alias (Langfuse project name) \u2192 API key.",
+      "description": "OpenRouter API integration (LLM routing and fallback).
+
+OpenRouter is a unified API that routes LLM requests across multiple\nbackends (OpenAI, Anthropic, etc.) with per-key and per-model fallback\nhandling. This block configures the OpenRouter integration.
+
+Attributes:
+    api_key: Canonical OpenRouter API key. Default empty string
+        (unconfigured).
+    keys: Named API keys for per-project routing. Keyed by project\n        (e.g. ``\"robotsix-chat-cognee\"``, a model fine-tune). When the\n        agent uses a model with a project name, it looks up the key\n        in this map and uses that key; otherwise it falls back to the\n        canonical ``api_key``.",
       "properties": {
+        "api_key": {
+          "default": "",
+          "format": "password",
+          "title": "Api Key",
+          "type": "string",
+          "writeOnly": true
+        },
         "keys": {
           "additionalProperties": {
             "format": "password",
@@ -753,94 +784,69 @@
           "type": "object"
         }
       },
-      "title": "OpenRouterSettings",
+      "title": "OpenrouterSettings",
       "type": "object"
     },
-    "PeriodicSessionDefinition": {
+    "PeriodicSessionSettings": {
       "additionalProperties": false,
-      "description": "One named periodic session preset.\n\nAttributes:\n    name: Unique identifier for the preset; also used in session titles\n        (``\"<name> \u2014 <date>\"``).\n    initial_prompt: The one message the scheduler posts into the freshly\n        created session. Write it like a complete task brief: what to do,\n        what the scope is, hard constraints (e.g. read-only), and what\n        the final report should contain. The scheduler prepends a short\n        shared preamble (see ``robotsix_chat.periodic.prompts``).\n    schedule_interval_seconds: Spacing between runs, measured from the\n        last time the preset fired. Default one day.\n    anchor_utc: Optional fixed UTC instant anchoring the schedule. When\n        set, the preset fires at this instant and then every\n        ``schedule_interval_seconds`` thereafter (e.g. an anchor of\n        ``2026-09-03T06:00:00Z`` with a 24h interval fires daily at\n        06:00 UTC). This pins a deterministic daily reference time\n        instead of deriving it from first-registration time. ``None``\n        keeps the legacy behaviour: the first run fires promptly after\n        startup, then spaced by ``schedule_interval_seconds`` from the\n        last firing.\n    model_level: llmio capability level for this preset's sessions\n        (1 cheap \u2026 3 frontier). ``None`` uses the global\n        ``chat_default_model_level`` resolution, exactly like an operator\n        session.\n    enabled: When ``False`` the preset never fires.",
+      "description": "Configuration for a single periodic subsession.\n\nAttributes:\n    name: Unique name for this periodic session (e.g., ``\"gate-drain\"``,\n        ``\"dependabot-drain\"``). Used as the subsession label and to\n        reference the session in commands.\n    initial_prompt: The initial system prompt / instructions for the\n        periodic agent. This is the agent's complete specification —\n        what to do, what tools to use, what to report, and any\n        constraints.\n    schedule_interval_seconds: How often (in seconds) to spawn a new\n        run of this periodic session. Default 3600 (hourly). Set to 0\n        to disable scheduling (manual trigger only via the\n        ``POST /periodic/definitions/{name}/run`` endpoint).\n    anchor_utc: Optional RFC-3339 timestamp in UTC (e.g.\n        ``\"2026-09-07T06:00:00Z\"``) that anchors the schedule. When set,\n        the first run is scheduled for this time; subsequent runs follow\n        the interval. This is useful for synchronizing periodic runs with\n        a specific time of day.\n    model_level: LLM model tier for this agent (1, 2, 3).\n        Default inherits the subsession default (usually 2). 1 is\n        cheap/fast for routine checks; 2 is the workhorse tier; 3 is\n        frontier reasoning.\n    enabled: Whether this periodic session is active (can be spawned).\n        Default ``False`` (must be explicitly enabled).",
       "properties": {
         "name": {
           "title": "Name",
           "type": "string"
         },
         "initial_prompt": {
-          "default": "",
           "title": "Initial Prompt",
           "type": "string"
         },
         "schedule_interval_seconds": {
-          "default": 86400.0,
-          "minimum": 300.0,
+          "default": 3600,
           "title": "Schedule Interval Seconds",
           "type": "number"
         },
         "anchor_utc": {
-          "anyOf": [
-            {
-              "format": "date-time",
-              "type": "string"
-            },
-            {
-              "type": "null"
-            }
-          ],
-          "default": null,
-          "description": "Optional fixed UTC instant anchoring the schedule. When set, the preset fires at this instant and then every schedule_interval_seconds thereafter (e.g. an anchor of '2026-09-03T06:00:00Z' with a 24h interval fires daily at 06:00 UTC). Unset keeps the legacy behaviour: first run promptly after startup, then spaced by schedule_interval_seconds from the last firing.",
-          "title": "Anchor Utc"
+          "default": "",
+          "title": "Anchor Utc",
+          "type": "string"
         },
         "model_level": {
-          "anyOf": [
-            {
-              "maximum": 3,
-              "minimum": 1,
-              "type": "integer"
-            },
-            {
-              "type": "null"
-            }
-          ],
-          "default": null,
-          "description": "llmio capability level for this preset's sessions (1 cheap \u2026 3 frontier). None follows the global model-level resolution.",
-          "title": "Model Level"
+          "default": 2,
+          "title": "Model Level",
+          "type": "integer"
         },
         "enabled": {
-          "default": true,
+          "default": false,
           "title": "Enabled",
           "type": "boolean"
         }
       },
       "required": [
-        "name"
+        "name",
+        "initial_prompt"
       ],
-      "title": "PeriodicSessionDefinition",
+      "title": "PeriodicSessionSettings",
       "type": "object"
     },
     "PeriodicSettings": {
       "additionalProperties": false,
-      "description": "Periodic chat sessions \u2014 scheduler presets plus board-tool thresholds.\n\nAttributes:\n    sessions: The preset list. An empty list simply means nothing fires.\n    ready_staleness_minutes: Minutes a ticket may sit in ``ready`` before\n        ``list_stale_ready_tickets`` reports it (board-tool threshold;\n        historically configured alongside the scheduled sessions that\n        use it, kept here).\n    priority_ready_staleness_minutes: The same threshold for\n        priority-flagged tickets, which legitimately wait longer in a\n        serial implementation queue.",
+      "description": "Periodic (background) subsessions — tasks that repeat on a schedule.\n\nPeriodic sessions allow the operator to define long-running subsessions\nthat repeat on a schedule (e.g., hourly, daily). Each session is a\nself-contained agent task with its own initial prompt, model tier, and\nschedule. Common use cases include gate-drain, dependency-update triage,\nand CI monitoring.\n\nAttributes:\n    ready_staleness_minutes: Threshold (minutes) before a ticket in\n        ``ready`` state is considered stale and should be prioritized\n        for work. Default 10 minutes.\n    priority_ready_staleness_minutes: Threshold (minutes) before a\n        priority ticket in ``ready`` state is considered stale.\n        Default 60 minutes.\n    sessions: List of periodic session definitions.",
       "properties": {
-        "sessions": {
-          "description": "Named periodic session presets. Each fires on its own interval, creating a fresh ordinary session seeded with its initial_prompt.",
-          "items": {
-            "$ref": "#/$defs/PeriodicSessionDefinition"
-          },
-          "title": "Sessions",
-          "type": "array"
-        },
         "ready_staleness_minutes": {
           "default": 10,
-          "description": "Minutes a ticket can remain in the ``ready`` state before ``list_stale_ready_tickets`` surfaces it as stale.",
-          "minimum": 1,
           "title": "Ready Staleness Minutes",
           "type": "integer"
         },
         "priority_ready_staleness_minutes": {
           "default": 60,
-          "description": "Minutes a priority-flagged ticket can remain ``ready`` before it is considered stale (longer than the normal threshold: priority tickets often wait in a serial implementation queue).",
-          "minimum": 1,
           "title": "Priority Ready Staleness Minutes",
           "type": "integer"
+        },
+        "sessions": {
+          "items": {
+            "$ref": "#/$defs/PeriodicSessionSettings"
+          },
+          "title": "Sessions",
+          "type": "array"
         }
       },
       "title": "PeriodicSettings",
@@ -848,7 +854,18 @@
     },
     "PublicFetchSettings": {
       "additionalProperties": false,
-      "description": "Scoped public-repo-fetch tool for the chat agent.\n\nWhen enabled, the agent gains a ``fetch_public_url`` tool that performs\na plain HTTP(S) GET to a user-provided public URL, returns the raw\ntext/file contents with metadata, and writes an audit-log entry per\nfetch.  SSRF protection blocks internal/private IP ranges for public\nhosts.  Fleet components, resolved from the central-deploy roster, are\ntrusted by the operator: they bypass the SSRF check and the domain\nallowlist, and their requests carry server-injected basic auth.\n\nAttributes:\n    enabled: Master switch.  When ``False``, no tool is offered.\n    timeout: Per-request HTTP timeout in seconds (default 10 s).\n    max_body_bytes: Maximum bytes of the response body to read and\n        return to the agent (default 1_048_576 \u2014 ~1 MB).\n    max_redirects: Maximum number of redirects to follow (default 5).\n    domain_allowlist: Optional list of hostnames (no protocol, no\n        path) that the tool is permitted to fetch.  When empty, any\n        public hostname is allowed (subject to SSRF checks).\n    rate_limit_requests: Maximum number of requests allowed within\n        ``rate_limit_window_seconds`` (default 10).\n    rate_limit_window_seconds: Sliding window in seconds for the\n        rate limiter (default 60.0).",
+      "description": "Public URL fetch tool — read-only web browsing with rate limits.
+
+When enabled, the agent gains a `public_fetch` tool that performs\nHTTP GET against URLs on an allowlist of domains. Useful for browsing\npublic resources (documentation, status pages, API responses) without\nleaving the chat runtime. This is read-only — no state mutation.
+
+Attributes:
+    enabled: Master switch.
+    timeout: HTTP read timeout (seconds). Default 10.
+    max_body_bytes: Maximum response body size to download. Larger\n        bodies are truncated with a note. Default 1 MB.
+    max_redirects: Maximum number of HTTP redirects to follow.\n        Default 5.
+    domain_allowlist: List of domain hostnames that public_fetch may\n        contact. When empty, all public domains are allowed (no\n        restrictions). When non-empty, ONLY these domains may be\n        contacted (e.g., ``[\"github.com\", \"status.github.com\"]``).
+    rate_limit_requests: Maximum number of requests in the rate-limit\n        window. Default 10.
+    rate_limit_window_seconds: Time window for rate-limit counting.\n        Default 60 seconds.",
       "properties": {
         "enabled": {
           "default": false,
@@ -871,6 +888,7 @@
           "type": "integer"
         },
         "domain_allowlist": {
+          "default": [],
           "items": {
             "type": "string"
           },
@@ -891,9 +909,21 @@
       "title": "PublicFetchSettings",
       "type": "object"
     },
-    "RefDocsSettings": {
+    "RefdocsSettings": {
       "additionalProperties": false,
-      "description": "Read-only reference-docs tool for the agent.\n\nLets the agent fetch documentation from allowlisted GitHub repos on\ndemand. Primarily used to consult the board-workflow reference repo\nwhen deciding whether a ticket needs manual human action. The tool is\nstrictly read-only, fetches are on-demand (no bulk ingestion), and only\nrepos in the *repos* allowlist are reachable.\n\nAttributes:\n    enabled: Master switch. When ``False``, no refdocs tools are offered.\n    repos: Allowlist of ``owner/name`` GitHub repos the agent may read.\n        The board-workflow reference repo goes here. The tool refuses\n        any repo not in this list.\n    ref: Default git ref/branch to read from (``\"main\"``).\n    base_url: Overridable base URL for GitHub Enterprise.\n    timeout: Per-request HTTP timeout in seconds.\n\nAuthentication reuses the ``direct_repo`` GitHub App credentials when\nthey are configured; without them only public repositories are reachable.",
+      "description": "Reference documentation tool — read-only lookup of markdown docs from git repos.
+
+When enabled, the agent gains a `read_reference_doc` tool that fetches\nand returns the contents of markdown documentation files from registered\ngit repositories. Useful for looking up architecture docs, API contracts,\nand other reference materials without the full repo context.
+
+Attributes:
+    enabled: Master switch. When ``False``, no reference-doc tool
+        is offered.
+    repos: Allowlist of ``{repo, ref}`` entries. Each entry specifies\na registered GitHub repository and a git ref (branch, tag, or\n        commit SHA) to use. When a lookup is requested, the tool is\n        restricted to these repos and refs; arbitrary repos cannot be\n        queried.
+    ref: Default git ref to fetch when a lookup does not specify one
+        (default ``main``).
+    base_url: GitHub API base URL (typically
+        ``https://api.github.com`` for GH.com, or an on-prem URL for\n        GitHub Enterprise).
+    timeout: Per-request HTTP timeout (seconds).",
       "properties": {
         "enabled": {
           "default": false,
@@ -901,8 +931,9 @@
           "type": "boolean"
         },
         "repos": {
+          "default": [],
           "items": {
-            "type": "string"
+            "type": "object"
           },
           "title": "Repos",
           "type": "array"
@@ -923,15 +954,15 @@
           "type": "number"
         }
       },
-      "title": "RefDocsSettings",
+      "title": "RefdocsSettings",
       "type": "object"
     },
     "RenderUrlSettings": {
       "additionalProperties": false,
-      "description": "Read-only URL rendering with headless Chromium (Playwright).\n\nWhen enabled, the agent gains a tool that loads a URL in a headless\nChromium browser (via Playwright), takes a full-page screenshot, and\nextracts the ARIA accessibility tree \u2014 both returned as structured output.\nNo interactive browsing, form-filling, or navigation beyond the initial\npage load is permitted.\n\nAttributes:\n    enabled: Master switch.  When ``False``, no URL-render tool is offered.\n    timeout: Per-request timeout in seconds for the page load.\n    viewport_width: Browser viewport width in pixels.\n    viewport_height: Browser viewport height in pixels.",
+      "description": "Render URL — headless Chromium page capture.\n\nWhen enabled, the agent gains a `render_url` tool that loads a URL in\na headless Chromium browser, captures a full-page screenshot, and\nextracts the ARIA accessibility tree. Useful for seeing how a page\nrenders (vs. raw HTML), finding visual issues, and reading text from\ncomplex layouts. This is read-only — no clicks, no form fills, no\nstate mutation.\n\nAttributes:\n    enabled: Master switch.\n    timeout: Browser load timeout (seconds). Default 30.\n    viewport_width: Browser viewport width (pixels). Default 1280.\n    viewport_height: Browser viewport height (pixels). Default 720.",
       "properties": {
         "enabled": {
-          "default": true,
+          "default": false,
           "title": "Enabled",
           "type": "boolean"
         },
@@ -956,7 +987,7 @@
     },
     "RepoStudySettings": {
       "additionalProperties": false,
-      "description": "Temporary local repo workspaces the agent can fetch and study.\n\nWhen enabled, the chat agent gains read-only tools to download a GitHub\nrepository snapshot (tarball \u2014 no ``git`` binary involved), extract it\ninto a temporary workspace under *data_dir*, and study it locally\n(list / read / regex-search files) before dropping it.  Workspaces are\ntransient: they are deleted on demand (``drop_repo_workspace``) and\nswept automatically once older than *ttl_minutes*.\n\nAuthentication reuses the ``direct_repo`` GitHub App credentials when\nthey are configured (the app's installation scope defines the private\nrepos the agent may fetch); without them only public repositories are\nreachable.  No new credential fields are introduced.\n\nAttributes:\n    enabled: Master switch.  When ``False``, no repo-study tools are\n        offered.\n    data_dir: Directory holding the temporary workspaces.  Default\n        ``/data/repo_study`` (on the persistent volume, so a redeploy\n        mid-study does not lose the workspace; the TTL sweep still\n        bounds growth).\n    ttl_minutes: Age after which a workspace is deleted by the sweep\n        that runs on every repo-study tool call.\n    max_archive_bytes: Maximum size of the downloaded tarball.\n    max_extracted_bytes: Maximum total uncompressed size of a workspace.\n    max_read_bytes: Maximum bytes returned by a single file read.\n    timeout: Per-request HTTP timeout in seconds for the download.",
+      "description": "Repository study tool — fetch and analyze code for a bounded scope.\n\nWhen enabled, the agent gains a `fetch_repo_for_study` tool that\nclones a git repository into a temporary workspace, lists and reads\nfiles, and performs regex searches — all within a bounded time (TTL)\nand size envelope. Useful for large-scale code analysis, migrations,\nand architectural decisions without the overhead of direct repository\noperations.\n\nAttributes:\n    enabled: Master switch.\n    data_dir: Base directory where repo workspaces are extracted.\n        Default ``/data/repo_study``.\n    ttl_minutes: How long (minutes) a repo workspace remains available\n        after last access before being cleaned up. Default 240 (4 hours).\n    max_archive_bytes: Maximum size (bytes) of a cloned repository\n        (before extraction). Large repos are rejected. Default 64 MB.\n    max_extracted_bytes: Maximum total size (bytes) of extracted files\n        across all workspaces. When exceeded, older workspaces are\n        evicted. Default 256 MB.\n    max_read_bytes: Maximum file size (bytes) that can be read in a\n        single `read_repo_file` call. Default 200 KB.",
       "properties": {
         "enabled": {
           "default": false,
@@ -999,7 +1030,7 @@
     },
     "SelfReviewSettings": {
       "additionalProperties": false,
-      "description": "Self-review tool \u2014 a read-only digest of live conversation activity.\n\nWhen enabled, the agent gains a ``read_recent_activity`` tool that\nreads the in-process :class:`~robotsix_chat.chat.conversation.ConversationStore`\n(short-lived per-client conversation turns) and returns a human-readable\nmulti-session digest.  This is a deliberate, explicit, cross-client\nsnapshot \u2014 complementary to, but independent of, the long-term\nepisodic memory subsystem (``src/robotsix_chat/memory/``).\n\nDefault-disabled so behaviour is unchanged unless explicitly turned on.\n\nAttributes:\n    enabled: Master switch. When ``True``, the ``read_recent_activity``\n        tool is attached to the agent.\n    recent_activity_limit: Maximum number of conversations returned by\n        the tool (clamps the caller's ``limit`` argument).",
+      "description": "Self-review and introspection tool — agent analyzes its own recent activity.\n\nWhen enabled, the agent gains a `read_recent_activity` tool that lists\nits own recent actions (file edits, tool calls, transitions) and summaries\nfor self-review and introspection. Useful for answering questions like\n\"what have I done recently?\", \"what is still pending?\", or\n\"have I completed this task?\".\n\nAttributes:\n    enabled: Master switch.\n    recent_activity_limit: Maximum number of recent items to return\n        in a single `read_recent_activity` call. Default 20.",
       "properties": {
         "enabled": {
           "default": false,
@@ -1017,7 +1048,7 @@
     },
     "SftpSettings": {
       "additionalProperties": false,
-      "description": "SFTP config-restore settings.\n\nProvides credentials and connection parameters for the SFTP config-restore\ncapability.  When enabled, the agent gains tools to read, list, and\n(confirmation-gated) write files on a remote SFTP server \u2014 used to\nrestore known-good configuration files when diagnostics detect they are\nmissing.\n\nAttributes:\n    enabled: Master switch.  When ``False`` (default), no SFTP tools\n        are registered and the agent runs exactly as before.\n    host: SFTP server hostname or IP address.\n    port: SFTP server port (default 22).\n    username: SFTP username for authentication.\n    password: Password for password-based authentication.  Leave empty\n        when using key-based auth.\n    private_key: OpenSSH-format private key for key-based\n        authentication.  Leave empty when using password auth.\n    private_key_passphrase: Passphrase for *private_key*, if the key\n        is encrypted.\n    known_hosts: OpenSSH-format known-hosts entries (one or more lines)\n        for host key verification.  When empty, host key verification\n        is skipped (insecure \u2014 only suitable for isolated networks).\n    remote_root: Optional base directory on the remote server to\n        restrict all operations under (e.g. ``/var/www``).  When set,\n        paths are resolved relative to this root and traversal outside\n        it is refused.",
+      "description": "SFTP client tool — remote file transfer via SSH/SFTP.",
       "properties": {
         "enabled": {
           "default": false,
@@ -1074,272 +1105,9 @@
       "title": "SftpSettings",
       "type": "object"
     },
-    "SubsessionsSettings": {
-      "additionalProperties": false,
-      "description": "Unified subsession system \u2014 background agents spawned from a chat.\n\nA subsession is a background agent run (``task``, ``periodic``, or\n``user_chat``) spawned by the main chat agent \u2014 or, nested, by another\nsubsession \u2014 with its own model level chosen by task difficulty.\n\nAttributes:\n    max_concurrent: Process-wide cap on simultaneously active\n        subsessions (all kinds, all depths).\n        Env override: ``SUBSESSIONS_MAX_CONCURRENT``.\n    max_concurrent_per_session: Per-session cap on simultaneously\n        active subsessions owned by a single chat session.  When a\n        session reaches this limit, new spawns are rejected even if\n        the global pool has room.  Set to ``0`` to disable (no\n        per-session limit).  Env override:\n        ``SUBSESSIONS_MAX_CONCURRENT_PER_SESSION``.\n    stale_reclaim_seconds: When the global pool\n        (``max_concurrent``) is full but the spawning session is\n        under its per-session limit, SLEEPING or PAUSED subsessions\n        owned by **other** sessions that have been idle for longer\n        than this many seconds are eligible for reclamation \u2014 the\n        stalest is closed to free a slot for the new spawn.\n        SLEEPING subsessions are preferred over PAUSED because they\n        count against the global capacity cap; reclaiming one\n        actually frees a slot.  Set to ``0`` to disable reclamation.\n        Env override:\n        ``SUBSESSIONS_STALE_RECLAIM_SECONDS``.\n    max_depth: Maximum nesting depth.  The main chat session is depth\n        0; its subsessions are depth 1.  Agents at ``max_depth`` get\n        no spawn tools.  Env override: ``SUBSESSIONS_MAX_DEPTH``.\n    default_model_level: llmio capability level used when the\n        spawning agent does not pick one explicitly (1 cheap/frequent,\n        2 workhorse, 3 frontier).\n        Env override: ``SUBSESSIONS_DEFAULT_MODEL_LEVEL``.\n    delegated_read_model_level: llmio capability level used as the\n        default for children spawned (without an explicit\n        ``model_level``) by a frontier parent subsession (level\n        ``3``).  The costly-tier orchestration directive tells such\n        parents to fan bulk reading/extraction out to cheap children;\n        this makes that fan-out land on the cheap level by default\n        while still letting the parent override ``model_level`` when a\n        subtask genuinely needs reasoning.  Default ``1``.\n        Env override: ``SUBSESSIONS_DELEGATED_READ_MODEL_LEVEL``.\n    monitor_max_model_level: Maximum model level for periodic and\n        wait_for_event monitor subsessions.  Routine monitors\n        (ticket polling, periodic checks) are capped at this level\n        so they never burn workhorse or frontier capacity.\n        Default ``1`` (cheap/frequent \u2014 haiku on the default slot).\n        Set to ``3`` to remove the cap.\n        Env override: ``SUBSESSIONS_MONITOR_MAX_MODEL_LEVEL``.\n    min_interval_seconds: Minimum interval for ``periodic``\n        subsessions.  Env override: ``SUBSESSIONS_MIN_INTERVAL_SECONDS``.\n    auto_stop_no_change_runs: A periodic subsession auto-closes after\n        this many consecutive ``NO_CHANGE`` runs.\n        Env override: ``SUBSESSIONS_AUTO_STOP_NO_CHANGE_RUNS``.\n    max_idle_runs: A periodic subsession auto-pauses (closes with\n        reason ``\"paused\"``) after this many consecutive\n        ``NO_CHANGE`` runs.  Set to ``0`` to disable.\n        Default ``15``.\n        Env override: ``SUBSESSIONS_MAX_IDLE_RUNS``.\n    max_no_change_pauses: A periodic monitor that repeatedly\n        auto-pauses (and is then auto-resumed) without the monitored\n        ticket ever changing state will auto-close with reason\n        ``no_change_pause_limit`` after this many consecutive\n        no-change pauses, instead of repeating the same pause message\n        forever.  The counter resets when the monitor observes a real\n        change.  Set to ``0`` to disable (always pause).\n        Default ``3``.\n        Env override: ``SUBSESSIONS_MAX_NO_CHANGE_PAUSES``.\n    human_approval_timeout_runs: When a periodic subsession's checkpoint\n        indicates the monitored ticket is in ``human_issue_approval``\n        state, auto-escalate (close with reason\n        ``human_approval_timeout``) after this many consecutive\n        ``NO_CHANGE`` runs.  Default ``5``.\n        Env override: ``SUBSESSIONS_HUMAN_APPROVAL_TIMEOUT_RUNS``.\n    human_approval_timeout_seconds: Wall-clock backstop for the\n        ``human_issue_approval`` stuck-ticket gate.  When the checkpoint\n        has carried ``last_known_state='human_issue_approval'`` for\n        longer than this many seconds, auto-escalate (close with reason\n        ``human_approval_timeout``) even if the ``NO_CHANGE`` run count\n        has not yet reached ``human_approval_timeout_runs``.  Default\n        ``300`` (5 minutes).\n        Env override: ``SUBSESSIONS_HUMAN_APPROVAL_TIMEOUT_SECONDS``.\n    auto_drive_promote_ready_drafts: Opt-in gate for the auto-drive\n        monitor's promotable-draft branch.  When ``True`` and a\n        monitored ticket is a promotable draft (state ``draft``,\n        refine-complete spec, no open blocking review thread), the\n        monitor transitions it into the ready queue.  When ``False``\n        (the default) the monitor never auto-promotes \u2014 it posts at\n        most one operator-decision comment and waits.\n        Default ``False``.\n    run_timeout_seconds: Hard per-run timeout for a single subsession\n        agent turn (recall + LLM call + delivery).  On expiry the run\n        is marked failed and the schedule continues instead of staying\n        ``running`` forever.  Default 600 s.\n        Env override: ``SUBSESSIONS_RUN_TIMEOUT_SECONDS``.\n    max_run_timeout_seconds: Upper bound (seconds) for a per-subsession\n        ``run_timeout_seconds`` request on the ``spawn_subsession``\n        tool.  A spawned subsession may declare a longer per-run budget\n        (for long batch work) than the global ``run_timeout_seconds``\n        default, but never above this ceiling \u2014 requests above it are\n        clamped to the cap.  Default ``3600`` (1 hour).\n        Env override: ``SUBSESSIONS_MAX_RUN_TIMEOUT_SECONDS``.\n    store_path: JSON persistence file (periodic subsessions resume\n        across restarts).  Env override: ``SUBSESSIONS_STORE_PATH``.\n    transcript_max_entries: Per-subsession transcript retention cap.\n        Env override: ``SUBSESSIONS_TRANSCRIPT_MAX_ENTRIES``.\n    mill_recovery_initial_backoff_seconds: Initial backoff (seconds)\n        when a ticket monitor enters mill-recovery mode after\n        consecutive failures.  Doubles on each retry up to\n        *mill_recovery_max_backoff_seconds*.  Default ``60.0``.\n        Env override: ``SUBSESSIONS_MILL_RECOVERY_INITIAL_BACKOFF_SECONDS``.\n    mill_recovery_max_backoff_seconds: Maximum backoff (seconds) for\n        mill-recovery retries.  Default ``3600.0`` (1 hour).\n        Env override: ``SUBSESSIONS_MILL_RECOVERY_MAX_BACKOFF_SECONDS``.\n    mill_recovery_max_retries: Maximum number of recovery retries\n        before the subsession is permanently closed.  Default ``10``.\n        Env override: ``SUBSESSIONS_MILL_RECOVERY_MAX_RETRIES``.\n    periodic_max_interval_seconds: Upper bound (seconds) for a\n        periodic subsession's self-adjusted interval.  The\n        ``adjust_periodic_interval`` tool clamps to this value.\n        Default ``3600.0`` (1 hour).\n        Env override: ``SUBSESSIONS_PERIODIC_MAX_INTERVAL_SECONDS``.\n    periodic_max_total_runs: Upper bound for a periodic subsession's\n        self-adjusted ``max_runs`` (total run budget).  The\n        ``adjust_periodic_budget`` tool clamps to this value.\n        Default ``100``.\n        Env override: ``SUBSESSIONS_PERIODIC_MAX_TOTAL_RUNS``.\n    user_chat_max_retries: Maximum number of automatic retries for\n        ``user_chat`` and ``task`` subsession failures.  Each retry\n        re-launches the subsession with the prior error folded into\n        the prompt so the agent can self-correct.  Once exhausted the\n        subsession is failed and, for ``user_chat``, the original\n        decision prompt is surfaced in the main conversation as a\n        fallback so the operator can answer directly.  Default ``3``.\n        Env override: ``SUBSESSIONS_USER_CHAT_MAX_RETRIES``.\n    transient_error_max_retries: Maximum retry attempts when a\n        periodic subsession's agent turn fails with a transient API\n        error (e.g. upstream provider hiccup).  Retries use\n        ``robotsix_http``'s exponential backoff with jitter; the\n        delays themselves are not operator-configurable, only the\n        attempt count.  When retries are exhausted the run is\n        skipped and the schedule continues rather than permanently\n        failing the subsession.\n        Default ``3``.\n        Env override: ``SUBSESSIONS_TRANSIENT_ERROR_MAX_RETRIES``.\n    max_runs_escalation_threshold: Number of consecutive times a\n        periodic subsession can hit its ``max_runs`` limit before\n        auto-escalating with a follow-up ticket.  When the threshold\n        is reached, a follow-up ticket is created on the board and\n        the monitor closes with reason ``max_runs_escalated``.\n        Set to ``0`` to disable escalation.  Default ``3``.\n        Env override: ``SUBSESSIONS_MAX_RUNS_ESCALATION_THRESHOLD``.\n    max_runs_progress_extension: Number of additional runs granted\n        to a periodic subsession when it reaches its ``max_runs``\n        cap but has observed progress within the recent window (a\n        non-``NO_CHANGE``, non-duplicate reply \u2014 i.e. the agent\n        acknowledged a state transition or reported activity).  The\n        extended cap is clamped by ``periodic_max_total_runs``.\n        Set to ``0`` to disable adaptive extension.  Default ``20``.\n        Env override: ``SUBSESSIONS_MAX_RUNS_PROGRESS_EXTENSION``.\n    max_runs_progress_window: Number of recent runs inspected for\n        progress when a periodic subsession reaches its ``max_runs``\n        cap.  A run counts as progress when the agent replies with\n        something other than ``NO_CHANGE`` and other than a verbatim\n        duplicate of the prior reply.  Set to ``0`` to disable\n        adaptive extension.  Default ``5``.\n        Env override: ``SUBSESSIONS_MAX_RUNS_PROGRESS_WINDOW``.\n    monitor_slot_budget: Maximum number of occupied monitor slots per\n        conversation (active + paused periodic subsessions).  When a\n        conversation reaches this budget, new monitor requests first\n        try to reuse the least-recently-active paused monitor; if\n        none is paused the request is queued rather than evicting a\n        live monitor.  Set to ``0`` to disable per-conversation slot\n        budgeting (all spawns proceed immediately).\n        Default ``8``.\n        Env override: ``SUBSESSIONS_MONITOR_SLOT_BUDGET``.\n    monitor_slot_queue_max: Maximum pending monitor-spawn requests\n        queued per conversation when the slot budget is exhausted\n        and no paused monitor is available for reuse.  A request\n        that would exceed this limit is rejected with a clear error.\n        Default ``32``.\n        Env override: ``SUBSESSIONS_MONITOR_SLOT_QUEUE_MAX``.\n    turn_budget: Per-kind agent-turn budget (soft-warn + hard-stop\n        thresholds) that bounds a single subsession's turn count\n        before force-closing it with a partial-work summary.  The\n        hard stop prevents a looping subagent from consuming\n        unbounded Claude subscription cap.\n        Defaults: ``task``, ``user_chat``, and ``on_close`` warn at\n        25 turns and hard-stop at 40 turns; ``periodic`` (and\n        ``wait_for_event``) defaults to ``0``/``0`` (disabled) \u2014\n        monitors are already bounded by ``monitor_max_model_level``,\n        ``run_timeout_seconds``, and ``periodic_max_total_runs``.\n        See :class:`TurnBudgetSettings`.",
-      "properties": {
-        "max_concurrent": {
-          "default": 8,
-          "title": "Max Concurrent",
-          "type": "integer"
-        },
-        "max_concurrent_per_session": {
-          "default": 0,
-          "description": "Per-session cap on simultaneously active subsessions owned by a single chat session.  When a session reaches this limit, new spawns are rejected even if the global pool has room.  Set to 0 to disable (no per-session limit).",
-          "title": "Max Concurrent Per Session",
-          "type": "integer"
-        },
-        "stale_reclaim_seconds": {
-          "default": 0.0,
-          "description": "When the global pool (max_concurrent) is full but the spawning session is under its per-session limit, SLEEPING or PAUSED subsessions owned by OTHER sessions that have been idle for longer than this many seconds are eligible for reclamation \u2014 the stalest is closed to free a slot for the new spawn.  SLEEPING subsessions are preferred over PAUSED because they count against the global capacity cap; reclaiming one actually frees a slot.  Set to 0 to disable reclamation.",
-          "title": "Stale Reclaim Seconds",
-          "type": "number"
-        },
-        "max_depth": {
-          "default": 3,
-          "title": "Max Depth",
-          "type": "integer"
-        },
-        "default_model_level": {
-          "default": 2,
-          "title": "Default Model Level",
-          "type": "integer"
-        },
-        "delegated_read_model_level": {
-          "default": 1,
-          "title": "Delegated Read Model Level",
-          "type": "integer"
-        },
-        "monitor_max_model_level": {
-          "default": 1,
-          "title": "Monitor Max Model Level",
-          "type": "integer"
-        },
-        "min_interval_seconds": {
-          "default": 60.0,
-          "title": "Min Interval Seconds",
-          "type": "number"
-        },
-        "auto_stop_no_change_runs": {
-          "default": 3,
-          "title": "Auto Stop No Change Runs",
-          "type": "integer"
-        },
-        "max_idle_runs": {
-          "default": 15,
-          "title": "Max Idle Runs",
-          "type": "integer"
-        },
-        "max_no_change_pauses": {
-          "default": 3,
-          "title": "Max No Change Pauses",
-          "type": "integer"
-        },
-        "human_approval_timeout_runs": {
-          "default": 5,
-          "title": "Human Approval Timeout Runs",
-          "type": "integer"
-        },
-        "human_approval_timeout_seconds": {
-          "default": 300.0,
-          "title": "Human Approval Timeout Seconds",
-          "type": "number"
-        },
-        "auto_drive_promote_ready_drafts": {
-          "default": false,
-          "description": "Opt-in gate for the auto-drive monitor's promotable-draft branch.  When a monitored ticket is a promotable draft (state 'draft', refine-complete spec, no open blocking review thread), the monitor transitions it into the ready queue instead of posting an operator-decision comment.  Default False \u2014 drafts are never auto-promoted without this opt-in.",
-          "title": "Auto Drive Promote Ready Drafts",
-          "type": "boolean"
-        },
-        "run_timeout_seconds": {
-          "default": 600.0,
-          "title": "Run Timeout Seconds",
-          "type": "number"
-        },
-        "max_run_timeout_seconds": {
-          "default": 3600.0,
-          "title": "Max Run Timeout Seconds",
-          "type": "number"
-        },
-        "store_path": {
-          "default": "/data/subsessions.json",
-          "title": "Store Path",
-          "type": "string"
-        },
-        "transcript_max_entries": {
-          "default": 200,
-          "title": "Transcript Max Entries",
-          "type": "integer"
-        },
-        "mill_recovery_initial_backoff_seconds": {
-          "default": 60.0,
-          "title": "Mill Recovery Initial Backoff Seconds",
-          "type": "number"
-        },
-        "mill_recovery_max_backoff_seconds": {
-          "default": 3600.0,
-          "title": "Mill Recovery Max Backoff Seconds",
-          "type": "number"
-        },
-        "mill_recovery_max_retries": {
-          "default": 10,
-          "title": "Mill Recovery Max Retries",
-          "type": "integer"
-        },
-        "paused_monitor_poll_interval_seconds": {
-          "default": 60.0,
-          "description": "Interval (seconds) between polls of paused periodic monitors.  The background watcher checks each paused monitor's ticket state via the mill API; when the ticket's state differs from the checkpoint's ``last_known_state`` the monitor is reopened and re-spawned.  Set to ``0`` to disable runtime polling (paused monitors only resume on service restart).",
-          "title": "Paused Monitor Poll Interval Seconds",
-          "type": "number"
-        },
-        "paused_monitor_long_poll_interval_seconds": {
-          "default": 15.0,
-          "description": "Interval (seconds) between direct mill API polls by a paused periodic monitor in its wait loop.  Each paused monitor polls the mill for its tracked ticket's state at this interval; when the state differs from the checkpoint's ``last_known_state`` the monitor resumes immediately (zero added latency).  The background watcher's ``paused_monitor_poll_interval_seconds`` (60 s default) serves as a safety-net backup.  Set to ``0`` to disable per-monitor long-polling (watcher-only wake).",
-          "title": "Paused Monitor Long Poll Interval Seconds",
-          "type": "number"
-        },
-        "paused_monitor_auto_resume_seconds": {
-          "default": 1800.0,
-          "description": "Maximum wall-clock seconds a paused periodic monitor remains paused before auto-resuming regardless of ticket-state changes.  When a monitor has been paused for longer than this interval (e.g. 1800 s = 30 min), it resumes its normal periodic cycle so the operator does not need to manually intervene.  Set to ``0`` to disable time-based auto-resume (monitor stays paused until a state change or manual message arrives).",
-          "title": "Paused Monitor Auto Resume Seconds",
-          "type": "number"
-        },
-        "paused_monitor_max_reblock_resumes": {
-          "default": 3,
-          "description": "Maximum number of consecutive BLOCKED-on-resume events before a paused periodic monitor is closed with reason ``repeated_blocked``.  When a ticket is BLOCKED on every resume (the agent keeps hitting the same failure without making progress), auto-retry is futile \u2014 the monitor is closed so the operator can intervene.  Default ``3``.",
-          "title": "Paused Monitor Max Reblock Resumes",
-          "type": "integer"
-        },
-        "paused_monitor_reblock_notify_threshold": {
-          "default": 2,
-          "description": "Number of consecutive BLOCKED-on-resume events before an SSE notification is sent to the parent conversation alerting the operator that the monitor is re-blocking.  This surfaces silent auto-resume\u2192re-block loops so the operator can decide whether to rebase the branch, revert problematic files, or take other action before the ``paused_monitor_max_reblock_resumes`` cap is reached.  Set to ``0`` to disable notifications.  Default ``2``.",
-          "title": "Paused Monitor Reblock Notify Threshold",
-          "type": "integer"
-        },
-        "event_driven_timeout_seconds": {
-          "default": 900.0,
-          "description": "Default timeout (seconds) for wait-for-event subsessions. When no matching mill event arrives within this window, the monitor runs a safety-net turn to verify state via the board API in case an event was lost, then re-arms the wait.",
-          "title": "Event Driven Timeout Seconds",
-          "type": "number"
-        },
-        "event_driven_max_silent_timeouts": {
-          "default": 8,
-          "description": "How many consecutive safety-net timeouts a wait-for-event monitor absorbs without an agent turn while a direct board read shows the ticket still in its last recorded state.  Each such timeout costs one HTTP read instead of a full LLM turn; after this many unchanged timeouts in a row (8 x 900 s = 2 h by default) the normal safety-net turn runs anyway.  Set to ``0`` to run the safety-net turn on every timeout.",
-          "title": "Event Driven Max Silent Timeouts",
-          "type": "integer"
-        },
-        "periodic_max_interval_seconds": {
-          "default": 3600.0,
-          "description": "Upper bound (seconds) for a periodic subsession's self-adjusted interval.  The adjust_periodic_interval tool clamps to this value.  Default 3600 (1 hour).",
-          "title": "Periodic Max Interval Seconds",
-          "type": "number"
-        },
-        "periodic_max_total_runs": {
-          "default": 100,
-          "description": "Upper bound for a periodic subsession's self-adjusted max_runs (total run budget).  The adjust_periodic_budget tool clamps to this value.  Default 100.",
-          "title": "Periodic Max Total Runs",
-          "type": "integer"
-        },
-        "user_chat_max_retries": {
-          "default": 3,
-          "title": "User Chat Max Retries",
-          "type": "integer"
-        },
-        "monitor_error_max_retries": {
-          "default": 2,
-          "description": "Maximum number of automatic retries for periodic and wait_for_event monitor subsessions that fail with a non-transient error (e.g. tool retry limit, unexpected exception).  Each retry re-launches the subsession worker with a system note about the prior failure so the agent can self-correct.  Once exhausted the monitor is permanently failed and the parent is notified.  Set to ``0`` to disable monitor error retries (monitors fail on the first error, matching legacy behaviour).  Default ``2``.  Env override: ``SUBSESSIONS_MONITOR_ERROR_MAX_RETRIES``.",
-          "title": "Monitor Error Max Retries",
-          "type": "integer"
-        },
-        "consecutive_error_fail_threshold": {
-          "default": 3,
-          "description": "Number of consecutive errored runs before a periodic or wait_for_event subsession is permanently failed.  A run is errored when it ends with a tool-retry exhaustion, transient-error exhaustion, timeout, or any other run-level failure.  The counter resets on any successful run.  The parent is notified at most once per error streak (when the streak begins).  Set to ``0`` to fail on the first errored run (legacy behaviour).  Default ``3``.  Env override: ``SUBSESSIONS_CONSECUTIVE_ERROR_FAIL_THRESHOLD``.",
-          "title": "Consecutive Error Fail Threshold",
-          "type": "integer"
-        },
-        "transient_error_max_retries": {
-          "default": 3,
-          "title": "Transient Error Max Retries",
-          "type": "integer"
-        },
-        "monitor_turn_concurrency": {
-          "default": 2,
-          "description": "Maximum number of periodic/wait_for_event monitor agent turns running at the same time, fleet-wide within this chat process.  A board-event storm (e.g. a mill restart re-enqueuing many tickets) wakes many monitors at once; each turn spawns a claudeSDK CLI subprocess (~240MB RSS), and an unbounded stampede drove the container to its memory limit and an OOM kill on 2026-09-02.  Excess wakes wait on the gate instead of running concurrently.  Set to ``0`` to disable the gate.  Default ``2``.",
-          "title": "Monitor Turn Concurrency",
-          "type": "integer"
-        },
-        "max_runs_escalation_threshold": {
-          "default": 3,
-          "description": "Number of consecutive times a periodic subsession can hit its ``max_runs`` limit before auto-escalating with a follow-up ticket.  When the threshold is reached, a follow-up ticket is created on the board and the monitor closes with reason ``max_runs_escalated``.  Set to ``0`` to disable escalation.  Default ``3``.",
-          "title": "Max Runs Escalation Threshold",
-          "type": "integer"
-        },
-        "max_runs_progress_extension": {
-          "default": 20,
-          "description": "Number of additional runs granted to a periodic subsession when it reaches its ``max_runs`` cap but has observed progress within the recent window (a non-``NO_CHANGE``, non-duplicate reply \u2014 i.e. the agent acknowledged a state transition or reported activity).  The extended cap is clamped by ``periodic_max_total_runs``.  Set to ``0`` to disable adaptive extension.  Default ``20``.",
-          "title": "Max Runs Progress Extension",
-          "type": "integer"
-        },
-        "max_runs_progress_window": {
-          "default": 5,
-          "description": "Number of recent runs inspected for progress when a periodic subsession reaches its ``max_runs`` cap.  A run counts as progress when the agent replies with something other than ``NO_CHANGE`` and other than a verbatim duplicate of the prior reply.  Set to ``0`` to disable adaptive extension.  Default ``5``.",
-          "title": "Max Runs Progress Window",
-          "type": "integer"
-        },
-        "monitor_slot_budget": {
-          "default": 8,
-          "description": "Maximum number of occupied monitor slots per conversation (active + paused periodic subsessions).  When a conversation reaches this budget, new monitor requests first try to reuse the least-recently-active paused monitor; if none is paused the request is queued rather than evicting a live monitor.  Set to ``0`` to disable per-conversation slot budgeting (all spawns proceed immediately).",
-          "title": "Monitor Slot Budget",
-          "type": "integer"
-        },
-        "monitor_slot_queue_max": {
-          "default": 32,
-          "description": "Maximum number of pending monitor-spawn requests queued per conversation when the slot budget is exhausted and no paused monitor is available for reuse.  A request that would exceed this limit is rejected with a clear error instead of growing the queue unbounded.",
-          "title": "Monitor Slot Queue Max",
-          "type": "integer"
-        },
-        "image_publish_workflow_name": {
-          "default": "release-image.yml",
-          "description": "Filename of the image-publish workflow in the monitored repo's ``.github/workflows/`` directory.  After a tracked PR is merged, the watcher checks the most recent run of this workflow on the repo's default branch to verify the image was successfully published before resuming the monitor.  When the latest run failed or is still in progress, the watcher keeps the monitor paused and emits a notification so the operator can see the publish pipeline is not green.  Set to an empty string to disable post-merge image-publish verification (the watcher resumes immediately on merge, matching legacy behaviour).",
-          "title": "Image Publish Workflow Name",
-          "type": "string"
-        },
-        "image_publish_verify_timeout_seconds": {
-          "default": 1800.0,
-          "description": "Maximum wall-clock seconds the watcher waits for the image-publish workflow to complete after a tracked PR is merged.  When the latest run is still in progress and this timeout has not elapsed, the watcher keeps the monitor paused and retries on the next poll cycle.  When the timeout elapses without a successful run, the watcher resumes the monitor with a warning in the notification so the agent can investigate.  Default 1800 s (30 min).",
-          "title": "Image Publish Verify Timeout Seconds",
-          "type": "number"
-        },
-        "turn_budget": {
-          "$ref": "#/$defs/TurnBudgetSettings"
-        }
-      },
-      "title": "SubsessionsSettings",
-      "type": "object"
-    },
-    "TurnBudgetSettings": {
-      "additionalProperties": false,
-      "description": "Per-kind turn budgets for subsession agents.\n\nAttributes:\n    task: Budget for one-shot ``task`` subsessions.\n    periodic: Budget for ``periodic`` monitor subsessions.  Defaults to\n        ``0``/``0`` (disabled) \u2014 monitors are already bounded by\n        ``monitor_max_model_level``, ``run_timeout_seconds``, and\n        ``periodic_max_total_runs``, and are designed to stay alive for\n        the whole life of a ticket, so a per-subsession turn ceiling\n        would force-close otherwise-healthy long-lived monitors.\n    user_chat: Budget for ``user_chat`` side-chat subsessions.\n    on_close: Budget for ``on_close`` subsessions.",
-      "properties": {
-        "task": {
-          "$ref": "#/$defs/KindTurnBudget"
-        },
-        "periodic": {
-          "$ref": "#/$defs/KindTurnBudget"
-        },
-        "user_chat": {
-          "$ref": "#/$defs/KindTurnBudget"
-        },
-        "on_close": {
-          "$ref": "#/$defs/KindTurnBudget"
-        }
-      },
-      "title": "TurnBudgetSettings",
-      "type": "object"
-    },
     "VersionCheckSettings": {
       "additionalProperties": false,
-      "description": "Self-version-check tool: compare running version vs latest GitHub release.\n\nDisabled by default. When enabled, the agent gains a tool that reports the\nrunning ``robotsix_chat.__version__`` and the latest published release of\nthe configured GitHub repo, and flags when the deployment is out of date.\n\nAttributes:\n    enabled: Master switch. When ``False``, no version-check tool is offered.\n    repo: GitHub ``owner/name`` (e.g. ``robotsix/robotsix-chat``). Required\n        when *enabled*.\n    base_url: Overridable base URL for GitHub Enterprise.\n    timeout: Per-request HTTP timeout in seconds.\n    cache_ttl: Seconds to cache the latest-release lookup (monotonic clock).\n\nAuthentication reuses the ``direct_repo`` GitHub App credentials when\nthey are configured; without them the lookup is unauthenticated (subject\nto lower rate limits).\n\nNote: the check is only meaningful when releases bump\n``robotsix_chat.__version__`` in lockstep with the GitHub release tag.",
+      "description": "Version-check tool — monitor for upstream changes (e.g. release tags).",
       "properties": {
         "enabled": {
           "default": false,
@@ -1372,7 +1140,14 @@
     },
     "VolumeToolsSettings": {
       "additionalProperties": false,
-      "description": "Local volume-directory listing \u2014 discover files on mounted volumes.\n\nWhen enabled, the agent gains a ``list_volume_files`` tool that returns\nthe contents of a directory under the configured *root_path*.  This\nlets the agent discover available files (e.g. a mounted knowledge\nstore, investigation data) without guessing individual file paths.\n\nThis is a read-only, local-filesystem-only primitive \u2014 no remote\naccess, no write capability, no traversal outside the root.\n\nAttributes:\n    enabled: Master switch.  Default ``True`` \u2014 this is a purely\n        local, read-only, no-credential primitive.\n    root_path: The directory that all listing operations are scoped\n        under.  Paths outside this root are refused.  Default\n        ``/data``.",
+      "description": "Volume tools — local filesystem directory listing.
+
+When enabled, the agent gains a `list_volume_files` tool that lists\nthe contents of directories under the configured volume root (typically\n``/data``). This is a read-only discovery tool — no state mutation, no\nfile read or write.  Useful for discovering available files and\nresources without guessing individual file paths.
+
+Attributes:
+    enabled: Master switch.  When ``False`` volume tools are not
+        offered.
+    root_path: Root directory path to list from (default ``/data``).",
       "properties": {
         "enabled": {
           "default": true,
@@ -1390,82 +1165,53 @@
     }
   },
   "additionalProperties": false,
-  "description": "Application settings, loaded from a single JSON config file.\n\nThe LLM is configured the robotsix-llmio way \u2014 pick a capability\n``model_level`` and llmio resolves the provider + model for that level\n(from its baked default :class:`~robotsix_llmio.config.TierLevelConfig`).\n\nAttributes:\n    chat_default_model_level: Capability level \u2014 ``1`` (cheap/frequent),\n        ``2`` (workhorse, the default) or ``3`` (frontier). Levels are a pure\n        capability axis; which provider serves them is llmio's failover\n        axis \u2014 the keyless Claude SDK default slot (haiku / opus /\n        fable) in normal operation, the keyed OpenRouter fallback slot\n        (DeepSeek) while failover is active.\n    openrouter_api_key: OpenRouter API key, forwarded to llmio only for\n        keyed (OpenRouter) slot attempts; unused while the keyless\n        ``claudeSDK`` default slot serves calls. Without it, provider\n        failover is unavailable. Accepts the legacy config key\n        ``llmio_api_key`` as a backward-compatible alias.\n    summary_model_level: Capability level of the dedicated summariser\n        agent \u2014 the idle-timeout compaction summary, the carryover\n        summary and conversation titles. Defaults to ``1`` (cheap,\n        frequent \u2014 Claude haiku on the default slot): a summary is a\n        bounded text transformation that runs once per idle gap.\n    llmio_failover_window_seconds: How long llmio routes calls straight\n        to the fallback (OpenRouter) provider slot after the default\n        (Claude) slot fails repeatedly, before automatically returning\n        to the default.  Default ``900`` (15 minutes).\n    agent_instruction: System instruction handed to the LLM agent as\n        its base system prompt. The built-in default sets the assistant\n        persona and its operating rules (knowledge-base usage, output\n        formatting, and tool-use conventions).\n    server_host: Host address the chat SSE server binds to.\n    server_port: Port the chat SSE server listens on.\n    idle_timeout_minutes: Minutes of client-side inactivity before the\n        browser UI compacts the conversation \u2014 it starts a fresh session\n        while keeping earlier messages visible above; ``0`` disables the\n        idle timer.\n    subsessions: Unified subsession system (background/periodic/user-chat\n        sub-agents) \u2014 see :class:`SubsessionsSettings`.\n    log_level: Python logging level name.\n    log_json_format: When ``True`` (default), log lines are emitted as\n        structured JSON via structlog.  Set to ``False`` for human-readable\n        console output during local development.\n    cors_allow_origins: Origins allowed to call /chat cross-origin\n        (empty = none; ``[\"*\"]`` = any). Only needed when the browser\n        UI is hosted on a different origin than the server.\n    correlation_id_header: HTTP header name used for the correlation /\n        request-id (both inbound and outbound). Default ``X-Request-ID``.\n    langfuse: The component's canonical Langfuse credential block \u2014\n        instance host plus every project it traces to, keyed by project\n        name (``robotsix-chat`` for the main agent,\n        ``robotsix-chat-cognee`` for the memory subsystem).\n    openrouter: The component's canonical OpenRouter credential block \u2014\n        provider API keys keyed by the Langfuse project alias they bill\n        under (``robotsix-chat-cognee`` for the memory subsystem).\n    langfuse_inspect: Langfuse trace-inspection tool \u2014 lets the agent\n        fetch and summarise recent implement traces for a given ticket\n        or trace id.  Default-disabled.\n    feedback: Automated feedback analysis that files improvement\n        tickets at compaction and session-end boundaries.\n    max_images_per_message: Maximum number of images a client may attach to\n        a single ``POST /chat`` request.  Default ``8``.\n    max_image_bytes: Maximum decoded size (bytes) of a single attached\n        image.  Default ``5_242_880`` (5 MiB).\n    allowed_image_media_types: Media types accepted for image attachments.\n        Default ``[\"image/png\", \"image/jpeg\", \"image/gif\", \"image/webp\"]``.\n    vision_model: OpenRouter model id used to caption attached images when the\n        active chat model lacks vision support. Empty string means 'vision\n        model unconfigured'.  Default ``openrouter/openai/gpt-4o-mini``.\n    mobile_auth: Mobile SSO authentication via tinyauth reverse proxy.\n        When enabled, exposes ``GET /auth/login`` and\n        ``POST /chat/auth/mobile-token`` for the mobile app's\n        authentication flow.  Default-disabled.",
   "properties": {
     "chat_default_model_level": {
       "default": 2,
-      "group": "LLM I/O",
       "title": "Chat Default Model Level",
       "type": "integer"
     },
     "openrouter_api_key": {
       "default": "",
-      "description": "OpenRouter API key forwarded to llmio's keyed OpenRouter fallback provider slot (and to the vision caption model). This is a separate credential from the top-level ``openrouter`` block: that block holds OpenRouter keys for the memory (cognee) subsystem, keyed by the Langfuse project alias they bill under. Both are the same provider but distinct credentials for different consumers, so they are intentionally not merged. Accepts the legacy config key ``llmio_api_key`` as a backward-compatible alias.",
       "format": "password",
-      "group": "LLM I/O",
       "title": "Openrouter Api Key",
       "type": "string",
       "writeOnly": true
     },
-    "summary_model_level": {
-      "default": 1,
-      "group": "LLM I/O",
-      "title": "Summary Model Level",
-      "type": "integer"
-    },
-    "llmio_failover_window_seconds": {
-      "default": 900.0,
-      "description": "How long llmio routes calls straight to the fallback (OpenRouter) provider slot after the default (Claude) slot fails repeatedly or exhausts its quota, before automatically returning to the default. Default 900 (15 minutes).",
-      "group": "LLM I/O",
-      "minimum": 1,
-      "title": "Llmio Failover Window Seconds",
-      "type": "number"
-    },
-    "llmio_tier_overrides": {
-      "additionalProperties": true,
-      "description": "Overrides merged over llmio's baked tier config, in load_tier_config's nested shape \u2014 e.g. {\"fallback\": {\"level2\": {\"model\": \"openrouter-<model>\"}}} to change which model serves a capability level on a provider slot. Per-level dicts merge field-by-field over the baked binding; unknown keys are rejected. The failover window from llmio_failover_window_seconds is layered on top.",
-      "group": "LLM I/O",
-      "title": "Llmio Tier Overrides",
-      "type": "object"
-    },
-    "agent_instruction": {
-      "default": "You are a helpful assistant. You have a local, durable knowledge base (add_knowledge_note, append_to_knowledge_note, update_knowledge_note, list_knowledge_notes, search_knowledge_notes, read_knowledge_note) for operational notes and lessons you deliberately author \u2014 consult it at the start of every session and before drafting any plan or taking substantive action, and write durable findings to it. Unlike the stable, human-governed system prompt (which you must not modify), these notes are yours to author and revise by id. This store is distinct from the automatic long-term conversation memory \u2014 it recalls past exchanges by similarity, while these notes you explicitly create and address by id. \u2013 Knowledge notes store **operational facts and findings** (what you observed, discovered, or learned), not behavioral rules or restrictions (what you should or should not do). Never write a knowledge note that encodes a behavioral restriction like 'never use X', 'avoid Y', or 'do not spawn Z' \u2014 these contradict higher-priority directives in this system prompt, and relying on self-authored rules over explicit instructions causes user-visible errors. Behavioral rules belong in the system prompt, not in knowledge notes.\n\nDelegated-action preferences: when the user explicitly delegates a class of action to an automated system (the mill, CI, a pipeline, etc.) \u2014 e.g. 'the mill will rebase', 'CI will merge' \u2014 record that delegation as a standing preference for the current session/category and suppress ALL manual interventions for that class (offering to rebase, update the branch, re-run a job, etc.) until the user explicitly reverses it. Do not keep re-offering the conflicting manual option after the user has told you an automated system will handle it.\n\nAnswer quick questions inline.\n\nSkills (read on demand):\n\u2013 Domain playbooks are NOT in this prompt. The skill index at the end of this prompt lists them; fetch one with the read_skill tool \u2014 the tool named read_skill (or mcp__milltools__read_skill) in your tool list, called as read_skill(name) \u2014 BEFORE the first action of that kind in a session and follow it. The Claude CLI 'Skill' tool is NOT how skills are read here: it knows none of these names, every Skill(...) call errors with 'Unknown skill' and wastes a turn \u2014 never call it. Map: 'mill_workflow' \u2014 anything about mill tickets and boards (filing, approval gate, monitoring, blocked/deadlocked tickets, merging via the mill, ticket-id fidelity, conflicts with pending tickets); 'subsessions' \u2014 before spawning a subsession or when running inside one (monitor lifecycle, pool budget, user_chat decision etiquette); 'lifecycle' \u2014 before any deploy, restart, onboarding or component-configuration advice; 'direct_repo' \u2014 before pushing, merging or creating repositories directly; 'github_actions' \u2014 when diagnosing CI failures; 'langfuse_inspect' \u2014 when the user cites trace or session ids. Reading a skill is one cheap call; acting in a domain without its skill is how wrong endpoints and skipped gates happen. Rules in this prompt always take precedence over a skill.\n\nSubsessions:\n\u2013 spawn_subsession offloads work to a background sub-agent that has the same tools you do. Three kinds: 'task' (one-shot job \u2014 multi-step research, long generation, anything that would stall your reply), 'periodic' (re-runs instructions on an interval \u2014 monitoring, polling), and 'user_chat' (a side-chat with the user for a focused question or decision \u2014 use it instead of blocking this conversation while you wait for an answer).\n\u2013 Maintain one subsession per subject. Do not consolidate unrelated ticket batches, decision groups, or operational contexts into a single subsession. When a new, distinct subject arises, spawn a separate subsession for it rather than folding it into an in-flight one. Each subsession should have a single, coherent goal and close when that goal is reached.\n\u2013 Pick model_level by difficulty (see Model Policy below for named tier labels): 1 (cheap-frequent) for trivial polling, extraction, monitors and routine checks; 2 (workhorse) is the default choice for general work \u2014 prefer it unless the task needs frontier reasoning; 3 (frontier) only for genuinely hard reasoning. Never spawn at level 3 for routine checks. Which PROVIDER serves a level is not your concern: the system runs on a flat-rate default provider and fails over to a paid backup provider automatically when the default is degraded.\n\u2013 Write instructions that are complete and self-contained: the subsession starts with NO conversation history, so include every id, URL, constraint, and expected outcome it needs.\n\u2013 Subsession reporting contract: subsessions only communicate with you through complete_subsession(summary). Intermediate progress \u2014 a periodic monitor's per-run observations, status updates, state transitions that are not terminal \u2014 stays inside the subsession and is never delivered here. You will receive a summary only when the subsession closes with a final outcome or an escalation (blocker, decision needed, unrecoverable failure). Expect silence from running monitors unless they close.\n\u2013 The subsession's summary arrives in this conversation when it closes. While it runs you can steer it with message_subsession, inspect it with list_subsessions, or end it with close_subsession. Tell the user the work is running in the background.\n\u2013 PRE-SPAWN GUARD \u2014 before spawning any subsession (task, user_chat, or periodic), you MUST call list_subsessions and check for an existing OPEN subsession with the same purpose or dedup_key. If one already exists: reuse it (do NOT spawn a second subsession for the same work). This applies especially to user_chat subsessions \u2014 a single decision queue should have exactly one user_chat subsession; never spawn a second one while the first remains open. The dedup_key system-level suppression only catches exact key matches \u2014 list_subsessions is the authoritative guard against logical duplicates.\n\u2013 When a periodic subsession reaches a verified terminal state and delivers its summary to this conversation, report the outcome in ONE sentence \u2014 e.g. 'Ticket approved and merged.' or 'The site is now verified broken.' Do NOT echo the subsession's full run history, list every status transition, or restate the summary text verbatim. The summary widget already shows the detail \u2014 confirm the conclusion and move on.\n\u2013 IMPORTANT \u2014 preserve factual fidelity in outcome reporting: when the subsession summary states a specific cause, reason, or actor (e.g. 'ticket closed by operator', 'superseded by ticket X', 'auto-paused after no-change runs'), echo that exact factual claim rather than substituting a vague or inaccurate paraphrase like 'closed itself cleanly' or 'finished normally.' The user needs to know what actually happened \u2014 not a generic summary that hides the real reason. A one-sentence report is still required; make it factually accurate rather than merely short.\n\u2013 SURFACE VERIFIED FAILURES PROACTIVELY: when a monitoring or verification subsession (or verification you run yourself) determines that a supposedly-fixed feature \u2014 ticket closed, PR merged, CI green \u2014 is still broken or incomplete, report that failure openly in the main conversation to the user, regardless of the ticket's status or CI results. Lead with the failure and its evidence ('The calendar component is still not registered \u2014 the monitor's verification failed even though the ticket is closed'), then state what the user should do next. Never bury a verification failure in internal metadata while telling the user the issue is resolved: hiding it prevents corrective action and misrepresents the actual system state.\n\u2013 When you are actively conversing with the user and they have already been told about a ticket's state in the prior turn (including via a summary widget or a prior status update), compress monitor outcomes to only the delta from the last known state \u2014 e.g. 'GREEN \u2014 publish workflow succeeded, image published' \u2014 suppressing stale IDs, timestamps, PR URLs, and lifecycle chains the user already knows. Do not restate the full ticket lifecycle when the user was just told about it.\n\u2013 Suppress internal tracking details (monitor IDs, subsession codes, pipeline job numbers, run counts, model tiers) when reporting status to the user \u2014 unless the user explicitly asks for them. Focus on what changed and what action the user should take next.\n\u2013 Re-ask for monitoring or tracking status: when the user re-asks about an in-flight ticket or monitor (e.g. 'tracking is not there', 'what is the status?', 'any update?'), directly state the current verified state and the next action \u2014 do NOT re-list the full ticket history, repeat lifecycle steps, or echo subsession summaries the user has already seen. Lead with the outcome and the action. If the ticket is still in the same state as your last update, confirm that in one sentence and state what happens next.\n\u2013 HARD FILTERING RULE \u2014 NEVER output any raw subsession metadata or internal technical detail to the user.  This is an absolute prohibition \u2014 violations read as broken debug output, confuse the user, and leak internal identifiers.  The following patterns are banned in EVERY context (compacted sessions, active conversations, summaries, and single-turn replies):\n  * 'Subsession summaries:' \u2014 this header is internal metadata generated by the feedback system; never echo it to the user.\n  * '[id] kind=... status=...' \u2014 raw bullet enumerations of subsession kind/status.\n  * 'kind=', 'status=', '[N] kind=' \u2014 any line or fragment that looks like a dump of internal subsession state.\n  * Tool-output-style dumps, plain lists of subsession summaries, or any block that reads like a raw API response.\n  * Block IDs (hex strings like 'a3f2', 'block a3f2'), state machine transitions, spawn counters, internal timeout values, stack traces, or raw API response fragments \u2014 these are internal implementation details with no user-facing meaning.\nInstead, SYNTHESIZE all relevant outcomes into a single cohesive narrative: what's new, what was checked, what is recommended, and what the user should do next.  Write 1\u20132 concise paragraphs in natural language.  If every outcome is no-change, reply with a single sentence like 'No change \u2014 monitor paused.' \u2014 never list the internal breakdown.\n\u2013 Trivial 'no change' monitors that reported nothing new should be omitted from the synthesis entirely \u2014 mention only outcomes with real progress, blockers, or decisions for the user.  If every monitor reported no change, a single sentence like 'All monitors report no change \u2014 nothing requires attention.' is sufficient.\n\u2013 MANDATORY CONSOLIDATION \u2014 BEFORE responding to any user message, scan the conversation for pending subsession outcomes. When multiple outcomes need to be reported (for example, a completed decision and a PR ready to merge arriving in the same turn), consolidate them into a single, theme-grouped paragraph \u2014 never re-list individual subsession identifiers, ticket IDs, or status codes after consolidation.  Group by theme (progress, blockers, action needed), not by subsession id.  E.g. 'The site-deploy monitor confirmed the new image is live and healthy. Two code-quality monitors reported no issues. The credential-rotation check is blocked waiting on operator approval.'  Never output a plain enumeration of individual subsession results.  This consolidation takes precedence over ANY pending sub-conversation threads, open questions, or approval prompts in the conversation history: do NOT re-pose an earlier question or re-request a decision that has already been presented (for example, do not ask again whether to merge approved PRs, and do not re-ask a decision the user has already made).  EXCEPTION \u2014 Recheck override: When the user explicitly asks you to recheck, refresh, or update the status of a previously-reported outcome (e.g. 'can you recheck now?', 'refresh the column', 'what is the current status?'), perform a fresh fetch from the relevant external tool BEFORE applying consolidation.  Do not reuse the cached last-reported state \u2014 the user is asking you to re-query the live source.  Once consolidated, end with a clear recommendation and next step \u2014 state what the user should do next or, if no action is needed, confirm that explicitly.\n\u2013 SUBSESSION STATE VERIFICATION \u2014 before synthesizing any subsession outcome into a user-facing reply, cross-check the conversation transcript against live state.  If you previously reported a subsession as active, tracking, or pending in an earlier turn, call list_subsessions (and check_monitor for monitors) to verify it has not since reached a terminal state (closed, failed, completed, auto-stopped).  When the live API confirms a subsession you described as active has already terminated, you MUST either: (a) PRUNE it from the synthesis entirely \u2014 do not repeat stale claims about it \u2014 or (b) explicitly acknowledge the superseding outcome ('Monitor X has since auto-stopped; the ticket is closed.').  Never present a subsession as still active when the live API shows it is terminal.  This verification costs one tool call per turn and prevents the recurring cycle where the assistant restates stale monitor state, the user corrects it, and the assistant repeats the stale claim.\n\nModel Policy:\n\u2013 Model levels (in order of capability):\n  1 = 'cheap-frequent' \u2014 monitors, classification, polling, extraction, high-volume routine work.\n  2 = 'workhorse' \u2014 the general-work level; prefer it unless a task needs frontier reasoning.\n  3 = 'frontier' \u2014 only for genuinely hard reasoning. Never use for routine checks.\n\u2013 Levels are capability only. Every level is served by the flat-rate default provider; when it is degraded or exhausted the system automatically fails over to a paid backup provider for the same level, then returns to the default on its own.\n\u2013 Your own conversation runs at the configured chat level (level 2, 'workhorse') \u2014 NOT the frontier level. If you have genuinely tried and cannot solve the user's problem at that capability, call escalate_model(reason) to pin THIS conversation to the frontier level for the rest of its life. Escalate only after a real attempt has failed: a reasoning step you cannot complete, an analysis you keep getting wrong, a task you already tried. Do NOT escalate because a request sounds hard, is long or tedious, or could be answered by a tool call \u2014 try first. The frontier level is a scarcer resource and the switch is permanent for the conversation. It takes effect on the user's NEXT message, so after escalating, finish the current turn as well as you can and tell the user plainly that you switched and why.\n\u2013 When filing tickets that specify model requirements (agent configurations, tool defaults, deployment specs, subsession spawning defaults), use these level LABELS (e.g. 'workhorse', 'frontier') rather than hardcoded model names. The resolver at deploy-time maps level labels to concrete models based on the current central policy, so configurations stay evergreen without rework.\n\nAutonomy:\n\u2013 Live state first: plans, status answers and any claim about a ticket, PR, service, deployment or file start from state fetched with tools in the same turn \u2014 never from recalled memory, knowledge notes or earlier turns alone. Recalled session memories are a fallible cache (stale ids, closed items remembered as open, options and decisions from unrelated sessions); verify first, then plan. Domain-specific procedures for the mill board, deploys and repositories live in the skills below.\n\u2013 When a user reference to a known entity \u2014 a ticket name or id, a repo name, a common term \u2014 does not match anything literally (for example 'moblie app' for 'mobile app'), do NOT match the typo verbatim and do not stop at 'no results' or 'not found'. Treat it as possibly misspelled or abbreviated: resolve it with fuzzy matching before acting \u2014 search the live board with keyword filters (GET /tickets), try case-insensitive, token-subset, and near-miss (edit-distance) matches against known ticket titles, repo names, and terms, and confirm the entity's existence and current state. If the best candidate is still not an exact match, present a 'did you mean X?' with the closest matches (and what each is) and ask the user to confirm before taking any action keyed to that entity. Never silently substitute a guess, and never proceed on a literal-but-wrong identifier without flagging the ambiguity.\n\u2013 Resolve-before-asking for ambiguous entities: when the user names an entity you cannot immediately place \u2014 a service, repo, file, ticket, or tool ('check the rope', 'is the standard missing?') \u2014 do NOT stall the turn on a bare clarifying question.  FIRST use the available discovery tools to look for a match: list lifecycle services, query the board (GET /tickets), list repositories, and list/search files.  If you find an exact or near match, act on it and report what you did.  If nothing matches exactly, still make a best-guess attempt and surface it together with any request for a specific location \u2014 for example 'I couldn't find a service named \"rope\"; did you mean the `robotsix-browser` repo?' \u2014 rather than asking for clarification with no attempt at action.  Defaulting to a clarifying question without first searching stalls the turn and delivers no result.\n\u2013 Proactively perform actions that are clearly safe and reversible without waiting for explicit human validation \u2014 do not ask for permission when the action is low-risk and can be easily undone. Examples: approving low-risk documentation/prompt changes, resuming held work after a known blocker has been resolved, or closing a periodic subsession that has reached a verified terminal state.\n\u2013 Intent-following default: when the user's intent is unambiguous \u2014 an imperative request ('file these tickets', 'merge that PR'), an explicit affirmative ('yes', 'go ahead', 'do it'), or an affirmative answer to a question you just asked \u2014 treat the requested action as authorized and execute it immediately, then report the result.  Do not re-ask 'want me to file?', 'shall I press merge?', 'shall I proceed?', or any equivalent confirmation once intent is clear; repeated re-confirmation is friction, not caution.  Ask for confirmation only when the action is genuinely ambiguous (unclear which item, which scope, or which target) or carries real risk the user has not already accepted.\n\u2013 Repeated-instruction handling: when the user repeats an earlier instruction verbatim, or restates a decision that was already made in this conversation, treat that message as RE-AFFIRMING the instruction \u2014 do NOT reply that you lack context, and do NOT ask a clarifying question whose answer is already in the conversation.  Re-read the recent turns to recover the exact targets (which tickets, which monitor, which action) and any already-answered details, then execute the action and report the result.  Claiming you have no context and re-asking already-answered questions when the user repeats an approved instruction verbatim derails the action and wastes a turn.\n\u2013 Gate only genuinely risky, destructive, irreversible, or ambiguous actions behind human approval \u2014 when in doubt about safety or reversibility, ask before acting.  A requested ticket filing, PR merge, or other concrete action with a clear target and scope is not 'ambiguous' merely because it mutates state; once the user has asked for it, executing it is the default, not a gate.\n\u2013 READ-ONLY MODE \u2014 when the operator puts you in read-only mode (or asks you to only list, inspect, or report), never propose or offer to perform a state-mutating action (move, archive, delete, send, merge, deploy, etc.).  Do NOT ask 'want me to archive it?' or otherwise suggest making the change; only list the items and state that operator action is required.  Proposing the mutation violates read-only mode just as much as performing it would.\n\u2013 NO AUTOMATIC CONSEQUENCES \u2014 a state-mutating action (move, archive, delete, send, merge, deploy, close, or any other change to external state) is authorized ONLY when the operator has unambiguously and recently given a direct order to act on those specific items.  Inspecting, listing, probing, or accessing an endpoint or resource is never itself authorization to change state: it must have zero side effects.  If the only way to inspect something would also mutate it (for example, a listing or endpoint call that archives or moves items as a side effect), do not use it \u2014 stop, report what you can observe read-only, and ask the operator to name the exact items and action before you touch anything.  Consent does not carry over to new items, new targets, or actions the operator did not name.\n\u2013 Destructive-action re-confirmation gate \u2014 for a move, archive, delete, or send action (or any other genuinely destructive or irreversible change to external state), the operator must give an unambiguous 'yes' or 'confirm' before you act.  A casual or ambiguous reply \u2014 even one that appears to grant permission \u2014 is NOT sufficient.  Examples of insufficient replies: 'delete', 'delete the promo', 'go ahead', 'ok lets delete then', 'you can delete', 'sure', 'fine', 'alright', 'do it'.  Any reply that lacks the word 'yes' or 'confirm' (or an equally explicit variant like 'yes, delete it') should trigger a confirmation prompt naming the exact items and action (e.g. 'To confirm, do you want me to delete the postmaster mailbox? Please reply with a clear yes or no.').  Wait for the explicit 'yes' or 'confirm' before acting.  This does not override a firm instruction that itself waives confirmation (e.g. 'delete it and don't ask again'); carry that out literally.\n\u2013 Bulk mail action gate \u2014 never execute a bulk mail action (batch archive, batch delete, or mass move of messages into archive subfolders) on the operator's default triage alone.  Before acting, present grouped cards showing each proposed destination with the messages that would go there (e.g. '20 TO_ARCHIVE messages \u2192 these subfolders', one card per group with its count and destination) and wait for the operator to validate each group.  Do NOT trust default triage as approval, and do not treat a restated plan ('batch-archive all 20', 'go ahead with the bulk archive') as authorization.  Execute a group only after the operator explicitly confirms that group (e.g. 'yes, archive group 1 and group 2'), and leave any unconfirmed group untouched.\n\u2013 Standing autonomy policy: act autonomously for anything safe and reversible.  Require operator confirmation only for destructive, irreversible, security-sensitive, or genuinely ambiguous actions.  The non-negotiable hard gates (secrets/credentials paths, .github/workflows/**, deletions, non-agent authorship) always apply and are never weakened.\n\u2013 When a user gives an explicit, firm instruction (e.g. 'close the superseded ticket without asking', 'do X and don't ask for confirmation'), carry it out literally without requesting additional confirmation. An explicit instruction overrides the default ask-before-acting gate \u2014 execute it and report the result.\n\u2013 Operator consent propagation: when the operator provides credentials (a password, API key, or token), explicitly approves a change, or authorizes a specific operation by name, that consent carries forward to all sub-operations in the same chain. Do not re-ask for approval at intermediate gates \u2014 ticket approval, MR approval, merge confirmation \u2014 for the same consented operation; the operator's initial authorization covers the full lifecycle. For example, if the operator says 'use this password: X' and asks you to file and deploy a config change, do not separately ask 'shall I approve this ticket?' or 'shall I approve the MR?' \u2014 the original consent authorized the complete operation. Only surface a new approval request for a genuinely new, unconsented action that was not reasonably encompassed by the original authorization.\n\u2013 When multiple unowned, actionable items exist (pending merges, unresolved tickets, queued operations, etc.), do not ask an open-ended 'Which do you mean?' \u2014 immediately offer a high-signal, scoped confirmation prompt listing each item compactly (e.g. 'Say: merge 5f1c, merge 2a97, rebase 54ea.'). Keep the list short and actionable.\n\u2013 Operator-facing blocker instructions: when surfacing a hard server-side blocker to the operator (configuration deadlock, service registration not enabled, missing credential, permission gap, or any block requiring an operator action), always provide a concrete, copy-paste-ready instruction \u2014 include the exact env variable name, config file path, restart command, or endpoint URL to execute. A vague instruction like 'flip the toggle' or 'enable the feature' without the specific key, path, or command leaves the operator guessing and causes unnecessary back-and-forth. Store common remediation recipes in a knowledge note (topic: operator-remediation-recipes) so they can be reused across sessions.\n\nEfficiency:\n\u2013 If a required tool is missing, state it in one sentence and stop \u2014 do not explore alternatives, explain why, or narrate checking for it.\n\u2013 Do NOT claim you have run out of \"token budget,\" \"response budget,\" \"call budget,\" or any other resource limit as a reason for not performing an action \u2014 you have no such constraint. Any claim of resource exhaustion while still producing a reply is a fabricated excuse that erodes trust. If you can perform the action with the tools and information available, do it now \u2014 do not defer or punt it to a later turn. If you cannot perform it for a real reason (missing tool, insufficient permissions, incomplete information, a genuine API error), state that specific reason \u2014 not a fabricated resource-exhaustion claim.\n\u2013 Before starting a multi-step investigation, estimate whether the task fits within a single turn. When a full investigation would be too large, break it into smaller bounded sub-tasks that can each complete in one turn, or propose a one-step diagnostic that answers the core question. Do not start a sprawling investigation and then abandon it mid-way \u2014 scope the work to fit one turn.\n\u2013 When a tool call returns an error \u2014 especially an HTTP endpoint or API route \u2014 do NOT guess alternate endpoints or routes blindly. First consult your knowledge notes: search for the 'endpoints' topic (search_knowledge_notes(\"endpoints\")) and read any relevant reference docs (list_reference_docs, read_reference_doc) for the correct route. Only try an alternate approach when you have verified it from notes or docs. When you discover a correct route that was not in your notes, add or update the 'endpoints' knowledge note immediately so future sessions avoid the same failure.\n\u2013 TOOL CALL INTEGRITY \u2014 never claim to have performed an action (filed a ticket, set up a monitor, merged a PR, deployed a change, or any other side effect) unless the conversation contains an actual tool call AND its result confirming the action succeeded. If you intend to file a ticket, make the tool call first and wait for the result before telling the user it was filed. Assertions like 'I filed the ticket' or 'monitor is now running' without a preceding tool-call/result pair are hallucinated claims that erode trust and waste the user's time when they discover the action never happened.\n\u2013 TIMEOUT REPORTING \u2014 when a tool call times out or fails, report the timeout/failure ONCE with the actual error and retry status (e.g. 'The API call timed out after 30s; retrying once more'). Do NOT repeat the same timeout claim across multiple messages or turns. If a retry succeeds, report the success; if it fails, report the final failure and stop \u2014 do not loop on 'the first attempt timed out' without making actual retry attempts.\n\u2013 FAILED ACTION RE-ATTEMPT \u2014 before re-attempting a file-creation, monitor-spawn, or other action that previously failed (timeout, API error, permission denied), ask the user whether to retry. State the previous failure reason and the proposed retry in one sentence, then wait for confirmation. Do NOT silently re-attempt failed actions without informing the user \u2014 repeated silent retries waste cycles and may compound the original failure.\n\u2013 INTERNAL TURN FAILURE \u2014 when a tool call, step, or the whole turn fails with an internal/framework-level error (e.g. an 'internal error' reply that carries only a correlation ID, a server exception, an unexpected crash mid-flow), never leave the user with just the opaque error message. Translate the failure into a user-facing diagnostic: state which step failed and what it was trying to do, explain the likely cause in plain language, and give a concrete recovery suggestion \u2014 retry the step automatically when a retry is safe and reasonable, otherwise offer to re-attempt it and say exactly what you will redo. The user must always be left with a next action or a clear offer to continue, never a dead end.\n\u2013 Answer in three sentences or fewer unless the user explicitly asks you to elaborate. Do NOT volunteer multi-row markdown tables, timeline/audit dumps, or recap lists \u2014 emit those formats ONLY when the user explicitly requests them (e.g. 'show me a table', 'give me the full audit'). Never repeat content already shown earlier in the same conversation.\n\u2013 Long sorted lists (e.g. 20+ PR links, ticket enumerations, file inventories): do NOT dump the full list inline in a single chat message \u2014 output-length limits will truncate it mid-list and the user gets an incomplete answer.  Instead, provide a compact summary (count, top few items, key takeaway) and offer the full list as a separate artifact \u2014 write it to a knowledge note (add_knowledge_note), split across multiple shorter replies, or ask the user to narrow their query.  If you must display the full list inline, keep it under ~25 items and warn the user when it approaches the output limit.\n\u2013 All tools are already loaded and available for the entire session; there is no separate tool-loading step. Never narrate loading, preparing, or fetching tools (e.g. 'I'll load the tools\u2026', 'Let me load the task management tool first') and never announce or run a 'capability check'. When you need a tool, call it directly; if it is unavailable you will learn that from the call result. Do not restate tool descriptions across turns.\n\u2013 System notices about service restarts are for your awareness only. If you must reference them (e.g. the user asks about background tasks), condense repeated identical notices into a single summary: 'The monitor for ticket 42e0 has been resumed X times after restarts.' Do not repeat or re-list verbatim every restart notice that appears in the conversation.\n\u2013 Status reporting: only announce key state changes \u2014 ticket approved, PR merged, site verified broken, deploy completed, config updated \u2014 with a clear call to action for the user. Do NOT report intermediate pipeline progress, polling results that show no change, routine heartbeat checks, or background task start/stop events. If nothing has changed, stay silent unless the user asks for an update. When reporting a change, lead with the outcome and the next step \u2014 not with the internal mechanism that detected it.\n\u2013 Troubleshooting: when the user reports a specific error or failure, first fetch the relevant live system state (deploy contract, service registry, logs, health endpoints) before hypothesizing causes. Do not propose volume-name collisions, port conflicts, or other speculative failure modes without first checking the actual system configuration \u2014 checking first prevents fabricated guesses that waste back-and-forth and erode trust.\n\nVerification:\n\u2013 When reporting the state of an external system (repository contents, deployment status, ticket resolution, configuration changes), always verify the current state through available tools rather than relying on memory alone. Memory is a fallible cache \u2014 the live system is the source of truth.\n\u2013 Memory recall (the 'Relevant memory from earlier conversations' block prepended to each turn) is similarity-based and can be stale, incomplete, or outright fabricated \u2014 it may reference repo owners, ticket ids, PR numbers, or queue contents that do not exist or have since changed. When planning or acting on a recalled-memory claim, always cross-check it against the live knowledge notes and board state first. Never treat a recalled-memory assertion as authoritative \u2014 verify first, then act. If verification contradicts the recall, trust the live data and disregard the recalled claim.\n\u2013 Knowledge note rule contradictions: your knowledge notes may contain stale or incorrect behavioral assumptions you wrote in a prior session. When a recalled knowledge note appears to prohibit or restrict an action that this system prompt explicitly permits or instructs (e.g. a note saying 'never use subsessions' when subsession guidance is present above), trust the system prompt \u2014 it is the higher-authority directive. Self-authored notes that encode behavioral rules are always subordinate to the system prompt and the user's explicit instructions. If you detect a contradiction, retire the offending note with update_knowledge_note and record the corrected fact instead.\n\u2013 When the user reports observable evidence that contradicts a memory-based claim, re-verify against the live system immediately. Never double down on a memory-based assertion when the user reports contradictory observable evidence (e.g. an empty repo where you claimed files exist, a stale container where you claimed a fix was deployed). Acknowledge the discrepancy, re-check, and report the verified current state \u2014 distrusting memory when it conflicts with live observation preserves trust.\n\u2013 Validate observations before presenting them: do not tell the user that data is empty, missing, or malformed (e.g. 'the JSON shows empty archive folders') until you have re-read the actual tool output or re-queried the live source and confirmed the claim. Presenting an unverified first impression as fact forces a correction next turn and wastes the user's attention. If you discover that an earlier statement was a mistake and the data is actually correct, issue ONE concise retraction stating the corrected fact (e.g. 'Correction: the archive folders are not empty \u2014 the data is correct.') and then proceed on the correct data. Do not unpack the error, narrate your misreading, or re-explain what went wrong at length \u2014 the user needs the corrected fact and the next action, not a post-mortem.\n\u2013 Batch-operation count reconciliation: before executing any batch operation (bulk delete, archive, move, or other multi-item mutation), reconcile the item counts you listed or quoted against the count you are about to act on. If they differ, state the discrepancy explicitly in one sentence \u2014 e.g. '18 items listed, but one was already archived, so 17 will be deleted' \u2014 and explain what changed (e.g. 'one card moved since the last count', with the before/after per-source numbers). Do NOT silently drop or change the count; an unexplained number shift erodes trust.\n\u2013 When the user states a concrete fact (e.g. 'the secrets have been provided', 'the config is correct', 'that deployment already ran'), treat the user's statement as ground truth. Do not contradict it based on tool output, logs, or recollection \u2014 your evidence may be stale, from a different scope, or misinterpreted. Instead, raise a targeted clarification question to reconcile the discrepancy (e.g. 'I see errors suggesting otherwise \u2014 could you confirm which environment or when the change was applied?'), then proceed with the user's account.\n\u2013 Prefer timestamped evidence over recollection: when available, cite the specific tool call result, commit SHA, or deployment timestamp that supports your claim, rather than asserting it from memory.\n\u2013 Completion-phase cross-check: before declaring a phase, section, or batch of work 'fully complete', 'standards-compliant', or otherwise finished, re-read or re-query the live data (files, configs, tickets, deployments) that the claim covers. Do not declare completion based on a mental model built from earlier tool calls alone \u2014 the data may have changed since then, or your summary may have missed a detail. If the claim spans multiple items (e.g. 'all config keys are now standard-compliant'), verify every item, not just the ones you touched last. A completion claim that fails a spot-check erodes trust faster than a slower, verified report.\n\nHalt and Re-scope:\n\u2013 When you detect that a user's request or an in-progress plan would violate an organizational policy, standard, or hard constraint (e.g. using a forbidden tool or registry, modifying a protected resource, publishing via a disallowed channel), do NOT explain the violation and then ask an open-ended 'What should I do instead?' \u2014 this triggers a multi-turn back-and-forth. Instead, immediately halt execution and present a structured re-scope prompt:\n  1. State the policy violation in one sentence \u2014 what constraint was triggered and why.\n  2. Offer 2\u20133 compliant alternatives, each as a distinct, self-contained option with a short label (A, B, C) and a one-sentence description of what it achieves. Prefer alternatives closest to the user's original intent.\n  3. If any existing ticket, PR, or work item would be superseded by the re-scope, include a one-click action to close it (e.g. 'I will close ticket 5f1c if you choose Option A').\n  4. If the re-scope requires filing a new or corrective ticket, proactively offer to file it via the standard ticket lifecycle \u2014 state the proposed ticket title and lifecycle path explicitly (e.g. 'I will file a prompt ticket \"Fix X non-compliance\" which will follow create \u2192 refine \u2192 implement').  Do NOT make the operator ask whether a ticket will be filed or how it will be routed.\n  5. Ask the user to choose by label, then stop \u2014 do not proceed until the user selects an option.\n\u2013 This condenses a 4\u20135 turn violation-resolution cycle into 1\u20132 turns: your structured prompt, the user's choice, and (optionally) your confirmation that superseded work has been closed.\n\nSecret handling:\n\u2013 When a user proposes a task that will require a secret (credentials, password, token, API key, SSH/SFTP key, or any other privileged material), you must halt and direct them to the secure credential-registration channel BEFORE they paste the secret value. Ask them to register the credential via the vault / one-time-secret link or file a credential-registration ticket with a secure scope \u2014 never solicit the plaintext value in chat. (Rationale: plaintext secrets pasted into chat persist in conversation history and compaction artifacts and cannot be erased.)\n\u2013 If a secret value has already appeared in the conversation, do NOT echo, quote, or restate the plaintext secret in any of your responses \u2014 redact or reference it generically instead (e.g. 'the password you provided'). (Rationale: repeating the secret extends its lifetime in the transcript.)\n\u2013 When a secret has already been pasted as plaintext, warn the user that it is now exposed in conversation history, recommend rotating the exposed credential, and route registration through the secure channel \u2014 do not use the plaintext value to file the registration ticket. (Rationale: the exposed value is already compromised; re-using it propagates the exposure into the ticket's own history.)\n\u2013 Remember secrets the user provided earlier in this same session. Never re-request or re-ask for a credential you already hold \u2014 when the user supplied a value earlier in the conversation, reference it generically ('the Client ID you provided') and proceed; do not ask them to paste it again. (Rationale: re-requesting a secret the user already gave implies the assistant lost context and wastes the user's time.)\n\u2013 Once a secret has been written to a service config, do NOT read it back or display it \u2014 rely on the persisted state and treat the value as already known. Never echo a stored secret back into the conversation. (Rationale: secrets stored in the service config are the source of truth; reading them back risks exposing them and implies they were lost.)\n\nYou are a conversational assistant. You have no ability to run shell commands, read or edit files on the host filesystem, or browse the web directly. You **can** access external systems and the network through the tools explicitly provided to you in this session \u2014 use them. If a request needs access you don't have, briefly say so and suggest an alternative; never narrate or pretend to perform actions you cannot take.",
-      "group": "Conversation / UI",
-      "title": "Agent Instruction",
-      "type": "string"
-    },
     "server_host": {
       "default": "0.0.0.0",
-      "group": "Server",
       "title": "Server Host",
       "type": "string"
     },
     "server_port": {
       "default": 8000,
-      "group": "Server",
       "title": "Server Port",
       "type": "integer"
     },
     "idle_timeout_minutes": {
       "default": 30,
-      "group": "Conversation / UI",
       "title": "Idle Timeout Minutes",
       "type": "integer"
     },
     "log_level": {
       "default": "INFO",
-      "group": "Logging",
+      "enum": [
+        "DEBUG",
+        "INFO",
+        "WARNING",
+        "ERROR",
+        "CRITICAL"
+      ],
       "title": "Log Level",
       "type": "string"
     },
     "log_json_format": {
       "default": true,
-      "group": "Logging",
       "title": "Log Json Format",
       "type": "boolean"
     },
     "cors_allow_origins": {
-      "group": "Server",
+      "default": [],
       "items": {
         "type": "string"
       },
@@ -1474,21 +1220,20 @@
     },
     "correlation_id_header": {
       "default": "X-Request-ID",
-      "group": "Server",
       "title": "Correlation Id Header",
       "type": "string"
     },
     "langfuse": {
       "$ref": "#/$defs/LangfuseSettings",
-      "group": "Tracing"
+      "group": "Agent Tools"
     },
     "openrouter": {
-      "$ref": "#/$defs/OpenRouterSettings",
-      "group": "Tracing"
+      "$ref": "#/$defs/OpenrouterSettings",
+      "group": "LLM"
     },
     "langfuse_inspect": {
       "$ref": "#/$defs/LangfuseInspectSettings",
-      "group": "Tracing"
+      "group": "Agent Tools"
     },
     "central_deploy": {
       "$ref": "#/$defs/CentralDeploySettings",
@@ -1503,16 +1248,12 @@
       "group": "Agent Tools"
     },
     "refdocs": {
-      "$ref": "#/$defs/RefDocsSettings",
-      "group": "Agent Tools"
-    },
-    "render_url": {
-      "$ref": "#/$defs/RenderUrlSettings",
+      "$ref": "#/$defs/RefdocsSettings",
       "group": "Agent Tools"
     },
     "knowledge": {
       "$ref": "#/$defs/KnowledgeSettings",
-      "group": "Memory"
+      "group": "Agent Tools"
     },
     "self_review": {
       "$ref": "#/$defs/SelfReviewSettings",
@@ -1527,20 +1268,20 @@
       "group": "Agent Tools"
     },
     "subsessions": {
-      "$ref": "#/$defs/SubsessionsSettings",
+      "$ref": "#/$defs/SubsessionSettings",
       "group": "Subsessions"
     },
     "direct_repo": {
       "$ref": "#/$defs/DirectRepoSettings",
-      "group": "Agent Tools"
+      "group": "GitHub"
     },
     "github_security": {
       "$ref": "#/$defs/GitHubSecuritySettings",
-      "group": "Agent Tools"
+      "group": "GitHub"
     },
     "github_actions": {
       "$ref": "#/$defs/GitHubActionsSettings",
-      "group": "Agent Tools"
+      "group": "GitHub"
     },
     "repo_study": {
       "$ref": "#/$defs/RepoStudySettings",
@@ -1578,6 +1319,10 @@
       "$ref": "#/$defs/VolumeToolsSettings",
       "group": "Agent Tools"
     },
+    "render_url": {
+      "$ref": "#/$defs/RenderUrlSettings",
+      "group": "Agent Tools"
+    },
     "feedback": {
       "$ref": "#/$defs/FeedbackSettings",
       "group": "Agent Tools"
@@ -1601,6 +1346,10 @@
     "memory_component": {
       "$ref": "#/$defs/MemoryComponentSettings",
       "group": "Memory"
+    },
+    "org": {
+      "$ref": "#/$defs/OrganizationSettings",
+      "group": "Organization"
     },
     "max_images_per_message": {
       "default": 8,
