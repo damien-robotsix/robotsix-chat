@@ -12,6 +12,8 @@ linked to a specific ticket or run.
   during that run.
 - When debugging an anomalous LLM response — fetch the trace by its id for a full structured
   summary.
+- When analyzing fleet cost drivers — query traces from mill, ci_fix, or other components using
+  the `project` parameter.
 
 ## Allowed operation
 
@@ -25,6 +27,7 @@ linked to a specific ticket or run.
 inspect_langfuse_trace(
     trace_id: str = "",
     ticket_id: str = "",
+    project: str = "",
     limit: int = 5,
     from_timestamp: str = "",
     to_timestamp: str = "",
@@ -34,6 +37,10 @@ inspect_langfuse_trace(
 - At least one search criterion must be provided: `trace_id`, `ticket_id`, `from_timestamp`, or
   `to_timestamp`.
 - `trace_id` is mutually exclusive with the other criteria.
+- `project`: Langfuse project name (optional). When empty, queries the main chat project.
+  Use this to query traces from other fleet components — e.g. `project="mill"`,
+  `project="ci_fix"`, `project="robotsix-memory"`. See the configuration schema for the full
+  list of available projects.
 - When `trace_id` is given: fetch that single trace and return a detailed summary (name, timestamps,
   input/output tokens, total cost, top-level observations, scores).
 - When `ticket_id` is given: search for traces whose tags include `ticket_id:<value>` (most recent
@@ -65,8 +72,8 @@ the cap used.
 
 - Read-only — never mutates anything in Langfuse.
 - Only reaches the configured Langfuse host (default `https://cloud.langfuse.com`).
-- Authenticates with Basic auth using the configured public/secret key pair — no user credentials
-  are ever exposed to the agent.
+- Authenticates with Basic auth using the specified project's configured credentials — no user
+  credentials are ever exposed to the agent.
 - The tool is only available when `langfuse_inspect.enabled` is `true` in the server config.
 
 ## Error handling — read before acting on a failure
@@ -75,9 +82,9 @@ the cap used.
   network failures up to 2 times with exponential backoff before returning an error. If you receive
   an error, it has already survived multiple attempts — do NOT retry the tool repeatedly hoping for
   a different result.
-- **Do NOT claim credentials are missing.** The tool authenticates via Basic auth using the
-  `langfuse.projects` config block — it checks credentials up front and returns an explicit
-  "credentials are not configured" error when they are absent. Any other error (HTTP status,
+- **Do NOT claim credentials are missing without evidence.** The tool authenticates via Basic auth
+  using the `langfuse.projects` config block — it checks credentials up front and returns an
+  explicit "project X is not configured" error when they are absent. Any other error (HTTP status,
   timeout, network failure) means the credentials *were* sent and the Langfuse host rejected or did
   not receive the request. Blaming a missing credential when the tool did not return the
   credential-specific error message wastes time and erodes trust.
@@ -96,12 +103,15 @@ the cap used.
 # Inspect a specific known trace
 inspect_langfuse_trace(trace_id="01J...abc")
 
-# Search for traces linked to a ticket
+# Search for traces linked to a ticket (chat project)
 inspect_langfuse_trace(ticket_id="20260727T001240Z-add-capability-5bd6", limit=5)
 
-# Query the last 24 hours of traces (time-range search)
-inspect_langfuse_trace(from_timestamp="2026-08-22T00:00:00Z",
-                       to_timestamp="2026-08-23T00:00:00Z", limit=20)
+# Query the last 24 hours of traces from the mill project to identify cost drivers
+inspect_langfuse_trace(project="mill", from_timestamp="2026-08-22T00:00:00Z",
+                       to_timestamp="2026-08-23T00:00:00Z", limit=10)
+
+# Find the most expensive ci_fix traces from the last week
+inspect_langfuse_trace(project="ci_fix", from_timestamp="2026-08-11T00:00:00Z", limit=20)
 ```
 
 ## Fast path for periodic-session speed complaints (moved from the system prompt, 2026-09-08)
