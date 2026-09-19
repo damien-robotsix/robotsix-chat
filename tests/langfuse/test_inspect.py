@@ -6,6 +6,7 @@ no real network calls.
 
 from __future__ import annotations
 
+import base64
 import json
 from typing import Any
 
@@ -13,7 +14,11 @@ import httpx
 import pytest
 import respx
 
-from robotsix_chat.config import LangfuseInspectSettings, LangfuseSettings
+from robotsix_chat.config import (
+    PROJECT_MAIN,
+    LangfuseInspectSettings,
+    LangfuseSettings,
+)
 from robotsix_chat.langfuse import (
     build_langfuse_inspect_tools,
     load_langfuse_inspect_skill,
@@ -214,7 +219,111 @@ async def test_inspect_no_credentials() -> None:
     )
     result = json.loads(await tools[0](trace_id="abc"))
     assert result["error"]
-    assert "credentials" in result["error"].lower()
+    assert "project" in result["error"].lower()
+    assert "is not configured" in result["error"].lower()
+    assert result["traces"] == []
+
+
+# ---------------------------------------------------------------------------
+# inspect_langfuse_trace — project routing
+# ---------------------------------------------------------------------------
+
+
+@pytest.mark.asyncio
+async def test_inspect_project_defaults_to_main(respx_mock: respx.MockRouter) -> None:
+    """An empty ``project`` resolves to the main chat project's credentials."""
+    trace_id = "01JM4PROJECTMAIN"
+    respx_mock.get(
+        f"https://cloud.langfuse.com/api/public/traces/{trace_id}"
+    ).mock(
+        return_value=httpx.Response(
+            200,
+            json={
+                "id": trace_id,
+                "name": "implement",
+                "timestamp": "2026-07-27T00:15:00.000Z",
+                "userId": "agent-1",
+                "latency": 1.0,
+                "totalCost": 0.0,
+                "metrics": {
+                    "usage": {
+                        "promptTokens": 10,
+                        "completionTokens": 5,
+                        "totalTokens": 15,
+                    },
+                },
+                "observations": [],
+                "scores": [],
+            },
+        )
+    )
+    tools = build_langfuse_inspect_tools(_inspect_settings(), _langfuse_settings())
+    result = json.loads(await tools[0](trace_id=trace_id))
+
+    assert len(result["traces"]) == 1
+    assert result["traces"][0]["id"] == trace_id
+    # Empty project used the main project's credentials.
+    expected = "Basic " + base64.b64encode(b"pk-test:sk-test").decode()
+    auth = respx_mock.calls[-1].request.headers.get("authorization", "")
+    assert auth == expected
+
+
+@pytest.mark.asyncio
+async def test_inspect_project_explicit_secondary(respx_mock: respx.MockRouter) -> None:
+    """``project='mill'`` selects the mill project's credentials."""
+    trace_id = "01JM4PROJECTMILL"
+    respx_mock.get(
+        f"https://cloud.langfuse.com/api/public/traces/{trace_id}"
+    ).mock(
+        return_value=httpx.Response(
+            200,
+            json={
+                "id": trace_id,
+                "name": "implement",
+                "timestamp": "2026-07-27T00:15:00.000Z",
+                "userId": "agent-1",
+                "latency": 1.0,
+                "totalCost": 0.0,
+                "metrics": {
+                    "usage": {
+                        "promptTokens": 10,
+                        "completionTokens": 5,
+                        "totalTokens": 15,
+                    },
+                },
+                "observations": [],
+                "scores": [],
+            },
+        )
+    )
+    tools = build_langfuse_inspect_tools(
+        _inspect_settings(),
+        _langfuse_settings(
+            projects={
+                PROJECT_MAIN: {"public_key": "pk-test", "secret_key": "sk-test"},
+                "mill": {"public_key": "pk-mill", "secret_key": "sk-mill"},
+            }
+        ),
+    )
+    result = json.loads(await tools[0](trace_id=trace_id, project="mill"))
+
+    assert len(result["traces"]) == 1
+    assert result["traces"][0]["id"] == trace_id
+    # The mill project's credentials were used, not the main project's.
+    expected = "Basic " + base64.b64encode(b"pk-mill:sk-mill").decode()
+    auth = respx_mock.calls[-1].request.headers.get("authorization", "")
+    assert auth == expected
+
+
+@pytest.mark.asyncio
+async def test_inspect_project_not_configured() -> None:
+    """An unknown project name returns a 'not configured' error."""
+    tools = build_langfuse_inspect_tools(_inspect_settings(), _langfuse_settings())
+    result = json.loads(await tools[0](trace_id="abc", project="mill"))
+
+    assert result["error"]
+    assert "project" in result["error"].lower()
+    assert "'mill' is not configured" in result["error"].lower()
     assert result["traces"] == []
 
 
