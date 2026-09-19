@@ -233,9 +233,7 @@ async def test_inspect_no_credentials() -> None:
 async def test_inspect_project_defaults_to_main(respx_mock: respx.MockRouter) -> None:
     """An empty ``project`` resolves to the main chat project's credentials."""
     trace_id = "01JM4PROJECTMAIN"
-    respx_mock.get(
-        f"https://cloud.langfuse.com/api/public/traces/{trace_id}"
-    ).mock(
+    respx_mock.get(f"https://cloud.langfuse.com/api/public/traces/{trace_id}").mock(
         return_value=httpx.Response(
             200,
             json={
@@ -272,9 +270,7 @@ async def test_inspect_project_defaults_to_main(respx_mock: respx.MockRouter) ->
 async def test_inspect_project_explicit_secondary(respx_mock: respx.MockRouter) -> None:
     """``project='mill'`` selects the mill project's credentials."""
     trace_id = "01JM4PROJECTMILL"
-    respx_mock.get(
-        f"https://cloud.langfuse.com/api/public/traces/{trace_id}"
-    ).mock(
+    respx_mock.get(f"https://cloud.langfuse.com/api/public/traces/{trace_id}").mock(
         return_value=httpx.Response(
             200,
             json={
