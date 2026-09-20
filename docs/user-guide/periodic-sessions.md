@@ -66,6 +66,104 @@ a `session_end` feedback run is scheduled, the memory component receives the fin
 the latest run of each preset is ever open, so periodic runs never pile up as sessions to close by
 hand. A failure to close the previous run is logged and never blocks the new firing.
 
+## Writing effective periodic tasks
+
+When you write a periodic task prompt, especially one that retrieves or validates external data,
+follow these practices to ensure the operator can verify that data is real, current, and actually
+retrieved from live services:
+
+### Require explicit tool invocation logs
+
+When your task involves fetching data (mail, calendar items, board status, etc.), **instruct the
+agent to log or report each tool call and its result**. Do not let the agent narrate the intended
+action and then synthesize results without showing the actual API responses.
+
+**Bad example:**
+```
+Review today's unread mail and summarize it for the operator.
+```
+This allows the agent to say "I'll fetch your mail" and then present made-up summaries without
+showing any tool calls.
+
+**Good example:**
+```
+Review today's unread mail and summarize it for the operator. For each step below, log the tool you
+called and the API response you received (or the error, if the call failed).
+
+Steps:
+1. Fetch today's unread mail using the mail component's list API, filtering on the date range
+   2026-09-20 00:00:00 to 23:59:59 UTC. Log the tool call and the list response.
+2. For each message, extract the sender, subject, and a 1-2 sentence summary from the body.
+3. Finish with your summary, then append the full tool-call log showing each API interaction.
+```
+
+### Fail explicitly when data sources are unavailable
+
+If a required API is unreachable or returns an error, **report the failure clearly instead of
+falling back to synthesis or stale cached data**. The operator needs to know whether the report is
+based on real current data or a failure.
+
+**Bad example:** "I couldn't reach the mail service, but based on my last knowledge I estimate you
+have about 5 unread messages."
+
+**Good example:** "FAILED: The mail service is unreachable (connection timeout after 30s). I cannot
+retrieve your unread mail. Please check the mail component status and re-run this task once the
+service is available."
+
+### Add validation checkpoints
+
+Include an explicit validation step where the agent **confirms it received real service responses**
+before presenting data to the operator. This prevents silent data synthesis.
+
+**Example validation step:**
+```
+After fetching all data, validate that you received actual API responses (not synthesized data):
+- Did each tool call return a structured response object (not empty/null)?
+- Does the response contain timestamps, IDs, or other concrete details that prove it came from a
+  live service?
+If validation fails, report the specific issue and do not present the data as 'fetched'.
+```
+
+### Concrete example: mail-review preset
+
+Here is a complete periodic task prompt for a mail-review preset that follows all three practices:
+
+```json
+{
+  "name": "mail-review",
+  "initial_prompt": "Review today's unread mail across all configured mail accounts and summarize it for the operator.
+
+Steps:
+1. FETCH: Call the mail component's API to list unread messages in today's date range (today 00:00:00 to 23:59:59 UTC). Include all accounts. Log the tool call name, parameters, and the complete API response (including message count, headers, and any errors).
+2. VALIDATE: Confirm the mail API returned a real response with actual message data (timestamps, sender addresses, message IDs). If the API returned an error or empty response, stop here and report the failure — do not synthesize results.
+3. SUMMARIZE: For each unread message, extract:
+   - Sender address
+   - Subject
+   - Date received
+   - 1-2 sentence body summary
+4. REPORT: Finish with your findings formatted as:
+   - Total unread count
+   - Messages grouped by sender
+   - One paragraph per message with sender, subject, date, and summary
+   - Timestamp of the API call (from the response)
+   - Full tool-invocation log (tool name, parameters, response summary)
+
+If the mail API is unavailable at any step, report the failure and stop — never present data as 'fetched' if you did not actually retrieve it.",
+  "schedule_interval_seconds": 86400,
+  "anchor_utc": "2026-09-20T09:00:00Z",
+  "model_level": 2,
+  "enabled": false
+}
+```
+
+### Patterns to avoid
+
+- ❌ **Narrating without showing work:** "I'll fetch your data and summarize it" without logging tool calls.
+- ❌ **Synthesizing when tools fail:** Presenting old cached results or estimates as current data.
+- ❌ **Hiding API failures in subsessions:** Reporting success in the main conversation while burying
+  failures in subsession metadata.
+- ❌ **No data validation:** Presenting results without confirming the source was real and current.
+
 ## Shipped presets
 
 ### `dependabot-drain`
