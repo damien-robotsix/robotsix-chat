@@ -124,6 +124,90 @@ per-ticket processing.
   total discovered count and the state-by-state summary (with no scope mismatch left silent),
   and that it appears enabled in `GET /periodic/definitions`.
 
+## Session-end contract and interrupted reports
+
+Every periodic session has an **unconditional obligation to report at the end** — even if it is
+interrupted by timeout, error, resource exhaustion, or early termination. A session that ends
+without a report leaves the next scheduled run blind to what was attempted, done, escalated, or
+blocked.
+
+### Guaranteed reports
+
+The scheduler prepends a preamble to every preset's initial prompt that instructs the agent to
+prioritize the report as the **first deliverable**, not the last. If the agent senses it is
+approaching a completion, token, or time limit — or hits an error mid-execution — it immediately
+stops the remaining work and outputs a report while it still can, rather than pressing on and
+risking termination before reporting.
+
+### PARTIAL REPORT (when work is interrupted)
+
+If a periodic task cannot finish everything, it outputs a report titled **`PARTIAL REPORT`** with
+three sections, in this order:
+
+1. **Done** — items completed and the ROUTINE actions taken (e.g. tickets drained, PRs merged or
+   filed), each named. For gate-drain: any tickets processed and their disposition. For
+   dependabot-drain: any PRs merged and migration tickets filed.
+
+2. **Escalations** — subsession IDs opened and the decision each one needs from the operator. If the
+   agent opened a subsession for a per-ticket merge decision or investigation that is still pending,
+   record it here so the operator knows it exists and awaits their input.
+
+3. **Held for next run** — items not reached or deliberately deferred, each with a one-line reason
+   (e.g. "47 remaining tickets need prioritization order"; "PR #123 blocked on feedback").
+
+A PARTIAL REPORT is always better than silence. An interrupted session that reported what it got to
+gives the next scheduled run the context to resume. One that reported nothing leaves no path forward.
+
+### Example: dependabot-drain interrupted
+
+If dependabot-drain times out after processing 3 of 10 Dependabot PRs:
+
+```
+PARTIAL REPORT
+
+Done:
+  - PR #456 (lodash): merged (green CI, non-breaking bump)
+  - PR #457 (eslint): filed migration ticket #ticket-123 (breaking API change)
+  - PR #458 (typescript): skipped (already auto-merging)
+
+Escalations:
+  - Subsession #sub-789: awaiting operator approval for PR #459 schema migration
+
+Held for next run:
+  - 7 remaining Dependabot PRs (session token budget exhausted)
+```
+
+The next `dependabot-drain` run will see these results and skip the 3 already-processed PRs,
+resuming with PR #460.
+
+### Example: gate-drain interrupted
+
+If gate-drain times out after reporting current-main CI failures and scope:
+
+```
+PARTIAL REPORT
+
+Current-main CI:
+  ⚠️ ALERT — main CI failing: robotsix-mill: Docs workflow (conclusion: failure); 
+  recommended fix: PR #723; recommendation: merge and re-run
+
+Done:
+  - 12 gated tickets analyzed
+  - 3 tickets drained (moved to resolved state)
+  - 2 subsessions opened for merge decisions (see Escalations)
+
+Escalations:
+  - Subsession #sub-890: awaiting operator approval for PR #410 (merge or close?)
+  - Subsession #sub-891: awaiting operator decision on ticket #board-567 (reassign or close?)
+
+Held for next run:
+  - 35 remaining gated tickets (session turn limit reached)
+  - Current-main CI failure to be re-checked next run
+```
+
+The next `gate-drain` run sees the current-main CI failure is still present and re-confirms or
+updates its status, and resumes the gated-ticket enumeration with the remaining 35.
+
 ## Endpoints
 
 - `GET /periodic/definitions` — presets with their firing state (`last_fired_at`, `last_session_id`,
