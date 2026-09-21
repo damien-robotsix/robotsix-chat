@@ -94,17 +94,17 @@ informed of production-blocking issues and human-gated/blocked tickets across bo
 it scans the main branch for any failing workflows (CI failures are production-blocking and take
 absolute priority), reports those first in the main conversation with clear ALERT flags and
 recommended fixes, and then enumerates every ticket in the gated states — `human_issue_approval`,
-`human_mr_approval`, `awaiting_user_reply`, and `blocked` — across all boards. Its **first output
-is a scope report emitted in the main conversation**: each current-main CI failure (one ALERT line
-per failure with recommended fix PR and recommendation), the total count of gated tickets discovered,
-a per-state count summary, and an explicit flag when it will only analyze a subset
-(the discovered-vs-analyzed mismatch). Only after that scope report does it begin detailed
-per-ticket processing.
+`human_mr_approval`, `awaiting_user_reply`, and `blocked` — across all boards. Its **first output is
+a scope report emitted in the main conversation**: each current-main CI failure (one ALERT line per
+failure with recommended fix PR and recommendation), the total count of gated tickets discovered, a
+per-state count summary, and an explicit flag when it will only analyze a subset (the
+discovered-vs-analyzed mismatch). Only after that scope report does it begin detailed per-ticket
+processing.
 
 - **Production CI failures are front-loaded.** The operator's primary goal is keeping main green.
   Current-main CI failures are production-blocking and must be reported at the TOP of the main
-  conversation before the gated-ticket enumeration, with a clear ALERT flag, recommended fix PR,
-  and recommendation for each failure. Never bury a CI failure in subsession metadata that a
+  conversation before the gated-ticket enumeration, with a clear ALERT flag, recommended fix PR, and
+  recommendation for each failure. Never bury a CI failure in subsession metadata that a
   main-thread-only reader would miss.
 - **Scope reporting belongs in the primary conversation.** Subsession summaries capture follow-up
   work items, not top-line scope. The CI failures, total discovered count, the per-state summary,
@@ -112,8 +112,9 @@ per-ticket processing.
   sees them immediately — never buried in a closed subsession summary. This preset exists because a
   2026-09-09 gate-drain run reported ~14 tickets in the main conversation while a subsession had
   actually discovered 47 across multiple boards; the 3× scope expansion never reached the operator.
-  And a 2026-09-19 incident identified that a broken robotsix-mill Docs workflow (production-blocking
-  CI failure) existed only in subsession metadata and never reached the operator's main conversation.
+  And a 2026-09-19 incident identified that a broken robotsix-mill Docs workflow
+  (production-blocking CI failure) existed only in subsession metadata and never reached the
+  operator's main conversation.
 - **Cadence** — every four hours (`schedule_interval_seconds: 14400`), at `model_level: 2`.
 - **Ships disabled** — `"enabled": false` per the feature-flag convention, so it never fires on a
   fresh checkout.
@@ -121,8 +122,93 @@ per-ticket processing.
   deployment's config, then redeploy. To prove it live, fire it once with
   `POST /periodic/definitions/gate-drain/run` and confirm the main-conversation report leads with
   any current-main CI failures (one ALERT line per failure with recommended fix PR) and then the
-  total discovered count and the state-by-state summary (with no scope mismatch left silent),
-  and that it appears enabled in `GET /periodic/definitions`.
+  total discovered count and the state-by-state summary (with no scope mismatch left silent), and
+  that it appears enabled in `GET /periodic/definitions`.
+
+## Session-end contract and interrupted reports
+
+Every periodic session has an **unconditional obligation to report at the end** — even if it is
+interrupted by timeout, error, resource exhaustion, or early termination. A session that ends
+without a report leaves the next scheduled run blind to what was attempted, done, escalated, or
+blocked.
+
+### Guaranteed reports
+
+The scheduler prepends a preamble to every preset's initial prompt that instructs the agent to
+prioritize the report as the **first deliverable**, not the last. If the agent senses it is
+approaching a completion, token, or time limit — or hits an error mid-execution — it immediately
+stops the remaining work and outputs a report while it still can, rather than pressing on and
+risking termination before reporting.
+
+### PARTIAL REPORT (when work is interrupted)
+
+If a periodic task cannot finish everything, it outputs a report titled **`PARTIAL REPORT`** with
+three sections, in this order:
+
+1. **Done** — items completed and the ROUTINE actions taken (e.g. tickets drained, PRs merged or
+   filed), each named. For gate-drain: any tickets processed and their disposition. For
+   dependabot-drain: any PRs merged and migration tickets filed.
+
+1. **Escalations** — subsession IDs opened and the decision each one needs from the operator. If the
+   agent opened a subsession for a per-ticket merge decision or investigation that is still pending,
+   record it here so the operator knows it exists and awaits their input.
+
+1. **Held for next run** — items not reached or deliberately deferred, each with a one-line reason
+   (e.g. "47 remaining tickets need prioritization order"; "PR #123 blocked on feedback").
+
+A PARTIAL REPORT is always better than silence. An interrupted session that reported what it got to
+gives the next scheduled run the context to resume. One that reported nothing leaves no path
+forward.
+
+### Example: dependabot-drain interrupted
+
+If dependabot-drain times out after processing 3 of 10 Dependabot PRs:
+
+```text
+PARTIAL REPORT
+
+Done:
+  - PR #456 (lodash): merged (green CI, non-breaking bump)
+  - PR #457 (eslint): filed migration ticket #ticket-123 (breaking API change)
+  - PR #458 (typescript): skipped (already auto-merging)
+
+Escalations:
+  - Subsession #sub-789: awaiting operator approval for PR #459 schema migration
+
+Held for next run:
+  - 7 remaining Dependabot PRs (session token budget exhausted)
+```
+
+The next `dependabot-drain` run will see these results and skip the 3 already-processed PRs,
+resuming with PR #460.
+
+### Example: gate-drain interrupted
+
+If gate-drain times out after reporting current-main CI failures and scope:
+
+```text
+PARTIAL REPORT
+
+Current-main CI:
+  ⚠️ ALERT — main CI failing: robotsix-mill: Docs workflow (conclusion: failure);
+  recommended fix: PR #723; recommendation: merge and re-run
+
+Done:
+  - 12 gated tickets analyzed
+  - 3 tickets drained (moved to resolved state)
+  - 2 subsessions opened for merge decisions (see Escalations)
+
+Escalations:
+  - Subsession #sub-890: awaiting operator approval for PR #410 (merge or close?)
+  - Subsession #sub-891: awaiting operator decision on ticket #board-567 (reassign or close?)
+
+Held for next run:
+  - 35 remaining gated tickets (session turn limit reached)
+  - Current-main CI failure to be re-checked next run
+```
+
+The next `gate-drain` run sees the current-main CI failure is still present and re-confirms or
+updates its status, and resumes the gated-ticket enumeration with the remaining 35.
 
 ## Endpoints
 
