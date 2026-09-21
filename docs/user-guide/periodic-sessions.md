@@ -135,15 +135,29 @@ blocked.
 ### Guaranteed reports
 
 The scheduler prepends a preamble to every preset's initial prompt that instructs the agent to
-prioritize the report as the **first deliverable**, not the last. If the agent senses it is
-approaching a completion, token, or time limit — or hits an error mid-execution — it immediately
-stops the remaining work and outputs a report while it still can, rather than pressing on and
-risking termination before reporting.
+prioritize the report as the **first deliverable**, not the last.
 
-### PARTIAL REPORT (when work is interrupted)
+The agent **cannot introspect its own token consumption or context-window usage** — there is no
+budget field or tool that tells it how close it is to the limit, and the limit can be reached
+without warning mid-operation. Because "sensing" exhaustion is not actionable, the preamble instead
+makes the report resilient to sudden termination by having the agent **report as it goes**:
 
-If a periodic task cannot finish everything, it outputs a report titled **`PARTIAL REPORT`** with
-three sections, in this order:
+1. **Report at natural breakpoints, not just at the end.** After each atomic unit of work (each PR
+   merged, each ticket processed or drained, each subsession opened, each investigation closed), the
+   agent outputs an updated running `PARTIAL REPORT` capturing everything done so far, restating the
+   full report each time — the last complete report the transcript contains is what survives.
+1. **Reserve headroom for the report.** The agent does not pack the turn end-to-end with operational
+   work; once a batch of major operations is done, it prefers stopping and emitting a final report
+   over starting another expensive operation that could be cut off before it reports it. A smaller
+   batch that is fully reported beats a larger batch that terminates unreported.
+1. **Report immediately on error.** If the agent hits an error mid-execution, it stops the remaining
+   work and outputs the report while it still can.
+
+### PARTIAL REPORT (the expected outcome for interrupted work)
+
+`PARTIAL REPORT` is the **expected outcome** for any interrupted or incomplete periodic session, not
+an emergency fallback. Whenever a periodic task cannot finish everything — and at every breakpoint
+above — it outputs a report titled **`PARTIAL REPORT`** with three sections, in this order:
 
 1. **Done** — items completed and the ROUTINE actions taken (e.g. tickets drained, PRs merged or
    filed), each named. For gate-drain: any tickets processed and their disposition. For
