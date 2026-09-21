@@ -138,5 +138,50 @@ def test_preamble_lets_operator_replies_supersede_task_constraints():
     assert "supersedes the task's constraints" in lowered
 
 
+def test_preamble_states_token_usage_is_not_introspectable():
+    """The preamble must be honest that the agent cannot sense exhaustion.
+
+    Session 700f4ec1 (2026-09-21) exhausted its token budget mid-escalation
+    and terminated without any report, because the old preamble told it to
+    "sense" a token limit it has no way to observe.
+    """
+    lowered = PERIODIC_PREAMBLE.lower()
+    assert "cannot introspect" in lowered
+    assert "token" in lowered
+
+
+def test_preamble_requires_reporting_at_breakpoints():
+    """The report must be emitted at natural operational breakpoints.
+
+    Reporting as-you-go (after each PR merge / ticket processed) is what
+    makes the report resilient to a turn that terminates without warning.
+    """
+    lowered = PERIODIC_PREAMBLE.lower()
+    assert "breakpoint" in lowered
+    assert "each pr merged" in lowered
+    assert "each ticket processed" in lowered
+    # A partial report is the expected outcome, not an emergency fallback.
+    assert "partial report is the expected outcome" in lowered
+
+
+def test_partial_report_survives_context_exhaustion_by_being_incremental():
+    """A session that runs out of context still leaves a PARTIAL REPORT.
+
+    We cannot exercise a real token limit in a unit test, so we assert the
+    mechanism that guarantees it: the preamble instructs the agent to emit a
+    full PARTIAL REPORT at every breakpoint (restating it, not deltas), so
+    the last complete report in the transcript survives a sudden cut-off.
+    Regression for session 700f4ec1, which terminated before its only,
+    end-of-turn report.
+    """
+    lowered = PERIODIC_PREAMBLE.lower()
+    # The three canonical sections are still required.
+    assert "done:" in lowered
+    assert "escalations:" in lowered
+    assert "held for next run:" in lowered
+    # And the report is restated in full each time so the last one is whole.
+    assert "restate the full report" in lowered
+
+
 def test_initial_prompt_is_trimmed():
     assert build_initial_message("  task  \n").endswith("task")
