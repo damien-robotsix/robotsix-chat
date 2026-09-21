@@ -164,7 +164,7 @@ forward.
 
 If dependabot-drain times out after processing 3 of 10 Dependabot PRs:
 
-```
+```text
 PARTIAL REPORT
 
 Done:
@@ -186,11 +186,11 @@ resuming with PR #460.
 
 If gate-drain times out after reporting current-main CI failures and scope:
 
-```
+```text
 PARTIAL REPORT
 
 Current-main CI:
-  ⚠️ ALERT — main CI failing: robotsix-mill: Docs workflow (conclusion: failure); 
+  ⚠️ ALERT — main CI failing: robotsix-mill: Docs workflow (conclusion: failure);
   recommended fix: PR #723; recommendation: merge and re-run
 
 Done:
