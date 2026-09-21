@@ -2,7 +2,7 @@
 
 ## Reporting a Vulnerability
 
-Please report security vulnerabilities privately by email to admin@robotsix.net. Do not open a
+Please report security vulnerabilities privately by email to <admin@robotsix.net>. Do not open a
 public issue for security problems.
 
 ## Response Time
