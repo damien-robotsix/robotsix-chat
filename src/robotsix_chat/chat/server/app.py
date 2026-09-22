@@ -449,13 +449,6 @@ _API_ROUTE_SPECS: tuple[tuple[str, Any, tuple[str, ...], str, bool], ...] = (
         True,
     ),
     (
-        "/chat-skill",
-        chat_skill_endpoint,
-        ("GET",),
-        "Return the chat skill definition.",
-        True,
-    ),
-    (
         "/config",
         config_get_endpoint,
         ("GET",),
@@ -940,6 +933,16 @@ def create_app(
     # sits behind the central-deploy gateway's auth layer.
     routes.append(Route("/openapi.json", openapi_json_endpoint, methods=["GET"]))
     routes.append(Route("/docs", docs_endpoint, methods=["GET"]))
+
+    # Chat-skill descriptor — served through the shared robotsix-http factory
+    # (robotsix_http.fastapi.create_chat_skill_router) which validates the
+    # frontmatter eagerly and provides the route-parity contract.  It
+    # intentionally lives outside _API_ROUTE_SPECS: no /api/v1 alias, and no
+    # entry in the OpenAPI schema assembled above.  The factory mints a
+    # FastAPI APIRoute, which a plain Starlette app cannot host directly, so
+    # the same validated descriptor is served through a Starlette-native
+    # endpoint (see routes/chat_skill.py).
+    routes.append(Route("/chat-skill", chat_skill_endpoint, methods=["GET"]))
 
     if serve_ui:
         routes.append(Route("/", ui_endpoint, methods=["GET"]))

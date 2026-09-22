@@ -10,6 +10,10 @@ from __future__ import annotations
 import json
 from pathlib import Path
 
+from fastapi import FastAPI
+from robotsix_http.fastapi import (
+    assert_chat_skill_route_parity,
+)
 from starlette.testclient import TestClient
 
 from robotsix_chat.chat.server.app import create_app
@@ -30,10 +34,10 @@ def _make_client(tmp_path: Path) -> TestClient:
     return TestClient(app, raise_server_exceptions=False)
 
 
-def test_chat_skill_returns_plain_text(tmp_path: Path) -> None:
+def test_chat_skill_returns_markdown(tmp_path: Path) -> None:
     resp = _make_client(tmp_path).get("/chat-skill")
     assert resp.status_code == 200
-    assert resp.headers["content-type"].startswith("text/plain")
+    assert resp.headers["content-type"].startswith("text/markdown")
     assert resp.text.strip()
 
 
@@ -42,7 +46,7 @@ def test_chat_skill_has_frontmatter(tmp_path: Path) -> None:
     body = _make_client(tmp_path).get("/chat-skill").text
     assert body.startswith("---\n")
     head = body.split("---", 2)[1]
-    assert "name: robotsix-chat-self" in head
+    assert "name: robotsix-chat" in head
     assert "description:" in head
 
 
@@ -62,3 +66,44 @@ def test_chat_skill_steers_away_from_the_deploy_plane(tmp_path: Path) -> None:
     """Writes must not go through the deploy plane's template-derived path."""
     body = _make_client(tmp_path).get("/chat-skill").text
     assert "/chat/config/{name}" in body
+
+
+def test_chat_skill_route_parity() -> None:
+    """The routes the skill documents are real, registered routes.
+
+    ``assert_chat_skill_route_parity`` is strict in both directions, so it
+    runs against a focused FastAPI app carrying exactly the config routes
+    this self-config skill describes — the chat server itself is a Starlette
+    app whose non-config routes are deliberately outside the skill's
+    contract.
+    """
+    from robotsix_chat.chat.server.routes.chat_skill import (
+        _CHAT_SKILL_TEXT,
+        chat_skill_router,
+    )
+    from robotsix_chat.chat.server.routes.config import (
+        config_get_endpoint,
+        config_rollback_endpoint,
+        config_save_endpoint,
+        config_versions_endpoint,
+    )
+
+    app = FastAPI()
+    app.add_api_route("/config", config_get_endpoint, methods=["GET"])
+    app.add_api_route("/config", config_save_endpoint, methods=["PUT"])
+    app.add_api_route("/config/versions", config_versions_endpoint, methods=["GET"])
+    app.add_api_route("/config/rollback", config_rollback_endpoint, methods=["POST"])
+    app.include_router(chat_skill_router)
+    assert_chat_skill_route_parity(
+        app,
+        _CHAT_SKILL_TEXT,
+        # Query-parameter variants and the deploy-plane restart route are
+        # documented prose referring to other endpoints, not registered
+        # route paths.
+        ignore={
+            "/config?keys_only=true",
+            "/config?path=periodic",
+            "/config?include_schema=false",
+            "/chat/services/{your-component-id}/restart",
+        },
+    )
