@@ -1,17 +1,7 @@
-"""Guard the periodic presets shipped in the committed ``config/config.json``.
-
-The committed template is what a developer gets on checkout and what
-central-deploy merges operator edits into. These tests load that exact file,
-validate it against the real ``Settings`` model, and assert the shipped
-``dependabot-drain`` preset parses with its documented schedule — so a typo in
-the template (or a schema drift) fails here instead of at deploy time.
-"""
-
-from __future__ import annotations
-
 import json
 from datetime import UTC, datetime
 from pathlib import Path
+from typing import cast
 
 from robotsix_chat.config import Settings
 from robotsix_chat.config.periodic_models import PeriodicSessionDefinition
@@ -51,12 +41,18 @@ def test_dependabot_drain_preset_parses() -> None:
 
 
 def test_gate_drain_preset_parses_and_demands_scope_report() -> None:
-    """The ``gate-drain`` preset parses and requires up-front scope reporting.
+    """The ``gate-drain`` preset parses, demands up-front scope reporting, and
+    requires ESCALATED-history verification before listing awaiting-operator.
 
     The prompt must instruct the agent to enumerate every gated state, report
     the total discovered count and per-state summary in the main conversation
     before detailed processing, and flag any discovered-vs-analyzed mismatch —
-    the behaviour missed by the 2026-09-09 run that motivated this preset.
+    the behaviour missed by the 2026-09-09 run that motivated this preset. It
+    must also read each gated ticket's history for an existing ESCALATED
+    comment / open decision panel before concluding it awaits the operator, and
+    state in the report that this verification was performed (motivated by a
+    2026-09-22 feedback run whose report listed escalated tickets without
+    confirming the history check).
     """
     preset = _preset(_load_settings(), "gate-drain")
 
@@ -80,3 +76,11 @@ def test_gate_drain_preset_parses_and_demands_scope_report() -> None:
     assert "mismatch" in prompt
     # Subsession summaries must not swallow the scope report.
     assert "subsession" in prompt.lower()
+    # Before listing a gated ticket as awaiting-operator, the agent must verify
+    # its history for an existing ESCALATED comment / open decision panel.
+    assert "ESCALATED" in prompt
+    assert "awaiting operator" in prompt or "awaiting-operator" in prompt
+    # The final report must explicitly confirm the history-verification.
+    assert "history-verification" in prompt
+    assert "history-verification for pending escalations" in prompt
+    assert cast(str, prompt).lower().find("no operator answer recorded since") != -1
