@@ -79,6 +79,16 @@ PERIODIC_PREAMBLE = (
     "is a live instruction that supersedes the task's constraints below "
     "(including any read-only framing): resolve it against this session's "
     "own turns first, and act on it as you would in a normal chat.\n\n"
+    "AT THE START OF EVERY RUN, before doing task work, call list_subsessions "
+    "and check for any OPEN user_chat subsessions still awaiting an operator "
+    "reply — including panels that were restarted after a chat-service "
+    "restart. The operator's desktop alert may not persist across restarts, "
+    "so surface every such open panel as a first-class ACTION ITEM in your "
+    "report: name the panel, the decision it needs, and that it is waiting "
+    "on the operator. Do not bury these in the 'Held for next run' section "
+    "— they are live decisions needing operator input, not deferred work. "
+    "If none are open, state that explicitly so the operator knows there is "
+    "no pending decision.\n\n"
     "---\n\n"
 )
 
