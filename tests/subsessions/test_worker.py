@@ -58,16 +58,18 @@ from tests.common.subsession_fakes import (
 
 @pytest.fixture(autouse=True)
 def _instant_transient_backoff(monkeypatch: pytest.MonkeyPatch) -> None:
-    """Collapse transient-retry backoff to zero for every test in this module.
+    """Collapse transient-retry backoff for every test in this module.
 
     The retry loop is ``robotsix_http.acall_with_retry``, whose delay is
-    ``min(backoff_base ** attempt, backoff_cap)``. Pinning the cap to 0
-    makes every retry immediate, so the transient-error paths stay fast
-    without a per-test knob — the two ``transient_error_backoff_*``
+    ``min(backoff_base ** attempt, backoff_cap)``. Pinning the cap to a
+    tiny positive value makes every retry immediate while staying above the
+    ``backoff_cap > 0`` validation that robotsix-http's ``RetryConfig``
+    enforces (a cap of 0.0 is rejected), so the transient-error paths stay
+    fast without a per-test knob — the two ``transient_error_backoff_*``
     settings these tests used to pass were removed along with the
     hand-rolled loop.
     """
-    monkeypatch.setattr(worker_mod, "_TRANSIENT_BACKOFF_CAP", 0.0)
+    monkeypatch.setattr(worker_mod, "_TRANSIENT_BACKOFF_CAP", 1e-9)
 
 
 OWNER = "sess-main"

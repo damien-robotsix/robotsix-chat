@@ -125,7 +125,7 @@ def build_component_tools(
         This tool configures **other** component agents only: *base_url* must
         name a component in the ``component_client.components`` allowlist. It
         never targets you — to change your own configuration, call your own
-        ``PUT /config`` endpoint (see the ``robotsix-chat-self`` chat skill)
+        ``PUT /config`` endpoint (see the ``robotsix-chat`` chat skill)
         instead of this tool.
 
         Args:
