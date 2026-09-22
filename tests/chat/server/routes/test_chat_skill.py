@@ -11,13 +11,12 @@ import json
 from pathlib import Path
 
 from fastapi import FastAPI
+from robotsix_http.fastapi import (
+    assert_chat_skill_route_parity,
+)
 from starlette.testclient import TestClient
 
 from robotsix_chat.chat.server.app import create_app
-from robotsix_http.fastapi import (
-    assert_chat_skill_route_parity,
-    create_chat_skill_router,
-)
 
 
 class _DummyAgent:
