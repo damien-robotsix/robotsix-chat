@@ -77,10 +77,9 @@ def test_chat_skill_route_parity() -> None:
     app whose non-config routes are deliberately outside the skill's
     contract.
     """
-    from robotsix_chat.chat.server.routes.chat_skill import (
-        _CHAT_SKILL_TEXT,
-        chat_skill_router,
-    )
+    from robotsix_http.fastapi import create_chat_skill_router
+
+    from robotsix_chat.chat.server.routes.chat_skill import _CHAT_SKILL_TEXT
     from robotsix_chat.chat.server.routes.config import (
         config_get_endpoint,
         config_rollback_endpoint,
@@ -93,6 +92,10 @@ def test_chat_skill_route_parity() -> None:
     app.add_api_route("/config", config_save_endpoint, methods=["PUT"])
     app.add_api_route("/config/versions", config_versions_endpoint, methods=["GET"])
     app.add_api_route("/config/rollback", config_rollback_endpoint, methods=["POST"])
+    # The chat server serves /chat-skill through a Starlette-native endpoint;
+    # the shared factory (FastAPI-only) is exercised here to keep the
+    # validated-descriptor contract in scope.
+    chat_skill_router = create_chat_skill_router(_CHAT_SKILL_TEXT, name="robotsix-chat")
     app.include_router(chat_skill_router)
     assert_chat_skill_route_parity(
         app,
