@@ -15,7 +15,6 @@ describes.
 
 from __future__ import annotations
 
-from robotsix_http.fastapi import create_chat_skill_router
 from starlette.requests import Request
 from starlette.responses import PlainTextResponse
 
@@ -153,17 +152,16 @@ is ever lost and a rollback can itself be rolled back.
 """
 
 
-# The shared factory validates the frontmatter eagerly (kebab-case ``name``,
-# non-empty ``description``, matching the expected component id) and mints a
-# FastAPI ``APIRoute`` for FastAPI services.  The chat server is a plain
-# Starlette app — a FastAPI ``APIRoute`` expects FastAPI's request-scope
-# middleware stack (``fastapi_middleware_astack``), which a Starlette app does
-# not provide.  ``chat_skill_router`` is kept for the route-parity contract;
-# the server itself serves the same validated descriptor through the
-# Starlette-native endpoint below.
-chat_skill_router = create_chat_skill_router(_CHAT_SKILL_TEXT, name="robotsix-chat")
-
-
+# The shared factory (``robotsix_http.fastapi.create_chat_skill_router``)
+# validates the frontmatter eagerly (kebab-case ``name``, non-empty
+# ``description``, matching the expected component id) but is FastAPI-only by
+# design: it mints a FastAPI ``APIRouter`` whose routes expect FastAPI's
+# request-scope middleware stack (``fastapi_middleware_astack``), which a
+# plain Starlette app does not provide.  Serving /chat-skill through the
+# factory is therefore infeasible for this server, so the descriptor is
+# served by the single Starlette-native endpoint below.  Frontmatter validity
+# and route parity are still enforced against the factory by
+# ``test_chat_skill_route_parity``.
 async def chat_skill_endpoint(request: Request) -> PlainTextResponse:  # noqa: ARG001
     """Serve the chat-skill descriptor as ``text/markdown``.
 

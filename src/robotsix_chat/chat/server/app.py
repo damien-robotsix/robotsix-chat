@@ -934,14 +934,15 @@ def create_app(
     routes.append(Route("/openapi.json", openapi_json_endpoint, methods=["GET"]))
     routes.append(Route("/docs", docs_endpoint, methods=["GET"]))
 
-    # Chat-skill descriptor — served through the shared robotsix-http factory
-    # (robotsix_http.fastapi.create_chat_skill_router) which validates the
-    # frontmatter eagerly and provides the route-parity contract.  It
+    # Chat-skill descriptor — served through a Starlette-native endpoint (see
+    # routes/chat_skill.py) because the shared robotsix-http factory
+    # (robotsix_http.fastapi.create_chat_skill_router) is FastAPI-only by
+    # design: it mints a FastAPI APIRouter that a plain Starlette app cannot
+    # host, so migrating /chat-skill to the factory is infeasible for this
+    # server.  Frontmatter validity and route parity are still enforced
+    # against the factory by the chat_skill_route_parity test.  It
     # intentionally lives outside _API_ROUTE_SPECS: no /api/v1 alias, and no
-    # entry in the OpenAPI schema assembled above.  The factory mints a
-    # FastAPI APIRoute, which a plain Starlette app cannot host directly, so
-    # the same validated descriptor is served through a Starlette-native
-    # endpoint (see routes/chat_skill.py).
+    # entry in the OpenAPI schema assembled above.
     routes.append(Route("/chat-skill", chat_skill_endpoint, methods=["GET"]))
 
     if serve_ui:
