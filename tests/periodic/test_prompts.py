@@ -183,5 +183,20 @@ def test_partial_report_survives_context_exhaustion_by_being_incremental():
     assert "restate the full report" in lowered
 
 
+def test_preamble_surfaces_awaiting_operator_panels():
+    """Open user_chat panels awaiting an operator reply must be surfaced.
+
+    The operator's desktop alert may not persist across a chat-service
+    restart, so every periodic run must enumerate open panels and report
+    them as live ACTION ITEMS — never bury them under "Held for next run".
+    """
+    lowered = PERIODIC_PREAMBLE.lower()
+    assert "call list_subsessions" in lowered
+    assert "open user_chat subsessions" in lowered
+    assert "awaiting an operator" in lowered
+    assert "held for next run" in lowered
+    assert "no pending decision" in lowered
+
+
 def test_initial_prompt_is_trimmed():
     assert build_initial_message("  task  \n").endswith("task")
