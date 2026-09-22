@@ -106,7 +106,7 @@ from .routes import (
     auth_login_endpoint,
     cancel_queued_endpoint,
     chat_endpoint,
-    chat_skill_endpoint,
+    chat_skill_router,
     config_deploy_get_endpoint,
     config_get_endpoint,
     config_rollback_endpoint,
@@ -446,13 +446,6 @@ _API_ROUTE_SPECS: tuple[tuple[str, Any, tuple[str, ...], str, bool], ...] = (
         github_job_log_endpoint,
         ("GET",),
         "Fetch a GitHub Actions job log.",
-        True,
-    ),
-    (
-        "/chat-skill",
-        chat_skill_endpoint,
-        ("GET",),
-        "Return the chat skill definition.",
         True,
     ),
     (
@@ -940,6 +933,12 @@ def create_app(
     # sits behind the central-deploy gateway's auth layer.
     routes.append(Route("/openapi.json", openapi_json_endpoint, methods=["GET"]))
     routes.append(Route("/docs", docs_endpoint, methods=["GET"]))
+
+    # Chat-skill descriptor — served through the shared robotsix-http factory
+    # (robotsix_http.fastapi.create_chat_skill_router) rather than a
+    # hand-rolled endpoint.  It intentionally lives outside _API_ROUTE_SPECS:
+    # no /api/v1 alias, and no entry in the OpenAPI schema assembled above.
+    routes.extend(chat_skill_router.routes)
 
     if serve_ui:
         routes.append(Route("/", ui_endpoint, methods=["GET"]))

@@ -15,17 +15,16 @@ describes.
 
 from __future__ import annotations
 
-from starlette.requests import Request
-from starlette.responses import PlainTextResponse
+from robotsix_http.fastapi import create_chat_skill_router
 
 _CHAT_SKILL_TEXT = """\
 ---
-name: robotsix-chat-self
+name: robotsix-chat
 description: Read and update this chat agent's own configuration, with
   version history and rollback.
 ---
 
-## robotsix-chat-self — Chat Agent Skill
+## robotsix-chat — Chat Agent Skill
 
 You are connected to **your own** component API. Use it to inspect and
 change your own configuration.
@@ -152,9 +151,4 @@ is ever lost and a rollback can itself be rolled back.
 """
 
 
-async def chat_skill_endpoint(request: Request) -> PlainTextResponse:  # noqa: ARG001
-    """Serve the SKILL.md document describing this component's own API.
-
-    *request* is unused; Starlette requires it in the endpoint signature.
-    """
-    return PlainTextResponse(_CHAT_SKILL_TEXT)
+chat_skill_router = create_chat_skill_router(_CHAT_SKILL_TEXT, name="robotsix-chat")

@@ -25,7 +25,7 @@ from .chat import (
     chat_endpoint,
 )
 from .chat_skill import (
-    chat_skill_endpoint,
+    chat_skill_router,
 )
 from .config import (
     config_deploy_get_endpoint,
@@ -117,7 +117,7 @@ __all__ = [
     "auth_login_endpoint",
     "cancel_queued_endpoint",
     "chat_endpoint",
-    "chat_skill_endpoint",
+    "chat_skill_router",
     "config_deploy_get_endpoint",
     "config_get_endpoint",
     "config_rollback_endpoint",
