@@ -106,7 +106,7 @@ from .routes import (
     auth_login_endpoint,
     cancel_queued_endpoint,
     chat_endpoint,
-    chat_skill_router,
+    chat_skill_endpoint,
     config_deploy_get_endpoint,
     config_get_endpoint,
     config_rollback_endpoint,
@@ -935,10 +935,14 @@ def create_app(
     routes.append(Route("/docs", docs_endpoint, methods=["GET"]))
 
     # Chat-skill descriptor — served through the shared robotsix-http factory
-    # (robotsix_http.fastapi.create_chat_skill_router) rather than a
-    # hand-rolled endpoint.  It intentionally lives outside _API_ROUTE_SPECS:
-    # no /api/v1 alias, and no entry in the OpenAPI schema assembled above.
-    routes.extend(chat_skill_router.routes)
+    # (robotsix_http.fastapi.create_chat_skill_router) which validates the
+    # frontmatter eagerly and provides the route-parity contract.  It
+    # intentionally lives outside _API_ROUTE_SPECS: no /api/v1 alias, and no
+    # entry in the OpenAPI schema assembled above.  The factory mints a
+    # FastAPI APIRoute, which a plain Starlette app cannot host directly, so
+    # the same validated descriptor is served through a Starlette-native
+    # endpoint (see routes/chat_skill.py).
+    routes.append(Route("/chat-skill", chat_skill_endpoint, methods=["GET"]))
 
     if serve_ui:
         routes.append(Route("/", ui_endpoint, methods=["GET"]))
