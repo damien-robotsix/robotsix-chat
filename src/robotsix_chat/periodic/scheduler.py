@@ -1,3 +1,4 @@
+#!/usr/bin/env python3
 """Periodic session scheduler — fire a preset, get an ordinary session.
 
 The scheduler is deliberately small. On each tick it checks every enabled
@@ -72,6 +73,35 @@ ClosePrevious = Callable[[str], Awaitable[Any]]
 #: closed while live.
 HasLiveSubsessions = Callable[[str], bool]
 
+_FAILED_RUN_REPORT_TEMPLATE = (
+    "PARTIAL REPORT\n\n"
+    "This periodic run FAILED before completing any work.\n\n"
+    "Done: 0\n"
+    "Escalations: 0\n"
+    "Held for next run: all tasks unstarted — the run's first turn failed "
+    "before anything was enumerated, done, or escalated; nothing was "
+    "attempted.\n"
+    "session: {session_id}\n"
+    "failure: {failure}\n"
+)
+
+
+def _failure_report(session_id: str, exc: BaseException) -> str:
+    """Return a minimal PARTIAL REPORT for a run whose first turn failed.
+
+    When the turn fails at the very start the agent never gets a chance to
+    write its own report, so the scheduler records one: the next run (and an
+    operator inspecting the closed session) sees that zero work was done, zero
+    escalations opened, and everything is held for the next run — instead of a
+    run that simply produces no output and leaves the next run blind.
+    """
+    correlation = type(exc).__name__
+    if str(exc):
+        correlation += f": {exc}"
+    return _FAILED_RUN_REPORT_TEMPLATE.format(
+        session_id=session_id, failure=correlation
+    )
+
 
 class PeriodicScheduler:
     """Create-and-seed scheduler for periodic session presets."""
@@ -128,7 +158,7 @@ class PeriodicScheduler:
             raw = json.loads(self._persist_path.read_text())
         except FileNotFoundError:
             return {}
-        except OSError, ValueError:
+        except (OSError, ValueError):
             logger.warning(
                 "Periodic scheduler state at %s unreadable — starting fresh",
                 self._persist_path,
@@ -274,12 +304,29 @@ class PeriodicScheduler:
         async def _run() -> None:
             try:
                 await self._submit_turn(session_id, message, defn.model_level)
-            except Exception:
+            except Exception as exc:
                 logger.exception(
                     "Periodic preset %r: initial turn failed (session %s)",
                     name,
                     session_id,
                 )
+                # The run failed before any work — never end it silent.
+                # Record a minimal PARTIAL REPORT so the next run (and an
+                # operator inspecting the closed session) knows the work was
+                # never attempted, rather than the run having no output at
+                # all. Best-effort: a failure to record must never mask the
+                # original turn failure.
+                try:
+                    self._store.record_for_session(
+                        session_id, "", _failure_report(session_id, exc)
+                    )
+                except Exception:
+                    logger.exception(
+                        "Periodic preset %r: writing failure PARTIAL REPORT "
+                        "for session %s failed",
+                        name,
+                        session_id,
+                    )
             else:
                 # The run completed (its report was delivered). Close the
                 # session now so periodic runs don't accumulate as open
