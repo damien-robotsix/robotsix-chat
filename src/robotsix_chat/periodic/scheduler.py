@@ -1,4 +1,3 @@
-#!/usr/bin/env python3
 """Periodic session scheduler — fire a preset, get an ordinary session.
 
 The scheduler is deliberately small. On each tick it checks every enabled
@@ -158,7 +157,7 @@ class PeriodicScheduler:
             raw = json.loads(self._persist_path.read_text())
         except FileNotFoundError:
             return {}
-        except OSError, ValueError:
+        except (OSError, ValueError):
             logger.warning(
                 "Periodic scheduler state at %s unreadable — starting fresh",
                 self._persist_path,
