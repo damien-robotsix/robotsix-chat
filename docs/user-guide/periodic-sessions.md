@@ -115,6 +115,14 @@ processing.
   And a 2026-09-19 incident identified that a broken robotsix-mill Docs workflow
   (production-blocking CI failure) existed only in subsession metadata and never reached the
   operator's main conversation.
+- **Escalation handling must be verified and reported.** Before listing a gated ticket as
+  'already escalated → awaiting operator' (or taking any action on it), the agent must read the
+  ticket's history and confirm whether an ESCALATED comment or an open operator decision panel
+  already exists for it — and only classify a ticket as freshly open when its history shows no
+  prior escalation. The final report must explicitly state that this history-verification was
+  performed (e.g. 'Verified ESCALATED comment present on each of the 7+9 escalated tickets; no
+  operator answer recorded since'), so a future run never treats an already-escalated ticket as
+  freshly open.
 - **Cadence** — every four hours (`schedule_interval_seconds: 14400`), at `model_level: 2`.
 - **Ships disabled** — `"enabled": false` per the feature-flag convention, so it never fires on a
   fresh checkout.
