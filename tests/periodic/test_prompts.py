@@ -198,5 +198,19 @@ def test_preamble_surfaces_awaiting_operator_panels():
     assert "no pending decision" in lowered
 
 
+def test_preamble_mandates_full_ticket_ids_in_report_sections():
+    """Done/Escalations/Held entries must carry full mill ticket IDs.
+
+    Drain runs were emitting truncated ID suffixes (e.g. 9c1b, ...-4b89),
+    forcing the next run to re-derive the ID and defeating escalation/dedup
+    correlation. The preamble must mandate full board-API ticket IDs.
+    """
+    lowered = PERIODIC_PREAMBLE.lower()
+    assert "full ticket ids" in lowered
+    assert "full mill ticket id" in lowered
+    assert "never a truncated suffix" in lowered
+    assert "escalation/dedup rules" in lowered
+
+
 def test_initial_prompt_is_trimmed():
     assert build_initial_message("  task  \n").endswith("task")
