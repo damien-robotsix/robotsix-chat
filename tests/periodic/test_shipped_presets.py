@@ -4,7 +4,9 @@ The committed template is what a developer gets on checkout and what
 central-deploy merges operator edits into. These tests load that exact file,
 validate it against the real ``Settings`` model, and assert the shipped
 ``dependabot-drain`` preset parses with its documented schedule — so a typo in
-the template (or a schema drift) fails here instead of at deploy time.
+the template (or a schema drift) fails here instead of at deploy time. The
+``gate-drain`` preset is also guarded for its escalation-verification
+requirement.
 """
 
 from __future__ import annotations
@@ -56,7 +58,12 @@ def test_gate_drain_preset_parses_and_demands_scope_report() -> None:
     The prompt must instruct the agent to enumerate every gated state, report
     the total discovered count and per-state summary in the main conversation
     before detailed processing, and flag any discovered-vs-analyzed mismatch —
-    the behaviour missed by the 2026-09-09 run that motivated this preset.
+    the behaviour missed by the 2026-09-09 run that motivated this preset. It
+    must also read each gated ticket's history for an existing ESCALATED
+    comment / open decision panel before listing it as awaiting-operator, and
+    state in the report that this history-verification was performed (motivated
+    by a 2026-09-22 feedback run whose report listed escalated tickets without
+    confirming the history check).
     """
     preset = _preset(_load_settings(), "gate-drain")
 
@@ -80,3 +87,10 @@ def test_gate_drain_preset_parses_and_demands_scope_report() -> None:
     assert "mismatch" in prompt
     # Subsession summaries must not swallow the scope report.
     assert "subsession" in prompt.lower()
+    # Before listing a gated ticket as awaiting-operator, the agent must verify
+    # its history for an existing ESCALATED comment / open decision panel.
+    assert "ESCALATED" in prompt
+    assert "awaiting operator" in prompt
+    # The final report must explicitly confirm the history verification.
+    assert "history-verification for pending escalations" in prompt
+    assert "no operator answer recorded since" in prompt
