@@ -158,7 +158,7 @@ class PeriodicScheduler:
             raw = json.loads(self._persist_path.read_text())
         except FileNotFoundError:
             return {}
-        except (OSError, ValueError):
+        except OSError, ValueError:
             logger.warning(
                 "Periodic scheduler state at %s unreadable — starting fresh",
                 self._persist_path,
