@@ -275,7 +275,9 @@ modules:
       - src/robotsix_chat/repo/direct/actions_client.py
       - src/robotsix_chat/repo/direct/board_client.py
       - src/robotsix_chat/repo/direct/client.py
+      - src/robotsix_chat/repo/direct/client_pr_operations.py
       - src/robotsix_chat/repo/direct/github_tools.py
+      - src/robotsix_chat/repo/direct/github_tools_ci.py
       - src/robotsix_chat/repo/direct/skill.md
       - src/robotsix_chat/repo/direct/trivy_parser.py
       - tests/repo/direct/__init__.py
@@ -584,6 +586,7 @@ modules:
     paths:
       - src/robotsix_chat/ticket_poll/__init__.py
       - src/robotsix_chat/ticket_poll/cache.py
+      - src/robotsix_chat/ticket_poll/helpers.py
       - src/robotsix_chat/ticket_poll/mill_states.py
       - src/robotsix_chat/ticket_poll/skill.md
       - docs/ticket-poll/skill.md
