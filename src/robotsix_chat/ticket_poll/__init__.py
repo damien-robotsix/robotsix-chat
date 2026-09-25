@@ -61,17 +61,15 @@ from robotsix_http import RetryClient, RetryConfig
 from robotsix_chat.repo.direct.board_client import BoardClient, parse_owner_repo
 from robotsix_chat.ticket_poll.helpers import (
     _board_connection,
-    _check_unexpected_terminal,
     _component_response_is_error,
-    _delivery_evidence,
     _delivery_fields,
     _extract_ingested_ticket_id,
-    _has_activity_event,
-    _history_states,
     _is_classifying_conflict,
     _match_candidates,
     _parse_json_body,
-    _response_status,
+)
+from robotsix_chat.ticket_poll.helpers import (
+    _check_unexpected_terminal as _check_unexpected_terminal,  # re-exported for tests
 )
 from robotsix_chat.ticket_poll.mill_states import (
     OPEN_STATES,
@@ -339,6 +337,7 @@ async def _resolve_ticket_ids(
 # ---------------------------------------------------------------------------
 # Unexpected-terminal-state detection / delivery evidence
 # ---------------------------------------------------------------------------
+
 
 # Keywords in an event ``type`` / ``action`` / ``note`` that signal the
 # ticket was worked on before it reached its terminal state.

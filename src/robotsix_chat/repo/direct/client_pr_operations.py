@@ -33,11 +33,14 @@ class PROperationsMixin:
             *,
             owner: str | None = None,
             repo: str | None = None,
-        ) -> Any: ...
+        ) -> Any:
+            raise NotImplementedError
 
-        async def _post_json(self, path: str, body: dict[str, Any]) -> Any: ...
+        async def _post_json(self, path: str, body: dict[str, Any]) -> Any:
+            raise NotImplementedError
 
-        async def _patch_json(self, path: str, body: dict[str, Any]) -> Any: ...
+        async def _patch_json(self, path: str, body: dict[str, Any]) -> Any:
+            raise NotImplementedError
 
         async def _request_json(
             self,
@@ -47,7 +50,8 @@ class PROperationsMixin:
             *,
             owner: str | None = None,
             repo: str | None = None,
-        ) -> Any: ...
+        ) -> Any:
+            raise NotImplementedError
 
         async def _http_with_retry(
             self,
@@ -57,18 +61,21 @@ class PROperationsMixin:
             owner: str | None = None,
             repo: str | None = None,
             **kwargs: Any,
-        ) -> Any: ...
+        ) -> Any:
+            raise NotImplementedError
 
         async def _gh_headers(
             self, *, owner: str | None = None, repo: str | None = None
-        ) -> dict[str, str]: ...
+        ) -> dict[str, str]:
+            raise NotImplementedError
 
         async def _git_create_tree(
             self,
             repo_full_name: str,
             base_tree_sha: str,
             files: list[dict[str, str]],
-        ) -> str: ...
+        ) -> str:
+            raise NotImplementedError
 
         async def _search_issues(
             self,
@@ -77,7 +84,8 @@ class PROperationsMixin:
             per_page: int = 100,
             owner: str | None = None,
             repo: str | None = None,
-        ) -> list[dict[str, Any]]: ...
+        ) -> list[dict[str, Any]]:
+            raise NotImplementedError
 
     # --- extracted PR methods (verbatim bodies) ---------------------------
 

@@ -41,6 +41,7 @@ def build_github_tools_ci(
     inline; only their captured names now come from this function's parameters
     (``ActionsClient`` / ``StartupFailureClass`` are imported at module scope).
     """
+
     async def check_ci_health(
         repo_full_name: str = "",
         branch: str = "",

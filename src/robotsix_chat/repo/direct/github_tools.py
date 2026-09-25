@@ -270,8 +270,6 @@ def build_github_tools(
     """
     from robotsix_chat.common.unified_diff import apply_patch as _apply_patch
 
-    from .actions_client import ActionsClient, StartupFailureClass
-
     async def push_direct_repo_branch(
         ticket_id: str,
         repo_full_name: str,
