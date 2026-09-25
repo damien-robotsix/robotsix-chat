@@ -27,19 +27,42 @@ wired via this package's ``claude-sdk`` / ``openrouter`` extras.
 
 from __future__ import annotations
 
+import asyncio
 import contextlib
 import json
 import logging
-from collections.abc import Iterator
+from collections.abc import AsyncIterator, Callable, Iterator
 from typing import Any
 
+from robotsix_http import RetryConfig, acall_with_retry
 from robotsix_llmio.claude_sdk import (
+    ClaudeSDKActivityEvent,
+    ClaudeSDKAuthError,
+    ClaudeSDKUsageExhaustedError,
+    activity_events,
     is_claude_sdk_transient,
 )
+from robotsix_llmio.config import load_tier_config
 from robotsix_llmio.config.tier import TierLevelConfig
+from robotsix_llmio.core.factory import get_provider_for_identifier
+from robotsix_llmio.core.failover import acall_with_failover
+from robotsix_llmio.exceptions import ProviderExhaustedError
 from robotsix_llmio.openrouter import is_openrouter_transient
 
+from robotsix_chat.chat.actions import (
+    actions_from_messages,
+    current_actions,
+    format_action,
+    record_action,
+)
+from robotsix_chat.chat.events import EventSink, activity_frame
 from robotsix_chat.config import slot_needs_api_key
+from robotsix_chat.llm.capabilities import (
+    reset_model_supports_images,
+    set_model_supports_images,
+)
+from robotsix_chat.memory import ChatMemory, NullMemory
+from robotsix_chat.periodic.prompts import strip_recall_scaffolding
 
 logger = logging.getLogger(__name__)
 
