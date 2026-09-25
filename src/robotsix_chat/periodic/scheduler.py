@@ -80,6 +80,33 @@ HasLiveSubsessions = Callable[[str], bool]
 ReportPartialResult = Callable[[str, str], Awaitable[Any]]
 
 
+def _format_partial_error_report(preset_name: str, exc: Exception) -> str:
+    """Format an exception as a proper PARTIAL REPORT for error reporting.
+
+    Follows the periodic preamble's PARTIAL REPORT structure: section headers
+    with summary counts first, then detailed sections. This ensures the next
+    run can inspect what was attempted and where it failed.
+    """
+    exc_type = type(exc).__name__
+    exc_str = str(exc)
+    tb_str = traceback.format_exc()
+
+    # Structure the report as a proper PARTIAL REPORT with headers, counts, and sections.
+    # This matches the format defined in periodic/prompts.py lines 52-84.
+    return (
+        "PARTIAL REPORT\n\n"
+        f"Preset: {preset_name}\n"
+        "Status: Turn failed before completing\n\n"
+        "Done: 0 items (turn crashed before any work completed)\n"
+        "Escalations: 0\n"
+        "Held for next run: this entire run\n\n"
+        "Reason for failure:\n"
+        f"{exc_type}: {exc_str}\n\n"
+        "Full diagnostic traceback:\n"
+        f"{tb_str}"
+    )
+
+
 class PeriodicScheduler:
     """Create-and-seed scheduler for periodic session presets."""
 
@@ -145,7 +172,7 @@ class PeriodicScheduler:
             raw = json.loads(self._persist_path.read_text())
         except FileNotFoundError:
             return {}
-        except OSError, ValueError:
+        except OSError | ValueError:
             logger.warning(
                 "Periodic scheduler state at %s unreadable — starting fresh",
                 self._persist_path,
@@ -297,16 +324,12 @@ class PeriodicScheduler:
                     name,
                     session_id,
                 )
-                # Emit a partial-failure report into the transcript so future
-                # runs can see what was attempted and where it failed. The
-                # session is deliberately NOT completion-closed here — a
-                # failed run is left for the supersede-close safety net.
+                # Emit a structured partial-failure report into the transcript so
+                # future runs can see what was attempted and where it failed. The
+                # session is deliberately NOT completion-closed here — a failed run
+                # is left for the supersede-close safety net.
                 if self._report_partial_result is not None:
-                    error_message = (
-                        f"⚠️ Periodic preset {name!r} turn failed before "
-                        f"completing.\n\n{type(exc).__name__}: {exc}\n\n"
-                        f"{traceback.format_exc()}"
-                    )
+                    error_message = _format_partial_error_report(name, exc)
                     try:
                         await self._report_partial_result(session_id, error_message)
                     except Exception:
