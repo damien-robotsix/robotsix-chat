@@ -35,6 +35,7 @@ import json
 import logging
 import math
 import time
+import traceback
 from collections.abc import Awaitable, Callable
 from datetime import UTC, datetime
 from pathlib import Path
@@ -72,6 +73,12 @@ ClosePrevious = Callable[[str], Awaitable[Any]]
 #: closed while live.
 HasLiveSubsessions = Callable[[str], bool]
 
+#: ReportPartialResult emits a partial-failure report into a run's transcript
+#: when its turn raises before completing. It is awaited with the run's
+#: session id and a formatted error message (best-effort; exceptions are
+#: logged and never propagate out of the turn task).
+ReportPartialResult = Callable[[str, str], Awaitable[Any]]
+
 
 class PeriodicScheduler:
     """Create-and-seed scheduler for periodic session presets."""
@@ -88,6 +95,7 @@ class PeriodicScheduler:
         close_previous: ClosePrevious | None = None,
         close_completed: ClosePrevious | None = None,
         has_live_subsessions: HasLiveSubsessions | None = None,
+        report_partial_result: ReportPartialResult | None = None,
     ) -> None:
         """*conversation_store* needs ``create_session`` and ``set_title``.
 
@@ -104,6 +112,14 @@ class PeriodicScheduler:
         session whose turn completed but still has a working subsession
         (``wait_for_event`` / ``user_chat``) is left open until that
         subsession finishes. ``None`` treats every session as closable.
+
+        *report_partial_result*, when given, is awaited with a run's session
+        id and a formatted error message when that run's turn raises before
+        completing, so a partial-failure report reaches the transcript and
+        future runs can see what was attempted and where it failed. The run
+        is NOT completion-closed after a failure (it is left for the
+        supersede-close safety net). ``None`` keeps the previous behaviour of
+        only logging the exception.
         """
         self._definitions = {d.name: d for d in definitions if d.enabled}
         self._store = conversation_store
@@ -112,6 +128,7 @@ class PeriodicScheduler:
         self._close_previous = close_previous
         self._close_completed = close_completed
         self._has_live_subsessions = has_live_subsessions
+        self._report_partial_result = report_partial_result
         self._persist_path = Path(persist_path)
         self._clock = clock
         #: name -> {"last_fired_at": float, "last_session_id": str, "runs": int}
@@ -274,12 +291,31 @@ class PeriodicScheduler:
         async def _run() -> None:
             try:
                 await self._submit_turn(session_id, message, defn.model_level)
-            except Exception:
+            except Exception as exc:
                 logger.exception(
                     "Periodic preset %r: initial turn failed (session %s)",
                     name,
                     session_id,
                 )
+                # Emit a partial-failure report into the transcript so future
+                # runs can see what was attempted and where it failed. The
+                # session is deliberately NOT completion-closed here — a
+                # failed run is left for the supersede-close safety net.
+                if self._report_partial_result is not None:
+                    error_message = (
+                        f"⚠️ Periodic preset {name!r} turn failed before "
+                        f"completing.\n\n{type(exc).__name__}: {exc}\n\n"
+                        f"{traceback.format_exc()}"
+                    )
+                    try:
+                        await self._report_partial_result(session_id, error_message)
+                    except Exception:
+                        logger.exception(
+                            "Periodic preset %r: emitting partial-failure "
+                            "report for session %s failed",
+                            name,
+                            session_id,
+                        )
             else:
                 # The run completed (its report was delivered). Close the
                 # session now so periodic runs don't accumulate as open

@@ -182,6 +182,22 @@ A PARTIAL REPORT is always better than silence. An interrupted session that repo
 gives the next scheduled run the context to resume. One that reported nothing leaves no path
 forward.
 
+### Automatic error reports on turn failure
+
+When a periodic turn encounters an unhandled exception before completing, the scheduler
+automatically appends an error message to the transcript with the exception type, message, and full
+traceback. This ensures that subsequent runs have full context of what was attempted and where it
+failed — you can see the error in the session's transcript under the `[PERIODIC]` prefix in the
+sidebar.
+
+The failed session is **not** immediately closed; it remains open for manual inspection or
+follow-up, and will be closed when the preset fires again (the new firing's supersede-close
+mechanism cleans up the previous run). This gives you time to examine the error and decide whether
+manual intervention is needed.
+
+If the error-reporting mechanism itself fails (e.g. the transcript backend is down), the exception
+is logged but never propagates out of the turn task, so the scheduler continues normally.
+
 ### Example: dependabot-drain interrupted
 
 If dependabot-drain times out after processing 3 of 10 Dependabot PRs:
