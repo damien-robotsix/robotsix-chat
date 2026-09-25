@@ -1102,6 +1102,24 @@ def create_app(
             # spawned a subsession.
             return any(sub.is_active for sub in registry.list_for_owner(session_id))
 
+        async def _periodic_report_partial_result(
+            session_id: str, error_message: str
+        ) -> None:
+            """Record a partial-failure report into a crashed run's transcript.
+
+            When a periodic turn raises before completing, the normal submit
+            path never records the exchange, leaving the session with no
+            visible failure state. Appending the error here means future runs
+            resume with full context of what was attempted and where it
+            failed.
+            """
+            _p_store.record(
+                session_id,
+                PERIODIC_OWNER,
+                "(periodic turn error)",
+                error_message,
+            )
+
         app.state.periodic_scheduler = PeriodicScheduler(
             definitions=periodic_definitions,
             conversation_store=_p_store,
@@ -1111,6 +1129,7 @@ def create_app(
             close_previous=_periodic_close_previous,
             close_completed=_periodic_close_completed,
             has_live_subsessions=_periodic_has_live_subsessions,
+            report_partial_result=_periodic_report_partial_result,
         )
     else:
         app.state.periodic_scheduler = None

@@ -49,6 +49,7 @@ def _make(
     close_previous=None,
     close_completed=None,
     has_live_subsessions=None,
+    report_partial_result=None,
 ):
     store = _FakeStore()
     submitted: list[tuple[str, str, int | None]] = []
@@ -75,6 +76,7 @@ def _make(
         close_previous=close_previous,
         close_completed=close_completed,
         has_live_subsessions=has_live_subsessions,
+        report_partial_result=report_partial_result,
     )
     return scheduler, store, submitted, now
 
@@ -229,6 +231,55 @@ async def test_fire_does_not_close_when_submit_fails(tmp_path):
     await scheduler.fire("mail-triage")
     await asyncio.sleep(0)
     assert closed == []
+
+
+@pytest.mark.asyncio
+async def test_fire_reports_partial_result_when_submit_fails(tmp_path):
+    """A crashed turn emits a partial-failure report into the transcript."""
+    reported: list[tuple[str, str]] = []
+
+    async def report_partial_result(session_id: str, error_message: str) -> None:
+        reported.append((session_id, error_message))
+
+    async def failing_submit(session_id, message, model_level):
+        raise RuntimeError("boom")
+
+    scheduler, store, submitted, _ = _make(
+        tmp_path, report_partial_result=report_partial_result
+    )
+    scheduler._submit_turn = failing_submit  # type: ignore[method-assign]
+
+    sid = await scheduler.fire("mail-triage")
+    # The background task has not run yet — no report emitted.
+    assert reported == []
+
+    await asyncio.sleep(0)
+    assert len(reported) == 1
+    assert reported[0][0] == sid
+    # The report carries the exception type/message and preset name.
+    assert "mail-triage" in reported[0][1]
+    assert "RuntimeError" in reported[0][1]
+    assert "boom" in reported[0][1]
+
+
+@pytest.mark.asyncio
+async def test_fire_survives_report_partial_result_failure(tmp_path):
+    """A raising report callback never leaks out of the turn task."""
+
+    async def report_partial_result(session_id: str, error_message: str) -> None:
+        raise RuntimeError("report sink down")
+
+    async def failing_submit(session_id, message, model_level):
+        raise RuntimeError("boom")
+
+    scheduler, store, submitted, _ = _make(
+        tmp_path, report_partial_result=report_partial_result
+    )
+    scheduler._submit_turn = failing_submit  # type: ignore[method-assign]
+
+    await scheduler.fire("mail-triage")
+    # No unhandled exception should escape the background task.
+    await asyncio.sleep(0)
 
 
 @pytest.mark.asyncio
