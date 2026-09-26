@@ -10,7 +10,18 @@
   "correlation_id_header": "X-Request-ID",
   "langfuse": {
     "host": "https://cloud.langfuse.com",
-    "projects": {}
+    "projects": {
+      "robotsix-mill": {
+        "public_key": "",
+        "secret_key": "",
+        "project_id": ""
+      },
+      "robotsix-ci-fix": {
+        "public_key": "",
+        "secret_key": "",
+        "project_id": ""
+      }
+    }
   },
   "openrouter": {
     "keys": {
