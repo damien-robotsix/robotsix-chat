@@ -69,6 +69,31 @@ Everything below predates the release-please migration and was
 maintained by hand or by towncrier. It is kept verbatim; new entries
 are added above by release-please.
 
+## [0.24.0](https://github.com/damien-robotsix/robotsix-chat/compare/v0.23.1...v0.24.0) (2026-09-26)
+
+
+### ⚠ BREAKING CHANGES
+
+* `evergoing.enabled` is no longer a setting and the cross-session agent tools are removed.
+
+### Features
+
+* add project parameter to inspect_langfuse_trace for fleet-wide queries ([52119be](https://github.com/damien-robotsix/robotsix-chat/commit/52119be214a2a6555f4cb3566dcf0eb20a1c2dc5))
+* Periodic gate-drain must report discovered scope upfront to operator in main conversation (20260915T151326Z-periodic-gate-drain-must-report-discover-51cc) ([#1954](https://github.com/damien-robotsix/robotsix-chat/issues/1954)) ([b9f144a](https://github.com/damien-robotsix/robotsix-chat/commit/b9f144a61156bf3eb805937760ff1aa96dd2989b))
+* remove the evergoing session (keep the summary-compaction scheduler) ([#1958](https://github.com/damien-robotsix/robotsix-chat/issues/1958)) ([6c6fa85](https://github.com/damien-robotsix/robotsix-chat/commit/6c6fa85bfe13815c4a45943c56075587ff27e95b))
+
+
+### Bug Fixes
+
+* Enforce mandatory final report in periodic session execution (20260921T154150Z-enforce-mandatory-final-report-in-period-a0ef) ([#1991](https://github.com/damien-robotsix/robotsix-chat/issues/1991)) ([4a9763c](https://github.com/damien-robotsix/robotsix-chat/commit/4a9763c683855ccd904da19f380defea7151078c))
+* Feedback runner: do not route findings to investigation subsessions when the owner session was deleted (20260915T154413Z-feedback-runner-do-not-route-findings-to-93de) ([#1959](https://github.com/damien-robotsix/robotsix-chat/issues/1959)) ([cf8c959](https://github.com/damien-robotsix/robotsix-chat/commit/cf8c9595efd6df7b471d9236892e2d354dcafc8a))
+* **feedback:** cap concurrent feedback runs (max_concurrent_runs, default 2) ([#1957](https://github.com/damien-robotsix/robotsix-chat/issues/1957)) ([eb137e2](https://github.com/damien-robotsix/robotsix-chat/commit/eb137e2bdd1137b343cf9875c88d6a47f723c55b))
+* **langfuse:** add trailing newline to skill.md and cover inspect_langfuse_trace project routing ([34f0340](https://github.com/damien-robotsix/robotsix-chat/commit/34f03407d1bc0f2ae5419143d34ee85a9ae56055))
+* **periodic:** close the superseded previous run when a preset fires again ([#1953](https://github.com/damien-robotsix/robotsix-chat/issues/1953)) ([91d0360](https://github.com/damien-robotsix/robotsix-chat/commit/91d036069470a529a3533a44cd3694378017868a))
+* **periodic:** Make final reports truncation-resilient ([#1993](https://github.com/damien-robotsix/robotsix-chat/issues/1993)) ([e995de5](https://github.com/damien-robotsix/robotsix-chat/commit/e995de567ee5d5fda85d313cdac47bdb772ea9dd))
+* **tools:** accept note= on mark_ticket_ready and repo= on check_ci_health ([#1956](https://github.com/damien-robotsix/robotsix-chat/issues/1956)) ([0b04ec7](https://github.com/damien-robotsix/robotsix-chat/commit/0b04ec771d4d5e268871a12ce47f9afb4e9d4784))
+* **tools:** accept the repo/path/patch argument aliases agents actually send ([#1969](https://github.com/damien-robotsix/robotsix-chat/issues/1969)) ([3ca97bc](https://github.com/damien-robotsix/robotsix-chat/commit/3ca97bc1518f3f98e2cc4ef77fd95728311e7a0a))
+
 ## [0.23.1](https://github.com/damien-robotsix/robotsix-chat/compare/v0.23.0...v0.23.1) (2026-09-13)
 
 
