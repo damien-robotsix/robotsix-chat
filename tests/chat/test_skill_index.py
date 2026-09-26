@@ -141,7 +141,7 @@ class TestBuildSkillIndex:
         The index must stay a small fraction of the concatenated bodies, so
         adding a skill no longer moves the prompt toward MAX_ARG_STRLEN.
         """
-        root = pathlib.Path(__file__).resolve().parents[1] / "src" / "robotsix_chat"
+        root = pathlib.Path(__file__).resolve().parents[2] / "src" / "robotsix_chat"
         skills = sorted(root.rglob("skill.md"))
         assert skills, "expected bundled skill.md files"
 
