@@ -19,7 +19,7 @@ from robotsix_chat.chat.server.routes._shared import (
     ui_endpoint,
 )
 
-from .conftest import _make_bare_request
+from .conftest import _make_bare_request, _make_json_request, _make_query_request
 
 # ---------------------------------------------------------------------------
 # _sse_frame
@@ -71,28 +71,6 @@ def test_sse_frame_empty_dict() -> None:
 # ---------------------------------------------------------------------------
 # _parse_json_body
 # ---------------------------------------------------------------------------
-
-
-def _make_json_request(body: object) -> Request:
-    """Build a minimal Starlette ``Request`` with a JSON body."""
-    scope: dict[str, object] = {
-        "type": "http",
-        "http_version": "1.1",
-        "method": "POST",
-        "scheme": "http",
-        "server": ("testserver", 80),
-        "client": ("testclient", 50000),
-        "path": "/test",
-        "query_string": b"",
-        "headers": [(b"content-type", b"application/json")],
-    }
-
-    body_bytes = json.dumps(body).encode() if body is not None else b""
-
-    async def receive() -> dict[str, object]:
-        return {"type": "http.request", "body": body_bytes, "more_body": False}
-
-    return Request(scope, receive)
 
 
 @pytest.mark.asyncio
@@ -173,26 +151,6 @@ async def test_parse_json_body_number() -> None:
 # ---------------------------------------------------------------------------
 # _get_session_id
 # ---------------------------------------------------------------------------
-
-
-def _make_query_request(query_string: str) -> Request:
-    """Build a minimal Starlette ``Request`` with the given query string."""
-    scope: dict[str, object] = {
-        "type": "http",
-        "http_version": "1.1",
-        "method": "GET",
-        "scheme": "http",
-        "server": ("testserver", 80),
-        "client": ("testclient", 50000),
-        "path": "/test",
-        "query_string": query_string.encode(),
-        "headers": [],
-    }
-
-    async def receive() -> dict[str, object]:
-        return {"type": "http.disconnect"}
-
-    return Request(scope, receive)
 
 
 def test_get_session_id_present() -> None:

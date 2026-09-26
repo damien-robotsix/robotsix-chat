@@ -7,49 +7,17 @@ import json
 from collections.abc import AsyncGenerator
 
 import pytest
-from starlette.requests import Request
 from starlette.responses import StreamingResponse
 
 from robotsix_chat.chat.server.routes.constants import SSE_CONTENT_TYPE
 from robotsix_chat.chat.server.routes.events import events_endpoint
 from tests.conftest import mock_app
 
+from .conftest import _make_request
+
 # ---------------------------------------------------------------------------
 # Helpers
 # ---------------------------------------------------------------------------
-
-
-def _make_request(
-    app: object,
-    *,
-    session_id: str | None = None,
-    client_id: str | None = None,
-) -> Request:
-    """Build a minimal Starlette ``Request`` for ``GET /events``."""
-    params: list[str] = []
-    if session_id is not None:
-        params.append(f"session_id={session_id}")
-    if client_id is not None:
-        params.append(f"client_id={client_id}")
-    query_string = "&".join(params).encode()
-
-    scope: dict[str, object] = {
-        "type": "http",
-        "http_version": "1.1",
-        "method": "GET",
-        "scheme": "http",
-        "server": ("testserver", 80),
-        "client": ("testclient", 50000),
-        "path": "/events",
-        "query_string": query_string,
-        "headers": [],
-        "app": app,
-    }
-
-    async def receive() -> dict[str, object]:
-        return {"type": "http.disconnect"}
-
-    return Request(scope, receive)
 
 
 def _parse_sse_bytes(data: bytes) -> list[dict[str, object]]:

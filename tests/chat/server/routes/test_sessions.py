@@ -9,7 +9,6 @@ from unittest.mock import MagicMock
 
 import pytest
 from starlette.exceptions import HTTPException
-from starlette.requests import Request
 
 from robotsix_chat.chat.server.routes.sessions import (
     _cleanup_session,
@@ -28,81 +27,7 @@ from robotsix_chat.config.constants import (
     level_needs_api_key,
 )
 
-# ---------------------------------------------------------------------------
-# Request factories (inspired by test_shared.py)
-# ---------------------------------------------------------------------------
-
-
-def _make_json_request(body: object, *, path: str = "/") -> Request:
-    """Build a minimal Starlette ``Request`` with a JSON body."""
-    scope: dict[str, object] = {
-        "type": "http",
-        "http_version": "1.1",
-        "method": "POST",
-        "scheme": "http",
-        "server": ("testserver", 80),
-        "client": ("testclient", 50000),
-        "path": path,
-        "query_string": b"",
-        "headers": [(b"content-type", b"application/json")],
-    }
-    body_bytes = json.dumps(body).encode() if body is not None else b""
-
-    async def receive() -> dict[str, object]:
-        return {"type": "http.request", "body": body_bytes, "more_body": False}
-
-    return Request(scope, receive)
-
-
-def _make_query_request(query_string: str, *, path: str = "/") -> Request:
-    """Build a minimal Starlette ``Request`` with the given query string."""
-    scope: dict[str, object] = {
-        "type": "http",
-        "http_version": "1.1",
-        "method": "GET",
-        "scheme": "http",
-        "server": ("testserver", 80),
-        "client": ("testclient", 50000),
-        "path": path,
-        "query_string": query_string.encode(),
-        "headers": [],
-    }
-
-    async def receive() -> dict[str, object]:
-        return {"type": "http.disconnect"}
-
-    return Request(scope, receive)
-
-
-def _make_request(
-    *,
-    method: str = "GET",
-    path: str = "/",
-    query_string: str = "",
-    path_params: dict[str, str] | None = None,
-    app_state: object | None = None,
-) -> Request:
-    """Build a minimal Starlette ``Request`` with full control over scope."""
-    scope: dict[str, object] = {
-        "type": "http",
-        "http_version": "1.1",
-        "method": method,
-        "scheme": "http",
-        "server": ("testserver", 80),
-        "client": ("testclient", 50000),
-        "path": path,
-        "query_string": query_string.encode(),
-        "headers": [],
-        "path_params": path_params or {},
-    }
-    if app_state is not None:
-        scope["app"] = type("FakeApp", (), {"state": app_state})()
-
-    async def receive() -> dict[str, object]:
-        return {"type": "http.disconnect"}
-
-    return Request(scope, receive)
-
+from .conftest import _make_json_request, _make_query_request, _make_request
 
 # ---------------------------------------------------------------------------
 # _cleanup_session
