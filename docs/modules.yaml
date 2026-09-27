@@ -287,6 +287,7 @@ modules:
       - tests/repo/direct/test_build_tools.py
       - tests/repo/direct/test_ci_workflow.py
       - tests/repo/direct/test_client.py
+      - tests/repo/direct/test_client_pr_operations.py
       - tests/repo/direct/test_direct_fix.py
       - tests/repo/direct/test_direct_repo.py
       - tests/repo/direct/test_enable_pages.py
