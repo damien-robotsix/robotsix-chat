@@ -212,5 +212,25 @@ def test_preamble_mandates_full_ticket_ids_in_report_sections():
     assert "escalation/dedup rules" in lowered
 
 
+def test_preamble_mandates_inline_reporting_every_few_operations():
+    """Reporting must be interleaved every 2-3 major operations, not deferred.
+
+    Session 8b80b7300d4b416a9b0cbfa719717988 accumulated all work first and
+    deferred report output to the very end; the report was then truncated
+    mid-execution. The preamble must make inline reporting mandatory and
+    specific about timing (every 2-3 major operations).
+    """
+    lowered = PERIODIC_PREAMBLE.lower()
+    # Explicit cadence and non-optionality.
+    assert "every 2-3 major operations" in lowered
+    assert "mandatory" in lowered
+    assert "not optional" in lowered
+    # Interleave report sections between batches, not only at the end.
+    assert "between batches" in lowered
+    # Distribution is the truncation-resilience mechanism.
+    assert "distribution" in lowered
+    assert "truncation-resilience mechanism" in lowered
+
+
 def test_initial_prompt_is_trimmed():
     assert build_initial_message("  task  \n").endswith("task")
