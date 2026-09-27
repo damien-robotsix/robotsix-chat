@@ -113,9 +113,7 @@ def test_blank_sentinel_strip_preserves_ordering_validation() -> None:
     ordering guard still fires.
     """
     with pytest.raises(ValidationError, match="must be less"):
-        KindTurnBudget.model_validate(
-            {"soft_warn_turns": 60, "hard_stop_turns": ""}
-        )
+        KindTurnBudget.model_validate({"soft_warn_turns": 60, "hard_stop_turns": ""})
 
 
 def test_non_dict_input_rejected() -> None:
@@ -163,12 +161,12 @@ def test_removed_cap_fields_stripped() -> None:
     """Legacy ``max_history_turns``/``max_conversations`` keys are dropped."""
     settings = ConversationSettings.model_validate(
         {
-            "persist_path": "/tmp/conv.json",
+            "persist_path": "/data/conv.json",
             "max_history_turns": 100,
             "max_conversations": 50,
         }
     )
-    assert settings.persist_path == "/tmp/conv.json"
+    assert settings.persist_path == "/data/conv.json"
     assert not hasattr(settings, "max_history_turns")
     assert not hasattr(settings, "max_conversations")
 
