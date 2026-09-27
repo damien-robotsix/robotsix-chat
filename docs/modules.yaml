@@ -292,6 +292,7 @@ modules:
       - tests/repo/direct/test_enable_pages.py
       - tests/repo/direct/test_github_auth_dependency.py
       - tests/repo/direct/test_github_tools.py
+      - tests/repo/direct/test_github_tools_ci.py
       - tests/repo/direct/test_merge.py
       - tests/repo/direct/test_open_pr.py
       - tests/repo/direct/test_patch_file.py
