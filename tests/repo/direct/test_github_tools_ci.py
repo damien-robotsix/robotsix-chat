@@ -405,9 +405,7 @@ class TestRerunCiWorkflow:
         assert actions.reran_run_id == 5
 
     @pytest.mark.asyncio
-    async def test_no_failed_run_found(
-        self, monkeypatch: pytest.MonkeyPatch
-    ) -> None:
+    async def test_no_failed_run_found(self, monkeypatch: pytest.MonkeyPatch) -> None:
         """No failed run on the branch → nothing-to-re-run message."""
         actions = _FakeActionsClient(runs=[_run("CI", id=4, conclusion="success")])
         tools = _build_ci_tools(monkeypatch, actions)

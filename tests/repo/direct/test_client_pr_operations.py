@@ -131,9 +131,7 @@ def _stub_update_branch(client: DirectRepoClient, result: Any) -> None:
 async def test_update_pr_branch_success() -> None:
     """An ``ok`` result yields the queued-for-update message."""
     client = DirectRepoClient(_settings())
-    _stub_update_branch(
-        client, SimpleNamespace(ok=True, status_code=202, error=None)
-    )
+    _stub_update_branch(client, SimpleNamespace(ok=True, status_code=202, error=None))
 
     out = await client.update_pr_branch(repo_full_name="org/repo", pr_number=42)
 
