@@ -94,3 +94,11 @@ def test_gate_drain_preset_parses_and_demands_scope_report() -> None:
     # The final report must explicitly confirm the history verification.
     assert "history-verification for pending escalations" in prompt
     assert "no operator answer recorded since" in prompt
+    # A ci-failure class ticket must be surfaced in the main conversation
+    # before any subsession is opened for it — never escalated silently to
+    # subsession metadata (motivated by the 2026-09-26 gate-drain run that
+    # buried ticket 20260919T091747Z-ci-failure-docs-on-main in subsession
+    # metadata without surfacing it in main chat).
+    assert "ci-failure class ticket" in prompt or "ci_failure" in prompt.lower()
+    assert "surface it in the main conversation" in prompt.lower()
+    assert "before opening any subsession" in prompt.lower()
