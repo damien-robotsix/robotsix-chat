@@ -107,7 +107,8 @@ class PeriodicScheduler:
         close_completed: ClosePrevious | None = None,
         has_live_subsessions: HasLiveSubsessions | None = None,
         report_partial_result: ReportPartialResult | None = None,
-        ensure_partial_report_on_interruption: EnsurePartialReportOnInterruption | None = None,
+        ensure_partial_report_on_interruption: EnsurePartialReportOnInterruption
+        | None = None,
     ) -> None:
         """*conversation_store* needs ``create_session`` and ``set_title``.
 
@@ -148,7 +149,9 @@ class PeriodicScheduler:
         self._close_completed = close_completed
         self._has_live_subsessions = has_live_subsessions
         self._report_partial_result = report_partial_result
-        self._ensure_partial_report_on_interruption = ensure_partial_report_on_interruption
+        self._ensure_partial_report_on_interruption = (
+            ensure_partial_report_on_interruption
+        )
         self._persist_path = Path(persist_path)
         self._clock = clock
         #: name -> {"last_fired_at": float, "last_session_id": str, "runs": int}
@@ -165,7 +168,7 @@ class PeriodicScheduler:
             raw = json.loads(self._persist_path.read_text())
         except FileNotFoundError:
             return {}
-        except (OSError, ValueError):
+        except OSError, ValueError:
             logger.warning(
                 "Periodic scheduler state at %s unreadable — starting fresh",
                 self._persist_path,
