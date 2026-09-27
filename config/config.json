@@ -12,6 +12,7 @@
     "host": "https://cloud.langfuse.com",
     "projects": {}
   },
+  "_comment_langfuse_projects": "To enable the inspect_langfuse_trace tool to query traces from fleet components (mill, ci_fix, etc.) for cost analysis, add project credentials here. Example: \"projects\": { \"robotsix-chat\": { \"public_key\": \"pk-...\", \"secret_key\": \"sk-...\" }, \"mill\": { \"public_key\": \"pk-...\", \"secret_key\": \"sk-...\" }, \"ci_fix\": { \"public_key\": \"pk-...\", \"secret_key\": \"sk-...\" } }. Each project's credentials come from its Langfuse project settings. When configured and langfuse_inspect.enabled=true, the tool can then query those projects via inspect_langfuse_trace(project=\"mill\") etc.",
   "openrouter": {
     "keys": {
       "robotsix-chat-cognee": ""
