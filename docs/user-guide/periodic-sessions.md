@@ -158,14 +158,18 @@ makes the report resilient to sudden termination by having the agent **report as
    work; once a batch of major operations is done, it prefers stopping and emitting a final report
    over starting another expensive operation that could be cut off before it reports it. A smaller
    batch that is fully reported beats a larger batch that terminates unreported.
-1. **Report immediately on error.** If the agent hits an error mid-execution, it stops the remaining
-   work and outputs the report while it still can.
+1. **Guarantee report output even on error.** The agent wraps task work in error handling (explicit
+   try-finally or implicit control-flow management) to **guarantee PARTIAL REPORT output even if an
+   error occurs**. If an error is encountered mid-execution — tool failure, API error, or unhandled
+   exception — the agent stops the remaining work, documents the error in the report's "Errors
+   encountered" section, and emits the PARTIAL REPORT immediately. Do not let an error silence the
+   session — every session MUST end with a report.
 
 ### PARTIAL REPORT (the expected outcome for interrupted work)
 
 `PARTIAL REPORT` is the **expected outcome** for any interrupted or incomplete periodic session, not
 an emergency fallback. Whenever a periodic task cannot finish everything — and at every breakpoint
-above — it outputs a report titled **`PARTIAL REPORT`** with three sections, in this order:
+above — it outputs a report titled **`PARTIAL REPORT`** with four sections, in this order:
 
 1. **Done** — items completed and the ROUTINE actions taken (e.g. tickets drained, PRs merged or
    filed), each named. For gate-drain: any tickets processed and their disposition. For
@@ -178,9 +182,14 @@ above — it outputs a report titled **`PARTIAL REPORT`** with three sections, i
 1. **Held for next run** — items not reached or deliberately deferred, each with a one-line reason
    (e.g. "47 remaining tickets need prioritization order"; "PR #123 blocked on feedback").
 
+1. **Errors encountered** (if any) — brief descriptions of any errors or failures encountered, so
+   the next run understands what to investigate or retry. This section helps subsequent runs avoid
+   the same failures or investigate further.
+
 A PARTIAL REPORT is always better than silence. An interrupted session that reported what it got to
 gives the next scheduled run the context to resume. One that reported nothing leaves no path
-forward.
+forward. An error-aware report (including the Errors section when applicable) tells the next run
+what went wrong and how to proceed.
 
 ### Automatic error reports on turn failure
 
