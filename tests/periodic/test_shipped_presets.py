@@ -102,3 +102,15 @@ def test_gate_drain_preset_parses_and_demands_scope_report() -> None:
     assert "ci-failure class ticket" in prompt or "ci_failure" in prompt.lower()
     assert "surface it in the main conversation" in prompt.lower()
     assert "before opening any subsession" in prompt.lower()
+    # A stabilized cascade of file-classification tickets (module_curator
+    # tickets blocking on module assignment) must spawn a triage user_chat
+    # that enumerates the specific unclaimed files and per-file classification
+    # options, so the operator decides without digging through ticket comments
+    # (motivated by session 331c2099197b4606bfafea0d26c21f1d).
+    assert "module_curator" in prompt
+    assert "module assignment" in prompt
+    assert "classification options" in prompt.lower()
+    # The triage subsession must inline the specific files and per-file options.
+    assert "unclaimed" in prompt.lower()
+    assert "path pattern" in prompt.lower()
+    assert "direct team input" in prompt.lower()
