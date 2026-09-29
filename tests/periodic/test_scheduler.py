@@ -256,6 +256,9 @@ async def test_fire_reports_partial_result_when_submit_fails(tmp_path):
     await asyncio.sleep(0)
     assert len(reported) == 1
     assert reported[0][0] == sid
+    # The report is emitted as a proper PARTIAL REPORT (not a bare error line)
+    # so the next run's drain prompt recognises it as a report.
+    assert reported[0][1].startswith("PARTIAL REPORT")
     # The report carries the exception type/message and preset name.
     assert "mail-triage" in reported[0][1]
     assert "RuntimeError" in reported[0][1]
