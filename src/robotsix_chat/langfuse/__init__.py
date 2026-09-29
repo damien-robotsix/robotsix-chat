@@ -181,8 +181,8 @@ def build_langfuse_inspect_tools(
             ticket_id: A ticket id to search for in trace tags.
             project: Langfuse project name (optional, defaults to the chat
                 project when empty). Use this to query traces from other
-                fleet components (e.g. ``project="mill"``,
-                ``project="ci_fix"``).
+                fleet components (e.g. ``project="robotsix-mill"``,
+                ``project="robotsix-ci-fix"``).
             limit: Maximum number of traces to return (capped by the
                 configured max).  Ignored when *trace_id* is set.
             from_timestamp: ISO 8601 start of time range (inclusive).

@@ -12,8 +12,8 @@ linked to a specific ticket or run.
   during that run.
 - When debugging an anomalous LLM response — fetch the trace by its id for a full structured
   summary.
-- When analyzing fleet cost drivers — query traces from mill, ci_fix, or other components using
-  the `project` parameter.
+- When analyzing fleet cost drivers — query traces from `robotsix-mill`, `robotsix-ci-fix`, or
+  other components using the `project` parameter.
 
 ## Allowed operation
 
@@ -38,8 +38,8 @@ inspect_langfuse_trace(
   `to_timestamp`.
 - `trace_id` is mutually exclusive with the other criteria.
 - `project`: Langfuse project name (optional). When empty, queries the main chat project.
-  Use this to query traces from other fleet components — e.g. `project="mill"`,
-  `project="ci_fix"`, `project="robotsix-memory"`. See the configuration schema for the full
+  Use this to query traces from other fleet components — e.g. `project="robotsix-mill"`,
+  `project="robotsix-ci-fix"`, `project="robotsix-memory"`. See the configuration schema for the full
   list of available projects.
 - When `trace_id` is given: fetch that single trace and return a detailed summary (name, timestamps,
   input/output tokens, total cost, top-level observations, scores).
@@ -107,11 +107,11 @@ inspect_langfuse_trace(trace_id="01J...abc")
 inspect_langfuse_trace(ticket_id="20260727T001240Z-add-capability-5bd6", limit=5)
 
 # Query the last 24 hours of traces from the mill project to identify cost drivers
-inspect_langfuse_trace(project="mill", from_timestamp="2026-08-22T00:00:00Z",
+inspect_langfuse_trace(project="robotsix-mill", from_timestamp="2026-08-22T00:00:00Z",
                        to_timestamp="2026-08-23T00:00:00Z", limit=10)
 
-# Find the most expensive ci_fix traces from the last week
-inspect_langfuse_trace(project="ci_fix", from_timestamp="2026-08-11T00:00:00Z", limit=20)
+# Find the most expensive robotsix-ci-fix traces from the last week
+inspect_langfuse_trace(project="robotsix-ci-fix", from_timestamp="2026-08-11T00:00:00Z", limit=20)
 ```
 
 ## Fast path for periodic-session speed complaints (moved from the system prompt, 2026-09-08)
