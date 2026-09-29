@@ -9,10 +9,6 @@ session.
 
 from __future__ import annotations
 
-from datetime import UTC, datetime
-
-from robotsix_chat.subsessions.prompts import USER_CHAT_FIRST_TURN_NOTE
-
 CURRENT_DATETIME_HEADER = (
     "=== CURRENT DATE/TIME (system context — extract 'today' from here) ==="
 )
