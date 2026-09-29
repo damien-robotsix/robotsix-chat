@@ -746,9 +746,7 @@ async def test_trace_name_stamps_function_tag_on_named_trace() -> None:
 
     with (
         patch("robotsix_chat.llm.agent.get_provider_for_identifier", create_model),
-        patch(
-            "robotsix_llmio.core.tracing.start_trace", fake_start_trace, create=True
-        ),
+        patch("robotsix_llmio.core.tracing.start_trace", fake_start_trace, create=True),
         patch(
             "robotsix_llmio.core.tracing.get_recording_span",
             return_value=fake_span,
