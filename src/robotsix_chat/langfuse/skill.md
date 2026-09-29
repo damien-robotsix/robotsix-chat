@@ -106,7 +106,7 @@ inspect_langfuse_trace(trace_id="01J...abc")
 # Search for traces linked to a ticket (chat project)
 inspect_langfuse_trace(ticket_id="20260727T001240Z-add-capability-5bd6", limit=5)
 
-# Query the last 24 hours of traces from the mill project to identify cost drivers
+# Query the last 24 hours of traces from the robotsix-mill project to identify cost drivers
 inspect_langfuse_trace(project="robotsix-mill", from_timestamp="2026-08-22T00:00:00Z",
                        to_timestamp="2026-08-23T00:00:00Z", limit=10)
 
