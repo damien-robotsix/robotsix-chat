@@ -123,6 +123,17 @@ processing.
   performed (e.g. 'Verified ESCALATED comment present on each of the 7+9 escalated tickets; no
   operator answer recorded since'), so a future run never treats an already-escalated ticket as
   freshly open.
+- **Cascade triage surfaces the specific files.** When a stabilized blocked cascade of
+  file-classification tickets is detected (multiple `module_curator` tickets blocking on module
+  assignment — typically ≥10 blocked tickets across ≥2 boards unchanged for ≥3 runs), the triage
+  `user_chat` subsession must enumerate the specific unclaimed/blocking files (grouped by ticket
+  when several cascades exist) and give per-file classification options: a suggested module
+  candidate inferred from the file path pattern, a note that direct team input may be required
+  before approval, and the current blocker. The panel title states which files are unclaimed and
+  what decision is needed, so the operator can triage without digging through ticket comments. This
+  behaviour exists because session `331c2099197b4606bfafea0d26c21f1d` spawned a hexarchy blocked
+  cascade triage that asked for a decision without listing the ~7 unclaimed files or offering
+  classification candidates.
 - **Cadence** — every four hours (`schedule_interval_seconds: 14400`), at `model_level: 2`.
 - **Ships disabled** — `"enabled": false` per the feature-flag convention, so it never fires on a
   fresh checkout.
