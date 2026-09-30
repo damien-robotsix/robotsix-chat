@@ -114,3 +114,14 @@ def test_gate_drain_preset_parses_and_demands_scope_report() -> None:
     assert "unclaimed" in prompt.lower()
     assert "path pattern" in prompt.lower()
     assert "direct team input" in prompt.lower()
+    # Board-API filters may be silently ignored, so the prompt must document the
+    # limitation and give a local-parsing fallback with batching + PARTIAL
+    # REPORT progress tracking that completes enumeration across turns
+    # (motivated by the 2026-09-08 run that exhausted tokens re-fetching whole
+    # boards because filter parameters were ignored).
+    assert "silently ignore" in prompt.lower()
+    assert "fetch each board once" in prompt.lower()
+    assert "parse that response locally" in prompt.lower()
+    assert "batch" in prompt.lower()
+    assert "still remaining" in prompt.lower()
+    assert "resumes" in prompt.lower()
