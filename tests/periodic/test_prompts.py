@@ -198,6 +198,26 @@ def test_preamble_surfaces_awaiting_operator_panels():
     assert "no pending decision" in lowered
 
 
+def test_preamble_lists_subsessions_first_before_task_and_report():
+    """The list_subsessions check is the mandatory first operation.
+
+    It must be framed as the first operation (before any task work) and
+    positioned ahead of the report-structure instructions, so the periodic
+    agent surfaces awaiting-operator panels before doing anything else.
+    Regression for external PR #2019 (periodic-list-subsessions-first).
+    """
+    lowered = PERIODIC_PREAMBLE.lower()
+    # Mandatory-first framing.
+    assert "first operation" in lowered
+    assert "before any task work" in lowered
+    # Ordering: the first-operation instruction precedes the report contract.
+    assert lowered.index("call list_subsessions") < lowered.index(
+        "always end the session with a report"
+    )
+    # Exactly one list_subsessions instruction remains (the banner form).
+    assert lowered.count("list_subsessions") == 1
+
+
 def test_preamble_mandates_full_ticket_ids_in_report_sections():
     """Done/Escalations/Held entries must carry full mill ticket IDs.
 
