@@ -1,0 +1,11 @@
+# Temporary marker file for PR creation
+# This PR modifies config/config.json to add robotsix-mill Langfuse project
+changes:
+  - file: config/config.json
+    field: langfuse.projects
+    add: |
+      "robotsix-mill": {
+        "public_key": "",
+        "secret_key": "",
+        "project_id": ""
+      }
