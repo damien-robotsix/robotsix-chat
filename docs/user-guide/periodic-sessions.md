@@ -134,6 +134,17 @@ processing.
   behaviour exists because session `331c2099197b4606bfafea0d26c21f1d` spawned a hexarchy blocked
   cascade triage that asked for a decision without listing the ~7 unclaimed files or offering
   classification candidates.
+- **Board-API filters may be ignored — enumerate defensively.** The board API's list endpoints
+  (`GET /board/cards` and similar) may silently ignore `status`/`board_id` filter parameters and
+  return the entire unfiltered board regardless of what is passed. The prompt therefore instructs
+  the agent NOT to rely on server-side filtering: fetch each board once as a complete entity, parse
+  it locally to extract the gated-state tickets, and track which boards are already fully enumerated
+  so none is re-fetched. Boards are processed in small batches with a PARTIAL REPORT between them
+  (boards done so far, gated tickets per state, running total, boards still remaining) so
+  enumeration resumes across turns without duplication and completes even when the API does not
+  honour the expected filters. This exists because the 2026-09-08 run issued one filtered request
+  per state per board, re-fetched whole boards repeatedly, and exhausted its token budget before
+  finishing enumeration.
 - **Cadence** — every four hours (`schedule_interval_seconds: 14400`), at `model_level: 2`.
 - **Ships disabled** — `"enabled": false` per the feature-flag convention, so it never fires on a
   fresh checkout.
