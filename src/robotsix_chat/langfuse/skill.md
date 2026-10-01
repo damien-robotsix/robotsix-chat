@@ -12,8 +12,10 @@ linked to a specific ticket or run.
   during that run.
 - When debugging an anomalous LLM response — fetch the trace by its id for a full structured
   summary.
-- When analyzing fleet cost drivers — query traces from `robotsix-mill`, `robotsix-ci-fix`, or
-  other components using the `project` parameter.
+- When analyzing fleet cost drivers — query traces from `robotsix-mill`, `robotsix-ci-fix`, or other
+  components using the `project` parameter. To rank the most expensive traces across the whole fleet
+  in a single call, pass a list of project names or `project="all"`; the combined result is sorted
+  by `totalCost` descending.
 
 ## Allowed operation
 
@@ -27,7 +29,7 @@ linked to a specific ticket or run.
 inspect_langfuse_trace(
     trace_id: str = "",
     ticket_id: str = "",
-    project: str = "",
+    project: str | list[str] = "",
     limit: int = 5,
     from_timestamp: str = "",
     to_timestamp: str = "",
@@ -36,37 +38,56 @@ inspect_langfuse_trace(
 
 - At least one search criterion must be provided: `trace_id`, `ticket_id`, `from_timestamp`, or
   `to_timestamp`.
+
 - `trace_id` is mutually exclusive with the other criteria.
-- `project`: Langfuse project name (optional). When empty, queries the main chat project.
-  Use this to query traces from other fleet components — e.g. `project="robotsix-mill"`,
-  `project="robotsix-ci-fix"`, `project="robotsix-memory"`. See the configuration schema for the full
-  list of available projects.
+
+- `project`: Langfuse project selector (optional). When empty, queries the main chat project. It
+  accepts several forms:
+
+  - a single project name — e.g. `project="robotsix-mill"`, `project="robotsix-ci-fix"`,
+    `project="robotsix-memory"`;
+  - a list of project names, or a comma-separated string, to query several projects at once — e.g.
+    `project=["robotsix-mill", "robotsix-ci-fix"]` or `project="robotsix-mill,robotsix-chat"`;
+  - the special value `project="all"` to query every configured project.
+
+  When more than one project is queried, each trace summary carries an extra `project` field, the
+  combined `traces` list is sorted by `totalCost` descending, and the response echoes the resolved
+  `projects` list (plus a per-project `errors` map when some projects could not be queried). See the
+  configuration schema for the full list of available projects.
+
 - When `trace_id` is given: fetch that single trace and return a detailed summary (name, timestamps,
   input/output tokens, total cost, top-level observations, scores).
+
 - When `ticket_id` is given: search for traces whose tags include `ticket_id:<value>` (most recent
   first) up to `limit`, and return a summary list (trace id, name, timestamp, duration, cost).
+
 - `from_timestamp` / `to_timestamp`: filter traces by time range (ISO 8601, e.g.
   `2026-08-01T00:00:00Z`). Either or both may be provided, alone or combined with `ticket_id`.
+
 - `limit` caps the number of traces returned (default 5, max configured in settings).
 
 ## Return value
 
 A JSON string with a `traces` list. Each trace entry carries:
 
-| Field          | Description                                      |
-| -------------- | ------------------------------------------------ |
-| `id`           | Langfuse trace id                                |
-| `name`         | Trace name (e.g. "implement", "chat-turn")       |
-| `timestamp`    | ISO-8601 start time                              |
-| `userId`       | User/agent id attached to the trace              |
-| `latency`      | End-to-end duration in seconds                   |
-| `totalCost`    | Total cost in USD                                |
-| `usage`        | `{promptTokens, completionTokens, totalTokens}`  |
-| `observations` | Count of observations (LLM calls, spans, events) |
-| `scores`       | List of `{name, value}` score pairs              |
+| Field          | Description                                                         |
+| -------------- | ------------------------------------------------------------------- |
+| `id`           | Langfuse trace id                                                   |
+| `name`         | Trace name (e.g. "implement", "chat-turn")                          |
+| `timestamp`    | ISO-8601 start time                                                 |
+| `userId`       | User/agent id attached to the trace                                 |
+| `latency`      | End-to-end duration in seconds                                      |
+| `totalCost`    | Total cost in USD                                                   |
+| `usage`        | `{promptTokens, completionTokens, cachedPromptTokens, totalTokens}` |
+| `observations` | Count of observations (LLM calls, spans, events)                    |
+| `scores`       | List of `{name, value}` score pairs                                 |
+
+`cachedPromptTokens` exposes the prompt tokens served from cache — compare it against `promptTokens`
+to spot wasteful token-ratio patterns (cache hits vs. primary tokens) and redundant retries.
 
 When `ticket_id` is given, an additional `ticket_id` field echoes the search key and `limit` echoes
-the cap used.
+the cap used. When multiple projects are queried, each trace carries a `project` field, and the
+response echoes the resolved `projects` list (and an `errors` map if any project failed).
 
 ## Safety
 
@@ -112,6 +133,13 @@ inspect_langfuse_trace(project="robotsix-mill", from_timestamp="2026-08-22T00:00
 
 # Find the most expensive robotsix-ci-fix traces from the last week
 inspect_langfuse_trace(project="robotsix-ci-fix", from_timestamp="2026-08-11T00:00:00Z", limit=20)
+
+# Rank the costliest traces across several projects in one call (sorted by totalCost desc)
+inspect_langfuse_trace(project=["robotsix-mill", "robotsix-ci-fix", "robotsix-chat"],
+                       from_timestamp="2026-08-22T00:00:00Z", limit=10)
+
+# Rank the costliest traces across EVERY configured project (fleet-wide cost analysis)
+inspect_langfuse_trace(project="all", from_timestamp="2026-08-22T00:00:00Z", limit=10)
 ```
 
 ## Fast path for periodic-session speed complaints (moved from the system prompt, 2026-09-08)
