@@ -3005,3 +3005,68 @@ async def test_chat_turn_persists_actions() -> None:
     assert len(actions) == 2
     assert actions[0][0].startswith("create_ticket(")
     assert "T-04d8" in actions[0][0]
+
+
+# ---------------------------------------------------------------------------
+# Periodic failsafe PARTIAL REPORT detection (_periodic_ensure_partial_report)
+# ---------------------------------------------------------------------------
+
+
+def _periodic_def():
+    from robotsix_chat.config.periodic_models import PeriodicSessionDefinition
+
+    return PeriodicSessionDefinition(
+        name="mail-triage",
+        initial_prompt="Review the mail queue. READ-ONLY.",
+        schedule_interval_seconds=3600,
+    )
+
+
+def _mk_periodic_app(store, tmp_path):
+    return mock_app(
+        conversation_store=store,
+        periodic_definitions=[_periodic_def()],
+        periodic_agent_factory=lambda level: MockAgent(tokens=["ok"]),
+        periodic_state_path=str(tmp_path / "state.json"),
+    )
+
+
+@pytest.mark.asyncio
+async def test_periodic_failsafe_appends_on_empty_transcript(tmp_path):
+    """An existing session with no recorded turns → the failsafe appends a report."""
+    store = ConversationStore()
+    async with _mk_periodic_app(store, tmp_path) as f:
+        sid = str(store.create_session("periodic")["session_id"])
+        handler = f.app.state.periodic_scheduler._ensure_partial_report_on_interruption
+        await handler(sid)
+        turns = store.history(sid)
+        assert len(turns) == 1
+        assert turns[-1][1].startswith("PARTIAL REPORT")
+
+
+@pytest.mark.asyncio
+async def test_periodic_failsafe_appends_on_whitespace_final_reply(tmp_path):
+    """A whitespace-only final assistant reply → the failsafe appends a report."""
+    store = ConversationStore()
+    async with _mk_periodic_app(store, tmp_path) as f:
+        sid = str(store.create_session("periodic")["session_id"])
+        store.record(sid, "periodic", "do work", "   \n  ")
+        handler = f.app.state.periodic_scheduler._ensure_partial_report_on_interruption
+        await handler(sid)
+        turns = store.history(sid)
+        assert len(turns) == 2
+        assert turns[-1][1].startswith("PARTIAL REPORT")
+
+
+@pytest.mark.asyncio
+async def test_periodic_failsafe_skips_on_nonempty_final_reply(tmp_path):
+    """A healthy run (non-empty final reply) → nothing appended."""
+    store = ConversationStore()
+    async with _mk_periodic_app(store, tmp_path) as f:
+        sid = str(store.create_session("periodic")["session_id"])
+        store.record(sid, "periodic", "do work", "DONE: 3 items processed")
+        handler = f.app.state.periodic_scheduler._ensure_partial_report_on_interruption
+        await handler(sid)
+        turns = store.history(sid)
+        assert len(turns) == 1  # unchanged — no failsafe report appended
+        assert turns[-1][1] == "DONE: 3 items processed"

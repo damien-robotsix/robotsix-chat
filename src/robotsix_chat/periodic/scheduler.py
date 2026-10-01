@@ -25,6 +25,12 @@ do not pile up as open sessions for the whole interval. A firing also
 SUPERSEDES the preset's previous run: once the new session exists the
 previous run's session is closed through the injected ``close_previous``
 callback, a safety net for runs that crash without completing.
+
+A run's session also gets a failsafe check to ensure a PARTIAL REPORT is
+present in the transcript, even if the turn ended cleanly (without raising)
+but the agent never emitted one — token exhaustion or a provider cutoff can
+end a turn without an error. This ensures the next firing always has context
+about what was attempted.
 """
 
 from __future__ import annotations
@@ -79,6 +85,12 @@ HasLiveSubsessions = Callable[[str], bool]
 #: logged and never propagate out of the turn task).
 ReportPartialResult = Callable[[str, str], Awaitable[Any]]
 
+#: EnsurePartialReportOnInterruption inspects a completed periodic run's
+#: transcript and appends a PARTIAL REPORT if the turn ended abruptly without one.
+#: This ensures the next firing inherits context about what was attempted, even if
+#: token exhaustion or API errors interrupt the agent before it can emit its report.
+EnsurePartialReportOnInterruption = Callable[[str], Awaitable[Any]]
+
 
 def _format_partial_error_report(preset_name: str, exc: Exception) -> str:
     """Format an exception as a proper PARTIAL REPORT for error reporting.
@@ -106,6 +118,32 @@ def _format_partial_error_report(preset_name: str, exc: Exception) -> str:
     )
 
 
+def format_failsafe_partial_report() -> str:
+    """Format a minimal PARTIAL REPORT for a turn that ended without one.
+
+    Used by the completed-run failsafe: the turn finished WITHOUT raising, but
+    the agent never emitted its report — most likely token exhaustion or a
+    provider cutoff ended the turn cleanly. Follows the periodic preamble's
+    PARTIAL REPORT structure (section header with summary counts, then detail)
+    so the next firing's drain prompt recognises it as a report and treats the
+    prior work as unverified.
+    """
+    return (
+        "PARTIAL REPORT\n\n"
+        "Status: Turn ended without the agent emitting a report\n\n"
+        "Done: unknown (no report was emitted)\n"
+        "Escalations: 0\n"
+        "Held for next run: all work from this run\n\n"
+        "Reason for failure:\n"
+        "The turn completed without the agent emitting a report. This most "
+        "likely means token exhaustion or a provider cutoff ended the turn "
+        "before the agent could summarise its work.\n\n"
+        "Guidance for the next firing:\n"
+        "Treat any work attempted during this run as unverified — the agent "
+        "produced no report confirming what, if anything, was completed."
+    )
+
+
 class PeriodicScheduler:
     """Create-and-seed scheduler for periodic session presets."""
 
@@ -122,6 +160,8 @@ class PeriodicScheduler:
         close_completed: ClosePrevious | None = None,
         has_live_subsessions: HasLiveSubsessions | None = None,
         report_partial_result: ReportPartialResult | None = None,
+        ensure_partial_report_on_interruption: EnsurePartialReportOnInterruption
+        | None = None,
     ) -> None:
         """*conversation_store* needs ``create_session`` and ``set_title``.
 
@@ -146,6 +186,15 @@ class PeriodicScheduler:
         is NOT completion-closed after a failure (it is left for the
         supersede-close safety net). ``None`` keeps the previous behaviour of
         only logging the exception.
+
+        *ensure_partial_report_on_interruption*, when given, is awaited with a
+        run's session id after the turn completes WITHOUT raising, to detect
+        and repair sessions that ended without a PARTIAL REPORT — a turn can
+        end cleanly yet have the agent never emit its report (token exhaustion
+        or a provider cutoff). The handler appends a minimal PARTIAL REPORT so
+        the next firing has context. It is NOT invoked on the exception path
+        (``report_partial_result`` already covers that). ``None`` skips this
+        failsafe.
         """
         self._definitions = {d.name: d for d in definitions if d.enabled}
         self._store = conversation_store
@@ -155,6 +204,9 @@ class PeriodicScheduler:
         self._close_completed = close_completed
         self._has_live_subsessions = has_live_subsessions
         self._report_partial_result = report_partial_result
+        self._ensure_partial_report_on_interruption = (
+            ensure_partial_report_on_interruption
+        )
         self._persist_path = Path(persist_path)
         self._clock = clock
         #: name -> {"last_fired_at": float, "last_session_id": str, "runs": int}
@@ -339,13 +391,26 @@ class PeriodicScheduler:
                             session_id,
                         )
             else:
-                # The run completed (its report was delivered). Close the
-                # session now so periodic runs don't accumulate as open
-                # sessions, unless a live subsession (wait_for_event /
-                # user_chat) is still working — such sessions stay open
-                # until the subsession finishes. The supersede-close at
-                # fire time remains as a safety net for runs that crash
+                # The run completed (its report was delivered). Ensure a PARTIAL
+                # REPORT is present first — a turn can end without raising yet
+                # have the agent never emit one (token exhaustion / provider
+                # cutoff), so the failsafe appends a minimal report so the next
+                # firing has context. Then close the session so periodic runs
+                # don't accumulate as open sessions, unless a live subsession
+                # (wait_for_event / user_chat) is still working — such sessions
+                # stay open until the subsession finishes. The supersede-close
+                # at fire time remains as a safety net for runs that crash
                 # without completing.
+                if self._ensure_partial_report_on_interruption is not None:
+                    try:
+                        await self._ensure_partial_report_on_interruption(session_id)
+                    except Exception:
+                        logger.exception(
+                            "Periodic preset %r: failsafe PARTIAL REPORT handler "
+                            "for session %s failed",
+                            name,
+                            session_id,
+                        )
                 if self._close_completed is not None and not (
                     self._has_live_subsessions is not None
                     and self._has_live_subsessions(session_id)

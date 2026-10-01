@@ -17,7 +17,11 @@ import pytest
 
 from robotsix_chat.config.periodic_models import PeriodicSessionDefinition
 from robotsix_chat.periodic.prompts import PERIODIC_PREAMBLE
-from robotsix_chat.periodic.scheduler import PERIODIC_OWNER, PeriodicScheduler
+from robotsix_chat.periodic.scheduler import (
+    PERIODIC_OWNER,
+    PeriodicScheduler,
+    format_failsafe_partial_report,
+)
 
 
 class _FakeStore:
@@ -50,6 +54,7 @@ def _make(
     close_completed=None,
     has_live_subsessions=None,
     report_partial_result=None,
+    ensure_partial_report_on_interruption=None,
 ):
     store = _FakeStore()
     submitted: list[tuple[str, str, int | None]] = []
@@ -77,6 +82,7 @@ def _make(
         close_completed=close_completed,
         has_live_subsessions=has_live_subsessions,
         report_partial_result=report_partial_result,
+        ensure_partial_report_on_interruption=ensure_partial_report_on_interruption,
     )
     return scheduler, store, submitted, now
 
@@ -283,6 +289,89 @@ async def test_fire_survives_report_partial_result_failure(tmp_path):
     await scheduler.fire("mail-triage")
     # No unhandled exception should escape the background task.
     await asyncio.sleep(0)
+
+
+@pytest.mark.asyncio
+async def test_fire_ensures_partial_report_on_completed_run(tmp_path):
+    """The failsafe hook is awaited with the session id on a completed run."""
+    ensured: list[str] = []
+
+    async def ensure(session_id: str) -> None:
+        ensured.append(session_id)
+
+    scheduler, store, submitted, _ = _make(
+        tmp_path, ensure_partial_report_on_interruption=ensure
+    )
+
+    sid = await scheduler.fire("mail-triage")
+    # The turn has not completed yet — the hook must not have fired.
+    assert ensured == []
+
+    await asyncio.sleep(0)
+    assert len(submitted) == 1
+    assert ensured == [sid]
+
+
+@pytest.mark.asyncio
+async def test_fire_does_not_ensure_partial_report_when_submit_fails(tmp_path):
+    """The failsafe hook is NOT awaited on the exception path."""
+    ensured: list[str] = []
+
+    async def ensure(session_id: str) -> None:
+        ensured.append(session_id)
+
+    async def failing_submit(session_id, message, model_level):
+        raise RuntimeError("boom")
+
+    scheduler, store, submitted, _ = _make(
+        tmp_path, ensure_partial_report_on_interruption=ensure
+    )
+    scheduler._submit_turn = failing_submit  # type: ignore[method-assign]
+
+    await scheduler.fire("mail-triage")
+    await asyncio.sleep(0)
+    # The exception path belongs to report_partial_result, not this failsafe.
+    assert ensured == []
+
+
+@pytest.mark.asyncio
+async def test_fire_survives_ensure_partial_report_failure(tmp_path):
+    """A raising failsafe hook is swallowed — completion-close still runs."""
+    closed: list[str] = []
+
+    async def close_completed(session_id: str) -> None:
+        closed.append(session_id)
+
+    async def ensure(session_id: str) -> None:
+        raise RuntimeError("failsafe sink down")
+
+    scheduler, store, submitted, _ = _make(
+        tmp_path,
+        close_completed=close_completed,
+        ensure_partial_report_on_interruption=ensure,
+    )
+
+    sid = await scheduler.fire("mail-triage")
+    # No unhandled exception should escape the background task, and the
+    # completion-close must still run despite the failsafe raising.
+    await asyncio.sleep(0)
+    assert closed == [sid]
+
+
+@pytest.mark.asyncio
+async def test_fire_without_ensure_partial_report_callback_changes_nothing(tmp_path):
+    """The default (None) failsafe hook leaves behaviour unchanged."""
+    scheduler, store, submitted, _ = _make(tmp_path)
+    await scheduler.fire("mail-triage")
+    await asyncio.sleep(0)
+    assert len(submitted) == 1  # plain old behaviour, no error
+
+
+def test_format_failsafe_partial_report_starts_with_partial_report():
+    """The failsafe formatter emits a recognisable PARTIAL REPORT."""
+    report = format_failsafe_partial_report()
+    assert report.startswith("PARTIAL REPORT")
+    assert "unverified" in report
 
 
 @pytest.mark.asyncio

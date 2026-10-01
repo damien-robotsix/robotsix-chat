@@ -229,6 +229,18 @@ manual intervention is needed.
 If the error-reporting mechanism itself fails (e.g. the transcript backend is down), the exception
 is logged but never propagates out of the turn task, so the scheduler continues normally.
 
+### Failsafe report when a turn ends without raising
+
+The error-report path above covers turns that *raise*. A turn can also end **cleanly** — without
+any exception — yet have the agent never emit its report: token exhaustion or a provider cutoff can
+end the turn while the agent is mid-work. To stop the next firing from inheriting a blank
+transcript, the scheduler runs a failsafe check after every completed (non-raising) run: if the
+transcript is empty, or its final assistant reply is empty/whitespace-only, the scheduler appends a
+minimal `PARTIAL REPORT` stating the turn ended without a report (likely token exhaustion or a
+provider cutoff) and that the next firing should treat any prior work as unverified. A healthy run —
+one whose final assistant reply is non-empty — is left untouched, so this never double-appends on a
+normal firing.
+
 ### Example: dependabot-drain interrupted
 
 If dependabot-drain times out after processing 3 of 10 Dependabot PRs:
