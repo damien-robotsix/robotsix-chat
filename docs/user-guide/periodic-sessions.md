@@ -115,14 +115,13 @@ processing.
   And a 2026-09-19 incident identified that a broken robotsix-mill Docs workflow
   (production-blocking CI failure) existed only in subsession metadata and never reached the
   operator's main conversation.
-- **Escalation handling must be verified and reported.** Before listing a gated ticket as
-  'already escalated → awaiting operator' (or taking any action on it), the agent must read the
-  ticket's history and confirm whether an ESCALATED comment or an open operator decision panel
-  already exists for it — and only classify a ticket as freshly open when its history shows no
-  prior escalation. The final report must explicitly state that this history-verification was
-  performed (e.g. 'Verified ESCALATED comment present on each of the 7+9 escalated tickets; no
-  operator answer recorded since'), so a future run never treats an already-escalated ticket as
-  freshly open.
+- **Escalation handling must be verified and reported.** Before listing a gated ticket as 'already
+  escalated → awaiting operator' (or taking any action on it), the agent must read the ticket's
+  history and confirm whether an ESCALATED comment or an open operator decision panel already exists
+  for it — and only classify a ticket as freshly open when its history shows no prior escalation.
+  The final report must explicitly state that this history-verification was performed (e.g.
+  'Verified ESCALATED comment present on each of the 7+9 escalated tickets; no operator answer
+  recorded since'), so a future run never treats an already-escalated ticket as freshly open.
 - **Cascade triage surfaces the specific files.** When a stabilized blocked cascade of
   file-classification tickets is detected (multiple `module_curator` tickets blocking on module
   assignment — typically ≥10 blocked tickets across ≥2 boards unchanged for ≥3 runs), the triage
@@ -228,6 +227,18 @@ manual intervention is needed.
 
 If the error-reporting mechanism itself fails (e.g. the transcript backend is down), the exception
 is logged but never propagates out of the turn task, so the scheduler continues normally.
+
+### Failsafe report when a turn ends without raising
+
+The error-report path above covers turns that *raise*. A turn can also end **cleanly** — without any
+exception — yet have the agent never emit its report: token exhaustion or a provider cutoff can end
+the turn while the agent is mid-work. To stop the next firing from inheriting a blank transcript,
+the scheduler runs a failsafe check after every completed (non-raising) run: if the transcript is
+empty, or its final assistant reply is empty/whitespace-only, the scheduler appends a minimal
+`PARTIAL REPORT` stating the turn ended without a report (likely token exhaustion or a provider
+cutoff) and that the next firing should treat any prior work as unverified. A healthy run — one
+whose final assistant reply is non-empty — is left untouched, so this never double-appends on a
+normal firing.
 
 ### Example: dependabot-drain interrupted
 

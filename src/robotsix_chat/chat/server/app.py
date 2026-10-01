@@ -1029,6 +1029,7 @@ def create_app(
             PERIODIC_OWNER,
             PERIODIC_SCHEDULER_PERSIST_PATH,
             PeriodicScheduler,
+            format_failsafe_partial_report,
         )
 
         _p_coalescer = app.state.message_coalescer
@@ -1120,6 +1121,27 @@ def create_app(
                 error_message,
             )
 
+        async def _periodic_ensure_partial_report(session_id: str) -> None:
+            """Append a failsafe PARTIAL REPORT when a turn ended without one.
+
+            A periodic turn can finish WITHOUT raising yet leave no report —
+            token exhaustion or a provider cutoff can end the turn cleanly
+            before the agent summarises its work. Conservative detection (low
+            false-positive): append only when the transcript is empty or the
+            final assistant reply is empty/whitespace-only. A healthy run ends
+            with a non-empty assistant reply and is left untouched, so this
+            never double-appends on a normal firing.
+            """
+            turns = _p_store.history(session_id)
+            if turns and turns[-1][1].strip():
+                return
+            _p_store.record(
+                session_id,
+                PERIODIC_OWNER,
+                "(periodic failsafe)",
+                format_failsafe_partial_report(),
+            )
+
         app.state.periodic_scheduler = PeriodicScheduler(
             definitions=periodic_definitions,
             conversation_store=_p_store,
@@ -1130,6 +1152,7 @@ def create_app(
             close_completed=_periodic_close_completed,
             has_live_subsessions=_periodic_has_live_subsessions,
             report_partial_result=_periodic_report_partial_result,
+            ensure_partial_report_on_interruption=_periodic_ensure_partial_report,
         )
     else:
         app.state.periodic_scheduler = None

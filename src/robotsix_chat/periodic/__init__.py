@@ -16,6 +16,7 @@ from .scheduler import (
     PERIODIC_OWNER,
     PERIODIC_SCHEDULER_PERSIST_PATH,
     PeriodicScheduler,
+    format_failsafe_partial_report,
 )
 
 __all__ = [
@@ -24,6 +25,7 @@ __all__ = [
     "PERIODIC_SCHEDULER_PERSIST_PATH",
     "PeriodicScheduler",
     "build_initial_message",
+    "format_failsafe_partial_report",
     "strip_periodic_scaffolding",
     "strip_recall_scaffolding",
 ]
