@@ -1030,6 +1030,7 @@ def create_app(
             PERIODIC_SCHEDULER_PERSIST_PATH,
             PeriodicScheduler,
             format_failsafe_partial_report,
+            prune_closed_periodic_sessions,
         )
 
         _p_coalescer = app.state.message_coalescer
@@ -1142,6 +1143,28 @@ def create_app(
                 format_failsafe_partial_report(),
             )
 
+        async def _periodic_carry_over(
+            previous_session_id: str, session_id: str
+        ) -> int:
+            """Hand the previous run's live user_chat panels to the new run.
+
+            Without this the supersede-close kills every decision panel the
+            operator has not answered yet, and the new run — finding no open
+            panel — spawns the same question again, every firing.
+            """
+            registry = app.state.subsession_registry
+            if registry is None:
+                return 0
+            return int(
+                registry.reassign_live_user_chats(previous_session_id, session_id)
+            )
+
+        async def _periodic_prune_closed(keep: set[str]) -> int:
+            """Delete closed periodic runs outside the retention window."""
+            return prune_closed_periodic_sessions(
+                _p_store, keep, registry=app.state.subsession_registry
+            )
+
         app.state.periodic_scheduler = PeriodicScheduler(
             definitions=periodic_definitions,
             conversation_store=_p_store,
@@ -1153,6 +1176,8 @@ def create_app(
             has_live_subsessions=_periodic_has_live_subsessions,
             report_partial_result=_periodic_report_partial_result,
             ensure_partial_report_on_interruption=_periodic_ensure_partial_report,
+            carry_over_subsessions=_periodic_carry_over,
+            prune_closed_runs=_periodic_prune_closed,
         )
     else:
         app.state.periodic_scheduler = None

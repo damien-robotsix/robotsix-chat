@@ -711,8 +711,15 @@ class ConversationStore:
         if session is None:
             return
 
-        # Derive title from the first user message.
-        if session.turn_count == 0 and user_message.strip():
+        # Derive title from the first user message — unless a caller already
+        # seeded one (the periodic scheduler titles its runs
+        # "<preset> — <date>" BEFORE posting the initial prompt; deriving
+        # here would replace that with the prompt's preamble).
+        if (
+            session.turn_count == 0
+            and user_message.strip()
+            and session.title == _DEFAULT_TITLE
+        ):
             session.title = _derive_title(user_message)
 
         session.actions = self._aligned_actions(session)

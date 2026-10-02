@@ -305,6 +305,19 @@ body {
   background: var(--btn-disabled-bg); cursor: not-allowed;
 }
 
+/* "Show/hide closed periodic runs (N)" — closed scheduler runs are hidden
+   from the session list by default so a day of firings does not bury the
+   operator's own chats. */
+#sessions-toggle-closed {
+  margin: 0 0.5rem 0.5rem; padding: 0.25rem 0.6rem;
+  background: transparent; color: var(--text-muted, #888);
+  border: 1px solid var(--border-color, rgba(128,128,128,0.4));
+  border-radius: 6px; font-size: 0.75rem; cursor: pointer;
+  flex-shrink: 0;
+}
+#sessions-toggle-closed:hover { color: inherit; }
+.session-row.session-closed { opacity: 0.6; }
+
 #new-auto-btn {
   margin: 0 0.5rem 0.5rem; padding: 0.4rem 0.75rem;
   background: var(--composer-bg); color: var(--text-fg);

@@ -441,6 +441,34 @@ import {
   // ---- Session management (localStorage-backed) -----------------------
   var ACTIVE_SESSION_KEY = PROJECT_TITLE + "-active-session-id";
   var SUBS_PANEL_KEY = PROJECT_TITLE + "-subsessions-panel-visible";
+  // Closed periodic runs are hidden from the session list by default: the
+  // scheduler closes every run once it reports, and a day of firings would
+  // otherwise bury the operator's own chats. The toggle below the "New
+  // chat" button reveals them; the choice sticks per browser.
+  var SESSIONS_SHOW_CLOSED_KEY = PROJECT_TITLE + "-sessions-show-closed-periodic";
+  var showClosedPeriodic = false;
+  try { showClosedPeriodic = localStorage.getItem(SESSIONS_SHOW_CLOSED_KEY) === "true"; }
+  catch (_) { showClosedPeriodic = false; }
+
+  // A periodic run that the scheduler already closed is hidden unless the
+  // operator asked to see closed runs or is currently viewing it.
+  function isHiddenClosedPeriodic(s) {
+    return !!(s && s._owner === PERIODIC_OWNER && s.closed &&
+              !showClosedPeriodic && s.session_id !== activeSessionId);
+  }
+
+  function updateSessionsToggleClosedButton(hiddenCount, closedCount) {
+    var btn = document.getElementById("sessions-toggle-closed");
+    if (!btn) return;
+    if (closedCount === 0) {
+      btn.style.display = "none";
+      return;
+    }
+    btn.style.display = "";
+    btn.textContent = showClosedPeriodic
+      ? "Hide closed periodic runs (" + closedCount + ")"
+      : "Show closed periodic runs (" + hiddenCount + ")";
+  }
   var SESSIONS_PANEL_KEY = PROJECT_TITLE + "-sessions-panel-visible";
   var UNREAD_SESSION_KEY = PROJECT_TITLE + "-unread-sessions";
   var activeSessionId = null;
@@ -774,12 +802,18 @@ import {
     var scrollTop = listEl.scrollTop;
     listEl.innerHTML = "";
 
+    var closedPeriodic = 0, hiddenPeriodic = 0;
     for (var i = 0; i < sessionsList.length; i++) {
       var s = sessionsList[i];
+      if (s._owner === PERIODIC_OWNER && s.closed) closedPeriodic++;
+      if (isHiddenClosedPeriodic(s)) { hiddenPeriodic++; continue; }
       var row = document.createElement("div");
       row.className = "session-row";
       if (s.session_id === activeSessionId) {
         row.classList.add("active");
+      }
+      if (s.closed) {
+        row.classList.add("session-closed");
       }
       if (isSessionUnread(s.session_id, s.turn_count || 0)) {
         row.classList.add("session-row-unread");
@@ -863,9 +897,23 @@ import {
       listEl.appendChild(row);
     }
 
+    updateSessionsToggleClosedButton(hiddenPeriodic, closedPeriodic);
+
     // Restore scroll position (preserved across auto-refresh re-renders).
     listEl.scrollTop = scrollTop;
   }
+
+  (function wireSessionsToggleClosed() {
+    var btn = document.getElementById("sessions-toggle-closed");
+    if (!btn) return;
+    btn.addEventListener("click", function () {
+      showClosedPeriodic = !showClosedPeriodic;
+      try {
+        localStorage.setItem(SESSIONS_SHOW_CLOSED_KEY, showClosedPeriodic ? "true" : "false");
+      } catch (_) {}
+      renderSessionList({ sessions: sessionsList });
+    });
+  })();
 
 
   function deleteSession(sid) {
