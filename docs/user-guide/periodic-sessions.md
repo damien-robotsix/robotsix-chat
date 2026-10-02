@@ -173,6 +173,32 @@ processing.
   total discovered count and the state-by-state summary (with no scope mismatch left silent), and
   that it appears enabled in `GET /periodic/definitions`.
 
+### `trace_review`
+
+The committed `config/config.json` also ships a `trace_review` preset, which monitors fleet-wide LLM
+spending patterns and detects wasteful traces. On each firing it attempts to fetch the 5–10 most
+expensive traces from the Langfuse `mill` project (sorted by cost), analyzes them for waste patterns
+(oversized prompts, retry loops, model-tier escalations), and reports findings to the operator. When
+Langfuse project credentials are absent, it degrades gracefully to aggregate cost-monitor queries
+(total spend by model-level, provider, region) and recommends configuring the `langfuse.projects`
+block per `docs/configuration.md`.
+
+- **Configuration requirement** — requires Langfuse project credentials configured in
+  `langfuse.projects` for the `mill`, `chat`, and optionally `mail` projects (see
+  `docs/configuration.md` Langfuse configuration section). When projects are unconfigured
+  (`langfuse.projects: {}`), the monitor switches to aggregate fallback mode (cost spikes by
+  model-level and provider).
+- **Cadence** — weekly, anchored to Monday 06:00 UTC (`schedule_interval_seconds: 604800`,
+  `anchor_utc: "2026-09-07T06:00:00Z"`). It runs at `model_level: 2`.
+- **Ships disabled** — the preset ships with `"enabled": false` per the feature-flag convention, so
+  it never fires on a fresh checkout.
+- **Activation** — set `"enabled": true` on the `trace_review` entry under `periodic.sessions` in
+  the deployment's config, then redeploy. To prove it live, fire it once with
+  `POST /periodic/definitions/trace_review/run` and read the cost report. If Langfuse projects are
+  unconfigured, the report will recommend configuring `langfuse.projects` per `config/config.json`
+  and `docs/configuration.md`. Once Langfuse is configured, a second firing will produce per-trace
+  analysis instead of aggregate fallback.
+
 ## Session-end contract and interrupted reports
 
 Every periodic session has an **unconditional obligation to report at the end** — even if it is
