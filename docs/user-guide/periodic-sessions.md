@@ -66,6 +66,25 @@ a `session_end` feedback run is scheduled, the memory component receives the fin
 the latest run of each preset is ever open, so periodic runs never pile up as sessions to close by
 hand. A failure to close the previous run is logged and never blocks the new firing.
 
+Two things survive that supersede-close:
+
+- **Pending operator decisions.** Before the previous run is closed, its live `user_chat` panels
+  (questions the operator has not answered yet) are moved to the new run's session. The new run's
+  mandatory first step — listing its open `user_chat` subsessions — therefore finds them and does
+  not re-ask; the operator can answer a decision days after it was first raised, in whichever run is
+  current. Without this, every firing killed the previous run's panels and spawned the same
+  questions again.
+- **The last few runs.** The scheduler remembers the last `RETAINED_RUNS_PER_PRESET` (3) session ids
+  of each preset. After every firing, and once at startup, every *other* closed periodic session is
+  deleted from the conversation store — a closed run is kept only long enough to read back what the
+  last couple of firings did; the memory component holds the long tail. Open runs (a failed turn, or
+  a run whose decision panel is still waiting) are never pruned, and a run the operator chatted in
+  keeps its history under the operator's own session list.
+
+The sidebar hides closed periodic runs by default. The **Show closed periodic runs (N)** button
+under **+ New chat** reveals them (the choice sticks per browser); the run you are currently viewing
+is always shown.
+
 ## Shipped presets
 
 ### `dependabot-drain`

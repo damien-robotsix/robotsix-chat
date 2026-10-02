@@ -15,17 +15,21 @@ from .prompts import (
 from .scheduler import (
     PERIODIC_OWNER,
     PERIODIC_SCHEDULER_PERSIST_PATH,
+    RETAINED_RUNS_PER_PRESET,
     PeriodicScheduler,
     format_failsafe_partial_report,
+    prune_closed_periodic_sessions,
 )
 
 __all__ = [
     "PERIODIC_OWNER",
     "PERIODIC_PREAMBLE",
     "PERIODIC_SCHEDULER_PERSIST_PATH",
+    "RETAINED_RUNS_PER_PRESET",
     "PeriodicScheduler",
     "build_initial_message",
     "format_failsafe_partial_report",
+    "prune_closed_periodic_sessions",
     "strip_periodic_scaffolding",
     "strip_recall_scaffolding",
 ]
