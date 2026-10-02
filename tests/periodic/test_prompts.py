@@ -252,5 +252,20 @@ def test_preamble_mandates_inline_reporting_every_few_operations():
     assert "truncation-resilience mechanism" in lowered
 
 
+def test_preamble_prioritizes_structured_output_completeness_over_brevity():
+    """Enumerated deliverables must be completed in full, not trimmed.
+
+    Periodic tasks that emit structured output (numbered action-lists,
+    decision tables, enumerated items) were truncating items for brevity.
+    The preamble must mandate full completion of enumerations and scope
+    brevity to prose only. Regression for external PR #1981.
+    """
+    lowered = PERIODIC_PREAMBLE.lower()
+    assert "structured output" in lowered
+    assert "complete that enumeration in full" in lowered
+    assert "do not truncate items for brevity" in lowered
+    assert "completeness of structured outputs is mandatory" in lowered
+
+
 def test_initial_prompt_is_trimmed():
     assert build_initial_message("  task  \n").endswith("task")
