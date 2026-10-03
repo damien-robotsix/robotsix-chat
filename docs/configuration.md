@@ -220,7 +220,7 @@ identify cost drivers across all high-spend projects — add that project's cred
 
 With these credentials configured, call the tool with the matching project name — e.g.
 `project="robotsix-mill"` to inspect mill traces, or `project="robotsix-ci-fix"` to inspect CI-fix
-traces. See the [Langfuse inspect skill](../src/robotsix_chat/langfuse/skill.md) for examples.
+traces. See the Langfuse inspect skill (`src/robotsix_chat/langfuse/skill.md`) for examples.
 
 ### Memory (cognee)
 
