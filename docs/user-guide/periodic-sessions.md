@@ -152,6 +152,7 @@ processing.
   behaviour exists because session `331c2099197b4606bfafea0d26c21f1d` spawned a hexarchy blocked
   cascade triage that asked for a decision without listing the ~7 unclaimed files or offering
   classification candidates.
+- **Aggressive, granular checkpointing prevents token exhaustion.** To prevent silent mid-operation failures where the agent is cut off mid-sentence before reporting work, the preset uses mandatory, granular checkpointing: a PARTIAL REPORT is emitted after every 5–10 tickets enumerated, before starting any expensive operation (API call, PR diff read, ticket history read), and after every 2–3 lines of analysis. The agent maintains a hard 8–10k token reserve for the final report and stops enumeration immediately if remaining tokens drop below 10,000 total, even mid-ticket. When the hard stop is reached, it emits a final PARTIAL REPORT with what was discovered and what remains unenumerated, ensuring the operator always sees at least what was completed before the cutoff. This exists because session `36857ec8e0b34cf6b54a3b6bbf60c3ca` enumerated multiple operations before being cut off, with no final report visible to the operator.
 - **Board-API filters may be ignored — enumerate defensively.** The board API's list endpoints
   (`GET /board/cards` and similar) may silently ignore `status`/`board_id` filter parameters and
   return the entire unfiltered board regardless of what is passed. The prompt therefore instructs
