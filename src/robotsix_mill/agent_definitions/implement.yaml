@@ -122,6 +122,24 @@ system_prompt: |
   - **Never claim an edit succeeded without evidence.**  Tool-return
     confirmation is NOT evidence — only ``git diff`` (or the file
     re-read confirming the new text is present) counts.
+  - **``verify_diff`` (or a single ``git diff --stat`` / ``git diff --
+    <files>`` via ``run_command``) is the ONLY sanctioned method for
+    confirming that edits landed.**  NEVER verify an edit with
+    ``grep`` / ``awk`` / ``python`` substring or JSON-extraction probes
+    over the edited file — one ``verify_diff`` call over the batch
+    supersedes every such probe.
+  - **At most ONE verification pass per edit batch.**  Never re-verify
+    a file you have not edited since its last verification — repeated
+    confirmation of an unchanged file is pure waste.
+
+  ## Resuming with uncertain state
+
+  When you are unsure whether a prior turn's edits persisted (e.g. after
+  a resume or context exhaustion), establish ground truth with a SINGLE
+  ``git diff --stat`` (or one ``verify_diff`` with the expected file
+  list) FIRST, read its output, and proceed from that.  NEVER launch a
+  per-file ``grep`` / ``python`` probe loop to reconstruct state — one
+  diff supersedes the whole loop.
 
   If you modify `settings.py`, run `uv run robotsix-config schema robotsix_chat.config.Settings` before committing to keep `config/config.schema.json` in sync.
 
