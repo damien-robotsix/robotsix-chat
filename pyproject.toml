@@ -131,7 +131,15 @@ robotsix-github-auth = { git = "https://github.com/damien-robotsix/robotsix-gith
 # file and never falls back to fetching the "latest" manifest from
 # raw.githubusercontent.com (a transient fetch failure there repeatedly broke
 # the release-please workflow's Set up uv step).
-required-version = "0.12.9"
+#
+# Keep this EXACT value in sync with the uv that the runtime actually
+# provisions (CI runners via the aligned `uv-version:` inputs in
+# .github/workflows, and the agent sandbox image).  `required-version` is a
+# hard runtime gate: when the installed uv does not satisfy it, every `uv`
+# invocation fails with "Required uv version ... does not match the running
+# version".  The sandbox image ships uv 0.12.19, so the pin tracks it; bump
+# both together when the toolchain moves.
+required-version = "0.12.19"
 constraint-dependencies = [
     "pypdf>=6.15.0",
     "anyio>=4.14.2",
