@@ -14,7 +14,7 @@ permissions:
 jobs:
   codeql:
     name: CodeQL analysis (shared)
-    uses: damien-robotsix/robotsix-github-workflows/.github/workflows/codeql.yml@454851ccfdba26ba4d08f3effea09258dfc3fe2f  # main
+    uses: damien-robotsix/robotsix-github-workflows/.github/workflows/codeql.yml@86fdac1c850f50f71203c156c2650cd534d20422  # main
     with:
       languages: python
       config-file: ./.github/codeql-config.yml
