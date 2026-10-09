@@ -267,5 +267,21 @@ def test_preamble_prioritizes_structured_output_completeness_over_brevity():
     assert "completeness of structured outputs is mandatory" in lowered
 
 
+def test_preamble_requires_escalation_opened_line():
+    """Opening an escalation must emit an immediate ESCALATION OPENED line.
+
+    The line is emitted in the main conversation right after spawn_subsession
+    returns the subsession id, so the escalation survives session truncation
+    (restart / token exhaustion / timeout) before the final PARTIAL REPORT.
+    Supersedes external PR #2072, which ordered the steps backwards (claiming
+    the id is known before the spawn call).
+    """
+    lowered = PERIODIC_PREAMBLE.lower()
+    assert "escalation opened" in lowered
+    assert "spawn_subsession" in lowered
+    assert "survives" in lowered
+    assert "truncat" in lowered
+
+
 def test_initial_prompt_is_trimmed():
     assert build_initial_message("  task  \n").endswith("task")
