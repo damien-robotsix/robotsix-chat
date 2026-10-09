@@ -8,6 +8,24 @@ from typing import Any
 
 from robotsix_chat.config import DirectRepoSettings, PeriodicSettings, Settings
 
+# These fixtures/constants are consumed via cross-module import by the
+# ticket_poll test modules.  Declaring them in ``__all__`` documents the export
+# surface and marks the shared ``_69BE_*`` fixtures as intentional exports for
+# static analysis (CodeQL ``py/unused-global-variable`` treats ``__all__``
+# membership as a use).
+__all__ = [
+    "_69BE_HISTORY",
+    "_69BE_ID",
+    "_69BE_PR",
+    "_component_request_error",
+    "_component_request_http_error",
+    "_component_request_success",
+    "_component_request_ticket_list",
+    "_settings",
+    "_stale_settings",
+    "_transition_tool",
+]
+
 
 def _settings(**kw: Any) -> Settings:
     base: dict[str, Any] = {

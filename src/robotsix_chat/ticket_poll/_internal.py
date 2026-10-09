@@ -18,6 +18,21 @@ from robotsix_chat.ticket_poll.helpers import (
 
 logger = logging.getLogger(__name__)
 
+# These internals are consumed via cross-module import (e.g.
+# ``ticket_poll_write`` imports the ``_CLASSIFY_*`` pacing constants).
+# Declaring them in ``__all__`` documents the export surface and marks the
+# module-private constants as intentional exports for static analysis (CodeQL
+# ``py/unused-global-variable`` treats ``__all__`` membership as a use).
+__all__ = [
+    "_CLASSIFY_POLL_SECONDS",
+    "_CLASSIFY_WAIT_SECONDS",
+    "_CLOSED_LOOKBACK_DAYS",
+    "_TICKET_POLL_RETRY_CONFIG",
+    "_fetch_board_repo_ids",
+    "_fetch_ticket_ids",
+    "_resolve_ticket_ids",
+]
+
 # Retry configuration for ticket poll requests — transient network blips
 # should not surface as "board API unreachable" to the agent.
 _TICKET_POLL_RETRY_CONFIG = RetryConfig(

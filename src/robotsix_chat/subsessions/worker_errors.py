@@ -2,6 +2,28 @@
 
 from __future__ import annotations
 
+# These helpers are consumed via cross-module import (``worker`` re-exports
+# them for sibling modules/tests).  Declaring them in ``__all__`` documents the
+# export surface and marks module-private constants such as
+# ``_RETRY_PROMPT_TEMPLATE`` as intentional exports for static analysis (CodeQL
+# ``py/unused-global-variable`` treats ``__all__`` membership as a use).
+__all__ = [
+    "_DEGENERATE_SUCCESS_SIGNATURE",
+    "_MODEL_TIER_NOT_FOUND_STATUS",
+    "_NO_CHANGE_SENTINEL",
+    "_QUEUED_SENTINEL",
+    "_RETRY_PROMPT_TEMPLATE",
+    "_USAGE_EXHAUSTED_SIGNATURE",
+    "_format_duration",
+    "_format_worker_error",
+    "_is_duplicate_reply",
+    "_is_model_tier_not_found",
+    "_is_no_change",
+    "_is_queued",
+    "_ordinal_suffix",
+    "_truncate",
+]
+
 # The Claude Agent SDK's wording when it collapses a self-contradictory
 # ``is_error=True`` / ``errors=[]`` / ``subtype="success"`` frame into a
 # bare message — a known transient bug, not a real tool failure.

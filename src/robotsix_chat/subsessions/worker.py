@@ -109,6 +109,39 @@ if TYPE_CHECKING:
 
 logger = logging.getLogger(__name__)
 
+# ``worker`` is a façade: it re-exports error-handling/validation helpers and
+# prompt notes from its sibling modules so existing ``from .worker import X``
+# call sites (sibling modules and tests) keep working after the module-size
+# split.  Declaring the re-export surface in ``__all__`` documents it and marks
+# the re-exported names as intentional exports for static analysis (CodeQL
+# ``py/unused-import`` treats ``__all__`` membership as a use).
+__all__ = [
+    "_DEGENERATE_SUCCESS_SIGNATURE",
+    "_MODEL_TIER_NOT_FOUND_STATUS",
+    "_NO_CHANGE_SENTINEL",
+    "_QUEUED_SENTINEL",
+    "_RETRY_PROMPT_TEMPLATE",
+    "_USAGE_EXHAUSTED_SIGNATURE",
+    "_USER_CHAT_FIRST_TURN_NOTE",
+    "_USER_CHAT_SETTLED_NOTE",
+    "CloseState",
+    "SubsessionContext",
+    "SubsessionEnv",
+    "_format_duration",
+    "_format_worker_error",
+    "_get_kind_turn_budget",
+    "_is_duplicate_reply",
+    "_is_model_tier_not_found",
+    "_is_no_change",
+    "_is_queued",
+    "_is_ticket_pre_authorized",
+    "_ordinal_suffix",
+    "_truncate",
+    "_validate_model_level",
+    "attach_slot_budget",
+    "spawn_subsession",
+]
+
 # Prior turns replayed to the subsession agent are capped so a
 # long-running periodic/user_chat subsession cannot grow its own prompt
 # without bound.
