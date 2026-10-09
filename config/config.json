@@ -27,7 +27,9 @@
     "roster_cache_ttl": 300.0,
     "component_response_max_chars": 200000,
     "component_credentials": {},
-    "component_fallbacks": {}
+    "component_fallbacks": {
+      "calendar": "http://calendar:8080"
+    }
   },
   "conversation": {
     "persist_path": "/data/conversations.json"
