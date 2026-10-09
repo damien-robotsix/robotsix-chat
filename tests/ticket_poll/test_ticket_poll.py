@@ -67,6 +67,7 @@ def test_configured_board_url_returns_two_tools() -> None:
     assert tools[1].__name__ == "ticket_poll_batch"
 
 
+@pytest.mark.asyncio
 async def test_ticket_poll_success(respx_mock: respx.MockRouter) -> None:
     """On success, returns JSON with ticket_id, state, and empty error."""
     route = respx_mock.get("http://board:8077/tickets/test-123").mock(
@@ -85,6 +86,7 @@ async def test_ticket_poll_success(respx_mock: respx.MockRouter) -> None:
     assert result["error"] == ""
 
 
+@pytest.mark.asyncio
 async def test_ticket_poll_state_null_when_absent(respx_mock: respx.MockRouter) -> None:
     """When response JSON has no 'state' key, state is null."""
     respx_mock.get("http://board:8077/tickets/test-456").mock(
@@ -99,6 +101,7 @@ async def test_ticket_poll_state_null_when_absent(respx_mock: respx.MockRouter) 
     assert result["error"] == ""
 
 
+@pytest.mark.asyncio
 async def test_ticket_poll_with_auth_token(respx_mock: respx.MockRouter) -> None:
     """When board_api_token is set, Authorization header is sent."""
     route = respx_mock.get("http://board:8077/tickets/test-auth").mock(
@@ -114,6 +117,7 @@ async def test_ticket_poll_with_auth_token(respx_mock: respx.MockRouter) -> None
     assert result["state"] == "IN_PROGRESS"
 
 
+@pytest.mark.asyncio
 async def test_ticket_poll_strips_trailing_slash(respx_mock: respx.MockRouter) -> None:
     """Trailing slash on board_api_base_url is stripped."""
     route = respx_mock.get("http://board:8077/tickets/test-slash").mock(
@@ -127,6 +131,7 @@ async def test_ticket_poll_strips_trailing_slash(respx_mock: respx.MockRouter) -
     assert result["state"] == "OPEN"
 
 
+@pytest.mark.asyncio
 async def test_ticket_poll_http_404(respx_mock: respx.MockRouter) -> None:
     """HTTP 404 → returns error JSON with state=null."""
     respx_mock.get("http://board:8077/tickets/not-found").mock(
@@ -141,6 +146,7 @@ async def test_ticket_poll_http_404(respx_mock: respx.MockRouter) -> None:
     assert result["error"].startswith("ticket not found (404)")
 
 
+@pytest.mark.asyncio
 async def test_ticket_poll_http_500(respx_mock: respx.MockRouter) -> None:
     """HTTP 500 → returns error JSON with state=null."""
     respx_mock.get("http://board:8077/tickets/server-error").mock(
@@ -155,6 +161,7 @@ async def test_ticket_poll_http_500(respx_mock: respx.MockRouter) -> None:
     assert result["error"] == "Board API error: HTTP 500"
 
 
+@pytest.mark.asyncio
 async def test_ticket_poll_timeout(respx_mock: respx.MockRouter) -> None:
     """Timeout → returns error JSON with state=null."""
     respx_mock.get("http://board:8077/tickets/timeout-id").mock(
@@ -169,6 +176,7 @@ async def test_ticket_poll_timeout(respx_mock: respx.MockRouter) -> None:
     assert result["error"].startswith("Board API timeout after")
 
 
+@pytest.mark.asyncio
 async def test_ticket_poll_connect_error(respx_mock: respx.MockRouter) -> None:
     """Connection error → returns error JSON with state=null."""
     respx_mock.get("http://board:8077/tickets/conn-fail").mock(
@@ -183,6 +191,7 @@ async def test_ticket_poll_connect_error(respx_mock: respx.MockRouter) -> None:
     assert result["error"].startswith("Board API unreachable:")
 
 
+@pytest.mark.asyncio
 async def test_ticket_poll_json_decode_failure(respx_mock: respx.MockRouter) -> None:
     """Non-JSON response body → returns error JSON with state=null."""
     respx_mock.get("http://board:8077/tickets/bad-json").mock(
@@ -201,6 +210,7 @@ async def test_ticket_poll_json_decode_failure(respx_mock: respx.MockRouter) -> 
     assert result["error"] == "Board API returned a non-JSON response"
 
 
+@pytest.mark.asyncio
 async def test_ticket_poll_empty_body_json_decode_failure(
     respx_mock: respx.MockRouter,
 ) -> None:
@@ -217,6 +227,7 @@ async def test_ticket_poll_empty_body_json_decode_failure(
     assert result["error"] == "Board API returned a non-JSON response"
 
 
+@pytest.mark.asyncio
 async def test_ticket_poll_roster_first_success() -> None:
     """When component_request is available, use it first and return result."""
     tools = build_ticket_poll_tools(
@@ -230,6 +241,7 @@ async def test_ticket_poll_roster_first_success() -> None:
     assert result["error"] == ""
 
 
+@pytest.mark.asyncio
 async def test_ticket_poll_roster_first_falls_back_to_direct(
     respx_mock: respx.MockRouter,
 ) -> None:
@@ -250,6 +262,7 @@ async def test_ticket_poll_roster_first_falls_back_to_direct(
     assert result["error"] == ""
 
 
+@pytest.mark.asyncio
 async def test_ticket_poll_roster_error_non_json_falls_back(
     respx_mock: respx.MockRouter,
 ) -> None:
@@ -268,6 +281,7 @@ async def test_ticket_poll_roster_error_non_json_falls_back(
     assert result["state"] == "DONE"
 
 
+@pytest.mark.asyncio
 async def test_ticket_poll_no_component_request_uses_direct_only(
     respx_mock: respx.MockRouter,
 ) -> None:
@@ -283,6 +297,7 @@ async def test_ticket_poll_no_component_request_uses_direct_only(
     assert result["state"] == "IN_PROGRESS"
 
 
+@pytest.mark.asyncio
 async def test_ticket_poll_resolves_paraphrased_id(
     respx_mock: respx.MockRouter,
 ) -> None:
@@ -316,6 +331,7 @@ async def test_ticket_poll_resolves_paraphrased_id(
     assert result["error"] == ""
 
 
+@pytest.mark.asyncio
 async def test_ticket_poll_resolves_against_mill_id_field(
     respx_mock: respx.MockRouter,
 ) -> None:
@@ -353,6 +369,7 @@ async def test_ticket_poll_resolves_against_mill_id_field(
     assert result["error"] == ""
 
 
+@pytest.mark.asyncio
 async def test_ticket_poll_batch_multiple_success(
     respx_mock: respx.MockRouter,
 ) -> None:
@@ -406,6 +423,7 @@ async def test_ticket_poll_batch_multiple_success(
     assert b["error"] == ""
 
 
+@pytest.mark.asyncio
 async def test_ticket_poll_batch_partial_failure(
     respx_mock: respx.MockRouter,
 ) -> None:
@@ -434,6 +452,7 @@ async def test_ticket_poll_batch_partial_failure(
     assert bad["error"] == "Board API error: HTTP 500"
 
 
+@pytest.mark.asyncio
 async def test_ticket_poll_batch_with_auth_token(
     respx_mock: respx.MockRouter,
 ) -> None:
@@ -455,6 +474,7 @@ async def test_ticket_poll_batch_with_auth_token(
         assert request_headers["Authorization"] == "Bearer batch-token"
 
 
+@pytest.mark.asyncio
 async def test_ticket_poll_batch_empty_list(
     respx_mock: respx.MockRouter,
 ) -> None:
@@ -466,6 +486,7 @@ async def test_ticket_poll_batch_empty_list(
     assert result == {"tickets": []}
 
 
+@pytest.mark.asyncio
 async def test_ticket_poll_batch_timeout_per_ticket(
     respx_mock: respx.MockRouter,
 ) -> None:
@@ -491,6 +512,7 @@ async def test_ticket_poll_batch_timeout_per_ticket(
     assert slow["error"].startswith("Board API timeout after")
 
 
+@pytest.mark.asyncio
 async def test_ticket_poll_batch_json_decode_failure(
     respx_mock: respx.MockRouter,
 ) -> None:
@@ -514,6 +536,7 @@ async def test_ticket_poll_batch_json_decode_failure(
     assert ticket["error"] == "Board API returned a non-JSON response"
 
 
+@pytest.mark.asyncio
 async def test_ticket_poll_batch_resolves_by_hash_suffix(
     respx_mock: respx.MockRouter,
 ) -> None:
@@ -552,6 +575,7 @@ async def test_ticket_poll_batch_resolves_by_hash_suffix(
     assert tickets[0]["error"] == ""
 
 
+@pytest.mark.asyncio
 async def test_ticket_poll_batch_resolves_by_slug_substring(
     respx_mock: respx.MockRouter,
 ) -> None:
@@ -590,6 +614,7 @@ async def test_ticket_poll_batch_resolves_by_slug_substring(
     assert tickets[0]["state"] == "DONE"
 
 
+@pytest.mark.asyncio
 async def test_ticket_poll_batch_exact_match_no_list_fetch(
     respx_mock: respx.MockRouter,
 ) -> None:
@@ -625,6 +650,7 @@ async def test_ticket_poll_batch_exact_match_no_list_fetch(
     assert tickets[0]["error"] == ""
 
 
+@pytest.mark.asyncio
 async def test_ticket_poll_batch_unresolvable_id_still_attempted(
     respx_mock: respx.MockRouter,
 ) -> None:
@@ -652,6 +678,7 @@ async def test_ticket_poll_batch_unresolvable_id_still_attempted(
     assert tickets[0]["error"].startswith("ticket not found (404)")
 
 
+@pytest.mark.asyncio
 async def test_ticket_poll_batch_resolution_list_failure_graceful(
     respx_mock: respx.MockRouter,
 ) -> None:
@@ -676,6 +703,7 @@ async def test_ticket_poll_batch_resolution_list_failure_graceful(
     assert tickets[0]["error"].startswith("ticket not found (404)")
 
 
+@pytest.mark.asyncio
 async def test_ticket_poll_direct_closed_with_pr_reports_delivered(
     respx_mock: respx.MockRouter,
 ) -> None:
@@ -710,6 +738,7 @@ async def test_ticket_poll_direct_closed_with_pr_reports_delivered(
     assert result["error"] == ""
 
 
+@pytest.mark.asyncio
 async def test_ticket_poll_direct_draft_to_closed_flags_dropped(
     respx_mock: respx.MockRouter,
 ) -> None:
@@ -732,6 +761,7 @@ async def test_ticket_poll_direct_draft_to_closed_flags_dropped(
     assert "draft → closed" in result["unexpected_terminal"]
 
 
+@pytest.mark.asyncio
 async def test_ticket_poll_direct_active_state_skips_history_fetch(
     respx_mock: respx.MockRouter,
 ) -> None:
@@ -752,6 +782,7 @@ async def test_ticket_poll_direct_active_state_skips_history_fetch(
     assert result["unexpected_terminal"] is None
 
 
+@pytest.mark.asyncio
 async def test_ticket_poll_component_path_fetches_history_via_roster() -> None:
     """Roster path: history comes from component_request GET /tickets/{id}/history."""
     calls: list[str] = []
@@ -776,6 +807,7 @@ async def test_ticket_poll_component_path_fetches_history_via_roster() -> None:
     assert result["unexpected_terminal"] is None
 
 
+@pytest.mark.asyncio
 async def test_ticket_poll_batch_resolves_closed_ticket_via_fallback(
     respx_mock: respx.MockRouter,
 ) -> None:
@@ -816,6 +848,7 @@ async def test_ticket_poll_batch_resolves_closed_ticket_via_fallback(
     assert result["tickets"][0]["state"] == "closed"
 
 
+@pytest.mark.asyncio
 async def test_ticket_poll_batch_no_closed_fallback_when_all_resolve(
     respx_mock: respx.MockRouter,
 ) -> None:

@@ -227,6 +227,7 @@ def test_unexpected_terminal_skips_non_dict_entries() -> None:
     assert _check_unexpected_terminal(data) is None
 
 
+@pytest.mark.asyncio
 async def test_ticket_poll_batch_direct_carries_delivery_fields(
     respx_mock: respx.MockRouter,
 ) -> None:

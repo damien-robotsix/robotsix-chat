@@ -6,6 +6,7 @@ import json
 from typing import Any
 
 import httpx
+import pytest
 import respx
 
 from robotsix_chat.config import DirectRepoSettings, PeriodicSettings, Settings
@@ -42,6 +43,7 @@ def test_merge_tool_configured_returns_one_tool() -> None:
     assert tools[0].__name__ == "merge_pull_request"
 
 
+@pytest.mark.asyncio
 async def test_merge_pull_request_roster_first_success() -> None:
     """When component_request succeeds, return its response directly."""
 
@@ -59,6 +61,7 @@ async def test_merge_pull_request_roster_first_success() -> None:
     assert "abc123" in result
 
 
+@pytest.mark.asyncio
 async def test_merge_pull_request_roster_falls_back_to_direct(
     respx_mock: respx.MockRouter,
 ) -> None:
@@ -77,6 +80,7 @@ async def test_merge_pull_request_roster_falls_back_to_direct(
     assert "merged_from_direct" in result
 
 
+@pytest.mark.asyncio
 async def test_merge_pull_request_roster_http_error_falls_back_to_direct(
     respx_mock: respx.MockRouter,
 ) -> None:
@@ -97,6 +101,7 @@ async def test_merge_pull_request_roster_http_error_falls_back_to_direct(
     assert "merged_from_direct" in result
 
 
+@pytest.mark.asyncio
 async def test_merge_pull_request_direct_only(
     respx_mock: respx.MockRouter,
 ) -> None:
@@ -112,6 +117,7 @@ async def test_merge_pull_request_direct_only(
     assert "merged" in result
 
 
+@pytest.mark.asyncio
 async def test_merge_pull_request_with_auth_token(
     respx_mock: respx.MockRouter,
 ) -> None:
@@ -130,6 +136,7 @@ async def test_merge_pull_request_with_auth_token(
     assert request_headers["Authorization"] == "Bearer merge-token"
 
 
+@pytest.mark.asyncio
 async def test_merge_pull_request_strips_trailing_slash(
     respx_mock: respx.MockRouter,
 ) -> None:
@@ -146,6 +153,7 @@ async def test_merge_pull_request_strips_trailing_slash(
     assert route.called
 
 
+@pytest.mark.asyncio
 async def test_merge_pull_request_http_404(
     respx_mock: respx.MockRouter,
 ) -> None:
@@ -161,6 +169,7 @@ async def test_merge_pull_request_http_404(
     assert "Not found" in result
 
 
+@pytest.mark.asyncio
 async def test_merge_pull_request_http_500(
     respx_mock: respx.MockRouter,
 ) -> None:
@@ -175,6 +184,7 @@ async def test_merge_pull_request_http_500(
     assert "500" in result
 
 
+@pytest.mark.asyncio
 async def test_merge_pull_request_http_status_error(
     respx_mock: respx.MockRouter,
 ) -> None:
@@ -192,6 +202,7 @@ async def test_merge_pull_request_http_status_error(
     assert "mergeable" in result.lower()
 
 
+@pytest.mark.asyncio
 async def test_merge_pull_request_timeout(
     respx_mock: respx.MockRouter,
 ) -> None:
@@ -208,6 +219,7 @@ async def test_merge_pull_request_timeout(
     assert "10.0s" in result
 
 
+@pytest.mark.asyncio
 async def test_merge_pull_request_connect_error(
     respx_mock: respx.MockRouter,
 ) -> None:
@@ -223,6 +235,7 @@ async def test_merge_pull_request_connect_error(
     assert "timed out" in result.lower()
 
 
+@pytest.mark.asyncio
 async def test_merge_pull_request_unexpected_exception(
     respx_mock: respx.MockRouter,
 ) -> None:
@@ -238,6 +251,7 @@ async def test_merge_pull_request_unexpected_exception(
     assert "something exploded" in result
 
 
+@pytest.mark.asyncio
 async def test_merge_pull_request_resolves_paraphrased_id(
     respx_mock: respx.MockRouter,
 ) -> None:
@@ -284,6 +298,7 @@ def test_mark_ticket_ready_configured_returns_one_tool() -> None:
     assert tools[0].__name__ == "mark_ticket_ready"
 
 
+@pytest.mark.asyncio
 async def test_mark_ticket_ready_roster_first_success() -> None:
     """When component_request succeeds, return its response directly."""
 
@@ -307,6 +322,7 @@ async def test_mark_ticket_ready_roster_first_success() -> None:
     assert "READY" in result
 
 
+@pytest.mark.asyncio
 async def test_mark_ticket_ready_posts_real_transition_body() -> None:
     """The request hits mill's real ``/transition`` route with state=ready.
 
@@ -337,6 +353,7 @@ async def test_mark_ticket_ready_posts_real_transition_body() -> None:
     ]
 
 
+@pytest.mark.asyncio
 async def test_mark_ticket_ready_accepts_note_alias() -> None:
     """``note=`` (the mill API's own field name) is accepted as an alias.
 
@@ -364,6 +381,7 @@ async def test_mark_ticket_ready_accepts_note_alias() -> None:
     assert calls[-1] == {"state": "ready", "note": "j"}
 
 
+@pytest.mark.asyncio
 async def test_mark_ticket_ready_roster_falls_back_to_direct(
     respx_mock: respx.MockRouter,
 ) -> None:
@@ -382,6 +400,7 @@ async def test_mark_ticket_ready_roster_falls_back_to_direct(
     assert "READY" in result
 
 
+@pytest.mark.asyncio
 async def test_mark_ticket_ready_roster_http_error_falls_back_to_direct(
     respx_mock: respx.MockRouter,
 ) -> None:
@@ -402,6 +421,7 @@ async def test_mark_ticket_ready_roster_http_error_falls_back_to_direct(
     assert "READY" in result
 
 
+@pytest.mark.asyncio
 async def test_mark_ticket_ready_direct_only(
     respx_mock: respx.MockRouter,
 ) -> None:
@@ -417,6 +437,7 @@ async def test_mark_ticket_ready_direct_only(
     assert "READY" in result
 
 
+@pytest.mark.asyncio
 async def test_mark_ticket_ready_with_auth_token(
     respx_mock: respx.MockRouter,
 ) -> None:
@@ -435,6 +456,7 @@ async def test_mark_ticket_ready_with_auth_token(
     assert request_headers["Authorization"] == "Bearer mark-token"
 
 
+@pytest.mark.asyncio
 async def test_mark_ticket_ready_strips_trailing_slash(
     respx_mock: respx.MockRouter,
 ) -> None:
@@ -451,6 +473,7 @@ async def test_mark_ticket_ready_strips_trailing_slash(
     assert route.called
 
 
+@pytest.mark.asyncio
 async def test_mark_ticket_ready_http_404(
     respx_mock: respx.MockRouter,
 ) -> None:
@@ -466,6 +489,7 @@ async def test_mark_ticket_ready_http_404(
     assert "Not found" in result
 
 
+@pytest.mark.asyncio
 async def test_mark_ticket_ready_resolves_paraphrased_id(
     respx_mock: respx.MockRouter,
 ) -> None:
@@ -523,6 +547,7 @@ def test_find_ticket_by_pr_configured_returns_one_tool() -> None:
     assert tools[0].__name__ == "find_ticket_by_pr"
 
 
+@pytest.mark.asyncio
 async def test_find_ticket_by_pr_server_side_match(
     respx_mock: respx.MockRouter,
 ) -> None:
@@ -552,6 +577,7 @@ async def test_find_ticket_by_pr_server_side_match(
     assert data["error"] == ""
 
 
+@pytest.mark.asyncio
 async def test_find_ticket_by_pr_no_match(
     respx_mock: respx.MockRouter,
 ) -> None:
@@ -581,6 +607,7 @@ async def test_find_ticket_by_pr_no_match(
     assert "No ticket found" in data["error"]
 
 
+@pytest.mark.asyncio
 async def test_find_ticket_by_pr_dict_response(
     respx_mock: respx.MockRouter,
 ) -> None:
@@ -603,6 +630,7 @@ async def test_find_ticket_by_pr_dict_response(
     assert data["ticket_id"] == "20250101T120000Z-fix-bug-a1b2"
 
 
+@pytest.mark.asyncio
 async def test_find_ticket_by_pr_with_auth_token(
     respx_mock: respx.MockRouter,
 ) -> None:
@@ -623,6 +651,7 @@ async def test_find_ticket_by_pr_with_auth_token(
     assert request_headers["Authorization"] == "Bearer find-token"
 
 
+@pytest.mark.asyncio
 async def test_find_ticket_by_pr_board_unreachable(
     respx_mock: respx.MockRouter,
 ) -> None:
@@ -641,6 +670,7 @@ async def test_find_ticket_by_pr_board_unreachable(
     assert "No ticket found" in data["error"]
 
 
+@pytest.mark.asyncio
 async def test_find_ticket_by_pr_strips_trailing_slash(
     respx_mock: respx.MockRouter,
 ) -> None:
@@ -664,6 +694,7 @@ async def test_find_ticket_by_pr_strips_trailing_slash(
     assert route.called
 
 
+@pytest.mark.asyncio
 async def test_find_ticket_by_pr_server_filter_falls_back_to_full_list(
     respx_mock: respx.MockRouter,
 ) -> None:
@@ -696,6 +727,7 @@ async def test_find_ticket_by_pr_server_filter_falls_back_to_full_list(
     assert data["state"] == "HUMAN_MR_APPROVAL"
 
 
+@pytest.mark.asyncio
 async def test_find_ticket_by_pr_skips_non_dict_entries(
     respx_mock: respx.MockRouter,
 ) -> None:
@@ -717,6 +749,7 @@ async def test_find_ticket_by_pr_skips_non_dict_entries(
     assert "No ticket found" in data["error"]
 
 
+@pytest.mark.asyncio
 async def test_file_ticket_sends_a_single_object_not_a_list(
     respx_mock: respx.MockRouter,
 ) -> None:
@@ -751,6 +784,7 @@ async def test_file_ticket_sends_a_single_object_not_a_list(
     assert result["error"] == ""
 
 
+@pytest.mark.asyncio
 async def test_file_ticket_requires_repo_id(respx_mock: respx.MockRouter) -> None:
     """An empty repo_id fails fast — mill has no default repo.
 
@@ -769,6 +803,7 @@ async def test_file_ticket_requires_repo_id(respx_mock: respx.MockRouter) -> Non
     assert "repo_id is required" in result["error"]
 
 
+@pytest.mark.asyncio
 async def test_file_ticket_roster_path_sends_a_single_object() -> None:
     """The component_request (roster) path sends an object too."""
     captured: dict[str, Any] = {}
@@ -799,6 +834,7 @@ async def test_file_ticket_roster_path_sends_a_single_object() -> None:
     assert result["error"] == ""
 
 
+@pytest.mark.asyncio
 async def test_file_ticket_reports_dedup_hit(respx_mock: respx.MockRouter) -> None:
     """A 200 + deduped=true resolves to the existing ticket id."""
     respx_mock.post("http://board:8077/tickets/ingest").mock(
@@ -816,6 +852,7 @@ async def test_file_ticket_reports_dedup_hit(respx_mock: respx.MockRouter) -> No
     assert result["error"] == ""
 
 
+@pytest.mark.asyncio
 async def test_file_ticket_empty_id_on_success_returns_error(
     respx_mock: respx.MockRouter,
 ) -> None:
@@ -842,6 +879,7 @@ async def test_file_ticket_empty_id_on_success_returns_error(
     assert "did not contain a ticket id" in result["error"]
 
 
+@pytest.mark.asyncio
 async def test_file_ticket_roster_empty_id_on_success_returns_error() -> None:
     """Roster path: accepted but no id → error, not silent empty success."""
 
@@ -883,6 +921,7 @@ def test_list_stale_ready_configured_returns_one_tool() -> None:
     assert tools[0].__name__ == "list_stale_ready_tickets"
 
 
+@pytest.mark.asyncio
 async def test_list_stale_ready_roster_success_no_stale() -> None:
     """Roster path returns tickets; none are stale when all are recent."""
     now = 1_750_000_000.0
@@ -918,6 +957,7 @@ async def test_list_stale_ready_roster_success_no_stale() -> None:
     assert result.get("error") is None
 
 
+@pytest.mark.asyncio
 async def test_list_stale_ready_roster_success_with_stale() -> None:
     """Roster path returns tickets; tickets older than threshold are stale."""
     now = 1_750_000_000.0
@@ -968,6 +1008,7 @@ async def test_list_stale_ready_roster_success_with_stale() -> None:
     assert result["stale_tickets"][0]["state"] == "READY"
 
 
+@pytest.mark.asyncio
 async def test_list_stale_ready_roster_ticket_list_key() -> None:
     """Roster path returns dict with 'tickets' key wrapping the list."""
     tickets = [
@@ -989,6 +1030,7 @@ async def test_list_stale_ready_roster_ticket_list_key() -> None:
     assert result["total_ready"] == 1
 
 
+@pytest.mark.asyncio
 async def test_list_stale_ready_priority_ticket_longer_threshold() -> None:
     """Priority-flagged ready tickets use the longer priority threshold."""
     now = 1_750_000_000.0
@@ -1030,6 +1072,7 @@ async def test_list_stale_ready_priority_ticket_longer_threshold() -> None:
     assert result["priority_threshold_minutes"] == 60
 
 
+@pytest.mark.asyncio
 async def test_list_stale_ready_priority_ticket_exceeds_priority_threshold() -> None:
     """Priority ticket IS stale when it exceeds the priority threshold."""
     now = 1_750_000_000.0
@@ -1069,6 +1112,7 @@ async def test_list_stale_ready_priority_ticket_exceeds_priority_threshold() -> 
     assert result["stale_tickets"][0]["priority"] is True
 
 
+@pytest.mark.asyncio
 async def test_list_stale_ready_mixed_priority_and_regular() -> None:
     """Mixed tickets: priority uses longer threshold, regular uses short threshold."""
     now = 1_750_000_000.0
@@ -1115,6 +1159,7 @@ async def test_list_stale_ready_mixed_priority_and_regular() -> None:
     assert result["stale_tickets"][0]["ticket_id"] == "t-regular-stale"
 
 
+@pytest.mark.asyncio
 async def test_list_stale_ready_roster_falls_back_to_direct(
     respx_mock: respx.MockRouter,
 ) -> None:
@@ -1143,6 +1188,7 @@ async def test_list_stale_ready_roster_falls_back_to_direct(
     assert result["stale_tickets"][0]["ticket_id"] == "t-fallback"
 
 
+@pytest.mark.asyncio
 async def test_list_stale_ready_roster_http_error_returns_error() -> None:
     """When roster returns HTTP 502, the error is surfaced directly (no fallback)."""
     tools = build_list_stale_ready_tickets_tool(
@@ -1156,6 +1202,7 @@ async def test_list_stale_ready_roster_http_error_returns_error() -> None:
     assert result["stale_ready_count"] == 0
 
 
+@pytest.mark.asyncio
 async def test_list_stale_ready_roster_http_500_proper_format() -> None:
     """When roster returns a properly-formatted HTTP 500, error is surfaced."""
     tools = build_list_stale_ready_tickets_tool(
@@ -1169,6 +1216,7 @@ async def test_list_stale_ready_roster_http_500_proper_format() -> None:
     assert result["stale_ready_count"] == 0
 
 
+@pytest.mark.asyncio
 async def test_list_stale_ready_direct_only(
     respx_mock: respx.MockRouter,
 ) -> None:
@@ -1195,6 +1243,7 @@ async def test_list_stale_ready_direct_only(
     assert result["total_ready"] == 1
 
 
+@pytest.mark.asyncio
 async def test_list_stale_ready_direct_http_404(
     respx_mock: respx.MockRouter,
 ) -> None:
@@ -1212,6 +1261,7 @@ async def test_list_stale_ready_direct_http_404(
     assert result["stale_tickets"] == []
 
 
+@pytest.mark.asyncio
 async def test_list_stale_ready_direct_timeout(
     respx_mock: respx.MockRouter,
 ) -> None:
@@ -1228,6 +1278,7 @@ async def test_list_stale_ready_direct_timeout(
     assert result["stale_ready_count"] == 0
 
 
+@pytest.mark.asyncio
 async def test_list_stale_ready_direct_connect_error(
     respx_mock: respx.MockRouter,
 ) -> None:
@@ -1244,6 +1295,7 @@ async def test_list_stale_ready_direct_connect_error(
     assert result["stale_ready_count"] == 0
 
 
+@pytest.mark.asyncio
 async def test_list_stale_ready_timestamp_iso_with_timezone() -> None:
     """ISO-8601 timestamp with timezone offset is parsed correctly."""
     now = 1_750_000_000.0
@@ -1282,6 +1334,7 @@ async def test_list_stale_ready_timestamp_iso_with_timezone() -> None:
     assert result["stale_tickets"][0]["staleness"] == "15m"
 
 
+@pytest.mark.asyncio
 async def test_list_stale_ready_timestamp_iso_without_timezone() -> None:
     """ISO-8601 timestamp without timezone is treated as UTC."""
     now = 1_750_000_000.0
@@ -1321,6 +1374,7 @@ async def test_list_stale_ready_timestamp_iso_without_timezone() -> None:
     assert result["stale_tickets"][0]["staleness"] == "15m"
 
 
+@pytest.mark.asyncio
 async def test_list_stale_ready_timestamp_unix_float() -> None:
     """Unix-seconds float timestamp is parsed correctly."""
     now = 1_750_000_000.0
@@ -1354,6 +1408,7 @@ async def test_list_stale_ready_timestamp_unix_float() -> None:
     assert result["stale_tickets"][0]["staleness"] == "15m"
 
 
+@pytest.mark.asyncio
 async def test_list_stale_ready_timestamp_unix_float_as_string() -> None:
     """Unix-seconds float stored as string is parsed correctly."""
     now = 1_750_000_000.0
@@ -1386,6 +1441,7 @@ async def test_list_stale_ready_timestamp_unix_float_as_string() -> None:
     assert result["stale_ready_count"] == 1
 
 
+@pytest.mark.asyncio
 async def test_list_stale_ready_timestamp_unparsable() -> None:
     """Unparsable timestamp string → ticket is included with 'unknown' staleness."""
     now = 1_750_000_000.0
@@ -1418,6 +1474,7 @@ async def test_list_stale_ready_timestamp_unparsable() -> None:
     assert result["stale_tickets"][0]["staleness"] == "unknown (no timestamp)"
 
 
+@pytest.mark.asyncio
 async def test_list_stale_ready_timestamp_missing() -> None:
     """Missing both updated_at and created_at → included with 'unknown' staleness."""
     now = 1_750_000_000.0
@@ -1448,6 +1505,7 @@ async def test_list_stale_ready_timestamp_missing() -> None:
     assert result["stale_tickets"][0]["staleness"] == "unknown (no timestamp)"
 
 
+@pytest.mark.asyncio
 async def test_list_stale_ready_format_staleness_hours() -> None:
     """Staleness >= 120 minutes is formatted in hours."""
     now = 1_750_000_000.0
@@ -1480,6 +1538,7 @@ async def test_list_stale_ready_format_staleness_hours() -> None:
     assert result["stale_tickets"][0]["staleness"] == "3.0h"
 
 
+@pytest.mark.asyncio
 async def test_list_stale_ready_format_staleness_minutes() -> None:
     """Staleness between 1 and 120 minutes is formatted in minutes."""
     now = 1_750_000_000.0
@@ -1512,6 +1571,7 @@ async def test_list_stale_ready_format_staleness_minutes() -> None:
     assert result["stale_tickets"][0]["staleness"] == "5m"
 
 
+@pytest.mark.asyncio
 async def test_list_stale_ready_format_staleness_seconds() -> None:
     """Staleness just at the threshold (60 s) is formatted as '1m'."""
     now = 1_750_000_000.0
@@ -1544,6 +1604,7 @@ async def test_list_stale_ready_format_staleness_seconds() -> None:
     assert result["stale_tickets"][0]["staleness"] == "1m"
 
 
+@pytest.mark.asyncio
 async def test_list_stale_ready_json_output_structure() -> None:
     """Output JSON contains expected top-level keys."""
     now = 1_750_000_000.0
@@ -1569,6 +1630,7 @@ async def test_list_stale_ready_json_output_structure() -> None:
     assert result["threshold_minutes"] == 10
 
 
+@pytest.mark.asyncio
 async def test_list_stale_ready_sorting_most_stale_first() -> None:
     """Stale tickets are sorted by staleness_seconds descending (most stale first)."""
     now = 1_750_000_000.0
@@ -1615,6 +1677,7 @@ async def test_list_stale_ready_sorting_most_stale_first() -> None:
     assert stale_ids == ["t-most", "t-mid", "t-least"]
 
 
+@pytest.mark.asyncio
 async def test_list_stale_ready_unknown_staleness_sorted_last() -> None:
     """Tickets with unknown staleness sort after timed tickets."""
     now = 1_750_000_000.0
@@ -1653,6 +1716,7 @@ async def test_list_stale_ready_unknown_staleness_sorted_last() -> None:
     assert stale_ids[0] == "t-no-ts"
 
 
+@pytest.mark.asyncio
 async def test_list_stale_ready_ticket_fields_in_output() -> None:
     """Each stale ticket entry contains all expected fields."""
     now = 1_750_000_000.0
@@ -1691,6 +1755,7 @@ async def test_list_stale_ready_ticket_fields_in_output() -> None:
     assert entry["created_at"] is not None
 
 
+@pytest.mark.asyncio
 async def test_list_stale_ready_respects_threshold() -> None:
     """Tickets older than threshold are stale; newer are not."""
     now = 1_750_000_000.0
@@ -1731,6 +1796,7 @@ async def test_list_stale_ready_respects_threshold() -> None:
     assert result["stale_tickets"][0]["ticket_id"] == "t-old"
 
 
+@pytest.mark.asyncio
 async def test_list_stale_ready_uses_ticket_id_field() -> None:
     """Tickets using 'ticket_id' key instead of 'id' are handled correctly."""
     now = 1_750_000_000.0
@@ -1762,6 +1828,7 @@ async def test_list_stale_ready_uses_ticket_id_field() -> None:
     assert result["stale_tickets"][0]["ticket_id"] == "t-ticket-id"
 
 
+@pytest.mark.asyncio
 async def test_file_ticket_rejects_unregistered_repo_id(
     respx_mock: respx.MockRouter,
 ) -> None:
@@ -1800,6 +1867,7 @@ async def test_file_ticket_rejects_unregistered_repo_id(
     assert "robotsix-mill" in result["error"]
 
 
+@pytest.mark.asyncio
 async def test_file_ticket_allows_registered_repo_id(
     respx_mock: respx.MockRouter,
 ) -> None:
@@ -1830,6 +1898,7 @@ async def test_file_ticket_allows_registered_repo_id(
     assert result["error"] == ""
 
 
+@pytest.mark.asyncio
 async def test_file_ticket_skips_validation_when_repos_unreachable(
     respx_mock: respx.MockRouter,
 ) -> None:
@@ -1859,6 +1928,7 @@ async def test_file_ticket_skips_validation_when_repos_unreachable(
     assert result["error"] == ""
 
 
+@pytest.mark.asyncio
 async def test_file_ticket_repo_validation_via_roster() -> None:
     """The roster (component_request) path also validates repo_id."""
     repos_response = json.dumps(
@@ -1892,6 +1962,7 @@ async def test_file_ticket_repo_validation_via_roster() -> None:
     assert "not registered" in result["error"]
 
 
+@pytest.mark.asyncio
 async def test_file_ticket_repo_validation_roster_falls_back_to_direct(
     respx_mock: respx.MockRouter,
 ) -> None:
@@ -1933,6 +2004,7 @@ async def test_file_ticket_repo_validation_roster_falls_back_to_direct(
     assert "not registered" in result["error"]
 
 
+@pytest.mark.asyncio
 async def test_transition_ticket_approves_to_ready_with_note(monkeypatch):
     """The approve path posts /transition with state=ready and the rationale."""
     captured: list = []
@@ -1949,6 +2021,7 @@ async def test_transition_ticket_approves_to_ready_with_note(monkeypatch):
     }
 
 
+@pytest.mark.asyncio
 async def test_transition_ticket_thin_spec_goes_to_draft(monkeypatch):
     """The thin-spec path posts state=draft with the what-is-missing note."""
     captured: list = []
@@ -1959,6 +2032,7 @@ async def test_transition_ticket_thin_spec_goes_to_draft(monkeypatch):
     assert captured[0][3]["state"] == "draft"
 
 
+@pytest.mark.asyncio
 async def test_transition_ticket_requires_a_note(monkeypatch):
     captured: list = []
     tool = _transition_tool(monkeypatch, captured)
@@ -1968,6 +2042,7 @@ async def test_transition_ticket_requires_a_note(monkeypatch):
     assert captured == []
 
 
+@pytest.mark.asyncio
 async def test_transition_ticket_rejects_unlisted_states(monkeypatch):
     captured: list = []
     tool = _transition_tool(monkeypatch, captured)
@@ -1989,6 +2064,7 @@ def test_mill_workflow_skill_carries_the_approval_gate_policy():
     assert "Never spawn a subsession that merely waits for a human" in instruction
 
 
+@pytest.mark.asyncio
 async def test_mark_ticket_ready_waits_out_classifying_then_retries(
     monkeypatch,
 ) -> None:
@@ -2039,6 +2115,7 @@ async def test_mark_ticket_ready_waits_out_classifying_then_retries(
     assert all(p == "/tickets/mr-classifying" for m, p in calls if m == "GET")
 
 
+@pytest.mark.asyncio
 async def test_mark_ticket_ready_still_classifying_returns_guidance(
     monkeypatch,
 ) -> None:
