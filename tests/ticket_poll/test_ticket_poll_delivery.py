@@ -6,6 +6,7 @@ import json
 from typing import Any
 
 import httpx
+import pytest
 import respx
 
 from robotsix_chat.ticket_poll import (
@@ -13,6 +14,7 @@ from robotsix_chat.ticket_poll import (
     _delivery_fields,
     build_ticket_poll_tools,
 )
+from robotsix_chat.ticket_poll.mill_states import ACTIVE_WORK_STATES, MERGE_STATES
 from tests.ticket_poll._ticket_poll_helpers import _69BE_HISTORY, _69BE_PR, _settings
 
 
@@ -141,6 +143,10 @@ def test_unexpected_terminal_human_issue_approval_to_closed_flagged() -> None:
     assert _check_unexpected_terminal(data) is not None
 
 
+@pytest.mark.parametrize(
+    "work_state",
+    sorted(ACTIVE_WORK_STATES | MERGE_STATES),
+)
 def test_unexpected_terminal_null_for_every_real_work_state(work_state: str) -> None:
     """Every real active-work / merge state in the history suppresses the flag."""
     data: dict[str, Any] = {
