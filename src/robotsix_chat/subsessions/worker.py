@@ -21,7 +21,6 @@ from __future__ import annotations
 
 import asyncio
 import contextvars
-import fnmatch
 import logging
 import re
 from collections.abc import Callable
@@ -40,7 +39,6 @@ from .models import (
     SubsessionInfo,
     SubsessionIntervalError,
     SubsessionKind,
-    SubsessionLevelError,
     SubsessionNoChangeThresholdError,
     SubsessionPeriodicSpawnError,
     SubsessionStatus,
@@ -51,6 +49,27 @@ from .prompts import USER_CHAT_SETTLED_NOTE as _USER_CHAT_SETTLED_NOTE
 from .registry import OWNER_CLOSED_REASON, SubsessionRegistry
 from .schedule import parse_anchor_time
 from .slot_budget import SLOT_BUDGET_QUEUED, SlotBudget, SlotBudgetQueueFullError
+from .worker_errors import (
+    _DEGENERATE_SUCCESS_SIGNATURE as _DEGENERATE_SUCCESS_SIGNATURE,
+    _MODEL_TIER_NOT_FOUND_STATUS as _MODEL_TIER_NOT_FOUND_STATUS,
+    _NO_CHANGE_SENTINEL as _NO_CHANGE_SENTINEL,
+    _QUEUED_SENTINEL as _QUEUED_SENTINEL,
+    _RETRY_PROMPT_TEMPLATE as _RETRY_PROMPT_TEMPLATE,
+    _USAGE_EXHAUSTED_SIGNATURE as _USAGE_EXHAUSTED_SIGNATURE,
+    _format_duration as _format_duration,
+    _format_worker_error as _format_worker_error,
+    _is_duplicate_reply as _is_duplicate_reply,
+    _is_model_tier_not_found as _is_model_tier_not_found,
+    _is_no_change as _is_no_change,
+    _is_queued as _is_queued,
+    _ordinal_suffix as _ordinal_suffix,
+    _truncate as _truncate,
+)
+from .worker_validation import (
+    _get_kind_turn_budget as _get_kind_turn_budget,
+    _is_ticket_pre_authorized as _is_ticket_pre_authorized,
+    _validate_model_level as _validate_model_level,
+)
 
 if TYPE_CHECKING:
     from robotsix_chat.chat.conversation import ConversationStore
@@ -71,266 +90,6 @@ _MAX_WORKER_HISTORY_TURNS = 20
 # Bound monitor replay much tighter — the current tick only needs a couple
 # of prior turns for continuity.
 _MAX_PERIODIC_HISTORY_TURNS = 3
-
-# The Claude Agent SDK's wording when it collapses a self-contradictory
-# ``is_error=True`` / ``errors=[]`` / ``subtype="success"`` frame into a
-# bare message — a known transient bug, not a real tool failure.
-_DEGENERATE_SUCCESS_SIGNATURE = "returned an error result: success"
-
-# The Claude CLI's wording when a tier's usage credits are exhausted.
-_USAGE_EXHAUSTED_SIGNATURE = "out of usage credits"
-
-# HTTP status used by model providers (OpenRouter, etc.) when the
-# requested model is not available at the configured price ceiling.
-# The model exists but cannot be reached through the current routing
-# — falling back to a different tier usually resolves it.
-_MODEL_TIER_NOT_FOUND_STATUS = 404
-
-
-def _is_model_tier_not_found(exc: BaseException) -> bool:
-    """Return ``True`` when *exc* indicates the requested model tier is not available.
-
-    Currently matches HTTP 404 on the exception or anywhere in its cause
-    chain — the common signature when an OpenRouter model cannot be routed
-    at the configured price ceiling.
-    """
-    from robotsix_http.retry import _status
-
-    return _status(exc) == _MODEL_TIER_NOT_FOUND_STATUS
-
-
-def _format_worker_error(exc: BaseException) -> str:
-    """Translate known Claude SDK error patterns into clear human-readable messages.
-
-    When *exc* is a :class:`claude_agent_sdk.ProcessError` (the CLI
-    subprocess exited non-zero), the message includes the exit code and
-    stderr output so the operator can diagnose the tool failure without
-    digging through logs.
-
-    For unrecognised exceptions the exception type name is always included
-    so the message is actionable even when the SDK wording is opaque.
-    """
-    msg = str(exc)
-    exc_type_name = type(exc).__name__
-
-    # Degenerate success frame — a known transient Claude SDK bug that
-    # can persist across retries.  Not a real tool failure.
-    if _DEGENERATE_SUCCESS_SIGNATURE in msg.lower():
-        return (
-            "The Claude agent encountered a transient internal SDK error "
-            "(degenerate success frame — the SDK reported an error result "
-            "whose subtype is 'success', a self-contradictory frame that "
-            "could not be cleared by retry). This is a known Claude SDK "
-            "bug and does not indicate a real tool failure. "
-            f"Original SDK message: {msg}"
-        )
-
-    # Usage-exhaustion — the tier has no credits left.
-    if _USAGE_EXHAUSTED_SIGNATURE in msg.lower():
-        return (
-            "The Claude agent's usage credits for this tier are exhausted. "
-            "Switch to a different model level, or wait for credits to "
-            "reset. " + msg
-        )
-
-    # Model not routable — e.g. OpenRouter 404 when no provider serves the
-    # model at the configured price ceiling. llmio's provider failover
-    # already retried the turn on the other provider slot before this
-    # surfaced.
-    if _is_model_tier_not_found(exc):
-        return (
-            "The requested model is not available "
-            "(HTTP 404 — it could not be routed at the configured "
-            "price ceiling), and the automatic provider failover could "
-            "not serve the turn either. " + msg
-        )
-
-    # ProcessError from claude_agent_sdk carries exit_code and stderr —
-    # surface those so the operator can diagnose without log-diving.
-    exit_code = getattr(exc, "exit_code", None)
-    if exit_code is not None:
-        stderr = getattr(exc, "stderr", None)
-        parts = [f"Claude CLI process exited with code {exit_code}"]
-        if stderr:
-            stderr_text = str(stderr).strip()
-            if stderr_text:
-                parts.append(f"stderr: {_truncate(stderr_text, 500)}")
-        parts.append(msg)
-        return "\n".join(parts)
-
-    # For any other exception, include the type name so the message is
-    # never just an opaque SDK string — the operator can distinguish a
-    # TimeoutError from a RuntimeError at a glance.
-    if exc_type_name not in msg:
-        return f"[{exc_type_name}] {msg}"
-    return msg
-
-
-def _truncate(text: str, max_len: int) -> str:
-    """Truncate *text* to *max_len* chars, appending ``"..."`` when cut."""
-    if len(text) <= max_len:
-        return text
-    return text[:max_len] + "..."
-
-
-# Reply sentinel a periodic subsession uses to report "nothing changed".
-_NO_CHANGE_SENTINEL = "NO_CHANGE"
-
-# Reply sentinel a periodic subsession uses to report that the monitored
-# ticket is queued (waiting for implementation / in a non-terminal
-# pipeline stage) — the monitor should enter event-driven wait instead of
-# burning no-change quota.
-_QUEUED_SENTINEL = "QUEUED"
-
-
-# Prompt fragment prepended when a user_chat / task subsession is retried
-# after a failure.  The agent sees the original error so it can diagnose
-# and self-correct (e.g. re-build context that was lost).
-_RETRY_PROMPT_TEMPLATE = (
-    "[System note: this subsession is being retried after a failure "
-    "(attempt {attempt}/{max_retries}). The error was:\n\n{error}\n\n"
-    "The subsession has been re-launched from its original instructions. "
-    "If the error was caused by lost context (e.g. after a server restart) "
-    "you may need to re-fetch any external state you were relying on. "
-    "Your original instructions follow below.]\n\n"
-)
-
-
-# Consecutive stale-worker resume attempts before the subsession is closed.
-
-
-# Phrases that, when they appear at the start of a periodic reply,
-# indicate the agent found nothing to report.  Kept broad enough to
-# catch common LLM paraphrasing of "nothing changed" without being so
-# broad that it swallows real status updates.
-_NO_CHANGE_PHRASES: tuple[str, ...] = (
-    "NO CHANGE",
-    "NO CHANGES",
-    "NOTHING CHANGED",
-    "NOTHING HAS CHANGED",
-    "NO UPDATES",
-    "UNCHANGED",
-    "NO NEW",
-    "EVERYTHING IS THE SAME",
-    "ALL QUIET",
-    "STATUS UNCHANGED",
-    "NO SIGNIFICANT CHANGE",
-    "NO MEANINGFUL CHANGE",
-)
-
-# Phrases that, when they appear at the start of a periodic reply,
-# indicate the agent found the ticket is queued (waiting for
-# implementation) — the monitor should switch to event-driven wait.
-_QUEUED_PHRASES: tuple[str, ...] = (
-    "QUEUED",
-    "QUEUED FOR IMPLEMENTATION",
-    "WAITING FOR IMPLEMENTATION",
-    "IN QUEUE",
-    "IMPLEMENTATION QUEUED",
-    "AWAITING IMPLEMENTATION",
-    "PENDING IMPLEMENTATION",
-)
-
-
-def _format_duration(seconds: float) -> str:
-    """Return a human-readable duration string for *seconds*."""
-    if seconds < 60:
-        return f"{int(seconds)}s"
-    if seconds < 3600:
-        minutes = int(seconds / 60)
-        return f"{minutes} min"
-    hours = int(seconds / 3600)
-    minutes = int((seconds % 3600) / 60)
-    if minutes == 0:
-        return f"{hours}h"
-    return f"{hours}h {minutes}m"
-
-
-def _is_no_change(reply: str) -> bool:
-    """Whether *reply* is the periodic no-change sentinel or a common paraphrase.
-
-    The LLM sometimes returns a paraphrase instead of the exact sentinel.
-    """
-    cleaned = reply.strip().upper()
-    if cleaned.startswith(_NO_CHANGE_SENTINEL):
-        return True
-    return cleaned.startswith(_NO_CHANGE_PHRASES)
-
-
-def _is_queued(reply: str) -> bool:
-    """Whether *reply* is the queued sentinel or a common paraphrase.
-
-    The agent uses this when the monitored ticket is waiting for
-    implementation — the worker should switch to event-driven wait
-    instead of counting this as a no-change run.
-    """
-    cleaned = reply.strip().upper()
-    if cleaned.startswith(_QUEUED_SENTINEL):
-        return True
-    return cleaned.startswith(_QUEUED_PHRASES)
-
-
-def _is_duplicate_reply(reply: str, previous: str | None) -> bool:
-    """Whether *reply* is identical to the previous run's reply.
-
-    Strips and case-folds before comparing — suppresses repeated verbatim output.
-    """
-    if previous is None:
-        return False
-    return reply.strip().casefold() == previous.strip().casefold()
-
-
-def _ordinal_suffix(n: int) -> str:
-    """Return the ordinal suffix for *n*.
-
-    E.g. ``"st"``, ``"nd"``, ``"rd"``, ``"th"``.
-    """
-    if 11 <= (n % 100) <= 13:
-        return "th"
-    last = n % 10
-    if last == 1:
-        return "st"
-    if last == 2:
-        return "nd"
-    if last == 3:
-        return "rd"
-    return "th"
-
-
-def _is_ticket_pre_authorized(
-    ticket_id: str,
-    patterns: list[str],
-) -> bool:
-    """Return ``True`` if *ticket_id* matches any glob pattern in *patterns*.
-
-    Uses :func:`fnmatch.fnmatch` for case-sensitive glob matching.
-    An empty *patterns* list always returns ``False``.
-    """
-    if not patterns:
-        return False
-    if not ticket_id:
-        return False
-    return any(fnmatch.fnmatch(ticket_id, p) for p in patterns)
-
-
-def _get_kind_turn_budget(
-    budgets: TurnBudgetSettings,
-    kind: SubsessionKind,
-) -> KindTurnBudget | None:
-    """Return the :class:`KindTurnBudget` for *kind*, or ``None``.
-
-    ``WAIT_FOR_EVENT`` reuses the ``periodic`` budget since it is a
-    variant of periodic monitoring.
-    """
-    if kind is SubsessionKind.TASK:
-        return budgets.task
-    if kind is SubsessionKind.PERIODIC or kind is SubsessionKind.WAIT_FOR_EVENT:
-        return budgets.periodic
-    if kind is SubsessionKind.USER_CHAT:
-        return budgets.user_chat
-    if kind is SubsessionKind.ON_CLOSE:
-        return budgets.on_close
-    return None
 
 
 # Turn-budget soft-warn reminder, appended to the agent's next turn input
@@ -864,22 +623,6 @@ def _drain_slot_budget_queue(env: SubsessionEnv, owner_session_id: str) -> None:
             request.get("kind"),
             owner_session_id,
             sub_id,
-        )
-
-
-def _validate_model_level(model_level: int) -> None:
-    """Reject invalid levels; key availability is not a spawn concern.
-
-    Every level is served by the keyless Claude SDK default slot; the
-    OpenRouter key only matters when llmio's provider failover routes a
-    call to the keyed fallback slot, and a missing key there surfaces as
-    a normal run failure, not a spawn error.
-    """
-    from robotsix_chat.config import VALID_MODEL_LEVELS
-
-    if model_level not in VALID_MODEL_LEVELS:
-        raise SubsessionLevelError(
-            f"model_level must be one of {sorted(VALID_MODEL_LEVELS)}"
         )
 
 
