@@ -55,9 +55,13 @@ from typing import TYPE_CHECKING, Any
 from robotsix_chat.repo.direct.board_client import BoardClient, parse_owner_repo
 from robotsix_chat.ticket_poll.helpers import (
     _board_connection,
-    _check_unexpected_terminal as _check_unexpected_terminal,
-    _delivery_fields as _delivery_fields,
     _parse_json_body,
+)
+from robotsix_chat.ticket_poll.helpers import (
+    _check_unexpected_terminal as _check_unexpected_terminal,
+)
+from robotsix_chat.ticket_poll.helpers import (
+    _delivery_fields as _delivery_fields,
 )
 from robotsix_chat.ticket_poll.ticket_poll_queue import (
     build_list_stale_ready_tickets_tool,

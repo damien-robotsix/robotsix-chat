@@ -2,8 +2,6 @@
 
 from __future__ import annotations
 
-
-
 # The Claude Agent SDK's wording when it collapses a self-contradictory
 # ``is_error=True`` / ``errors=[]`` / ``subtype="success"`` frame into a
 # bare message — a known transient bug, not a real tool failure.

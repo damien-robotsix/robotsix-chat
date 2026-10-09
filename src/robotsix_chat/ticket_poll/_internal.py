@@ -16,7 +16,6 @@ from robotsix_chat.ticket_poll.helpers import (
     _parse_json_body,
 )
 
-
 logger = logging.getLogger(__name__)
 
 # Retry configuration for ticket poll requests — transient network blips

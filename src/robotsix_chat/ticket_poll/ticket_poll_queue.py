@@ -6,7 +6,6 @@ import asyncio
 import json
 import logging
 from collections.abc import Callable
-from datetime import UTC, datetime
 from typing import TYPE_CHECKING, Any
 
 import httpx

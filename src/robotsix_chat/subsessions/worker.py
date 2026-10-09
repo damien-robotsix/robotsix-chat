@@ -51,23 +51,53 @@ from .schedule import parse_anchor_time
 from .slot_budget import SLOT_BUDGET_QUEUED, SlotBudget, SlotBudgetQueueFullError
 from .worker_errors import (
     _DEGENERATE_SUCCESS_SIGNATURE as _DEGENERATE_SUCCESS_SIGNATURE,
+)
+from .worker_errors import (
     _MODEL_TIER_NOT_FOUND_STATUS as _MODEL_TIER_NOT_FOUND_STATUS,
+)
+from .worker_errors import (
     _NO_CHANGE_SENTINEL as _NO_CHANGE_SENTINEL,
+)
+from .worker_errors import (
     _QUEUED_SENTINEL as _QUEUED_SENTINEL,
+)
+from .worker_errors import (
     _RETRY_PROMPT_TEMPLATE as _RETRY_PROMPT_TEMPLATE,
+)
+from .worker_errors import (
     _USAGE_EXHAUSTED_SIGNATURE as _USAGE_EXHAUSTED_SIGNATURE,
+)
+from .worker_errors import (
     _format_duration as _format_duration,
+)
+from .worker_errors import (
     _format_worker_error as _format_worker_error,
+)
+from .worker_errors import (
     _is_duplicate_reply as _is_duplicate_reply,
+)
+from .worker_errors import (
     _is_model_tier_not_found as _is_model_tier_not_found,
+)
+from .worker_errors import (
     _is_no_change as _is_no_change,
+)
+from .worker_errors import (
     _is_queued as _is_queued,
+)
+from .worker_errors import (
     _ordinal_suffix as _ordinal_suffix,
+)
+from .worker_errors import (
     _truncate as _truncate,
 )
 from .worker_validation import (
     _get_kind_turn_budget as _get_kind_turn_budget,
+)
+from .worker_validation import (
     _is_ticket_pre_authorized as _is_ticket_pre_authorized,
+)
+from .worker_validation import (
     _validate_model_level as _validate_model_level,
 )
 
@@ -75,7 +105,7 @@ if TYPE_CHECKING:
     from robotsix_chat.chat.conversation import ConversationStore
     from robotsix_chat.chat.events import EventSink
     from robotsix_chat.chat.server.routes import ChatAgent
-    from robotsix_chat.config import KindTurnBudget, Settings, TurnBudgetSettings
+    from robotsix_chat.config import Settings
 
 logger = logging.getLogger(__name__)
 
