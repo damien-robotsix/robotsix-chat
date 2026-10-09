@@ -66,6 +66,8 @@ async def _fetch_board_repo_ids(
                         newline = body.index("\n")
                         body = body[newline + 1 :]
                     except ValueError:
+                        # No newline in the "HTTP <status>" line — the body is
+                        # already the bare payload, so leave it unchanged.
                         pass
                 parsed, _err = (
                     _parse_json_body(body) if isinstance(body, str) else (body, "")
