@@ -1,5 +1,5 @@
 name: website_status_check
-system_prompt: |
+prompt_overlay: |
   ## Monthly website content-source verification
 
   Client-facing project descriptions (e.g., website cards, detail pages)
