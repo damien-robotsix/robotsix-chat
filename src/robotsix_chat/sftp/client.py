@@ -113,9 +113,7 @@ class SftpClient:
             self._settings.host,
             self._settings.port,
         )
-        conn = await asyncssh.connect(
-            **kwargs, connect_timeout=self._settings.timeout
-        )
+        conn = await asyncssh.connect(**kwargs, connect_timeout=self._settings.timeout)
         return conn
 
     @asynccontextmanager
