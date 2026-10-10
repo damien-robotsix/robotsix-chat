@@ -69,6 +69,44 @@ Everything below predates the release-please migration and was
 maintained by hand or by towncrier. It is kept verbatim; new entries
 are added above by release-please.
 
+## [0.24.0](https://github.com/damien-robotsix/robotsix-chat/compare/v0.23.1...v0.24.0) (2026-10-10)
+
+
+### ⚠ BREAKING CHANGES
+
+* `evergoing.enabled` is no longer a setting and the cross-session agent tools are removed.
+
+### Features
+
+* add project parameter to inspect_langfuse_trace for fleet-wide queries ([52119be](https://github.com/damien-robotsix/robotsix-chat/commit/52119be214a2a6555f4cb3566dcf0eb20a1c2dc5))
+* Adopt & complete external PR [#2034](https://github.com/damien-robotsix/robotsix-chat/issues/2034): failsafe PARTIAL REPORT for interrupted periodic runs (20261001T102658Z-track-external-pr-robotsix-chat-2034-e5b4) ([#2062](https://github.com/damien-robotsix/robotsix-chat/issues/2062)) ([2622a1c](https://github.com/damien-robotsix/robotsix-chat/commit/2622a1c1488423a79a977b36b85ddf79cc0e4158))
+* Periodic gate-drain must report discovered scope upfront to operator in main conversation (20260915T151326Z-periodic-gate-drain-must-report-discover-51cc) ([#1954](https://github.com/damien-robotsix/robotsix-chat/issues/1954)) ([b9f144a](https://github.com/damien-robotsix/robotsix-chat/commit/b9f144a61156bf3eb805937760ff1aa96dd2989b))
+* remove the evergoing session (keep the summary-compaction scheduler) ([#1958](https://github.com/damien-robotsix/robotsix-chat/issues/1958)) ([6c6fa85](https://github.com/damien-robotsix/robotsix-chat/commit/6c6fa85bfe13815c4a45943c56075587ff27e95b))
+* Track external PR: robotsix-chat[#2015](https://github.com/damien-robotsix/robotsix-chat/issues/2015) (20260929T102622Z-track-external-pr-robotsix-chat-2015-1feb) ([#2044](https://github.com/damien-robotsix/robotsix-chat/issues/2044)) ([4818394](https://github.com/damien-robotsix/robotsix-chat/commit/4818394d84f198943db7de2cb1e5c18368acaa69))
+
+
+### Bug Fixes
+
+* Enforce mandatory final report in periodic session execution (20260921T154150Z-enforce-mandatory-final-report-in-period-a0ef) ([#1991](https://github.com/damien-robotsix/robotsix-chat/issues/1991)) ([4a9763c](https://github.com/damien-robotsix/robotsix-chat/commit/4a9763c683855ccd904da19f380defea7151078c))
+* Feedback runner: do not route findings to investigation subsessions when the owner session was deleted (20260915T154413Z-feedback-runner-do-not-route-findings-to-93de) ([#1959](https://github.com/damien-robotsix/robotsix-chat/issues/1959)) ([cf8c959](https://github.com/damien-robotsix/robotsix-chat/commit/cf8c9595efd6df7b471d9236892e2d354dcafc8a))
+* **feedback:** cap concurrent feedback runs (max_concurrent_runs, default 2) ([#1957](https://github.com/damien-robotsix/robotsix-chat/issues/1957)) ([eb137e2](https://github.com/damien-robotsix/robotsix-chat/commit/eb137e2bdd1137b343cf9875c88d6a47f723c55b))
+* **langfuse:** add trailing newline to skill.md and cover inspect_langfuse_trace project routing ([34f0340](https://github.com/damien-robotsix/robotsix-chat/commit/34f03407d1bc0f2ae5419143d34ee85a9ae56055))
+* **periodic:** close the superseded previous run when a preset fires again ([#1953](https://github.com/damien-robotsix/robotsix-chat/issues/1953)) ([91d0360](https://github.com/damien-robotsix/robotsix-chat/commit/91d036069470a529a3533a44cd3694378017868a))
+* **periodic:** Make final reports truncation-resilient ([#1993](https://github.com/damien-robotsix/robotsix-chat/issues/1993)) ([e995de5](https://github.com/damien-robotsix/robotsix-chat/commit/e995de567ee5d5fda85d313cdac47bdb772ea9dd))
+* **periodic:** stop periodic runs piling up as sessions and re-asked decisions ([#2067](https://github.com/damien-robotsix/robotsix-chat/issues/2067)) ([c7b4178](https://github.com/damien-robotsix/robotsix-chat/commit/c7b4178521bffb2a27442969bc652b2cec4889d2))
+* Restructure periodic drain prompt to enforce incremental report output (20260927T194524Z-restructure-periodic-drain-prompt-to-enf-e699) ([#2033](https://github.com/damien-robotsix/robotsix-chat/issues/2033)) ([1e23da6](https://github.com/damien-robotsix/robotsix-chat/commit/1e23da6652c87ec28f0f4417b53abbd8fae59048))
+* **tools:** accept note= on mark_ticket_ready and repo= on check_ci_health ([#1956](https://github.com/damien-robotsix/robotsix-chat/issues/1956)) ([0b04ec7](https://github.com/damien-robotsix/robotsix-chat/commit/0b04ec771d4d5e268871a12ce47f9afb4e9d4784))
+* **tools:** accept the repo/path/patch argument aliases agents actually send ([#1969](https://github.com/damien-robotsix/robotsix-chat/issues/1969)) ([3ca97bc](https://github.com/damien-robotsix/robotsix-chat/commit/3ca97bc1518f3f98e2cc4ef77fd95728311e7a0a))
+* Track external PR: robotsix-chat[#1983](https://github.com/damien-robotsix/robotsix-chat/issues/1983) (20261002T102719Z-track-external-pr-robotsix-chat-1983-7d82) ([#2071](https://github.com/damien-robotsix/robotsix-chat/issues/2071)) ([97633c2](https://github.com/damien-robotsix/robotsix-chat/commit/97633c2e0195786018c7d3e209f39c08c1ffc401))
+* Track external PR: robotsix-chat[#2013](https://github.com/damien-robotsix/robotsix-chat/issues/2013) (20260929T102622Z-track-external-pr-robotsix-chat-2013-1e47) ([#2043](https://github.com/damien-robotsix/robotsix-chat/issues/2043)) ([382e661](https://github.com/damien-robotsix/robotsix-chat/commit/382e661575412422a7768d8c0fb4b6fd3841ff2c))
+
+
+### Documentation
+
+* Track external PR: robotsix-chat[#1987](https://github.com/damien-robotsix/robotsix-chat/issues/1987) (20261003T102737Z-track-external-pr-robotsix-chat-1987-96bb) ([#2078](https://github.com/damien-robotsix/robotsix-chat/issues/2078)) ([0e7ff31](https://github.com/damien-robotsix/robotsix-chat/commit/0e7ff31923ce756698701d96a1c49442333cf0cc))
+* Track external PR: robotsix-chat[#2020](https://github.com/damien-robotsix/robotsix-chat/issues/2020) (20261007T132402Z-track-external-pr-robotsix-chat-2020-cbff) ([#2088](https://github.com/damien-robotsix/robotsix-chat/issues/2088)) ([8f6f95f](https://github.com/damien-robotsix/robotsix-chat/commit/8f6f95ff14701764eeb561b395a67c486e3b544a))
+* Track external PR: robotsix-chat[#2064](https://github.com/damien-robotsix/robotsix-chat/issues/2064) (20261009T132444Z-track-external-pr-robotsix-chat-2064-3af4) ([#2095](https://github.com/damien-robotsix/robotsix-chat/issues/2095)) ([04656e2](https://github.com/damien-robotsix/robotsix-chat/commit/04656e2089fd80fa93bb0ed9752cc66c96f19c51))
+
 ## [0.23.1](https://github.com/damien-robotsix/robotsix-chat/compare/v0.23.0...v0.23.1) (2026-09-13)
 
 
