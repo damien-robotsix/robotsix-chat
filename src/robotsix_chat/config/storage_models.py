@@ -156,5 +156,5 @@ class SftpSettings(BaseModel):
     known_hosts: str = ""
     remote_root: str = ""
     timeout: float = Field(
-        10.0, description="SFTP connection and operation timeout in seconds"
+        default=10.0, description="SFTP connection and operation timeout in seconds"
     )
