@@ -1017,7 +1017,7 @@
     },
     "SftpSettings": {
       "additionalProperties": false,
-      "description": "SFTP config-restore settings.\n\nProvides credentials and connection parameters for the SFTP config-restore\ncapability.  When enabled, the agent gains tools to read, list, and\n(confirmation-gated) write files on a remote SFTP server \u2014 used to\nrestore known-good configuration files when diagnostics detect they are\nmissing.\n\nAttributes:\n    enabled: Master switch.  When ``False`` (default), no SFTP tools\n        are registered and the agent runs exactly as before.\n    host: SFTP server hostname or IP address.\n    port: SFTP server port (default 22).\n    username: SFTP username for authentication.\n    password: Password for password-based authentication.  Leave empty\n        when using key-based auth.\n    private_key: OpenSSH-format private key for key-based\n        authentication.  Leave empty when using password auth.\n    private_key_passphrase: Passphrase for *private_key*, if the key\n        is encrypted.\n    known_hosts: OpenSSH-format known-hosts entries (one or more lines)\n        for host key verification.  When empty, host key verification\n        is skipped (insecure \u2014 only suitable for isolated networks).\n    remote_root: Optional base directory on the remote server to\n        restrict all operations under (e.g. ``/var/www``).  When set,\n        paths are resolved relative to this root and traversal outside\n        it is refused.",
+      "description": "SFTP config-restore settings.\n\nProvides credentials and connection parameters for the SFTP config-restore\ncapability.  When enabled, the agent gains tools to read, list, and\n(confirmation-gated) write files on a remote SFTP server \u2014 used to\nrestore known-good configuration files when diagnostics detect they are\nmissing.\n\nAttributes:\n    enabled: Master switch.  When ``False`` (default), no SFTP tools\n        are registered and the agent runs exactly as before.\n    host: SFTP server hostname or IP address.\n    port: SFTP server port (default 22).\n    username: SFTP username for authentication.\n    password: Password for password-based authentication.  Leave empty\n        when using key-based auth.\n    private_key: OpenSSH-format private key for key-based\n        authentication.  Leave empty when using password auth.\n    private_key_passphrase: Passphrase for *private_key*, if the key\n        is encrypted.\n    known_hosts: OpenSSH-format known-hosts entries (one or more lines)\n        for host key verification.  When empty, host key verification\n        is skipped (insecure \u2014 only suitable for isolated networks).\n    remote_root: Optional base directory on the remote server to\n        restrict all operations under (e.g. ``/var/www``).  When set,\n        paths are resolved relative to this root and traversal outside\n        it is refused.\n    timeout: SFTP connection and operation timeout in seconds.  Caps\n        how long a connection to a slow, unreachable, or malicious\n        server may hang before failing.",
       "properties": {
         "enabled": {
           "default": false,
@@ -1069,6 +1069,12 @@
           "default": "",
           "title": "Remote Root",
           "type": "string"
+        },
+        "timeout": {
+          "default": 10.0,
+          "description": "SFTP connection and operation timeout in seconds",
+          "title": "Timeout",
+          "type": "number"
         }
       },
       "title": "SftpSettings",

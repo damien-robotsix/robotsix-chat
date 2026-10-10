@@ -201,7 +201,8 @@
     "private_key": "",
     "private_key_passphrase": "",
     "known_hosts": "",
-    "remote_root": ""
+    "remote_root": "",
+    "timeout": 10.0
   },
   "file_hub_tools": {
     "enabled": false,

@@ -2,7 +2,7 @@
 
 from __future__ import annotations
 
-from pydantic import BaseModel, ConfigDict, SecretStr
+from pydantic import BaseModel, ConfigDict, Field, SecretStr
 
 
 class DirectRepoSettings(BaseModel):
@@ -138,6 +138,9 @@ class SftpSettings(BaseModel):
             restrict all operations under (e.g. ``/var/www``).  When set,
             paths are resolved relative to this root and traversal outside
             it is refused.
+        timeout: SFTP connection and operation timeout in seconds.  Caps
+            how long a connection to a slow, unreachable, or malicious
+            server may hang before failing.
 
     """
 
@@ -152,3 +155,6 @@ class SftpSettings(BaseModel):
     private_key_passphrase: SecretStr = SecretStr("")
     known_hosts: str = ""
     remote_root: str = ""
+    timeout: float = Field(
+        10.0, description="SFTP connection and operation timeout in seconds"
+    )

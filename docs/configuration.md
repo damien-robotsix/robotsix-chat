@@ -788,6 +788,7 @@ files when diagnostics detect they are missing. Disabled by default.
 | `sftp.private_key_passphrase` | `string` (secret) | `""`    | Passphrase for `private_key`, if the key is encrypted.                                                      |
 | `sftp.known_hosts`            | `string`          | `""`    | OpenSSH-format known-hosts entries for host key verification. When empty, host key verification is skipped. |
 | `sftp.remote_root`            | `string`          | `""`    | Optional base directory on the remote server to restrict all operations under (e.g. `/var/www`).            |
+| `sftp.timeout`                | `number`          | `10.0`  | SFTP connection and operation timeout in seconds.                                                           |
 
 ### File Hub Tools
 
