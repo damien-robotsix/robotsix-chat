@@ -38,6 +38,7 @@ from robotsix_chat.chat.events import (
     subsession_started_frame,
     subsession_updated_frame,
 )
+from robotsix_chat.ticket_poll.mill_states import HUMAN_WAIT_STATES
 
 from .models import (
     ACTIVE_STATUSES,
@@ -62,9 +63,13 @@ TICKET_ID_RE = re.compile(r"\b\d{8}T\d{6}Z-[a-z0-9][a-z0-9-]*-[0-9a-f]{4}\b")
 # only meaningful while its ticket sits in one of these. Once a mill event
 # reports the ticket somewhere else (approved → ready, closed, re-running),
 # the decision is moot and the panel is closed on the operator's behalf.
-DECISION_GATE_STATES = frozenset(
-    {"human_issue_approval", "human_mr_approval", "awaiting_user_reply", "blocked"}
-)
+#
+# This is an alias for the canonical ``HUMAN_WAIT_STATES`` set defined in
+# ``robotsix_chat.ticket_poll.mill_states`` (the single source of truth for
+# mill state-name sets). Aliasing — rather than re-typing the literal —
+# guarantees the decision-gate logic stays in sync when a new human-wait
+# state is added upstream.
+DECISION_GATE_STATES = HUMAN_WAIT_STATES
 
 
 def user_chat_ticket_id(info: SubsessionInfo) -> str | None:
