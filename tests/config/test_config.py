@@ -1031,6 +1031,32 @@ def test_allowed_image_media_types_default() -> None:
     ]
 
 
+def test_allowed_image_media_types_default_uses_shared_constant() -> None:
+    """The default derives from the single-source-of-truth module constant."""
+    from robotsix_chat.config import DEFAULT_ALLOWED_IMAGE_MEDIA_TYPES
+
+    settings = Settings()
+    assert settings.allowed_image_media_types == DEFAULT_ALLOWED_IMAGE_MEDIA_TYPES
+    # A fresh list per instance — mutating one must not leak into the constant.
+    assert settings.allowed_image_media_types is not DEFAULT_ALLOWED_IMAGE_MEDIA_TYPES
+
+
+def test_image_mime_allowlist_frontend_in_sync() -> None:
+    """The frontend literals agree with the Python allowlist (CI sync gate)."""
+    import subprocess
+    import sys
+    from pathlib import Path
+
+    repo_root = Path(__file__).resolve().parents[2]
+    script = repo_root / "scripts" / "check_image_mime_sync.py"
+    result = subprocess.run(
+        [sys.executable, str(script)],
+        capture_output=True,
+        text=True,
+    )
+    assert result.returncode == 0, result.stderr
+
+
 # ---------------------------------------------------------------------------
 # LangfuseSettings
 # ---------------------------------------------------------------------------
