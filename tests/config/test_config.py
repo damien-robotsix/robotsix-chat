@@ -1049,7 +1049,7 @@ def test_image_mime_allowlist_frontend_in_sync() -> None:
 
     repo_root = Path(__file__).resolve().parents[2]
     script = repo_root / "scripts" / "check_image_mime_sync.py"
-    result = subprocess.run(
+    result = subprocess.run(  # noqa: S603
         [sys.executable, str(script)],
         capture_output=True,
         text=True,
