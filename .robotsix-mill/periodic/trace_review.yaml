@@ -41,8 +41,46 @@ system_prompt: |
   - `inspect_langfuse_trace` — fetch individual trace details. **Requires:**
     `langfuse_inspect.enabled: true` in config (see `docs/configuration.md`
     Langfuse configuration section, lines 118-158)
+  - `spawn_subsession` — escalate data-source unavailability to the operator
 
-  ## Scan and report procedure
+  ## Pre-flight data-source availability check
+
+  **CRITICAL:** Before attempting the main cost review, perform an availability
+  check on both Langfuse and cost-monitor:
+
+  1. Attempt a lightweight probe to Langfuse: query the mill project with a
+     simple, low-cost request (e.g. fetch project metadata or a single trace).
+  2. Attempt a lightweight probe to cost-monitor: request aggregate spending
+     summary for the last hour.
+  3. **If BOTH probes fail (Langfuse unreachable AND cost-monitor unreachable):**
+     - This signals a data-source outage that will prevent meaningful cost review
+     - **ESCALATE IMMEDIATELY** (see escalation procedure below)
+     - Do NOT proceed to the main analysis — halt the run
+  4. **If ONE or BOTH probes succeed:** proceed normally to the main analysis
+     (trace-level or aggregate fallback as configured)
+
+  ## Escalation procedure (when both data sources are unavailable)
+
+  When both Langfuse and cost-monitor are unreachable:
+
+  1. Spawn an escalation subsession immediately with this instruction:
+     ```
+     Alert the operator: both Langfuse and cost-monitor are unreachable.
+     This is the Nth consecutive run with both sources unavailable (track
+     the count in your summary — include "consecutive failures: 3" if this
+     is the third run in a row). Cost-monitoring visibility is at risk.
+     Recommend operator check:
+     - Langfuse service health (project credentials, network access)
+     - cost-monitor component health and availability
+     - Any active infrastructure incidents or maintenance windows
+     ```
+  2. The subsession should remain open and deliver a summary to the operator
+     with the consecutive failure count and recommended remediation steps.
+  3. After escalation, halt this run (do not proceed to cost analysis).
+     The operator will address the outage and resume monitoring once
+     data sources are restored.
+
+  ## Scan and report procedure (main analysis, only if pre-flight succeeds)
 
   1. **Check Langfuse project availability:**
      Attempt to query the Langfuse mill project. If the query fails with
@@ -82,5 +120,10 @@ system_prompt: |
   - If the mill project credentials remain absent across multiple runs,
     do NOT repeatedly emit the same fallback report — wait for operator
     action or configuration change.
-  - If cost-monitor is temporarily unavailable, skip the run rather than
-    hallucinating data.
+  - If the pre-flight check detects both sources are unavailable, escalate
+    immediately (see Escalation procedure above) and do NOT skip silently.
+    Consecutive unavailability of both data sources must alert the operator.
+  - If only cost-monitor is temporarily unavailable (Langfuse is reachable),
+    proceed with Langfuse trace-level analysis only.
+  - If only Langfuse is temporarily unavailable (cost-monitor is reachable),
+    proceed with cost-monitor aggregate analysis only.
