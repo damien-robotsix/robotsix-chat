@@ -34,7 +34,7 @@ from robotsix_chat.chat.conversation import ConversationStore
 from robotsix_chat.chat.events import EventBus, EventSink
 from robotsix_chat.component_access import build_component_access_tools
 from robotsix_chat.component_client import build_component_tools
-from robotsix_chat.config import Settings
+from robotsix_chat.config import DEFAULT_ALLOWED_IMAGE_MEDIA_TYPES, Settings
 from robotsix_chat.config.models import (
     EvergoingSettings,
     HealthSettings,
@@ -1008,7 +1008,7 @@ def create_app(
     app.state.allowed_image_media_types = (
         allowed_image_media_types
         if allowed_image_media_types is not None
-        else ["image/png", "image/jpeg", "image/gif", "image/webp"]
+        else list(DEFAULT_ALLOWED_IMAGE_MEDIA_TYPES)
     )
     app.state.event_bus = event_bus or EventBus()
     app.state.run_serializer = run_serializer or RunSerializer()

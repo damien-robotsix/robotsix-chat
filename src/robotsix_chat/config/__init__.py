@@ -44,11 +44,13 @@ from robotsix_chat.config.models import (
     VersionCheckSettings,
 )
 from robotsix_chat.config.settings import (
+    DEFAULT_ALLOWED_IMAGE_MEDIA_TYPES,
     SYSTEM_PROMPT_VERSION,
     Settings,
 )
 
 __all__ = [
+    "DEFAULT_ALLOWED_IMAGE_MEDIA_TYPES",
     "PROJECT_MAIN",
     "SYSTEM_PROMPT_VERSION",
     "VALID_MODEL_LEVELS",
