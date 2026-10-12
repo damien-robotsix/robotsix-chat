@@ -399,6 +399,37 @@ def _build_investigation_prompt(
     )
 
 
+def _build_chat_config_panel_prompt(
+    ticket: dict[str, Any],
+    *,
+    session_id: str,
+    trigger_type: str,
+) -> str:
+    """Build the operator panel for a finding about chat's own config.
+
+    Periodic presets, prompts and session behaviour are configured in the
+    deployed chat config (``periodic.sessions[]`` in the config volume), not
+    in the repo, so a repo PR cannot change them: the operator decides whether
+    to apply the proposed change to the live config, or to dismiss it.
+    """
+    return (
+        "A feedback analysis of a chat session proposed a change to the chat "
+        "system's own configuration (a periodic preset, prompt or session "
+        "behaviour). That configuration lives in the deployed chat config, "
+        "not in the robotsix-chat repository, so no pull request is opened "
+        "for it — this is your decision.\n\n"
+        f"Title: {ticket['title']}\n"
+        f"Kind: {ticket.get('kind', '')}\n\n"
+        f"Finding:\n{ticket['description']}\n\n"
+        f"(Origin: robotsix-chat feedback run | session: {session_id} | "
+        f"trigger: {trigger_type})\n\n"
+        "Decide whether to apply it: edit the live config (the periodic "
+        "preset's prompt via the config API, then a chat restart so presets "
+        "reload), or dismiss it. Either way, mark the panel resolved so the "
+        "finding is not re-raised."
+    )
+
+
 def _build_escalation_prompt(
     ticket: dict[str, Any],
     *,
@@ -1111,6 +1142,43 @@ class FeedbackRunner:
                 "Feedback finding %r blocked by board admission policy but no "
                 "subsession spawner is configured — finding dropped",
                 ticket["title"],
+            )
+            return "routed"
+        if _subject_is_chat_config(ticket):
+            # Chat's periodic presets / prompts live in the deployed config
+            # volume, not in the repo: an investigation subsession can only
+            # edit the shipped ``config/config.json`` template, which prod
+            # never reads. 82 such PRs piled up on robotsix-chat between
+            # 2026-09-05 and 2026-10-12 (3 to 9 a day, none mergeable into
+            # anything live) and mill filed a tracking ticket for each. A
+            # preset/prompt change is a policy decision — surface it to the
+            # operator as a panel instead of opening a PR.
+            prompt = _build_chat_config_panel_prompt(
+                ticket, session_id=session_id, trigger_type=trigger_type
+            )
+            title = f"[feedback] chat config: {ticket['title']}"
+            try:
+                sub_id = self._spawner(
+                    owner_session_id=session_id,
+                    title=title,
+                    prompt=prompt,
+                    kind="user_chat",
+                )
+            except Exception:
+                logger.exception(
+                    "Failed to escalate chat-config finding %r to operator panel",
+                    ticket["title"],
+                )
+                return "routed"
+            self._record_resolved_finding(
+                ticket, session_id=session_id, trigger_type=trigger_type
+            )
+            self._last_filed_at[ticket["title"].strip().lower()] = time.monotonic()
+            logger.info(
+                "Feedback chat-config finding escalated to operator panel: "
+                "title=%r subsession=%s",
+                ticket["title"],
+                sub_id,
             )
             return "routed"
         target_repo = self._resolve_target_repo(ticket)
