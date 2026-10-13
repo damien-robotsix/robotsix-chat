@@ -28,7 +28,8 @@
     "component_response_max_chars": 200000,
     "component_credentials": {},
     "component_fallbacks": {
-      "calendar": "http://calendar:8080"
+      "calendar": "http://calendar:8080",
+      "mill": "http://mill:8080"
     }
   },
   "conversation": {
