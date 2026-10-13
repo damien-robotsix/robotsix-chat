@@ -292,6 +292,67 @@ async def test_fire_survives_report_partial_result_failure(tmp_path):
 
 
 @pytest.mark.asyncio
+async def test_fire_reports_pending_subsessions_when_submit_fails(tmp_path):
+    """A crashed turn surfaces open user_chat panels into the transcript."""
+    surfaced: list[str] = []
+
+    async def report_pending_subsessions(session_id: str) -> None:
+        surfaced.append(session_id)
+
+    async def failing_submit(session_id, message, model_level):
+        raise RuntimeError("boom")
+
+    scheduler, store, submitted, _ = _make(tmp_path)
+    scheduler._report_pending_subsessions = report_pending_subsessions
+    scheduler._submit_turn = failing_submit  # type: ignore[method-assign]
+
+    sid = await scheduler.fire("mail-triage")
+    # The background task has not run yet — nothing surfaced.
+    assert surfaced == []
+
+    await asyncio.sleep(0)
+    # The fallback fired on the exception path, independently of the task.
+    assert surfaced == [sid]
+
+
+@pytest.mark.asyncio
+async def test_fire_does_not_report_pending_subsessions_on_completion(tmp_path):
+    """The fallback is NOT invoked when the turn completes (no double-surface)."""
+    surfaced: list[str] = []
+
+    async def report_pending_subsessions(session_id: str) -> None:
+        surfaced.append(session_id)
+
+    scheduler, store, submitted, _ = _make(tmp_path)
+    scheduler._report_pending_subsessions = report_pending_subsessions
+
+    await scheduler.fire("mail-triage")
+    await asyncio.sleep(0)
+    # A completed run surfaces its own panels — the fallback stays silent.
+    assert len(submitted) == 1
+    assert surfaced == []
+
+
+@pytest.mark.asyncio
+async def test_fire_survives_report_pending_subsessions_failure(tmp_path):
+    """A raising pending-subsession fallback never leaks out of the turn task."""
+
+    async def report_pending_subsessions(session_id: str) -> None:
+        raise RuntimeError("subsession sink down")
+
+    async def failing_submit(session_id, message, model_level):
+        raise RuntimeError("boom")
+
+    scheduler, store, submitted, _ = _make(tmp_path)
+    scheduler._report_pending_subsessions = report_pending_subsessions
+    scheduler._submit_turn = failing_submit  # type: ignore[method-assign]
+
+    await scheduler.fire("mail-triage")
+    # No unhandled exception should escape the background task.
+    await asyncio.sleep(0)
+
+
+@pytest.mark.asyncio
 async def test_fire_ensures_partial_report_on_completed_run(tmp_path):
     """The failsafe hook is awaited with the session id on a completed run."""
     ensured: list[str] = []

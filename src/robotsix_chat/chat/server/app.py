@@ -1032,6 +1032,7 @@ def create_app(
             format_failsafe_partial_report,
             prune_closed_periodic_sessions,
         )
+        from robotsix_chat.subsessions import SubsessionKind
 
         _p_coalescer = app.state.message_coalescer
         _p_store = app.state.conversation_store
@@ -1165,6 +1166,49 @@ def create_app(
                 _p_store, keep, registry=app.state.subsession_registry
             )
 
+        async def _periodic_report_pending_subsessions(session_id: str) -> None:
+            """Surface OPEN user_chat panels when a periodic turn crashed.
+
+            The agent normally surfaces open ``user_chat`` decision panels as
+            its first operation, but a turn that fails before the agent runs
+            never performs that check, so pending operator decisions stay
+            invisible in the transcript. This fallback — invoked ONLY on the
+            exception path — lists the run's live ``user_chat`` subsessions and
+            records them directly, making the escalations visible independently
+            of the main task succeeding. No-op when there are none open, so the
+            transcript is not cluttered when nothing is pending.
+            """
+            registry = app.state.subsession_registry
+            if registry is None:
+                return
+            pending = [
+                sub
+                for sub in registry.list_for_owner(session_id)
+                if sub.kind is SubsessionKind.USER_CHAT and sub.is_active
+            ]
+            if not pending:
+                return
+            lines = [
+                "PENDING OPERATOR DECISIONS (surfaced after a failed periodic "
+                "turn)",
+                "",
+                "The scheduled task failed before completing, but the "
+                "following open user_chat decision panels are still awaiting an "
+                "operator reply. They are live decisions, not deferred work:",
+                "",
+            ]
+            for sub in pending:
+                lines.append(f"- {sub.title} ({sub.id}) — status: {sub.status.value}")
+                prompt = (sub.prompt or "").strip()
+                if prompt:
+                    lines.append(f"    Decision needed: {prompt}")
+            _p_store.record(
+                session_id,
+                PERIODIC_OWNER,
+                "(periodic pending subsessions)",
+                "\n".join(lines),
+            )
+
         app.state.periodic_scheduler = PeriodicScheduler(
             definitions=periodic_definitions,
             conversation_store=_p_store,
@@ -1176,6 +1220,7 @@ def create_app(
             has_live_subsessions=_periodic_has_live_subsessions,
             report_partial_result=_periodic_report_partial_result,
             ensure_partial_report_on_interruption=_periodic_ensure_partial_report,
+            report_pending_subsessions=_periodic_report_pending_subsessions,
             carry_over_subsessions=_periodic_carry_over,
             prune_closed_runs=_periodic_prune_closed,
         )

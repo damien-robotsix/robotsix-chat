@@ -120,6 +120,17 @@ ReportPartialResult = Callable[[str, str], Awaitable[Any]]
 #: token exhaustion or API errors interrupt the agent before it can emit its report.
 EnsurePartialReportOnInterruption = Callable[[str], Awaitable[Any]]
 
+#: ReportPendingSubsessions surfaces any OPEN ``user_chat`` decision panels of
+#: a run's session into its transcript when the main turn FAILS before the
+#: agent could run its own first-operation subsession check. This makes pending
+#: operator decisions visible independently of the main task succeeding — a
+#: crashed turn would otherwise leave time-critical escalations invisible. It is
+#: awaited with the run's session id ONLY on the exception path (a completed run
+#: surfaces its own panels, so there is no double-surfacing); best-effort,
+#: exceptions are logged and never propagate out of the turn task. ``None`` skips
+#: the fallback.
+ReportPendingSubsessions = Callable[[str], Awaitable[Any]]
+
 
 def _format_partial_error_report(preset_name: str, exc: Exception) -> str:
     """Format an exception as a proper PARTIAL REPORT for error reporting.
@@ -220,6 +231,7 @@ class PeriodicScheduler:
         report_partial_result: ReportPartialResult | None = None,
         ensure_partial_report_on_interruption: EnsurePartialReportOnInterruption
         | None = None,
+        report_pending_subsessions: ReportPendingSubsessions | None = None,
         carry_over_subsessions: CarryOverSubsessions | None = None,
         prune_closed_runs: PruneClosedRuns | None = None,
         retained_runs_per_preset: int = RETAINED_RUNS_PER_PRESET,
@@ -257,6 +269,15 @@ class PeriodicScheduler:
         (``report_partial_result`` already covers that). ``None`` skips this
         failsafe.
 
+        *report_pending_subsessions*, when given, is awaited with a run's
+        session id ONLY when that run's turn RAISES before completing — it
+        surfaces any OPEN ``user_chat`` decision panels into the transcript so
+        the operator still sees pending decisions even though the main task
+        crashed before the agent could run its own first-operation subsession
+        check. It is NOT invoked on the completion path (a completed run
+        surfaces its own panels, so there is no double-surfacing). Best-effort;
+        exceptions are logged and never propagate. ``None`` skips this fallback.
+
         *carry_over_subsessions*, when given, is awaited with the previous
         run's session id and the new run's session id each time a preset
         fires again, BEFORE the previous session is closed — so the previous
@@ -280,6 +301,7 @@ class PeriodicScheduler:
         self._ensure_partial_report_on_interruption = (
             ensure_partial_report_on_interruption
         )
+        self._report_pending_subsessions = report_pending_subsessions
         self._carry_over_subsessions = carry_over_subsessions
         self._prune_closed_runs = prune_closed_runs
         self._retained_runs = max(1, int(retained_runs_per_preset))
@@ -512,6 +534,22 @@ class PeriodicScheduler:
                         logger.exception(
                             "Periodic preset %r: emitting partial-failure "
                             "report for session %s failed",
+                            name,
+                            session_id,
+                        )
+                # Independently surface any OPEN user_chat decision panels so
+                # the operator still sees pending decisions even though the
+                # main turn crashed before the agent could run its own
+                # first-operation subsession check. This runs ONLY on the
+                # failure path — a completed run surfaces its own panels, so
+                # there is no double-surfacing.
+                if self._report_pending_subsessions is not None:
+                    try:
+                        await self._report_pending_subsessions(session_id)
+                    except Exception:
+                        logger.exception(
+                            "Periodic preset %r: surfacing pending subsessions "
+                            "for session %s failed",
                             name,
                             session_id,
                         )

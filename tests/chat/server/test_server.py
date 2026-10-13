@@ -3070,3 +3070,57 @@ async def test_periodic_failsafe_skips_on_nonempty_final_reply(tmp_path):
         turns = store.history(sid)
         assert len(turns) == 1  # unchanged — no failsafe report appended
         assert turns[-1][1] == "DONE: 3 items processed"
+
+
+# ---------------------------------------------------------------------------
+# Periodic pending-subsession fallback (_periodic_report_pending_subsessions)
+# ---------------------------------------------------------------------------
+
+
+@pytest.mark.asyncio
+async def test_periodic_report_pending_surfaces_open_user_chat(tmp_path):
+    """Open user_chat panels are recorded when a crashed turn triggers the fallback."""
+    store = ConversationStore()
+    registry = SubsessionRegistry(store_path=None)
+    async with mock_app(
+        conversation_store=store,
+        subsession_registry=registry,
+        periodic_definitions=[_periodic_def()],
+        periodic_agent_factory=lambda level: MockAgent(tokens=["ok"]),
+        periodic_state_path=str(tmp_path / "state.json"),
+    ) as f:
+        sid = str(store.create_session("periodic")["session_id"])
+        sub = _register_subsession(
+            registry,
+            owner=sid,
+            kind=SubsessionKind.USER_CHAT,
+            title="Approve deploy?",
+        )
+        handler = f.app.state.periodic_scheduler._report_pending_subsessions
+        await handler(sid)
+        turns = store.history(sid)
+        assert len(turns) == 1
+        recorded = turns[-1][1]
+        assert "PENDING OPERATOR DECISIONS" in recorded
+        assert sub.id in recorded
+        assert "Approve deploy?" in recorded
+
+
+@pytest.mark.asyncio
+async def test_periodic_report_pending_noop_when_no_open_user_chat(tmp_path):
+    """No open user_chat panels → nothing is recorded (transcript stays clean)."""
+    store = ConversationStore()
+    registry = SubsessionRegistry(store_path=None)
+    async with mock_app(
+        conversation_store=store,
+        subsession_registry=registry,
+        periodic_definitions=[_periodic_def()],
+        periodic_agent_factory=lambda level: MockAgent(tokens=["ok"]),
+        periodic_state_path=str(tmp_path / "state.json"),
+    ) as f:
+        sid = str(store.create_session("periodic")["session_id"])
+        # A non-user_chat subsession must not be surfaced.
+        _register_subsession(registry, owner=sid, kind=SubsessionKind.TASK)
+        handler = f.app.state.periodic_scheduler._report_pending_subsessions
+        await handler(sid)
+        assert store.history(sid) == []
