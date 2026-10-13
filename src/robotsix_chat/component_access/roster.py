@@ -18,6 +18,7 @@ sibling resilience — no queues, no retry loops.
 
 from __future__ import annotations
 
+import asyncio
 import logging
 import time
 from collections.abc import Callable
@@ -35,6 +36,10 @@ _cache: tuple[float, list[dict[str, Any]]] | None = None
 
 # Last non-empty roster — preserved across empty fetches as a stale fallback.
 _last_non_empty_cache: tuple[float, list[dict[str, Any]]] | None = None
+
+# In-flight background refresh started by ``fetch_roster_sync`` from inside a
+# running loop (one at a time; the three agent-build callers share it).
+_refresh_task: asyncio.Task[Any] | None = None
 
 # Retry configuration for roster fetches — transient network blips or
 # upstream 5xx should not poison the cache for a full TTL.
@@ -206,13 +211,34 @@ def fetch_roster_sync(settings: CentralDeploySettings) -> list[dict[str, Any]]:
     junk session per tick), the coroutine runs on a short-lived worker
     thread with its own loop instead.
     """
-    import asyncio
+    global _refresh_task
 
     try:
-        asyncio.get_running_loop()
+        loop = asyncio.get_running_loop()
     except RuntimeError:
         return asyncio.run(fetch_roster(settings))
 
+    # Inside a running loop the fetch must NEVER park the loop on a network
+    # wait: central-deploy builds the roster by probing every component's
+    # /chat-skill — chat's own included — so a loop blocked on ``.result()``
+    # cannot answer that probe, the fetch times out (30 s per try, retried), every
+    # caller repeats it, and the whole server (health included) is dead
+    # meanwhile. Live incident 2026-10-13 06:00-06:04Z: the daily periodic
+    # fired on a cold cache and chat was unresponsive for 4.5 min (docker
+    # health ``unhealthy`` at 06:02 and 06:04). Serve the cache — fresh or
+    # stale — and refresh it in the background instead.
+    if _cache is not None or _last_non_empty_cache is not None:
+        if _cache_valid(settings.roster_cache_ttl):
+            _, entries = _cache  # type: ignore[misc]
+            return _augment_with_fallbacks(entries, settings.component_fallbacks)
+        if _refresh_task is None or _refresh_task.done():
+            _refresh_task = loop.create_task(fetch_roster(settings))
+        stale = _last_non_empty_cache or _cache
+        return _augment_with_fallbacks(stale[1], settings.component_fallbacks)  # type: ignore[index]
+
+    # Cold start inside a loop (nothing cached yet — startup_checks normally
+    # primes the cache before the first tick): the worker-thread wait is the
+    # only way to get a roster at all.
     import concurrent.futures
 
     with concurrent.futures.ThreadPoolExecutor(max_workers=1) as pool:
