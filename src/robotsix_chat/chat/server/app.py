@@ -1190,7 +1190,7 @@ def create_app(
                 return
             lines = [
                 "PENDING OPERATOR DECISIONS (surfaced after a failed periodic "
-                "turn)",
+                + "turn)",
                 "",
                 "The scheduled task failed before completing, but the "
                 "following open user_chat decision panels are still awaiting an "
