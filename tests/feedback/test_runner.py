@@ -1061,10 +1061,46 @@ class TestFileTickets:
         )
         spawner.assert_called_once()
         _, kwargs = spawner.call_args
-        # The investigation prompt must target the chat repo, never the
-        # component repo the analysis LLM guessed.
-        assert "robotsix-chat" in kwargs["prompt"]
+        # Never an investigation in the component repo the analysis LLM
+        # guessed — and, since 2026-10-12, not a repo PR at all: the preset
+        # lives in the deployed config, so the finding becomes an operator
+        # panel (82 unmergeable config/config.json PRs had piled up on
+        # robotsix-chat, each spawning a mill tracking ticket).
+        assert kwargs["kind"] == "user_chat"
+        assert kwargs["title"].startswith("[feedback] chat config:")
+        assert "no pull request is opened" in kwargs["prompt"]
         assert "hexarchy" not in kwargs["prompt"]
+        assert "Target repo" not in kwargs["prompt"]
+
+    @pytest.mark.asyncio
+    async def test_chat_config_finding_recorded_resolved_not_reraised(
+        self, respx_mock: respx.MockRouter
+    ) -> None:
+        """A chat-config finding escalated once is not escalated again."""
+        policy_detail = (
+            "source_tag robotsix-chat-feedback is not admitted on this board: "
+            "mill admits deployment tickets only. Run this investigation as a "
+            "chat subsession agent instead of filing a ticket."
+        )
+        respx_mock.post("http://test-board/tickets/ingest").mock(
+            return_value=httpx.Response(400, json={"detail": policy_detail})
+        )
+        spawner = MagicMock(return_value="ss-panel-1")
+        runner = _make_runner(subsession_spawner=spawner)
+        finding = {
+            "title": "Periodic drain task: add mandatory checkpoint",
+            "description": "The board-gates-drain preset should emit a "
+            "PARTIAL REPORT after the subsession check.",
+            "kind": "prompt",
+            "target_repo": "robotsix-chat",
+        }
+        await runner._file_tickets(
+            [dict(finding)], trigger_type="session_end", session_id="sess-1"
+        )
+        await runner._file_tickets(
+            [dict(finding)], trigger_type="session_end", session_id="sess-2"
+        )
+        spawner.assert_called_once()
 
     @pytest.mark.asyncio
     async def test_unresolvable_target_escalates_to_user_chat(
