@@ -69,6 +69,13 @@ Everything below predates the release-please migration and was
 maintained by hand or by towncrier. It is kept verbatim; new entries
 are added above by release-please.
 
+## [0.24.1](https://github.com/damien-robotsix/robotsix-chat/compare/v0.24.0...v0.24.1) (2026-10-13)
+
+
+### Bug Fixes
+
+* **github-tools:** make the PR mutation echo arguments optional ([#2136](https://github.com/damien-robotsix/robotsix-chat/issues/2136)) ([7892d80](https://github.com/damien-robotsix/robotsix-chat/commit/7892d80f1f95707ea3ed323e1ed42968bd21911a))
+
 ## [0.24.0](https://github.com/damien-robotsix/robotsix-chat/compare/v0.23.1...v0.24.0) (2026-10-13)
 
 
