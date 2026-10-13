@@ -14,6 +14,7 @@ __all__ = [
     "_QUEUED_SENTINEL",
     "_RETRY_PROMPT_TEMPLATE",
     "_USAGE_EXHAUSTED_SIGNATURE",
+    "_categorize_error",
     "_format_duration",
     "_format_worker_error",
     "_is_duplicate_reply",
@@ -116,6 +117,59 @@ def _format_worker_error(exc: BaseException) -> str:
     if exc_type_name not in msg:
         return f"[{exc_type_name}] {msg}"
     return msg
+
+
+def _categorize_error(exc: BaseException) -> str:
+    """Categorize an exception as transient or permanent for operator guidance.
+
+    Transient errors may self-resolve on retry (timeouts, rate limits,
+    temporary network issues). Permanent errors require investigation
+    (configuration, permissions, bugs). Returns a short classification
+    string suitable for operator decision-making.
+    """
+    msg_lower = str(exc).lower()
+    exc_type_name = type(exc).__name__
+
+    # Known transient patterns
+    transient_indicators = (
+        "timeout",
+        "timed out",
+        "temporarily unavailable",
+        "rate limit",
+        "429",
+        "503",
+        "502",
+        "connection reset",
+        "connection refused",
+        "temporary",
+        "try again",
+    )
+
+    # Known permanent patterns  
+    permanent_indicators = (
+        "permission denied",
+        "unauthorized",
+        "403",
+        "404",
+        "not found",
+        "invalid",
+        "configuration",
+        "syntax error",
+    )
+
+    # Check message
+    if any(indicator in msg_lower for indicator in transient_indicators):
+        return "transient"
+    if any(indicator in msg_lower for indicator in permanent_indicators):
+        return "permanent"
+
+    # Check exception type
+    if exc_type_name in ("TimeoutError", "ConnectionError", "ConnectionRefusedError"):
+        return "transient"
+    if exc_type_name in ("ValueError", "KeyError", "AttributeError"):
+        return "permanent"
+
+    return "unknown"
 
 
 def _truncate(text: str, max_len: int) -> str:
