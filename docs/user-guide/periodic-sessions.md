@@ -74,6 +74,15 @@ Two things survive that supersede-close:
   not re-ask; the operator can answer a decision days after it was first raised, in whichever run is
   current. Without this, every firing killed the previous run's panels and spawned the same
   questions again.
+
+  **Fallback when a turn crashes.** The agent normally surfaces open `user_chat` panels as its
+  first operation, but a turn that fails before the agent even starts (e.g. a network error during
+  `submit_turn`, or a pre-agent validation failure) never performs that check. To ensure
+  time-critical operator decisions stay visible even when the main task crashes, a fallback
+  mechanism automatically surfaces any open `user_chat` panels into the transcript when a turn
+  fails. This makes pending decisions visible independently of the main task succeeding — the
+  operator still sees decision panels and their decision prompts even when the turn crashes. No-op
+  when there are no open panels, so the transcript stays clean when nothing is pending.
 - **The last few runs.** The scheduler remembers the last `RETAINED_RUNS_PER_PRESET` (3) session ids
   of each preset. After every firing, and once at startup, every *other* closed periodic session is
   deleted from the conversation store — a closed run is kept only long enough to read back what the
