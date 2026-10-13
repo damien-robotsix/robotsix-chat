@@ -975,6 +975,24 @@ async def test_periodic_ignores_bool_no_change_threshold_in_checkpoint() -> None
     assert len(agent.calls) == 2
 
 
+async def _wait_for_status(
+    env: Any, sub_id: str, status: SubsessionStatus, *, timeout: float = 5.0
+) -> None:
+    """Poll the registry until *sub_id* reaches *status* (or *timeout* elapses).
+
+    Timing-based tests that sleep a fixed interval are flaky on loaded CI
+    runners; polling keeps the test fast on an idle box and correct on a
+    slow one. The assertion that follows reports the actual status on
+    timeout.
+    """
+    deadline = asyncio.get_running_loop().time() + timeout
+    while asyncio.get_running_loop().time() < deadline:
+        info = env.registry.get(sub_id)
+        if info is not None and info.status is status:
+            return
+        await asyncio.sleep(0.01)
+
+
 @pytest.mark.asyncio
 async def test_periodic_max_idle_runs_pauses_after_consecutive_no_change() -> None:
     """max_idle_runs pauses the subsession and emits a notification."""
@@ -987,9 +1005,11 @@ async def test_periodic_max_idle_runs_pauses_after_consecutive_no_change() -> No
     )
 
     sub_id = _spawn(env, kind=SubsessionKind.PERIODIC, interval_seconds=0.02)
-    # The worker enters a PAUSED wait loop and never finishes — wait
-    # briefly for it to reach the paused state, then cancel it.
-    await asyncio.sleep(0.15)
+    # The worker enters a PAUSED wait loop and never finishes — wait for it
+    # to reach the paused state, then cancel it. Poll instead of a fixed
+    # sleep: three 0.02 s runs took longer than 0.15 s on a loaded CI runner
+    # (main run 38365698735, 2026-10-13) and the assertion saw SLEEPING.
+    await _wait_for_status(env, sub_id, SubsessionStatus.PAUSED)
     task = env.registry._running.get(sub_id)
     if task is not None and not task.done():
         task.cancel()
