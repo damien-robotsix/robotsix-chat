@@ -283,5 +283,28 @@ def test_preamble_requires_escalation_opened_line():
     assert "truncat" in lowered
 
 
+def test_preamble_requires_error_handling_guidance():
+    """The preamble must instruct the agent to handle errors and emit PARTIAL REPORT.
+
+    Session c627f49d8aa94b788798650749f15db7 (2026-09-21) encountered an
+    infrastructure blockage (mill API timeout) mid-investigation and ended
+    abruptly without emitting a PARTIAL REPORT. The preamble must explicitly
+    mandate error handling (try-finally) and guarantee that errors do not
+    silence the session — every session MUST emit a report even on error.
+    Regression for feedback finding: periodic-session-error-handling.
+    """
+    lowered = PERIODIC_PREAMBLE.lower()
+    # Error handling guidance must be present.
+    assert "error handling" in lowered
+    assert "try-finally" in lowered
+    assert "guarantee" in lowered
+    # Errors do not silence the session.
+    assert "do not let an error silence the session" in lowered
+    # Document errors in report so next run can resume.
+    assert "document it in your report" in lowered
+    # The skeleton includes errors section.
+    assert "errors encountered" in lowered
+
+
 def test_initial_prompt_is_trimmed():
     assert build_initial_message("  task  \n").endswith("task")
