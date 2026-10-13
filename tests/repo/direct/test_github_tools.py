@@ -821,3 +821,25 @@ async def test_push_patch_to_pr_branch_requires_path_and_patch() -> None:
     out = await fn(ticket_id="t", repo_full_name="damien-robotsix/x", pr_number=1)
     assert out.startswith("Error:")
     assert "file_path is required" in out
+
+
+@pytest.mark.parametrize(
+    "name",
+    ["merge_direct_repo_pr", "close_direct_repo_pr", "arm_direct_repo_auto_merge"],
+)
+def test_pr_mutation_echo_args_are_optional(name: str) -> None:
+    """``pr_title`` / ``head_base_branches`` are a cosmetic audit echo.
+
+    Live 2026-10-13 10:14Z (correlation 14acad9d…): a periodic agent called
+    ``merge_direct_repo_pr(repo_full_name=…, pr_number=…)`` for five PRs and
+    the claude_sdk path — which validates the JSON schema BEFORE the body —
+    rejected every call with "'pr_title' is a required property". Five
+    wasted turns for two strings the tool only echoes back.
+    """
+    import pydantic_ai
+
+    schema = pydantic_ai.Tool(_build_tool(name)).tool_def.parameters_json_schema
+    required = set(schema.get("required", []))
+    assert {"repo_full_name", "pr_number"} <= required, name
+    assert "pr_title" not in required, name
+    assert "head_base_branches" not in required, name

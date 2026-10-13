@@ -252,6 +252,24 @@ def check_simple_pr_file_safety(files: list[dict[str, str]]) -> str | None:
     return None
 
 
+def _confirmation_echo(pr_title: str, head_base_branches: str) -> str:
+    """Return the audit echo suffix for a PR mutation result.
+
+    ``pr_title`` / ``head_base_branches`` are purely cosmetic (the operator
+    confirmation lives in the conversation, not in these arguments), so they
+    are optional: live 2026-10-13 10:14Z (correlation 14acad9d…) a periodic
+    agent called ``merge_direct_repo_pr(repo_full_name=…, pr_number=…)`` for
+    five PRs and the claude_sdk path rejected every call with "'pr_title' is
+    a required property" before the body ran. Echo whatever was given.
+    """
+    parts: list[str] = []
+    if pr_title:
+        parts.append(f"PR: {pr_title}")
+    if head_base_branches:
+        parts.append(f"Branches: {head_base_branches}")
+    return ("\n" + "\n".join(parts)) if parts else ""
+
+
 def build_github_tools(
     *,
     client: DirectRepoClient,
@@ -1084,8 +1102,8 @@ def build_github_tools(
     async def merge_direct_repo_pr(
         repo_full_name: str,
         pr_number: int,
-        pr_title: str,
-        head_base_branches: str,
+        pr_title: str = "",
+        head_base_branches: str = "",
         merge_method: str = "squash",
         commit_title: str = "",
         commit_message: str = "",
@@ -1110,7 +1128,8 @@ def build_github_tools(
             repo_full_name: GitHub ``owner/name`` (e.g.
                 ``"robotsix/robotsix-chat"``).
             pr_number: The PR number to merge.
-            pr_title: The PR title — used for the confirmation echo.
+            pr_title: The PR title — optional, echoed back in the result
+                for auditability when given.
             head_base_branches: Description of head/base branches
                 (e.g. ``"fix/ticket → main"``) — used for the
                 confirmation echo.
@@ -1136,14 +1155,14 @@ def build_github_tools(
         )
         # Include confirmation context in the result for auditability
         if "merged successfully" in result.lower():
-            result += f"\nPR: {pr_title}\nBranches: {head_base_branches}"
+            result += _confirmation_echo(pr_title, head_base_branches)
         return result
 
     async def close_direct_repo_pr(
         repo_full_name: str,
         pr_number: int,
-        pr_title: str,
-        head_base_branches: str,
+        pr_title: str = "",
+        head_base_branches: str = "",
     ) -> str:
         """Close a pull request without merging it.
 
@@ -1164,7 +1183,8 @@ def build_github_tools(
             repo_full_name: GitHub ``owner/name`` (e.g.
                 ``"robotsix/robotsix-chat"``).
             pr_number: The PR number to close.
-            pr_title: The PR title — used for the confirmation echo.
+            pr_title: The PR title — optional, echoed back in the result
+                for auditability when given.
             head_base_branches: Description of head/base branches
                 (e.g. ``"fix/ticket → main"``) — used for the
                 confirmation echo.
@@ -1183,7 +1203,7 @@ def build_github_tools(
         )
         # Include confirmation context in the result for auditability
         if "has been closed" in result.lower():
-            result += f"\nPR: {pr_title}\nBranches: {head_base_branches}"
+            result += _confirmation_echo(pr_title, head_base_branches)
         return result
 
     async def check_direct_repo_auto_merge(
@@ -1217,8 +1237,8 @@ def build_github_tools(
     async def arm_direct_repo_auto_merge(
         repo_full_name: str,
         pr_number: int,
-        pr_title: str,
-        head_base_branches: str,
+        pr_title: str = "",
+        head_base_branches: str = "",
         merge_method: str = "squash",
     ) -> str:
         """Enable auto-merge on a pull request.
@@ -1247,7 +1267,8 @@ def build_github_tools(
             repo_full_name: GitHub ``owner/name`` (e.g.
                 ``"robotsix/robotsix-chat"``).
             pr_number: The PR number to enable auto-merge on.
-            pr_title: The PR title — used for the confirmation echo.
+            pr_title: The PR title — optional, echoed back in the result
+                for auditability when given.
             head_base_branches: Description of head/base branches
                 (e.g. ``"fix/ticket → main"``) — used for the
                 confirmation echo.
@@ -1268,7 +1289,7 @@ def build_github_tools(
         )
         # Include confirmation context in the result for auditability
         if "auto-merge enabled" in result.lower():
-            result += f"\nPR: {pr_title}\nBranches: {head_base_branches}"
+            result += _confirmation_echo(pr_title, head_base_branches)
         return result
 
     async def enable_repo_pages(
