@@ -119,6 +119,18 @@ class TestBuildSkillIndex:
         """An index without the retrieval instruction is a dead end."""
         assert "read_skill(name)" in build_skill_index(self._entries())
 
+    def test_forbids_denying_a_listed_but_unloaded_capability(self) -> None:
+        """A listed skill is a real capability even before its body is loaded.
+
+        The agent must not answer "I have no tool for that" about a capability
+        it can see in the index — the index is the authoritative inventory, and
+        the body is one ``read_skill`` call away.
+        """
+        index = build_skill_index(self._entries()).lower()
+        assert "authoritative inventory" in index
+        assert "does not exist" in index or "no tool" in index
+        assert "not yet loaded" in index or "not currently loaded" in index
+
     def test_empty_when_nothing_is_enabled(self) -> None:
         """Callers append unconditionally, so this must be falsy."""
         """Callers append unconditionally, so this must be falsy, not a header."""
