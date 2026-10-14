@@ -69,6 +69,23 @@ Everything below predates the release-please migration and was
 maintained by hand or by towncrier. It is kept verbatim; new entries
 are added above by release-please.
 
+## [0.25.0](https://github.com/damien-robotsix/robotsix-chat/compare/v0.24.1...v0.25.0) (2026-10-14)
+
+
+### Features
+
+* inspect_langfuse_trace: add multi-project support and cached-token metadata (20261001T193950Z-inspect-langfuse-trace-add-multi-project-eb04) ([#2138](https://github.com/damien-robotsix/robotsix-chat/issues/2138)) ([26c9192](https://github.com/damien-robotsix/robotsix-chat/commit/26c9192d60c46137c0178a3d468826552e8b9efd))
+
+
+### Bug Fixes
+
+* Rendre les composants/outils visibles dès le départ, même quand leur skill n'est pas encore chargé (20261014T202241Z-rendre-les-composants-outils-visibles-d-6c38) ([#2145](https://github.com/damien-robotsix/robotsix-chat/issues/2145)) ([713bbac](https://github.com/damien-robotsix/robotsix-chat/commit/713bbacdaf3ac58cdf42bb3f01553e0eaacfa744))
+
+
+### Documentation
+
+* AGENT.md: Periodic task prompts — When adding or updating periodic maintenance task prompts, mandate immediate in… (20261014T112214Z-agent-md-periodic-task-prompts-when-addi-6d3f) ([#2141](https://github.com/damien-robotsix/robotsix-chat/issues/2141)) ([bb957fc](https://github.com/damien-robotsix/robotsix-chat/commit/bb957fcb56e22a00b74124e17a21b5629dbe0833))
+
 ## [0.24.1](https://github.com/damien-robotsix/robotsix-chat/compare/v0.24.0...v0.24.1) (2026-10-13)
 
 
