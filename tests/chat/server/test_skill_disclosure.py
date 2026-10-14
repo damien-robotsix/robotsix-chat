@@ -227,6 +227,34 @@ class TestComponentSkills:
         assert "GET /accounts" not in prompt
         assert "x" * 200 not in prompt
 
+    def test_mail_is_visible_but_not_loaded_at_session_start(self) -> None:
+        """Reproduce the robotsix-mail complaint: the capability must be visible.
+
+        The operator saw the agent claim it had no tool to draft a mail — the
+        mail component was lazily loaded and the agent read its absence from
+        context as absence of the capability. At session start, before any
+        ``read_skill`` call, the mail component must appear by id + short
+        summary, and the prompt must forbid denying a listed-but-unloaded
+        capability — without pasting the 20 KB body.
+        """
+        settings = self._settings()
+        with patch(
+            "robotsix_chat.component_access.roster.fetch_roster_sync",
+            return_value=self._ROSTER,
+        ):
+            prompt = _inject_skills(settings, "Base instruction.")
+        # Visible: id + short routing summary, not the body.
+        assert "**mail**" in prompt
+        assert "Mail triage board over HTTP." in prompt
+        assert "GET /accounts" not in prompt
+        assert "x" * 200 not in prompt
+        # Loadable on demand, not eagerly loaded.
+        assert "read_skill" in prompt
+        # Forbids the "I have no tool for that" denial seen in the field.
+        low = prompt.lower()
+        assert "authoritative inventory" in low
+        assert "does not exist" in low or "no tool" in low
+
     def test_read_skill_serves_the_component_body(self) -> None:
         """The tool serves the roster skill verbatim, keyed by component id."""
         settings = self._settings()
