@@ -283,5 +283,30 @@ def test_preamble_requires_escalation_opened_line():
     assert "truncat" in lowered
 
 
+def test_preamble_requires_immediate_critical_finding_surfacing():
+    """Critical findings must be surfaced in-conversation the moment confirmed.
+
+    A critical finding (CI failure on main, widespread outage, security issue)
+    must be surfaced immediately in the main conversation, not deferred to the
+    end-of-session report, so a regression survives an interrupt before the
+    final report is written. Motivated by a mill-drain session that discovered
+    two main-breaking CI failures but was restarted before reporting them.
+    """
+    lowered = PERIODIC_PREAMBLE.lower()
+    assert "critical finding" in lowered
+    assert "immediate" in lowered
+    # Immediacy: surface as soon as confirmed, not batched for end of session.
+    assert "not deferred" in lowered or "not batched" in lowered
+    # Definition of "critical" — at minimum CI-on-main, outages, security.
+    assert "ci failure indicating main is broken" in lowered
+    assert "outage" in lowered
+    assert "security issue" in lowered
+    # Surfaced in the main conversation with concrete evidence.
+    assert "main conversation" in lowered
+    assert "evidence" in lowered
+    # Survives truncation independent of the final report.
+    assert "survives session truncation" in lowered
+
+
 def test_initial_prompt_is_trimmed():
     assert build_initial_message("  task  \n").endswith("task")
