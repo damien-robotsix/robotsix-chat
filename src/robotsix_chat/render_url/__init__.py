@@ -21,6 +21,7 @@ from __future__ import annotations
 
 __all__ = ["build_render_url_tools", "load_render_url_skill"]
 
+import asyncio
 import io
 import json
 import logging
@@ -189,11 +190,15 @@ def build_render_url_tools(
                     # keep the response compact).  Returned as a binary
                     # part, never base64-in-JSON — see the module docstring.
                     if not text_only:
-                        raw = await page.screenshot(full_page=True)
+                        async with asyncio.timeout(settings.timeout):
+                            raw = await page.screenshot(full_page=True)
                         screenshot_bytes = _downscale_png(raw)
 
                     # ARIA accessibility tree snapshot (YAML-like string).
-                    a11y_snapshot = await page.locator("body").aria_snapshot()
+                    # Wrapped in a per-operation timeout — page.goto()'s
+                    # timeout does not carry over to subsequent operations.
+                    async with asyncio.timeout(settings.timeout):
+                        a11y_snapshot = await page.locator("body").aria_snapshot()
                     if a11y_snapshot:
                         result["accessibility_tree"] = a11y_snapshot
 

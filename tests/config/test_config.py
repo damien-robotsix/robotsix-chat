@@ -1031,6 +1031,32 @@ def test_allowed_image_media_types_default() -> None:
     ]
 
 
+def test_allowed_image_media_types_default_uses_shared_constant() -> None:
+    """The default derives from the single-source-of-truth module constant."""
+    from robotsix_chat.config import DEFAULT_ALLOWED_IMAGE_MEDIA_TYPES
+
+    settings = Settings()
+    assert settings.allowed_image_media_types == DEFAULT_ALLOWED_IMAGE_MEDIA_TYPES
+    # A fresh list per instance — mutating one must not leak into the constant.
+    assert settings.allowed_image_media_types is not DEFAULT_ALLOWED_IMAGE_MEDIA_TYPES
+
+
+def test_image_mime_allowlist_frontend_in_sync() -> None:
+    """The frontend literals agree with the Python allowlist (CI sync gate)."""
+    import subprocess
+    import sys
+    from pathlib import Path
+
+    repo_root = Path(__file__).resolve().parents[2]
+    script = repo_root / "scripts" / "check_image_mime_sync.py"
+    result = subprocess.run(  # noqa: S603
+        [sys.executable, str(script)],
+        capture_output=True,
+        text=True,
+    )
+    assert result.returncode == 0, result.stderr
+
+
 # ---------------------------------------------------------------------------
 # LangfuseSettings
 # ---------------------------------------------------------------------------
@@ -1425,8 +1451,8 @@ _PREEXISTING_ALLOWLIST: set[tuple[str, int, str]] = {
     ("src/robotsix_chat/config/settings.py", 98, "-opus"),
     ("src/robotsix_chat/config/settings.py", 98, "claude-fable"),
     # config/settings.py — vision_model default (OpenRouter captioning model)
-    ("src/robotsix_chat/config/settings.py", 196, "gpt-"),
-    ("src/robotsix_chat/config/settings.py", 1082, "gpt-"),
+    ("src/robotsix_chat/config/settings.py", 209, "gpt-"),
+    ("src/robotsix_chat/config/settings.py", 1095, "gpt-"),
     # config/memory_models.py — gpt-5-nano / gpt-5-mini / deepseek-v4-flash
     ("src/robotsix_chat/config/memory_models.py", 26, "gpt-"),
     ("src/robotsix_chat/config/memory_models.py", 50, "gpt-"),

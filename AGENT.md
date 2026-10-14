@@ -407,6 +407,21 @@ Documenting the convention in AGENT.md prevents future contributors from wasting
 discovering the governance test, matching the style of the CI-enforced rules already in the
 config/module-registration sections.
 
+## Periodic task prompts
+
+**Rule:** When adding or updating periodic maintenance task prompts, mandate immediate
+in-conversation surfacing of critical findings (CI failures on main, widespread outages, security
+issues) as soon as confirmed. Do not defer critical findings to end-of-session summaries, as session
+interrupts may prevent operator notification.
+
+**Rationale:** Ticket 20260915T193854Z — system restarts during a periodic mill-drain session
+prevented critical CI-failure findings from reaching the operator because they were deferred to a
+final report that was never sent. Immediate surfacing ensures visibility regardless of session
+termination.
+
+**Provenance:** proposed by retrospect from
+20260915T193854Z-prompt-periodic-mill-drain-should-surfac-89fc
+
 ## Standards compliance verification
 
 **Rule:** When making claims about whether a repo or component complies with a robotsix-standards

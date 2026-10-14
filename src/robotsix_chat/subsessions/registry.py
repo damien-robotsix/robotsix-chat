@@ -38,6 +38,7 @@ from robotsix_chat.chat.events import (
     subsession_started_frame,
     subsession_updated_frame,
 )
+from robotsix_chat.ticket_poll.mill_states import HUMAN_WAIT_STATES
 
 from .models import (
     ACTIVE_STATUSES,
@@ -62,9 +63,13 @@ TICKET_ID_RE = re.compile(r"\b\d{8}T\d{6}Z-[a-z0-9][a-z0-9-]*-[0-9a-f]{4}\b")
 # only meaningful while its ticket sits in one of these. Once a mill event
 # reports the ticket somewhere else (approved → ready, closed, re-running),
 # the decision is moot and the panel is closed on the operator's behalf.
-DECISION_GATE_STATES = frozenset(
-    {"human_issue_approval", "human_mr_approval", "awaiting_user_reply", "blocked"}
-)
+#
+# This is an alias for the canonical ``HUMAN_WAIT_STATES`` set defined in
+# ``robotsix_chat.ticket_poll.mill_states`` (the single source of truth for
+# mill state-name sets). Aliasing — rather than re-typing the literal —
+# guarantees the decision-gate logic stays in sync when a new human-wait
+# state is added upstream.
+DECISION_GATE_STATES = HUMAN_WAIT_STATES
 
 
 def user_chat_ticket_id(info: SubsessionInfo) -> str | None:
@@ -491,6 +496,51 @@ class RegistryIndex:
             )
             moved += 1
         self._registry._store.persist()
+        return moved
+
+    def reassign_live_user_chats(
+        self, old_owner_session_id: str, new_owner_session_id: str
+    ) -> int:
+        """Move the live ``user_chat`` panels of one owner to another.
+
+        Used when a periodic preset fires again: the previous run's
+        decision panels that still await the operator's answer follow the
+        preset to its new session instead of dying with the superseded one
+        — otherwise the new run finds no open panel and re-asks the same
+        question, and the operator never gets to answer any of them.
+
+        Only ACTIVE ``user_chat`` subsessions move (``running`` /
+        ``waiting``); every other kind and every terminal record stays with
+        the old owner, whose close path cleans it up.  Publishes a
+        ``subsession_started`` frame per moved panel to the new owner's
+        event stream.  Returns the number of panels moved.
+        """
+        if old_owner_session_id == new_owner_session_id:
+            return 0
+        sub_ids = self._by_owner.get(old_owner_session_id)
+        if not sub_ids:
+            return 0
+        moved = 0
+        for sub_id in list(sub_ids):
+            info = self._subs.get(sub_id)
+            if (
+                info is None
+                or info.kind is not SubsessionKind.USER_CHAT
+                or not info.is_active
+            ):
+                continue
+            sub_ids.discard(sub_id)
+            info.owner_session_id = new_owner_session_id
+            self._by_owner[new_owner_session_id].add(sub_id)
+            self._registry._publish(
+                new_owner_session_id,
+                subsession_started_frame(info.snapshot()),
+            )
+            moved += 1
+        if not sub_ids:
+            self._by_owner.pop(old_owner_session_id, None)
+        if moved:
+            self._registry._store.persist()
         return moved
 
 
@@ -1263,6 +1313,14 @@ class SubsessionRegistry:
     ) -> int:
         """Move every subsession owned by *old_owner_session_id* to the new owner."""
         return self._index.reassign_owner(old_owner_session_id, new_owner_session_id)
+
+    def reassign_live_user_chats(
+        self, old_owner_session_id: str, new_owner_session_id: str
+    ) -> int:
+        """Move the live ``user_chat`` panels of *old* to *new* (see index)."""
+        return self._index.reassign_live_user_chats(
+            old_owner_session_id, new_owner_session_id
+        )
 
     # ------------------------------------------------------------------
     # core queries (retained on registry)

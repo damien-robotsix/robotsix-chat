@@ -2591,3 +2591,75 @@ def test_update_periodic_config_persists(tmp_path: Path) -> None:
     entry = next(e for e in raw if e["subsession_id"] == info.id)
     assert entry["prompt"] == "persisted prompt"
     assert entry["interval_seconds"] == 42.0
+
+
+# ---------------------------------------------------------------------------
+# reassign_live_user_chats
+# ---------------------------------------------------------------------------
+
+
+def test_reassign_live_user_chats_moves_only_active_user_chat_panels() -> None:
+    """Live user_chat panels follow the new owner; tasks and closed panels stay."""
+    sink = RecordingSink()
+    registry = SubsessionRegistry(event_sink=sink, store_path=None)
+    waiting = _create(
+        registry,
+        owner="run-1",
+        kind=SubsessionKind.USER_CHAT,
+        title="ask",
+        dedup_key="ticket-42",
+    )
+    registry.set_status(waiting.id, SubsessionStatus.WAITING)
+    running = _create(
+        registry, owner="run-1", kind=SubsessionKind.USER_CHAT, title="ask2"
+    )
+    task = _create(registry, owner="run-1", kind=SubsessionKind.TASK, title="work")
+    done = _create(registry, owner="run-1", kind=SubsessionKind.USER_CHAT, title="old")
+    registry.cancel_and_close(done.id, reason="answered")
+    other = _create(registry, owner="run-other", kind=SubsessionKind.USER_CHAT)
+
+    moved = registry.reassign_live_user_chats("run-1", "run-2")
+
+    assert moved == 2
+    assert waiting.owner_session_id == "run-2"
+    assert running.owner_session_id == "run-2"
+    assert waiting.status is SubsessionStatus.WAITING
+    assert task.owner_session_id == "run-1"
+    assert done.owner_session_id == "run-1"
+    assert other.owner_session_id == "run-other"
+    assert {i.id for i in registry.list_for_owner("run-2")} == {waiting.id, running.id}
+    assert {i.id for i in registry.list_for_owner("run-1")} == {task.id, done.id}
+    started_for_new = {
+        frame["subsession_id"]
+        for session_id, frame in sink.of_type(SSE_SUBSESSION_STARTED_TYPE)
+        if session_id == "run-2"
+    }
+    assert started_for_new == {waiting.id, running.id}
+    # Dedup bookkeeping is owner-independent: the moved panel is still found,
+    # so the new run cannot spawn a duplicate for the same key.
+    assert registry.is_dedup_key_active("ticket-42") == waiting.id
+
+
+def test_reassign_live_user_chats_noop_cases() -> None:
+    """Same owner, unknown owner, or no live panel → nothing moves."""
+    registry = SubsessionRegistry(store_path=None)
+    task = _create(registry, owner="run-1", kind=SubsessionKind.TASK)
+
+    assert registry.reassign_live_user_chats("run-1", "run-1") == 0
+    assert registry.reassign_live_user_chats("ghost", "run-2") == 0
+    assert registry.reassign_live_user_chats("run-1", "run-2") == 0
+    assert task.owner_session_id == "run-1"
+
+
+def test_reassign_live_user_chats_persists_new_owner(tmp_path: Path) -> None:
+    """The moved panel's new owner_session_id reaches the JSON store."""
+    store_path = tmp_path / "subsessions.json"
+    registry = SubsessionRegistry(store_path=store_path)
+    info = _create(registry, owner="run-1", kind=SubsessionKind.USER_CHAT)
+
+    registry.reassign_live_user_chats("run-1", "run-2")
+
+    raw = json.loads(store_path.read_text(encoding="utf-8"))
+    entries = raw if isinstance(raw, list) else list(raw.values())
+    stored = [e for e in entries if e.get("subsession_id") == info.id]
+    assert stored and stored[0]["owner_session_id"] == "run-2"

@@ -34,7 +34,7 @@ from robotsix_chat.chat.conversation import ConversationStore
 from robotsix_chat.chat.events import EventBus, EventSink
 from robotsix_chat.component_access import build_component_access_tools
 from robotsix_chat.component_client import build_component_tools
-from robotsix_chat.config import Settings
+from robotsix_chat.config import DEFAULT_ALLOWED_IMAGE_MEDIA_TYPES, Settings
 from robotsix_chat.config.models import (
     EvergoingSettings,
     HealthSettings,
@@ -1008,7 +1008,7 @@ def create_app(
     app.state.allowed_image_media_types = (
         allowed_image_media_types
         if allowed_image_media_types is not None
-        else ["image/png", "image/jpeg", "image/gif", "image/webp"]
+        else list(DEFAULT_ALLOWED_IMAGE_MEDIA_TYPES)
     )
     app.state.event_bus = event_bus or EventBus()
     app.state.run_serializer = run_serializer or RunSerializer()
@@ -1029,7 +1029,10 @@ def create_app(
             PERIODIC_OWNER,
             PERIODIC_SCHEDULER_PERSIST_PATH,
             PeriodicScheduler,
+            format_failsafe_partial_report,
+            prune_closed_periodic_sessions,
         )
+        from robotsix_chat.subsessions import SubsessionKind
 
         _p_coalescer = app.state.message_coalescer
         _p_store = app.state.conversation_store
@@ -1120,6 +1123,92 @@ def create_app(
                 error_message,
             )
 
+        async def _periodic_ensure_partial_report(session_id: str) -> None:
+            """Append a failsafe PARTIAL REPORT when a turn ended without one.
+
+            A periodic turn can finish WITHOUT raising yet leave no report —
+            token exhaustion or a provider cutoff can end the turn cleanly
+            before the agent summarises its work. Conservative detection (low
+            false-positive): append only when the transcript is empty or the
+            final assistant reply is empty/whitespace-only. A healthy run ends
+            with a non-empty assistant reply and is left untouched, so this
+            never double-appends on a normal firing.
+            """
+            turns = _p_store.history(session_id)
+            if turns and turns[-1][1].strip():
+                return
+            _p_store.record(
+                session_id,
+                PERIODIC_OWNER,
+                "(periodic failsafe)",
+                format_failsafe_partial_report(),
+            )
+
+        async def _periodic_carry_over(
+            previous_session_id: str, session_id: str
+        ) -> int:
+            """Hand the previous run's live user_chat panels to the new run.
+
+            Without this the supersede-close kills every decision panel the
+            operator has not answered yet, and the new run — finding no open
+            panel — spawns the same question again, every firing.
+            """
+            registry = app.state.subsession_registry
+            if registry is None:
+                return 0
+            return int(
+                registry.reassign_live_user_chats(previous_session_id, session_id)
+            )
+
+        async def _periodic_prune_closed(keep: set[str]) -> int:
+            """Delete closed periodic runs outside the retention window."""
+            return prune_closed_periodic_sessions(
+                _p_store, keep, registry=app.state.subsession_registry
+            )
+
+        async def _periodic_report_pending_subsessions(session_id: str) -> None:
+            """Surface OPEN user_chat panels when a periodic turn crashed.
+
+            The agent normally surfaces open ``user_chat`` decision panels as
+            its first operation, but a turn that fails before the agent runs
+            never performs that check, so pending operator decisions stay
+            invisible in the transcript. This fallback — invoked ONLY on the
+            exception path — lists the run's live ``user_chat`` subsessions and
+            records them directly, making the escalations visible independently
+            of the main task succeeding. No-op when there are none open, so the
+            transcript is not cluttered when nothing is pending.
+            """
+            registry = app.state.subsession_registry
+            if registry is None:
+                return
+            pending = [
+                sub
+                for sub in registry.list_for_owner(session_id)
+                if sub.kind is SubsessionKind.USER_CHAT and sub.is_active
+            ]
+            if not pending:
+                return
+            lines = [
+                "PENDING OPERATOR DECISIONS (surfaced after a failed periodic "
+                + "turn)",
+                "",
+                "The scheduled task failed before completing, but the "
+                "following open user_chat decision panels are still awaiting an "
+                "operator reply. They are live decisions, not deferred work:",
+                "",
+            ]
+            for sub in pending:
+                lines.append(f"- {sub.title} ({sub.id}) — status: {sub.status.value}")
+                prompt = (sub.prompt or "").strip()
+                if prompt:
+                    lines.append(f"    Decision needed: {prompt}")
+            _p_store.record(
+                session_id,
+                PERIODIC_OWNER,
+                "(periodic pending subsessions)",
+                "\n".join(lines),
+            )
+
         app.state.periodic_scheduler = PeriodicScheduler(
             definitions=periodic_definitions,
             conversation_store=_p_store,
@@ -1130,6 +1219,10 @@ def create_app(
             close_completed=_periodic_close_completed,
             has_live_subsessions=_periodic_has_live_subsessions,
             report_partial_result=_periodic_report_partial_result,
+            ensure_partial_report_on_interruption=_periodic_ensure_partial_report,
+            report_pending_subsessions=_periodic_report_pending_subsessions,
+            carry_over_subsessions=_periodic_carry_over,
+            prune_closed_runs=_periodic_prune_closed,
         )
     else:
         app.state.periodic_scheduler = None

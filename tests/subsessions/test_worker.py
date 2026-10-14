@@ -987,9 +987,17 @@ async def test_periodic_max_idle_runs_pauses_after_consecutive_no_change() -> No
     )
 
     sub_id = _spawn(env, kind=SubsessionKind.PERIODIC, interval_seconds=0.02)
-    # The worker enters a PAUSED wait loop and never finishes — wait
-    # briefly for it to reach the paused state, then cancel it.
-    await asyncio.sleep(0.15)
+    # The worker enters a PAUSED wait loop and never finishes — wait for
+    # it to consume the 3 NO_CHANGE replies and reach the paused state
+    # (polling rather than a fixed sleep, which is racy under CI load),
+    # then cancel it.
+    await wait_until(lambda: len(agent.calls) >= 3)
+
+    def _is_paused() -> bool:
+        info = env.registry.get(sub_id)
+        return info is not None and info.status is SubsessionStatus.PAUSED
+
+    await wait_until(_is_paused)
     task = env.registry._running.get(sub_id)
     if task is not None and not task.done():
         task.cancel()

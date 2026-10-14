@@ -698,6 +698,73 @@ async def test_session_id_wraps_run_in_langfuse_session() -> None:
 
 
 # ---------------------------------------------------------------------------
+# Function-tag stamping (cost attribution)
+# ---------------------------------------------------------------------------
+
+
+def test_stamp_function_tag_sets_attribute() -> None:
+    """_stamp_function_tag sets langfuse.trace.tags with a JSON array."""
+    from robotsix_chat.llm.agent import _stamp_function_tag
+
+    fake_span = MagicMock()
+    with patch(
+        "robotsix_llmio.core.tracing.get_recording_span",
+        return_value=fake_span,
+        create=True,
+    ):
+        _stamp_function_tag("chat-turn")
+
+    fake_span.set_attribute.assert_called_once_with(
+        "langfuse.trace.tags", '["chat-turn"]'
+    )
+
+
+def test_stamp_function_tag_noop_when_span_is_none() -> None:
+    """_stamp_function_tag is a no-op when no span is recording."""
+    from robotsix_chat.llm.agent import _stamp_function_tag
+
+    with patch(
+        "robotsix_llmio.core.tracing.get_recording_span",
+        return_value=None,
+        create=True,
+    ):
+        # Should not raise
+        _stamp_function_tag("chat-turn")
+
+
+@pytest.mark.asyncio
+async def test_trace_name_stamps_function_tag_on_named_trace() -> None:
+    """A named trace turn stamps the trace_name as a Langfuse function tag."""
+    create_model, _ = _patched_create_model("reply")
+    fake_span = MagicMock()
+
+    import contextlib
+
+    @contextlib.contextmanager
+    def fake_start_trace(name: str, *, session_id: str | None = None):  # type: ignore[no-untyped-def]
+        yield
+
+    with (
+        patch("robotsix_chat.llm.agent.get_provider_for_identifier", create_model),
+        patch("robotsix_llmio.core.tracing.start_trace", fake_start_trace, create=True),
+        patch(
+            "robotsix_llmio.core.tracing.get_recording_span",
+            return_value=fake_span,
+            create=True,
+        ),
+    ):
+        agent = LlmioChatAgent(model_level=3, instruction="Be helpful.")
+        _ = [
+            c
+            async for c in agent.stream(
+                "hi", session_id="sess-1", trace_name="chat-turn"
+            )
+        ]
+
+    fake_span.set_attribute.assert_any_call("langfuse.trace.tags", '["chat-turn"]')
+
+
+# ---------------------------------------------------------------------------
 # Retry behaviour
 # ---------------------------------------------------------------------------
 

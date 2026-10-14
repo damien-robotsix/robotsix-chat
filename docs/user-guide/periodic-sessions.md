@@ -66,6 +66,34 @@ a `session_end` feedback run is scheduled, the memory component receives the fin
 the latest run of each preset is ever open, so periodic runs never pile up as sessions to close by
 hand. A failure to close the previous run is logged and never blocks the new firing.
 
+Two things survive that supersede-close:
+
+- **Pending operator decisions.** Before the previous run is closed, its live `user_chat` panels
+  (questions the operator has not answered yet) are moved to the new run's session. The new run's
+  mandatory first step — listing its open `user_chat` subsessions — therefore finds them and does
+  not re-ask; the operator can answer a decision days after it was first raised, in whichever run is
+  current. Without this, every firing killed the previous run's panels and spawned the same
+  questions again.
+
+  **Fallback when a turn crashes.** The agent normally surfaces open `user_chat` panels as its
+  first operation, but a turn that fails before the agent even starts (e.g. a network error during
+  `submit_turn`, or a pre-agent validation failure) never performs that check. To ensure
+  time-critical operator decisions stay visible even when the main task crashes, a fallback
+  mechanism automatically surfaces any open `user_chat` panels into the transcript when a turn
+  fails. This makes pending decisions visible independently of the main task succeeding — the
+  operator still sees decision panels and their decision prompts even when the turn crashes. No-op
+  when there are no open panels, so the transcript stays clean when nothing is pending.
+- **The last few runs.** The scheduler remembers the last `RETAINED_RUNS_PER_PRESET` (3) session ids
+  of each preset. After every firing, and once at startup, every *other* closed periodic session is
+  deleted from the conversation store — a closed run is kept only long enough to read back what the
+  last couple of firings did; the memory component holds the long tail. Open runs (a failed turn, or
+  a run whose decision panel is still waiting) are never pruned, and a run the operator chatted in
+  keeps its history under the operator's own session list.
+
+The sidebar hides closed periodic runs by default. The **Show closed periodic runs (N)** button
+under **+ New chat** reveals them (the choice sticks per browser); the run you are currently viewing
+is always shown.
+
 ## Shipped presets
 
 ### `dependabot-drain`
@@ -115,14 +143,36 @@ processing.
   And a 2026-09-19 incident identified that a broken robotsix-mill Docs workflow
   (production-blocking CI failure) existed only in subsession metadata and never reached the
   operator's main conversation.
-- **Escalation handling must be verified and reported.** Before listing a gated ticket as
-  'already escalated → awaiting operator' (or taking any action on it), the agent must read the
-  ticket's history and confirm whether an ESCALATED comment or an open operator decision panel
-  already exists for it — and only classify a ticket as freshly open when its history shows no
-  prior escalation. The final report must explicitly state that this history-verification was
-  performed (e.g. 'Verified ESCALATED comment present on each of the 7+9 escalated tickets; no
-  operator answer recorded since'), so a future run never treats an already-escalated ticket as
-  freshly open.
+- **Escalation handling must be verified and reported.** Before listing a gated ticket as 'already
+  escalated → awaiting operator' (or taking any action on it), the agent must read the ticket's
+  history and confirm whether an ESCALATED comment or an open operator decision panel already exists
+  for it — and only classify a ticket as freshly open when its history shows no prior escalation.
+  The final report must explicitly state that this history-verification was performed (e.g.
+  'Verified ESCALATED comment present on each of the 7+9 escalated tickets; no operator answer
+  recorded since'), so a future run never treats an already-escalated ticket as freshly open.
+- **Cascade triage surfaces the specific files.** When a stabilized blocked cascade of
+  file-classification tickets is detected (multiple `module_curator` tickets blocking on module
+  assignment — typically ≥10 blocked tickets across ≥2 boards unchanged for ≥3 runs), the triage
+  `user_chat` subsession must enumerate the specific unclaimed/blocking files (grouped by ticket
+  when several cascades exist) and give per-file classification options: a suggested module
+  candidate inferred from the file path pattern, a note that direct team input may be required
+  before approval, and the current blocker. The panel title states which files are unclaimed and
+  what decision is needed, so the operator can triage without digging through ticket comments. This
+  behaviour exists because session `331c2099197b4606bfafea0d26c21f1d` spawned a hexarchy blocked
+  cascade triage that asked for a decision without listing the ~7 unclaimed files or offering
+  classification candidates.
+- **Skeleton-first PARTIAL REPORT strategy prevents token exhaustion.** To prevent silent mid-operation failures where the agent is cut off mid-sentence before reporting work, PARTIAL REPORTs now use a skeleton-first strategy: the agent emits a minimal report skeleton FIRST (counts and full ticket IDs, one per line, no prose) before adding optional prose descriptions. The skeleton is re-emitted after each batch of work with updated counts. This ensures that even if truncation strikes mid-prose or mid-report, the counts and ticket IDs survive and the next run knows what was discovered and can resume. The agent maintains a hard 8–10k token reserve and stops enumeration immediately if remaining tokens drop below 10,000 total, even mid-ticket. When the hard stop is reached, it emits the final skeleton with what was discovered and what remains unenumerated. This strategy exists because session `36857ec8e0b34cf6b54a3b6bbf60c3ca` enumerated multiple operations before being cut off, with no final report visible to the operator.
+- **Board-API filters may be ignored — enumerate defensively.** The board API's list endpoints
+  (`GET /board/cards` and similar) may silently ignore `status`/`board_id` filter parameters and
+  return the entire unfiltered board regardless of what is passed. The prompt therefore instructs
+  the agent NOT to rely on server-side filtering: fetch each board once as a complete entity, parse
+  it locally to extract the gated-state tickets, and track which boards are already fully enumerated
+  so none is re-fetched. Boards are processed in small batches with a PARTIAL REPORT between them
+  (boards done so far, gated tickets per state, running total, boards still remaining) so
+  enumeration resumes across turns without duplication and completes even when the API does not
+  honour the expected filters. This exists because the 2026-09-08 run issued one filtered request
+  per state per board, re-fetched whole boards repeatedly, and exhausted its token budget before
+  finishing enumeration.
 - **Cadence** — every four hours (`schedule_interval_seconds: 14400`), at `model_level: 2`.
 - **Ships disabled** — `"enabled": false` per the feature-flag convention, so it never fires on a
   fresh checkout.
@@ -132,6 +182,32 @@ processing.
   any current-main CI failures (one ALERT line per failure with recommended fix PR) and then the
   total discovered count and the state-by-state summary (with no scope mismatch left silent), and
   that it appears enabled in `GET /periodic/definitions`.
+
+### `trace_review`
+
+The committed `config/config.json` also ships a `trace_review` preset, which monitors fleet-wide LLM
+spending patterns and detects wasteful traces. On each firing it attempts to fetch the 5–10 most
+expensive traces from the Langfuse `mill` project (sorted by cost), analyzes them for waste patterns
+(oversized prompts, retry loops, model-tier escalations), and reports findings to the operator. When
+Langfuse project credentials are absent, it degrades gracefully to aggregate cost-monitor queries
+(total spend by model-level, provider, region) and recommends configuring the `langfuse.projects`
+block per `docs/configuration.md`.
+
+- **Configuration requirement** — requires Langfuse project credentials configured in
+  `langfuse.projects` for the `mill`, `chat`, and optionally `mail` projects (see
+  `docs/configuration.md` Langfuse configuration section). When projects are unconfigured
+  (`langfuse.projects: {}`), the monitor switches to aggregate fallback mode (cost spikes by
+  model-level and provider).
+- **Cadence** — weekly, anchored to Monday 06:00 UTC (`schedule_interval_seconds: 604800`,
+  `anchor_utc: "2026-09-07T06:00:00Z"`). It runs at `model_level: 2`.
+- **Ships disabled** — the preset ships with `"enabled": false` per the feature-flag convention, so
+  it never fires on a fresh checkout.
+- **Activation** — set `"enabled": true` on the `trace_review` entry under `periodic.sessions` in
+  the deployment's config, then redeploy. To prove it live, fire it once with
+  `POST /periodic/definitions/trace_review/run` and read the cost report. If Langfuse projects are
+  unconfigured, the report will recommend configuring `langfuse.projects` per `config/config.json`
+  and `docs/configuration.md`. Once Langfuse is configured, a second firing will produce per-trace
+  analysis instead of aggregate fallback.
 
 ## Session-end contract and interrupted reports
 
@@ -158,14 +234,18 @@ makes the report resilient to sudden termination by having the agent **report as
    work; once a batch of major operations is done, it prefers stopping and emitting a final report
    over starting another expensive operation that could be cut off before it reports it. A smaller
    batch that is fully reported beats a larger batch that terminates unreported.
-1. **Report immediately on error.** If the agent hits an error mid-execution, it stops the remaining
-   work and outputs the report while it still can.
+1. **Guarantee report output even on error.** The agent wraps task work in error handling (explicit
+   try-finally or implicit control-flow management) to **guarantee PARTIAL REPORT output even if an
+   error occurs**. If an error is encountered mid-execution — tool failure, API error, or unhandled
+   exception — the agent stops the remaining work, documents the error in the report's "Errors
+   encountered" section, and emits the PARTIAL REPORT immediately. Do not let an error silence the
+   session — every session MUST end with a report.
 
 ### PARTIAL REPORT (the expected outcome for interrupted work)
 
 `PARTIAL REPORT` is the **expected outcome** for any interrupted or incomplete periodic session, not
 an emergency fallback. Whenever a periodic task cannot finish everything — and at every breakpoint
-above — it outputs a report titled **`PARTIAL REPORT`** with three sections, in this order:
+above — it outputs a report titled **`PARTIAL REPORT`** with four sections, in this order:
 
 1. **Done** — items completed and the ROUTINE actions taken (e.g. tickets drained, PRs merged or
    filed), each named. For gate-drain: any tickets processed and their disposition. For
@@ -178,9 +258,14 @@ above — it outputs a report titled **`PARTIAL REPORT`** with three sections, i
 1. **Held for next run** — items not reached or deliberately deferred, each with a one-line reason
    (e.g. "47 remaining tickets need prioritization order"; "PR #123 blocked on feedback").
 
+1. **Errors encountered** (if any) — brief descriptions of any errors or failures encountered, so
+   the next run understands what to investigate or retry. This section helps subsequent runs avoid
+   the same failures or investigate further.
+
 A PARTIAL REPORT is always better than silence. An interrupted session that reported what it got to
 gives the next scheduled run the context to resume. One that reported nothing leaves no path
-forward.
+forward. An error-aware report (including the Errors section when applicable) tells the next run
+what went wrong and how to proceed.
 
 ### Automatic error reports on turn failure
 
@@ -197,6 +282,18 @@ manual intervention is needed.
 
 If the error-reporting mechanism itself fails (e.g. the transcript backend is down), the exception
 is logged but never propagates out of the turn task, so the scheduler continues normally.
+
+### Failsafe report when a turn ends without raising
+
+The error-report path above covers turns that *raise*. A turn can also end **cleanly** — without any
+exception — yet have the agent never emit its report: token exhaustion or a provider cutoff can end
+the turn while the agent is mid-work. To stop the next firing from inheriting a blank transcript,
+the scheduler runs a failsafe check after every completed (non-raising) run: if the transcript is
+empty, or its final assistant reply is empty/whitespace-only, the scheduler appends a minimal
+`PARTIAL REPORT` stating the turn ended without a report (likely token exhaustion or a provider
+cutoff) and that the next firing should treat any prior work as unverified. A healthy run — one
+whose final assistant reply is non-empty — is left untouched, so this never double-appends on a
+normal firing.
 
 ### Example: dependabot-drain interrupted
 

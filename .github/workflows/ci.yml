@@ -26,7 +26,7 @@ jobs:
       - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1  # v7.0.1
         with:
           persist-credentials: false
-      - uses: astral-sh/setup-uv@bec219d24cd3e171d82865faccec33120bb574f4  # v10.1.0
+      - uses: astral-sh/setup-uv@c18668ad3cf93ea998bef934396af7bb5c839dc7  # v10.2.0
       - name: Check lockfile freshness
         run: uv lock --check
       - name: Audit dependencies
@@ -55,7 +55,7 @@ jobs:
       # Must match pyproject.toml's [tool.uv] required-version: the shared
       # workflow defaults to an older uv, and uv refuses to run when the
       # installed version doesn't satisfy the project's required-version.
-      uv-version: "0.12.9"
+      uv-version: "0.12.19"
       cov-package: "robotsix_chat"
       install-extras: ""
       # coverage-threshold deliberately omitted: the fleet-wide floor (80)
@@ -78,10 +78,10 @@ jobs:
     uses: damien-robotsix/robotsix-github-workflows/.github/workflows/python-security.yml@454851ccfdba26ba4d08f3effea09258dfc3fe2f  # main
     with:
       install-extras: ""
-      # Align with the [tool.uv] required-version pin (uv 0.12.9); the shared
+      # Align with the [tool.uv] required-version pin (uv 0.12.19); the shared
       # workflow defaults to 0.8.15 and would otherwise fail `uv sync` with a
       # "Required uv version ... does not match the running version" error.
-      uv-version: "0.12.9"
+      uv-version: "0.12.19"
       trufflehog-pr-diff: true
       # Postgres detector excluded: the WIP commit on this branch temporarily
       # carried .inspect_cognee/ and .inspect_litellm/ directories (third-party
@@ -108,7 +108,7 @@ jobs:
       - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1  # v7.0.1
         with:
           persist-credentials: false
-      - uses: astral-sh/setup-uv@bec219d24cd3e171d82865faccec33120bb574f4  # v10.1.0
+      - uses: astral-sh/setup-uv@c18668ad3cf93ea998bef934396af7bb5c839dc7  # v10.2.0
       - name: Install
         run: uv --preview-features malware-check sync --frozen
         env:
@@ -196,6 +196,21 @@ jobs:
       - name: Run SubsessionStatus check
         run: python scripts/check_subsession_statuses.py
 
+  check-image-mime-sync:
+    name: Image MIME allowlist audit
+    runs-on: ubuntu-latest
+    permissions:
+      contents: read  # checkout the repo
+    steps:
+      - name: Harden Runner
+        uses: step-security/harden-runner@e14015d583714f6e62063499dc959a02595150a1  # v2.21.1
+        with:
+          egress-policy: audit
+      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1  # v7.0.1
+        with:
+          persist-credentials: false
+      - name: Run image MIME allowlist check
+        run: python scripts/check_image_mime_sync.py
 
   image-scan:
     name: Container image scan (Trivy)
@@ -309,7 +324,7 @@ jobs:
           vuln-type: os,library
           trivyignores: .trivyignore
       - name: Upload SARIF
-        uses: github/codeql-action/upload-sarif@b96794f015dfd88f77b49b1c93e0fa7110f94c63  # v4.38.0
+        uses: github/codeql-action/upload-sarif@2892aa5e19bbd11bc0cff5427e3b750a04d9e3c2  # v4.38.2
         if: always()
         with:
           sarif_file: trivy-ci-results.sarif
@@ -328,7 +343,7 @@ jobs:
       - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1  # v7.0.1
         with:
           persist-credentials: false
-      - uses: astral-sh/setup-uv@bec219d24cd3e171d82865faccec33120bb574f4  # v10.1.0
+      - uses: astral-sh/setup-uv@c18668ad3cf93ea998bef934396af7bb5c839dc7  # v10.2.0
       - name: Install
         run: uv --preview-features malware-check sync --frozen
         env:
@@ -349,7 +364,7 @@ jobs:
       - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1  # v7.0.1
         with:
           persist-credentials: false
-      - uses: astral-sh/setup-uv@bec219d24cd3e171d82865faccec33120bb574f4  # v10.1.0
+      - uses: astral-sh/setup-uv@c18668ad3cf93ea998bef934396af7bb5c839dc7  # v10.2.0
       - name: Install
         run: uv --preview-features malware-check sync --frozen
         env:
@@ -392,7 +407,7 @@ jobs:
       - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1  # v7.0.1
         with:
           persist-credentials: false
-      - uses: astral-sh/setup-uv@bec219d24cd3e171d82865faccec33120bb574f4  # v10.1.0
+      - uses: astral-sh/setup-uv@c18668ad3cf93ea998bef934396af7bb5c839dc7  # v10.2.0
       - name: Install
         run: uv --preview-features malware-check sync --frozen
         env:
@@ -413,7 +428,7 @@ jobs:
       - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1  # v7.0.1
         with:
           persist-credentials: false
-      - uses: astral-sh/setup-uv@bec219d24cd3e171d82865faccec33120bb574f4  # v10.1.0
+      - uses: astral-sh/setup-uv@c18668ad3cf93ea998bef934396af7bb5c839dc7  # v10.2.0
       - name: Install
         run: uv sync --frozen
         env:
@@ -435,7 +450,7 @@ jobs:
       - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1  # v7.0.1
         with:
           persist-credentials: false
-      - uses: astral-sh/setup-uv@bec219d24cd3e171d82865faccec33120bb574f4  # v10.1.0
+      - uses: astral-sh/setup-uv@c18668ad3cf93ea998bef934396af7bb5c839dc7  # v10.2.0
       - name: Install
         run: uv --preview-features malware-check sync --frozen
         env:

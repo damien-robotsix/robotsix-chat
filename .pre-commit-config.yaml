@@ -23,7 +23,7 @@ repos:
         exclude: ^CHANGELOG\.md$
 
   - repo: https://github.com/astral-sh/ruff-pre-commit
-    rev: v0.16.8
+    rev: v0.16.9
     hooks:
       - id: ruff
         args: [--fix]
@@ -94,7 +94,7 @@ repos:
       - id: hadolint-docker
 
   - repo: https://github.com/trufflesecurity/trufflehog
-    rev: v3.97.5
+    rev: v3.97.9
     hooks:
       - id: trufflehog
         args: ["--exclude-detectors=Lob"]
@@ -143,7 +143,7 @@ repos:
         fail_fast: true
 
   - repo: https://github.com/DavidAnson/markdownlint-cli2
-    rev: v0.23.2
+    rev: v0.23.3
     hooks:
       - id: markdownlint-cli2
         args: ["--fix"]

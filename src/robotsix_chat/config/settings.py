@@ -82,6 +82,19 @@ class ConfigValidationError(ValueError):
 # docs/system_prompt_changelog.md with a new entry + SHA256.
 SYSTEM_PROMPT_VERSION = 163
 
+# Single source of truth for the image-upload MIME allowlist.  The
+# ``Settings.allowed_image_media_types`` default, the runtime fallback in
+# ``chat/server/app.py``, and the two static frontend copies
+# (``ui/static/chat.js`` ``ALLOWED_TYPES`` and the ``ui/index.html`` file
+# ``accept`` attribute) must all agree; ``scripts/check_image_mime_sync.py``
+# asserts the frontend literals match this list in CI.
+DEFAULT_ALLOWED_IMAGE_MEDIA_TYPES: list[str] = [
+    "image/png",
+    "image/jpeg",
+    "image/gif",
+    "image/webp",
+]
+
 # Settings-panel group labels.  The shared ConfigPanel buckets fields by their
 # ``json_schema_extra["group"]`` label, rendering each distinct label under a
 # collapsible header instead of the generic "General" bucket.  Every top-level
@@ -1075,7 +1088,7 @@ class Settings(BaseModel):
         json_schema_extra=_CONVERSATION_GROUP,
     )
     allowed_image_media_types: list[str] = Field(
-        default_factory=lambda: ["image/png", "image/jpeg", "image/gif", "image/webp"],
+        default_factory=lambda: list(DEFAULT_ALLOWED_IMAGE_MEDIA_TYPES),
         json_schema_extra=_CONVERSATION_GROUP,
     )
     vision_model: str = Field(

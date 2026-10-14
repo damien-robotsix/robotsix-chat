@@ -192,6 +192,36 @@ Disabled by default.
 | `langfuse_inspect.enabled`    | `boolean` | `false` | Master switch — enables the `inspect_langfuse_trace` tool. |
 | `langfuse_inspect.max_traces` | `integer` | `5`     | Maximum number of traces returned per query.               |
 
+#### Cross-project trace inspection
+
+The `inspect_langfuse_trace` tool accepts a `project` parameter that selects which Langfuse project
+to query; it resolves that project's credentials from the top-level `langfuse.projects.<name>` block
+at call time, defaulting to `robotsix-chat` when the parameter is omitted. To let this component
+inspect **another fleet component's** traces — useful for periodic cost-review tasks that need to
+identify cost drivers across all high-spend projects — add that project's credentials under
+`langfuse.projects`:
+
+```json
+"langfuse": {
+  "projects": {
+    "robotsix-mill": {
+      "public_key": "pk-lf-...",
+      "secret_key": "sk-lf-...",  // pragma: allowlist secret
+      "project_id": ""
+    },
+    "robotsix-ci-fix": {
+      "public_key": "pk-lf-...",
+      "secret_key": "sk-lf-...",  // pragma: allowlist secret
+      "project_id": ""
+    }
+  }
+}
+```
+
+With these credentials configured, call the tool with the matching project name — e.g.
+`project="robotsix-mill"` to inspect mill traces, or `project="robotsix-ci-fix"` to inspect CI-fix
+traces. See the Langfuse inspect skill (`src/robotsix_chat/langfuse/skill.md`) for examples.
+
 ### Memory (cognee)
 
 Persistent, cross-conversation episodic memory via embedded cognee. Disabled by default.
@@ -758,6 +788,7 @@ files when diagnostics detect they are missing. Disabled by default.
 | `sftp.private_key_passphrase` | `string` (secret) | `""`    | Passphrase for `private_key`, if the key is encrypted.                                                      |
 | `sftp.known_hosts`            | `string`          | `""`    | OpenSSH-format known-hosts entries for host key verification. When empty, host key verification is skipped. |
 | `sftp.remote_root`            | `string`          | `""`    | Optional base directory on the remote server to restrict all operations under (e.g. `/var/www`).            |
+| `sftp.timeout`                | `number`          | `10.0`  | SFTP connection and operation timeout in seconds.                                                           |
 
 ### File Hub Tools
 

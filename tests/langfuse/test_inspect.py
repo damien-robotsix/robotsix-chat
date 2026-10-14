@@ -20,6 +20,7 @@ from robotsix_chat.config import (
     LangfuseSettings,
 )
 from robotsix_chat.langfuse import (
+    _resolve_project_list,
     build_langfuse_inspect_tools,
     load_langfuse_inspect_skill,
 )
@@ -704,3 +705,273 @@ async def test_retry_ticket_id_search_timeout_recovers(
     assert len(result["traces"]) == 1
     assert result["traces"][0]["id"] == "trace-1"
     assert route.call_count == 2
+
+
+# ---------------------------------------------------------------------------
+# _resolve_project_list — project selector parsing
+# ---------------------------------------------------------------------------
+
+
+def test_resolve_project_list_empty_defaults_to_main() -> None:
+    """An empty selector resolves to the main chat project."""
+    assert _resolve_project_list("", ["a", "b"]) == [PROJECT_MAIN]
+    assert _resolve_project_list([], ["a", "b"]) == [PROJECT_MAIN]
+
+
+def test_resolve_project_list_single_name() -> None:
+    """A single project name passes through unchanged."""
+    assert _resolve_project_list("robotsix-mill", []) == ["robotsix-mill"]
+
+
+def test_resolve_project_list_comma_separated() -> None:
+    """A comma-separated string is split and trimmed."""
+    assert _resolve_project_list("robotsix-mill, robotsix-ci-fix", []) == [
+        "robotsix-mill",
+        "robotsix-ci-fix",
+    ]
+
+
+def test_resolve_project_list_list_input() -> None:
+    """A list of names is used as-is (with de-duplication)."""
+    assert _resolve_project_list(["a", "b", "a"], []) == ["a", "b"]
+
+
+def test_resolve_project_list_all_expands_to_configured() -> None:
+    """``all`` expands to every configured project, else falls back to main."""
+    assert _resolve_project_list("all", ["p1", "p2"]) == ["p1", "p2"]
+    assert _resolve_project_list("ALL", []) == [PROJECT_MAIN]
+    assert _resolve_project_list(["x", "all"], ["p1", "p2"]) == ["p1", "p2"]
+
+
+# ---------------------------------------------------------------------------
+# inspect_langfuse_trace — cachedPromptTokens in usage
+# ---------------------------------------------------------------------------
+
+
+@pytest.mark.asyncio
+async def test_inspect_usage_includes_cached_prompt_tokens(
+    respx_mock: respx.MockRouter,
+) -> None:
+    """The usage object exposes cachedPromptTokens from the API metrics."""
+    trace_id = "01JM3XCACHED"
+    respx_mock.get(f"https://cloud.langfuse.com/api/public/traces/{trace_id}").mock(
+        return_value=httpx.Response(
+            200,
+            json={
+                "id": trace_id,
+                "name": "implement",
+                "timestamp": "2026-07-27T00:15:00.000Z",
+                "userId": "agent-1",
+                "latency": 1.0,
+                "totalCost": 0.01,
+                "metrics": {
+                    "usage": {
+                        "promptTokens": 1500,
+                        "completionTokens": 800,
+                        "cachedPromptTokens": 1200,
+                        "totalTokens": 2300,
+                    }
+                },
+                "observations": [],
+                "scores": [],
+            },
+        )
+    )
+
+    tools = build_langfuse_inspect_tools(_inspect_settings(), _langfuse_settings())
+    result = json.loads(await tools[0](trace_id=trace_id))
+
+    usage = result["traces"][0]["usage"]
+    assert usage["promptTokens"] == 1500
+    assert usage["completionTokens"] == 800
+    assert usage["cachedPromptTokens"] == 1200
+    assert usage["totalTokens"] == 2300
+
+
+@pytest.mark.asyncio
+async def test_inspect_usage_cached_prompt_tokens_absent_is_none(
+    respx_mock: respx.MockRouter,
+) -> None:
+    """When the API omits cachedPromptTokens the field is present and None."""
+    trace_id = "01JM3XNOCACHE"
+    respx_mock.get(f"https://cloud.langfuse.com/api/public/traces/{trace_id}").mock(
+        return_value=httpx.Response(
+            200,
+            json={
+                "id": trace_id,
+                "name": "implement",
+                "timestamp": "2026-07-27T00:15:00.000Z",
+                "userId": "agent-1",
+                "latency": 1.0,
+                "totalCost": 0.01,
+                "metrics": {
+                    "usage": {
+                        "promptTokens": 10,
+                        "completionTokens": 5,
+                        "totalTokens": 15,
+                    }
+                },
+                "observations": [],
+                "scores": [],
+            },
+        )
+    )
+
+    tools = build_langfuse_inspect_tools(_inspect_settings(), _langfuse_settings())
+    result = json.loads(await tools[0](trace_id=trace_id))
+
+    assert "cachedPromptTokens" in result["traces"][0]["usage"]
+    assert result["traces"][0]["usage"]["cachedPromptTokens"] is None
+
+
+# ---------------------------------------------------------------------------
+# inspect_langfuse_trace — multi-project queries
+# ---------------------------------------------------------------------------
+
+
+def _multi_project_settings() -> LangfuseSettings:
+    """Two configured projects for multi-project tests."""
+    return _langfuse_settings(
+        projects={
+            "robotsix-mill": {
+                "public_key": "pk-mill",
+                "secret_key": "sk-mill",  # pragma: allowlist secret
+            },
+            "robotsix-ci-fix": {
+                "public_key": "pk-cifix",
+                "secret_key": "sk-cifix",  # pragma: allowlist secret
+            },
+        }
+    )
+
+
+def _trace_payload(trace_id: str, cost: float) -> dict[str, Any]:
+    return {
+        "data": [
+            {
+                "id": trace_id,
+                "name": "autonomous",
+                "timestamp": "2026-08-22T06:00:00.000Z",
+                "userId": "agent-1",
+                "latency": 3.0,
+                "totalCost": cost,
+                "metrics": {
+                    "usage": {
+                        "promptTokens": 100,
+                        "completionTokens": 50,
+                        "cachedPromptTokens": 20,
+                        "totalTokens": 150,
+                    }
+                },
+                "observations": [],
+                "scores": [],
+            }
+        ],
+        "meta": {"page": 1, "limit": 10, "totalItems": 1},
+    }
+
+
+@pytest.mark.asyncio
+async def test_inspect_multi_project_sorted_by_cost(
+    respx_mock: respx.MockRouter,
+) -> None:
+    """A list of projects aggregates results, sorted by totalCost desc."""
+    # Projects are queried in order; mill is cheap, ci-fix is expensive.
+    respx_mock.get("https://cloud.langfuse.com/api/public/traces").mock(
+        side_effect=[
+            httpx.Response(200, json=_trace_payload("trace-mill", 0.01)),
+            httpx.Response(200, json=_trace_payload("trace-cifix", 0.50)),
+        ]
+    )
+
+    tools = build_langfuse_inspect_tools(
+        _inspect_settings(max_traces=10), _multi_project_settings()
+    )
+    result = json.loads(
+        await tools[0](
+            project=["robotsix-mill", "robotsix-ci-fix"],
+            from_timestamp="2026-08-22T00:00:00Z",
+            limit=10,
+        )
+    )
+
+    assert result["projects"] == ["robotsix-mill", "robotsix-ci-fix"]
+    assert [t["id"] for t in result["traces"]] == ["trace-cifix", "trace-mill"]
+    # Each trace is tagged with its originating project.
+    assert result["traces"][0]["project"] == "robotsix-ci-fix"
+    assert result["traces"][1]["project"] == "robotsix-mill"
+    assert "errors" not in result
+
+
+@pytest.mark.asyncio
+async def test_inspect_multi_project_all_selector(
+    respx_mock: respx.MockRouter,
+) -> None:
+    """``project='all'`` queries every configured project."""
+    respx_mock.get("https://cloud.langfuse.com/api/public/traces").mock(
+        side_effect=[
+            httpx.Response(200, json=_trace_payload("trace-mill", 0.02)),
+            httpx.Response(200, json=_trace_payload("trace-cifix", 0.03)),
+        ]
+    )
+
+    tools = build_langfuse_inspect_tools(
+        _inspect_settings(max_traces=10), _multi_project_settings()
+    )
+    result = json.loads(
+        await tools[0](project="all", from_timestamp="2026-08-22T00:00:00Z")
+    )
+
+    assert result["projects"] == ["robotsix-mill", "robotsix-ci-fix"]
+    assert len(result["traces"]) == 2
+    assert result["traces"][0]["id"] == "trace-cifix"
+
+
+@pytest.mark.asyncio
+async def test_inspect_multi_project_partial_failure_records_errors(
+    respx_mock: respx.MockRouter,
+) -> None:
+    """When one project is unconfigured, it is recorded under errors."""
+    respx_mock.get("https://cloud.langfuse.com/api/public/traces").mock(
+        return_value=httpx.Response(200, json=_trace_payload("trace-mill", 0.02))
+    )
+
+    tools = build_langfuse_inspect_tools(
+        _inspect_settings(max_traces=10), _multi_project_settings()
+    )
+    result = json.loads(
+        await tools[0](
+            project=["robotsix-mill", "robotsix-unknown"],
+            from_timestamp="2026-08-22T00:00:00Z",
+        )
+    )
+
+    assert len(result["traces"]) == 1
+    assert result["traces"][0]["id"] == "trace-mill"
+    assert "robotsix-unknown" in result["errors"]
+    assert "is not configured" in result["errors"]["robotsix-unknown"].lower()
+
+
+@pytest.mark.asyncio
+async def test_inspect_single_project_shape_unchanged(
+    respx_mock: respx.MockRouter,
+) -> None:
+    """A single project keeps the original response shape (no project field)."""
+    respx_mock.get("https://cloud.langfuse.com/api/public/traces").mock(
+        return_value=httpx.Response(200, json=_trace_payload("trace-mill", 0.02))
+    )
+
+    tools = build_langfuse_inspect_tools(
+        _inspect_settings(max_traces=10), _multi_project_settings()
+    )
+    result = json.loads(
+        await tools[0](
+            project="robotsix-mill",
+            from_timestamp="2026-08-22T00:00:00Z",
+        )
+    )
+
+    assert "projects" not in result
+    assert "project" not in result["traces"][0]
+    assert result["from_timestamp"] == "2026-08-22T00:00:00Z"
+    assert result["limit"] == 5  # default limit, unchanged

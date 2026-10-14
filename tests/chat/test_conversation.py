@@ -210,6 +210,18 @@ def test_record_derives_title_from_first_message() -> None:
     assert sessions[0]["title"] == "Hello world, this is a test"
 
 
+def test_record_keeps_a_seeded_title() -> None:
+    """A title set before the first turn (periodic runs) survives that turn."""
+    store = _store()
+
+    sid = cast(str, store.create_session("periodic")["session_id"])
+    store.set_title(sid, "mail-triage — 2026-10-02 06:00")
+    store.record(sid, "periodic", "You are running a scheduled periodic session.", "ok")
+
+    sessions, _ = store.list_sessions("periodic", create_default=False)
+    assert sessions[0]["title"] == "mail-triage — 2026-10-02 06:00"
+
+
 def test_record_for_owner_writes_to_active_session() -> None:
     """``record_for_owner`` records into the owner's active session."""
     store = _store()

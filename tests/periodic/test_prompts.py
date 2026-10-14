@@ -198,6 +198,26 @@ def test_preamble_surfaces_awaiting_operator_panels():
     assert "no pending decision" in lowered
 
 
+def test_preamble_lists_subsessions_first_before_task_and_report():
+    """The list_subsessions check is the mandatory first operation.
+
+    It must be framed as the first operation (before any task work) and
+    positioned ahead of the report-structure instructions, so the periodic
+    agent surfaces awaiting-operator panels before doing anything else.
+    Regression for external PR #2019 (periodic-list-subsessions-first).
+    """
+    lowered = PERIODIC_PREAMBLE.lower()
+    # Mandatory-first framing.
+    assert "first operation" in lowered
+    assert "before any task work" in lowered
+    # Ordering: the first-operation instruction precedes the report contract.
+    assert lowered.index("call list_subsessions") < lowered.index(
+        "always end the session with a report"
+    )
+    # Exactly one list_subsessions instruction remains (the banner form).
+    assert lowered.count("list_subsessions") == 1
+
+
 def test_preamble_mandates_full_ticket_ids_in_report_sections():
     """Done/Escalations/Held entries must carry full mill ticket IDs.
 
@@ -210,6 +230,82 @@ def test_preamble_mandates_full_ticket_ids_in_report_sections():
     assert "full mill ticket id" in lowered
     assert "never a truncated suffix" in lowered
     assert "escalation/dedup rules" in lowered
+
+
+def test_preamble_mandates_inline_reporting_every_few_operations():
+    """Reporting must be interleaved every 2-3 major operations, not deferred.
+
+    Session 8b80b7300d4b416a9b0cbfa719717988 accumulated all work first and
+    deferred report output to the very end; the report was then truncated
+    mid-execution. The preamble must make inline reporting mandatory and
+    specific about timing (every 2-3 major operations).
+    """
+    lowered = PERIODIC_PREAMBLE.lower()
+    # Explicit cadence and non-optionality.
+    assert "every 2-3 major operations" in lowered
+    assert "mandatory" in lowered
+    assert "not optional" in lowered
+    # Interleave report sections between batches, not only at the end.
+    assert "between batches" in lowered
+    # Distribution is the truncation-resilience mechanism.
+    assert "distribution" in lowered
+    assert "truncation-resilience mechanism" in lowered
+
+
+def test_preamble_prioritizes_structured_output_completeness_over_brevity():
+    """Enumerated deliverables must be completed in full, not trimmed.
+
+    Periodic tasks that emit structured output (numbered action-lists,
+    decision tables, enumerated items) were truncating items for brevity.
+    The preamble must mandate full completion of enumerations and scope
+    brevity to prose only. Regression for external PR #1981.
+    """
+    lowered = PERIODIC_PREAMBLE.lower()
+    assert "structured output" in lowered
+    assert "complete that enumeration in full" in lowered
+    assert "do not truncate items for brevity" in lowered
+    assert "completeness of structured outputs is mandatory" in lowered
+
+
+def test_preamble_requires_escalation_opened_line():
+    """Opening an escalation must emit an immediate ESCALATION OPENED line.
+
+    The line is emitted in the main conversation right after spawn_subsession
+    returns the subsession id, so the escalation survives session truncation
+    (restart / token exhaustion / timeout) before the final PARTIAL REPORT.
+    Supersedes external PR #2072, which ordered the steps backwards (claiming
+    the id is known before the spawn call).
+    """
+    lowered = PERIODIC_PREAMBLE.lower()
+    assert "escalation opened" in lowered
+    assert "spawn_subsession" in lowered
+    assert "survives" in lowered
+    assert "truncat" in lowered
+
+
+def test_preamble_requires_immediate_critical_finding_surfacing():
+    """Critical findings must be surfaced in-conversation the moment confirmed.
+
+    A critical finding (CI failure on main, widespread outage, security issue)
+    must be surfaced immediately in the main conversation, not deferred to the
+    end-of-session report, so a regression survives an interrupt before the
+    final report is written. Motivated by a mill-drain session that discovered
+    two main-breaking CI failures but was restarted before reporting them.
+    """
+    lowered = PERIODIC_PREAMBLE.lower()
+    assert "critical finding" in lowered
+    assert "immediate" in lowered
+    # Immediacy: surface as soon as confirmed, not batched for end of session.
+    assert "not deferred" in lowered or "not batched" in lowered
+    # Definition of "critical" — at minimum CI-on-main, outages, security.
+    assert "ci failure indicating main is broken" in lowered
+    assert "outage" in lowered
+    assert "security issue" in lowered
+    # Surfaced in the main conversation with concrete evidence.
+    assert "main conversation" in lowered
+    assert "evidence" in lowered
+    # Survives truncation independent of the final report.
+    assert "survives session truncation" in lowered
 
 
 def test_initial_prompt_is_trimmed():

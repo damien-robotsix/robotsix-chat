@@ -553,3 +553,40 @@ class TestSftpClientConnectionKwargs:
         kwargs = client._connection_kwargs()
 
         assert "password" not in kwargs
+
+
+class TestSftpClientConnectTimeout:
+    """Tests that _connect passes the configured connect_timeout."""
+
+    @staticmethod
+    def _make_settings(**kwargs: object) -> SftpSettings:
+        defaults: dict[str, object] = {
+            "enabled": True,
+            "host": "sftp.example.com",
+            "username": "admin",
+            "password": SecretStr("secret"),
+        }
+        defaults.update(kwargs)
+        return SftpSettings(**defaults)
+
+    @pytest.mark.asyncio
+    async def test_default_timeout(self) -> None:
+        """The default SFTP timeout is 10 seconds."""
+        settings = self._make_settings()
+        assert settings.timeout == 10.0
+
+    @pytest.mark.asyncio
+    async def test_connect_passes_connect_timeout(self, monkeypatch) -> None:
+        """_connect forwards settings.timeout to asyncssh.connect."""
+        import asyncssh
+
+        mock_connect = AsyncMock(return_value=MagicMock())
+        monkeypatch.setattr(asyncssh, "connect", mock_connect)
+
+        settings = self._make_settings(timeout=3.5)
+        client = SftpClient(settings)
+
+        await client._connect()
+
+        mock_connect.assert_called_once()
+        assert mock_connect.call_args.kwargs["connect_timeout"] == 3.5

@@ -29,6 +29,7 @@ from __future__ import annotations
 
 import asyncio
 import contextlib
+import json
 import logging
 from collections.abc import AsyncIterator, Callable, Iterator
 from typing import Any
@@ -264,6 +265,7 @@ def _trace_session(
     session_id: str | None,
     trace_metadata: dict[str, str] | None = None,
     trace_name: str | None = None,
+    function: str | None = None,
 ) -> Iterator[None]:
     """Group the enclosed agent run under *session_id* in Langfuse.
 
@@ -283,6 +285,11 @@ def _trace_session(
     span attribute on the current recording span (if any) inside the session
     context — used for parent/owner lineage so the trace tree mirrors the
     subsession tree in observability.
+
+    When *function* is supplied, it is stamped as a Langfuse trace tag so
+    traces can be aggregated by function (e.g. ``"chat-turn"``,
+    ``"subsession-turn"``) for cost attribution and per-function anomaly
+    detection.
     """
     try:
         from robotsix_llmio.core.tracing import langfuse_session, start_trace
@@ -297,12 +304,16 @@ def _trace_session(
         with start_trace(trace_name, session_id=session_id):
             if trace_metadata:
                 _stamp_trace_metadata(trace_metadata)
+            if function:
+                _stamp_function_tag(function)
             yield
     elif session_id:
         # No custom name — use session-based grouping (existing behavior).
         with langfuse_session(session_id):
             if trace_metadata:
                 _stamp_trace_metadata(trace_metadata)
+            if function:
+                _stamp_function_tag(function)
             yield
     else:
         yield
@@ -322,6 +333,23 @@ def _stamp_trace_metadata(metadata: dict[str, str]) -> None:
     if span is not None:
         for key, value in metadata.items():
             span.set_attribute(key, value)
+
+
+def _stamp_function_tag(function: str) -> None:
+    """Stamp *function* as a Langfuse trace tag for cost attribution.
+
+    Tags the current trace with the function name so traces can be aggregated
+    by function for baseline trending and anomaly detection. A no-op when
+    OpenTelemetry is absent or no span is currently recording — the tag is
+    best-effort observability for cost tracking, not critical to the run.
+    """
+    try:
+        from robotsix_llmio.core.tracing import get_recording_span
+    except ImportError:
+        return
+    span = get_recording_span()
+    if span is not None:
+        span.set_attribute("langfuse.trace.tags", json.dumps([function]))
 
 
 def _activity_context(
@@ -887,6 +915,7 @@ class LlmioChatAgent:
             session_id,
             effective_trace_metadata,
             trace_name=trace_name,
+            function=trace_name,
         ):
             result = await acall_with_failover(
                 _fn_factory,

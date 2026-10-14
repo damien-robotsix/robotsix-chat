@@ -268,6 +268,69 @@ async def test_render_url_custom_timeout() -> None:
 
 
 # ---------------------------------------------------------------------------
+# render_url — per-operation timeouts
+# ---------------------------------------------------------------------------
+
+
+@pytest.mark.asyncio
+async def test_render_url_screenshot_timeout() -> None:
+    """A hung screenshot is bounded by the per-operation timeout."""
+    import asyncio
+
+    fake = _install_fake_playwright()
+
+    async def _never_returns(*_a: Any, **_kw: Any) -> bytes:
+        await asyncio.sleep(10)
+        return b""
+
+    fake._test_page.screenshot = AsyncMock(side_effect=_never_returns)
+    try:
+        from robotsix_chat.render_url import build_render_url_tools
+
+        tools = build_render_url_tools(_settings(timeout=0.01))
+        render_url = tools[0]
+
+        result = await render_url("https://example.com")
+        metadata, image = _split_result(result)
+
+        assert metadata["error"].startswith("TimeoutError")
+        assert image is None
+        fake._test_browser.close.assert_awaited_once()
+    finally:
+        _remove_fake_playwright()
+
+
+@pytest.mark.asyncio
+async def test_render_url_aria_snapshot_timeout() -> None:
+    """A hung aria_snapshot is bounded by the per-operation timeout."""
+    import asyncio
+
+    fake = _install_fake_playwright()
+
+    async def _never_returns(*_a: Any, **_kw: Any) -> str:
+        await asyncio.sleep(10)
+        return ""
+
+    mock_locator = MagicMock()
+    mock_locator.aria_snapshot = AsyncMock(side_effect=_never_returns)
+    fake._test_page.locator = MagicMock(return_value=mock_locator)
+    try:
+        from robotsix_chat.render_url import build_render_url_tools
+
+        # text_only=True so the screenshot step is skipped and the aria
+        # snapshot is the operation under test.
+        tools = build_render_url_tools(_settings(timeout=0.01))
+        render_url = tools[0]
+
+        result = await render_url("https://example.com", text_only=True)
+        metadata, _image = _split_result(result)
+
+        assert metadata["error"].startswith("TimeoutError")
+    finally:
+        _remove_fake_playwright()
+
+
+# ---------------------------------------------------------------------------
 # render_url — error handling
 # ---------------------------------------------------------------------------
 

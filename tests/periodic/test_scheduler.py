@@ -17,7 +17,11 @@ import pytest
 
 from robotsix_chat.config.periodic_models import PeriodicSessionDefinition
 from robotsix_chat.periodic.prompts import PERIODIC_PREAMBLE
-from robotsix_chat.periodic.scheduler import PERIODIC_OWNER, PeriodicScheduler
+from robotsix_chat.periodic.scheduler import (
+    PERIODIC_OWNER,
+    PeriodicScheduler,
+    format_failsafe_partial_report,
+)
 
 
 class _FakeStore:
@@ -50,6 +54,7 @@ def _make(
     close_completed=None,
     has_live_subsessions=None,
     report_partial_result=None,
+    ensure_partial_report_on_interruption=None,
 ):
     store = _FakeStore()
     submitted: list[tuple[str, str, int | None]] = []
@@ -77,6 +82,7 @@ def _make(
         close_completed=close_completed,
         has_live_subsessions=has_live_subsessions,
         report_partial_result=report_partial_result,
+        ensure_partial_report_on_interruption=ensure_partial_report_on_interruption,
     )
     return scheduler, store, submitted, now
 
@@ -256,6 +262,9 @@ async def test_fire_reports_partial_result_when_submit_fails(tmp_path):
     await asyncio.sleep(0)
     assert len(reported) == 1
     assert reported[0][0] == sid
+    # The report is emitted as a proper PARTIAL REPORT (not a bare error line)
+    # so the next run's drain prompt recognises it as a report.
+    assert reported[0][1].startswith("PARTIAL REPORT")
     # The report carries the exception type/message and preset name.
     assert "mail-triage" in reported[0][1]
     assert "RuntimeError" in reported[0][1]
@@ -280,6 +289,150 @@ async def test_fire_survives_report_partial_result_failure(tmp_path):
     await scheduler.fire("mail-triage")
     # No unhandled exception should escape the background task.
     await asyncio.sleep(0)
+
+
+@pytest.mark.asyncio
+async def test_fire_reports_pending_subsessions_when_submit_fails(tmp_path):
+    """A crashed turn surfaces open user_chat panels into the transcript."""
+    surfaced: list[str] = []
+
+    async def report_pending_subsessions(session_id: str) -> None:
+        surfaced.append(session_id)
+
+    async def failing_submit(session_id, message, model_level):
+        raise RuntimeError("boom")
+
+    scheduler, store, submitted, _ = _make(tmp_path)
+    scheduler._report_pending_subsessions = report_pending_subsessions
+    scheduler._submit_turn = failing_submit  # type: ignore[method-assign]
+
+    sid = await scheduler.fire("mail-triage")
+    # The background task has not run yet — nothing surfaced.
+    assert surfaced == []
+
+    await asyncio.sleep(0)
+    # The fallback fired on the exception path, independently of the task.
+    assert surfaced == [sid]
+
+
+@pytest.mark.asyncio
+async def test_fire_does_not_report_pending_subsessions_on_completion(tmp_path):
+    """The fallback is NOT invoked when the turn completes (no double-surface)."""
+    surfaced: list[str] = []
+
+    async def report_pending_subsessions(session_id: str) -> None:
+        surfaced.append(session_id)
+
+    scheduler, store, submitted, _ = _make(tmp_path)
+    scheduler._report_pending_subsessions = report_pending_subsessions
+
+    await scheduler.fire("mail-triage")
+    await asyncio.sleep(0)
+    # A completed run surfaces its own panels — the fallback stays silent.
+    assert len(submitted) == 1
+    assert surfaced == []
+
+
+@pytest.mark.asyncio
+async def test_fire_survives_report_pending_subsessions_failure(tmp_path):
+    """A raising pending-subsession fallback never leaks out of the turn task."""
+
+    async def report_pending_subsessions(session_id: str) -> None:
+        raise RuntimeError("subsession sink down")
+
+    async def failing_submit(session_id, message, model_level):
+        raise RuntimeError("boom")
+
+    scheduler, store, submitted, _ = _make(tmp_path)
+    scheduler._report_pending_subsessions = report_pending_subsessions
+    scheduler._submit_turn = failing_submit  # type: ignore[method-assign]
+
+    await scheduler.fire("mail-triage")
+    # No unhandled exception should escape the background task.
+    await asyncio.sleep(0)
+
+
+@pytest.mark.asyncio
+async def test_fire_ensures_partial_report_on_completed_run(tmp_path):
+    """The failsafe hook is awaited with the session id on a completed run."""
+    ensured: list[str] = []
+
+    async def ensure(session_id: str) -> None:
+        ensured.append(session_id)
+
+    scheduler, store, submitted, _ = _make(
+        tmp_path, ensure_partial_report_on_interruption=ensure
+    )
+
+    sid = await scheduler.fire("mail-triage")
+    # The turn has not completed yet — the hook must not have fired.
+    assert ensured == []
+
+    await asyncio.sleep(0)
+    assert len(submitted) == 1
+    assert ensured == [sid]
+
+
+@pytest.mark.asyncio
+async def test_fire_does_not_ensure_partial_report_when_submit_fails(tmp_path):
+    """The failsafe hook is NOT awaited on the exception path."""
+    ensured: list[str] = []
+
+    async def ensure(session_id: str) -> None:
+        ensured.append(session_id)
+
+    async def failing_submit(session_id, message, model_level):
+        raise RuntimeError("boom")
+
+    scheduler, store, submitted, _ = _make(
+        tmp_path, ensure_partial_report_on_interruption=ensure
+    )
+    scheduler._submit_turn = failing_submit  # type: ignore[method-assign]
+
+    await scheduler.fire("mail-triage")
+    await asyncio.sleep(0)
+    # The exception path belongs to report_partial_result, not this failsafe.
+    assert ensured == []
+
+
+@pytest.mark.asyncio
+async def test_fire_survives_ensure_partial_report_failure(tmp_path):
+    """A raising failsafe hook is swallowed — completion-close still runs."""
+    closed: list[str] = []
+
+    async def close_completed(session_id: str) -> None:
+        closed.append(session_id)
+
+    async def ensure(session_id: str) -> None:
+        raise RuntimeError("failsafe sink down")
+
+    scheduler, store, submitted, _ = _make(
+        tmp_path,
+        close_completed=close_completed,
+        ensure_partial_report_on_interruption=ensure,
+    )
+
+    sid = await scheduler.fire("mail-triage")
+    # No unhandled exception should escape the background task, and the
+    # completion-close must still run despite the failsafe raising.
+    await asyncio.sleep(0)
+    assert closed == [sid]
+
+
+@pytest.mark.asyncio
+async def test_fire_without_ensure_partial_report_callback_changes_nothing(tmp_path):
+    """The default (None) failsafe hook leaves behaviour unchanged."""
+    scheduler, store, submitted, _ = _make(tmp_path)
+    await scheduler.fire("mail-triage")
+    await asyncio.sleep(0)
+    assert len(submitted) == 1  # plain old behaviour, no error
+
+
+def test_format_failsafe_partial_report_starts_with_partial_report():
+    """The failsafe formatter emits a recognisable PARTIAL REPORT."""
+    report = format_failsafe_partial_report()
+    assert report.startswith("PARTIAL REPORT")
+    assert "unverified" in report
 
 
 @pytest.mark.asyncio
@@ -490,3 +643,216 @@ async def test_unanchored_preset_regression(tmp_path):
     await scheduler.tick()
     await asyncio.sleep(0)
     assert store.created == ["sess-1", "sess-2"]
+
+
+# ---------------------------------------------------------------------------
+# run retention: carry-over of live user_chat panels + pruning of closed runs
+# ---------------------------------------------------------------------------
+
+
+@pytest.mark.asyncio
+async def test_refire_carries_user_chats_over_before_closing_previous(tmp_path):
+    """Live decision panels move to the new run BEFORE the old run is closed."""
+    events: list[tuple[str, ...]] = []
+
+    async def carry_over(previous: str, new: str) -> int:
+        events.append(("carry", previous, new))
+        return 2
+
+    async def close_previous(sid: str) -> None:
+        events.append(("close", sid))
+
+    scheduler, store, _, now = _make(tmp_path, close_previous=close_previous)
+    scheduler._carry_over_subsessions = carry_over
+    first = await scheduler.fire("mail-triage")
+    await asyncio.sleep(0)  # let the first turn task finish
+    now["t"] += 3600
+    second = await scheduler.fire("mail-triage")
+
+    assert events == [("carry", first, second), ("close", first)]
+
+
+@pytest.mark.asyncio
+async def test_carry_over_failure_does_not_block_the_new_firing(tmp_path, caplog):
+    """A failing carry-over is logged; the old run still closes, the new one runs."""
+    closed: list[str] = []
+
+    async def carry_over(previous: str, new: str) -> int:
+        raise RuntimeError("registry down")
+
+    async def close_previous(sid: str) -> None:
+        closed.append(sid)
+
+    scheduler, _, submitted, now = _make(tmp_path, close_previous=close_previous)
+    scheduler._carry_over_subsessions = carry_over
+    first = await scheduler.fire("mail-triage")
+    await asyncio.sleep(0)
+    now["t"] += 3600
+    second = await scheduler.fire("mail-triage")
+    await asyncio.sleep(0)
+
+    assert closed == [first]
+    assert [s[0] for s in submitted] == [first, second]
+    assert "carrying user_chat panels over" in caplog.text
+
+
+@pytest.mark.asyncio
+async def test_first_firing_has_nothing_to_carry_over(tmp_path):
+    """No previous run → the carry-over callback is never awaited."""
+    calls: list[tuple[str, str]] = []
+
+    async def carry_over(previous: str, new: str) -> int:
+        calls.append((previous, new))
+        return 0
+
+    scheduler, _, _, _ = _make(tmp_path)
+    scheduler._carry_over_subsessions = carry_over
+    await scheduler.fire("mail-triage")
+
+    assert calls == []
+
+
+@pytest.mark.asyncio
+async def test_state_tracks_the_recent_runs_of_each_preset(tmp_path):
+    """The last RETAINED runs per preset are remembered; older ids fall off."""
+    scheduler, _, _, now = _make(tmp_path)
+    scheduler._retained_runs = 2
+    sids = []
+    for _ in range(3):
+        sids.append(await scheduler.fire("mail-triage"))
+        await asyncio.sleep(0)
+        now["t"] += 3600
+
+    state = scheduler.state_for("mail-triage")
+    assert state["recent_session_ids"] == sids[-2:]
+    assert state["last_session_id"] == sids[-1]
+    assert scheduler.retained_session_ids() == set(sids[-2:])
+    persisted = json.loads((tmp_path / "state.json").read_text())
+    assert persisted["mail-triage"]["recent_session_ids"] == sids[-2:]
+
+
+def test_legacy_state_without_recent_ids_keeps_the_last_session(tmp_path):
+    """Pre-retention state seeds the recent list from ``last_session_id``."""
+    (tmp_path / "state.json").write_text(
+        json.dumps(
+            {
+                "mail-triage": {
+                    "last_fired_at": 1.0,
+                    "last_session_id": "legacy-sess",
+                    "runs": 7,
+                }
+            }
+        )
+    )
+    scheduler, _, _, _ = _make(tmp_path)
+
+    assert scheduler.state_for("mail-triage")["recent_session_ids"] == ["legacy-sess"]
+    assert scheduler.retained_session_ids() == {"legacy-sess"}
+
+
+@pytest.mark.asyncio
+async def test_fire_prunes_with_the_retained_ids(tmp_path):
+    """Every firing asks the prune callback to keep exactly the retained runs."""
+    keeps: list[set[str]] = []
+
+    async def prune(keep: set[str]) -> int:
+        keeps.append(set(keep))
+        return 1
+
+    scheduler, _, _, now = _make(tmp_path)
+    scheduler._prune_closed_runs = prune
+    first = await scheduler.fire("mail-triage")
+    await asyncio.sleep(0)
+    now["t"] += 3600
+    second = await scheduler.fire("mail-triage")
+
+    assert keeps == [{first}, {first, second}]
+
+
+@pytest.mark.asyncio
+async def test_prune_failure_is_contained(tmp_path, caplog):
+    """A failing prune callback is logged and reports zero deletions."""
+
+    async def prune(keep: set[str]) -> int:
+        raise OSError("disk")
+
+    scheduler, _, _, _ = _make(tmp_path)
+    scheduler._prune_closed_runs = prune
+
+    assert await scheduler.prune() == 0
+    assert "Pruning closed periodic sessions failed" in caplog.text
+
+
+@pytest.mark.asyncio
+async def test_prune_without_callback_is_a_noop(tmp_path):
+    scheduler, _, _, _ = _make(tmp_path)
+    assert await scheduler.prune() == 0
+
+
+@pytest.mark.asyncio
+async def test_start_prunes_once_before_the_first_tick(tmp_path):
+    """Startup prunes closed runs left over from before the process started."""
+    pruned = asyncio.Event()
+
+    async def prune(keep: set[str]) -> int:
+        pruned.set()
+        return 0
+
+    scheduler, _, _, _ = _make(tmp_path)
+    scheduler._prune_closed_runs = prune
+    scheduler.start()
+    try:
+        await asyncio.wait_for(pruned.wait(), timeout=1.0)
+    finally:
+        await scheduler.close()
+
+
+def test_prune_closed_periodic_sessions_deletes_only_closed_unretained_runs():
+    """Closed runs outside the keep-set go; open runs and retained runs stay."""
+    from robotsix_chat.chat.conversation import ConversationStore
+    from robotsix_chat.periodic.scheduler import prune_closed_periodic_sessions
+
+    store = ConversationStore()
+    old_closed = str(store.create_session(PERIODIC_OWNER)["session_id"])
+    kept_closed = str(store.create_session(PERIODIC_OWNER)["session_id"])
+    still_open = str(store.create_session(PERIODIC_OWNER)["session_id"])
+    operator = str(store.create_session("operator")["session_id"])
+    for sid in (old_closed, kept_closed):
+        store.close_session(PERIODIC_OWNER, sid)
+    store.close_session("operator", operator)
+
+    class _Registry:
+        def __init__(self) -> None:
+            self.closed: list[str] = []
+
+        def close_all_for_owner(self, owner: str, *, reason: str) -> int:
+            self.closed.append(owner)
+            return 0
+
+    registry = _Registry()
+    deleted = prune_closed_periodic_sessions(
+        store, {kept_closed, still_open}, registry=registry
+    )
+
+    assert deleted == 1
+    remaining = {s["session_id"] for s in store.list_sessions(PERIODIC_OWNER)[0]}
+    assert remaining == {kept_closed, still_open}
+    assert registry.closed == [old_closed]
+    # The operator's own closed session is never touched.
+    assert [s["session_id"] for s in store.list_sessions("operator")[0]] == [operator]
+
+
+def test_prune_closed_periodic_sessions_keeps_history_for_dual_owned_runs():
+    """A run the operator chatted in leaves the periodic list but keeps its history."""
+    from robotsix_chat.chat.conversation import ConversationStore
+    from robotsix_chat.periodic.scheduler import prune_closed_periodic_sessions
+
+    store = ConversationStore()
+    store.list_sessions("operator")  # the operator owner exists
+    sid = str(store.create_session(PERIODIC_OWNER)["session_id"])
+    store.record(sid, "operator", "hello from the operator", "hi")
+    store.close_session(PERIODIC_OWNER, sid)
+
+    assert prune_closed_periodic_sessions(store, set()) == 1
+    assert store.list_sessions(PERIODIC_OWNER, create_default=False)[0] == []
+    assert store.history(sid) == [("hello from the operator", "hi")]
