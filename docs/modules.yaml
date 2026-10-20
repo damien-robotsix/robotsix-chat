@@ -144,6 +144,18 @@ modules:
       - tests/component_access/test_component_access.py
       - tests/component_access/test_roster.py
 
+  - id: caretaker
+    description: "Model-free surfacing of central-deploy caretaker findings — polls GET /caretaker/status on a short interval (no agent turn) and broadcasts SSE desktop notifications for error-severity claude_auth/crash_loop/health findings, so an LLM-outage escalation reaches the operator without needing a model."
+    paths:
+      - src/robotsix_chat/caretaker/__init__.py
+      - src/robotsix_chat/caretaker/client.py
+      - src/robotsix_chat/caretaker/models.py
+      - src/robotsix_chat/caretaker/watcher.py
+      - tests/caretaker/__init__.py
+      - tests/caretaker/test_client.py
+      - tests/caretaker/test_models.py
+      - tests/caretaker/test_watcher.py
+
   - id: config
     description: "Typed configuration — pydantic Settings model loaded from the one JSON config file via robotsix-config."
     paths:

@@ -289,6 +289,26 @@ Keys are component IDs matching the central-deploy roster (the `id` field in
 `GET /chat/components`). The roster entry's `auth.type` selects which credential fields are used —
 only the fields matching the declared auth scheme are consulted when authenticating.
 
+### Caretaker
+
+Deterministic, model-free surfacing of central-deploy caretaker findings. When enabled, chat polls
+`GET {central_deploy.url}/caretaker/status` on a short interval **with no agent/LLM turn involved**
+and broadcasts an SSE desktop notification to every connected operator browser for each
+error-severity finding whose `kind` is in `surface_kinds`. Because no model turn is required, this
+path keeps working while the fleet has no usable model — exactly the outage an LLM-driven escalation
+cannot report. Notifications are de-duplicated per `(kind, component)`: announced once, re-announced
+when the body changes, and followed by a "resolved" notice when the finding disappears. The
+`central_deploy.url` and `central_deploy.deploy_api_key` fields supply the endpoint and the
+`X-API-Key` credential. **Activation:** set `caretaker.enabled: true` and configure
+`central_deploy.url`.
+
+| JSON key                          | Type      | Default                                   | Description                                                                                                                          |
+| --------------------------------- | --------- | ----------------------------------------- | ------------------------------------------------------------------------------------------------------------------------------------ |
+| `caretaker.enabled`               | `boolean` | `false`                                   | Master switch for the caretaker-findings watcher. Set `true` (and configure `central_deploy.url`) to activate the model-free poller. |
+| `caretaker.poll_interval_seconds` | `number`  | `60.0`                                    | Seconds between polls of `/caretaker/status`. Clamped to a floor of 15s so a misconfigured tiny value cannot hammer central-deploy.  |
+| `caretaker.request_timeout`       | `number`  | `10.0`                                    | Per-request HTTP timeout (seconds) for the status poll.                                                                              |
+| `caretaker.surface_kinds`         | `array`   | `["claude_auth", "crash_loop", "health"]` | Finding `kind` values (case-insensitive) that are surfaced to the operator at error severity.                                        |
+
 ### Conversation
 
 | JSON key                    | Type     | Default                      | Description                                |

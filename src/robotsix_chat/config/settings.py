@@ -25,6 +25,7 @@ from robotsix_chat.config.constants import (
     drop_blank_numeric_sentinels,
 )
 from robotsix_chat.config.models import (
+    CaretakerSettings,
     CentralDeploySettings,
     ComponentClientSettings,
     ContinuationSettings,
@@ -969,6 +970,10 @@ class Settings(BaseModel):
     )
     central_deploy: CentralDeploySettings = Field(
         default_factory=CentralDeploySettings,
+        json_schema_extra=_DEPLOY_GROUP,
+    )
+    caretaker: CaretakerSettings = Field(
+        default_factory=CaretakerSettings,
         json_schema_extra=_DEPLOY_GROUP,
     )
     conversation: ConversationSettings = Field(
