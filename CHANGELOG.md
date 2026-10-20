@@ -69,6 +69,18 @@ Everything below predates the release-please migration and was
 maintained by hand or by towncrier. It is kept verbatim; new entries
 are added above by release-please.
 
+## [0.26.0](https://github.com/damien-robotsix/robotsix-chat/compare/v0.25.0...v0.26.0) (2026-10-20)
+
+
+### Features
+
+* **ui:** add a "Discard closed periodic runs (N)" button to the sessions panel ([#2161](https://github.com/damien-robotsix/robotsix-chat/issues/2161)) ([a2c5892](https://github.com/damien-robotsix/robotsix-chat/commit/a2c589223b46e6cc9bbacf88328122eb1e86d36e))
+
+
+### Bug Fixes
+
+* **deps:** bump certifi to 2026.10.19 (GHSA-6q48-6c7w-9gw2) ([#2162](https://github.com/damien-robotsix/robotsix-chat/issues/2162)) ([b58f646](https://github.com/damien-robotsix/robotsix-chat/commit/b58f6464c569fd5104defd36850fbc62cf0199af))
+
 ## [0.25.0](https://github.com/damien-robotsix/robotsix-chat/compare/v0.24.1...v0.25.0) (2026-10-14)
 
 
