@@ -1,4 +1,6 @@
 [default.extend-words]
+# Package name, not a misspelling of "certify" (dependency-review allow-list).
+certifi = "certifi"
 # Allow common tech abbreviations that typos would otherwise flag
 URI = "URI"
 API = "API"
