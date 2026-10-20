@@ -92,7 +92,9 @@ Two things survive that supersede-close:
 
 The sidebar hides closed periodic runs by default. The **Show closed periodic runs (N)** button
 under **+ New chat** reveals them (the choice sticks per browser); the run you are currently viewing
-is always shown.
+is always shown. **Discard closed periodic runs (N)** next to it deletes every closed run in one
+confirmed click (the run you are viewing is kept; deletes go one at a time and any refused delete
+is reported, not retried).
 
 ## Shipped presets
 
