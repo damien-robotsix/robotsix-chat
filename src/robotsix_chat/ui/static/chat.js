@@ -1,5 +1,6 @@
 import { processSSEStream } from "./sse-parser.js";
 import { drainSessionDraft } from "./drain-draft.js";
+import { closedPeriodicSessions, discardSessions } from "./discard-closed.js";
 import { renderMemoryBanner } from "./memory-banner.js";
 import { notify } from "./notify.js";
 import {
@@ -459,15 +460,22 @@ import {
 
   function updateSessionsToggleClosedButton(hiddenCount, closedCount) {
     var btn = document.getElementById("sessions-toggle-closed");
-    if (!btn) return;
+    var discardBtn = document.getElementById("sessions-discard-closed");
     if (closedCount === 0) {
-      btn.style.display = "none";
+      if (btn) btn.style.display = "none";
+      if (discardBtn) discardBtn.style.display = "none";
       return;
     }
-    btn.style.display = "";
-    btn.textContent = showClosedPeriodic
-      ? "Hide closed periodic runs (" + closedCount + ")"
-      : "Show closed periodic runs (" + hiddenCount + ")";
+    if (btn) {
+      btn.style.display = "";
+      btn.textContent = showClosedPeriodic
+        ? "Hide closed periodic runs (" + closedCount + ")"
+        : "Show closed periodic runs (" + hiddenCount + ")";
+    }
+    if (discardBtn && !discardBtn.disabled) {
+      discardBtn.style.display = "";
+      discardBtn.textContent = "Discard closed periodic runs (" + closedCount + ")";
+    }
   }
   var SESSIONS_PANEL_KEY = PROJECT_TITLE + "-sessions-panel-visible";
   var UNREAD_SESSION_KEY = PROJECT_TITLE + "-unread-sessions";
@@ -912,6 +920,40 @@ import {
         localStorage.setItem(SESSIONS_SHOW_CLOSED_KEY, showClosedPeriodic ? "true" : "false");
       } catch (_) {}
       renderSessionList({ sessions: sessionsList });
+    });
+  })();
+
+  // "Discard closed periodic runs (N)": delete every closed periodic run in
+  // one click instead of one confirm dialog per row. The run being viewed
+  // is left alone; deletes run one at a time (see discard-closed.js).
+  (function wireSessionsDiscardClosed() {
+    var btn = document.getElementById("sessions-discard-closed");
+    if (!btn) return;
+    btn.addEventListener("click", function () {
+      var targets = closedPeriodicSessions(sessionsList, PERIODIC_OWNER, activeSessionId);
+      if (targets.length === 0) return;
+      if (!window.confirm(
+        "Discard " + targets.length + " closed periodic run" +
+        (targets.length === 1 ? "" : "s") + "?\n\n" +
+        "This deletes their history. This cannot be undone."
+      )) return;
+      btn.disabled = true;
+      btn.textContent = "Discarding " + targets.length + "…";
+      discardSessions(targets, deleteSession).then(function (res) {
+        btn.disabled = false;
+        if (res.failed > 0) {
+          window.alert(
+            "Discarded " + res.deleted + " run(s); " + res.failed +
+            " could not be deleted:\n" +
+            res.failures.map(function (f) { return f.id + ": " + f.error; }).join("\n")
+          );
+        }
+        return refreshSessions();
+      }).catch(function (err) {
+        btn.disabled = false;
+        window.alert("Discard failed: " + (err && err.message ? err.message : err));
+        return refreshSessions();
+      });
     });
   })();
 

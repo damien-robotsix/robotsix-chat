@@ -316,6 +316,17 @@ body {
   flex-shrink: 0;
 }
 #sessions-toggle-closed:hover { color: inherit; }
+/* "Discard closed periodic runs (N)" — same quiet style as the toggle; the
+   bulk delete asks for one confirmation instead of one per row. */
+#sessions-discard-closed {
+  margin: 0 0.5rem 0.5rem; padding: 0.25rem 0.6rem;
+  background: transparent; color: var(--text-muted, #888);
+  border: 1px solid var(--border-color, rgba(128,128,128,0.4));
+  border-radius: 6px; font-size: 0.75rem; cursor: pointer;
+  flex-shrink: 0;
+}
+#sessions-discard-closed:hover { color: inherit; }
+#sessions-discard-closed:disabled { cursor: progress; opacity: 0.6; }
 .session-row.session-closed { opacity: 0.6; }
 
 #new-auto-btn {
