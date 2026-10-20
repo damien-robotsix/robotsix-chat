@@ -10,6 +10,7 @@ import pytest
 from robotsix_chat.caretaker import watcher as watcher_mod
 from robotsix_chat.caretaker.models import CaretakerFinding
 from robotsix_chat.caretaker.watcher import watch_caretaker_findings
+from robotsix_chat.chat.events import SSE_NOTIFICATION_TYPE
 from robotsix_chat.config.deploy_models import (
     CaretakerSettings,
     CentralDeploySettings,
@@ -105,7 +106,7 @@ async def test_surface_then_autoresolve(monkeypatch: pytest.MonkeyPatch) -> None
     broadcasts = env.event_sink.broadcasts
     assert len(broadcasts) == 2
     assert broadcasts[0]["title"] == "Claude credential unusable - fleet-wide"
-    assert broadcasts[0]["type"] == "notification"
+    assert broadcasts[0]["type"] == SSE_NOTIFICATION_TYPE
     assert "Re-login" in broadcasts[0]["body"]
     assert broadcasts[1]["title"].startswith("Resolved:")
 
