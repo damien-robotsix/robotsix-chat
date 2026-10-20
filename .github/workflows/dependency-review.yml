@@ -46,8 +46,14 @@ jobs:
           # reportlab is BSD-3-Clause (permissive, OSI-approved) but declares
           # its license as freeform "BSD license (see license.txt)" metadata
           # that cannot be mapped to an SPDX id — explicitly allow it.
+          # certifi is MPL-2.0 (file-level copyleft on Mozilla's CA bundle,
+          # which we never modify). It has been in the tree at that license
+          # all along; the action only evaluates CHANGED packages, so the
+          # 2026-10-19 security bump (GHSA-6q48-6c7w-9gw2) was the first
+          # time it looked. Pin the allowance to the version we ship.
           allow-dependencies-licenses: >-
             pkg:pypi/mdformat-frontmatter@2.1.2,
             pkg:pypi/mdit-py-plugins@0.6.1,
             pkg:pypi/ruamel-yaml@0.19.1,
-            pkg:pypi/reportlab@5.0.1
+            pkg:pypi/reportlab@5.0.1,
+            pkg:pypi/certifi@2026.10.19

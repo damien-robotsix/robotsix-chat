@@ -391,9 +391,20 @@ UNCHANGED…Reply with NO_CHANGE and stop' before both the custom-prompt branch 
 a new autonomous session…' text, creating a contradictory prompt that undermines the no-change
 detection.
 
-**Rule:** When skills are lazy-loaded (full instructions deferred to on-demand `read_skill` calls), the system prompt MUST explicitly state that the skills inventory (the list/index shown to the agent) is authoritative, and that a skill listed there is available to the agent even if its full body is not yet loaded into context. The prompt must forbid the agent from denying a listed capability merely because its body is not currently loaded. The agent must be instructed to use `read_skill` or the equivalent lazy-load mechanism to fetch the body before claiming the capability is unavailable.
+**Rule:** When skills are lazy-loaded (full instructions deferred to on-demand `read_skill` calls),
+the system prompt MUST explicitly state that the skills inventory (the list/index shown to the
+agent) is authoritative, and that a skill listed there is available to the agent even if its full
+body is not yet loaded into context. The prompt must forbid the agent from denying a listed
+capability merely because its body is not currently loaded. The agent must be instructed to use
+`read_skill` or the equivalent lazy-load mechanism to fetch the body before claiming the capability
+is unavailable.
 
-**Rationale:** Lazy loading of skill bodies is necessary to stay under the argv-length ceiling (`MAX_ARG_STRLEN`), which would otherwise be exceeded when all skills are concatenated into the system prompt. However, without explicit inventory visibility and an instruction forbidding denial of listed-but-unloaded capabilities, agents read the absence of a skill's body from context and incorrectly report the capability doesn't exist — even though it's available and just needs to be loaded on demand.
+**Rationale:** Lazy loading of skill bodies is necessary to stay under the argv-length ceiling
+(`MAX_ARG_STRLEN`), which would otherwise be exceeded when all skills are concatenated into the
+system prompt. However, without explicit inventory visibility and an instruction forbidding denial
+of listed-but-unloaded capabilities, agents read the absence of a skill's body from context and
+incorrectly report the capability doesn't exist — even though it's available and just needs to be
+loaded on demand.
 
 ## Prompt governance
 
