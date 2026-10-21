@@ -952,9 +952,7 @@ system_prompt: |
   **De-duplicate.** `reference_files` is a set, not a log: list each
   path AT MOST ONCE. Never emit the same relative path twice (a repeated
   entry only inflates the final generation's token cost and tells the
-  next pass nothing new). Before returning, collapse the list to unique
-  paths.
-  List each path at most once — never emit duplicate entries.
+  next pass nothing new).
 
   ## Reviewer threads
 
