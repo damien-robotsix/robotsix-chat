@@ -571,6 +571,8 @@ modules:
     paths:
       - src/robotsix_chat/epic/__init__.py
       - src/robotsix_chat/epic/skill.md
+      - tests/epic/__init__.py
+      - tests/epic/test_epic.py
 
   - id: public-fetch
     description: "Scoped public-URL fetch tool for the chat agent — exposes build_public_fetch_tools() returning a fetch_public_url tool that performs a plain HTTP(S) GET with SSRF protection, size cap, rate limiting, and audit logging, plus load_public_fetch_skill() for the component skill document."
