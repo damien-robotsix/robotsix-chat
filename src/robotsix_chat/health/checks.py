@@ -12,6 +12,7 @@ from __future__ import annotations
 
 import logging
 import time
+from collections.abc import Awaitable
 from typing import Any, cast
 
 from robotsix_chat.health.models import CheckResult, CheckSeverity
@@ -150,7 +151,7 @@ async def check_memory(state: Any) -> CheckResult:
         refresh_fn = getattr(memory, "refresh_write_health", None)
         if callable(refresh_fn):
             try:
-                await refresh_fn()
+                await cast("Awaitable[Any]", refresh_fn())
             except Exception:
                 logger.debug(
                     "health check: memory write-health refresh raised",
