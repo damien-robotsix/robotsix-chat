@@ -132,6 +132,127 @@ async def test_render_unknown_shape_is_empty() -> None:
     assert _render_recall_block({"results": "nope"}) == ""
 
 
+# Real shape of GET /health/hindsight when the retain path is failing —
+# mirrors robotsix-memory #85 (balance exhausted since 2026-09-24).
+HINDSIGHT_FAILING = {
+    "status": "degraded",
+    "hindsight": "ok",
+    "retain": {
+        "status": "failing",
+        "last_error": "This request requires more credits",
+        "banks": {
+            "fleet-operator": {
+                "status": "failing",
+                "last_write_at": "2026-09-17T15:13:07+00:00",
+                "failed": 10,
+                "checked": 10,
+            }
+        },
+    },
+}
+
+HINDSIGHT_HEALTHY = {
+    "status": "ok",
+    "hindsight": "ok",
+    "retain": {"status": "ok", "last_error": None, "banks": {}},
+}
+
+
+@respx.mock
+async def test_write_health_failing_flips_status() -> None:
+    respx.get(f"{URL}/health/hindsight").mock(
+        return_value=httpx.Response(200, json=HINDSIGHT_FAILING)
+    )
+    memory = ComponentMemory(URL)
+    assert memory.status()["degraded"] is False  # unknown until first read
+    await memory.refresh_write_health()
+    status = memory.status()
+    assert status["degraded"] is True
+    assert status["writes_failing"] is True
+    assert "requires more credits" in status["write_last_error"]
+    assert "requires more credits" in status["reason"]
+
+
+@respx.mock
+async def test_write_health_healthy_keeps_ok() -> None:
+    respx.get(f"{URL}/health/hindsight").mock(
+        return_value=httpx.Response(200, json=HINDSIGHT_HEALTHY)
+    )
+    memory = ComponentMemory(URL)
+    await memory.refresh_write_health()
+    status = memory.status()
+    assert status["degraded"] is False
+    assert status["writes_failing"] is False
+    assert status["write_last_error"] is None
+
+
+@respx.mock
+async def test_write_health_unreachable_stays_unknown() -> None:
+    respx.get(f"{URL}/health/hindsight").mock(side_effect=httpx.ConnectError("down"))
+    memory = ComponentMemory(URL)
+    assert await memory.refresh_write_health() is None
+    assert memory.status()["writes_failing"] is False
+
+
+@respx.mock
+async def test_write_alert_opens_once_per_cause_and_closes_on_recovery() -> None:
+    opened: list[str] = []
+    closed: list[bool] = []
+
+    async def _on_failing(last_error: str) -> None:
+        opened.append(last_error)
+
+    async def _on_recovered() -> None:
+        closed.append(True)
+
+    memory = ComponentMemory(URL)
+    memory.set_write_alert_callbacks(on_failing=_on_failing, on_recovered=_on_recovered)
+
+    route = respx.get(f"{URL}/health/hindsight")
+
+    # Three failing reads, same cause -> opened exactly once.
+    route.mock(return_value=httpx.Response(200, json=HINDSIGHT_FAILING))
+    for _ in range(3):
+        await memory.refresh_write_health()
+    assert opened == ["This request requires more credits"]
+    assert closed == []
+
+    # Recovery -> closed once.
+    route.mock(return_value=httpx.Response(200, json=HINDSIGHT_HEALTHY))
+    await memory.refresh_write_health()
+    assert closed == [True]
+
+    # Failing again after recovery -> re-opens.
+    route.mock(return_value=httpx.Response(200, json=HINDSIGHT_FAILING))
+    await memory.refresh_write_health()
+    assert opened == [
+        "This request requires more credits",
+        "This request requires more credits",
+    ]
+
+
+@respx.mock
+async def test_write_alert_reopens_on_distinct_cause() -> None:
+    opened: list[str] = []
+
+    async def _on_failing(last_error: str) -> None:
+        opened.append(last_error)
+
+    memory = ComponentMemory(URL)
+    memory.set_write_alert_callbacks(on_failing=_on_failing, on_recovered=None)
+    route = respx.get(f"{URL}/health/hindsight")
+
+    route.mock(return_value=httpx.Response(200, json=HINDSIGHT_FAILING))
+    await memory.refresh_write_health()
+    other = {
+        "status": "degraded",
+        "retain": {"status": "failing", "last_error": "upstream 503"},
+    }
+    route.mock(return_value=httpx.Response(200, json=other))
+    await memory.refresh_write_health()
+    assert opened == ["This request requires more credits", "upstream 503"]
+
+
 async def test_build_memory_prefers_component() -> None:
     reset_build_memory_cache()
     memory = build_memory(MemoryComponentSettings(enabled=True, url=URL))

@@ -12,6 +12,7 @@ from __future__ import annotations
 
 import logging
 import time
+from collections.abc import Awaitable
 from typing import Any, cast
 
 from robotsix_chat.health.models import CheckResult, CheckSeverity
@@ -142,6 +143,21 @@ async def check_memory(state: Any) -> CheckResult:
                 details={"backend": type(memory).__name__},
             )
 
+        # Refresh the component's write (retain) path from
+        # GET /health/hindsight before reading status(): the component
+        # retains asynchronously, so a dead write path never surfaces on the
+        # recall failures status() already tracks. Safe-by-construction — the
+        # refresh never raises and leaves write health "unknown" on error.
+        refresh_fn = getattr(memory, "refresh_write_health", None)
+        if callable(refresh_fn):
+            try:
+                await cast("Awaitable[Any]", refresh_fn())
+            except Exception:
+                logger.debug(
+                    "health check: memory write-health refresh raised",
+                    exc_info=True,
+                )
+
         snapshot = cast("dict[str, Any]", status_fn())
         if not isinstance(snapshot, dict):
             return CheckResult(
@@ -155,10 +171,14 @@ async def check_memory(state: Any) -> CheckResult:
         backend = snapshot.get("backend", type(memory).__name__)
 
         if degraded:
+            reason = snapshot.get("reason")
+            message = f"Memory backend {backend!r} is degraded"
+            if reason:
+                message += f": {reason}"
             return CheckResult(
                 name="memory",
                 status=CheckSeverity.ERROR,
-                message=f"Memory backend {backend!r} is degraded",
+                message=message,
                 details=snapshot,
             )
 

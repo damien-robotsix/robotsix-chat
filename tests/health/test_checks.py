@@ -75,6 +75,52 @@ class TestCheckMemory:
         assert result.status == CheckSeverity.ERROR
         assert "exception" in result.message
 
+    def test_write_path_failing_degrades_with_last_error(self) -> None:
+        """ERROR with the retain last_error when the write path is failing.
+
+        Mirrors the component's GET /health/hindsight shape (robotsix-memory
+        #85): refresh_write_health() folds the failing retain path into the
+        status snapshot, which check_memory surfaces in the message.
+        """
+        memory = _FakeMemory(
+            status_result={
+                "backend": "memory-component",
+                "degraded": False,
+                "reason": None,
+                "consecutive_recall_failures": 0,
+                "writes_failing": False,
+                "write_last_error": None,
+            },
+            write_health={
+                "degraded": True,
+                "reason": "memory writes failing: This request requires more credits",
+                "writes_failing": True,
+                "write_last_error": "This request requires more credits",
+            },
+        )
+        state = _FakeState(memory=memory)
+        result = asyncio.run(check_memory(state))
+        assert memory.refresh_calls == 1
+        assert result.status == CheckSeverity.ERROR
+        assert "requires more credits" in result.message
+
+    def test_write_path_healthy_stays_ok(self) -> None:
+        """OK when the write path is healthy (refresh leaves status clean)."""
+        memory = _FakeMemory(
+            status_result={
+                "backend": "memory-component",
+                "degraded": False,
+                "writes_failing": False,
+                "write_last_error": None,
+            },
+            write_health={"degraded": False, "writes_failing": False},
+        )
+        state = _FakeState(memory=memory)
+        result = asyncio.run(check_memory(state))
+        assert memory.refresh_calls == 1
+        assert result.status == CheckSeverity.OK
+        assert "healthy" in result.message
+
 
 # ---------------------------------------------------------------------------
 # check_knowledge_store
@@ -313,15 +359,26 @@ class _FakeMemory:
         self,
         status_result: object | None = None,
         status_raises: Exception | None = None,
+        write_health: dict | None = None,
     ) -> None:
         self._status_result = status_result
         self._status_raises = status_raises
+        # When set, mimic ComponentMemory: refresh_write_health() folds the
+        # failing write path into status() before check_memory reads it.
+        self._write_health = write_health
+        self.refresh_calls = 0
 
     def status(self) -> object:
         """Return a canned status dict or raise."""
         if self._status_raises is not None:
             raise self._status_raises
         return self._status_result
+
+    async def refresh_write_health(self) -> None:
+        """Fold a failing write path into the status snapshot."""
+        self.refresh_calls += 1
+        if self._write_health is not None and isinstance(self._status_result, dict):
+            self._status_result.update(self._write_health)
 
 
 class _FakeStore:
