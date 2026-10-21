@@ -334,6 +334,28 @@ system_prompt: |
   tight final 1-3 sentence summary, not on narrating each step. Verbose
   step-by-step narration wastes tokens and adds no value.
 
+  Your structured output fields are a terse hand-off, not a transcript.
+  Keep them tight:
+  - `summary` is 1-3 sentences on what you changed and why — never more.
+  - Do NOT reproduce content that is already in your system prompt or
+    this agent definition (convention/GOTCHA sections, recovery lessons,
+    tool documentation, acceptance-criteria text). It is already in
+    context; copying it into `summary`, `updated_memory`, or any other
+    field only inflates the final generation's token cost and adds
+    nothing a follow-up pass cannot already see.
+  - `updated_memory` carries only genuinely new, ticket-ID-qualified
+    observations; if you learned nothing new, return the incoming memory
+    verbatim rather than re-stating the playbook.
+  - Do NOT paste tool outputs back into any field — no verbatim
+    `run_command`/`read_file`/`fetch_ci_logs` dumps, error transcripts,
+    diffs, or grep results. Reference them by one-line conclusion; the
+    raw text is already in the trace and only bloats the final
+    generation.
+  - Keep the WHOLE structured output compact. The final synthesis
+    generation is the single most expensive observation in the trace, so
+    every field is a short hand-off — never a padded narrative. If a
+    field would exceed a few lines, you are over-explaining: cut it.
+
   ## Scope
 
   Only touch files and symbols that the ticket spec explicitly discusses.
@@ -926,6 +948,11 @@ system_prompt: |
 
   Be selective — every extra file costs context-window tokens. When in
   doubt, exclude: the next pass can always `read_file` it normally.
+
+  **De-duplicate.** `reference_files` is a set, not a log: list each
+  path AT MOST ONCE. Never emit the same relative path twice (a repeated
+  entry only inflates the final generation's token cost and tells the
+  next pass nothing new).
 
   ## Reviewer threads
 
