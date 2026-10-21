@@ -83,6 +83,18 @@ Two things survive that supersede-close:
   fails. This makes pending decisions visible independently of the main task succeeding — the
   operator still sees decision panels and their decision prompts even when the turn crashes. No-op
   when there are no open panels, so the transcript stays clean when nothing is pending.
+
+  **Automatic system alerts.** System health checks (e.g., the memory component's periodic retain
+  health probe) can automatically open a `user_chat` operator panel when a critical subsystem
+  fails. The memory write-failure alert, for example, opens when the memory component's retain
+  path (used by background cognee consolidation) stops working — which never surfaces on the
+  chat request path because memory retains asynchronously. The panel opens with title
+  `Memory writes failing: <error>` and guides the operator to investigate the cause (e.g.
+  exhausted extraction-LLM balance). These alert panels are deduped per cause, so if the same
+  error persists across multiple health checks, only one panel remains open. The panel
+  automatically closes when the health check detects recovery. Like other pending decisions,
+  these alert panels survive run supersessions, so the operator can investigate in the current
+  run even if a panel was initially opened in a previous run.
 - **The last few runs.** The scheduler remembers the last `RETAINED_RUNS_PER_PRESET` (3) session ids
   of each preset. After every firing, and once at startup, every *other* closed periodic session is
   deleted from the conversation store — a closed run is kept only long enough to read back what the
