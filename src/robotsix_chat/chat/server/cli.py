@@ -440,11 +440,14 @@ def run_server_from_config(agent: ChatAgent | None = None) -> None:
             owner_session_id: str,
             title: str,
             prompt: str,
-            kind: str = "task",
+            kind: str = "user_chat",
+            dedup_key: str | None = None,
         ) -> str | None:
-            # ``kind`` is a string ("task" or "user_chat"); map it to the
-            # enum.  "user_chat" escalates an unresolvable finding to the
-            # operator as a user-facing panel instead of a background TASK.
+            # ``kind`` is a string; map it to the enum.  Feedback findings now
+            # always become an operator approval panel ("user_chat"): the
+            # panel investigates read-only and only opens a PR once the
+            # operator approves.  ``dedup_key`` collapses the same finding
+            # across runs onto the existing panel instead of a new one.
             return spawn_subsession(
                 env=env,
                 kind=SubsessionKind(kind),
@@ -454,6 +457,7 @@ def run_server_from_config(agent: ChatAgent | None = None) -> None:
                 title=title,
                 prompt=prompt,
                 model_level=_feedback_subsession_level,
+                dedup_key=dedup_key,
             )
 
         feedback_runner = FeedbackRunner(

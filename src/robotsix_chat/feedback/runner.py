@@ -359,34 +359,54 @@ def _subject_is_chat_config(ticket: dict[str, Any]) -> bool:
     return any(marker in subject for marker in _CHAT_CONFIG_SUBJECT_MARKERS)
 
 
-def _build_investigation_prompt(
+def _build_investigation_panel_prompt(
     ticket: dict[str, Any],
     *,
     session_id: str,
     trigger_type: str,
 ) -> str:
-    """Build a self-contained instruction for the investigation subsession.
+    """Build the operator panel for an actionable feedback finding.
 
-    The board no longer accepts feedback findings as tickets; the mill 400
-    prescribes running the investigation as a chat subsession agent.  This
-    prompt hands the agent the full finding so it can investigate and act
-    on it directly in the target repo.
+    A feedback finding no longer opens a pull request on its own.  Instead
+    every finding becomes ONE operator panel (``user_chat`` subsession): the
+    panel agent investigates the finding **read-only** (it may explore the
+    target repo and draft the change) and presents the proposed change to the
+    operator, but the PR-opening tool path (``direct_repo`` / merge tools) is
+    gated on an explicit operator reply — ``"approve"`` or a branch name.  On
+    approval the agent opens the PR and closes the panel with the PR link; on
+    rejection it closes the panel with the reason and the finding is not
+    re-raised.
+
+    This replaced the autonomous investigation subsession that opened PRs
+    directly: on 2026-10-21 the operator triaged 61 such PRs on robotsix-chat
+    (all closed, none mergeable on merit), plus three mis-targeted PRs on
+    hexarchy — so investigations are now approval-gated panels.
     """
     return (
         "A feedback analysis of a chat session surfaced an actionable "
-        "improvement. The board no longer accepts these as ingest tickets "
-        "(it admits deployment tickets only), so you must investigate and "
-        "act on this finding directly as a chat subsession agent.\n\n"
+        "improvement. This is an OPERATOR APPROVAL PANEL — a feedback "
+        "investigation must NOT open a pull request on its own. You are "
+        "read-only until the operator approves in this panel.\n\n"
         f"Target repo: {ticket.get('target_repo', '') or 'robotsix-chat'}\n"
         f"Kind: {ticket.get('kind', '')}\n"
         f"Title: {ticket['title']}\n\n"
         f"Finding:\n{ticket['description']}\n\n"
         f"(Origin: robotsix-chat feedback run | session: {session_id} | "
         f"trigger: {trigger_type})\n\n"
-        "Investigate the finding in the target repo, then take the smallest "
-        "concrete action that addresses it (e.g. open a pull request, file a "
-        "properly-scoped deployment ticket, or document why no change is "
-        "needed). Report a short summary of what you did when done.\n\n"
+        "Step 1 — Investigate read-only: explore the target repo and draft "
+        "the smallest concrete change that addresses the finding. Do NOT open "
+        "a pull request yet and do NOT call any direct_repo / merge "
+        "PR-opening tool in this step.\n\n"
+        "Step 2 — Present to the operator: summarise the finding, the target "
+        "repo, and your proposed change (the files/lines you would touch and "
+        "why). Then ask the operator to approve it.\n\n"
+        "Step 3 — Act only on the operator's reply:\n"
+        '- On approval (the operator replies "approve", or gives a branch '
+        "name): open the pull request with the proposed change on the target "
+        "repo, then close this panel with the PR link.\n"
+        "- On rejection (the operator declines or asks you to drop it): open "
+        "no PR, and close this panel with the operator's reason — the finding "
+        "will not be re-raised.\n\n"
         "CRITICAL — never open a pull request when the finding's subject is "
         "not present in the target repo. Investigate first; if the thing you "
         "were sent to fix does not exist in this repo (the finding was "
@@ -1163,6 +1183,7 @@ class FeedbackRunner:
                     title=title,
                     prompt=prompt,
                     kind="user_chat",
+                    dedup_key=self._subject_key(ticket),
                 )
             except Exception:
                 logger.exception(
@@ -1196,6 +1217,7 @@ class FeedbackRunner:
                     title=title,
                     prompt=prompt,
                     kind="user_chat",
+                    dedup_key=self._subject_key(ticket),
                 )
             except Exception:
                 logger.exception(
@@ -1217,18 +1239,25 @@ class FeedbackRunner:
         # findings) so the investigation prompt never points at a component
         # repo for chat's own config.
         ticket["target_repo"] = target_repo
-        prompt = _build_investigation_prompt(
+        prompt = _build_investigation_panel_prompt(
             ticket, session_id=session_id, trigger_type=trigger_type
         )
         try:
+            # The investigation no longer opens a PR autonomously: it becomes
+            # an operator approval panel (``user_chat``) that is read-only
+            # until the operator approves.  Dedup on the normalised subject
+            # key so the same finding across runs updates the existing panel
+            # instead of opening a new one.
             sub_id = self._spawner(
                 owner_session_id=session_id,
                 title=ticket["title"],
                 prompt=prompt,
+                kind="user_chat",
+                dedup_key=self._subject_key(ticket),
             )
         except Exception:
             logger.exception(
-                "Failed to spawn investigation subsession for feedback finding %r",
+                "Failed to spawn investigation panel for feedback finding %r",
                 ticket["title"],
             )
             return "routed"
@@ -1260,6 +1289,20 @@ class FeedbackRunner:
             return _CHAT_SELF_REPO
         target = (ticket.get("target_repo") or "").strip()
         return target or None
+
+    @staticmethod
+    def _subject_key(ticket: dict[str, Any]) -> str:
+        """Return a normalised dedup key for a finding's subject.
+
+        Combines the normalised title with the resolved target repo so the
+        same finding seen across successive ``session_end`` runs maps to ONE
+        operator panel: the dedup guard in ``spawn_subsession`` returns the
+        existing panel's id instead of opening a second one.  The same title
+        about a different repo stays a distinct subject.
+        """
+        title = (ticket.get("title") or "").strip().lower()
+        repo = (ticket.get("target_repo") or "").strip().lower()
+        return f"feedback:{repo}:{title}" if repo else f"feedback:{title}"
 
     def _finding_resolved(self, ticket: dict[str, Any]) -> bool:
         """Return ``True`` when *ticket* (by normalized title) is already resolved.
