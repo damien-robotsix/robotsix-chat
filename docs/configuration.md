@@ -479,9 +479,24 @@ Both caches are in-process only (no persistence), so a server restart resets the
 
 The board no longer admits feedback findings as ingest tickets; it answers `POST /tickets/ingest`
 with an admission-policy `HTTP 400` and instructs the runner to investigate the finding as a chat
-subsession agent instead. The runner normally **routes** such a finding to a one-shot investigation
-subsession owned by the originating chat session, which reports its summary back to that
-conversation.
+subsession agent instead. The runner normally **routes** every such finding to a single **operator
+approval panel** (a `user_chat` subsession) owned by the originating chat session.
+
+A feedback investigation no longer opens a pull request on its own. The panel agent investigates the
+finding **read-only** — it may explore the target repo and draft the change — and presents the
+finding, the target repo, and its proposed change to the operator. The PR-opening tool path
+(`direct_repo` / merge tools) is gated on an explicit operator reply in the panel: on approval
+(`approve`, or a branch name) the agent opens the PR and closes the panel with the PR link; on
+rejection it opens no PR and closes the panel with the operator's reason, and the finding is not
+re-raised. Every panel is deduplicated on a **normalised subject key** (target repo + normalised
+title), so the same finding seen across successive `session_end` runs maps to the existing panel
+rather than opening a new one.
+
+This replaced the autonomous investigation subsession that opened PRs directly: on 2026-10-21 the
+operator triaged 61 such PRs on robotsix-chat (all closed, none mergeable on merit) plus three
+mis-targeted PRs on hexarchy, so investigations are now approval-gated panels. Findings about chat's
+own configuration (periodic presets, prompts, session behaviour) and findings whose target repo
+cannot be resolved with confidence likewise surface as `user_chat` panels rather than repo PRs.
 
 When the owner session has been **deleted** (e.g. `DELETE /sessions/{id}` — the feedback run is
 still scheduled from the deletion, but the conversation is gone), routing would spawn an orphan

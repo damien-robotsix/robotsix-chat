@@ -26,7 +26,7 @@ from robotsix_chat.config.models import FeedbackSettings
 from robotsix_chat.feedback.runner import (
     FeedbackRunner,
     _build_feedback_prompt,
-    _build_investigation_prompt,
+    _build_investigation_panel_prompt,
 )
 from robotsix_chat.subsessions.models import (
     SubsessionInfo,
@@ -1015,13 +1015,17 @@ class TestFileTickets:
         assert failed == 0
         assert routed == 1
         assert route.call_count == 1
-        # The finding was handed to a chat subsession agent.
+        # The finding became an operator approval panel (not an autonomous
+        # PR-opening investigation): kind=user_chat, read-only until approval,
+        # deduped on a normalised subject key.
         spawner.assert_called_once()
         _, kwargs = spawner.call_args
         assert kwargs["owner_session_id"] == "sess-abc"
+        assert kwargs["kind"] == "user_chat"
         assert "delete_branch_on_merge" in kwargs["title"]
         assert "robotsix-chat" in kwargs["prompt"]
-        assert "chat subsession agent" in kwargs["prompt"]
+        assert "read-only until the operator approves" in kwargs["prompt"]
+        assert kwargs["dedup_key"]
         assert "routing to chat subsession agent" in caplog.text
 
     @pytest.mark.asyncio
@@ -1141,7 +1145,7 @@ class TestFileTickets:
         assert "escalated to you" in kwargs["prompt"]
         assert "assign target" in kwargs["title"]
 
-    def test_investigation_prompt_forbids_pr_when_no_in_repo_referent(
+    def test_investigation_panel_prompt_forbids_pr_when_no_in_repo_referent(
         self,
     ) -> None:
         """An investigation that finds no in-repo referent must not open a PR.
@@ -1151,7 +1155,7 @@ class TestFileTickets:
         and close with outcome "no change needed, wrong target" rather than
         opening a cosmetic PR.
         """
-        prompt = _build_investigation_prompt(
+        prompt = _build_investigation_panel_prompt(
             {
                 "title": "T",
                 "description": "A finding.",
@@ -1163,6 +1167,105 @@ class TestFileTickets:
         )
         assert "never open a pull request" in prompt
         assert "no change needed, wrong target" in prompt
+
+    def test_investigation_panel_prompt_is_approval_gated(self) -> None:
+        """The investigation panel is read-only until the operator approves.
+
+        Regression for the 2026-10-21 PR flood (61 unmergeable PRs on
+        robotsix-chat): a feedback investigation must not open a PR on its
+        own.  The panel prompt must carry the finding, the target repo, and
+        the read-only-until-approval contract (approve → open PR, reject →
+        close with reason).
+        """
+        prompt = _build_investigation_panel_prompt(
+            {
+                "title": "Add retry to ingest",
+                "description": "The ingest path should retry on 503.",
+                "kind": "code",
+                "target_repo": "robotsix-chat",
+            },
+            session_id="s1",
+            trigger_type="session_end",
+        )
+        # The finding and target repo appear in the panel body.
+        assert "Add retry to ingest" in prompt
+        assert "robotsix-chat" in prompt
+        assert "The ingest path should retry on 503." in prompt
+        # Read-only until approval: no autonomous PR; approve/reject contract.
+        assert "read-only until the operator approves" in prompt
+        assert "approve" in prompt
+        assert "On rejection" in prompt
+        assert "will not be re-raised" in prompt
+
+    @pytest.mark.asyncio
+    async def test_same_finding_dedups_onto_one_panel_across_runs(
+        self, respx_mock: respx.MockRouter
+    ) -> None:
+        """The same finding across session_end runs maps to ONE panel.
+
+        The runner must hand ``spawn_subsession`` a stable, normalised
+        subject key for the same finding (title + target_repo + kind), so the
+        dedup guard returns the existing panel id instead of opening a second
+        one.  Mirrors the real finding shape and simulates the dedup guard.
+        """
+        policy_detail = (
+            "source_tag robotsix-chat-feedback is not admitted on this board: "
+            "mill admits deployment tickets only. Run this investigation as a "
+            "chat subsession agent instead of filing a ticket."
+        )
+        respx_mock.post("http://test-board/tickets/ingest").mock(
+            return_value=httpx.Response(400, json={"detail": policy_detail})
+        )
+
+        class _DedupSpawner:
+            """Fake spawner that mirrors ``spawn_subsession``'s dedup guard."""
+
+            def __init__(self) -> None:
+                self.calls: list[dict[str, Any]] = []
+                self._by_key: dict[str, str] = {}
+                self.panels_created = 0
+
+            def __call__(
+                self,
+                *,
+                owner_session_id: str,
+                title: str,
+                prompt: str,
+                kind: str = "user_chat",
+                dedup_key: str | None = None,
+            ) -> str:
+                self.calls.append({"dedup_key": dedup_key, "kind": kind})
+                if dedup_key is not None and dedup_key in self._by_key:
+                    return self._by_key[dedup_key]
+                self.panels_created += 1
+                sub_id = f"ss-{self.panels_created}"
+                if dedup_key is not None:
+                    self._by_key[dedup_key] = sub_id
+                return sub_id
+
+        spawner = _DedupSpawner()
+        finding = {
+            "title": "Add retry to ingest path",
+            "description": "The ingest path should retry on transient 503s.",
+            "kind": "code",
+            "target_repo": "robotsix-chat",
+        }
+        # Two fresh runners (no knowledge store) → in-process and durable
+        # dedup are both cold, so each run reaches the spawner.
+        runner1 = _make_runner(subsession_spawner=spawner)
+        await runner1._file_tickets(
+            [dict(finding)], trigger_type="session_end", session_id="sess-1"
+        )
+        runner2 = _make_runner(subsession_spawner=spawner)
+        await runner2._file_tickets(
+            [dict(finding)], trigger_type="session_end", session_id="sess-2"
+        )
+        # Both runs called the spawner with the SAME normalised subject key,
+        # so only one panel was actually created.
+        assert len(spawner.calls) == 2
+        assert spawner.calls[0]["dedup_key"] == spawner.calls[1]["dedup_key"]
+        assert spawner.calls[0]["dedup_key"]
+        assert spawner.panels_created == 1
 
     @pytest.mark.asyncio
     async def test_resolved_finding_not_reinvestigated_next_session_end(
