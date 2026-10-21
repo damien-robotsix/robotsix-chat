@@ -16,6 +16,7 @@ after :data:`_DEGRADED_AFTER` consecutive failures.
 from __future__ import annotations
 
 import logging
+from collections.abc import Awaitable, Callable
 from typing import Any
 
 import httpx
@@ -60,6 +61,18 @@ class ComponentMemory:
         self._recall_limit = recall_limit
         self._timeout = timeout_seconds
         self._consecutive_failures = 0
+        # Write-path (retain) health cached from GET /health/hindsight — the
+        # component retains asynchronously, so a dead write path never
+        # surfaces on recall. Refreshed by the periodic health run; "unknown"
+        # (not failing) until first read.
+        self._write_checked = False
+        self._write_failing = False
+        self._write_last_error: str | None = None
+        # Operator-panel escalation: opened once per distinct last_error while
+        # writes fail, closed when they recover.
+        self._on_write_failing: Callable[[str], Awaitable[None]] | None = None
+        self._on_write_recovered: Callable[[], Awaitable[None]] | None = None
+        self._alerted_write_error: str | None = None
 
     async def setup(self) -> None:
         """Probe the component once so a dead memory is visible at boot."""
@@ -158,18 +171,83 @@ class ComponentMemory:
             return reflection.strip()[:_MAX_BLOCK_CHARS]
         return ""
 
+    async def refresh_write_health(self) -> dict[str, Any] | None:
+        """Read ``GET /health/hindsight`` and cache the retain (write) path.
+
+        robotsix-memory retains asynchronously, so a dead write path (e.g.
+        the extraction LLM's balance exhausted) never surfaces on the recall
+        path this backend already tracks, and ``POST /remember`` still
+        answers 201. The component reports it on ``GET /health/hindsight``
+        instead (top-level ``status`` + ``retain.status``/``retain.last_error``).
+        Reads it so :meth:`status` and the periodic health run report a failing
+        write path, and escalates to the operator on a transition.
+
+        Safe by construction: never raises. An unreachable or malformed
+        response leaves the cached state unchanged (write health is
+        "unknown", not "failing"). Returns the raw parsed payload, or
+        ``None`` when the probe did not yield a usable response.
+        """
+        try:
+            async with httpx.AsyncClient(timeout=self._timeout) as client:
+                resp = await client.get(f"{self._url}/health/hindsight")
+        except httpx.HTTPError as exc:
+            logger.debug("memory write-health probe failed: %s", exc)
+            return None
+        if resp.status_code >= 500:
+            logger.debug("memory write-health probe: HTTP %d", resp.status_code)
+            return None
+        try:
+            payload = resp.json()
+        except ValueError:
+            logger.debug("memory write-health probe returned non-JSON")
+            return None
+        if not isinstance(payload, dict):
+            return None
+        self._write_failing, self._write_last_error = _parse_write_health(payload)
+        self._write_checked = True
+        await self._escalate_write_health()
+        return payload
+
+    async def _escalate_write_health(self) -> None:
+        """Open/close the operator panel on write-health transitions.
+
+        Opens ONE panel per distinct ``last_error`` while writes are failing
+        (so the operator learns the cause without a model needing to notice),
+        and closes it when writes recover. Best effort: a callback error never
+        propagates into the health run.
+        """
+        try:
+            if self._write_failing:
+                cause = self._write_last_error or "unknown error"
+                if self._alerted_write_error != cause:
+                    self._alerted_write_error = cause
+                    if self._on_write_failing is not None:
+                        await self._on_write_failing(cause)
+            elif self._write_checked and self._alerted_write_error is not None:
+                self._alerted_write_error = None
+                if self._on_write_recovered is not None:
+                    await self._on_write_recovered()
+        except Exception:
+            logger.debug("memory write-health escalation failed", exc_info=True)
+
     def status(self) -> dict[str, Any]:
         """Health snapshot for ``GET /health``."""
-        degraded = self._consecutive_failures >= _DEGRADED_AFTER
+        recall_degraded = self._consecutive_failures >= _DEGRADED_AFTER
+        degraded = recall_degraded or self._write_failing
+        reasons: list[str] = []
+        if recall_degraded:
+            reasons.append(f"{self._consecutive_failures} consecutive recall failures")
+        if self._write_failing:
+            reasons.append(
+                "memory writes failing: " + (self._write_last_error or "unknown error")
+            )
         return {
             "backend": "memory-component",
             "degraded": degraded,
-            "reason": (
-                f"{self._consecutive_failures} consecutive recall failures"
-                if degraded
-                else None
-            ),
+            "reason": "; ".join(reasons) if reasons else None,
             "consecutive_recall_failures": self._consecutive_failures,
+            "writes_failing": self._write_failing,
+            "write_last_error": self._write_last_error,
         }
 
     def set_recovery_callback(
@@ -186,6 +264,21 @@ class ComponentMemory:
         """No escalation path — component health is on GET /health."""
         return None
 
+    def set_write_alert_callbacks(
+        self,
+        *,
+        on_failing: Callable[[str], Awaitable[None]] | None,
+        on_recovered: Callable[[], Awaitable[None]] | None,
+    ) -> None:
+        """Register (or clear) the write-failure operator-panel callbacks.
+
+        ``on_failing(last_error)`` opens the panel; ``on_recovered()`` closes
+        it. Invoked at most once per distinct ``last_error`` until writes
+        recover — see :meth:`_escalate_write_health`.
+        """
+        self._on_write_failing = on_failing
+        self._on_write_recovered = on_recovered
+
     def _note_failure(self, reason: str) -> None:
         self._consecutive_failures += 1
         logger.warning(
@@ -193,6 +286,23 @@ class ComponentMemory:
             reason,
             self._consecutive_failures,
         )
+
+
+def _parse_write_health(payload: dict[str, Any]) -> tuple[bool, str | None]:
+    """Return ``(writes_failing, last_error)`` from a ``/health/hindsight`` body.
+
+    Writes are failing when the top-level ``status`` is ``degraded`` or the
+    ``retain.status`` is ``failing``. ``last_error`` is the engine's message
+    from the ``retain`` block when present.
+    """
+    retain = payload.get("retain")
+    retain = retain if isinstance(retain, dict) else {}
+    retain_status = str(retain.get("status") or "").lower()
+    top_status = str(payload.get("status") or "").lower()
+    failing = retain_status == "failing" or top_status == "degraded"
+    last_error = retain.get("last_error")
+    last_error = last_error if isinstance(last_error, str) and last_error else None
+    return failing, last_error
 
 
 def _render_recall_block(payload: Any) -> str:

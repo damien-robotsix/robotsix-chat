@@ -383,6 +383,74 @@ def run_server_from_config(agent: ChatAgent | None = None) -> None:
     # turn instead of a passive history record.
     delivery.set_agent(agent)
 
+    # -- memory write-failure operator alert -------------------------------
+    # robotsix-memory retains asynchronously, so a dead write path (e.g. the
+    # extraction LLM's balance exhausted) never surfaces on recall and
+    # POST /remember still answers 201. The periodic health run reads
+    # GET /health/hindsight (ComponentMemory.refresh_write_health) and, when
+    # the retain path is failing, opens ONE operator panel naming the cause
+    # so the operator learns without a model needing to notice; it closes
+    # automatically when writes recover.
+    from robotsix_chat.memory.component import ComponentMemory
+
+    _app_memory = getattr(agent, "memory", None)
+    if isinstance(_app_memory, ComponentMemory):
+        from robotsix_chat.subsessions import SubsessionKind
+        from robotsix_chat.subsessions.worker import spawn_subsession
+
+        memory_alert_session = "system-memory-health"
+        memory_alert_dedup = "memory-writes-failing"
+
+        async def _open_memory_write_panel(last_error: str) -> None:
+            prompt = (
+                "The long-term memory component's write (retain) path is "
+                "failing, so new memories are not being persisted.\n\n"
+                f"Engine error: {last_error}\n\n"
+                "Detected from the component's GET /health/hindsight "
+                "(retain.status=failing). Recall still works; writes do not. "
+                "Likely causes include an exhausted extraction-LLM balance or "
+                "a misconfigured memory backend. Investigate and tell the "
+                "operator what to do. This panel closes automatically when "
+                "writes recover."
+            )
+            try:
+                spawn_subsession(
+                    env=env,
+                    kind=SubsessionKind.USER_CHAT,
+                    owner_session_id=memory_alert_session,
+                    parent_id=None,
+                    depth=1,
+                    title=f"Memory writes failing: {last_error}"[:200],
+                    prompt=prompt,
+                    model_level=settings.chat_default_model_level,
+                    dedup_key=memory_alert_dedup,
+                )
+            except Exception:
+                logger.warning("failed to open memory-write alert panel", exc_info=True)
+
+        async def _close_memory_write_panel() -> None:
+            try:
+                sub_id = subsession_registry.is_dedup_key_active(memory_alert_dedup)
+                if sub_id is not None:
+                    subsession_registry.cancel_and_close(
+                        sub_id,
+                        reason="memory_writes_recovered",
+                        closed_by="system",
+                        summary=(
+                            "Memory writes recovered — the retain path is "
+                            "healthy again."
+                        ),
+                    )
+            except Exception:
+                logger.warning(
+                    "failed to close memory-write alert panel", exc_info=True
+                )
+
+        _app_memory.set_write_alert_callbacks(
+            on_failing=_open_memory_write_panel,
+            on_recovered=_close_memory_write_panel,
+        )
+
     # Dedicated summariser agent for the idle-timeout compaction summary,
     # the carryover summary and conversation titles (bounded text
     # transformation, not open-ended reasoning).  It runs on its own
