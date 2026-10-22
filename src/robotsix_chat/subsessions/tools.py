@@ -585,7 +585,13 @@ def _build_spawn_and_control_tools(
     spawn_subsession_tool.__name__ = "spawn_subsession"
     spawn_subsession_tool.__qualname__ = "spawn_subsession"
 
-    async def message_subsession(subsession_id: str, text: str) -> str:
+    async def message_subsession(
+        subsession_id: str,
+        text: str = "",
+        message: str = "",
+        content: str = "",
+        body: str = "",
+    ) -> str:
         """Send a steering message to one of your running subsessions.
 
         The subsession sees the message at its next turn boundary (after
@@ -593,7 +599,23 @@ def _build_spawn_and_control_tools(
         add context, or redirect work without restarting it. Only
         subsessions started from this conversation (or their
         descendants) can be messaged.
+
+        Args:
+            subsession_id: The subsession to message (full id or the
+                8-char prefix ``list_subsessions`` shows).
+            text: The message.
+            message: Alias of ``text``.
+            content: Alias of ``text``.
+            body: Alias of ``text``. The claude_sdk schema check rejected
+                ``message=``/``content=``/``body=`` before the body ran, so
+                all four board-gates-drain updates of 2026-10-22 15:55Z were
+                lost (correlation 9a692be1…).
+
         """
+        supplied = [t for t in (text, message, content, body) if t.strip()]
+        if len(set(supplied)) > 1:
+            return "Error: text and its aliases disagree; pass only one of them."
+        text = supplied[0] if supplied else text
         resolved = _resolve_subsession_id(env, ctx, subsession_id)
         if resolved is None:
             return f"No subsession {subsession_id!r} in this conversation's tree."
