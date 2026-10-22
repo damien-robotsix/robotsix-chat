@@ -180,20 +180,23 @@ Tasks that are pending, in-progress, or blocked.
 ## T-0008 — Caretaker findings: persistent user_chat operator panel (open/update/auto-close)
 
 - status: pending
+
 - created: 2026-10-20T19:52:00Z
+
 - updated: 2026-10-20T19:52:00Z
-- notes: Follow-up to ticket
-  20261020T195231Z-surface-caretaker-findings-claude-auth-c (the PR that added the
-  `src/robotsix_chat/caretaker/` module). That ticket shipped the **model-free notification half**:
-  a background poller (`watch_caretaker_findings`) that GETs `{central_deploy.url}/caretaker/status`
-  on an interval with no agent turn and broadcasts an SSE desktop `notification` frame
-  (`EventSink.publish_all`) for each error-severity `claude_auth`/`crash_loop`/`health` finding,
-  de-duped per `(kind, component)`, with a resolution notice when the finding clears. Behind
-  `caretaker.enabled` (default off).
+
+- notes: Follow-up to ticket 20261020T195231Z-surface-caretaker-findings-claude-auth-c (the PR that
+  added the `src/robotsix_chat/caretaker/` module). That ticket shipped the **model-free
+  notification half**: a background poller (`watch_caretaker_findings`) that GETs
+  `{central_deploy.url}/caretaker/status` on an interval with no agent turn and broadcasts an SSE
+  desktop `notification` frame (`EventSink.publish_all`) for each error-severity
+  `claude_auth`/`crash_loop`/`health` finding, de-duped per `(kind, component)`, with a resolution
+  notice when the finding clears. Behind `caretaker.enabled` (default off).
 
   **Remaining acceptance item (deferred by design):** open/update/auto-close ONE persistent
   `user_chat` operator **panel** per `(kind, component)` (not just a transient toast). Split out
   because it needs two design decisions the notification path does not:
+
   1. **Session ownership.** A `user_chat` panel (subsession) is published to a single
      `owner_session_id` (`registry.create` -> `subsession_started_frame`); there is no canonical
      process-wide "operator"/primary session for a fleet-wide panel to attach to, and the browser
@@ -207,10 +210,10 @@ Tasks that are pending, in-progress, or blocked.
      (`subsessions/resume.py` `_resume_user_chat_entry`) without re-spawning a model turn.
 
   **External contract to confirm:** the exact `/caretaker/status` JSON schema is owned by
-  central-deploy (#924) and was parsed tolerantly here (field aliases in
-  `caretaker/models.py` `CaretakerFinding.from_payload`). Confirm the real field names
-  (`kind`/`component`/`severity`/`detail`) and the severity value used for `claude_auth`
-  (assumed `"error"`) against the live endpoint; tighten the parser if they differ.
+  central-deploy (#924) and was parsed tolerantly here (field aliases in `caretaker/models.py`
+  `CaretakerFinding.from_payload`). Confirm the real field names
+  (`kind`/`component`/`severity`/`detail`) and the severity value used for `claude_auth` (assumed
+  `"error"`) against the live endpoint; tighten the parser if they differ.
 
   **Activation (already shipped):** `caretaker.enabled: true` + `central_deploy.url` set. **Live
   proof:** with a credential whose status is `not-authenticated`, confirm an operator notification

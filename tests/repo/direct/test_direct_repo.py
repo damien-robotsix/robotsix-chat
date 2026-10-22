@@ -79,7 +79,7 @@ def test_build_direct_repo_tools_disabled() -> None:
 def test_build_direct_repo_tools_returns_twentytwo_tools() -> None:
     """Verify that enabled direct_repo returns the twenty-five expected tools."""
     tools = build_direct_repo_tools(_settings())
-    assert len(tools) == 25
+    assert len(tools) == 27
     names = [t.__name__ for t in tools]
     assert "push_direct_repo_branch" in names
     assert "open_direct_repo_pr" in names
@@ -344,6 +344,7 @@ def test_merge_tools_returned() -> None:
         "fetch_ci_job_logs",
         "fetch_trivy_findings",
         "file_ci_stabilization_ticket",
+        "get_repo_settings",
         "inspect_github_installation_token",
         "inspect_pr_diff",
         "list_open_prs",
@@ -356,6 +357,7 @@ def test_merge_tools_returned() -> None:
         "rerun_ci_workflow",
         "reset_implement_spawn_counter",
         "resolve_pr_conflict",
+        "set_repo_delete_branch_on_merge",
         "update_pr_branch",
         "update_simple_repo_pr",
         "verify_pr_ci_status",
@@ -2032,7 +2034,7 @@ def test_direct_fix_available_when_enabled() -> None:
     tools = build_direct_repo_tools(_settings(direct_fix_enabled=True))
     names = [t.__name__ for t in tools]
     assert "direct_fix" in names
-    assert len(tools) == 27  # 25 base + direct_fix + patch_direct_repo_file
+    assert len(tools) == 29  # 27 base + direct_fix + patch_direct_repo_file
 
 
 @pytest.mark.asyncio

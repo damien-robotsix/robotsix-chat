@@ -1333,6 +1333,68 @@ def build_github_tools(
             build_type=build_type,
         )
 
+    async def get_repo_settings(repo_full_name: str) -> str:
+        """Read a repository's branch/merge-hygiene settings.
+
+        Calls ``GET /repos/{owner}/{repo}`` and reports
+        ``delete_branch_on_merge``, ``default_branch``, ``allow_auto_merge``
+        and the other merge-strategy flags.  Read-only.
+
+        **No BLOCKED-state requirement.**
+
+        **Scope:** *repo_full_name* must be within the robotsix-mill GitHub
+        App's current installation scope (checked dynamically at call time).
+
+        Args:
+            repo_full_name: GitHub ``owner/name`` (e.g.
+                ``"robotsix/robotsix-chat"``).
+
+        Returns:
+            One line per setting (``- key: value``), or an error string.
+
+        """
+        if error := await assert_in_scope(client, repo_full_name):
+            return error
+        return await client.get_repo_settings(repo_full_name)
+
+    async def set_repo_delete_branch_on_merge(
+        repo_full_name: str,
+        enabled: bool = True,
+    ) -> str:
+        """Toggle ``delete_branch_on_merge`` on a repository.
+
+        Sends ``PATCH /repos/{owner}/{repo}`` with a body containing ONLY
+        ``delete_branch_on_merge`` — no other repository setting can be
+        changed through this tool.  Idempotent.  Requires the GitHub App
+        permission ``Administration: write``.
+
+        **Repository-settings mutation.**  Call it when the operator asked
+        for it in the conversation or when a periodic preset written by the
+        operator (e.g. ``repo-hygiene`` PART 2) instructs it — that preset
+        is the operator's standing consent.  Read the current value first
+        with ``get_repo_settings`` and only call this when it differs.
+
+        **No BLOCKED-state requirement.**
+
+        **Scope:** *repo_full_name* must be within the robotsix-mill GitHub
+        App's current installation scope (checked dynamically at call time).
+
+        Args:
+            repo_full_name: GitHub ``owner/name``.
+            enabled: Target value (default ``True``).
+
+        Returns:
+            A confirmation message, or an actionable error (e.g. missing
+            ``administration: write`` permission).
+
+        """
+        if error := await assert_in_scope(client, repo_full_name):
+            return error
+        return await client.set_delete_branch_on_merge(
+            repo_full_name=repo_full_name,
+            enabled=enabled,
+        )
+
     async def reset_implement_spawn_counter(ticket_id: str) -> str:
         """Reset the implement-agent spawn counter for a blocked ticket.
 
@@ -1869,6 +1931,8 @@ def build_github_tools(
         close_direct_repo_pr,
         arm_direct_repo_auto_merge,
         enable_repo_pages,
+        get_repo_settings,
+        set_repo_delete_branch_on_merge,
         reset_implement_spawn_counter,
         apply_patch_to_file,
         push_patch_to_pr_branch,
