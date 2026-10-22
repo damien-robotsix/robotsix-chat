@@ -2279,3 +2279,40 @@ async def test_spawn_continuation_capacity_error_reports_gracefully() -> None:
     assert "could not be spawned" in result
     assert "capacity" in result.lower()
     assert close_state.requested is True
+
+
+@pytest.mark.asyncio
+@pytest.mark.parametrize("alias", ["message", "content", "body"])
+async def test_message_tool_accepts_text_aliases(alias: str) -> None:
+    """The model habitually names the text ``message``/``content``/``body``.
+
+    2026-10-22: the claude_sdk schema check rejected all four of a drain
+    run's message_subsession calls on those names before the body ran.
+    """
+    from pydantic_ai import Tool
+
+    env = build_env()
+    info = _register(env)
+    message = _by_name(build_subsession_tools(env, ctx=_ctx()), "message_subsession")
+    props = Tool(message).tool_def.parameters_json_schema["properties"]
+    assert alias in props
+    assert Tool(message).tool_def.parameters_json_schema["required"] == [
+        "subsession_id"
+    ]
+
+    result = await message(info.id, **{alias: "via alias"})
+
+    assert f"Message queued for subsession {info.id}" in result
+    queued = env.registry.drain_inbox(info.id)
+    assert [(m.role, m.text) for m in queued] == [("parent", "via alias")]
+
+
+@pytest.mark.asyncio
+async def test_message_tool_rejects_conflicting_text() -> None:
+    """Two different texts (``text`` + an alias) are refused before enqueueing."""
+    env = build_env()
+    info = _register(env)
+    message = _by_name(build_subsession_tools(env, ctx=_ctx()), "message_subsession")
+
+    assert "disagree" in await message(info.id, text="a", body="b")
+    assert env.registry.drain_inbox(info.id) == []
