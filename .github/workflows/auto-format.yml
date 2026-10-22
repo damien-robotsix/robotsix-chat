@@ -24,7 +24,16 @@ jobs:
     permissions:
       contents: read
     # Skip for fork PRs — no token of ours can push to an external fork.
-    if: github.event.pull_request.head.repo.full_name == github.repository
+    # Skip for dependabot PRs too: a pull_request run triggered by dependabot
+    # only sees Dependabot secrets, so secrets.RELEASE_APP_PRIVATE_KEY is
+    # empty and the token mint fails ("The 'private-key' input must be set
+    # to a non-empty string") — every dependabot PR carried a red
+    # Auto-format from #1942 (2026-09-11) until 2026-10-22, which made
+    # repo-hygiene hold the whole dependabot queue. Dependabot commits are
+    # lock/workflow bumps that never need formatting.
+    if: >-
+      github.event.pull_request.head.repo.full_name == github.repository
+      && github.actor != 'dependabot[bot]'
     steps:
       - name: Harden Runner
         uses: step-security/harden-runner@ccd8616d44fd3846e67624a50d5aad6d37bf2d25  # v2.22.1
