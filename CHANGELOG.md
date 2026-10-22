@@ -69,6 +69,13 @@ Everything below predates the release-please migration and was
 maintained by hand or by towncrier. It is kept verbatim; new entries
 are added above by release-please.
 
+## [0.26.1](https://github.com/damien-robotsix/robotsix-chat/compare/v0.26.0...v0.26.1) (2026-10-21)
+
+
+### Bug Fixes
+
+* ci_fix: out-of-scope CI failure — Security scan (shared) / Security, Lockfile and audit (20261021T180413Z-ci-fix-out-of-scope-ci-failure-security-d893) ([#2170](https://github.com/damien-robotsix/robotsix-chat/issues/2170)) ([081cd46](https://github.com/damien-robotsix/robotsix-chat/commit/081cd464369b97777157b3ec6b339d2353d7e7e6))
+
 ## [0.26.0](https://github.com/damien-robotsix/robotsix-chat/compare/v0.25.0...v0.26.0) (2026-10-20)
 
 
