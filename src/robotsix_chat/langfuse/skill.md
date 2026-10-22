@@ -113,6 +113,12 @@ response echoes the resolved `projects` list (and an `errors` map if any project
   `LANGFUSE_SECRET_KEY`) was decommissioned — the tool reads credentials from the server's JSON
   config file at startup. A restart will not change the credential state and will not fix a network,
   timeout, or API-level error.
+- **Other components' projects come from deploy.** A foreign project (e.g. `robotsix-mill`) is
+  configured only when central-deploy dispatched its keys — the owning component tags them with a
+  `langfuse:<project>` scope and chat consumes `langfuse:*`, which injects
+  `LANGFUSE_<PROJECT>_PUBLIC_KEY` / `_SECRET_KEY` at deploy. If such a project is "not configured",
+  the fix is the scope tag in central-deploy's env store plus a chat redeploy — never copying the
+  keys into chat's config.
 - **The self-check you already have:** call the tool with any known trace id or ticket id. If it
   returns data, Langfuse access is working. If it returns an error, read the error message literally
   — it tells you exactly what failed (network, timeout, HTTP status, missing credentials). Do not

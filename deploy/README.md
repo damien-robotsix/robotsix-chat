@@ -31,6 +31,11 @@ directly. The root `docker-compose.yml` remains the local-dev stack.
   claude-sdk transport (the default provider slot serving every level). Authenticate once through
   central-deploy's dashboard login flow (which runs `claude login` into that volume) — no host
   `~/.claude` is involved.
+- **Foreign Langfuse credentials**: chat's central-deploy `ComponentConfig` declares
+  `consumed_scopes: ["langfuse:*"]`, so every key another component tagged `langfuse:<project>` in
+  the env store is injected as `LANGFUSE_<PROJECT>_PUBLIC_KEY` / `_SECRET_KEY` at deploy and
+  materialised in memory as `langfuse.projects.<project>` — never written to `config.json`. See
+  `docs/configuration.md` → "Cross-project trace inspection".
 
 ## Onboarding
 

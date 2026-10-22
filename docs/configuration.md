@@ -2,7 +2,9 @@
 
 robotsix-chat is configured via a single JSON config file, loaded by
 [`robotsix-config`](https://github.com/damien-robotsix/robotsix-config). There is no YAML cascade
-and no env-var overlay — the only environment variable consumed for config is the file locator.
+and no general env-var overlay — the only environment variable consumed for config is the file
+locator, plus the deploy-dispatched Langfuse credentials described under
+[Cross-project trace inspection](#cross-project-trace-inspection).
 
 ## Config ownership
 
@@ -198,7 +200,36 @@ The `inspect_langfuse_trace` tool accepts a `project` parameter that selects whi
 to query; it resolves that project's credentials from the top-level `langfuse.projects.<name>` block
 at call time, defaulting to `robotsix-chat` when the parameter is omitted. To let this component
 inspect **another fleet component's** traces — useful for periodic cost-review tasks that need to
-identify cost drivers across all high-spend projects — add that project's credentials under
+identify cost drivers across all high-spend projects — that project's credentials must be present
+under `langfuse.projects`.
+
+**Preferred: dispatched by central-deploy.** Another component's Langfuse keys are never copied into
+this component's config file. Instead central-deploy dispatches them at deploy time:
+
+1. The owning component (e.g. mill) tags its Langfuse key pair in central-deploy's env store with
+   the scope `langfuse:<project-name>` (e.g. `langfuse:robotsix-mill`), stored under the env names
+   `LANGFUSE_<PROJECT>_PUBLIC_KEY` / `LANGFUSE_<PROJECT>_SECRET_KEY`, where `<PROJECT>` is the
+   project name upper-cased with `-` → `_` (e.g. `LANGFUSE_ROBOTSIX_MILL_PUBLIC_KEY`).
+1. This component's central-deploy `ComponentConfig` declares `consumed_scopes: ["langfuse:*"]`, so
+   every deploy (and rollback / caretaker restart) injects all matching keys into the container
+   environment.
+1. On startup `Settings.load()` materialises each complete `LANGFUSE_<PROJECT>_PUBLIC_KEY` +
+   `LANGFUSE_<PROJECT>_SECRET_KEY` pair as `langfuse.projects.<project>` (lower-cased, `_` → `-`),
+   in memory only. The env value overlays a same-named config entry (a config `project_id` is kept);
+   half-filled pairs and the bare `LANGFUSE_PUBLIC_KEY` / `LANGFUSE_SECRET_KEY` are ignored.
+
+| Env var                         | Materialised as                          |
+| ------------------------------- | ---------------------------------------- |
+| `LANGFUSE_<PROJECT>_PUBLIC_KEY` | `langfuse.projects.<project>.public_key` |
+| `LANGFUSE_<PROJECT>_SECRET_KEY` | `langfuse.projects.<project>.secret_key` |
+
+Because the overlay is never written back to `config.json`, rotating the key in the owning
+component's env flows here on the next redeploy. Activation: set the scope tags and
+`consumed_scopes` in central-deploy, redeploy chat, then confirm the startup log line
+`Materialised Langfuse project credentials from deploy env: robotsix-mill` and that
+`inspect_langfuse_trace(project="robotsix-mill", …)` returns traces.
+
+**Fallback: static config.** For local development, the credentials can also be added directly under
 `langfuse.projects`:
 
 ```json
