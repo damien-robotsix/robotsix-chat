@@ -1,0 +1,99 @@
+name: Scheduled dependency audit
+
+# The blocking CVE audit in ci.yml only runs on PRs that touch uv.lock or
+# pyproject.toml (and on push to main), so a newly published advisory against
+# an already-pinned transitive dependency no longer fails unrelated PRs.
+# This workflow closes the resulting gap: it audits main's lockfile daily and,
+# when an advisory is found, fails (red run) AND opens — or comments on — a
+# single tracking issue so the advisory is remediated by a dependency-bump PR
+# instead of being silently ignored.
+
+on:
+  schedule:
+    # Daily at 05:00 UTC.
+    - cron: '0 5 * * *'
+  workflow_dispatch:
+
+permissions: {}
+
+concurrency:
+  group: dependency-audit-${{ github.ref }}
+  cancel-in-progress: false
+
+jobs:
+  audit:
+    name: Dependency CVE audit (main)
+    runs-on: ubuntu-latest
+    permissions:
+      contents: read  # checkout the repo
+      issues: write   # open/comment on the advisory tracking issue
+    steps:
+      - name: Harden Runner
+        uses: step-security/harden-runner@ccd8616d44fd3846e67624a50d5aad6d37bf2d25  # v2.22.1
+        with:
+          egress-policy: audit
+      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1  # v7.0.1
+        with:
+          persist-credentials: false
+      - uses: astral-sh/setup-uv@1c37ad07a6a961277cf70c0d37d6f313000f5884  # v10.3.0
+      - name: Audit dependencies
+        # Keep the ignore list in sync with the `lockfile` job in ci.yml and
+        # the uv-audit hook in .pre-commit-config.yaml (see ci.yml for the
+        # per-advisory justifications).
+        run: |
+          set -euo pipefail
+          uv --preview-features audit-command audit \
+            --ignore-until-fixed GHSA-w8v5-vhqr-4h9v \
+            --ignore-until-fixed GHSA-mfx4-hv73-q22v \
+            --ignore-until-fixed GHSA-mq44-7p77-q5h7 \
+            --ignore-until-fixed GHSA-cq5v-8q36-5273 \
+            --ignore-until-fixed GHSA-g6cj-pr64-35w5 \
+            2>&1 | tee audit.log
+      - name: Open or update the advisory tracking issue
+        if: failure()
+        uses: actions/github-script@3a2844b7e9c422d3c10d287c895573f7108da1b3  # v9
+        with:
+          script: |
+            const fs = require('fs');
+            const title = 'Dependency audit: new advisory against main';
+            const runUrl = `${context.serverUrl}/${context.repo.owner}/${context.repo.repo}/actions/runs/${context.runId}`;
+            let log = '(audit log unavailable — see the run)';
+            try {
+              log = fs.readFileSync('audit.log', 'utf8').slice(-6000);
+            } catch (e) {}
+            const body = [
+              `The scheduled dependency audit failed on \`main\`: ${runUrl}`,
+              '',
+              'A newly published advisory affects a pinned dependency. Bump the',
+              'affected package (`uv lock --upgrade-package <pkg>`), or — only when',
+              'no fixed release exists — add it to the `--ignore-until-fixed` list',
+              'in ci.yml, dependency-audit.yml and .pre-commit-config.yaml.',
+              '',
+              '```',
+              log,
+              '```',
+            ].join('\n');
+            const { data: open } = await github.rest.issues.listForRepo({
+              owner: context.repo.owner,
+              repo: context.repo.repo,
+              state: 'open',
+              per_page: 100,
+            });
+            const existing = open.find((i) => !i.pull_request && i.title === title);
+            if (existing) {
+              await github.rest.issues.createComment({
+                owner: context.repo.owner,
+                repo: context.repo.repo,
+                issue_number: existing.number,
+                body,
+              });
+              core.info(`Commented on existing issue #${existing.number}`);
+            } else {
+              const { data: issue } = await github.rest.issues.create({
+                owner: context.repo.owner,
+                repo: context.repo.repo,
+                title,
+                body,
+              });
+              core.info(`Opened issue #${issue.number}`);
+            }
