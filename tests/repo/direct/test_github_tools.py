@@ -121,7 +121,7 @@ def test_build_github_tools_returns_all_named_async_tools() -> None:
         assert_in_scope=_pass,
     )
     names = [t.__name__ for t in tools]
-    assert len(tools) == 25
+    assert len(tools) == 27
     # No duplicate registrations.
     assert len(names) == len(set(names))
     assert all(callable(t) for t in tools)

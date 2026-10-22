@@ -311,6 +311,7 @@ modules:
       - tests/repo/direct/test_open_pr.py
       - tests/repo/direct/test_patch_file.py
       - tests/repo/direct/test_push.py
+      - tests/repo/direct/test_repo_settings.py
       - tests/repo/direct/test_reset_counter.py
       - tests/repo/direct/test_trivy_parser.py
       - tests/repo/direct/test_update_pr_branch.py

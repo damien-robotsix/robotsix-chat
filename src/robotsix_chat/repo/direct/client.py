@@ -1270,6 +1270,107 @@ class DirectRepoClient(PROperationsMixin):
             f"{result.error or f'HTTP {result.status_code}'}"
         )
 
+    # -- repository settings ---------------------------------------------
+
+    _REPO_SETTING_KEYS = (
+        "default_branch",
+        "delete_branch_on_merge",
+        "allow_auto_merge",
+        "allow_merge_commit",
+        "allow_squash_merge",
+        "allow_rebase_merge",
+        "archived",
+    )
+
+    @classmethod
+    def _format_repo_settings(cls, repo_full_name: str, repo: dict[str, Any]) -> str:
+        """Format the branch/merge-hygiene subset of a repository object."""
+        lines = [f"Repository settings for {repo_full_name}:"]
+        lines.extend(
+            f"- {key}: {json.dumps(repo.get(key))}" for key in cls._REPO_SETTING_KEYS
+        )
+        return "\n".join(lines)
+
+    async def get_repo_settings(self, repo_full_name: str) -> str:
+        """Read the branch/merge-hygiene settings of a repository.
+
+        Calls ``GET /repos/{owner}/{repo}`` and reports
+        ``delete_branch_on_merge``, ``default_branch``, ``allow_auto_merge``
+        and the other merge-strategy flags.  Never raises.
+        """
+        try:
+            repo = await self._get_json(f"/repos/{repo_full_name}")
+        except RuntimeError as exc:
+            return f"Error fetching repository settings for {repo_full_name}: {exc}"
+        if not isinstance(repo, dict):
+            return (
+                f"Error fetching repository settings for {repo_full_name}: "
+                f"unexpected response shape"
+            )
+        return self._format_repo_settings(repo_full_name, repo)
+
+    async def set_delete_branch_on_merge(
+        self,
+        repo_full_name: str,
+        enabled: bool = True,
+    ) -> str:
+        """Toggle ``delete_branch_on_merge`` on a repository.
+
+        Calls ``PATCH /repos/{owner}/{repo}`` with a body carrying ONLY
+        ``delete_branch_on_merge`` — no other repository setting is sent,
+        so nothing else can be changed by this call.  Requires the GitHub
+        App permission ``Administration: write``; a 403 is reported as a
+        permission error.  Never raises.
+        """
+        if not isinstance(enabled, bool):
+            return f"Error: enabled must be a boolean, got {enabled!r}"
+
+        owner_part, _, repo_part = repo_full_name.partition("/")
+        owner = owner_part or None
+        repo = repo_part or None
+        try:
+            result = await self._http_with_retry(
+                "PATCH",
+                f"{self._base_url}/repos/{repo_full_name}",
+                owner=owner,
+                repo=repo,
+                headers=await self._gh_headers(owner=owner, repo=repo),
+                timeout=self._s.timeout,
+                json_body={"delete_branch_on_merge": enabled},
+                label="GitHub API",
+            )
+        except Exception as exc:
+            return f"Error updating delete_branch_on_merge on {repo_full_name}: {exc}"
+
+        if result.status_code == 403:
+            return (
+                f"Error updating delete_branch_on_merge on {repo_full_name}: "
+                f"permission denied — the GitHub App installation token lacks "
+                f"'administration: write'. Use inspect_github_installation_token "
+                f"to confirm the current permission scope, then grant "
+                f"Administration read/write access and retry."
+            )
+        if result.error is not None:
+            return (
+                f"Error updating delete_branch_on_merge on {repo_full_name}: "
+                f"{result.error}"
+            )
+        try:
+            data = json.loads(result.text or "")
+        except json.JSONDecodeError:
+            data = None
+        if isinstance(data, dict) and "delete_branch_on_merge" in data:
+            actual = data["delete_branch_on_merge"]
+            if actual != enabled:
+                return (
+                    f"Error updating delete_branch_on_merge on {repo_full_name}: "
+                    f"GitHub reported delete_branch_on_merge={json.dumps(actual)} "
+                    f"after requesting {json.dumps(enabled)}."
+                )
+        return (
+            f"delete_branch_on_merge set to {json.dumps(enabled)} on {repo_full_name}."
+        )
+
     # -- merge helpers -----------------------------------------------------
 
     async def check_auto_merge_enabled(

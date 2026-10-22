@@ -563,6 +563,40 @@ been clearly given.
 
 ______________________________________________________________________
 
+## Agent tools: `get_repo_settings` / `set_repo_delete_branch_on_merge`
+
+Branch-hygiene repository settings (used by the `repo-hygiene` periodic preset, PART 2). The
+central-deploy `github` component has no repository GET/PATCH route — use these tools instead of
+`component_request` for this.
+
+- **`get_repo_settings(repo_full_name)`** — read-only. Calls `GET /repos/{owner}/{repo}` and returns
+  one `- key: value` line each for `default_branch`, `delete_branch_on_merge`, `allow_auto_merge`,
+  `allow_merge_commit`, `allow_squash_merge`, `allow_rebase_merge` and `archived`.
+- **`set_repo_delete_branch_on_merge(repo_full_name, enabled=True)`** — calls
+  `PATCH /repos/{owner}/{repo}` with a body containing **only** `delete_branch_on_merge`; no other
+  setting can be changed through it. Idempotent. Read the current value with `get_repo_settings`
+  first and only call it when the value differs. Call it when the operator asked for it, or when an
+  operator-written periodic preset (e.g. `repo-hygiene`) instructs it — that preset is the
+  operator's standing consent.
+
+### Preconditions
+
+- Repository must be within the GitHub App installation scope.
+- Setting the value requires the GitHub App permission **Administration: write** (reading needs only
+  Metadata: read).
+- No BLOCKED-state requirement.
+
+### Error responses
+
+| Condition                      | Message                                                                        |
+| ------------------------------ | ------------------------------------------------------------------------------ |
+| Repo not in installation scope | `The robotsix-mill GitHub App is not installed on 'owner/name'`                |
+| Missing Administration (403)   | `Error updating delete_branch_on_merge on owner/name: permission denied — ...` |
+| Value not applied              | `Error updating delete_branch_on_merge on owner/name: GitHub reported ...`     |
+| Read failure                   | `Error fetching repository settings for owner/name: <detail>`                  |
+
+______________________________________________________________________
+
 ## Other direct-repo tools (read-only or gated on BLOCKED state)
 
 The following tools are available for push/PR operations. They require the ticket to be in BLOCKED

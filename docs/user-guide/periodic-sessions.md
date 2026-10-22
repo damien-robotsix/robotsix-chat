@@ -231,6 +231,24 @@ block per `docs/configuration.md`.
   and `docs/configuration.md`. Once Langfuse is configured, a second firing will produce per-trace
   analysis instead of aggregate fallback.
 
+### Branch hygiene in operator presets (`repo-hygiene` PART 2)
+
+The operator-defined `repo-hygiene` preset (it lives in the config volume, not in the shipped
+template) asks the agent to verify `delete_branch_on_merge` on every fleet repo. The central-deploy
+`github` component does not expose a repository GET/PATCH, so that step is performed with chat's own
+direct-repo tools (GitHub App installation token, no `component_request`):
+
+- `get_repo_settings(repo_full_name)` — `GET /repos/{owner}/{repo}`; reports
+  `delete_branch_on_merge`, `default_branch`, `allow_auto_merge` and the merge-strategy flags.
+- `set_repo_delete_branch_on_merge(repo_full_name, enabled=True)` — `PATCH /repos/{owner}/{repo}`
+  with a body containing only `delete_branch_on_merge`. Needs the GitHub App permission
+  **Administration: write**; without it the tool returns a permission-denied message.
+
+With `delete_branch_on_merge` on, GitHub deletes merged head branches itself, so the preset needs no
+separate branch-delete step. Update the live preset's PART 2 text to: "For each fleet repo, call
+`get_repo_settings`; when `delete_branch_on_merge` is false, call `set_repo_delete_branch_on_merge`
+with `enabled=true` and list the repos changed in the report."
+
 ## Session-end contract and interrupted reports
 
 Every periodic session has an **unconditional obligation to report at the end** — even if it is
