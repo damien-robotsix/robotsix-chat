@@ -111,6 +111,28 @@ reported, not retried).
 
 ## Shipped presets
 
+### Where the live presets live
+
+The presets in the committed `config/config.json` are a **template** only. The running chat reads
+its presets from the deployed config volume (the file `ROBOTSIX_CONFIG_FILE` points at; in
+production the central-deploy `chat-config` volume, readable via `GET /config`). The template is
+not copied into the container image, and the live preset list can differ completely from it (for
+example a live `repo-hygiene` preset with no template counterpart). Editing a preset in the
+template therefore changes nothing live by itself.
+
+A preset change reaches the running chat only by editing the live config: `PUT /config` with the
+updated `periodic.sessions` entry (named-list merge by `name`), then restart the chat. When a PR
+changes a template preset prompt, apply the same change to the live preset of the same name.
+
+To keep such drift visible, `src/robotsix_chat/periodic/shipped.py` mirrors every template preset as
+name → SHA256 of its `initial_prompt` (`SHIPPED_PRESET_PROMPT_SHA256S`):
+
+- CI (`tests/periodic/test_shipped_drift.py`) fails when a template preset prompt changes without
+  the mirror being updated — the prompt to check the live config for that preset.
+- At boot the chat logs a `Periodic preset drift` warning for every shipped preset that is absent
+  from the live config, or whose live prompt differs from the shipped one. The live prompt is
+  always kept (it may be an operator edit); the warning only surfaces the gap.
+
 ### `dependabot-drain`
 
 The committed `config/config.json` ships one preset, `dependabot-drain`, which keeps the
