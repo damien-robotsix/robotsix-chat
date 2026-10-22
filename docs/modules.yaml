@@ -120,9 +120,11 @@ modules:
       - src/robotsix_chat/periodic/__init__.py
       - src/robotsix_chat/periodic/prompts.py
       - src/robotsix_chat/periodic/scheduler.py
+      - src/robotsix_chat/periodic/shipped.py
       - tests/periodic/__init__.py
       - tests/periodic/test_prompts.py
       - tests/periodic/test_scheduler.py
+      - tests/periodic/test_shipped_drift.py
       - tests/periodic/test_shipped_presets.py
       - docs/user-guide/periodic-sessions.md
 

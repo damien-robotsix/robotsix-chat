@@ -25,6 +25,7 @@ from robotsix_chat.continuation.store import ContinuationStore
 from robotsix_chat.diagnostics import DiagnosticStore
 from robotsix_chat.knowledge.store import KnowledgeStore
 from robotsix_chat.llm import LlmioChatAgent
+from robotsix_chat.periodic.shipped import check_shipped_presets
 from robotsix_chat.startup_checks import check_component_connectivity
 
 from .app import create_agent_from_settings, create_app
@@ -360,6 +361,8 @@ def run_server_from_config(agent: ChatAgent | None = None) -> None:
             )
         return _periodic_agents[model_level]
 
+    # Surface shipped-template presets that never reach the live config.
+    check_shipped_presets(settings.periodic.sessions)
     periodic_definitions = [d for d in settings.periodic.sessions if d.enabled]
     logger.info(
         "Periodic scheduler configured (%d enabled preset(s))",
