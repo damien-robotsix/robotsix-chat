@@ -43,7 +43,12 @@ RUN uv export --frozen --no-emit-project --no-hashes \
     && uv pip install --system --no-cache -r /tmp/requirements.txt \
     && uv pip install --system --no-cache --no-deps . \
     && python -c "import nacl.public; print('PyNaCl OK')" \
-    && rm -f /tmp/requirements.txt
+    && rm -f /tmp/requirements.txt \
+    && python -m pip uninstall -y uv
+# ^ uv is a build-only tool: drop it from site-packages so the runtime stage's
+# site-packages COPY does not ship its dist-info (Trivy flags the bundled CA
+# store of the pinned uv, GHSA-hq85-5cpj-mr62, even though the runtime has no
+# uv binary).
 
 # ---------------------------------------------------------------------------
 # UI stage: fetch the shared @robotsix/ui settings renderer build (vanilla JS
