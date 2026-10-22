@@ -69,6 +69,23 @@ Everything below predates the release-please migration and was
 maintained by hand or by towncrier. It is kept verbatim; new entries
 are added above by release-please.
 
+## [0.27.0](https://github.com/damien-robotsix/robotsix-chat/compare/v0.26.1...v0.27.0) (2026-10-22)
+
+
+### Features
+
+* github component: expose repository settings (delete_branch_on_merge) so repo-hygiene PART 2 can run (20261022T123238Z-github-component-expose-repository-setti-5acd) ([#2189](https://github.com/damien-robotsix/robotsix-chat/issues/2189)) ([b042d5a](https://github.com/damien-robotsix/robotsix-chat/commit/b042d5ab33b5511376a8a556292d0f1378583532))
+* Preset prompt changes in the shipped config/config.json never reach the live chat presets (20261022T161939Z-preset-prompt-changes-in-the-shipped-con-b643) ([#2191](https://github.com/damien-robotsix/robotsix-chat/issues/2191)) ([4060e75](https://github.com/damien-robotsix/robotsix-chat/commit/4060e7564f0a6afd68a21c50e22918a158f16eab))
+* repo-hygiene: rebase (update-branch) bot PRs before judging them CI-red (20261022T123238Z-repo-hygiene-rebase-update-branch-bot-pr-3695) ([#2184](https://github.com/damien-robotsix/robotsix-chat/issues/2184)) ([2d94e91](https://github.com/damien-robotsix/robotsix-chat/commit/2d94e911fd3a8abf9b90631c0ab1721b52e657eb))
+* Surface caretaker findings (claude_auth, crash_loop, health) to the operator without a model in the loop (20261020T195231Z-surface-caretaker-findings-claude-auth-c-2447) ([#2164](https://github.com/damien-robotsix/robotsix-chat/issues/2164)) ([5c03976](https://github.com/damien-robotsix/robotsix-chat/commit/5c0397690679c596b754e0a01b378caa1741dd0c))
+
+
+### Bug Fixes
+
+* CI failure: CI on main (20261022T091850Z-ci-failure-ci-on-main-c557) ([#2181](https://github.com/damien-robotsix/robotsix-chat/issues/2181)) ([8da3742](https://github.com/damien-robotsix/robotsix-chat/commit/8da3742fa2164c5ff356da914a62357729b187f0))
+* **ci:** skip Auto-format on dependabot PRs (no repo secrets → token mint fails) ([#2183](https://github.com/damien-robotsix/robotsix-chat/issues/2183)) ([91558e0](https://github.com/damien-robotsix/robotsix-chat/commit/91558e0b7d4114e168a33404c9d5122ddf146090))
+* **subsessions:** accept message/content/body as aliases of message_subsession text ([#2187](https://github.com/damien-robotsix/robotsix-chat/issues/2187)) ([d5f9361](https://github.com/damien-robotsix/robotsix-chat/commit/d5f93617ddd858eb5e2a8a54509814acbe28d20b))
+
 ## [0.26.1](https://github.com/damien-robotsix/robotsix-chat/compare/v0.26.0...v0.26.1) (2026-10-21)
 
 
