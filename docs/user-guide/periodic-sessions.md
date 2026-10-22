@@ -120,6 +120,14 @@ Dependabot/Renovate PRs (`list_open_prs`), judges each one's impact (`inspect_pr
 auto-merge: PRs already armed to auto-merge are skipped. It finishes with a report of the PRs
 merged, migration tickets filed, and PRs skipped.
 
+Before classifying or holding a PR whose checks are red, it compares each red check with the latest
+run of the same workflow on the base branch (`check_ci_health`). A PR that is red on its branch but
+green on main most likely predates a main-branch fix: the agent updates the branch with
+`recover_auto_merge` (GitHub's update-branch API) and re-verifies on the next run instead of holding
+it as CI-red. Only a PR whose workflow is red on main too is held as a real blocker. The report
+lists the two classes separately. Live presets with the same role (e.g. an operator-defined
+`repo-hygiene` entry in the config volume) need the same step added by the operator or deploy.
+
 - **Cadence** — weekly, anchored to Monday 06:00 UTC (`schedule_interval_seconds: 604800`,
   `anchor_utc: "2026-09-07T06:00:00Z"`). It runs at `model_level: 3`.
 - **Ships disabled** — the preset ships with `"enabled": false` per the feature-flag convention, so

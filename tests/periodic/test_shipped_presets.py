@@ -52,6 +52,39 @@ def test_dependabot_drain_preset_parses() -> None:
     assert "/tickets/ingest" in preset.initial_prompt
 
 
+def test_dependabot_drain_preset_updates_stale_branches_before_holding() -> None:
+    """A bot PR red on its branch but green on main is updated, not held.
+
+    Motivated by the 2026-10-22 repo-hygiene run, which held dependabot PRs as
+    "systemic CI-red" when their branches merely predated a main-branch fix.
+    The prompt must name the update-branch step, place it before the hold /
+    classification decision, and make the report distinguish the two classes.
+    """
+    prompt = _preset(_load_settings(), "dependabot-drain").initial_prompt
+
+    # The update-branch step is named, with the tool and the GitHub API call.
+    assert "update-branch" in prompt
+    assert "recover_auto_merge" in prompt
+    assert "PUT /repos/{owner}/{repo}/pulls/{n}/update-branch" in prompt
+    # The base branch's latest run of the same workflow is the comparison.
+    assert "check_ci_health" in prompt
+    assert "SAME workflow on the base branch" in prompt
+    # The step comes BEFORE the classify / hold decision.
+    assert prompt.index("Stale-branch check") < prompt.index("Classify it as")
+    # Both classes are named, with the right disposition for each.
+    assert "RED-ON-PR-GREEN-ON-MAIN" in prompt
+    assert "RED-ON-MAIN-TOO" in prompt
+    assert "This is a rebase, not a blocker" in prompt
+    assert "This is a real blocker" in prompt
+    assert "re-verify the checks on the next run" in prompt
+    assert (
+        "Never hold such a PR as CI-red without an update-branch attempt "
+        "recorded in the report" in prompt
+    )
+    # The report keeps the two classes apart.
+    assert "**Stale branches vs real blockers:**" in prompt
+
+
 def test_gate_drain_preset_parses_and_demands_scope_report() -> None:
     """The ``gate-drain`` preset parses and requires up-front scope reporting.
 
