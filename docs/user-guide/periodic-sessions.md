@@ -75,8 +75,8 @@ Two things survive that supersede-close:
   current. Without this, every firing killed the previous run's panels and spawned the same
   questions again.
 
-  **Fallback when a turn crashes.** The agent normally surfaces open `user_chat` panels as its
-  first operation, but a turn that fails before the agent even starts (e.g. a network error during
+  **Fallback when a turn crashes.** The agent normally surfaces open `user_chat` panels as its first
+  operation, but a turn that fails before the agent even starts (e.g. a network error during
   `submit_turn`, or a pre-agent validation failure) never performs that check. To ensure
   time-critical operator decisions stay visible even when the main task crashes, a fallback
   mechanism automatically surfaces any open `user_chat` panels into the transcript when a turn
@@ -85,16 +85,17 @@ Two things survive that supersede-close:
   when there are no open panels, so the transcript stays clean when nothing is pending.
 
   **Automatic system alerts.** System health checks (e.g., the memory component's periodic retain
-  health probe) can automatically open a `user_chat` operator panel when a critical subsystem
-  fails. The memory write-failure alert, for example, opens when the memory component's retain
-  path (used by background cognee consolidation) stops working — which never surfaces on the
-  chat request path because memory retains asynchronously. The panel opens with title
-  `Memory writes failing: <error>` and guides the operator to investigate the cause (e.g.
-  exhausted extraction-LLM balance). These alert panels are deduped per cause, so if the same
-  error persists across multiple health checks, only one panel remains open. The panel
-  automatically closes when the health check detects recovery. Like other pending decisions,
-  these alert panels survive run supersessions, so the operator can investigate in the current
-  run even if a panel was initially opened in a previous run.
+  health probe) can automatically open a `user_chat` operator panel when a critical subsystem fails.
+  The memory write-failure alert, for example, opens when the memory component's retain path (used
+  by background cognee consolidation) stops working — which never surfaces on the chat request path
+  because memory retains asynchronously. The panel opens with title `Memory writes failing: <error>`
+  and guides the operator to investigate the cause (e.g. exhausted extraction-LLM balance). These
+  alert panels are deduped per cause, so if the same error persists across multiple health checks,
+  only one panel remains open. The panel automatically closes when the health check detects
+  recovery. Like other pending decisions, these alert panels survive run supersessions, so the
+  operator can investigate in the current run even if a panel was initially opened in a previous
+  run.
+
 - **The last few runs.** The scheduler remembers the last `RETAINED_RUNS_PER_PRESET` (3) session ids
   of each preset. After every firing, and once at startup, every *other* closed periodic session is
   deleted from the conversation store — a closed run is kept only long enough to read back what the
@@ -105,8 +106,8 @@ Two things survive that supersede-close:
 The sidebar hides closed periodic runs by default. The **Show closed periodic runs (N)** button
 under **+ New chat** reveals them (the choice sticks per browser); the run you are currently viewing
 is always shown. **Discard closed periodic runs (N)** next to it deletes every closed run in one
-confirmed click (the run you are viewing is kept; deletes go one at a time and any refused delete
-is reported, not retried).
+confirmed click (the run you are viewing is kept; deletes go one at a time and any refused delete is
+reported, not retried).
 
 ## Shipped presets
 
@@ -183,7 +184,17 @@ processing.
   behaviour exists because session `331c2099197b4606bfafea0d26c21f1d` spawned a hexarchy blocked
   cascade triage that asked for a decision without listing the ~7 unclaimed files or offering
   classification candidates.
-- **Skeleton-first PARTIAL REPORT strategy prevents token exhaustion.** To prevent silent mid-operation failures where the agent is cut off mid-sentence before reporting work, PARTIAL REPORTs now use a skeleton-first strategy: the agent emits a minimal report skeleton FIRST (counts and full ticket IDs, one per line, no prose) before adding optional prose descriptions. The skeleton is re-emitted after each batch of work with updated counts. This ensures that even if truncation strikes mid-prose or mid-report, the counts and ticket IDs survive and the next run knows what was discovered and can resume. The agent maintains a hard 8–10k token reserve and stops enumeration immediately if remaining tokens drop below 10,000 total, even mid-ticket. When the hard stop is reached, it emits the final skeleton with what was discovered and what remains unenumerated. This strategy exists because session `36857ec8e0b34cf6b54a3b6bbf60c3ca` enumerated multiple operations before being cut off, with no final report visible to the operator.
+- **Skeleton-first PARTIAL REPORT strategy prevents token exhaustion.** To prevent silent
+  mid-operation failures where the agent is cut off mid-sentence before reporting work, PARTIAL
+  REPORTTs now use a skeleton-first strategy: the agent emits a minimal report skeleton FIRST
+  (counts and full ticket IDs, one per line, no prose) before adding optional prose descriptions.
+  The skeleton is re-emitted after each batch of work with updated counts. This ensures that even if
+  truncation strikes mid-prose or mid-report, the counts and ticket IDs survive and the next run
+  knows what was discovered and can resume. The agent maintains a hard 8–10k token reserve and stops
+  enumeration immediately if remaining tokens drop below 10,000 total, even mid-ticket. When the
+  hard stop is reached, it emits the final skeleton with what was discovered and what remains
+  unenumerated. This strategy exists because session `36857ec8e0b34cf6b54a3b6bbf60c3ca` enumerated
+  multiple operations before being cut off, with no final report visible to the operator.
 - **Board-API filters may be ignored — enumerate defensively.** The board API's list endpoints
   (`GET /board/cards` and similar) may silently ignore `status`/`board_id` filter parameters and
   return the entire unfiltered board regardless of what is passed. The prompt therefore instructs

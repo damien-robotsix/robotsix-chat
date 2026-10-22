@@ -280,7 +280,7 @@ def test_preamble_requires_escalation_opened_line():
     assert "escalation opened" in lowered
     assert "spawn_subsession" in lowered
     assert "survives" in lowered
-    assert "truncat" in lowered
+    assert "truncate" in lowered
 
 
 def test_preamble_requires_immediate_critical_finding_surfacing():
