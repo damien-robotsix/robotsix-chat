@@ -111,3 +111,53 @@ class CentralDeploySettings(BaseModel):
     def _strip_blank_numeric(cls, data: Any) -> Any:
         """Drop legacy ``""`` sentinels for numeric fields so old configs load."""
         return drop_blank_numeric_sentinels(cls, data)
+
+
+class CaretakerSettings(BaseModel):
+    """Deterministic, model-free surfacing of central-deploy caretaker findings.
+
+    central-deploy's caretaker loop turns management-plane problems
+    (expired shared ``claude-auth`` credential, crash-looping component,
+    failing health probe) into findings exposed at
+    ``GET {central_deploy.url}/caretaker/status``.  When enabled, chat
+    polls that endpoint on a short interval **with no agent/LLM turn
+    involved** and broadcasts an SSE desktop notification to every
+    connected operator browser for each error-severity finding whose
+    ``kind`` is in :attr:`surface_kinds`.  This path keeps working while
+    the fleet has no usable model — exactly the outage an LLM-driven
+    escalation cannot report.
+
+    The notification carries the finding's remediation text (from the
+    finding ``detail``), is de-duplicated per ``(kind, component)`` so an
+    unchanged finding is announced once, re-announced when its body
+    changes, and followed by a "resolved" notification when the finding
+    disappears from the endpoint.
+
+    Attributes:
+        enabled: Master switch.  Default ``False`` — set ``true`` (and
+            configure ``central_deploy.url``) to activate the poller.
+        poll_interval_seconds: Seconds between polls of
+            ``/caretaker/status``.  Clamped to a floor of 15s to avoid
+            hammering central-deploy.  Default 60.
+        request_timeout: Per-request HTTP timeout (seconds) for the
+            status poll.  Default 10.
+        surface_kinds: Finding ``kind`` values (case-insensitive) that
+            are surfaced to the operator.  Default
+            ``["claude_auth", "crash_loop", "health"]``.
+
+    """
+
+    model_config = ConfigDict(extra="forbid")
+
+    enabled: bool = False
+    poll_interval_seconds: float = 60.0
+    request_timeout: float = 10.0
+    surface_kinds: list[str] = Field(
+        default_factory=lambda: ["claude_auth", "crash_loop", "health"],
+    )
+
+    @model_validator(mode="before")
+    @classmethod
+    def _strip_blank_numeric(cls, data: Any) -> Any:
+        """Drop legacy ``""`` sentinels for numeric fields so old configs load."""
+        return drop_blank_numeric_sentinels(cls, data)

@@ -557,6 +557,18 @@ def run_server_from_config(agent: ChatAgent | None = None) -> None:
         task.add_done_callback(env._tasks.discard)
         logger.info("Paused-monitor watcher started.")
 
+    # -- background watcher for central-deploy caretaker findings ----------
+    async def _start_caretaker_watcher() -> None:
+        """Launch the model-free caretaker-findings watcher, if enabled."""
+        if not settings.caretaker.enabled:
+            return
+        from robotsix_chat.caretaker import watch_caretaker_findings
+
+        task = asyncio.create_task(watch_caretaker_findings(env))
+        env._tasks.add(task)
+        task.add_done_callback(env._tasks.discard)
+        logger.info("Caretaker-findings watcher started.")
+
     # -- warm the memory backend off the request path ----------------------
     def _start_memory_warmup() -> None:
         """Fire the memory backend's cold start, if the backend wants one.
@@ -594,6 +606,8 @@ def run_server_from_config(agent: ChatAgent | None = None) -> None:
         _start_memory_warmup()
         # Start the paused-monitor watcher.
         await _start_watcher()
+        # Start the caretaker-findings watcher (model-free operator escalation).
+        await _start_caretaker_watcher()
         # Fire any pending post-restart continuation.
         await _fire_continuation()
 

@@ -36,6 +36,24 @@ def _reset_llmio_failover_tracker() -> Any:
     reset_failover_tracker()
 
 
+@pytest.fixture(autouse=True)
+def _reset_feedback_repo_cache() -> Any:
+    """Isolate every test from the feedback runner's allowed-repo cache.
+
+    ``robotsix_chat.feedback.runner`` caches the resolved deploy∩mill repo
+    set in a module-global dict (``_repo_cache``) for ``_REPO_CACHE_TTL``
+    seconds.  Without a reset the cached list leaks across tests, so under
+    certain random orderings a value resolved by one test (e.g. a run that
+    fell back to a single repo) is still live when a later ``_run`` test
+    reads it — silently filtering out the tickets that test expects to file.
+    """
+    from robotsix_chat.feedback import runner as _feedback_runner
+
+    _feedback_runner._repo_cache.clear()
+    yield
+    _feedback_runner._repo_cache.clear()
+
+
 from robotsix_chat.chat.server import create_app  # noqa: E402
 
 

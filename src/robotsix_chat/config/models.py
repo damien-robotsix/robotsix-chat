@@ -14,6 +14,7 @@ from .component_models import (
     SelfReviewSettings,
 )
 from .deploy_models import (
+    CaretakerSettings,
     CentralDeploySettings,
     ComponentCredentials,
 )
@@ -72,6 +73,7 @@ from .storage_models import (
 
 __all__ = [
     "PROJECT_MAIN",
+    "CaretakerSettings",
     "CentralDeploySettings",
     "ComponentClientSettings",
     "ComponentCredentials",

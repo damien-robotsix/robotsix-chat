@@ -1,5 +1,35 @@
 {
   "$defs": {
+    "CaretakerSettings": {
+      "additionalProperties": false,
+      "description": "Deterministic, model-free surfacing of central-deploy caretaker findings.\n\ncentral-deploy's caretaker loop turns management-plane problems\n(expired shared ``claude-auth`` credential, crash-looping component,\nfailing health probe) into findings exposed at\n``GET {central_deploy.url}/caretaker/status``.  When enabled, chat\npolls that endpoint on a short interval **with no agent/LLM turn\ninvolved** and broadcasts an SSE desktop notification to every\nconnected operator browser for each error-severity finding whose\n``kind`` is in :attr:`surface_kinds`.  This path keeps working while\nthe fleet has no usable model \u2014 exactly the outage an LLM-driven\nescalation cannot report.\n\nThe notification carries the finding's remediation text (from the\nfinding ``detail``), is de-duplicated per ``(kind, component)`` so an\nunchanged finding is announced once, re-announced when its body\nchanges, and followed by a \"resolved\" notification when the finding\ndisappears from the endpoint.\n\nAttributes:\n    enabled: Master switch.  Default ``False`` \u2014 set ``true`` (and\n        configure ``central_deploy.url``) to activate the poller.\n    poll_interval_seconds: Seconds between polls of\n        ``/caretaker/status``.  Clamped to a floor of 15s to avoid\n        hammering central-deploy.  Default 60.\n    request_timeout: Per-request HTTP timeout (seconds) for the\n        status poll.  Default 10.\n    surface_kinds: Finding ``kind`` values (case-insensitive) that\n        are surfaced to the operator.  Default\n        ``[\"claude_auth\", \"crash_loop\", \"health\"]``.",
+      "properties": {
+        "enabled": {
+          "default": false,
+          "title": "Enabled",
+          "type": "boolean"
+        },
+        "poll_interval_seconds": {
+          "default": 60.0,
+          "title": "Poll Interval Seconds",
+          "type": "number"
+        },
+        "request_timeout": {
+          "default": 10.0,
+          "title": "Request Timeout",
+          "type": "number"
+        },
+        "surface_kinds": {
+          "items": {
+            "type": "string"
+          },
+          "title": "Surface Kinds",
+          "type": "array"
+        }
+      },
+      "title": "CaretakerSettings",
+      "type": "object"
+    },
     "CentralDeploySettings": {
       "additionalProperties": false,
       "description": "Central-deploy roster and component-access settings.\n\nProvides the base URL for the central-deploy management-plane API.\nAt session start the agent fetches the\n``GET /chat/components`` roster (a list of component agents the chat\nis allowed to call), caches it with a short TTL, and loads each\ncomponent's declared skill into the agent.\n\nAttributes:\n    url: Canonical base URL of the central-deploy / deploy-lifecycle API\n        (no trailing slash).  Single source of truth for the deploy-plane\n        address; the lifecycle client and feedback roster lookup both read\n        it (the former ``lifecycle.base_url`` was retired in favour of it).\n    roster_cache_ttl: Seconds to cache the roster before re-fetching.\n        Default 300 (5 min).\n    component_response_max_chars: Maximum characters of a component API\n        response returned to the agent; longer bodies are truncated.\n        Default 200000.\n    deploy_api_key: Canonical deploy-plane credential \u2014 the shared\n        secret between this chat component and central-deploy.  Sent as\n        the ``X-API-Key`` header on outbound roster/lifecycle calls, and\n        required (matched) on inbound central-deploy \u2192 chat endpoints\n        (``/chat/github/*`` and the feedback roster lookup).  This is the\n        single source of truth; the per-block ``deploy_api_key`` fields\n        were retired in favour of it.\n    component_credentials: Per-component credentials keyed by\n        component id.  Each entry carries credentials for all\n        supported auth schemes; the roster entry's ``auth.type``\n        selects which fields are used.",
@@ -1498,6 +1528,10 @@
     },
     "central_deploy": {
       "$ref": "#/$defs/CentralDeploySettings",
+      "group": "Deploy"
+    },
+    "caretaker": {
+      "$ref": "#/$defs/CaretakerSettings",
       "group": "Deploy"
     },
     "conversation": {
