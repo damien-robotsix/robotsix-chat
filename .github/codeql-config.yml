@@ -16,3 +16,10 @@ query-filters:
     id: py/unused-import
 - exclude:
     id: py/unused-global-variable
+# - py/cyclic-import: the subsessions/worker.py façade is split into sibling
+#   modules (continuation, turn_runner, slot_budget_wiring, subsession_types,
+#   worker_periodic, subsession_waits, ...) that reach back into the façade
+#   only via function-level deferred imports or ``TYPE_CHECKING`` blocks,
+#   which are safe at runtime; CodeQL still reports these as import cycles.
+- exclude:
+    id: py/cyclic-import

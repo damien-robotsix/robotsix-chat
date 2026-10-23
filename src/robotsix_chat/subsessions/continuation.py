@@ -64,3 +64,6 @@ async def _handle_kind_continuation(
         pending, previous_result, consecutive_no_change = result
         env.registry.reap_orphans()
         return (pending, previous_result, consecutive_no_change)
+
+    # Unknown kind: no continuation — stop the worker loop.
+    return None
