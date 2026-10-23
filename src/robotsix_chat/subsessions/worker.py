@@ -22,15 +22,8 @@ from __future__ import annotations
 import asyncio
 import contextvars
 import logging
-import re
-from collections.abc import Callable
-from dataclasses import dataclass, field
-from typing import TYPE_CHECKING, cast
 
-from robotsix_http import RetryConfig, acall_with_retry
-from robotsix_llmio.openrouter import is_openrouter_transient
-
-from .delivery import ParentDelivery
+from .continuation import _handle_kind_continuation
 from .models import (
     InboxMessage,
     SubsessionCapacityError,
@@ -44,70 +37,50 @@ from .models import (
     SubsessionStatus,
     SubsessionUserChatSpawnError,
 )
+from .prompt_context import (
+    _build_ancestor_context,
+    _operator_picked_suggestion,
+    _render_turn_input,
+)
 from .prompts import USER_CHAT_FIRST_TURN_NOTE as _USER_CHAT_FIRST_TURN_NOTE
 from .prompts import USER_CHAT_SETTLED_NOTE as _USER_CHAT_SETTLED_NOTE
-from .registry import OWNER_CLOSED_REASON, SubsessionRegistry
 from .schedule import parse_anchor_time
-from .slot_budget import SLOT_BUDGET_QUEUED, SlotBudget, SlotBudgetQueueFullError
+from .slot_budget import SLOT_BUDGET_QUEUED, SlotBudgetQueueFullError
+from .slot_budget_wiring import attach_slot_budget
+from .subsession_types import CloseState, SubsessionContext, SubsessionEnv
+from .turn_errors import _is_github_rate_limit_error, _is_unexpected_model_behavior
+from .turn_runner import (
+    _MAX_PERIODIC_HISTORY_TURNS,
+    _MAX_WORKER_HISTORY_TURNS,
+    _history_cap,
+    _run_turn,
+    _run_turn_with_transient_retry,
+    _run_user_chat_turn,
+    _RunTimeoutError,
+    _TransientExhaustedError,
+)
 from .worker_errors import (
     _DEGENERATE_SUCCESS_SIGNATURE as _DEGENERATE_SUCCESS_SIGNATURE,
 )
-from .worker_errors import (
-    _MODEL_TIER_NOT_FOUND_STATUS as _MODEL_TIER_NOT_FOUND_STATUS,
-)
-from .worker_errors import (
-    _NO_CHANGE_SENTINEL as _NO_CHANGE_SENTINEL,
-)
-from .worker_errors import (
-    _QUEUED_SENTINEL as _QUEUED_SENTINEL,
-)
-from .worker_errors import (
-    _RETRY_PROMPT_TEMPLATE as _RETRY_PROMPT_TEMPLATE,
-)
-from .worker_errors import (
-    _USAGE_EXHAUSTED_SIGNATURE as _USAGE_EXHAUSTED_SIGNATURE,
-)
-from .worker_errors import (
-    _format_duration as _format_duration,
-)
-from .worker_errors import (
-    _format_worker_error as _format_worker_error,
-)
-from .worker_errors import (
-    _is_duplicate_reply as _is_duplicate_reply,
-)
-from .worker_errors import (
-    _is_model_tier_not_found as _is_model_tier_not_found,
-)
-from .worker_errors import (
-    _is_no_change as _is_no_change,
-)
-from .worker_errors import (
-    _is_queued as _is_queued,
-)
-from .worker_errors import (
-    _ordinal_suffix as _ordinal_suffix,
-)
-from .worker_errors import (
-    _truncate as _truncate,
-)
-from .worker_validation import (
-    _get_kind_turn_budget as _get_kind_turn_budget,
-)
-from .worker_validation import (
-    _is_ticket_pre_authorized as _is_ticket_pre_authorized,
-)
-from .worker_validation import (
-    _validate_model_level as _validate_model_level,
-)
-
-if TYPE_CHECKING:
-    from robotsix_chat.chat.conversation import ConversationStore
-    from robotsix_chat.chat.events import EventSink
-    from robotsix_chat.chat.server.routes import ChatAgent
-    from robotsix_chat.config import Settings
+from .worker_errors import _MODEL_TIER_NOT_FOUND_STATUS as _MODEL_TIER_NOT_FOUND_STATUS
+from .worker_errors import _NO_CHANGE_SENTINEL as _NO_CHANGE_SENTINEL
+from .worker_errors import _QUEUED_SENTINEL as _QUEUED_SENTINEL
+from .worker_errors import _RETRY_PROMPT_TEMPLATE as _RETRY_PROMPT_TEMPLATE
+from .worker_errors import _USAGE_EXHAUSTED_SIGNATURE as _USAGE_EXHAUSTED_SIGNATURE
+from .worker_errors import _format_duration as _format_duration
+from .worker_errors import _format_worker_error as _format_worker_error
+from .worker_errors import _is_duplicate_reply as _is_duplicate_reply
+from .worker_errors import _is_model_tier_not_found as _is_model_tier_not_found
+from .worker_errors import _is_no_change as _is_no_change
+from .worker_errors import _is_queued as _is_queued
+from .worker_errors import _ordinal_suffix as _ordinal_suffix
+from .worker_errors import _truncate as _truncate
+from .worker_validation import _get_kind_turn_budget as _get_kind_turn_budget
+from .worker_validation import _is_ticket_pre_authorized as _is_ticket_pre_authorized
+from .worker_validation import _validate_model_level as _validate_model_level
 
 logger = logging.getLogger(__name__)
+
 
 # ``worker`` is a façade: it re-exports error-handling/validation helpers and
 # prompt notes from its sibling modules so existing ``from .worker import X``
@@ -117,6 +90,8 @@ logger = logging.getLogger(__name__)
 # ``py/unused-import`` treats ``__all__`` membership as a use).
 __all__ = [
     "_DEGENERATE_SUCCESS_SIGNATURE",
+    "_MAX_PERIODIC_HISTORY_TURNS",
+    "_MAX_WORKER_HISTORY_TURNS",
     "_MODEL_TIER_NOT_FOUND_STATUS",
     "_NO_CHANGE_SENTINEL",
     "_QUEUED_SENTINEL",
@@ -127,32 +102,29 @@ __all__ = [
     "CloseState",
     "SubsessionContext",
     "SubsessionEnv",
+    "_build_ancestor_context",
+    "_draft_decision_comment_posted",
     "_format_duration",
     "_format_worker_error",
     "_get_kind_turn_budget",
+    "_history_cap",
     "_is_duplicate_reply",
+    "_is_github_rate_limit_error",
     "_is_model_tier_not_found",
     "_is_no_change",
     "_is_queued",
     "_is_ticket_pre_authorized",
+    "_is_unexpected_model_behavior",
+    "_operator_picked_suggestion",
     "_ordinal_suffix",
+    "_render_turn_input",
+    "_run_turn",
+    "_subsession_worker",
     "_truncate",
     "_validate_model_level",
     "attach_slot_budget",
     "spawn_subsession",
 ]
-
-# Prior turns replayed to the subsession agent are capped so a
-# long-running periodic/user_chat subsession cannot grow its own prompt
-# without bound.
-_MAX_WORKER_HISTORY_TURNS = 20
-
-# Periodic/wait-for-event monitors run on a fresh, never-compacted CLI
-# transcript per tick, so replaying the full 20-turn window re-carries an
-# ever-growing prefix as cache traffic on every step of every tool loop.
-# Bound monitor replay much tighter — the current tick only needs a couple
-# of prior turns for continuity.
-_MAX_PERIODIC_HISTORY_TURNS = 3
 
 
 # Turn-budget soft-warn reminder, appended to the agent's next turn input
@@ -166,63 +138,6 @@ _TURN_BUDGET_SOFT_WARN = (
     "complete_subsession with a summary of what you have "
     "accomplished so far.]"
 )
-
-
-@dataclass(frozen=True)
-class SubsessionContext:
-    """Identity captured lexically in agent tool closures.
-
-    ``subsession_id is None`` means the agent IS the main chat agent
-    (depth 0); its spawned children then have ``parent_id=None`` and
-    their summaries deliver straight to the owning chat session.
-    """
-
-    owner_session_id: str
-    subsession_id: str | None
-    depth: int
-
-
-@dataclass
-class CloseState:
-    """Mutable close-request holder shared between a worker and its agent.
-
-    The ``complete_subsession`` tool sets :attr:`requested` (and the
-    summary); the worker checks it after every turn.
-
-    When the tool itself already delivered the summary (e.g. to survive
-    a race with an external close), :attr:`delivery_done` is set to
-    ``True`` so the worker does not deliver a second time.
-    """
-
-    requested: bool = False
-    summary: str | None = None
-    delivery_done: bool = False
-
-
-@dataclass
-class SubsessionEnv:
-    """Shared runtime dependencies for spawning and running subsessions.
-
-    ``agent_factory(settings, model_level, ctx, close_state)`` must build
-    a fully-tooled agent for the subsession: the standard tool suite plus
-    the depth-aware subsession tools (spawn/message/close/list when depth
-    allows, ``complete_subsession`` always).
-    """
-
-    settings: Settings
-    registry: SubsessionRegistry
-    delivery: ParentDelivery
-    conversation_store: ConversationStore
-    agent_factory: Callable[[Settings, int, SubsessionContext, CloseState], ChatAgent]
-    event_sink: EventSink | None = None
-    # Strong refs to worker tasks spawned via spawn_subsession (belt and
-    # braces alongside the registry's _running map).
-    _tasks: set[asyncio.Task[None]] = field(default_factory=set)
-    # Per-conversation slot-budget manager (optional).  When set (and
-    # enabled), spawn_subsession consults it before admitting a new
-    # monitor; when None, all spawns proceed as before.  Wired by
-    # :func:`attach_slot_budget`.
-    slot_budget: SlotBudget | None = None
 
 
 def spawn_subsession(
@@ -614,519 +529,9 @@ def spawn_subsession(
     return info.id
 
 
-def attach_slot_budget(env: SubsessionEnv) -> SlotBudget | None:
-    """Create and wire the per-conversation slot-budget manager into *env*.
-
-    Returns ``None`` (and wires nothing) when slot budgeting is disabled
-    by config (``monitor_slot_budget <= 0``).  Otherwise sets
-    ``env.slot_budget`` and registers a registry close callback so the
-    pending queue drains whenever a monitor terminates and a slot frees.
-    """
-    cfg = env.settings.subsessions
-    budget = getattr(cfg, "monitor_slot_budget", 0)
-    if budget <= 0:
-        return None
-    slot_budget = SlotBudget(
-        budget=budget,
-        queue_max=getattr(cfg, "monitor_slot_queue_max", 32),
-    )
-    env.slot_budget = slot_budget
-
-    def _on_monitor_closed(info: SubsessionInfo) -> None:
-        if info.close_reason == "slot_reclaimed":
-            # The freed slot is being repurposed by the in-flight spawn
-            # that triggered the reclamation — draining here would admit
-            # a second monitor into the same slot.
-            return
-        if info.close_reason == OWNER_CLOSED_REASON:
-            # The conversation itself is being torn down — drop any
-            # pending monitor requests rather than spawning work for a
-            # dead session.
-            slot_budget.discard(info.owner_session_id)
-            return
-        _drain_slot_budget_queue(env, info.owner_session_id)
-
-    env.registry.add_close_callback(_on_monitor_closed)
-    return slot_budget
-
-
-def _drain_slot_budget_queue(env: SubsessionEnv, owner_session_id: str) -> None:
-    """Dequeue and spawn pending monitor requests while slots are free.
-
-    Called after a monitor terminates (its occupied slot frees).  Spawns
-    the oldest pending request per iteration and repeats until the queue
-    is empty or the conversation is back at budget.
-    """
-    slot_budget = env.slot_budget
-    if slot_budget is None or not slot_budget.enabled:
-        return
-    while env.registry.count_occupied_for_owner(owner_session_id) < slot_budget.budget:
-        request = slot_budget.pop_next(owner_session_id)
-        if request is None:
-            return
-        try:
-            sub_id = spawn_subsession(env=env, **request)
-        except Exception:
-            logger.exception(
-                "slot budget: failed to drain queued monitor request "
-                "for conversation %s — request re-queued",
-                owner_session_id,
-            )
-            # Keep the request's FIFO position and stop: retrying the
-            # whole queue here would risk a failure cascade.
-            slot_budget.requeue_front(owner_session_id, request)
-            return
-        if sub_id == SLOT_BUDGET_QUEUED:
-            # Defensive: the freed slot was consumed concurrently and the
-            # request re-queued itself — stop draining to avoid a loop.
-            return
-        logger.info(
-            "slot budget: drained queued %s monitor request for "
-            "conversation %s into freed slot (%s)",
-            request.get("kind"),
-            owner_session_id,
-            sub_id,
-        )
-
-
-# Character budget for the ancestor-context block prepended to a nested
-# child's prompt when ``inherit_context=True``.  The budget covers the
-# block header plus each ancestor (title + first 300 chars of its prompt);
-# ancestors beyond the budget are silently dropped so the block never
-# overwhelms the child's own instructions.
-_MAX_ANCESTOR_CONTEXT_CHARS = 2000
-
-
-def _build_ancestor_context(registry: SubsessionRegistry, parent_id: str) -> str:
-    """Walk up the parent chain and build a compact context block.
-
-    Returns a string of the form::
-
-        # Ancestor context (inherited from the subsession tree above you)
-
-        ## ancestor-1 title
-        ancestor-1 prompt summary …
-
-        ## ancestor-2 title
-        ...
-
-    or an empty string when the parent chain is unreachable.
-    """
-    ancestors: list[SubsessionInfo] = []
-    current_id: str | None = parent_id
-    while current_id is not None:
-        info = registry.get(current_id)
-        if info is None:
-            break
-        ancestors.append(info)
-        current_id = info.parent_id
-    if not ancestors:
-        return ""
-
-    # Build from root downward (reverse the walk-up order).
-    ancestors.reverse()
-    parts: list[str] = [
-        "# Ancestor context (inherited from the subsession tree above you)\n"
-    ]
-    budget = _MAX_ANCESTOR_CONTEXT_CHARS - len(parts[0])
-    for info in ancestors:
-        snippet = info.prompt[:300]
-        entry = f"## {info.title}\n{snippet}"
-        if len(entry) > budget:
-            break
-        parts.append(entry)
-        budget -= len(entry) + 1  # +1 for the blank line separator
-    if not parts[1:]:  # only the header, no actual ancestor entries
-        return ""
-    return "\n\n".join(parts) + "\n\n"
-
-
-_SUGGESTIONS_BLOCK_RE = re.compile(r"```suggestions\s*\n(.*?)```", re.DOTALL)
-
-
-def _offered_suggestions(info: SubsessionInfo) -> list[str]:
-    """Return the option lines of the panel's most recent ```suggestions block."""
-    for entry in reversed(info.transcript):
-        if entry.role != "assistant":
-            continue
-        blocks = _SUGGESTIONS_BLOCK_RE.findall(entry.text or "")
-        if not blocks:
-            return []
-        return [ln.strip() for ln in blocks[-1].splitlines() if ln.strip()]
-    return []
-
-
-def _operator_picked_suggestion(
-    info: SubsessionInfo, pending: list[InboxMessage]
-) -> bool:
-    """Return True when a user_chat operator reply equals an offered option.
-
-    A clicked ```suggestions line is a settled decision: the worker appends
-    :data:`USER_CHAT_SETTLED_NOTE` so the panel completes itself instead of
-    waiting for the operator to close it by hand (operator report 2026-09-08).
-    """
-    if info.kind is not SubsessionKind.USER_CHAT:
-        return False
-    offered = {o.casefold() for o in _offered_suggestions(info)}
-    if not offered:
-        return False
-    return any(
-        m.role == "user" and (m.text or "").strip().casefold() in offered
-        for m in pending
-    )
-
-
-def _render_turn_input(messages: list[InboxMessage]) -> str:
-    """Merge an inbox batch into one turn input, labelled by role."""
-    if len(messages) == 1:
-        return messages[0].text
-    return "\n\n".join(f"[{m.role}] {m.text}" for m in messages)
-
-
-def _is_github_rate_limit_error(exc: BaseException) -> bool:
-    """Return ``True`` when *exc* is a GitHub API rate-limit error (403/429).
-
-    Inspects the exception's ``__cause__`` and ``__context__`` chain
-    for ``RuntimeError`` messages matching the pattern emitted by
-    :class:`~robotsix_chat.repo.direct.client.DirectRepoClient`.
-    """
-    seen: set[int] = set()
-    current: BaseException | None = exc
-    while current is not None:
-        exc_id = id(current)
-        if exc_id in seen:
-            break
-        seen.add(exc_id)
-        if isinstance(current, RuntimeError):
-            msg = str(current)
-            if "GitHub API" in msg and (
-                "error 429" in msg
-                or ("error 403" in msg and "rate limit" in msg.lower())
-            ):
-                return True
-        current = current.__cause__ or current.__context__
-    return False
-
-
-def _is_unexpected_model_behavior(exc: BaseException) -> bool:
-    """Return ``True`` when *exc* is a pydantic-ai ``UnexpectedModelBehavior``.
-
-    The LLM provider occasionally returns an unexpected response shape
-    (empty stream, malformed JSON delta, missing candidate) that pydantic-ai
-    surfaces as ``UnexpectedModelBehavior``.  These are typically transient —
-    a retry almost always succeeds — so monitor subsessions should ride them
-    out with backoff rather than failing permanently.
-
-    Walks the ``__cause__`` / ``__context__`` chain because agent frameworks
-    routinely wrap the original error.
-    """
-    # Lazy import to avoid a hard dependency at module level — pydantic-ai
-    # is always present in this repo, but the import is cheap and keeps
-    # the function self-contained.
-    from pydantic_ai.exceptions import UnexpectedModelBehavior
-
-    seen: set[int] = set()
-    current: BaseException | None = exc
-    while current is not None:
-        exc_id = id(current)
-        if exc_id in seen:
-            break
-        seen.add(exc_id)
-        if isinstance(current, UnexpectedModelBehavior):
-            return True
-        current = current.__cause__ or current.__context__
-    return False
-
-
-# Backoff policy for transient turn retries.  Module-level rather than
-# operator-configurable: robotsix_http owns retry policy fleet-wide, and the
-# only turn-level knob that ever needed tuning is the attempt count
-# (``transient_error_max_retries``).  Tests collapse the cap to 0 so the
-# retry paths run instantly — see tests/subsessions/test_worker.py.
-#
-# These reproduce the delays the hand-rolled loop produced: it used
-# ``min(1.0 * 2**attempt, 30.0)`` -> 1s, 2s, 4s, and RetryConfig computes
-# ``min(2.0**attempt, 30.0)`` -> the same 1s, 2s, 4s, with up to 50% jitter
-# subtracted (RetryConfig.jitter_factor), which the old loop lacked.
-_TRANSIENT_BACKOFF_BASE = 2.0
-_TRANSIENT_BACKOFF_CAP = 30.0
-
-
-_monitor_turn_gate: asyncio.Semaphore | None = None
-_monitor_turn_gate_size: int = -1
-
-
-def _get_monitor_turn_gate(size: int) -> asyncio.Semaphore | None:
-    """Return the process-wide monitor-turn gate for *size* (``None`` = off).
-
-    Bounds how many periodic/wait_for_event agent turns run at once: each
-    turn spawns a claudeSDK CLI subprocess (~240MB RSS), and a board-event
-    storm waking many monitors simultaneously drove the container to its
-    memory limit and an OOM kill (2026-09-02 15:22Z).  Recreated when the
-    configured size changes (tests, config reload).
-    """
-    global _monitor_turn_gate, _monitor_turn_gate_size
-    if size <= 0:
-        return None
-    if _monitor_turn_gate is None or _monitor_turn_gate_size != size:
-        _monitor_turn_gate = asyncio.Semaphore(size)
-        _monitor_turn_gate_size = size
-    return _monitor_turn_gate
-
-
-async def _run_turn_with_transient_retry(
-    env: SubsessionEnv,
-    agent: ChatAgent,
-    turn_input: str,
-    history: list[tuple[str, str]],
-    sub_id: str,
-    info: SubsessionInfo,
-) -> str:
-    """Run one agent turn, retrying on transient API errors for periodic subsessions.
-
-    For PERIODIC subsessions only: transient errors (e.g. OpenRouter
-    upstream hiccups, GitHub API rate-limit 403/429, pydantic-ai
-    ``UnexpectedModelBehavior`` from malformed provider responses) are
-    retried with exponential backoff.  When all retries are exhausted the
-    function raises :class:`_TransientExhaustedError` so the worker loop
-    can skip the cycle gracefully instead of permanently failing the
-    subsession.
-
-    For TASK / USER_CHAT subsessions the error propagates unchanged —
-    the outer handler will fail the subsession.
-
-    The loop itself is :func:`robotsix_http.acall_with_retry`; the
-    transient classification stays here, since it is domain knowledge
-    (which provider errors are worth another turn) rather than transport
-    policy.  ``acall_with_retry`` re-raises the original exception when
-    attempts run out, so the exhausted-and-still-transient case is
-    translated to the sentinel below.
-    """
-    settings = env.settings.subsessions
-    max_retries = settings.transient_error_max_retries
-
-    def _is_transient(exc: BaseException) -> bool:
-        """Whether *exc* earns another turn for THIS subsession kind.
-
-        Kind is part of the predicate on purpose: the same provider error
-        is retryable for a monitor (skip the cycle, keep the schedule) and
-        fatal for a task / user_chat run.  Returning ``False`` makes
-        ``acall_with_retry`` re-raise immediately, which is exactly the
-        old behaviour for non-monitors.
-        """
-        is_monitor = info.kind in (
-            SubsessionKind.PERIODIC,
-            SubsessionKind.WAIT_FOR_EVENT,
-        )
-        if not is_monitor:
-            return False
-        return is_openrouter_transient(exc) or (
-            _is_github_rate_limit_error(exc) or _is_unexpected_model_behavior(exc)
-        )
-
-    def _log_retry(attempt: int, exc: Exception, delay: float) -> None:
-        logger.warning(
-            "Subsession %s run %d: transient error on attempt %d/%d — "
-            "retrying in %.1fs. Error: %s",
-            sub_id,
-            info.runs + 1,
-            attempt,
-            max_retries + 1,
-            delay,
-            exc,
-        )
-
-    async def _one_turn() -> str:
-        gate = (
-            _get_monitor_turn_gate(settings.monitor_turn_concurrency)
-            if info.kind in (SubsessionKind.PERIODIC, SubsessionKind.WAIT_FOR_EVENT)
-            else None
-        )
-        if gate is None:
-            return await _run_turn_with_timeout(
-                env, agent, turn_input, history, sub_id, info
-            )
-        async with gate:
-            return await _run_turn_with_timeout(
-                env, agent, turn_input, history, sub_id, info
-            )
-
-    try:
-        # cast: acall_with_retry's `Callable[..., T]` resolves T to the
-        # coroutine type for an async fn, so the awaited value is str at
-        # runtime but Coroutine to the checker. Same treatment as the
-        # existing call site in repo/direct/__init__.py.
-        return cast(
-            "str",
-            await acall_with_retry(
-                _one_turn,
-                config=RetryConfig(
-                    max_retries=max_retries,
-                    backoff_base=_TRANSIENT_BACKOFF_BASE,
-                    backoff_cap=_TRANSIENT_BACKOFF_CAP,
-                    on_retry=_log_retry,
-                ),
-                what=f"subsession {sub_id} agent turn",
-                is_transient_fn=_is_transient,
-            ),
-        )
-    except _RunTimeoutError:
-        raise  # timeout is handled separately; never retried
-    except Exception as exc:
-        if not _is_transient(exc):
-            raise
-        # Every sanctioned attempt was spent and the error is still
-        # transient — surface the sentinel so the worker loop skips this
-        # cycle instead of permanently failing the subsession.
-        logger.error(
-            "Subsession %s run %d: all %d transient-error retries exhausted "
-            "(last error: %s) — skipping this cycle.",
-            sub_id,
-            info.runs + 1,
-            max_retries + 1,
-            exc,
-        )
-        raise _TransientExhaustedError(
-            f"transient error persisted across {max_retries + 1} attempts"
-        ) from exc
-
-
-class _TransientExhaustedError(Exception):
-    """Sentinel raised when all transient-error retries are exhausted.
-
-    Caught by the worker loop for periodic subsessions to skip the cycle
-    gracefully rather than permanently failing the subsession.
-    """
-
-
-def _history_cap(kind: SubsessionKind) -> int:
-    """Return the prior-turn replay cap for *kind*.
-
-    Periodic and wait-for-event monitors get the tight
-    :data:`_MAX_PERIODIC_HISTORY_TURNS` bound; every other kind keeps the
-    default :data:`_MAX_WORKER_HISTORY_TURNS` window.
-    """
-    if kind in (SubsessionKind.PERIODIC, SubsessionKind.WAIT_FOR_EVENT):
-        return _MAX_PERIODIC_HISTORY_TURNS
-    return _MAX_WORKER_HISTORY_TURNS
-
-
-async def _run_turn(
-    agent: ChatAgent,
-    turn_input: str,
-    history: list[tuple[str, str]],
-    sub_id: str,
-    *,
-    max_history_turns: int = _MAX_WORKER_HISTORY_TURNS,
-    trace_metadata: dict[str, str] | None = None,
-    trace_name: str | None = None,
-    skip_recall: bool = False,
-) -> str:
-    """Run one agent turn and return the reply text."""
-    parts = [
-        chunk
-        async for chunk in agent.stream(
-            turn_input,
-            history=history[-max_history_turns:] or None,
-            session_id=sub_id,
-            client_id=sub_id,
-            trace_metadata=trace_metadata,
-            trace_name=trace_name,
-            skip_recall=skip_recall,
-        )
-    ]
-    return "".join(parts)
-
-
-_RUN_TIMEOUT_GRACE = 5.0
 """Seconds of grace added to the configured run timeout for the
 asyncio.timeout context so the warning + status update have time to
 execute before the CancelledError propagates."""
-
-
-async def _run_turn_with_timeout(
-    env: SubsessionEnv,
-    agent: ChatAgent,
-    turn_input: str,
-    history: list[tuple[str, str]],
-    sub_id: str,
-    info: SubsessionInfo,
-) -> str:
-    """Run one agent turn with a hard timeout guard.
-
-    On timeout the run is marked failed for TASK/USER_CHAT kinds, or the
-    schedule continues with the failure recorded for PERIODIC kinds.
-    """
-    timeout = (
-        info.run_timeout_seconds
-        if info.run_timeout_seconds is not None
-        else env.settings.subsessions.run_timeout_seconds
-    )
-    try:
-        async with asyncio.timeout(timeout + _RUN_TIMEOUT_GRACE):
-            return await _run_turn(
-                agent,
-                turn_input,
-                history,
-                sub_id,
-                max_history_turns=_history_cap(info.kind),
-                trace_metadata={
-                    "owner_session_id": info.owner_session_id,
-                    "parent_session_id": info.parent_id or info.owner_session_id,
-                },
-                trace_name="subsession-turn",
-                # Monitor wakes (periodic / wait_for_event) feed fixed,
-                # machine-generated instruction boilerplate as the turn
-                # input; recalling on it churns the memory component for
-                # near-random, noise-only matches. Monitors are
-                # self-contained by design, so skip automatic recall.
-                skip_recall=info.kind
-                in (SubsessionKind.PERIODIC, SubsessionKind.WAIT_FOR_EVENT),
-            )
-    except TimeoutError:
-        logger.warning(
-            "Subsession %s run timed out after %.0fs; marking run as failed",
-            sub_id,
-            timeout,
-        )
-        raise _RunTimeoutError(
-            f"subsession run exceeded {timeout:.0f}s timeout"
-        ) from None
-
-
-class _RunTimeoutError(Exception):
-    """Raised when a single subsession turn exceeds the run timeout.
-
-    Internal sentinel — caught by the worker loop to trigger kind-specific
-    failure handling without conflating with other CancelledError sources.
-    """
-
-
-async def _run_task_turn(
-    env: SubsessionEnv, sub_id: str, reply: str
-) -> list[InboxMessage]:
-    """Handle TASK post-turn: drain inbox; return pending messages or close.
-
-    Returns a non-empty list if steering messages arrived mid-turn
-    (the worker should continue), or an empty list after closing the
-    subsession (the worker should stop).
-    """
-    pending = env.registry.drain_inbox(sub_id)
-    if pending:
-        return pending  # a steering message arrived mid-turn
-    closed = env.registry.mark_closed(
-        sub_id, summary=reply, reason="completed", closed_by="agent"
-    )
-    if closed is not None:
-        await env.delivery.deliver_summary(closed, reply, "completed")
-    return []
-
-
-async def _run_user_chat_turn(env: SubsessionEnv, sub_id: str) -> list[InboxMessage]:
-    """Handle USER_CHAT post-turn: wait for inbox, drain, return pending."""
-    env.registry.set_status(sub_id, SubsessionStatus.WAITING)
-    await env.registry.wait_for_inbox(sub_id, timeout=None)
-    return env.registry.drain_inbox(sub_id)
 
 
 def _draft_decision_comment_posted(info: SubsessionInfo) -> bool:
@@ -1848,54 +1253,3 @@ async def _subsession_worker(
                     f"{info.prompt}"
                 )
             await env.delivery.deliver_summary(failed, summary, "failed")
-
-
-async def _handle_kind_continuation(
-    env: SubsessionEnv,
-    info: SubsessionInfo,
-    sub_id: str,
-    reply: str,
-    previous_result: str | None,
-    consecutive_no_change: int,
-) -> tuple[list[InboxMessage], str | None, int] | None:
-    """Dispatch kind-specific post-turn logic.
-
-    Returns ``(pending, previous_result, consecutive_no_change)`` to
-    continue, or ``None`` to stop (the subsession reached a terminal
-    state).
-    """
-    if info.kind is SubsessionKind.TASK or info.kind is SubsessionKind.ON_CLOSE:
-        pending = await _run_task_turn(env, sub_id, reply)
-        if not pending:
-            return None
-        return (pending, None, 0)
-
-    if info.kind is SubsessionKind.USER_CHAT:
-        pending = await _run_user_chat_turn(env, sub_id)
-        return (pending, None, 0)
-
-    # PERIODIC
-    if info.kind is SubsessionKind.PERIODIC:
-        from .worker_periodic import _run_periodic_turn
-
-        result = await _run_periodic_turn(
-            env, info, sub_id, reply, previous_result, consecutive_no_change
-        )
-        if result is None:
-            return None
-        pending, previous_result, consecutive_no_change = result
-        env.registry.reap_orphans()
-        return (pending, previous_result, consecutive_no_change)
-
-    # WAIT_FOR_EVENT
-    if info.kind is SubsessionKind.WAIT_FOR_EVENT:
-        from .subsession_waits import _run_wait_for_event_turn
-
-        result = await _run_wait_for_event_turn(
-            env, info, sub_id, reply, previous_result, consecutive_no_change
-        )
-        if result is None:
-            return None
-        pending, previous_result, consecutive_no_change = result
-        env.registry.reap_orphans()
-        return (pending, previous_result, consecutive_no_change)

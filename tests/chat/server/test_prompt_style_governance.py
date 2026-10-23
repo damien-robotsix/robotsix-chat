@@ -9,7 +9,7 @@ from __future__ import annotations
 
 from pathlib import Path
 
-from robotsix_chat.chat.server.app import (
+from robotsix_chat.chat.server.skill_wiring import (
     _STYLE_DIRECTIVE_HEADER,
     _inject_skills,
     _load_prompt_style,

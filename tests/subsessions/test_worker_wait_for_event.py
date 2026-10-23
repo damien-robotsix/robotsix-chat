@@ -31,7 +31,7 @@ from robotsix_chat.subsessions import (
     spawn_subsession,
 )
 from robotsix_chat.subsessions import subsession_waits as waits_mod
-from robotsix_chat.subsessions import worker as worker_mod
+from robotsix_chat.subsessions import turn_runner as turn_runner_mod
 from robotsix_chat.subsessions.subsession_waits import (
     _event_wait_loop,
     _run_wait_for_event_turn,
@@ -68,7 +68,7 @@ def _instant_transient_backoff(monkeypatch: pytest.MonkeyPatch) -> None:
     settings these tests used to pass were removed along with the
     hand-rolled loop.
     """
-    monkeypatch.setattr(worker_mod, "_TRANSIENT_BACKOFF_CAP", 1e-9)
+    monkeypatch.setattr(turn_runner_mod, "_TRANSIENT_BACKOFF_CAP", 1e-9)
 
 
 OWNER = "sess-main"
@@ -123,7 +123,7 @@ async def test_periodic_non_transient_error_not_retried_when_disabled() -> None:
     )
 
     with patch(
-        "robotsix_chat.subsessions.worker.is_openrouter_transient",
+        "robotsix_chat.subsessions.turn_runner.is_openrouter_transient",
         return_value=False,
     ):
         sub_id = _spawn(
@@ -154,7 +154,7 @@ async def test_periodic_non_transient_error_retries_then_fails() -> None:
     )
 
     with patch(
-        "robotsix_chat.subsessions.worker.is_openrouter_transient",
+        "robotsix_chat.subsessions.turn_runner.is_openrouter_transient",
         return_value=False,
     ):
         sub_id = _spawn(
@@ -215,7 +215,7 @@ async def test_periodic_non_transient_error_retry_succeeds() -> None:
     )
 
     with patch(
-        "robotsix_chat.subsessions.worker.is_openrouter_transient",
+        "robotsix_chat.subsessions.turn_runner.is_openrouter_transient",
         return_value=False,
     ):
         sub_id = _spawn(
@@ -248,7 +248,7 @@ async def test_wait_for_event_non_transient_error_retries() -> None:
     )
 
     with patch(
-        "robotsix_chat.subsessions.worker.is_openrouter_transient",
+        "robotsix_chat.subsessions.turn_runner.is_openrouter_transient",
         return_value=False,
     ):
         sub_id = _spawn(
@@ -278,7 +278,7 @@ async def test_periodic_transient_error_transcript_recorded() -> None:
     )
 
     with patch(
-        "robotsix_chat.subsessions.worker.is_openrouter_transient",
+        "robotsix_chat.subsessions.turn_runner.is_openrouter_transient",
         return_value=True,
     ):
         sub_id = _spawn(
@@ -537,7 +537,7 @@ async def test_tool_failure_leaves_subsession_alive_periodic() -> None:
     )
 
     with patch(
-        "robotsix_chat.subsessions.worker.is_openrouter_transient",
+        "robotsix_chat.subsessions.turn_runner.is_openrouter_transient",
         return_value=False,
     ):
         sub_id = _spawn(
@@ -597,7 +597,7 @@ async def test_tool_failure_exhausting_retries_leaves_subsession_alive_wfe() -> 
     )
 
     with patch(
-        "robotsix_chat.subsessions.worker.is_openrouter_transient",
+        "robotsix_chat.subsessions.turn_runner.is_openrouter_transient",
         return_value=False,
     ):
         sub_id = _spawn(
@@ -751,7 +751,7 @@ async def test_three_consecutive_errored_runs_fails_subsession() -> None:
     )
 
     with patch(
-        "robotsix_chat.subsessions.worker.is_openrouter_transient",
+        "robotsix_chat.subsessions.turn_runner.is_openrouter_transient",
         return_value=False,
     ):
         sub_id = _spawn(
@@ -788,7 +788,7 @@ async def test_single_errored_run_produces_at_most_one_notification() -> None:
     )
 
     with patch(
-        "robotsix_chat.subsessions.worker.is_openrouter_transient",
+        "robotsix_chat.subsessions.turn_runner.is_openrouter_transient",
         return_value=False,
     ):
         sub_id = _spawn(
@@ -827,7 +827,7 @@ async def test_no_behavior_change_for_task_kind() -> None:
     )
 
     with patch(
-        "robotsix_chat.subsessions.worker.is_openrouter_transient",
+        "robotsix_chat.subsessions.turn_runner.is_openrouter_transient",
         return_value=False,
     ):
         sub_id = _spawn(env, prompt="do something", kind=SubsessionKind.TASK)
@@ -857,7 +857,7 @@ async def test_threshold_zero_fails_on_first_errored_run() -> None:
     )
 
     with patch(
-        "robotsix_chat.subsessions.worker.is_openrouter_transient",
+        "robotsix_chat.subsessions.turn_runner.is_openrouter_transient",
         return_value=False,
     ):
         sub_id = _spawn(

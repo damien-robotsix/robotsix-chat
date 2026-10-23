@@ -28,7 +28,8 @@ from robotsix_chat.llm import LlmioChatAgent
 from robotsix_chat.periodic.shipped import check_shipped_presets
 from robotsix_chat.startup_checks import check_component_connectivity
 
-from .app import create_agent_from_settings, create_app
+from .agent_factory import create_agent_from_settings
+from .app import create_app
 from .routes import ChatAgent, RunSerializer
 
 logger = logging.getLogger(__name__)
