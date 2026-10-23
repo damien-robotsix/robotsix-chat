@@ -1134,7 +1134,7 @@ def test_create_agent_from_settings_memory_disabled_skips_cognee() -> None:
     )
 
     with patch(
-        "robotsix_chat.chat.server.app.build_memory",
+        "robotsix_chat.chat.server.agent_factory.build_memory",
         side_effect=AssertionError("build_memory must not be called when gated"),
     ):
         agent = create_agent_from_settings(settings=settings, memory_enabled=False)
@@ -1153,7 +1153,7 @@ def test_create_agent_from_settings_gated_memory_still_reads_component() -> None
     sentinel = NullMemory()
 
     with patch(
-        "robotsix_chat.chat.server.app.build_memory", return_value=sentinel
+        "robotsix_chat.chat.server.agent_factory.build_memory", return_value=sentinel
     ) as build:
         agent = create_agent_from_settings(settings=settings, memory_enabled=False)
 
@@ -1173,7 +1173,7 @@ def test_create_agent_from_settings_memory_enabled_builds_memory() -> None:
     sentinel = NullMemory()
 
     with patch(
-        "robotsix_chat.chat.server.app.build_memory", return_value=sentinel
+        "robotsix_chat.chat.server.agent_factory.build_memory", return_value=sentinel
     ) as build:
         agent = create_agent_from_settings(settings=settings)
 
@@ -2130,7 +2130,7 @@ def test_main_agent_gets_suggestion_chip_contract() -> None:
     The contract must be code-level (not sourced from the operator-editable
     config document) so it holds for every session regardless of config edits.
     """
-    from robotsix_chat.chat.server.app import _SUGGESTIONS_INSTRUCTION
+    from robotsix_chat.chat.server.agent_factory import _SUGGESTIONS_INSTRUCTION
 
     settings = Settings(agent_instruction="You are terse.")
 
@@ -2142,7 +2142,7 @@ def test_main_agent_gets_suggestion_chip_contract() -> None:
 
 def test_bare_agent_has_no_suggestion_chip_contract() -> None:
     """A bare text-transformation agent never gets the suggestion contract."""
-    from robotsix_chat.chat.server.app import _SUGGESTIONS_INSTRUCTION
+    from robotsix_chat.chat.server.agent_factory import _SUGGESTIONS_INSTRUCTION
 
     settings = Settings(agent_instruction="Be terse.")
 
@@ -2157,7 +2157,7 @@ def test_subsession_agent_has_no_main_suggestion_contract() -> None:
     They get their own directive via ``_USER_CHAT_FIRST_TURN_NOTE`` in the
     worker instead.
     """
-    from robotsix_chat.chat.server.app import _SUGGESTIONS_INSTRUCTION
+    from robotsix_chat.chat.server.agent_factory import _SUGGESTIONS_INSTRUCTION
     from robotsix_chat.subsessions import CloseState, SubsessionContext
     from tests.common.subsession_fakes import build_env
 

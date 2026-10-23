@@ -5,11 +5,8 @@ preserving backward compatibility for all existing import sites
 (``tests/``, ``src/robotsix_chat/chat/__init__.py``, etc.).
 """
 
-from .app import (
-    _load_ui_html,
-    create_agent_from_settings,
-    create_app,
-)
+from .agent_factory import create_agent_from_settings
+from .app import create_app
 from .cli import (
     run_server,
     run_server_from_config,
@@ -29,6 +26,7 @@ from .routes import (  # noqa: F401 — imports used via dynamic __all__ below
 # symbols that were actually imported into this module — this avoids
 # duplicating the endpoint-name list across two __init__.py files.
 from .routes import __all__ as _routes_all
+from .ui import _load_ui_html
 
 _routes_in_scope = [name for name in _routes_all if name in globals()]
 

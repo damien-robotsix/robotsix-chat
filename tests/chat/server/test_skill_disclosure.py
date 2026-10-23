@@ -19,7 +19,7 @@ from unittest.mock import patch
 import pytest
 
 import robotsix_chat.periodic  # noqa: F401
-from robotsix_chat.chat.server.app import (
+from robotsix_chat.chat.server.skill_wiring import (
     _inject_skills,
     _skill_registry,
     build_skill_tools,
@@ -123,10 +123,10 @@ class TestReadSkillRetryAndCache:
 
         with (
             patch(
-                "robotsix_chat.chat.server.app._skill_registry",
+                "robotsix_chat.chat.server.skill_wiring._skill_registry",
                 return_value=[(True, target_name, flaky_loader)],
             ),
-            patch("robotsix_chat.chat.server.app.time.sleep") as mock_sleep,
+            patch("robotsix_chat.chat.server.skill_wiring.time.sleep") as mock_sleep,
         ):
             (read_skill,) = build_skill_tools(settings)
             result = read_skill(target_name)
@@ -155,10 +155,10 @@ class TestReadSkillRetryAndCache:
 
         with (
             patch(
-                "robotsix_chat.chat.server.app._skill_registry",
+                "robotsix_chat.chat.server.skill_wiring._skill_registry",
                 return_value=[(True, target_name, loader)],
             ),
-            patch("robotsix_chat.chat.server.app.time.sleep"),
+            patch("robotsix_chat.chat.server.skill_wiring.time.sleep"),
         ):
             (read_skill,) = build_skill_tools(settings)
             # First call succeeds and populates the cache.
@@ -181,10 +181,10 @@ class TestReadSkillRetryAndCache:
 
         with (
             patch(
-                "robotsix_chat.chat.server.app._skill_registry",
+                "robotsix_chat.chat.server.skill_wiring._skill_registry",
                 return_value=[(True, target_name, failing_loader)],
             ),
-            patch("robotsix_chat.chat.server.app.time.sleep"),
+            patch("robotsix_chat.chat.server.skill_wiring.time.sleep"),
         ):
             (read_skill,) = build_skill_tools(settings)
             result = read_skill(target_name)

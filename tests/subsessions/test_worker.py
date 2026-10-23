@@ -29,7 +29,7 @@ from robotsix_chat.subsessions import (
     SubsessionStatus,
     spawn_subsession,
 )
-from robotsix_chat.subsessions import worker as worker_mod
+from robotsix_chat.subsessions import turn_runner as turn_runner_mod
 from robotsix_chat.subsessions.models import SubsessionInfo
 from robotsix_chat.subsessions.worker import (
     CloseState,
@@ -69,7 +69,7 @@ def _instant_transient_backoff(monkeypatch: pytest.MonkeyPatch) -> None:
     settings these tests used to pass were removed along with the
     hand-rolled loop.
     """
-    monkeypatch.setattr(worker_mod, "_TRANSIENT_BACKOFF_CAP", 1e-9)
+    monkeypatch.setattr(turn_runner_mod, "_TRANSIENT_BACKOFF_CAP", 1e-9)
 
 
 OWNER = "sess-main"
@@ -3113,7 +3113,7 @@ async def test_periodic_transient_error_retried_then_succeeds() -> None:
     with (
         patch.object(agent, "stream", _flaky_stream),
         patch(
-            "robotsix_chat.subsessions.worker.is_openrouter_transient",
+            "robotsix_chat.subsessions.turn_runner.is_openrouter_transient",
             return_value=True,
         ),
     ):
@@ -3148,7 +3148,7 @@ async def test_periodic_transient_error_exhausted_skips_cycle() -> None:
     )
 
     with patch(
-        "robotsix_chat.subsessions.worker.is_openrouter_transient",
+        "robotsix_chat.subsessions.turn_runner.is_openrouter_transient",
         return_value=True,
     ):
         sub_id = _spawn(
@@ -3178,7 +3178,7 @@ async def test_task_transient_error_not_retried() -> None:
     env = build_env(agent=agent)
 
     with patch(
-        "robotsix_chat.subsessions.worker.is_openrouter_transient",
+        "robotsix_chat.subsessions.turn_runner.is_openrouter_transient",
         return_value=True,
     ):
         sub_id = _spawn(env, prompt="compute", kind=SubsessionKind.TASK)
@@ -3200,7 +3200,7 @@ async def test_task_run_timeout_fails_without_retry(monkeypatch) -> None:
     rather than burn the retry budget on a doomed turn.
     """
     # Collapse the grace window so the tiny test timeout fires instantly.
-    monkeypatch.setattr(worker_mod, "_RUN_TIMEOUT_GRACE", 0.0)
+    monkeypatch.setattr(turn_runner_mod, "_RUN_TIMEOUT_GRACE", 0.0)
     # The agent blocks forever on the gate, so the turn can only end by
     # hitting the per-subsession run timeout.
     gate = asyncio.Event()
@@ -3276,8 +3276,8 @@ def _gate_info(kind: SubsessionKind) -> SimpleNamespace:
 @pytest.mark.asyncio
 async def test_monitor_turns_serialize_through_the_gate(monkeypatch):
     """With concurrency=1, two monitor turns never overlap."""
-    worker_mod._monitor_turn_gate = None
-    worker_mod._monitor_turn_gate_size = -1
+    turn_runner_mod._monitor_turn_gate = None
+    turn_runner_mod._monitor_turn_gate_size = -1
     running = 0
     max_running = 0
 
@@ -3289,11 +3289,11 @@ async def test_monitor_turns_serialize_through_the_gate(monkeypatch):
         running -= 1
         return "ok"
 
-    monkeypatch.setattr(worker_mod, "_run_turn_with_timeout", fake_turn)
+    monkeypatch.setattr(turn_runner_mod, "_run_turn_with_timeout", fake_turn)
     env = _gate_env(1)
     results = await asyncio.gather(
         *(
-            worker_mod._run_turn_with_transient_retry(
+            turn_runner_mod._run_turn_with_transient_retry(
                 env, None, "in", [], f"sub{i}", _gate_info(SubsessionKind.PERIODIC)
             )
             for i in range(3)
@@ -3306,8 +3306,8 @@ async def test_monitor_turns_serialize_through_the_gate(monkeypatch):
 @pytest.mark.asyncio
 async def test_gate_disabled_and_non_monitor_kinds_bypass(monkeypatch):
     """concurrency=0 disables the gate; TASK turns never wait on it."""
-    worker_mod._monitor_turn_gate = None
-    worker_mod._monitor_turn_gate_size = -1
+    turn_runner_mod._monitor_turn_gate = None
+    turn_runner_mod._monitor_turn_gate_size = -1
     running = 0
     max_running = 0
 
@@ -3319,15 +3319,15 @@ async def test_gate_disabled_and_non_monitor_kinds_bypass(monkeypatch):
         running -= 1
         return "ok"
 
-    monkeypatch.setattr(worker_mod, "_run_turn_with_timeout", fake_turn)
+    monkeypatch.setattr(turn_runner_mod, "_run_turn_with_timeout", fake_turn)
     await asyncio.gather(
-        worker_mod._run_turn_with_transient_retry(
+        turn_runner_mod._run_turn_with_transient_retry(
             _gate_env(0), None, "in", [], "s1", _gate_info(SubsessionKind.PERIODIC)
         ),
-        worker_mod._run_turn_with_transient_retry(
+        turn_runner_mod._run_turn_with_transient_retry(
             _gate_env(1), None, "in", [], "s2", _gate_info(SubsessionKind.TASK)
         ),
-        worker_mod._run_turn_with_transient_retry(
+        turn_runner_mod._run_turn_with_transient_retry(
             _gate_env(1), None, "in", [], "s3", _gate_info(SubsessionKind.TASK)
         ),
     )

@@ -2,10 +2,13 @@
 
 from __future__ import annotations
 
+import json
 from types import SimpleNamespace
 from typing import Any
 
+import httpx
 import pytest
+import respx
 
 from robotsix_chat.config import DirectRepoSettings
 
@@ -48,3 +51,53 @@ def _mock_github_auth(monkeypatch: pytest.MonkeyPatch) -> None:
     fake.clear_token_cache = lambda: None
     fake.invalidate_token_cache = lambda installation_id: None
     monkeypatch.setitem(sys.modules, "robotsix_github_auth", fake)
+
+
+def _mock_installation_repos(respx_mock: respx.MockRouter) -> None:
+    respx_mock.get(
+        url__startswith="https://api.github.com/installation/repositories"
+    ).mock(
+        return_value=httpx.Response(
+            200,
+            text=json.dumps(
+                {
+                    "repositories": [
+                        {"full_name": "damien-robotsix/repo-a"},
+                        {"full_name": "damien-robotsix/robotsix-central-deploy"},
+                    ]
+                }
+            ),
+        )
+    )
+
+
+async def _mock_component_request_blocked(
+    _component_id: str,
+    _method: str,
+    _path: str,
+    **_kw: Any,
+) -> str:
+    """Mock ``component_request`` that returns BLOCKED state with ≥3 cycles."""
+    return "HTTP 200\n" + json.dumps(
+        {
+            "state": "blocked",
+            "events": [
+                {"type": "implement_start"},
+                {"type": "implement_complete"},
+                {"type": "implement_start"},
+                {"type": "implement_complete"},
+                {"type": "implement_start"},
+                {"type": "implement_complete"},
+            ],
+        }
+    )
+
+
+async def _mock_component_request_error(
+    _component_id: str,
+    _method: str,
+    _path: str,
+    **_kw: Any,
+) -> str:
+    """Mock ``component_request`` that returns a transient 'Error:' response."""
+    return "Error: connection refused"

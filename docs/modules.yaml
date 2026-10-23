@@ -208,7 +208,12 @@ modules:
       - src/robotsix_chat/chat/actions.py
       - src/robotsix_chat/chat/events.py
       - src/robotsix_chat/chat/server/__init__.py
+      - src/robotsix_chat/chat/server/agent_factory.py
       - src/robotsix_chat/chat/server/app.py
+      - src/robotsix_chat/chat/server/middleware.py
+      - src/robotsix_chat/chat/server/openapi.py
+      - src/robotsix_chat/chat/server/skill_wiring.py
+      - src/robotsix_chat/chat/server/ui.py
       - src/robotsix_chat/skill_index.py
       - src/robotsix_chat/chat/server/cli.py
       - src/robotsix_chat/chat/server/idempotency.py
@@ -305,7 +310,9 @@ modules:
       - tests/repo/direct/test_client.py
       - tests/repo/direct/test_client_pr_operations.py
       - tests/repo/direct/test_direct_fix.py
-      - tests/repo/direct/test_direct_repo.py
+      - tests/repo/direct/test_direct_repo_fix_and_commits.py
+      - tests/repo/direct/test_direct_repo_patching.py
+      - tests/repo/direct/test_direct_repo_pull_requests.py
       - tests/repo/direct/test_enable_pages.py
       - tests/repo/direct/test_github_auth_dependency.py
       - tests/repo/direct/test_github_tools.py
@@ -411,16 +418,22 @@ modules:
     description: "Unified subsession system — background agents (task / periodic / user_chat) spawned from chat sessions, with per-subsession model levels, depth-limited nesting, inbox steering, and parent summary delivery."
     paths:
       - src/robotsix_chat/subsessions/__init__.py
+      - src/robotsix_chat/subsessions/continuation.py
       - src/robotsix_chat/subsessions/delivery.py
       - src/robotsix_chat/subsessions/models.py
       - src/robotsix_chat/subsessions/prompts.py
+      - src/robotsix_chat/subsessions/prompt_context.py
       - src/robotsix_chat/subsessions/registry.py
       - src/robotsix_chat/subsessions/resume.py
       - src/robotsix_chat/subsessions/schedule.py
       - src/robotsix_chat/subsessions/skill.md
       - src/robotsix_chat/subsessions/slot_budget.py
+      - src/robotsix_chat/subsessions/slot_budget_wiring.py
       - src/robotsix_chat/subsessions/subsession_waits.py
+      - src/robotsix_chat/subsessions/subsession_types.py
       - src/robotsix_chat/subsessions/tools.py
+      - src/robotsix_chat/subsessions/turn_errors.py
+      - src/robotsix_chat/subsessions/turn_runner.py
       - src/robotsix_chat/subsessions/watcher.py
       - src/robotsix_chat/subsessions/worker.py
       - src/robotsix_chat/subsessions/worker_errors.py
