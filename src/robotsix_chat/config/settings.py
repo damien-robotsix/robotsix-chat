@@ -8,6 +8,7 @@ from __future__ import annotations
 
 import hashlib
 import logging
+import os
 from typing import Any
 
 from pydantic import (
@@ -24,6 +25,7 @@ from robotsix_chat.config.constants import (
     VALID_MODEL_LEVELS,
     drop_blank_numeric_sentinels,
 )
+from robotsix_chat.config.langfuse_models import overlay_env_projects
 from robotsix_chat.config.models import (
     CaretakerSettings,
     CentralDeploySettings,
@@ -1718,8 +1720,18 @@ class Settings(BaseModel):
 
     @classmethod
     def load(cls) -> Settings:
-        """Load from the JSON file located by ``ROBOTSIX_CONFIG_FILE``."""
-        return load_config(cls)
+        """Load from the JSON file located by ``ROBOTSIX_CONFIG_FILE``.
+
+        Other components' Langfuse credentials dispatched by central-deploy
+        (``LANGFUSE_<PROJECT>_PUBLIC_KEY`` / ``_SECRET_KEY`` env vars) are
+        overlaid onto ``langfuse.projects`` in memory — see
+        :func:`~robotsix_chat.config.langfuse_models.overlay_env_projects`.
+        """
+        settings = load_config(cls)
+        langfuse = overlay_env_projects(settings.langfuse, os.environ)
+        if langfuse is settings.langfuse:
+            return settings
+        return settings.model_copy(update={"langfuse": langfuse})
 
 
 def _migrate_legacy_deploy_and_mail(data: Any) -> Any:

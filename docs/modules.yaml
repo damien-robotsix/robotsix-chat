@@ -188,6 +188,7 @@ modules:
       - tests/config/test_session_models.py
       - tests/config/test_system_prompt_governance.py
       - tests/config/test_config_hypothesis.py
+      - tests/config/test_langfuse_env_overlay.py
 
   - id: continuation
     description: "Post-restart continuation — auto-resume a conversation after a restart so work-in-progress continues without human intervention."

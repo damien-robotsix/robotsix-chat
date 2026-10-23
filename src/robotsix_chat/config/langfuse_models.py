@@ -3,6 +3,8 @@
 from __future__ import annotations
 
 import logging
+import re
+from collections.abc import Mapping
 from typing import Any
 
 from pydantic import BaseModel, ConfigDict, Field, SecretStr, model_validator
@@ -10,6 +12,12 @@ from pydantic import BaseModel, ConfigDict, Field, SecretStr, model_validator
 #: Langfuse project for the main chat agent's LLM traffic.  The component
 #: standard fixes a component's main project name as ``<repo>``.
 PROJECT_MAIN = "robotsix-chat"
+
+#: Env var shape central-deploy injects for a consumed ``langfuse:<project>``
+#: scope, e.g. ``LANGFUSE_ROBOTSIX_MILL_PUBLIC_KEY`` → project
+#: ``robotsix-mill``.  The bare ``LANGFUSE_PUBLIC_KEY`` (llmio's own tracing
+#: wiring) never matches: the project segment must be non-empty.
+_ENV_PROJECT_RE = re.compile(r"^LANGFUSE_([A-Z0-9][A-Z0-9_]*)_(PUBLIC_KEY|SECRET_KEY)$")
 
 
 _logger = logging.getLogger(__name__)
@@ -99,6 +107,61 @@ class LangfuseSettings(BaseModel):
         off" rather than raising.
         """
         return self.projects.get(project) or LangfuseProjectCreds()
+
+
+def env_project_name(segment: str) -> str:
+    """Map an env-var project segment to a Langfuse project name.
+
+    ``ROBOTSIX_MILL`` → ``robotsix-mill`` (lower-case, ``_`` → ``-``), the
+    inverse of how central-deploy names a ``langfuse:<project>`` scoped key.
+    """
+    return segment.lower().replace("_", "-")
+
+
+def overlay_env_projects(
+    langfuse: LangfuseSettings, environ: Mapping[str, str]
+) -> LangfuseSettings:
+    """Return *langfuse* with projects materialised from deploy-injected env.
+
+    Central-deploy dispatches other components' Langfuse credentials to this
+    one by injecting every key tagged with a consumed ``langfuse:*`` scope —
+    ``LANGFUSE_<PROJECT>_PUBLIC_KEY`` / ``LANGFUSE_<PROJECT>_SECRET_KEY`` —
+    into the container environment at deploy time.  Each pair with both
+    halves set becomes ``langfuse.projects.<project>`` (env overlays config;
+    a config ``project_id`` is kept).  Half-filled pairs are ignored.
+
+    The overlay is in-memory only: it is applied to the loaded settings, never
+    written back, so the config file never stores a foreign key and rotating
+    the key in the owning component's env flows here on the next deploy.
+    """
+    found: dict[str, dict[str, str]] = {}
+    for key, value in environ.items():
+        match = _ENV_PROJECT_RE.match(key)
+        if match is None or not value:
+            continue
+        segment, half = match.groups()
+        found.setdefault(env_project_name(segment), {})[half.lower()] = value
+
+    projects = dict(langfuse.projects)
+    added: list[str] = []
+    for name, halves in sorted(found.items()):
+        if "public_key" not in halves or "secret_key" not in halves:
+            continue
+        existing = projects.get(name)
+        projects[name] = LangfuseProjectCreds(
+            public_key=SecretStr(halves["public_key"]),
+            secret_key=SecretStr(halves["secret_key"]),
+            project_id=existing.project_id if existing else "",
+        )
+        added.append(name)
+
+    if not added:
+        return langfuse
+    _logger.info(
+        "Materialised Langfuse project credentials from deploy env: %s",
+        ", ".join(added),
+    )
+    return langfuse.model_copy(update={"projects": projects})
 
 
 class LangfuseInspectSettings(BaseModel):
