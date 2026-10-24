@@ -748,7 +748,7 @@ Periodic sessions are **ordinary chat sessions started on a schedule**. Each pre
 interval: the scheduler creates a fresh session under the `periodic` owner and posts the preset's
 `initial_prompt` through the same code path as an operator message. There is no execution state
 machine, no self-scheduled continuation, and no restart-resume — see
-[the user guide](user-guide/periodic-sessions.md).
+[the user guide](periodic/periodic-sessions.md).
 
 | JSON key                                    | Type      | Default | Description                                                                                                             |
 | ------------------------------------------- | --------- | ------- | ----------------------------------------------------------------------------------------------------------------------- |

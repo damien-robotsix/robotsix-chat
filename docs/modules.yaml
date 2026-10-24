@@ -126,7 +126,7 @@ modules:
       - tests/periodic/test_scheduler.py
       - tests/periodic/test_shipped_drift.py
       - tests/periodic/test_shipped_presets.py
-      - docs/user-guide/periodic-sessions.md
+      - docs/periodic/periodic-sessions.md
 
   - id: component-client
     description: "Component agent client tools for the chat LLM — exposes build_component_tools(), a factory returning LLM tools that let the chat agent enumerate, inspect, and configure remote component agents via direct HTTP."

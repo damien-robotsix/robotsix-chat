@@ -7,7 +7,8 @@
   are listed under the owning module. When new static/test files are added, they MUST be registered
   in the `ui` module's paths in `docs/modules.yaml`.
 - `docs/user-guide/` — user-facing feature docs: `chat-interface.md`, `deployment.md`,
-  `periodic-sessions.md`, `settings-ui.md`.
+  `settings-ui.md`.
+- `docs/periodic/` — periodic-module docs: `periodic-sessions.md`.
 - `docs/chat/server/` — server route docs.
 
 ## Conventions
