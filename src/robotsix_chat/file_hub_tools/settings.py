@@ -6,8 +6,6 @@ from typing import Any
 
 from pydantic import BaseModel, ConfigDict, Field, model_validator
 
-from robotsix_chat.config.constants import drop_blank_numeric_sentinels
-
 
 class FileHubToolsSettings(BaseModel):
     """File-hub integration — fetch, fill, and upload documents via file-hub.
@@ -55,4 +53,8 @@ class FileHubToolsSettings(BaseModel):
     @classmethod
     def _strip_blank_numeric(cls, data: Any) -> Any:
         """Drop legacy ``""`` sentinels for numeric fields so old configs load."""
+        # Imported lazily: ``robotsix_chat.config`` re-exports this model, so a
+        # top-level import of the config package here would be circular.
+        from robotsix_chat.config.constants import drop_blank_numeric_sentinels
+
         return drop_blank_numeric_sentinels(cls, data)
