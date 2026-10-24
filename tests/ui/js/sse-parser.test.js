@@ -6,7 +6,7 @@
 // frames and lifecycle events.
 
 import { describe, it, expect, vi, beforeEach } from "vitest";
-import { processSSEStream } from "../../src/robotsix_chat/ui/static/sse-parser.js";
+import { processSSEStream } from "../../../src/robotsix_chat/ui/static/sse-parser.js";
 
 // Helper: create a ReadableStream that pushes byte chunks from an array
 // of strings, then closes.  A short delay (0 ms) between chunks lets the

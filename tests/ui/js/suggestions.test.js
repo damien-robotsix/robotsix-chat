@@ -9,7 +9,7 @@ import {
   stripStreamingSuggestions,
   renderSuggestionChips,
   disableStaleSuggestionChips,
-} from "../../src/robotsix_chat/ui/static/suggestions.js";
+} from "../../../src/robotsix_chat/ui/static/suggestions.js";
 
 describe("parseSuggestions", () => {
   it("returns null suggestions when no block is present", () => {

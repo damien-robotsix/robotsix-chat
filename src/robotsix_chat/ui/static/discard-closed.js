@@ -7,7 +7,7 @@
 // closed periodic run, one at a time, reporting what it could not delete.
 //
 // Pure logic: no DOM, no fetch — the caller injects `deleteSession`, so
-// the behaviour is unit-testable (tests/js/discard-closed.test.js).
+// the behaviour is unit-testable (tests/ui/js/discard-closed.test.js).
 
 /** Select the closed periodic runs in `sessions`, skipping `activeSessionId`. */
 export function closedPeriodicSessions(sessions, periodicOwner, activeSessionId) {

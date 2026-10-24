@@ -1,5 +1,5 @@
 import { describe, it, expect, beforeEach } from "vitest";
-import { renderMemoryBanner } from "../../src/robotsix_chat/ui/static/memory-banner.js";
+import { renderMemoryBanner } from "../../../src/robotsix_chat/ui/static/memory-banner.js";
 
 function makeBanner() {
   const el = document.createElement("div");

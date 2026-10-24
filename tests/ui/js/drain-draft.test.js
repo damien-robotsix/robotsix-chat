@@ -4,7 +4,7 @@
 // sends failed while the draft was cleared unconditionally.
 
 import { describe, it, expect, vi } from "vitest";
-import { drainSessionDraft } from "../../src/robotsix_chat/ui/static/drain-draft.js";
+import { drainSessionDraft } from "../../../src/robotsix_chat/ui/static/drain-draft.js";
 
 const item = (text) => ({ text, images: [] });
 

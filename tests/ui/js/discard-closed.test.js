@@ -4,7 +4,7 @@ import { describe, it, expect } from "vitest";
 import {
   closedPeriodicSessions,
   discardSessions,
-} from "../../src/robotsix_chat/ui/static/discard-closed.js";
+} from "../../../src/robotsix_chat/ui/static/discard-closed.js";
 
 const PERIODIC = "periodic";
 const row = (id, owner, closed) => ({ session_id: id, _owner: owner, closed });

@@ -556,16 +556,16 @@ modules:
       - docs/user-guide/chat-interface.md
       - docs/user-guide/settings-ui.md
       - docs/user-guide/settings-audit-upgrade.md
-      - tests/js/memory-banner.test.js
-      - tests/js/message-queue.test.js
-      - tests/js/notify-gating.test.js
-      - tests/js/notify-navigation.test.js
-      - tests/js/notify.test.js
-      - tests/js/reconnect-guard.test.js
-      - tests/js/drain-draft.test.js
-      - tests/js/discard-closed.test.js
-      - tests/js/sse-parser.test.js
-      - tests/js/suggestions.test.js
+      - tests/ui/js/memory-banner.test.js
+      - tests/ui/js/message-queue.test.js
+      - tests/ui/js/notify-gating.test.js
+      - tests/ui/js/notify-navigation.test.js
+      - tests/ui/js/notify.test.js
+      - tests/ui/js/reconnect-guard.test.js
+      - tests/ui/js/drain-draft.test.js
+      - tests/ui/js/discard-closed.test.js
+      - tests/ui/js/sse-parser.test.js
+      - tests/ui/js/suggestions.test.js
       - tests/ui/__init__.py
       - tests/ui/conftest.py
       - tests/ui/test_chat_integration.py
