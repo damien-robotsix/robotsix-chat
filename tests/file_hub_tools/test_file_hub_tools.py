@@ -904,7 +904,7 @@ class TestRenderPdfPageCaptionBranch:
         token = set_model_supports_images(False)
         try:
             with patch(
-                "robotsix_chat.file_hub_tools.caption_or_omit_note",
+                "robotsix_chat.llm.captioning.caption_or_omit_note",
                 new=AsyncMock(
                     return_value="Page dimensions: 612.0 x 792.0 points.\n"
                     "[Image caption: a filled form]"

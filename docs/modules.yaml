@@ -494,7 +494,7 @@ modules:
       - src/robotsix_chat/file_hub_tools/pdf_tools.py
       - src/robotsix_chat/file_hub_tools/image_tools.py
       - src/robotsix_chat/file_hub_tools/skill.md
-      - src/robotsix_chat/config/file_hub_models.py
+      - src/robotsix_chat/file_hub_tools/settings.py
       - tests/file_hub_tools/__init__.py
       - tests/file_hub_tools/test_file_hub_tools.py
       - tests/file_hub_tools/test_pdf_tools.py
