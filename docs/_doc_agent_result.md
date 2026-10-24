@@ -30,4 +30,4 @@
 `src/robotsix_chat/ui/static/`: chat.js (main IIFE), notify.js (Notification API wrapper, never
 throws), notify-gating.js (pure focus/visibility gating helpers unit-tested in Node), sse-parser.js,
 memory-banner.js, message-queue.js, reconnect-guard.js, drain-draft.js, suggestions.js. Tests under
-`tests/js/`.
+`tests/ui/js/`.

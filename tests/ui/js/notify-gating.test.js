@@ -13,7 +13,7 @@ import {
   isDocumentVisible,
   shouldNotifyMainConversation,
   shouldNotifySubsession,
-} from "../../src/robotsix_chat/ui/static/notify-gating.js";
+} from "../../../src/robotsix_chat/ui/static/notify-gating.js";
 
 describe("isDocumentVisible", () => {
   it("treats a visible document as visible", () => {

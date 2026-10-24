@@ -10,7 +10,7 @@ import { describe, it, expect, vi } from "vitest";
 import {
   buildMainConversationClick,
   buildSubsessionClick,
-} from "../../src/robotsix_chat/ui/static/notify-navigation.js";
+} from "../../../src/robotsix_chat/ui/static/notify-navigation.js";
 
 function makeApp() {
   return {
