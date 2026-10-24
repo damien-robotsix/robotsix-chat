@@ -35,13 +35,18 @@ COPY src ./src
 # builds a project venv the runtime COPY would miss. Extras: claude-sdk for
 # the LLM transport, tracing for Langfuse observability.
 # --no-hashes: the git-sourced first-party deps cannot carry hashes.
+# The BuildKit cache mount keeps uv's wheel/git cache across rebuilds, so a
+# src-only change does not re-download the full wheel set; cache mounts are
+# never persisted into the image layer (UV_LINK_MODE=copy keeps the installed
+# files independent of the cache).
 # hadolint ignore=DL3066
-RUN uv export --frozen --no-emit-project --no-hashes \
+RUN --mount=type=cache,target=/root/.cache/uv \
+    uv export --frozen --no-emit-project --no-hashes \
         --extra claude-sdk --extra tracing --extra openrouter --extra render-url \
         --extra github-actions \
         -o /tmp/requirements.txt \
-    && uv pip install --system --no-cache -r /tmp/requirements.txt \
-    && uv pip install --system --no-cache --no-deps . \
+    && uv pip install --system -r /tmp/requirements.txt \
+    && uv pip install --system --no-deps . \
     && python -c "import nacl.public; print('PyNaCl OK')" \
     && rm -f /tmp/requirements.txt \
     && python -m pip uninstall -y uv
