@@ -160,7 +160,7 @@ deep-merges it over the on-disk config and validates it against the `PeriodicSes
 model — so new, edited, and deleted presets are picked up on the next save without manual
 config-file edits.
 
-See [Periodic sessions](periodic-sessions.md) for the full preset-key reference (`name`,
+See [Periodic sessions](../periodic/periodic-sessions.md) for the full preset-key reference (`name`,
 `initial_prompt`, `schedule_interval_seconds`, `model_level`, `enabled`).
 
 ## Endpoint details

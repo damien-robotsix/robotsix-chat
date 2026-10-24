@@ -16,7 +16,7 @@ Browser + SSE chat server exposing an LLM agent to human users.
 - **[Contributing](contributing.md)** — contributor setup and conventions.
 - **[API Reference](api/robotsix_chat.md)** — HTTP endpoint documentation.
 - **[User Guide](user-guide/deployment.md)** — using the chat interface.
-- **[User Guide: Periodic Sessions](user-guide/periodic-sessions.md)** — scheduling ordinary
+- **[User Guide: Periodic Sessions](periodic/periodic-sessions.md)** — scheduling ordinary
   sessions that start on an interval with one initial prompt.
 - **[Settings Audit — Upgrade Notes](user-guide/settings-audit-upgrade.md)** — removed/renamed
   settings and Settings-panel UX changes from the configuration audit, with upgrade steps.

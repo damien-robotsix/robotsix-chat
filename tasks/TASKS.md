@@ -159,7 +159,7 @@ Tasks that are pending, in-progress, or blocked.
 
 - notes: Ticket 20260903T113001Z / follow-up 20260903T114337Z shipped the `dependabot-drain`
   periodic-session preset into `config/config.json` under `periodic.sessions`, documented in
-  `docs/user-guide/periodic-sessions.md`. It ships `"enabled": false` per the feature-flag
+  `docs/periodic/periodic-sessions.md`. It ships `"enabled": false` per the feature-flag
   convention, so it is inert until an operator turns it on.
 
   **Activation config change (operator, live deployment):** set `"enabled": true` on the

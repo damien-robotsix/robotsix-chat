@@ -30,6 +30,7 @@ nav:
   - User Guide:
       - Configuration: configuration.md
       - Periodic Checks: periodic-checks.md
+      - Periodic Sessions: periodic/periodic-sessions.md
       - Deployment: user-guide/deployment.md
       - Settings UI: user-guide/settings-ui.md
   - API Reference:
