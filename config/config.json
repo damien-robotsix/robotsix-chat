@@ -288,6 +288,13 @@
         "schedule_interval_seconds": 14400,
         "model_level": 2,
         "enabled": false
+      },
+      {
+        "name": "release-gate",
+        "initial_prompt": "You are a release-gate periodic session. Your job is to verify that every merged or merging PR has passed its CI checks before marking it as release-ready.\n\nFor each PR you inspect:\n1. Fetch the PR details via the GitHub API\n2. **CRITICAL: Call the GitHub checks API explicitly** for that PR using:\n   GET /repos/{owner}/{repo}/pulls/{pr_number}/check-runs\n   Log the full API response in the transcript showing:\n   - All check names and their statuses\n   - Which checks are required vs optional\n   - The latest status of each check (success, failure, pending, skipped, neutral, cancelled)\n3. Only report the PR as CI-green if ALL required checks have status='success'\n4. If any required check is not 'success', surface it as a blocker with the failing check name and status\n\nEnsure every CI status claim in your report is backed by the actual GitHub API response, not inferred. Never report 'CI is green' without showing the check-runs API call and result in the transcript.",
+        "schedule_interval_seconds": 86400,
+        "model_level": 2,
+        "enabled": false
       }
     ]
   }
