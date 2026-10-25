@@ -1841,3 +1841,39 @@ async def test_named_trace_is_root_above_failover_attempt_span() -> None:
     assert turn.parent is None, "the named turn span must be the trace root"
     assert attempt.parent is not None
     assert attempt.parent.span_id == turn.context.span_id
+
+
+def _slot(provider: str) -> MagicMock:
+    """Build a minimal stand-in for an llmio ``TierLevelConfig`` slot binding."""
+    tlc = MagicMock()
+    tlc.provider = provider
+    tlc.provider_kwargs = {}
+    tlc.max_tokens = None
+    return tlc
+
+
+def test_slot_kwargs_anthropic_slot_gets_anthropic_key() -> None:
+    """The direct Anthropic slot receives the ``anthropic_api_key`` setting."""
+    agent = LlmioChatAgent(
+        model_level=2,
+        instruction="hi",
+        api_key="sk-or",  # pragma: allowlist secret
+        anthropic_api_key="sk-ant",  # pragma: allowlist secret
+    )
+    assert agent._slot_kwargs(_slot("anthropic")) == {
+        "api_key": "sk-ant"  # pragma: allowlist secret
+    }
+    assert agent._slot_kwargs(_slot("openrouter")) == {
+        "api_key": "sk-or"  # pragma: allowlist secret
+    }
+    assert agent._slot_kwargs(_slot("claudeSDK")) == {}
+
+
+def test_slot_kwargs_anthropic_slot_without_key_defers_to_env() -> None:
+    """An empty Anthropic key is omitted (llmio falls back to the env var)."""
+    agent = LlmioChatAgent(
+        model_level=2,
+        instruction="hi",
+        api_key="sk-or",  # pragma: allowlist secret
+    )
+    assert agent._slot_kwargs(_slot("anthropic")) == {}

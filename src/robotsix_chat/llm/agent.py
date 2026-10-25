@@ -95,6 +95,10 @@ _FALLBACK_CONTINUATION_NOTE = (
 # to keyed slots.
 _KEYED_REQUEST_LIMIT = 200
 
+# llmio provider name of the direct Anthropic Messages API transport; its
+# slots take the ``anthropic_api_key`` setting rather than the OpenRouter key.
+_ANTHROPIC_PROVIDER = "anthropic"
+
 
 def _keyed_usage_limits(tlc: TierLevelConfig) -> Any:
     """``usage_limits`` for ``handle.run`` — set only on keyed slots."""
@@ -462,6 +466,7 @@ class LlmioChatAgent:
         model_level: int,
         instruction: str,
         api_key: str = "",
+        anthropic_api_key: str = "",
         memory: ChatMemory | None = None,
         tools: list[Any] | None = None,
         request_tools_factory: Callable[[str], list[Any]] | None = None,
@@ -476,6 +481,11 @@ class LlmioChatAgent:
         llmio's provider failover reach the keyed fallback slot when the
         shared Claude credential or subscription quota is the thing that
         failed.
+
+        *anthropic_api_key* is the configured Anthropic API key, if any. It
+        is forwarded only to slots served by the direct Anthropic Messages
+        API provider (``anthropic``). When empty, llmio's provider falls
+        back to the ``ANTHROPIC_API_KEY`` environment variable.
 
         *failover_window_seconds*, when set, overrides how long llmio routes
         calls straight to the fallback (OpenRouter) slot after the default
@@ -500,6 +510,7 @@ class LlmioChatAgent:
         self._model_level = model_level
         self._instruction = instruction
         self._api_key = api_key
+        self._anthropic_api_key = anthropic_api_key
         self._memory: ChatMemory = memory if memory is not None else NullMemory()
         # Tools the underlying agent may call (e.g. the mill consult tool). When
         # non-empty, llmio runs a real tool loop; the final reply is still
@@ -529,13 +540,18 @@ class LlmioChatAgent:
 
         Starts from the slot's own ``provider_kwargs`` + ``max_tokens`` (a
         real per-response cap on OpenRouter). Forwards the configured
-        api_key only to keyed (OpenRouter) slots — keyless providers reject
-        it.
+        api_key only to keyed slots — keyless providers reject it. The
+        direct Anthropic slot gets the Anthropic key (an empty one is
+        omitted so llmio falls back to ``ANTHROPIC_API_KEY``); every other
+        keyed slot gets the OpenRouter key.
         """
         kwargs: dict[str, Any] = dict(tlc.provider_kwargs)
         if tlc.max_tokens is not None:
             kwargs.setdefault("max_tokens", tlc.max_tokens)
-        if slot_needs_api_key(tlc) and self._api_key:
+        if tlc.provider == _ANTHROPIC_PROVIDER:
+            if self._anthropic_api_key:
+                kwargs["api_key"] = self._anthropic_api_key
+        elif slot_needs_api_key(tlc) and self._api_key:
             kwargs["api_key"] = self._api_key
         return kwargs
 

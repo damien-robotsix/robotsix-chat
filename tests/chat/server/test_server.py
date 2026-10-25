@@ -1080,6 +1080,19 @@ def test_create_agent_from_settings_explicit() -> None:
     assert agent._api_key == "sk-from-settings"  # pragma: allowlist secret
 
 
+def test_create_agent_from_settings_forwards_anthropic_key() -> None:
+    """``anthropic_api_key`` reaches the agent for the direct Anthropic slot."""
+    settings = Settings(
+        anthropic_api_key=SecretStr("sk-ant-from-settings")  # pragma: allowlist secret
+    )
+
+    agent = create_agent_from_settings("Be concise.", settings=settings)
+
+    assert (
+        agent._anthropic_api_key == "sk-ant-from-settings"  # pragma: allowlist secret
+    )
+
+
 def test_create_agent_from_settings_keyless_level_drops_key() -> None:
     """The default level constructs with no api_key (keyless default slot)."""
     settings = Settings()  # model_level 2, keyless default slot

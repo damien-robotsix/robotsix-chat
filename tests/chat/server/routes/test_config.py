@@ -157,6 +157,7 @@ def test_mask_secrets_masks_multiple_keys() -> None:
     """Multiple secret keys at different nesting levels are all masked."""
     data = {
         "openrouter_api_key": "sk-abc",  # pragma: allowlist secret
+        "anthropic_api_key": "sk-ant",  # pragma: allowlist secret
         "memory": {
             "llm": {"api_key": "sk-def"},  # pragma: allowlist secret
             "embedding": {"api_key": "sk-ghi"},  # pragma: allowlist secret
@@ -169,6 +170,7 @@ def test_mask_secrets_masks_multiple_keys() -> None:
     }
     result = _mask_secrets(data)
     assert result["openrouter_api_key"] == "**********"
+    assert result["anthropic_api_key"] == "**********"
     assert (
         result["memory"]["llm"]["api_key"] == "**********"
     )  # pragma: allowlist secret
@@ -342,6 +344,7 @@ def test_get_config_returns_masked_data(tmp_path: Path) -> None:
         {
             "chat_default_model_level": 2,
             "openrouter_api_key": "sk-real",  # pragma: allowlist secret
+            "anthropic_api_key": "sk-ant-real",  # pragma: allowlist secret
             "server_port": 8080,
             "memory": {
                 "embedding": {"endpoint": "http://box:11434/v1"},
@@ -360,6 +363,7 @@ def test_get_config_returns_masked_data(tmp_path: Path) -> None:
 
     assert config["chat_default_model_level"] == 2
     assert config["openrouter_api_key"] == "**********"
+    assert config["anthropic_api_key"] == "**********"
     assert config["server_port"] == 8080
     assert (  # pragma: allowlist secret
         config["openrouter"]["keys"]["robotsix-chat-cognee"] == "**********"
