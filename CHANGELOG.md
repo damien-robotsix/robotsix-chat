@@ -69,6 +69,23 @@ Everything below predates the release-please migration and was
 maintained by hand or by towncrier. It is kept verbatim; new entries
 are added above by release-please.
 
+## [0.28.0](https://github.com/damien-robotsix/robotsix-chat/compare/v0.27.0...v0.28.0) (2026-10-25)
+
+
+### Features
+
+* Receive other components' Langfuse project credentials through the deploy contract (consumed scopes), not by copying keys into chat's config (20261021T091750Z-receive-other-components-langfuse-projec-6d43) ([#2190](https://github.com/damien-robotsix/robotsix-chat/issues/2190)) ([6ad8b5e](https://github.com/damien-robotsix/robotsix-chat/commit/6ad8b5ebcdc630aa93d842174df71a1b47aec2d2))
+
+
+### Bug Fixes
+
+* ci_fix: out-of-scope CI failure — Security scan (shared) / Security, Lockfile and audit (20261023T231319Z-ci-fix-out-of-scope-ci-failure-security-77d7) ([#2196](https://github.com/damien-robotsix/robotsix-chat/issues/2196)) ([2d7f572](https://github.com/damien-robotsix/robotsix-chat/commit/2d7f572582c4eb977c50819b0efbc9e240dd30b0))
+
+
+### Documentation
+
+* Reorganize module periodic: align to per-module layout (src/docs/tests) (20261024T053215Z-reorganize-module-periodic-align-to-per-2a95) ([#2202](https://github.com/damien-robotsix/robotsix-chat/issues/2202)) ([a4c090a](https://github.com/damien-robotsix/robotsix-chat/commit/a4c090a0aab6b00c611fd9e38f21e6e6f06a8f49))
+
 ## [0.27.0](https://github.com/damien-robotsix/robotsix-chat/compare/v0.26.1...v0.27.0) (2026-10-22)
 
 
