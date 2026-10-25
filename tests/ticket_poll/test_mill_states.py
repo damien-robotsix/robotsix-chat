@@ -12,6 +12,7 @@ from robotsix_chat.ticket_poll.mill_states import (
     ALL_STATES,
     HUMAN_WAIT_STATES,
     MERGE_STATES,
+    MERGED_TERMINAL_STATES,
     OPEN_STATES,
     PRE_WORK_STATES,
     TERMINAL_STATES,
@@ -108,6 +109,13 @@ def test_terminal_and_open_partition_all_states() -> None:
     """OPEN_STATES is the complement of TERMINAL_STATES."""
     assert OPEN_STATES | TERMINAL_STATES == ALL_STATES
     assert not OPEN_STATES & TERMINAL_STATES
+
+
+def test_merged_terminal_states_is_narrow_subset_of_terminal() -> None:
+    assert {"done", "closed"} == MERGED_TERMINAL_STATES
+    assert MERGED_TERMINAL_STATES <= TERMINAL_STATES
+    assert "answered" not in MERGED_TERMINAL_STATES
+    assert "epic_closed" not in MERGED_TERMINAL_STATES
 
 
 def test_human_wait_states() -> None:

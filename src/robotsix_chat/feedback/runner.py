@@ -1623,7 +1623,7 @@ class FeedbackRunner:
 
         # Terminal ticket states — tickets in these states are "closed"
         # and should not block a new filing.
-        _terminal_states = frozenset({"closed", "done"})
+        from robotsix_chat.ticket_poll.mill_states import MERGED_TERMINAL_STATES
 
         for existing in ticket_objects:
             if not isinstance(existing, dict):
@@ -1648,7 +1648,7 @@ class FeedbackRunner:
             existing_state = existing.get("state", "")
             if (
                 isinstance(existing_state, str)
-                and existing_state.lower() in _terminal_states
+                and existing_state.lower() in MERGED_TERMINAL_STATES
             ):
                 continue
             logger.info(
