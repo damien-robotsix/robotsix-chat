@@ -23,7 +23,7 @@ for the calling component.
 
 from __future__ import annotations
 
-from collections.abc import Callable
+from collections.abc import Awaitable, Callable
 from pathlib import Path
 from typing import TYPE_CHECKING, Any
 
@@ -64,6 +64,41 @@ def build_lifecycle_tools(
     from .client import LifecycleClient
 
     client = LifecycleClient(settings, base_url)
+    # The agent's own service name — restarting it kills this process.
+    own_service = settings.service_name or "chat"
+
+    async def _drain_gated_restart(restart: Callable[[], Awaitable[str]]) -> str:
+        """Restart now when idle; otherwise defer until in-flight turns drain.
+
+        The calling turn is itself in flight, so it is excluded from the
+        count; the deferred restart waits for it too (it ends right after
+        this tool returns).
+        """
+        from .drain import (
+            RESTART_DRAIN_TIMEOUT_SECONDS,
+            deferred_restart_pending,
+            inflight_count,
+            schedule_deferred_restart,
+        )
+
+        if deferred_restart_pending():
+            return (
+                "Restart already deferred: it will be issued automatically "
+                "once the in-flight agent turns finish (or after the "
+                f"{RESTART_DRAIN_TIMEOUT_SECONDS:.0f}s drain timeout). "
+                "Do not call it again."
+            )
+        others = max(0, inflight_count() - 1)
+        if others == 0:
+            return await restart()
+        schedule_deferred_restart(restart)
+        return (
+            f"Restart deferred: {others} other agent turn(s) are still in "
+            "flight and a restart now would kill them. The restart will be "
+            "issued automatically once they finish (at most "
+            f"{RESTART_DRAIN_TIMEOUT_SECONDS:.0f}s drain timeout). Do not call "
+            "it again."
+        )
 
     async def list_lifecycle_services() -> str:
         """List all services managed by the deploy lifecycle server.
@@ -123,15 +158,24 @@ def build_lifecycle_tools(
         403 error.  For restarting the agent's own service when the
         toggle is not enabled, use ``self_restart`` instead.
 
+        Restarting the agent's own service is drain-gated like
+        ``self_restart``: while other agent turns are in flight the restart
+        is deferred until they finish (bounded wait) and the reply names
+        the in-flight count.
+
         Args:
             service_name: The service identifier as returned by
                 ``list_lifecycle_services`` (e.g. ``"chat"``).
 
         Returns:
-            The restart result or an error message (including 403 when
-            the per-repo access toggle is not enabled).
+            The restart result, a deferral message, or an error message
+            (including 403 when the per-repo access toggle is not enabled).
 
         """
+        if service_name == own_service:
+            return await _drain_gated_restart(
+                lambda: client.restart_service(service_name)
+            )
         return await client.restart_service(service_name)
 
     async def redeploy_lifecycle_service(service_name: str, image_ref: str = "") -> str:
@@ -173,12 +217,17 @@ def build_lifecycle_tools(
         other managed services.  For restarting other services, use
         ``restart_lifecycle_service``.
 
+        A restart kills every agent turn in flight.  While other turns are
+        running, the restart is deferred: the reply names how many are in
+        flight and the restart fires automatically once they finish (or
+        after a bounded drain timeout).
+
         Returns:
-            The restart result or an error message (including when
-            ``lifecycle.service_name`` is not configured).
+            The restart result, a deferral message, or an error message
+            (including when ``lifecycle.service_name`` is not configured).
 
         """
-        return await client.self_restart()
+        return await _drain_gated_restart(client.self_restart)
 
     async def update_lifecycle_service_env(
         service_name: str, env: dict[str, Any]

@@ -856,3 +856,70 @@ def test_prune_closed_periodic_sessions_keeps_history_for_dual_owned_runs():
     assert prune_closed_periodic_sessions(store, set()) == 1
     assert store.list_sessions(PERIODIC_OWNER, create_default=False)[0] == []
     assert store.history(sid) == [("hello from the operator", "hi")]
+
+
+# ---------------------------------------------------------------------------
+# hot reload (PUT /config without a restart)
+# ---------------------------------------------------------------------------
+
+
+@pytest.mark.asyncio
+async def test_reload_definitions_adds_replaces_removes_and_keeps_state(
+    tmp_path, caplog
+):
+    """Presets are swapped by name in place; firing state survives the reload."""
+    scheduler, _store, submitted, now = _make(tmp_path)
+    first = await scheduler.fire("mail-triage")
+    await asyncio.sleep(0)
+    fired_at = scheduler.state_for("mail-triage")["last_fired_at"]
+
+    with caplog.at_level("INFO", logger="robotsix_chat.periodic.scheduler"):
+        count = scheduler.reload_definitions(
+            [
+                PeriodicSessionDefinition(
+                    name="mail-triage",
+                    initial_prompt="NEW mail prompt",
+                    schedule_interval_seconds=300,
+                    model_level=3,
+                ),
+                PeriodicSessionDefinition(
+                    name="board-watch",
+                    initial_prompt="Watch the board.",
+                    schedule_interval_seconds=3600,
+                ),
+                PeriodicSessionDefinition(
+                    name="disabled-one",
+                    initial_prompt="never",
+                    enabled=False,
+                ),
+            ]
+        )
+    assert count == 2
+    assert sorted(scheduler.definition_names) == ["board-watch", "mail-triage"]
+    assert any(
+        "Periodic scheduler reloaded (2 enabled preset(s))" in r.getMessage()
+        for r in caplog.records
+    )
+    # Firing state is kept for the replaced preset.
+    state = scheduler.state_for("mail-triage")
+    assert state["last_fired_at"] == fired_at
+    assert state["last_session_id"] == first
+
+    # The replaced definition is live: firing uses the new prompt/level.
+    now["t"] += 300
+    await scheduler.fire("mail-triage")
+    await asyncio.sleep(0)
+    assert "NEW mail prompt" in submitted[-1][1]
+    assert submitted[-1][2] == 3
+
+    # Removing a preset by omission stops it from firing.
+    scheduler.reload_definitions(
+        [
+            PeriodicSessionDefinition(
+                name="board-watch", initial_prompt="Watch the board."
+            )
+        ]
+    )
+    assert scheduler.definition_names == ["board-watch"]
+    with pytest.raises(KeyError):
+        await scheduler.fire("mail-triage")

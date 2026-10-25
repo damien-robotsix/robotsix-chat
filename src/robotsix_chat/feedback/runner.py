@@ -444,9 +444,10 @@ def _build_chat_config_panel_prompt(
         f"(Origin: robotsix-chat feedback run | session: {session_id} | "
         f"trigger: {trigger_type})\n\n"
         "Decide whether to apply it: edit the live config (the periodic "
-        "preset's prompt via the config API, then a chat restart so presets "
-        "reload), or dismiss it. Either way, mark the panel resolved so the "
-        "finding is not re-raised."
+        "preset's prompt via PUT /config — periodic presets hot-reload on "
+        "save, so do NOT restart the chat service; a restart kills every "
+        "agent turn in flight), or dismiss it. Either way, mark the panel "
+        "resolved so the finding is not re-raised."
     )
 
 

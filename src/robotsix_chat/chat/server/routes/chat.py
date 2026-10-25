@@ -263,6 +263,14 @@ class MessageCoalescer:
         """
         return session_id in self._batches or session_id in self._processing
 
+    def inflight_count(self) -> int:
+        """Return how many sessions have a queued message or running turn.
+
+        Used by the graceful self-restart drain gate
+        (:mod:`robotsix_chat.lifecycle.drain`).
+        """
+        return len(set(self._batches) | self._processing)
+
     async def cancel_message(
         self,
         session_id: str,
