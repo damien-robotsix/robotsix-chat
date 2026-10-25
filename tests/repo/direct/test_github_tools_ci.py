@@ -61,8 +61,13 @@ class _FakeActionsClient:
         jobs: list[dict[str, Any]] | None = None,
         job_logs: dict[int, str] | None = None,
         list_exc: Exception | None = None,
+        check_runs: list[dict[str, Any]] | None = None,
+        check_runs_exc: Exception | None = None,
     ) -> None:
         """Store canned return values / side effects for the fake methods."""
+        self._check_runs = check_runs or []
+        self._check_runs_exc = check_runs_exc
+        self.check_run_refs: list[str] = []
         self._runs = runs or []
         self._default_branch = default_branch
         self._classification = classification
@@ -92,6 +97,19 @@ class _FakeActionsClient:
         if self._list_exc is not None:
             raise self._list_exc
         return self._runs
+
+    async def list_check_runs(
+        self,
+        repo_full_name: str,
+        ref: str,
+        *,
+        max_pages: int = 5,
+    ) -> list[dict[str, Any]]:
+        """Return the canned check-runs, or raise the configured exception."""
+        self.check_run_refs.append(ref)
+        if self._check_runs_exc is not None:
+            raise self._check_runs_exc
+        return self._check_runs
 
     async def classify_startup_failure_run(
         self,
@@ -133,8 +151,9 @@ def _build_ci_tools(
     actions: _FakeActionsClient,
     *,
     component_request: Any = None,
-    client: _FakeClient | None = None,
+    client: Any = None,
     board: _FakeBoard | None = None,
+    resolve_pr_ref: Any = _fake_resolve_pr_ref,
 ) -> dict[str, Any]:
     """Build the CI tools with fakes and return a name -> callable mapping."""
     monkeypatch.setattr(github_tools_ci, "ActionsClient", lambda settings: actions)
@@ -143,7 +162,7 @@ def _build_ci_tools(
         board=cast(Any, board or _FakeBoard()),
         settings=cast(Any, object()),
         component_request=component_request,
-        resolve_pr_ref=_fake_resolve_pr_ref,
+        resolve_pr_ref=resolve_pr_ref,
     )
     return {t.__name__: t for t in tools}
 
@@ -571,3 +590,196 @@ class TestFetchCiJobLogs:
         tools = _build_ci_tools(monkeypatch, actions)
         result = await tools["fetch_ci_job_logs"](repo_full_name="org/repo", run_id=42)
         assert "_(empty log)_" in result
+
+
+# ---------------------------------------------------------------------------
+# verify_pr_ci_status — the check-run verdict (chat #2208, 2026-10-25)
+# ---------------------------------------------------------------------------
+
+
+class _FakePrClient(_FakeClient):
+    """``_FakeClient`` that also answers ``get_pr`` with a canned PR."""
+
+    def __init__(self, pr: dict[str, Any]) -> None:
+        """Store the canned PR dict."""
+        super().__init__()
+        self._pr = pr
+
+    async def get_pr(self, *, repo_full_name: str, pr_number: int) -> dict[str, Any]:
+        """Return the canned PR regardless of the arguments."""
+        return self._pr
+
+
+async def _resolve_org_repo_7(*_a: Any, **_k: Any) -> tuple[str, int]:
+    return ("org/repo", 7)
+
+
+def _check_run(name: str, conclusion: str | None = "success") -> dict[str, Any]:
+    return {
+        "name": name,
+        "status": "completed" if conclusion is not None else "in_progress",
+        "conclusion": conclusion,
+    }
+
+
+_PR = {
+    "title": "feat: thing",
+    "state": "open",
+    "html_url": "https://github.com/org/repo/pull/7",
+    "mergeable": True,
+    "mergeable_state": "clean",
+    "draft": False,
+    "merged": False,
+    "head": {"ref": "feat/thing", "sha": "bd0f7b4dabcdef"},
+}
+
+
+class TestVerifyPrCiStatusVerdict:
+    """The verdict comes from EVERY check-run, not the first 5 workflow runs."""
+
+    async def _verify(
+        self, monkeypatch: pytest.MonkeyPatch, actions: _FakeActionsClient
+    ) -> str:
+        tools = _build_ci_tools(
+            monkeypatch,
+            actions,
+            client=_FakePrClient(_PR),
+            resolve_pr_ref=_resolve_org_repo_7,
+        )
+        result: str = await tools["verify_pr_ci_status"](
+            repo_full_name="org/repo", pr_number=7
+        )
+        return result
+
+    @pytest.mark.asyncio
+    async def test_failed_check_hidden_from_workflow_page_is_red(
+        self, monkeypatch: pytest.MonkeyPatch
+    ) -> None:
+        """The #2208 shape: 5 green workflow runs, a FAILED Tests check-run."""
+        actions = _FakeActionsClient(
+            runs=[_run(n) for n in ("Dependabot", "Baseline", "Lint", "Review", "Fmt")],
+            check_runs=[_check_run(f"c{i}") for i in range(24)]
+            + [
+                _check_run("Python CI (shared) / Tests", "failure"),
+                _check_run("All CI checks passed", "failure"),
+            ],
+        )
+        result = await self._verify(monkeypatch, actions)
+        verdict_line = next(
+            line for line in result.splitlines() if line.startswith("CI verdict")
+        )
+        assert "bd0f7b4d" in verdict_line
+        assert "RED" in verdict_line
+        assert "Python CI (shared) / Tests" in verdict_line
+        assert "completed 26/26" in verdict_line
+        assert "Do NOT merge" in result
+        assert actions.check_run_refs == ["bd0f7b4dabcdef"]
+        # the verdict precedes the workflow-run detail
+        assert result.index("CI verdict") < result.index("Workflow runs")
+        assert "detail only" in result
+
+    @pytest.mark.asyncio
+    async def test_all_green_is_green(self, monkeypatch: pytest.MonkeyPatch) -> None:
+        """Every check-run completed without failure → GREEN with counts."""
+        actions = _FakeActionsClient(
+            runs=[_run("CI")],
+            check_runs=[_check_run("Tests"), _check_run("Trivy", "neutral")],
+        )
+        result = await self._verify(monkeypatch, actions)
+        assert "GREEN — all 2 check-run(s)" in result
+        assert "1 success, 1 skipped/neutral" in result
+        assert "Do NOT merge" not in result
+
+    @pytest.mark.asyncio
+    async def test_in_progress_check_is_pending(
+        self, monkeypatch: pytest.MonkeyPatch
+    ) -> None:
+        """A check-run with ``status != completed`` makes the verdict PENDING."""
+        actions = _FakeActionsClient(
+            check_runs=[_check_run("Lint"), _check_run("Tests", None)]
+        )
+        result = await self._verify(monkeypatch, actions)
+        assert "PENDING — 1 check-run(s) still running: Tests" in result
+        assert "Do NOT merge" in result
+
+    @pytest.mark.asyncio
+    async def test_no_check_runs_is_none_not_green(
+        self, monkeypatch: pytest.MonkeyPatch
+    ) -> None:
+        """An empty check-run list is NONE and still blocks a green claim."""
+        result = await self._verify(monkeypatch, _FakeActionsClient(check_runs=[]))
+        assert "NONE — no check-runs reported" in result
+        assert "Do NOT merge" in result
+
+    @pytest.mark.asyncio
+    async def test_checks_api_error_is_unknown(
+        self, monkeypatch: pytest.MonkeyPatch
+    ) -> None:
+        """A Checks API failure is reported as UNKNOWN, never as green."""
+        actions = _FakeActionsClient(check_runs_exc=RuntimeError("403 checks"))
+        result = await self._verify(monkeypatch, actions)
+        assert "CI verdict for head bd0f7b4d: UNKNOWN" in result
+        assert "403 checks" in result
+        assert "do NOT merge" in result
+
+    @pytest.mark.asyncio
+    async def test_blocked_mergeable_state_is_called_out(
+        self, monkeypatch: pytest.MonkeyPatch
+    ) -> None:
+        """``mergeable_state=blocked`` gets an explicit merge-gate line."""
+        pr = dict(_PR, mergeable_state="blocked")
+        tools = _build_ci_tools(
+            monkeypatch,
+            _FakeActionsClient(check_runs=[_check_run("Tests")]),
+            client=_FakePrClient(pr),
+            resolve_pr_ref=_resolve_org_repo_7,
+        )
+        result = await tools["verify_pr_ci_status"](
+            repo_full_name="org/repo", pr_number=7
+        )
+        assert "Merge gate: GitHub reports mergeable_state=blocked" in result
+
+
+class TestSummarizeCheckRuns:
+    """Pure folding of raw check-run dicts into a verdict."""
+
+    def test_failure_classes(self) -> None:
+        """Every failing conclusion is RED; skipped/neutral are not."""
+        from robotsix_chat.repo.direct.actions_client import summarize_check_runs
+
+        summary = summarize_check_runs(
+            [
+                _check_run("a", "timed_out"),
+                _check_run("b", "cancelled"),
+                _check_run("c", "action_required"),
+                _check_run("d", "startup_failure"),
+                _check_run("e", "skipped"),
+                _check_run("f", "neutral"),
+                _check_run("g"),
+            ]
+        )
+        assert summary.verdict == "red"
+        assert summary.failed == ("a", "b", "c", "d")
+        assert summary.skipped == 2
+        assert summary.succeeded == 1
+        assert summary.pending == ()
+
+    def test_pending_beats_green_and_empty_conclusion_string(self) -> None:
+        """``conclusion: ""`` on a queued run is pending, not a failure."""
+        from robotsix_chat.repo.direct.actions_client import summarize_check_runs
+
+        summary = summarize_check_runs(
+            [
+                _check_run("ok"),
+                {"name": "queued", "status": "queued", "conclusion": ""},
+            ]
+        )
+        assert summary.verdict == "pending"
+        assert summary.pending == ("queued",)
+        assert "completed 1/2, 0 failed" in summary.describe()
+
+    def test_empty_is_none(self) -> None:
+        """No check-runs → NONE (callers must not read it as green)."""
+        from robotsix_chat.repo.direct.actions_client import summarize_check_runs
+
+        assert summarize_check_runs([]).verdict == "none"

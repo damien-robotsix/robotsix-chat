@@ -30,6 +30,99 @@ _JOB_EXECUTION_CONCLUSIONS: frozenset[str] = frozenset(
     {"success", "failure", "timed_out", "action_required"}
 )
 
+# Check-run conclusions that make a commit's CI RED.  ``skipped`` and
+# ``neutral`` are not failures; ``stale`` runs were superseded by a newer
+# check-run of the same name and are dropped by ``filter=latest``.
+_CHECK_RUN_FAILURE_CONCLUSIONS: frozenset[str] = frozenset(
+    {"failure", "timed_out", "cancelled", "action_required", "startup_failure"}
+)
+
+
+@dataclass(frozen=True)
+class CheckRunSummary:
+    """Verdict over EVERY check-run of one commit.
+
+    Built by :func:`summarize_check_runs` from the Checks API
+    (``GET /repos/{owner}/{repo}/commits/{ref}/check-runs``), which lists
+    every check-run regardless of which workflow produced it.  The
+    workflow-runs listing (``/actions/runs``) is NOT a substitute: it is
+    paginated by recency, so a ``per_page=5`` read on a repo with nine
+    workflows silently drops the one carrying the test job (2026-10-25:
+    chat #2208 was merged on "all 5 checks success" while its ``Tests``
+    check-run had been FAILED for 3.5 h).
+    """
+
+    total: int
+    succeeded: int
+    skipped: int
+    failed: tuple[str, ...]
+    pending: tuple[str, ...]
+
+    @property
+    def verdict(self) -> str:
+        """``"red"``, ``"pending"``, ``"none"`` or ``"green"``."""
+        if self.failed:
+            return "red"
+        if self.pending:
+            return "pending"
+        if self.total == 0:
+            return "none"
+        return "green"
+
+    def describe(self) -> str:
+        """One line a model can quote: the verdict first, then the evidence."""
+        completed = self.total - len(self.pending)
+        if self.failed:
+            pending = f"; {len(self.pending)} still running" if self.pending else ""
+            return (
+                f"RED — {len(self.failed)} failed check-run(s): "
+                f"{', '.join(self.failed)}{pending} "
+                f"(completed {completed}/{self.total})"
+            )
+        if self.pending:
+            return (
+                f"PENDING — {len(self.pending)} check-run(s) still running: "
+                f"{', '.join(self.pending)} "
+                f"(completed {completed}/{self.total}, 0 failed)"
+            )
+        if self.total == 0:
+            return "NONE — no check-runs reported for this commit yet"
+        return (
+            f"GREEN — all {self.total} check-run(s) completed without failure "
+            f"({self.succeeded} success, {self.skipped} skipped/neutral)"
+        )
+
+
+def summarize_check_runs(check_runs: list[dict[str, Any]]) -> CheckRunSummary:
+    """Fold raw check-run dicts into a :class:`CheckRunSummary`.
+
+    A check-run whose ``status`` is not ``completed`` is pending whatever
+    its ``conclusion`` says (GitHub reports ``conclusion: null`` or ``""``
+    for in-progress runs).
+    """
+    succeeded = skipped = 0
+    failed: list[str] = []
+    pending: list[str] = []
+    for cr in check_runs:
+        name = str(cr.get("name") or "?")
+        if str(cr.get("status") or "").lower() != "completed":
+            pending.append(name)
+            continue
+        conclusion = str(cr.get("conclusion") or "").lower()
+        if conclusion in _CHECK_RUN_FAILURE_CONCLUSIONS:
+            failed.append(name)
+        elif conclusion == "success":
+            succeeded += 1
+        else:
+            skipped += 1
+    return CheckRunSummary(
+        total=len(check_runs),
+        succeeded=succeeded,
+        skipped=skipped,
+        failed=tuple(failed),
+        pending=tuple(pending),
+    )
+
 
 class StartupFailureClass(StrEnum):
     """Deterministic root-cause plane for a zero-job ``startup_failure`` run."""
@@ -215,6 +308,37 @@ class ActionsClient:
                 exc,
             )
             return []
+
+    # -- check-runs (the authoritative per-commit CI verdict) --------------
+
+    async def list_check_runs(
+        self,
+        repo_full_name: str,
+        ref: str,
+        *,
+        max_pages: int = 5,
+    ) -> list[dict[str, Any]]:
+        """Return EVERY latest check-run of *ref* (a commit sha or branch).
+
+        Calls ``GET /repos/{owner}/{repo}/commits/{ref}/check-runs`` with
+        ``per_page=100&filter=latest`` and follows ``page`` until the
+        reported ``total_count`` is reached (or *max_pages*).  Raises
+        ``RuntimeError`` when the API fails — callers must NOT treat an
+        error as "no checks" (see :class:`CheckRunSummary`).
+        """
+        runs: list[dict[str, Any]] = []
+        page = 1
+        while True:
+            data = await self._client._get_json(
+                f"/repos/{repo_full_name}/commits/{ref}/check-runs"
+                f"?per_page=100&filter=latest&page={page}"
+            )
+            batch: list[dict[str, Any]] = data.get("check_runs", []) or []
+            runs.extend(batch)
+            total = int(data.get("total_count") or 0)
+            if len(batch) < 100 or len(runs) >= total or page >= max_pages:
+                return runs
+            page += 1
 
     # -- default branch ----------------------------------------------------
 

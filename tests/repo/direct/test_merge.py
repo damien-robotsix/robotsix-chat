@@ -15,6 +15,34 @@ from robotsix_chat.repo.direct.client import (
 
 from .conftest import _prepopulate_installation_token, _settings
 
+
+def _check_run(name: str, conclusion: str | None = "success") -> dict[str, object]:
+    """Build a minimal check-run dict (``status`` follows *conclusion*)."""
+    return {
+        "name": name,
+        "status": "completed" if conclusion is not None else "in_progress",
+        "conclusion": conclusion,
+    }
+
+
+def _mock_check_runs(
+    respx_mock: respx.MockRouter,
+    sha: str,
+    check_runs: list[dict[str, object]],
+    *,
+    repo: str = "org/repo",
+) -> None:
+    """Serve ``GET /repos/{repo}/commits/{sha}/check-runs`` with *check_runs*."""
+    respx_mock.get(
+        url__startswith=f"https://api.github.com/repos/{repo}/commits/{sha}/check-runs"
+    ).mock(
+        return_value=httpx.Response(
+            200,
+            text=json.dumps({"total_count": len(check_runs), "check_runs": check_runs}),
+        )
+    )
+
+
 # ---------------------------------------------------------------------------
 # check_pr_merge_conflict
 # ---------------------------------------------------------------------------
@@ -415,9 +443,13 @@ async def test_merge_pr_success(
                     "mergeable_state": "clean",
                     "merged": False,
                     "draft": False,
+                    "head": {"sha": "feedface10"},
                 }
             ),
         )
+    )
+    _mock_check_runs(
+        respx_mock, "feedface10", [_check_run("Tests"), _check_run("Lint")]
     )
     respx_mock.put("https://api.github.com/repos/org/repo/pulls/10/merge").mock(
         return_value=httpx.Response(
@@ -676,10 +708,13 @@ async def test_merge_pr_github_405(
                     "mergeable_state": "blocked",
                     "merged": False,
                     "draft": False,
+                    "head": {"sha": "feedface15"},
                 }
             ),
         )
     )
+    # Check-runs green but a required review is missing → GitHub says 405.
+    _mock_check_runs(respx_mock, "feedface15", [_check_run("Tests")])
     respx_mock.put("https://api.github.com/repos/org/repo/pulls/15/merge").mock(
         return_value=httpx.Response(
             405,
@@ -698,6 +733,143 @@ async def test_merge_pr_github_405(
     )
     assert "not in a mergeable state" in out.lower()
     assert "status checks" in out.lower()
+
+
+# ---------------------------------------------------------------------------
+# merge_direct_repo_pr — check-run CI gate (chat #2208, 2026-10-25: the App
+# bypasses branch rules, so GitHub merged a PR whose Tests check had FAILED)
+# ---------------------------------------------------------------------------
+
+
+def _mock_mergeable_pr(respx_mock: respx.MockRouter, number: int, sha: str) -> None:
+    """Serve a clean, non-draft, open PR *number* whose head is *sha*."""
+    respx_mock.get(
+        url__startswith="https://api.github.com/installation/repositories"
+    ).mock(
+        return_value=httpx.Response(
+            200,
+            text=json.dumps({"repositories": [{"full_name": "org/repo"}]}),
+        )
+    )
+    respx_mock.get(f"https://api.github.com/repos/org/repo/pulls/{number}").mock(
+        return_value=httpx.Response(
+            200,
+            text=json.dumps(
+                {
+                    "title": "Looks green",
+                    "mergeable": True,
+                    "mergeable_state": "clean",
+                    "merged": False,
+                    "draft": False,
+                    "head": {"sha": sha},
+                }
+            ),
+        )
+    )
+
+
+def _merge_tool() -> object:
+    settings = _settings()
+    _prepopulate_installation_token(settings)
+    tools = build_direct_repo_tools(settings)
+    return [t for t in tools if t.__name__ == "merge_direct_repo_pr"][0]
+
+
+@pytest.mark.asyncio
+async def test_merge_pr_refused_when_a_check_run_failed(
+    respx_mock: respx.MockRouter,
+) -> None:
+    """One FAILED check-run among many successes → refusal, no PUT /merge."""
+    _mock_mergeable_pr(respx_mock, 20, "bd0f7b4d20")
+    _mock_check_runs(
+        respx_mock,
+        "bd0f7b4d20",
+        [_check_run(f"check-{i}") for i in range(24)]
+        + [
+            _check_run("Python CI (shared) / Tests", "failure"),
+            _check_run("All CI checks passed", "failure"),
+        ],
+    )
+    merge_route = respx_mock.put(
+        "https://api.github.com/repos/org/repo/pulls/20/merge"
+    ).mock(return_value=httpx.Response(200, text=json.dumps({"merged": True})))
+
+    fn = _merge_tool()
+    out = await fn(repo_full_name="org/repo", pr_number=20)  # type: ignore[operator]
+
+    assert out.startswith("Refusing to merge PR #20")
+    assert "RED" in out
+    assert "Python CI (shared) / Tests" in out
+    assert "override_ci=true" in out
+    assert not merge_route.called
+
+
+@pytest.mark.asyncio
+async def test_merge_pr_refused_while_check_runs_pending(
+    respx_mock: respx.MockRouter,
+) -> None:
+    """An in-progress check-run (conclusion null) → refusal, no PUT /merge."""
+    _mock_mergeable_pr(respx_mock, 21, "feedface21")
+    _mock_check_runs(
+        respx_mock,
+        "feedface21",
+        [_check_run("Lint"), _check_run("Tests", None)],
+    )
+    merge_route = respx_mock.put(
+        "https://api.github.com/repos/org/repo/pulls/21/merge"
+    ).mock(return_value=httpx.Response(200, text=json.dumps({"merged": True})))
+
+    fn = _merge_tool()
+    out = await fn(repo_full_name="org/repo", pr_number=21)  # type: ignore[operator]
+
+    assert "PENDING" in out
+    assert "Tests" in out
+    assert not merge_route.called
+
+
+@pytest.mark.asyncio
+async def test_merge_pr_refused_when_check_runs_api_fails(
+    respx_mock: respx.MockRouter,
+) -> None:
+    """A Checks API error is UNKNOWN, never "no checks → green"."""
+    _mock_mergeable_pr(respx_mock, 22, "feedface22")
+    respx_mock.get(
+        url__startswith="https://api.github.com/repos/org/repo/commits/feedface22/check-runs"
+    ).mock(return_value=httpx.Response(500, text="boom"))
+    merge_route = respx_mock.put(
+        "https://api.github.com/repos/org/repo/pulls/22/merge"
+    ).mock(return_value=httpx.Response(200, text=json.dumps({"merged": True})))
+
+    fn = _merge_tool()
+    out = await fn(repo_full_name="org/repo", pr_number=22)  # type: ignore[operator]
+
+    assert "UNKNOWN" in out
+    assert not merge_route.called
+
+
+@pytest.mark.asyncio
+async def test_merge_pr_override_ci_merges_and_echoes_verdict(
+    respx_mock: respx.MockRouter,
+) -> None:
+    """``override_ci=True`` merges a red PR and records the bypassed verdict."""
+    _mock_mergeable_pr(respx_mock, 23, "feedface23")
+    _mock_check_runs(respx_mock, "feedface23", [_check_run("Tests", "failure")])
+    respx_mock.put("https://api.github.com/repos/org/repo/pulls/23/merge").mock(
+        return_value=httpx.Response(
+            200,
+            text=json.dumps({"sha": "0ff1ce", "merged": True, "message": "ok"}),
+        )
+    )
+
+    fn = _merge_tool()
+    out = await fn(  # type: ignore[operator]
+        repo_full_name="org/repo", pr_number=23, override_ci=True
+    )
+
+    assert "merged successfully" in out.lower()
+    assert "CI override used" in out
+    assert "RED" in out
+    assert "Tests" in out
 
 
 # ---------------------------------------------------------------------------

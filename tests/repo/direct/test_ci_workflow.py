@@ -524,6 +524,27 @@ async def test_merge_pr_success(
                     "mergeable_state": "clean",
                     "merged": False,
                     "draft": False,
+                    "head": {"sha": "feedface10"},
+                }
+            ),
+        )
+    )
+    # The tool's own CI gate reads every check-run of the head commit.
+    respx_mock.get(
+        url__startswith="https://api.github.com/repos/org/repo/commits/feedface10/check-runs"
+    ).mock(
+        return_value=httpx.Response(
+            200,
+            text=json.dumps(
+                {
+                    "total_count": 1,
+                    "check_runs": [
+                        {
+                            "name": "Tests",
+                            "status": "completed",
+                            "conclusion": "success",
+                        }
+                    ],
                 }
             ),
         )
@@ -785,6 +806,27 @@ async def test_merge_pr_github_405(
                     "mergeable_state": "blocked",
                     "merged": False,
                     "draft": False,
+                    "head": {"sha": "feedface15"},
+                }
+            ),
+        )
+    )
+    # Check-runs green (a missing required review is what GitHub rejects).
+    respx_mock.get(
+        url__startswith="https://api.github.com/repos/org/repo/commits/feedface15/check-runs"
+    ).mock(
+        return_value=httpx.Response(
+            200,
+            text=json.dumps(
+                {
+                    "total_count": 1,
+                    "check_runs": [
+                        {
+                            "name": "Tests",
+                            "status": "completed",
+                            "conclusion": "success",
+                        }
+                    ],
                 }
             ),
         )
