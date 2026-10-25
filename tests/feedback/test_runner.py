@@ -1075,6 +1075,18 @@ class TestFileTickets:
         assert "no pull request is opened" in kwargs["prompt"]
         assert "hexarchy" not in kwargs["prompt"]
         assert "Target repo" not in kwargs["prompt"]
+        # 2026-10-25: the panel agent applied the proposed preset edit and
+        # restarted chat on its own, 44 s after the panel opened at 04:04Z
+        # (nobody answered) — three auto-applies that day, one of them
+        # twice because its own restart killed the turn and the resume
+        # re-ran it. The prompt must gate the apply on an operator reply,
+        # exactly like the investigation panel gates PR opening.
+        prompt = kwargs["prompt"]
+        assert "OPERATOR APPROVAL PANEL" in prompt
+        assert "read-only until the operator approves" in prompt
+        assert "do NOT restart any service before the operator has replied" in prompt
+        assert "Act only on the operator's reply" in prompt
+        assert "never treat the absence of a reply as approval" in prompt
 
     @pytest.mark.asyncio
     async def test_chat_config_finding_recorded_resolved_not_reraised(
