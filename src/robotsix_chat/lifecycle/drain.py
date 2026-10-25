@@ -11,16 +11,19 @@ issues the restart call.
 Counting is probe-based so the lifecycle package stays decoupled from the
 server: ``create_app`` registers one probe per source of agent turns (the
 main-chat message coalescer — which also carries periodic turns — and the
-subsession registry).  With no probe registered the count is ``0`` and the
-restart proceeds immediately, exactly as before.
+subsession registry).  Turns that bypass both — the subsession ParentDelivery
+reaction turns — wrap themselves in :func:`track_inflight_turn`.  With no
+probe registered and no tracked turn the count is ``0`` and the restart
+proceeds immediately, exactly as before.
 """
 
 from __future__ import annotations
 
 import asyncio
+import contextlib
 import logging
 import time
-from collections.abc import Awaitable, Callable
+from collections.abc import Awaitable, Callable, Iterator
 
 logger = logging.getLogger(__name__)
 
@@ -32,6 +35,7 @@ __all__ = [
     "inflight_count",
     "register_inflight_probe",
     "schedule_deferred_restart",
+    "track_inflight_turn",
     "wait_for_drain",
 ]
 
@@ -42,6 +46,7 @@ RESTART_DRAIN_POLL_SECONDS: float = 2.0
 
 _probes: dict[str, Callable[[], int]] = {}
 _deferred_task: asyncio.Task[None] | None = None
+_tracked_turns: int = 0
 
 
 def register_inflight_probe(name: str, probe: Callable[[], int]) -> None:
@@ -54,13 +59,31 @@ def clear_inflight_probes() -> None:
     _probes.clear()
 
 
+@contextlib.contextmanager
+def track_inflight_turn() -> Iterator[None]:
+    """Count the enclosed agent turn as in flight (for turns no probe sees).
+
+    Used by agent turns that bypass the message coalescer — e.g. the
+    subsession ParentDelivery reaction turns, which run the main agent (with
+    every tool, ``self_restart`` included) directly.
+    """
+    global _tracked_turns
+    _tracked_turns += 1
+    try:
+        yield
+    finally:
+        _tracked_turns -= 1
+
+
 def inflight_count() -> int:
     """Return the number of agent turns currently running process-wide.
 
-    A probe that raises is logged and counted as ``0`` — the drain gate must
-    never block a restart forever because of a broken probe.
+    Sums every registered probe plus the turns entered through
+    :func:`track_inflight_turn`.  A probe that raises is logged and counted
+    as ``0`` — the drain gate must never block a restart forever because of
+    a broken probe.
     """
-    total = 0
+    total = max(0, _tracked_turns)
     for name, probe in list(_probes.items()):
         try:
             total += max(0, int(probe()))

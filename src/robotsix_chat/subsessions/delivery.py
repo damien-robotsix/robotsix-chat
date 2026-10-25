@@ -40,6 +40,7 @@ from collections.abc import Sequence
 from typing import TYPE_CHECKING
 
 from robotsix_chat.chat.events import SSE_NOTIFICATION_TYPE, agent_message_frame
+from robotsix_chat.lifecycle.drain import track_inflight_turn
 
 from .models import SubsessionInfo, SubsessionKind
 
@@ -897,22 +898,26 @@ class ParentDelivery:
             async with self._run_serializer.for_owner(session_id):
                 history = self._store.history(session_id)
                 try:
-                    chunks = [
-                        chunk
-                        async for chunk in self._agent.stream(
-                            prompt,
-                            history=history or None,
-                            session_id=session_id,
-                            client_id=session_id,
-                            trace_metadata={"subsession_batch": "true"},
-                            trace_name="subsession-reaction-batch",
-                            # The prompt is a machine-built "[System notice]"
-                            # digest, not an operator utterance: recalling on
-                            # it retrieves noise and, past the backend's query
-                            # cap, a 400 (live 2026-09-07 06:34Z).
-                            skip_recall=True,
-                        )
-                    ]
+                    # Counted by the self-restart drain gate: this turn runs
+                    # the main agent (with every tool) outside the coalescer.
+                    with track_inflight_turn():
+                        chunks = [
+                            chunk
+                            async for chunk in self._agent.stream(
+                                prompt,
+                                history=history or None,
+                                session_id=session_id,
+                                client_id=session_id,
+                                trace_metadata={"subsession_batch": "true"},
+                                trace_name="subsession-reaction-batch",
+                                # The prompt is a machine-built "[System
+                                # notice]" digest, not an operator utterance:
+                                # recalling on it retrieves noise and, past the
+                                # backend's query cap, a 400 (live 2026-09-07
+                                # 06:34Z).
+                                skip_recall=True,
+                            )
+                        ]
                 except Exception:
                     logger.exception(
                         "Batched reaction turn failed for session %s (%d outcomes)",
@@ -1046,18 +1051,21 @@ class ParentDelivery:
             async with self._run_serializer.for_owner(session_id):
                 history = self._store.history(session_id)
                 try:
-                    parts = [
-                        chunk
-                        async for chunk in self._agent.stream(
-                            prompt,
-                            history=history or None,
-                            session_id=session_id,
-                            client_id=session_id,
-                            trace_metadata={"subsession_id": info.id},
-                            trace_name="subsession-reaction",
-                            skip_recall=True,
-                        )
-                    ]
+                    # Counted by the self-restart drain gate: this turn runs
+                    # the main agent (with every tool) outside the coalescer.
+                    with track_inflight_turn():
+                        parts = [
+                            chunk
+                            async for chunk in self._agent.stream(
+                                prompt,
+                                history=history or None,
+                                session_id=session_id,
+                                client_id=session_id,
+                                trace_metadata={"subsession_id": info.id},
+                                trace_name="subsession-reaction",
+                                skip_recall=True,
+                            )
+                        ]
                 except Exception:
                     logger.exception(
                         "Reaction turn failed for subsession %s (session %s)",

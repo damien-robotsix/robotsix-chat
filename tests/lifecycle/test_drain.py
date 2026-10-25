@@ -42,7 +42,9 @@ def _tool(name: str) -> Any:
 def _clean_drain_state() -> Iterator[None]:
     drain.clear_inflight_probes()
     drain._deferred_task = None
+    drain._tracked_turns = 0
     yield
+    drain._tracked_turns = 0
     task = drain._deferred_task
     if task is not None and not task.done():
         task.cancel()
@@ -59,6 +61,36 @@ def test_inflight_count_sums_probes_and_tolerates_failures() -> None:
 
     drain.register_inflight_probe("c", _broken)
     assert drain.inflight_count() == 3
+
+
+def test_track_inflight_turn_counts_until_exit() -> None:
+    drain.register_inflight_probe("chat_turns", lambda: 1)
+    with drain.track_inflight_turn():
+        assert drain.inflight_count() == 2
+        with pytest.raises(RuntimeError), drain.track_inflight_turn():
+            raise RuntimeError("turn failed")
+        assert drain.inflight_count() == 2
+    assert drain.inflight_count() == 1
+
+
+@pytest.mark.asyncio
+async def test_self_restart_from_reaction_turn_defers_for_operator_turn(
+    respx_mock: respx.MockRouter,
+) -> None:
+    """A tracked (reaction) turn calling self_restart waits for the other turn.
+
+    Regression: reaction turns bypass the coalescer, so without tracking the
+    caller was uncounted and the restart killed the operator turn.
+    """
+    route = respx_mock.post(_SELF_RESTART_URL).mock(
+        return_value=httpx.Response(200, json={"status": "restarting"})
+    )
+    drain.register_inflight_probe("chat_turns", lambda: 1)  # operator turn
+    with drain.track_inflight_turn():  # the calling reaction turn
+        out = await _tool("self_restart")()
+    assert "Restart deferred" in out
+    assert "1 other agent turn(s)" in out
+    assert not route.called
 
 
 @pytest.mark.asyncio
