@@ -6,6 +6,7 @@ mocked so there are no real network calls.
 
 from __future__ import annotations
 
+from collections.abc import Iterator
 from typing import Any
 
 import httpx
@@ -13,7 +14,7 @@ import pytest
 import respx
 
 from robotsix_chat.config import LifecycleSettings
-from robotsix_chat.lifecycle import build_lifecycle_tools, load_lifecycle_skill
+from robotsix_chat.lifecycle import build_lifecycle_tools, drain, load_lifecycle_skill
 from robotsix_chat.lifecycle.client import (
     LifecycleClient,
     _diagnose_self_restart_failure,
@@ -25,6 +26,15 @@ from robotsix_chat.lifecycle.client import (
 )
 
 _LIFECYCLE_BASE_URL = "http://lifecycle:9000"
+
+
+@pytest.fixture(autouse=True)
+def _no_inflight_probes() -> Iterator[None]:
+    """Isolate restart tests from drain probes registered by other test apps."""
+    drain.clear_inflight_probes()
+    drain._deferred_task = None
+    yield
+    drain.clear_inflight_probes()
 
 
 def _settings(**kw: Any) -> LifecycleSettings:

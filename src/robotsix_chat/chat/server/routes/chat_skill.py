@@ -125,7 +125,13 @@ your model no longer defines — usually a field removed by an upgrade, or
 one written in the wrong place. Fix the key path (check `schema` from
 `GET /config`); the offending key is named in the error.
 
-Changes that only take effect at startup need a restart to become live.
+**`periodic.sessions` hot-reloads.** A save that changes the `periodic`
+block is applied to the live periodic scheduler immediately (presets are
+added / removed / replaced by `name`, firing state is kept; the log says
+`Periodic scheduler reloaded (N enabled preset(s))`). Do NOT restart after
+a preset edit — a restart kills every agent turn in flight.
+
+Other changes that only take effect at startup need a restart to become live.
 Restart yourself with `POST /chat/services/{your-component-id}/restart` on
 the deploy component.
 

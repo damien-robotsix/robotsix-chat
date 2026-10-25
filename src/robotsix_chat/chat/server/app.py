@@ -68,6 +68,35 @@ logger = logging.getLogger(__name__)
 # ---------------------------------------------------------------------------
 
 
+def _register_inflight_probes(coalescer: Any, subsession_registry: Any) -> None:
+    """Wire the self-restart drain gate to this app's sources of agent turns.
+
+    The main-chat coalescer carries operator and periodic turns; the
+    subsession registry carries subsession workers mid-turn (``RUNNING`` —
+    a ``user_chat`` waiting for the operator is idle and not counted).
+    """
+    from robotsix_chat.lifecycle.drain import register_inflight_probe
+    from robotsix_chat.subsessions import SubsessionStatus
+
+    def _chat_turns() -> int:
+        if coalescer is None or not hasattr(coalescer, "inflight_count"):
+            return 0
+        return int(coalescer.inflight_count())
+
+    def _running_subsessions() -> int:
+        if subsession_registry is None:
+            return 0
+        return sum(
+            1
+            for info in subsession_registry.list_all()
+            if info.status is SubsessionStatus.RUNNING
+        )
+
+    # Re-registering under the same names replaces a previous app's probes.
+    register_inflight_probe("chat_turns", _chat_turns)
+    register_inflight_probe("subsessions", _running_subsessions)
+
+
 @contextlib.asynccontextmanager
 async def _make_lifespan(
     on_startup: Callable[[], None] | None,
@@ -466,6 +495,7 @@ def create_app(
     app.state.github_actions_settings = github_actions_settings
     app.state.mobile_auth = mobile_auth
     app.state.feedback_runner = feedback_runner  # may be None
+    _register_inflight_probes(app.state.message_coalescer, subsession_registry)
     if periodic_definitions:
         from robotsix_chat.periodic import (
             PERIODIC_OWNER,

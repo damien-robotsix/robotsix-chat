@@ -364,6 +364,24 @@ class PeriodicScheduler:
         """Return the firing state for *name* (empty when it never fired)."""
         return dict(self._state.get(name, {}))
 
+    def reload_definitions(self, definitions: list[PeriodicSessionDefinition]) -> int:
+        """Replace the preset definitions in place (hot reload); return the count.
+
+        Presets are keyed by ``name``: new names are added, missing names
+        removed, and same-name entries replaced by the new definition.  The
+        persisted firing state (``periodic_scheduler_state.json``) is kept
+        untouched, so a replaced preset keeps its ``last_fired_at`` cadence
+        and a removed-then-re-added preset resumes where it left off.
+        In-flight turns are never interrupted.
+
+        The dict is swapped atomically (never mutated), so a ``tick`` that is
+        iterating the previous mapping finishes safely.
+        """
+        self._definitions = {d.name: d for d in definitions if d.enabled}
+        count = len(self._definitions)
+        logger.info("Periodic scheduler reloaded (%d enabled preset(s))", count)
+        return count
+
     # -- scheduling ----------------------------------------------------------
 
     def _next_run(

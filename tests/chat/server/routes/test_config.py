@@ -1691,3 +1691,105 @@ def test_deep_merge_mixed_list_without_names_is_replaced() -> None:
     existing = {"x": [{"name": "a"}, {"other": 1}]}
     update = {"x": [{"name": "a", "v": 2}]}
     assert _deep_merge(existing, update) == {"x": [{"name": "a", "v": 2}]}
+
+
+# ---------------------------------------------------------------------------
+# PUT /config — periodic preset hot reload
+# ---------------------------------------------------------------------------
+
+
+class _PeriodicFakeStore:
+    """Just enough ConversationStore for a live PeriodicScheduler."""
+
+    def __init__(self) -> None:
+        self._n = 0
+
+    def create_session(self, owner_id: str) -> dict[str, object]:
+        self._n += 1
+        return {"session_id": f"periodic-{self._n}", "title": "New chat"}
+
+    def set_title(self, session_id: str, title: str) -> bool:
+        return True
+
+
+def _attach_scheduler(client: TestClient, tmp_path: Path) -> tuple[object, list]:
+    from robotsix_chat.config.periodic_models import PeriodicSessionDefinition
+    from robotsix_chat.periodic.scheduler import PeriodicScheduler
+
+    submitted: list[tuple[str, str, int | None]] = []
+
+    async def submit_turn(session_id: str, message: str, model_level: int | None):
+        submitted.append((session_id, message, model_level))
+
+    scheduler = PeriodicScheduler(
+        definitions=[
+            PeriodicSessionDefinition(
+                name="nightly", initial_prompt="OLD prompt", model_level=2
+            )
+        ],
+        conversation_store=_PeriodicFakeStore(),
+        submit_turn=submit_turn,
+        is_busy=lambda sid: False,
+        persist_path=str(tmp_path / "periodic_state.json"),
+    )
+    client.app.state.periodic_scheduler = scheduler  # type: ignore[attr-defined]
+    return scheduler, submitted
+
+
+def test_put_config_hot_reloads_periodic_presets(tmp_path: Path) -> None:
+    """A one-item periodic.sessions PUT changes the live preset — no restart."""
+    import asyncio
+
+    config_path = tmp_path / "config.json"
+    _write_config(
+        config_path,
+        {
+            "periodic": {
+                "sessions": [
+                    {
+                        "name": "nightly",
+                        "initial_prompt": "OLD prompt",
+                        "model_level": 2,
+                    }
+                ]
+            }
+        },
+    )
+    client = _make_app(config_path)
+    scheduler, submitted = _attach_scheduler(client, tmp_path)
+
+    resp = client.put(
+        "/config",
+        json={
+            "periodic": {
+                "sessions": [
+                    {"name": "nightly", "initial_prompt": "NEW prompt"},
+                    {"name": "added", "initial_prompt": "Added preset"},
+                ]
+            }
+        },
+    )
+    assert resp.status_code == 200, resp.text
+
+    assert sorted(scheduler.definition_names) == ["added", "nightly"]  # type: ignore[attr-defined]
+    defn = scheduler.get_definition("nightly")  # type: ignore[attr-defined]
+    assert defn.initial_prompt == "NEW prompt"
+    # Fields not in the payload were preserved by the named-list merge.
+    assert defn.model_level == 2
+
+    # Firing the preset uses the new definition.
+    asyncio.run(scheduler.fire("nightly"))  # type: ignore[attr-defined]
+    assert submitted and "NEW prompt" in submitted[-1][1]
+
+
+def test_put_config_without_periodic_change_does_not_reload(tmp_path: Path) -> None:
+    config_path = tmp_path / "config.json"
+    _write_config(config_path, {})
+    client = _make_app(config_path)
+    scheduler, _submitted = _attach_scheduler(client, tmp_path)
+    calls: list[object] = []
+    scheduler.reload_definitions = lambda defs: calls.append(defs) or 0  # type: ignore[attr-defined]
+
+    resp = client.put("/config", json={"chat_default_model_level": 2})
+    assert resp.status_code == 200, resp.text
+    assert calls == []
