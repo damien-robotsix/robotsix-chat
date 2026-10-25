@@ -39,7 +39,7 @@ SHIPPED_PRESET_PROMPT_SHA256S: dict[str, str] = {
     ),
     "gate-drain": ("3b6d7c1c21f0eba13abb307db469b840021d92330f89963106a40684f90a07b5"),
     "release-gate": (
-        "70654e1a78132a5dab0b4655b3c8db11db240be747af0305caa31ec42294667d"
+        "6c83fcf395a1d10f2719636b259cbc9746c475ce9e3655df966bc1c2b7185290"
     ),
 }
 
