@@ -609,10 +609,10 @@ class ParentDelivery:
             # Suppress auto-pause delivery when the monitored ticket is
             # already in a terminal state — stale monitors for
             # already-closed tickets should not distract the user.
-            from .worker_mill import _TICKET_STATE_TERMINAL
+            from robotsix_chat.ticket_poll.mill_states import MERGED_TERMINAL_STATES
 
             last_known = _extract_last_known_state(info)
-            if last_known is not None and last_known.lower() in _TICKET_STATE_TERMINAL:
+            if last_known is not None and last_known.lower() in MERGED_TERMINAL_STATES:
                 logger.info(
                     "Suppressing auto-pause report for ticket %s "
                     "from subsession %s — ticket is already in a "

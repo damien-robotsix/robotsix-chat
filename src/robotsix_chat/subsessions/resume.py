@@ -13,6 +13,7 @@ from collections.abc import Mapping
 from typing import TYPE_CHECKING, TypedDict
 
 from robotsix_chat.config.constants import clamp_persisted_model_level
+from robotsix_chat.ticket_poll.mill_states import MERGED_TERMINAL_STATES
 
 from .models import (
     ACTIVE_STATUSES,
@@ -24,7 +25,6 @@ from .models import (
 )
 from .registry import SubsessionRegistry
 from .worker import spawn_subsession
-from .worker_mill import _TICKET_STATE_TERMINAL
 
 if TYPE_CHECKING:
     from .worker import SubsessionEnv
@@ -356,7 +356,7 @@ def _handle_terminal_on_resume(
     """
     checkpoint = _rebuild_checkpoint(entry)
     last_known = checkpoint.get("last_known_state") if checkpoint else None
-    if isinstance(last_known, str) and last_known.lower() in _TICKET_STATE_TERMINAL:
+    if isinstance(last_known, str) and last_known.lower() in MERGED_TERMINAL_STATES:
         info = _restore_entry(env.registry, entry, force_active=True)
         if info is not None:
             env.registry.mark_closed(
