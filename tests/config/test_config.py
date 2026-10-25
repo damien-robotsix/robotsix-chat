@@ -53,6 +53,7 @@ def test_defaults() -> None:
 
     assert settings.chat_default_model_level == 2
     assert settings.openrouter_api_key.get_secret_value() == ""
+    assert settings.anthropic_api_key.get_secret_value() == ""
     assert settings.server_host == "0.0.0.0"
     assert settings.server_port == 8000
     assert settings.log_level == "INFO"
@@ -76,6 +77,7 @@ def test_log_level_default() -> None:
 _LLMIO_GROUP_FIELDS = {
     "chat_default_model_level",
     "openrouter_api_key",
+    "anthropic_api_key",
     "summary_model_level",
     "llmio_failover_window_seconds",
     "llmio_tier_overrides",
@@ -1451,8 +1453,8 @@ _PREEXISTING_ALLOWLIST: set[tuple[str, int, str]] = {
     ("src/robotsix_chat/config/settings.py", 98, "-opus"),
     ("src/robotsix_chat/config/settings.py", 98, "claude-fable"),
     # config/settings.py — vision_model default (OpenRouter captioning model)
-    ("src/robotsix_chat/config/settings.py", 212, "gpt-"),
-    ("src/robotsix_chat/config/settings.py", 1102, "gpt-"),
+    ("src/robotsix_chat/config/settings.py", 219, "gpt-"),
+    ("src/robotsix_chat/config/settings.py", 1120, "gpt-"),
     # config/memory_models.py — gpt-5-nano / gpt-5-mini / deepseek-v4-flash
     ("src/robotsix_chat/config/memory_models.py", 26, "gpt-"),
     ("src/robotsix_chat/config/memory_models.py", 50, "gpt-"),

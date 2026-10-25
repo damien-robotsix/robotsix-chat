@@ -371,6 +371,9 @@ def create_agent_from_settings(
     # shared Claude credential or quota is what failed — the mode that takes
     # the whole default slot down at once.
     api_key = settings.openrouter_api_key.get_secret_value()
+    # The direct Anthropic Messages API slot takes its own credential; an
+    # empty value lets llmio fall back to the ANTHROPIC_API_KEY env var.
+    anthropic_api_key = settings.anthropic_api_key.get_secret_value()
 
     tools = _build_static_tools(
         settings,
@@ -438,6 +441,7 @@ def create_agent_from_settings(
         model_level=effective_level,
         instruction=instruction,
         api_key=api_key,
+        anthropic_api_key=anthropic_api_key,
         memory=memory,
         tools=tools,
         request_tools_factory=request_tools_factory,

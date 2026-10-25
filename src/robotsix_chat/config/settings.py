@@ -159,6 +159,13 @@ class Settings(BaseModel):
             ``claudeSDK`` default slot serves calls. Without it, provider
             failover is unavailable. Accepts the legacy config key
             ``llmio_api_key`` as a backward-compatible alias.
+        anthropic_api_key: Anthropic API key, forwarded to llmio only for
+            slot attempts served by the direct Anthropic Messages API
+            transport (provider ``anthropic``). Resolution order: this
+            config field when non-empty, else llmio's own fallback to the
+            ``ANTHROPIC_API_KEY`` process environment variable. Without
+            either, the ``anthropic`` slot cannot run and failover moves on
+            to the next slot.
         summary_model_level: Capability level of the dedicated summariser
             agent — the idle-timeout compaction summary, the carryover
             summary and conversation titles. Defaults to ``1`` (cheap,
@@ -231,6 +238,17 @@ class Settings(BaseModel):
             "different consumers, so they are intentionally not merged. "
             "Accepts the legacy config key ``llmio_api_key`` as a "
             "backward-compatible alias."
+        ),
+    )
+    anthropic_api_key: SecretStr = Field(
+        default=SecretStr(""),
+        json_schema_extra=_LLMIO_GROUP,
+        description=(
+            "Anthropic API key forwarded to llmio's direct Anthropic "
+            "Messages API provider slot (provider ``anthropic``). "
+            "Resolution order: this field when non-empty, else llmio "
+            "falls back to the ``ANTHROPIC_API_KEY`` environment variable. "
+            "Without either, the ``anthropic`` slot is skipped by failover."
         ),
     )
     summary_model_level: int = Field(default=1, json_schema_extra=_LLMIO_GROUP)
