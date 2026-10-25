@@ -110,9 +110,16 @@ ______________________________________________________________________
 ## Agent tool: `verify_pr_ci_status`
 
 Fetch live CI run status and PR state from GitHub — PR metadata (state, mergeability, draft status)
-combined with the latest CI workflow runs for the PR's head branch. The agent MUST call this tool
-before asserting success or signalling the operator about CI/PR status; never rely on cached,
-inferred, or incomplete data.
+plus an authoritative **CI verdict** computed over EVERY check-run of the PR's head commit, followed
+by the workflow runs as detail. The agent MUST call this tool before asserting success or signalling
+the operator about CI/PR status; never rely on cached, inferred, or incomplete data.
+
+**A PR is CI-green only when the `CI verdict for head <sha>:` line says `GREEN`.** `RED` names the
+failed check-runs, `PENDING` the ones still running, `NONE` means no check-runs exist yet and
+`UNKNOWN` means the Checks API could not be read — none of those is green. The workflow-run list
+below the verdict is detail only: it is paginated by recency and can omit the workflow that carries
+the failing job (2026-10-25: chat #2208 was merged on "all 5 runs success" while its `Tests`
+check-run had been FAILED for hours).
 
 **Read-only.** Does not modify any repository state and does not require a ticket to be in BLOCKED
 state.
@@ -125,7 +132,10 @@ state.
 ### Returned information
 
 - PR title, URL, state (open/closed/merged), draft flag, merged flag, mergeable state.
-- CI: up to 5 most recent workflow runs on the PR's head branch, each with name, run id, status, and
+- `CI verdict for head <sha>: GREEN|RED|PENDING|NONE|UNKNOWN — …` with counts and the failed /
+  pending check-run names; a `Merge gate:` line when GitHub reports `mergeable_state` blocked,
+  unstable, dirty or behind.
+- Workflow runs on the PR's head branch (up to 20; detail only), each with name, run id, status, and
   conclusion.
 
 ### Error responses
@@ -381,10 +391,18 @@ answer to your proposal IS that consent — once given, state the exact repo, PR
 head/base branches and merge without re-asking. Ask only when consent has not yet been clearly
 given. The endpoint modifies live repository state.
 
-### Preconditions (enforced server-side)
+### CI gate (enforced by the tool itself)
+
+The GitHub App this tool merges with can **bypass branch rules**, so GitHub will not stop a red PR.
+The tool therefore reads every check-run of the PR's head commit and refuses to merge unless all of
+them completed without failure; the refusal names the failed / pending checks. Wait for them or fix
+them. Only when the operator has explicitly instructed to merge DESPITE the stated verdict, call
+again with `override_ci=true` and say so in the conversation — the override and the bypassed verdict
+are echoed into the result.
+
+### Preconditions (also enforced server-side)
 
 - PR must be mergeable (no conflicts).
-- Required status checks / CI must be green.
 - PR must not be in draft state.
 - Repository must be within the GitHub App installation scope.
 
