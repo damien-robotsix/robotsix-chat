@@ -13,7 +13,7 @@ constraints = [
     { name = "anyio", specifier = ">=4.14.2" },
     { name = "pypdf", specifier = ">=6.15.0" },
 ]
-overrides = [{ name = "robotsix-http", extras = ["fastapi"], git = "https://github.com/damien-robotsix/robotsix-http.git?rev=4bf6c1e317ccdf4f2e2764ad05c97a456b1ca0a1" }]
+overrides = [{ name = "robotsix-http", extras = ["fastapi"], git = "https://github.com/damien-robotsix/robotsix-http.git?rev=3672b3c3cd21534419d9233a3c980e140e89b131" }]
 
 [[package]]
 name = "annotated-doc"
@@ -2014,7 +2014,7 @@ requires-dist = [
     { name = "reportlab" },
     { name = "robotsix-config", git = "https://github.com/damien-robotsix/robotsix-config.git?rev=884a452062a04f569fb63a9d103c29eafbf3c056" },
     { name = "robotsix-github-auth", git = "https://github.com/damien-robotsix/robotsix-github-auth.git?rev=9447d652ffe98e3e19cad2a57fd4f2621074f28c" },
-    { name = "robotsix-http", extras = ["fastapi"], git = "https://github.com/damien-robotsix/robotsix-http.git?rev=4bf6c1e317ccdf4f2e2764ad05c97a456b1ca0a1" },
+    { name = "robotsix-http", extras = ["fastapi"], git = "https://github.com/damien-robotsix/robotsix-http.git?rev=3672b3c3cd21534419d9233a3c980e140e89b131" },
     { name = "robotsix-llmio", git = "https://github.com/damien-robotsix/robotsix-llmio.git?rev=3fb688be8cea3dbcb95430b5c72fdca096d710a6" },
     { name = "robotsix-llmio", extras = ["claude-sdk"], marker = "extra == 'claude-sdk'", git = "https://github.com/damien-robotsix/robotsix-llmio.git?rev=3fb688be8cea3dbcb95430b5c72fdca096d710a6" },
     { name = "robotsix-llmio", extras = ["openrouter"], marker = "extra == 'openrouter'", git = "https://github.com/damien-robotsix/robotsix-llmio.git?rev=3fb688be8cea3dbcb95430b5c72fdca096d710a6" },
@@ -2071,8 +2071,8 @@ dependencies = [
 
 [[package]]
 name = "robotsix-http"
-version = "0.6.0"
-source = { git = "https://github.com/damien-robotsix/robotsix-http.git?rev=4bf6c1e317ccdf4f2e2764ad05c97a456b1ca0a1#4bf6c1e317ccdf4f2e2764ad05c97a456b1ca0a1" }
+version = "0.8.3"
+source = { git = "https://github.com/damien-robotsix/robotsix-http.git?rev=3672b3c3cd21534419d9233a3c980e140e89b131#3672b3c3cd21534419d9233a3c980e140e89b131" }
 dependencies = [
     { name = "httpcore" },
     { name = "httpx" },
@@ -2081,6 +2081,7 @@ dependencies = [
 [package.optional-dependencies]
 fastapi = [
     { name = "fastapi" },
+    { name = "structlog" },
 ]
 
 [[package]]
