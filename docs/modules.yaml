@@ -120,11 +120,13 @@ modules:
       - src/robotsix_chat/periodic/__init__.py
       - src/robotsix_chat/periodic/prompts.py
       - src/robotsix_chat/periodic/scheduler.py
+      - src/robotsix_chat/periodic/shipped.py
       - tests/periodic/__init__.py
       - tests/periodic/test_prompts.py
       - tests/periodic/test_scheduler.py
+      - tests/periodic/test_shipped_drift.py
       - tests/periodic/test_shipped_presets.py
-      - docs/user-guide/periodic-sessions.md
+      - docs/periodic/periodic-sessions.md
 
   - id: component-client
     description: "Component agent client tools for the chat LLM — exposes build_component_tools(), a factory returning LLM tools that let the chat agent enumerate, inspect, and configure remote component agents via direct HTTP."
@@ -186,6 +188,7 @@ modules:
       - tests/config/test_session_models.py
       - tests/config/test_system_prompt_governance.py
       - tests/config/test_config_hypothesis.py
+      - tests/config/test_langfuse_env_overlay.py
 
   - id: continuation
     description: "Post-restart continuation — auto-resume a conversation after a restart so work-in-progress continues without human intervention."
@@ -205,7 +208,12 @@ modules:
       - src/robotsix_chat/chat/actions.py
       - src/robotsix_chat/chat/events.py
       - src/robotsix_chat/chat/server/__init__.py
+      - src/robotsix_chat/chat/server/agent_factory.py
       - src/robotsix_chat/chat/server/app.py
+      - src/robotsix_chat/chat/server/middleware.py
+      - src/robotsix_chat/chat/server/openapi.py
+      - src/robotsix_chat/chat/server/skill_wiring.py
+      - src/robotsix_chat/chat/server/ui.py
       - src/robotsix_chat/skill_index.py
       - src/robotsix_chat/chat/server/cli.py
       - src/robotsix_chat/chat/server/idempotency.py
@@ -302,7 +310,9 @@ modules:
       - tests/repo/direct/test_client.py
       - tests/repo/direct/test_client_pr_operations.py
       - tests/repo/direct/test_direct_fix.py
-      - tests/repo/direct/test_direct_repo.py
+      - tests/repo/direct/test_direct_repo_fix_and_commits.py
+      - tests/repo/direct/test_direct_repo_patching.py
+      - tests/repo/direct/test_direct_repo_pull_requests.py
       - tests/repo/direct/test_enable_pages.py
       - tests/repo/direct/test_github_auth_dependency.py
       - tests/repo/direct/test_github_tools.py
@@ -311,6 +321,7 @@ modules:
       - tests/repo/direct/test_open_pr.py
       - tests/repo/direct/test_patch_file.py
       - tests/repo/direct/test_push.py
+      - tests/repo/direct/test_repo_settings.py
       - tests/repo/direct/test_reset_counter.py
       - tests/repo/direct/test_trivy_parser.py
       - tests/repo/direct/test_update_pr_branch.py
@@ -407,16 +418,22 @@ modules:
     description: "Unified subsession system — background agents (task / periodic / user_chat) spawned from chat sessions, with per-subsession model levels, depth-limited nesting, inbox steering, and parent summary delivery."
     paths:
       - src/robotsix_chat/subsessions/__init__.py
+      - src/robotsix_chat/subsessions/continuation.py
       - src/robotsix_chat/subsessions/delivery.py
       - src/robotsix_chat/subsessions/models.py
       - src/robotsix_chat/subsessions/prompts.py
+      - src/robotsix_chat/subsessions/prompt_context.py
       - src/robotsix_chat/subsessions/registry.py
       - src/robotsix_chat/subsessions/resume.py
       - src/robotsix_chat/subsessions/schedule.py
       - src/robotsix_chat/subsessions/skill.md
       - src/robotsix_chat/subsessions/slot_budget.py
+      - src/robotsix_chat/subsessions/slot_budget_wiring.py
       - src/robotsix_chat/subsessions/subsession_waits.py
+      - src/robotsix_chat/subsessions/subsession_types.py
       - src/robotsix_chat/subsessions/tools.py
+      - src/robotsix_chat/subsessions/turn_errors.py
+      - src/robotsix_chat/subsessions/turn_runner.py
       - src/robotsix_chat/subsessions/watcher.py
       - src/robotsix_chat/subsessions/worker.py
       - src/robotsix_chat/subsessions/worker_errors.py
@@ -477,7 +494,7 @@ modules:
       - src/robotsix_chat/file_hub_tools/pdf_tools.py
       - src/robotsix_chat/file_hub_tools/image_tools.py
       - src/robotsix_chat/file_hub_tools/skill.md
-      - src/robotsix_chat/config/file_hub_models.py
+      - src/robotsix_chat/file_hub_tools/settings.py
       - tests/file_hub_tools/__init__.py
       - tests/file_hub_tools/test_file_hub_tools.py
       - tests/file_hub_tools/test_pdf_tools.py
@@ -539,16 +556,16 @@ modules:
       - docs/user-guide/chat-interface.md
       - docs/user-guide/settings-ui.md
       - docs/user-guide/settings-audit-upgrade.md
-      - tests/js/memory-banner.test.js
-      - tests/js/message-queue.test.js
-      - tests/js/notify-gating.test.js
-      - tests/js/notify-navigation.test.js
-      - tests/js/notify.test.js
-      - tests/js/reconnect-guard.test.js
-      - tests/js/drain-draft.test.js
-      - tests/js/discard-closed.test.js
-      - tests/js/sse-parser.test.js
-      - tests/js/suggestions.test.js
+      - tests/ui/js/memory-banner.test.js
+      - tests/ui/js/message-queue.test.js
+      - tests/ui/js/notify-gating.test.js
+      - tests/ui/js/notify-navigation.test.js
+      - tests/ui/js/notify.test.js
+      - tests/ui/js/reconnect-guard.test.js
+      - tests/ui/js/drain-draft.test.js
+      - tests/ui/js/discard-closed.test.js
+      - tests/ui/js/sse-parser.test.js
+      - tests/ui/js/suggestions.test.js
       - tests/ui/__init__.py
       - tests/ui/conftest.py
       - tests/ui/test_chat_integration.py
@@ -629,9 +646,11 @@ modules:
     paths:
       - src/robotsix_chat/lifecycle/__init__.py
       - src/robotsix_chat/lifecycle/client.py
+      - src/robotsix_chat/lifecycle/drain.py
       - src/robotsix_chat/lifecycle/skill.md
       - docs/lifecycle/skill.md
       - tests/lifecycle/__init__.py
+      - tests/lifecycle/test_drain.py
       - tests/lifecycle/test_lifecycle.py
 
   - id: version-check

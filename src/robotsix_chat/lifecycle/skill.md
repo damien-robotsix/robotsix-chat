@@ -78,6 +78,13 @@ attempting a call.
 
 This tool cannot restart other managed services — for those, use `restart_lifecycle_service`.
 
+**Drain gate.** A restart kills every agent turn in flight. `self_restart` (and
+`restart_lifecycle_service` on the agent's own service) therefore defers while other agent turns or
+subsessions are mid-turn: the reply reads `Restart deferred: N other agent turn(s) are still in
+flight…` and the restart is issued automatically once they finish, or after a bounded drain timeout
+(600 s). Do not call it again after a deferral. Never restart just to apply a `periodic.sessions`
+edit — presets hot-reload on `PUT /config`.
+
 ### URL protocol handling
 
 If `central_deploy.url` lacks a URL scheme (e.g. `central-deploy:8100`), the client prepends the

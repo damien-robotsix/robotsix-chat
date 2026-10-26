@@ -772,7 +772,7 @@ async def config_save_endpoint(request: Request) -> JSONResponse:
 
     # 4. Validate the merged config through Settings.
     try:
-        Settings.model_validate(merged)
+        validated = Settings.model_validate(merged)
     except ValidationError as exc:
         # Extract per-precondition failures from the underlying
         # ConfigValidationError.  Pydantic v2 stores the original
@@ -821,7 +821,41 @@ async def config_save_endpoint(request: Request) -> JSONResponse:
         new_ver,
         len(merged),
     )
+
+    # 8. Hot-reload periodic presets so a preset edit takes effect without a
+    # process restart (a restart kills every in-flight agent turn).
+    _reload_periodic_presets(request, existing, merged, validated)
+
     return JSONResponse({"config": _effective_config(merged), "version": new_ver})
+
+
+def _reload_periodic_presets(
+    request: Request,
+    existing: dict[str, Any],
+    merged: dict[str, Any],
+    validated: Settings,
+) -> None:
+    """Apply a changed ``periodic`` block to the live periodic scheduler.
+
+    No-op when the ``periodic`` section did not change.  When the app was
+    booted without any enabled preset there is no scheduler to update; a
+    warning says a restart is still needed in that case.  Never raises —
+    the config is already persisted, so a reload failure must not turn the
+    save into an error.
+    """
+    if existing.get("periodic") == merged.get("periodic"):
+        return
+    scheduler = getattr(request.app.state, "periodic_scheduler", None)
+    if scheduler is None:
+        logger.warning(
+            "periodic config changed but no periodic scheduler is running "
+            "(booted with zero enabled presets) — restart to apply"
+        )
+        return
+    try:
+        scheduler.reload_definitions(list(validated.periodic.sessions))
+    except Exception:
+        logger.exception("Periodic scheduler hot reload failed")
 
 
 async def config_versions_endpoint(request: Request) -> JSONResponse:

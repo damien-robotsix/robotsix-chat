@@ -225,9 +225,10 @@ pydantic field defaults  ←filled by←  the one JSON config file
   only source of values. No env-var overlay, no CLI merge.
 
 The LLM provider is selected indirectly: `model_level` (1–3) is passed to `robotsix-llmio`, which
-resolves it against the provider slot its failover tracker designates as active — the keyless
-claudeSDK default slot (haiku/opus/fable) in normal operation, the keyed OpenRouter fallback slot
-(DeepSeek) while provider failover is armed. Level 2 (`opus` on the default slot) is the workhorse
+resolves it against the provider slot its failover tracker designates as active — the direct
+Anthropic API slot (when an Anthropic key is configured, else cascading to the keyless claudeSDK
+slot: haiku/opus/fable) in normal operation, the keyed OpenRouter fallback slot (DeepSeek) while
+provider failover is armed. Level 2 (`opus` on the default slot) is the workhorse
 and the default for the main chat agent; subsessions default to level 2 and monitors are capped at
 level 1 unless configured otherwise.
 

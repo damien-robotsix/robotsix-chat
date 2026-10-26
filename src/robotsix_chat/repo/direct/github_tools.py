@@ -22,6 +22,7 @@ if TYPE_CHECKING:
     from .board_client import BoardClient
     from .client import DirectRepoClient
 
+from .actions_client import ActionsClient, summarize_check_runs
 from .github_tools_ci import build_github_tools_ci
 
 logger = logging.getLogger(__name__)
@@ -1099,6 +1100,56 @@ def build_github_tools(
 
         return "\n".join(context_lines) + "\n\n" + result
 
+    async def _ci_merge_gate(
+        repo_full_name: str, pr_number: int, *, override_ci: bool
+    ) -> tuple[str | None, str]:
+        """Refuse a merge whose head commit is not all-green on check-runs.
+
+        Returns ``(refusal, override_note)``: *refusal* is the message to
+        return instead of merging (``None`` to proceed); *override_note* is
+        appended to a successful merge result when ``override_ci`` bypassed
+        a non-green verdict.  Draft / conflicting / still-computing / already
+        merged PRs are left to ``client.merge_pr``'s own pre-flight so its
+        diagnostics stay unchanged.
+        """
+        try:
+            pr = await client.get_pr(repo_full_name=repo_full_name, pr_number=pr_number)
+        except Exception as exc:
+            return (f"Error fetching PR #{pr_number} in {repo_full_name}: {exc}", "")
+        if pr.get("draft") or pr.get("merged") or pr.get("mergeable") is not True:
+            return (None, "")
+        head_sha = str((pr.get("head") or {}).get("sha") or "")
+        try:
+            if not head_sha:
+                raise RuntimeError("PR data carries no head sha")
+            summary = summarize_check_runs(
+                await ActionsClient(settings).list_check_runs(repo_full_name, head_sha)
+            )
+        except Exception as exc:
+            verdict = f"UNKNOWN — check-runs could not be read ({exc})"
+            green = False
+        else:
+            verdict = summary.describe()
+            green = summary.verdict == "green"
+        if green:
+            return (None, "")
+        if override_ci:
+            return (
+                None,
+                f"\nCI override used on operator instruction — the check-run "
+                f"verdict for head {head_sha[:8] or '?'} at merge time was: "
+                f"{verdict}",
+            )
+        return (
+            f"Refusing to merge PR #{pr_number} in {repo_full_name}: CI verdict "
+            f"for head {head_sha[:8] or '?'} is {verdict}. The GitHub App can "
+            f"bypass branch rules, so this tool does not merge a PR whose "
+            f"check-runs are not all green. Wait for the checks to finish or "
+            f"fix them; if the operator explicitly instructs to merge despite "
+            f"this verdict, call again with override_ci=true and say so.",
+            "",
+        )
+
     async def merge_direct_repo_pr(
         repo_full_name: str,
         pr_number: int,
@@ -1107,6 +1158,7 @@ def build_github_tools(
         merge_method: str = "squash",
         commit_title: str = "",
         commit_message: str = "",
+        override_ci: bool = False,
     ) -> str:
         """Merge a pull request in a GitHub repository.
 
@@ -1116,9 +1168,17 @@ def build_github_tools(
         and wait for the operator to confirm before proceeding.  Never merge
         a PR without the operator's explicit consent in-chat.
 
-        **Preconditions (enforced server-side by GitHub):**
+        **CI gate (enforced by this tool):** the GitHub App this tool merges
+        with can BYPASS branch rules, so GitHub will not stop a red PR.  The
+        tool therefore reads EVERY check-run of the PR's head commit and
+        refuses to merge unless all of them completed without failure.  A
+        refusal names the failed / pending checks; wait for them or fix them.
+        Only when the operator has explicitly instructed to merge DESPITE the
+        stated verdict, call again with ``override_ci=True`` — the override
+        and the verdict it bypassed are echoed into the result.
+
+        **Preconditions (also enforced server-side by GitHub):**
         - PR must be mergeable (no conflicts).
-        - Required status checks / CI must be green.
         - PR must not be in draft state.
 
         **Scope:** *repo_full_name* must be within the robotsix-mill GitHub
@@ -1137,6 +1197,8 @@ def build_github_tools(
                 ``"merge"``, or ``"rebase"``.
             commit_title: Optional merge-commit title (squash/merge).
             commit_message: Optional merge-commit body (squash/merge).
+            override_ci: ``True`` ONLY when the operator explicitly asked to
+                merge despite a non-green CI verdict reported by this tool.
 
         Returns:
             A status message with the merge commit SHA on success, or an
@@ -1145,6 +1207,12 @@ def build_github_tools(
         """
         if error := await assert_in_scope(client, repo_full_name):
             return error
+
+        refusal, override_note = await _ci_merge_gate(
+            repo_full_name, pr_number, override_ci=override_ci
+        )
+        if refusal:
+            return refusal
 
         result = await client.merge_pr(
             repo_full_name=repo_full_name,
@@ -1156,6 +1224,7 @@ def build_github_tools(
         # Include confirmation context in the result for auditability
         if "merged successfully" in result.lower():
             result += _confirmation_echo(pr_title, head_base_branches)
+            result += override_note
         return result
 
     async def close_direct_repo_pr(
@@ -1331,6 +1400,68 @@ def build_github_tools(
         return await client.enable_pages(
             repo_full_name=repo_full_name,
             build_type=build_type,
+        )
+
+    async def get_repo_settings(repo_full_name: str) -> str:
+        """Read a repository's branch/merge-hygiene settings.
+
+        Calls ``GET /repos/{owner}/{repo}`` and reports
+        ``delete_branch_on_merge``, ``default_branch``, ``allow_auto_merge``
+        and the other merge-strategy flags.  Read-only.
+
+        **No BLOCKED-state requirement.**
+
+        **Scope:** *repo_full_name* must be within the robotsix-mill GitHub
+        App's current installation scope (checked dynamically at call time).
+
+        Args:
+            repo_full_name: GitHub ``owner/name`` (e.g.
+                ``"robotsix/robotsix-chat"``).
+
+        Returns:
+            One line per setting (``- key: value``), or an error string.
+
+        """
+        if error := await assert_in_scope(client, repo_full_name):
+            return error
+        return await client.get_repo_settings(repo_full_name)
+
+    async def set_repo_delete_branch_on_merge(
+        repo_full_name: str,
+        enabled: bool = True,
+    ) -> str:
+        """Toggle ``delete_branch_on_merge`` on a repository.
+
+        Sends ``PATCH /repos/{owner}/{repo}`` with a body containing ONLY
+        ``delete_branch_on_merge`` — no other repository setting can be
+        changed through this tool.  Idempotent.  Requires the GitHub App
+        permission ``Administration: write``.
+
+        **Repository-settings mutation.**  Call it when the operator asked
+        for it in the conversation or when a periodic preset written by the
+        operator (e.g. ``repo-hygiene`` PART 2) instructs it — that preset
+        is the operator's standing consent.  Read the current value first
+        with ``get_repo_settings`` and only call this when it differs.
+
+        **No BLOCKED-state requirement.**
+
+        **Scope:** *repo_full_name* must be within the robotsix-mill GitHub
+        App's current installation scope (checked dynamically at call time).
+
+        Args:
+            repo_full_name: GitHub ``owner/name``.
+            enabled: Target value (default ``True``).
+
+        Returns:
+            A confirmation message, or an actionable error (e.g. missing
+            ``administration: write`` permission).
+
+        """
+        if error := await assert_in_scope(client, repo_full_name):
+            return error
+        return await client.set_delete_branch_on_merge(
+            repo_full_name=repo_full_name,
+            enabled=enabled,
         )
 
     async def reset_implement_spawn_counter(ticket_id: str) -> str:
@@ -1869,6 +2000,8 @@ def build_github_tools(
         close_direct_repo_pr,
         arm_direct_repo_auto_merge,
         enable_repo_pages,
+        get_repo_settings,
+        set_repo_delete_branch_on_merge,
         reset_implement_spawn_counter,
         apply_patch_to_file,
         push_patch_to_pr_branch,

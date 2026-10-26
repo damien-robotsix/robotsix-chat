@@ -16,7 +16,11 @@ import logging
 from collections.abc import Awaitable, Callable
 from typing import TYPE_CHECKING, Any
 
-from .actions_client import ActionsClient, StartupFailureClass
+from .actions_client import (
+    ActionsClient,
+    StartupFailureClass,
+    summarize_check_runs,
+)
 
 if TYPE_CHECKING:
     from robotsix_chat.config import DirectRepoSettings
@@ -758,11 +762,13 @@ def build_github_tools_ci(
     ) -> str:
         """Fetch live CI run status and PR state from GitHub.
 
-        Combines PR metadata (state, mergeability, draft status) with the
-        latest CI workflow runs for the PR's head branch into a single
-        human-readable summary.  Use this tool BEFORE asserting success or
-        signalling the operator about CI/PR status — never rely on cached
-        or inferred data.
+        Combines PR metadata (state, mergeability, draft status) with an
+        authoritative CI verdict computed over EVERY check-run of the PR's
+        head commit (``GREEN`` / ``RED`` / ``PENDING`` / ``NONE`` /
+        ``UNKNOWN``), followed by the workflow runs as detail.  Use this
+        tool BEFORE asserting success or signalling the operator about
+        CI/PR status — never rely on cached or inferred data, and never
+        call a PR CI-green unless the verdict line says ``GREEN``.
 
         **Read-only.** Does not modify any repository state.
         **No BLOCKED-state requirement.** This is a pure diagnostic tool —
@@ -782,7 +788,8 @@ def build_github_tools_ci(
 
         Returns:
             A multi-line summary: PR state, mergeability, draft status,
-            and the latest CI workflow runs for the PR's head branch.
+            the check-run CI verdict for the head commit, and the workflow
+            runs for the PR's head branch as detail.
 
         """
         ref = await resolve_pr_ref(
@@ -836,27 +843,67 @@ def build_github_tools_ci(
         elif mergeable is False:
             lines.append("Mergeability: conflicts detected.")
 
-        # --- CI workflow runs for the PR's head branch ---
+        # --- authoritative verdict: EVERY check-run on the head commit ---
+        # /actions/runs is paginated by recency and omits workflows that
+        # did not fit the page; the Checks API lists every check-run of the
+        # commit, so the verdict comes from there (chat #2208, 2026-10-25).
+        head_sha = str(head.get("sha") or "")
+        if head_sha:
+            try:
+                actions_client = ActionsClient(settings)
+                check_runs = await actions_client.list_check_runs(
+                    repo_full_name, head_sha
+                )
+            except Exception as exc:
+                lines.append(
+                    f"CI verdict for head {head_sha[:8]}: UNKNOWN — the "
+                    f"check-runs API failed ({exc}). Do NOT report this PR "
+                    f"as CI-green and do NOT merge it on this evidence."
+                )
+            else:
+                summary = summarize_check_runs(check_runs)
+                lines.append(
+                    f"CI verdict for head {head_sha[:8]}: {summary.describe()}"
+                )
+                if summary.verdict != "green":
+                    lines.append(
+                        "Do NOT merge or report this PR as CI-green until the "
+                        "verdict above is GREEN."
+                    )
+        else:
+            lines.append(
+                "CI verdict: UNKNOWN — the PR data carries no head sha. "
+                "Do NOT report this PR as CI-green."
+            )
+        if mergeable_state in {"blocked", "unstable", "dirty", "behind"}:
+            lines.append(
+                f"Merge gate: GitHub reports mergeable_state={mergeable_state} "
+                f"— the PR is not ready to merge as it stands."
+            )
+
+        # --- detail: workflow runs on the head commit (NOT the verdict) ---
         if head_branch:
             try:
                 actions_client = ActionsClient(settings)
                 runs = await actions_client.list_workflow_runs(
-                    repo_full_name, branch=head_branch, per_page=5
+                    repo_full_name,
+                    branch=head_branch,
+                    head_sha=head_sha or None,
+                    per_page=20,
                 )
             except Exception as exc:
-                lines.append(f"CI status: could not fetch workflow runs — {exc}")
+                lines.append(f"Workflow runs: could not fetch — {exc}")
                 return "\n".join(lines)
 
             if not runs:
-                lines.append(
-                    f"CI status: no recent workflow runs found "
-                    f"for branch '{head_branch}'."
-                )
+                lines.append(f"Workflow runs: none found for branch '{head_branch}'.")
             else:
                 lines.append(
-                    f"CI status for branch '{head_branch}' ({len(runs)} recent run(s)):"
+                    f"Workflow runs for branch '{head_branch}' "
+                    f"({len(runs)} run(s); detail only — the CI verdict "
+                    f"above is authoritative):"
                 )
-                for r in runs[:5]:
+                for r in runs[:20]:
                     lines.append(
                         f"  - {r.get('name', '?')} "
                         f"(run {r.get('id')}): "
@@ -864,7 +911,7 @@ def build_github_tools_ci(
                         f"conclusion={r.get('conclusion')}"
                     )
         else:
-            lines.append("CI status: could not determine head branch from PR data.")
+            lines.append("Workflow runs: could not determine head branch from PR data.")
 
         return "\n".join(lines)
 

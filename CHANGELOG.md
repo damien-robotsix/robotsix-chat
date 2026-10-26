@@ -69,6 +69,57 @@ Everything below predates the release-please migration and was
 maintained by hand or by towncrier. It is kept verbatim; new entries
 are added above by release-please.
 
+## [0.29.0](https://github.com/damien-robotsix/robotsix-chat/compare/v0.28.0...v0.29.0) (2026-10-25)
+
+
+### Features
+
+* Add anthropic_api_key masked-secret field to Settings schema and wire it to the anthropic transport (20261025T213236Z-add-anthropic-api-key-masked-secret-fiel-b799) ([#2217](https://github.com/damien-robotsix/robotsix-chat/issues/2217)) ([c698a3b](https://github.com/damien-robotsix/robotsix-chat/commit/c698a3b0d2479f410b6c431c612f161af42e8805))
+* Add PR-age escalation to release-gate periodic preset in robotsix-chat config (20261025T171624Z-add-pr-age-escalation-to-release-gate-pe-a88c) ([#2214](https://github.com/damien-robotsix/robotsix-chat/issues/2214)) ([e0d7779](https://github.com/damien-robotsix/robotsix-chat/commit/e0d77799bc59046ab891e9aa632d1e548f2c813e))
+* Chat restart (self_restart / restart_lifecycle_service / config apply) must not kill agent turns in flight: drain or hot-reload periodic presets (20261025T134513Z-chat-restart-self-restart-restart-lifecy-2c89) ([#2210](https://github.com/damien-robotsix/robotsix-chat/issues/2210)) ([d28e1c8](https://github.com/damien-robotsix/robotsix-chat/commit/d28e1c8c347708ff8507dd7bae8b109e59b90f1c))
+* **periodic:** add release-gate preset with explicit CI check-runs API logging ([#2208](https://github.com/damien-robotsix/robotsix-chat/issues/2208)) ([2063d91](https://github.com/damien-robotsix/robotsix-chat/commit/2063d9167745591f3cfa5aa34be8a7911f34d02d))
+
+
+### Bug Fixes
+
+* **feedback:** gate chat-config panels on an explicit operator reply ([#2207](https://github.com/damien-robotsix/robotsix-chat/issues/2207)) ([223b115](https://github.com/damien-robotsix/robotsix-chat/commit/223b1159d7d91b38e659a6a594c866a45c9c51ee))
+* **periodic:** mirror the release-gate preset prompt in SHIPPED_PRESET_PROMPT_SHA256S ([#2215](https://github.com/damien-robotsix/robotsix-chat/issues/2215)) ([261b12e](https://github.com/damien-robotsix/robotsix-chat/commit/261b12e4a953a00a32cdd7e2a675d3f51517eaeb))
+* **repo:** CI verdict from EVERY check-run; merge tool refuses non-green PRs ([#2216](https://github.com/damien-robotsix/robotsix-chat/issues/2216)) ([61a21b6](https://github.com/damien-robotsix/robotsix-chat/commit/61a21b601f8730f98b2e6aa3f6aae9dbaf25f291))
+
+## [0.28.0](https://github.com/damien-robotsix/robotsix-chat/compare/v0.27.0...v0.28.0) (2026-10-25)
+
+
+### Features
+
+* Receive other components' Langfuse project credentials through the deploy contract (consumed scopes), not by copying keys into chat's config (20261021T091750Z-receive-other-components-langfuse-projec-6d43) ([#2190](https://github.com/damien-robotsix/robotsix-chat/issues/2190)) ([6ad8b5e](https://github.com/damien-robotsix/robotsix-chat/commit/6ad8b5ebcdc630aa93d842174df71a1b47aec2d2))
+
+
+### Bug Fixes
+
+* ci_fix: out-of-scope CI failure — Security scan (shared) / Security, Lockfile and audit (20261023T231319Z-ci-fix-out-of-scope-ci-failure-security-77d7) ([#2196](https://github.com/damien-robotsix/robotsix-chat/issues/2196)) ([2d7f572](https://github.com/damien-robotsix/robotsix-chat/commit/2d7f572582c4eb977c50819b0efbc9e240dd30b0))
+
+
+### Documentation
+
+* Reorganize module periodic: align to per-module layout (src/docs/tests) (20261024T053215Z-reorganize-module-periodic-align-to-per-2a95) ([#2202](https://github.com/damien-robotsix/robotsix-chat/issues/2202)) ([a4c090a](https://github.com/damien-robotsix/robotsix-chat/commit/a4c090a0aab6b00c611fd9e38f21e6e6f06a8f49))
+
+## [0.27.0](https://github.com/damien-robotsix/robotsix-chat/compare/v0.26.1...v0.27.0) (2026-10-22)
+
+
+### Features
+
+* github component: expose repository settings (delete_branch_on_merge) so repo-hygiene PART 2 can run (20261022T123238Z-github-component-expose-repository-setti-5acd) ([#2189](https://github.com/damien-robotsix/robotsix-chat/issues/2189)) ([b042d5a](https://github.com/damien-robotsix/robotsix-chat/commit/b042d5ab33b5511376a8a556292d0f1378583532))
+* Preset prompt changes in the shipped config/config.json never reach the live chat presets (20261022T161939Z-preset-prompt-changes-in-the-shipped-con-b643) ([#2191](https://github.com/damien-robotsix/robotsix-chat/issues/2191)) ([4060e75](https://github.com/damien-robotsix/robotsix-chat/commit/4060e7564f0a6afd68a21c50e22918a158f16eab))
+* repo-hygiene: rebase (update-branch) bot PRs before judging them CI-red (20261022T123238Z-repo-hygiene-rebase-update-branch-bot-pr-3695) ([#2184](https://github.com/damien-robotsix/robotsix-chat/issues/2184)) ([2d94e91](https://github.com/damien-robotsix/robotsix-chat/commit/2d94e911fd3a8abf9b90631c0ab1721b52e657eb))
+* Surface caretaker findings (claude_auth, crash_loop, health) to the operator without a model in the loop (20261020T195231Z-surface-caretaker-findings-claude-auth-c-2447) ([#2164](https://github.com/damien-robotsix/robotsix-chat/issues/2164)) ([5c03976](https://github.com/damien-robotsix/robotsix-chat/commit/5c0397690679c596b754e0a01b378caa1741dd0c))
+
+
+### Bug Fixes
+
+* CI failure: CI on main (20261022T091850Z-ci-failure-ci-on-main-c557) ([#2181](https://github.com/damien-robotsix/robotsix-chat/issues/2181)) ([8da3742](https://github.com/damien-robotsix/robotsix-chat/commit/8da3742fa2164c5ff356da914a62357729b187f0))
+* **ci:** skip Auto-format on dependabot PRs (no repo secrets → token mint fails) ([#2183](https://github.com/damien-robotsix/robotsix-chat/issues/2183)) ([91558e0](https://github.com/damien-robotsix/robotsix-chat/commit/91558e0b7d4114e168a33404c9d5122ddf146090))
+* **subsessions:** accept message/content/body as aliases of message_subsession text ([#2187](https://github.com/damien-robotsix/robotsix-chat/issues/2187)) ([d5f9361](https://github.com/damien-robotsix/robotsix-chat/commit/d5f93617ddd858eb5e2a8a54509814acbe28d20b))
+
 ## [0.26.1](https://github.com/damien-robotsix/robotsix-chat/compare/v0.26.0...v0.26.1) (2026-10-21)
 
 

@@ -4,7 +4,7 @@
 // String transforms (parseSuggestions, stripStreamingSuggestions) are pure
 // and DOM-free.  The DOM-coupled chip helpers (renderSuggestionChips,
 // disableStaleSuggestionChips) also live here so they can be unit-tested
-// under jsdom (see tests/js/suggestions.test.js).  chat.js imports
+// under jsdom (see tests/ui/js/suggestions.test.js).  chat.js imports
 // everything from this single module.
 
 // Parses a ```suggestions fenced block from the assistant message text.

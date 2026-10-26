@@ -1950,3 +1950,55 @@ async def test_resume_restores_undelivered_user_chat_message_once(
     if worker is not None:
         with contextlib.suppress(asyncio.CancelledError):
             await asyncio.wait_for(worker, 2.0)
+
+
+@pytest.mark.asyncio
+async def test_resume_user_chat_reexecutes_interrupted_operator_decision(
+    tmp_path: Path,
+) -> None:
+    """An operator decision whose execution a restart cut short is re-run.
+
+    Incident 2026-10-25: a ``user_chat`` panel had received the operator's
+    decision ("Yes, merge release 0.28.0") and was RUNNING its follow-up
+    turn when the process restarted.  The decision was transcripted but the
+    follow-up turn never completed, so after boot the panel must be re-driven
+    with the decision in its first turn — not parked waiting for an answer
+    the operator already gave.
+    """
+    store_path = tmp_path / "subsessions.json"
+    registry1 = SubsessionRegistry(store_path=store_path)
+    panel = registry1.create(
+        kind=SubsessionKind.USER_CHAT,
+        owner_session_id=OWNER,
+        parent_id=None,
+        depth=1,
+        title="merge release?",
+        prompt="Ask the operator whether to merge release 0.28.0",
+        model_level=3,
+    )
+    question = "Merge release 0.28.0 (PR #2194)?"
+    registry1.append_turn_history(panel.id, "Ask about the release", question)
+    registry1.append_transcript(panel.id, "assistant", question)
+    decision = "Yes, merge release 0.28.0."
+    registry1.append_transcript(panel.id, "user", decision)
+    # The follow-up execution was mid-turn when the restart hit.
+    registry1.set_status(panel.id, SubsessionStatus.RUNNING)
+
+    gate = asyncio.Event()
+    agent = FakeAgent(["Merging now."], gate=gate)
+    registry2 = SubsessionRegistry(store_path=store_path)
+    env = build_env(agent=agent, registry=registry2, settings=make_settings())
+    resume_subsessions(env)
+
+    for _ in range(200):
+        if agent.calls:
+            break
+        await asyncio.sleep(0.01)
+    assert agent.calls, "interrupted operator decision was not re-executed"
+    assert decision in agent.calls[0]["message"]
+
+    worker = registry2._running.get(panel.id)
+    if worker is not None:
+        registry2.cancel_and_close(panel.id, reason="teardown", closed_by="system")
+        with contextlib.suppress(asyncio.CancelledError):
+            await asyncio.wait_for(worker, 2.0)

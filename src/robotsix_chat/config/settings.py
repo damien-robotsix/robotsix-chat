@@ -8,6 +8,7 @@ from __future__ import annotations
 
 import hashlib
 import logging
+import os
 from typing import Any
 
 from pydantic import (
@@ -24,6 +25,7 @@ from robotsix_chat.config.constants import (
     VALID_MODEL_LEVELS,
     drop_blank_numeric_sentinels,
 )
+from robotsix_chat.config.langfuse_models import overlay_env_projects
 from robotsix_chat.config.models import (
     CaretakerSettings,
     CentralDeploySettings,
@@ -157,6 +159,13 @@ class Settings(BaseModel):
             ``claudeSDK`` default slot serves calls. Without it, provider
             failover is unavailable. Accepts the legacy config key
             ``llmio_api_key`` as a backward-compatible alias.
+        anthropic_api_key: Anthropic API key, forwarded to llmio only for
+            slot attempts served by the direct Anthropic Messages API
+            transport (provider ``anthropic``). Resolution order: this
+            config field when non-empty, else llmio's own fallback to the
+            ``ANTHROPIC_API_KEY`` process environment variable. Without
+            either, the ``anthropic`` slot cannot run and failover moves on
+            to the next slot.
         summary_model_level: Capability level of the dedicated summariser
             agent — the idle-timeout compaction summary, the carryover
             summary and conversation titles. Defaults to ``1`` (cheap,
@@ -229,6 +238,17 @@ class Settings(BaseModel):
             "different consumers, so they are intentionally not merged. "
             "Accepts the legacy config key ``llmio_api_key`` as a "
             "backward-compatible alias."
+        ),
+    )
+    anthropic_api_key: SecretStr = Field(
+        default=SecretStr(""),
+        json_schema_extra=_LLMIO_GROUP,
+        description=(
+            "Anthropic API key forwarded to llmio's direct Anthropic "
+            "Messages API provider slot (provider ``anthropic``). "
+            "Resolution order: this field when non-empty, else llmio "
+            "falls back to the ``ANTHROPIC_API_KEY`` environment variable. "
+            "Without either, the ``anthropic`` slot is skipped by failover."
         ),
     )
     summary_model_level: int = Field(default=1, json_schema_extra=_LLMIO_GROUP)
@@ -1718,8 +1738,18 @@ class Settings(BaseModel):
 
     @classmethod
     def load(cls) -> Settings:
-        """Load from the JSON file located by ``ROBOTSIX_CONFIG_FILE``."""
-        return load_config(cls)
+        """Load from the JSON file located by ``ROBOTSIX_CONFIG_FILE``.
+
+        Other components' Langfuse credentials dispatched by central-deploy
+        (``LANGFUSE_<PROJECT>_PUBLIC_KEY`` / ``_SECRET_KEY`` env vars) are
+        overlaid onto ``langfuse.projects`` in memory — see
+        :func:`~robotsix_chat.config.langfuse_models.overlay_env_projects`.
+        """
+        settings = load_config(cls)
+        langfuse = overlay_env_projects(settings.langfuse, os.environ)
+        if langfuse is settings.langfuse:
+            return settings
+        return settings.model_copy(update={"langfuse": langfuse})
 
 
 def _migrate_legacy_deploy_and_mail(data: Any) -> Any:

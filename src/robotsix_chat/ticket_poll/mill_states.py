@@ -24,6 +24,7 @@ __all__ = [
     "ACTIVE_WORK_STATES",
     "ALL_STATES",
     "HUMAN_WAIT_STATES",
+    "MERGED_TERMINAL_STATES",
     "MERGE_STATES",
     "OPEN_STATES",
     "PRE_WORK_STATES",
@@ -79,6 +80,14 @@ HUMAN_WAIT_STATES: frozenset[str] = frozenset(
 TERMINAL_STATES: frozenset[str] = frozenset(
     {"done", "closed", "answered", "epic_closed"}
 )
+
+#: Terminal states meaning "PR merged / pipeline completed" — the subset of
+#: :data:`TERMINAL_STATES` that proves the ticket's work actually landed.
+#: Deliberately excludes ``answered`` (an information-only ticket answered
+#: without a PR) and ``epic_closed`` (an epic rollup closed, not a merge), so
+#: PR-merged guards (subsession watcher/resume/delivery, feedback dedup) do
+#: not treat those outcomes as a delivered PR.
+MERGED_TERMINAL_STATES: frozenset[str] = frozenset({"done", "closed"})
 
 #: Every state the mill can report (superset of the sets above).
 ALL_STATES: frozenset[str] = (

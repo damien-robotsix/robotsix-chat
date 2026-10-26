@@ -4,7 +4,7 @@
 // and cancel operations.
 
 import { describe, it, expect, vi } from "vitest";
-import { createMessageQueue } from "../../src/robotsix_chat/ui/static/message-queue.js";
+import { createMessageQueue } from "../../../src/robotsix_chat/ui/static/message-queue.js";
 
 describe("createMessageQueue", () => {
   // ------------------------------------------------------------------

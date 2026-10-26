@@ -13,7 +13,7 @@ import {
   getNotificationPermission,
   requestNotificationPermission,
   notify,
-} from "../../src/robotsix_chat/ui/static/notify.js";
+} from "../../../src/robotsix_chat/ui/static/notify.js";
 
 function makeFakeNotification({ permission = "default" } = {}) {
   class FakeNotification {

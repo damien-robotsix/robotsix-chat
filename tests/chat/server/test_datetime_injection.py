@@ -14,7 +14,10 @@ from datetime import UTC, datetime
 # Pre-existing import cycle (see test_skill_disclosure): entering the skill
 # ring from ``periodic`` completes it cleanly.
 import robotsix_chat.periodic  # noqa: F401
-from robotsix_chat.chat.server.app import _current_datetime_directive, _inject_skills
+from robotsix_chat.chat.server.skill_wiring import (
+    _current_datetime_directive,
+    _inject_skills,
+)
 from robotsix_chat.config import Settings
 
 

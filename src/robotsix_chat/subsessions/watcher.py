@@ -28,7 +28,7 @@ import httpx
 
 from robotsix_chat.chat.events import SSE_NOTIFICATION_TYPE
 from robotsix_chat.repo.direct.board_client import BoardClient
-from robotsix_chat.subsessions.worker_mill import _TICKET_STATE_TERMINAL
+from robotsix_chat.ticket_poll.mill_states import MERGED_TERMINAL_STATES
 
 if TYPE_CHECKING:
     from .worker import SubsessionEnv
@@ -696,7 +696,7 @@ async def watch_paused_monitors(env: SubsessionEnv) -> None:
                         board_url, info.depends_on_ticket_id, info.id
                     )
                     if prereq_state is not None and prereq_state.lower() in (
-                        _TICKET_STATE_TERMINAL
+                        MERGED_TERMINAL_STATES
                     ):
                         logger.info(
                             "Watcher: subsession %s prerequisite ticket "
@@ -918,7 +918,7 @@ async def watch_paused_monitors(env: SubsessionEnv) -> None:
                     # the board ticket's pr_url is null), keep the monitor
                     # paused rather than silently accepting a terminal
                     # state with no code merged.
-                    if current_state.lower() in _TICKET_STATE_TERMINAL:
+                    if current_state.lower() in MERGED_TERMINAL_STATES:
                         pr_number_raw = checkpoint.get("pr_number")
                         repo_raw = checkpoint.get("repo_full_name")
                         if (
@@ -1229,7 +1229,7 @@ async def watch_paused_monitors(env: SubsessionEnv) -> None:
                                             ticket_terminal = (
                                                 state_str is not None
                                                 and state_str.lower()
-                                                in _TICKET_STATE_TERMINAL
+                                                in MERGED_TERMINAL_STATES
                                             )
                                     if not ticket_terminal:
                                         if env.event_sink is not None:

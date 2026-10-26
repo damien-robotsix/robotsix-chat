@@ -6,8 +6,8 @@ export default defineConfig({
     // integration tests).  Pure unit tests (SSE parser) can override
     // to "node" per-suite.
     environment: "jsdom",
-    // Look for test files under tests/js/.
-    include: ["tests/js/**/*.test.js"],
+    // Look for test files under tests/ui/js/.
+    include: ["tests/ui/js/**/*.test.js"],
     // Timeout after 10 s (SSE parser tests are async but fast).
     testTimeout: 10_000,
   },

@@ -4,7 +4,7 @@
 // isClosed suppression, and cancel behaviour.
 
 import { describe, it, expect, vi, beforeEach, afterEach } from "vitest";
-import { createReconnectGuard } from "../../src/robotsix_chat/ui/static/reconnect-guard.js";
+import { createReconnectGuard } from "../../../src/robotsix_chat/ui/static/reconnect-guard.js";
 
 describe("createReconnectGuard", () => {
   beforeEach(() => {

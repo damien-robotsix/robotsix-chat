@@ -16,11 +16,8 @@ from importlib import resources
 from pathlib import Path
 from typing import TYPE_CHECKING, Any
 
-from robotsix_chat.llm.capabilities import model_supports_images
-from robotsix_chat.llm.captioning import caption_or_omit_note
-
 if TYPE_CHECKING:
-    from robotsix_chat.config.models import FileHubToolsSettings
+    from .settings import FileHubToolsSettings
 
 __all__ = ["build_file_hub_tools", "load_file_hub_skill"]
 
@@ -348,6 +345,12 @@ def build_file_hub_tools(
         # A BinaryContent block in a tool result 404s the whole turn on
         # text-only OpenRouter models, so degrade to a caption (when a vision
         # model is configured) or the curated omit note there.
+        # Imported lazily: ``robotsix_chat.llm`` imports ``robotsix_chat.config``,
+        # which imports this package's ``settings`` module — a top-level import
+        # here would be circular.
+        from robotsix_chat.llm.capabilities import model_supports_images
+        from robotsix_chat.llm.captioning import caption_or_omit_note
+
         if not model_supports_images():
             return await caption_or_omit_note(
                 metadata,

@@ -16,6 +16,7 @@ import httpx
 from robotsix_http import RetryConfig
 
 from robotsix_chat.chat.events import SSE_NOTIFICATION_TYPE
+from robotsix_chat.ticket_poll.mill_states import MERGED_TERMINAL_STATES
 
 from .models import SubsessionInfo, SubsessionStatus
 
@@ -37,7 +38,6 @@ _MAX_MILL_FAILURES = 2
 _MAX_STALE_WORKER_RESUMES = 2
 
 # Ticket states recognised by the resume status check.
-_TICKET_STATE_TERMINAL = frozenset({"closed", "done"})
 _TICKET_STATE_BLOCKED = frozenset({"blocked"})
 _TICKET_STATE_HUMAN_APPROVAL = frozenset({"human_issue_approval"})
 
@@ -396,7 +396,7 @@ async def _check_resume_status(
         env.registry.update_checkpoint(sub_id, checkpoint)
 
     # Terminal → close the subsession.
-    if current_state_str.lower() in _TICKET_STATE_TERMINAL:
+    if current_state_str.lower() in MERGED_TERMINAL_STATES:
         pr_note = ""
         checkpoint_pr = checkpoint.get("pr_number")
         has_checkpoint_pr = isinstance(checkpoint_pr, int) and checkpoint_pr > 0

@@ -2,7 +2,9 @@
 
 robotsix-chat is configured via a single JSON config file, loaded by
 [`robotsix-config`](https://github.com/damien-robotsix/robotsix-config). There is no YAML cascade
-and no env-var overlay — the only environment variable consumed for config is the file locator.
+and no general env-var overlay — the only environment variable consumed for config is the file
+locator, plus the deploy-dispatched Langfuse credentials described under
+[Cross-project trace inspection](#cross-project-trace-inspection).
 
 ## Config ownership
 
@@ -61,6 +63,8 @@ traces.
 Secret fields include:
 
 - `openrouter_api_key` (accepts the legacy key `llmio_api_key` as an alias)
+- `anthropic_api_key` (direct Anthropic Messages API slot; falls back to the `ANTHROPIC_API_KEY` env
+  var when empty)
 - `langfuse.projects.<project>.public_key`, `langfuse.projects.<project>.secret_key`
 - `openrouter.keys.<alias>`, `memory.embedding.api_key`
 - `central_deploy.deploy_api_key`
@@ -93,6 +97,7 @@ pipelines (summary, vision captioning).
 | `chat_default_model_level`      | `integer`         | `2`                             | The chat agent's default capability tier: `1` (cheap/frequent), `2` (workhorse, default), `3` (frontier). Levels are a pure capability axis; the serving provider is llmio's failover axis (keyless Claude SDK default slot, keyed OpenRouter fallback slot).                                                                                                                                                                                                                                    |
 | `summary_model_level`           | `integer`         | `1`                             | Capability level of the dedicated summariser agent (idle-timeout compaction summary, carryover summary, conversation titles). Runs once per idle gap, not per turn; a bounded text transformation, so the cheap/frequent level.                                                                                                                                                                                                                                                                  |
 | `openrouter_api_key`            | `string` (secret) | `""`                            | OpenRouter API key for llmio's keyed fallback slot (and vision captioning). Required for levels 1–2; ignored for 3–4. Accepts the legacy key `llmio_api_key` as a backward-compatible alias. Distinct from the top-level `openrouter` credential block (memory subsystem).                                                                                                                                                                                                                       |
+| `anthropic_api_key`             | `string` (secret) | `""`                            | Anthropic API key for llmio's direct Anthropic Messages API slot (provider `anthropic`). Resolution order: this field when non-empty, else the `ANTHROPIC_API_KEY` environment variable; with neither, failover skips that slot.                                                                                                                                                                                                                                                                 |
 | `llmio_failover_window_seconds` | `number`          | `900.0`                         | How long llmio routes calls straight to the fallback (OpenRouter) provider slot after the default (Claude) slot fails repeatedly or exhausts its quota, before automatically returning to the default.                                                                                                                                                                                                                                                                                           |
 | `llmio_tier_overrides`          | `object`          | `{}`                            | Overrides merged over llmio's baked tier config, in load_tier_config's nested shape — e.g. `{"fallback": {"level2": {"model": "openrouter-<model>"}}}` to change which model serves a capability level on a provider slot. Per-level dicts merge field-by-field over the baked binding; unknown keys are rejected. The failover window from `llmio_failover_window_seconds` is layered on top. Edited in the settings panel as a validated JSON textarea; the saved value must be a JSON object. |
 | `vision_model`                  | `string`          | `openrouter/openai/gpt-4o-mini` | OpenRouter model id for automatic image captioning. When configured (non-empty), tools like `render_pdf_page` and `render_url` will send images to this model for a one-shot text caption when the active chat model lacks vision support, so text-only models can still understand image content. Empty string disables captioning; images are then omitted with a curated note on text-only models.                                                                                            |
@@ -198,7 +203,36 @@ The `inspect_langfuse_trace` tool accepts a `project` parameter that selects whi
 to query; it resolves that project's credentials from the top-level `langfuse.projects.<name>` block
 at call time, defaulting to `robotsix-chat` when the parameter is omitted. To let this component
 inspect **another fleet component's** traces — useful for periodic cost-review tasks that need to
-identify cost drivers across all high-spend projects — add that project's credentials under
+identify cost drivers across all high-spend projects — that project's credentials must be present
+under `langfuse.projects`.
+
+**Preferred: dispatched by central-deploy.** Another component's Langfuse keys are never copied into
+this component's config file. Instead central-deploy dispatches them at deploy time:
+
+1. The owning component (e.g. mill) tags its Langfuse key pair in central-deploy's env store with
+   the scope `langfuse:<project-name>` (e.g. `langfuse:robotsix-mill`), stored under the env names
+   `LANGFUSE_<PROJECT>_PUBLIC_KEY` / `LANGFUSE_<PROJECT>_SECRET_KEY`, where `<PROJECT>` is the
+   project name upper-cased with `-` → `_` (e.g. `LANGFUSE_ROBOTSIX_MILL_PUBLIC_KEY`).
+1. This component's central-deploy `ComponentConfig` declares `consumed_scopes: ["langfuse:*"]`, so
+   every deploy (and rollback / caretaker restart) injects all matching keys into the container
+   environment.
+1. On startup `Settings.load()` materialises each complete `LANGFUSE_<PROJECT>_PUBLIC_KEY` +
+   `LANGFUSE_<PROJECT>_SECRET_KEY` pair as `langfuse.projects.<project>` (lower-cased, `_` → `-`),
+   in memory only. The env value overlays a same-named config entry (a config `project_id` is kept);
+   half-filled pairs and the bare `LANGFUSE_PUBLIC_KEY` / `LANGFUSE_SECRET_KEY` are ignored.
+
+| Env var                         | Materialised as                          |
+| ------------------------------- | ---------------------------------------- |
+| `LANGFUSE_<PROJECT>_PUBLIC_KEY` | `langfuse.projects.<project>.public_key` |
+| `LANGFUSE_<PROJECT>_SECRET_KEY` | `langfuse.projects.<project>.secret_key` |
+
+Because the overlay is never written back to `config.json`, rotating the key in the owning
+component's env flows here on the next redeploy. Activation: set the scope tags and
+`consumed_scopes` in central-deploy, redeploy chat, then confirm the startup log line
+`Materialised Langfuse project credentials from deploy env: robotsix-mill` and that
+`inspect_langfuse_trace(project="robotsix-mill", …)` returns traces.
+
+**Fallback: static config.** For local development, the credentials can also be added directly under
 `langfuse.projects`:
 
 ```json
@@ -717,7 +751,7 @@ Periodic sessions are **ordinary chat sessions started on a schedule**. Each pre
 interval: the scheduler creates a fresh session under the `periodic` owner and posts the preset's
 `initial_prompt` through the same code path as an operator message. There is no execution state
 machine, no self-scheduled continuation, and no restart-resume — see
-[the user guide](user-guide/periodic-sessions.md).
+[the user guide](periodic/periodic-sessions.md).
 
 | JSON key                                    | Type      | Default | Description                                                                                                             |
 | ------------------------------------------- | --------- | ------- | ----------------------------------------------------------------------------------------------------------------------- |

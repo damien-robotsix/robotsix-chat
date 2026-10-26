@@ -76,3 +76,23 @@ All rows below except `/health` and `/metrics` are also served under the `/api/v
 The authoritative, machine-readable contract — including per-endpoint summaries, path parameters,
 and request/response bodies — is `GET /openapi.json`. The table above is a human-readable index;
 when the two disagree, the schema wins.
+
+## Repository enumeration is not an HTTP endpoint
+
+There is deliberately **no** `GET /chat/github/repos` endpoint. The only route at that path is
+`POST /chat/github/repos` (create a repository); listing the repositories in the GitHub App
+installation scope is not exposed over HTTP.
+
+This is an architecture decision, not a gap:
+
+- **External agents** (release-gate, other periodic or fleet agents) that need the repo list should
+  enumerate repositories directly through the GitHub API with their own credentials (e.g.
+  `GET /installation/repositories` for a GitHub App installation token, or `gh repo list`).
+- **Server-side code** inside robotsix-chat should call the internal
+  `DirectRepoClient.list_installation_repos()` method (`src/robotsix_chat/repo/direct/client.py`).
+  It resolves the scope dynamically from the GitHub App installation (not a static allowlist) and
+  paginates through every page.
+
+Keeping enumeration off the HTTP surface avoids turning the chat server into a proxy that leaks the
+installation's repo inventory to any caller behind the gateway. Do not add a `GET` handler for
+`/chat/github/repos` without revisiting this decision.

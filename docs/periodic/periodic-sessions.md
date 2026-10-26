@@ -75,8 +75,8 @@ Two things survive that supersede-close:
   current. Without this, every firing killed the previous run's panels and spawned the same
   questions again.
 
-  **Fallback when a turn crashes.** The agent normally surfaces open `user_chat` panels as its
-  first operation, but a turn that fails before the agent even starts (e.g. a network error during
+  **Fallback when a turn crashes.** The agent normally surfaces open `user_chat` panels as its first
+  operation, but a turn that fails before the agent even starts (e.g. a network error during
   `submit_turn`, or a pre-agent validation failure) never performs that check. To ensure
   time-critical operator decisions stay visible even when the main task crashes, a fallback
   mechanism automatically surfaces any open `user_chat` panels into the transcript when a turn
@@ -85,16 +85,17 @@ Two things survive that supersede-close:
   when there are no open panels, so the transcript stays clean when nothing is pending.
 
   **Automatic system alerts.** System health checks (e.g., the memory component's periodic retain
-  health probe) can automatically open a `user_chat` operator panel when a critical subsystem
-  fails. The memory write-failure alert, for example, opens when the memory component's retain
-  path (used by background cognee consolidation) stops working — which never surfaces on the
-  chat request path because memory retains asynchronously. The panel opens with title
-  `Memory writes failing: <error>` and guides the operator to investigate the cause (e.g.
-  exhausted extraction-LLM balance). These alert panels are deduped per cause, so if the same
-  error persists across multiple health checks, only one panel remains open. The panel
-  automatically closes when the health check detects recovery. Like other pending decisions,
-  these alert panels survive run supersessions, so the operator can investigate in the current
-  run even if a panel was initially opened in a previous run.
+  health probe) can automatically open a `user_chat` operator panel when a critical subsystem fails.
+  The memory write-failure alert, for example, opens when the memory component's retain path (used
+  by background cognee consolidation) stops working — which never surfaces on the chat request path
+  because memory retains asynchronously. The panel opens with title `Memory writes failing: <error>`
+  and guides the operator to investigate the cause (e.g. exhausted extraction-LLM balance). These
+  alert panels are deduped per cause, so if the same error persists across multiple health checks,
+  only one panel remains open. The panel automatically closes when the health check detects
+  recovery. Like other pending decisions, these alert panels survive run supersessions, so the
+  operator can investigate in the current run even if a panel was initially opened in a previous
+  run.
+
 - **The last few runs.** The scheduler remembers the last `RETAINED_RUNS_PER_PRESET` (3) session ids
   of each preset. After every firing, and once at startup, every *other* closed periodic session is
   deleted from the conversation store — a closed run is kept only long enough to read back what the
@@ -105,10 +106,32 @@ Two things survive that supersede-close:
 The sidebar hides closed periodic runs by default. The **Show closed periodic runs (N)** button
 under **+ New chat** reveals them (the choice sticks per browser); the run you are currently viewing
 is always shown. **Discard closed periodic runs (N)** next to it deletes every closed run in one
-confirmed click (the run you are viewing is kept; deletes go one at a time and any refused delete
-is reported, not retried).
+confirmed click (the run you are viewing is kept; deletes go one at a time and any refused delete is
+reported, not retried).
 
 ## Shipped presets
+
+### Where the live presets live
+
+The presets in the committed `config/config.json` are a **template** only. The running chat reads
+its presets from the deployed config volume (the file `ROBOTSIX_CONFIG_FILE` points at; in
+production the central-deploy `chat-config` volume, readable via `GET /config`). The template is
+not copied into the container image, and the live preset list can differ completely from it (for
+example a live `repo-hygiene` preset with no template counterpart). Editing a preset in the
+template therefore changes nothing live by itself.
+
+A preset change reaches the running chat only by editing the live config: `PUT /config` with the
+updated `periodic.sessions` entry (named-list merge by `name`), then restart the chat. When a PR
+changes a template preset prompt, apply the same change to the live preset of the same name.
+
+To keep such drift visible, `src/robotsix_chat/periodic/shipped.py` mirrors every template preset as
+name → SHA256 of its `initial_prompt` (`SHIPPED_PRESET_PROMPT_SHA256S`):
+
+- CI (`tests/periodic/test_shipped_drift.py`) fails when a template preset prompt changes without
+  the mirror being updated — the prompt to check the live config for that preset.
+- At boot the chat logs a `Periodic preset drift` warning for every shipped preset that is absent
+  from the live config, or whose live prompt differs from the shipped one. The live prompt is
+  always kept (it may be an operator edit); the warning only surfaces the gap.
 
 ### `dependabot-drain`
 
@@ -183,7 +206,17 @@ processing.
   behaviour exists because session `331c2099197b4606bfafea0d26c21f1d` spawned a hexarchy blocked
   cascade triage that asked for a decision without listing the ~7 unclaimed files or offering
   classification candidates.
-- **Skeleton-first PARTIAL REPORT strategy prevents token exhaustion.** To prevent silent mid-operation failures where the agent is cut off mid-sentence before reporting work, PARTIAL REPORTs now use a skeleton-first strategy: the agent emits a minimal report skeleton FIRST (counts and full ticket IDs, one per line, no prose) before adding optional prose descriptions. The skeleton is re-emitted after each batch of work with updated counts. This ensures that even if truncation strikes mid-prose or mid-report, the counts and ticket IDs survive and the next run knows what was discovered and can resume. The agent maintains a hard 8–10k token reserve and stops enumeration immediately if remaining tokens drop below 10,000 total, even mid-ticket. When the hard stop is reached, it emits the final skeleton with what was discovered and what remains unenumerated. This strategy exists because session `36857ec8e0b34cf6b54a3b6bbf60c3ca` enumerated multiple operations before being cut off, with no final report visible to the operator.
+- **Skeleton-first PARTIAL REPORT strategy prevents token exhaustion.** To prevent silent
+  mid-operation failures where the agent is cut off mid-sentence before reporting work, PARTIAL
+  REPORTTs now use a skeleton-first strategy: the agent emits a minimal report skeleton FIRST
+  (counts and full ticket IDs, one per line, no prose) before adding optional prose descriptions.
+  The skeleton is re-emitted after each batch of work with updated counts. This ensures that even if
+  truncation strikes mid-prose or mid-report, the counts and ticket IDs survive and the next run
+  knows what was discovered and can resume. The agent maintains a hard 8–10k token reserve and stops
+  enumeration immediately if remaining tokens drop below 10,000 total, even mid-ticket. When the
+  hard stop is reached, it emits the final skeleton with what was discovered and what remains
+  unenumerated. This strategy exists because session `36857ec8e0b34cf6b54a3b6bbf60c3ca` enumerated
+  multiple operations before being cut off, with no final report visible to the operator.
 - **Board-API filters may be ignored — enumerate defensively.** The board API's list endpoints
   (`GET /board/cards` and similar) may silently ignore `status`/`board_id` filter parameters and
   return the entire unfiltered board regardless of what is passed. The prompt therefore instructs
@@ -230,6 +263,24 @@ block per `docs/configuration.md`.
   unconfigured, the report will recommend configuring `langfuse.projects` per `config/config.json`
   and `docs/configuration.md`. Once Langfuse is configured, a second firing will produce per-trace
   analysis instead of aggregate fallback.
+
+### Branch hygiene in operator presets (`repo-hygiene` PART 2)
+
+The operator-defined `repo-hygiene` preset (it lives in the config volume, not in the shipped
+template) asks the agent to verify `delete_branch_on_merge` on every fleet repo. The central-deploy
+`github` component does not expose a repository GET/PATCH, so that step is performed with chat's own
+direct-repo tools (GitHub App installation token, no `component_request`):
+
+- `get_repo_settings(repo_full_name)` — `GET /repos/{owner}/{repo}`; reports
+  `delete_branch_on_merge`, `default_branch`, `allow_auto_merge` and the merge-strategy flags.
+- `set_repo_delete_branch_on_merge(repo_full_name, enabled=True)` — `PATCH /repos/{owner}/{repo}`
+  with a body containing only `delete_branch_on_merge`. Needs the GitHub App permission
+  **Administration: write**; without it the tool returns a permission-denied message.
+
+With `delete_branch_on_merge` on, GitHub deletes merged head branches itself, so the preset needs no
+separate branch-delete step. Update the live preset's PART 2 text to: "For each fleet repo, call
+`get_repo_settings`; when `delete_branch_on_merge` is false, call `set_repo_delete_branch_on_merge`
+with `enabled=true` and list the repos changed in the report."
 
 ## Session-end contract and interrupted reports
 

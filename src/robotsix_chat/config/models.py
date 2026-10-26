@@ -6,6 +6,8 @@ re-exports them so ``from robotsix_chat.config.models import ...`` keeps
 working unchanged.
 """
 
+from robotsix_chat.file_hub_tools.settings import FileHubToolsSettings
+
 from .auth_models import MobileAuthSettings
 from .component_models import (
     ComponentClientSettings,
@@ -18,7 +20,6 @@ from .deploy_models import (
     CentralDeploySettings,
     ComponentCredentials,
 )
-from .file_hub_models import FileHubToolsSettings
 from .github_models import (
     GitHubActionsSettings,
     GitHubSecuritySettings,
