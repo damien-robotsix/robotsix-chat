@@ -13,8 +13,51 @@ concurrency:
   cancel-in-progress: ${{ github.event_name == 'pull_request' }}
 
 jobs:
+  changes:
+    name: Detect dependency changes
+    # The blocking CVE audits (lockfile job's `uv audit`, the shared security
+    # job's pip-audit) only run when a PR touches uv.lock or pyproject.toml.
+    # A newly published advisory against an already-pinned transitive
+    # dependency reproduces on main and is not caused by an unrelated diff —
+    # it is caught by the scheduled `dependency-audit.yml` workflow, which
+    # opens a fix issue, instead of parking every open PR in red CI.
+    # Non-PR events (push to main) always audit.
+    runs-on: ubuntu-latest
+    permissions:
+      contents: read  # checkout the repo
+    outputs:
+      deps: ${{ steps.diff.outputs.deps }}
+    steps:
+      - name: Harden Runner
+        uses: step-security/harden-runner@ccd8616d44fd3846e67624a50d5aad6d37bf2d25  # v2.22.1
+        with:
+          egress-policy: audit
+      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1  # v7.0.1
+        with:
+          persist-credentials: false
+          # The PR checkout is the synthetic merge commit; HEAD^1 is the base
+          # branch tip, so `git diff HEAD^1 HEAD` is exactly the PR's changes.
+          fetch-depth: 2
+      - name: Check whether uv.lock or pyproject.toml changed
+        id: diff
+        env:
+          EVENT_NAME: ${{ github.event_name }}
+        run: |
+          set -euo pipefail
+          if [ "$EVENT_NAME" != "pull_request" ]; then
+            echo "Non-PR event ($EVENT_NAME): running the dependency audit."
+            echo "deps=true" >> "$GITHUB_OUTPUT"
+          elif [ -n "$(git diff --name-only HEAD^1 HEAD -- uv.lock pyproject.toml)" ]; then
+            echo "uv.lock or pyproject.toml changed: running the dependency audit."
+            echo "deps=true" >> "$GITHUB_OUTPUT"
+          else
+            echo "No dependency manifest changes: skipping the blocking dependency audit."
+            echo "deps=false" >> "$GITHUB_OUTPUT"
+          fi
+
   lockfile:
     name: Lockfile and audit
+    needs: [changes]
     runs-on: ubuntu-latest
     permissions:
       contents: read  # checkout the repo
@@ -30,6 +73,10 @@ jobs:
       - name: Check lockfile freshness
         run: uv lock --check
       - name: Audit dependencies
+        # Only when the PR touches uv.lock / pyproject.toml (or on push to
+        # main) — see the `changes` job. Keep the ignore list in sync with
+        # .github/workflows/dependency-audit.yml and .pre-commit-config.yaml.
+        if: ${{ needs.changes.outputs.deps == 'true' }}
         # CVE-2025-69872 / GHSA-w8v5-vhqr-4h9v: diskcache unsafe pickle deserialization.
         # No fix version available; ignored until a patched release is published.
         # --preview-features audit-command: uv ≥0.12 requires the flag; older
@@ -75,6 +122,7 @@ jobs:
 
   security:
     name: Security scan (shared)
+    needs: [changes]
     uses: damien-robotsix/robotsix-github-workflows/.github/workflows/python-security.yml@454851ccfdba26ba4d08f3effea09258dfc3fe2f  # main
     with:
       install-extras: ""
@@ -91,6 +139,10 @@ jobs:
       # oracle (fixed in 50.0.0). Ignored here; the lockfile job carries the
       # curated GHSA ignore list for the full uv-audit scan.
       pip-audit-ignore-vulns: CVE-2026-69247
+      # pip-audit only blocks PRs that touch uv.lock / pyproject.toml (and
+      # push to main); unrelated PRs skip it — new advisories against pinned
+      # deps are caught by the scheduled dependency-audit.yml workflow.
+      run-pip-audit: ${{ needs.changes.outputs.deps == 'true' }}
     permissions:
       contents: read          # checkout the repo
       security-events: write  # required by python-security.yml's nested jobs for SARIF upload
@@ -129,8 +181,11 @@ jobs:
           max_attempts: 3
           retry_wait_seconds: 15
           retry_on: error
+          # uv-audit is skipped here: the dependency CVE audit is scoped to
+          # dependency-changing PRs by the `lockfile` job (see `changes`),
+          # and `--all-files` would otherwise run it on every PR.
           command: |
-            uv run --frozen --with pre-commit --with vulture --with pyright pre-commit run --all-files --show-diff-on-failure
+            SKIP=uv-audit uv run --frozen --with pre-commit --with vulture --with pyright pre-commit run --all-files --show-diff-on-failure
 
   check-sse-types:
     name: SSE event type audit
@@ -466,7 +521,7 @@ jobs:
 
   check:
     name: All CI checks passed
-    needs: [lockfile, ci, security, pre-commit, check-sse-types, check-subsession-kinds, check-activity-kinds, check-subsession-statuses, image-scan, check-config-schema, deptry, frontend-js, pyright, mypy]
+    needs: [changes, lockfile, ci, security, pre-commit, check-sse-types, check-subsession-kinds, check-activity-kinds, check-subsession-statuses, image-scan, check-config-schema, deptry, frontend-js, pyright, mypy]
     # Use !cancelled() so the job still runs when a reusable-workflow call
     # (ci, security) is misreported as "skipped" due to a known GitHub
     # Actions edge case: when a reusable workflow has conditionally-skipped
@@ -482,6 +537,7 @@ jobs:
     steps:
       - name: Verify all gates passed
         env:
+          CHANGES_RESULT: ${{ needs.changes.result }}
           LOCKFILE_RESULT: ${{ needs.lockfile.result }}
           CI_RESULT: ${{ needs.ci.result }}
           SECURITY_RESULT: ${{ needs.security.result }}
@@ -518,6 +574,7 @@ jobs:
             return 1
           }
           echo "--- CI gate results ---"
+          check "$CHANGES_RESULT"                     changes
           check "$LOCKFILE_RESULT"                    lockfile
           check "$CI_RESULT"                          ci                    allow-skipped
           check "$SECURITY_RESULT"                    security              non-blocking

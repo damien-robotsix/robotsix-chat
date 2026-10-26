@@ -226,6 +226,13 @@ standard, "CI-time image scan").
 shared audit step has no ignore mechanism, so enabling both hard-blocks CI on CVEs that have no
 released fix.
 
+**Rule:** The blocking PR audits (`lockfile` job's `uv audit`, the shared security job's pip-audit)
+run only when the PR touches `uv.lock` or `pyproject.toml` (the `changes` job in `ci.yml`), and
+on push to main; pre-commit skips its `uv-audit` hook in CI. New advisories against pinned deps are
+caught by the daily `dependency-audit.yml` workflow, which opens a tracking issue. The
+`--ignore-until-fixed` list lives in `ci.yml`, `dependency-audit.yml` and `.pre-commit-config.yaml`
+— keep all three in sync.
+
 **Rule:** Never commit pre-compiled tool binaries (e.g. hadolint, actionlint, shellcheck) to the
 repository — the pre-commit hooks fetch their own binaries via their hook installers. If a tool
 binary appears on your branch, remove it from tracking and add it to the `.gitignore` "Pre-commit
