@@ -69,6 +69,23 @@ Everything below predates the release-please migration and was
 maintained by hand or by towncrier. It is kept verbatim; new entries
 are added above by release-please.
 
+## [0.30.0](https://github.com/damien-robotsix/robotsix-chat/compare/v0.29.0...v0.30.0) (2026-10-26)
+
+
+### Features
+
+* Let the chat agent create repositories and forks under the operator's account (PAT-backed, confirmation-gated) (20261026T093701Z-let-the-chat-agent-create-repositories-a-7ede) ([#2226](https://github.com/damien-robotsix/robotsix-chat/issues/2226)) ([fe2fec1](https://github.com/damien-robotsix/robotsix-chat/commit/fe2fec1d7e49a5086342d0a2213a9c44ee73240c))
+
+
+### Bug Fixes
+
+* Bump the robotsix-llmio git pin to 3fb688be+ (0.10.x) so CLI 'Control request timeout' turns are retried (20261026T102029Z-bump-the-robotsix-llmio-git-pin-to-3fb68-00a2) ([#2224](https://github.com/damien-robotsix/robotsix-chat/issues/2224)) ([5b67cf7](https://github.com/damien-robotsix/robotsix-chat/commit/5b67cf72e7d72b5a2cce8303626fce2effb4e5fa))
+
+
+### Documentation
+
+* Document architecture decision: repo enumeration not exposed via HTTP endpoint (20261026T092113Z-document-architecture-decision-repo-enum-c7b0) ([#2221](https://github.com/damien-robotsix/robotsix-chat/issues/2221)) ([b1e2aab](https://github.com/damien-robotsix/robotsix-chat/commit/b1e2aabab2993d7734dc5bbc63145c72177f7adb))
+
 ## [0.29.0](https://github.com/damien-robotsix/robotsix-chat/compare/v0.28.0...v0.29.0) (2026-10-25)
 
 
