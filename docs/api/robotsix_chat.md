@@ -71,7 +71,19 @@ All rows below except `/health` and `/metrics` are also served under the `/api/v
 | `GET`    | `/config/versions/{version}/diff`                                              | Diff two configuration versions.                                |
 | `POST`   | `/config/rollback`                                                             | Roll back to a previous configuration version.                  |
 | `POST`   | `/diagnostics/events`                                                          | Record a diagnostic event.                                      |
-| `GET`    | `/diagnostics/events`                                                          | List the recorded diagnostic events.                            |
+| `GET`    | `/diagnostics/events`                                                          | List the recorded diagnostic events.                             |
+
+## Architecture notes
+
+### Repository enumeration
+
+Repository enumeration is intentionally not exposed as an HTTP endpoint. There is no `GET /chat/github/repos` or similar read-only endpoint for listing repositories.
+
+When agents need to enumerate repositories across the fleet — for example, in periodic tasks like the release-gate task that checks for release-please PRs — they should enumerate directly via the GitHub API (using the authenticated GitHub App credential) or use the internal `DirectRepoClient.list_installation_repos()` method when operating server-side.
+
+This design keeps the HTTP API focused on direct mutation operations (creating repos, setting secrets, dispatching workflows) while delegating read-only discovery to the GitHub API itself, which has comprehensive querying, filtering, and pagination capabilities built in.
+
+---
 
 The authoritative, machine-readable contract — including per-endpoint summaries, path parameters,
 and request/response bodies — is `GET /openapi.json`. The table above is a human-readable index;
