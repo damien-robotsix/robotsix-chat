@@ -69,6 +69,23 @@ Everything below predates the release-please migration and was
 maintained by hand or by towncrier. It is kept verbatim; new entries
 are added above by release-please.
 
+## [0.29.0](https://github.com/damien-robotsix/robotsix-chat/compare/v0.28.0...v0.29.0) (2026-10-25)
+
+
+### Features
+
+* Add anthropic_api_key masked-secret field to Settings schema and wire it to the anthropic transport (20261025T213236Z-add-anthropic-api-key-masked-secret-fiel-b799) ([#2217](https://github.com/damien-robotsix/robotsix-chat/issues/2217)) ([c698a3b](https://github.com/damien-robotsix/robotsix-chat/commit/c698a3b0d2479f410b6c431c612f161af42e8805))
+* Add PR-age escalation to release-gate periodic preset in robotsix-chat config (20261025T171624Z-add-pr-age-escalation-to-release-gate-pe-a88c) ([#2214](https://github.com/damien-robotsix/robotsix-chat/issues/2214)) ([e0d7779](https://github.com/damien-robotsix/robotsix-chat/commit/e0d77799bc59046ab891e9aa632d1e548f2c813e))
+* Chat restart (self_restart / restart_lifecycle_service / config apply) must not kill agent turns in flight: drain or hot-reload periodic presets (20261025T134513Z-chat-restart-self-restart-restart-lifecy-2c89) ([#2210](https://github.com/damien-robotsix/robotsix-chat/issues/2210)) ([d28e1c8](https://github.com/damien-robotsix/robotsix-chat/commit/d28e1c8c347708ff8507dd7bae8b109e59b90f1c))
+* **periodic:** add release-gate preset with explicit CI check-runs API logging ([#2208](https://github.com/damien-robotsix/robotsix-chat/issues/2208)) ([2063d91](https://github.com/damien-robotsix/robotsix-chat/commit/2063d9167745591f3cfa5aa34be8a7911f34d02d))
+
+
+### Bug Fixes
+
+* **feedback:** gate chat-config panels on an explicit operator reply ([#2207](https://github.com/damien-robotsix/robotsix-chat/issues/2207)) ([223b115](https://github.com/damien-robotsix/robotsix-chat/commit/223b1159d7d91b38e659a6a594c866a45c9c51ee))
+* **periodic:** mirror the release-gate preset prompt in SHIPPED_PRESET_PROMPT_SHA256S ([#2215](https://github.com/damien-robotsix/robotsix-chat/issues/2215)) ([261b12e](https://github.com/damien-robotsix/robotsix-chat/commit/261b12e4a953a00a32cdd7e2a675d3f51517eaeb))
+* **repo:** CI verdict from EVERY check-run; merge tool refuses non-green PRs ([#2216](https://github.com/damien-robotsix/robotsix-chat/issues/2216)) ([61a21b6](https://github.com/damien-robotsix/robotsix-chat/commit/61a21b601f8730f98b2e6aa3f6aae9dbaf25f291))
+
 ## [0.28.0](https://github.com/damien-robotsix/robotsix-chat/compare/v0.27.0...v0.28.0) (2026-10-25)
 
 
