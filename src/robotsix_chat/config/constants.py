@@ -139,6 +139,12 @@ def drop_blank_numeric_sentinels(
 # `claude` CLI — no API key needed).
 _KEYLESS_PROVIDER = "claudeSDK"
 
+# Provider prefix for the direct Anthropic Messages API transport. It carries
+# its own key (``anthropic_api_key`` / ``ANTHROPIC_API_KEY``) and, without
+# one, llmio's failover cascades the call to the keyless Claude SDK slot — so
+# a level it serves never needs the OpenRouter ``api_key`` to be usable.
+_ANTHROPIC_PROVIDER = "anthropic"
+
 
 def slot_needs_api_key(tlc: TierLevelConfig) -> bool:
     """Whether the resolved slot binding *tlc* requires an ``api_key``.
@@ -155,17 +161,19 @@ def slot_needs_api_key(tlc: TierLevelConfig) -> bool:
 def level_needs_api_key(level: int) -> bool:
     """Whether *level*, as currently served, requires an ``api_key``.
 
-    Resolves against the provider slot the llmio failover tracker currently
-    designates as active — keyless while the default (Claude SDK) slot
-    serves calls, keyed while failover routes to OpenRouter. Unknown levels
-    are treated as needing a key (model_level is validated separately
-    before this matters).
+    "Requires an ``api_key``" means the OpenRouter key the UI gates keyed
+    levels on. Resolves against the provider slot the llmio failover tracker
+    currently designates as active — not needed while the direct Anthropic
+    or Claude SDK slot serves calls (the Anthropic slot cascades to the
+    keyless Claude SDK slot when its own key is missing), needed while
+    failover routes to OpenRouter. Unknown levels are treated as needing a
+    key (model_level is validated separately before this matters).
     """
     try:
         tlc = default_tier_config().for_level(level)
     except ValueError:
         return True
-    return slot_needs_api_key(tlc)
+    return slot_needs_api_key(tlc) and tlc.provider != _ANTHROPIC_PROVIDER
 
 
 #: The strongest capability level a session can escalate to (level 3, the

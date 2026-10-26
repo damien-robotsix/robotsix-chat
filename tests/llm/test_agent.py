@@ -81,6 +81,33 @@ def _patched_create_model(output: str = "hi there") -> tuple[MagicMock, MagicMoc
     return create_model, handle
 
 
+def _start_on_claude_sdk_slot() -> None:
+    """Route calls past the direct Anthropic slot to the Claude SDK slot.
+
+    llmio's baked chain is anthropic -> claudeSDK -> openrouter. Arming the
+    first slot's failover window makes the keyless Claude SDK slot the active
+    one, so a test can exercise the claudeSDK -> openrouter cascade.
+    """
+    from robotsix_llmio.config.tier import FailoverConfig
+    from robotsix_llmio.core.failover import get_failover_tracker
+    from robotsix_llmio.exceptions import ProviderExhaustedError
+
+    tracker = get_failover_tracker()
+    tracker.configure(FailoverConfig(), chain_length=3)
+    tracker.record_failure("default", ProviderExhaustedError("api credits"))
+
+
+def _start_on_openrouter_slot() -> None:
+    """Arm failover past the Anthropic and Claude SDK slots to OpenRouter."""
+    from robotsix_llmio.core.failover import get_failover_tracker
+    from robotsix_llmio.exceptions import ProviderExhaustedError
+
+    _start_on_claude_sdk_slot()
+    get_failover_tracker().record_failure(
+        "fallback", ProviderExhaustedError("weekly cap")
+    )
+
+
 @pytest.mark.asyncio
 async def test_stream_yields_block_response() -> None:
     """``stream`` yields the agent's full reply as a single block."""
@@ -95,8 +122,52 @@ async def test_stream_yields_block_response() -> None:
 
 
 @pytest.mark.asyncio
+async def test_default_chain_starts_on_anthropic_slot() -> None:
+    """The baked llmio chain serves a turn on the direct Anthropic slot first.
+
+    It never receives the OpenRouter key; without an ``anthropic_api_key``
+    it gets no key at all (llmio's provider reads ``ANTHROPIC_API_KEY``).
+    """
+    get_provider, _ = _patched_create_model()
+
+    with patch("robotsix_chat.llm.agent.get_provider_for_identifier", get_provider):
+        agent = LlmioChatAgent(
+            model_level=3, instruction="Be helpful.", api_key="sk-or-test"
+        )
+        _ = [c async for c in agent.stream("hi")]
+
+    (call,) = get_provider.call_args_list
+    assert call.args[0].startswith("anthropic-")
+    assert "api_key" not in call.kwargs
+
+
+@pytest.mark.asyncio
+async def test_anthropic_slot_supports_images() -> None:
+    """The direct Anthropic slot reads images natively (unlike OpenRouter)."""
+    from robotsix_chat.llm.capabilities import model_supports_images
+
+    seen: dict[str, bool] = {}
+    get_provider, handle = _patched_create_model()
+    original_run = handle.run
+
+    async def run(message: str, **kwargs: object) -> object:
+        seen["images"] = model_supports_images()
+        return await original_run(message, **kwargs)
+
+    handle.run = run
+
+    with patch("robotsix_chat.llm.agent.get_provider_for_identifier", get_provider):
+        agent = LlmioChatAgent(model_level=2, instruction="Be helpful.")
+        _ = [c async for c in agent.stream("hi")]
+
+    assert get_provider.call_args.args[0].startswith("anthropic-")
+    assert seen["images"] is True
+
+
+@pytest.mark.asyncio
 async def test_default_slot_gets_no_api_key() -> None:
     """The keyless default (claudeSDK) slot never receives an api_key."""
+    _start_on_claude_sdk_slot()
     get_provider, _ = _patched_create_model()
 
     with patch("robotsix_chat.llm.agent.get_provider_for_identifier", get_provider):
@@ -115,12 +186,8 @@ async def test_keyed_slot_forwards_api_key() -> None:
     Plus the slot's own routing kwargs and per-response max_tokens.
     """
     from robotsix_llmio.config.tier import FALLBACK_LEVEL1
-    from robotsix_llmio.core.failover import get_failover_tracker
-    from robotsix_llmio.exceptions import ProviderExhaustedError
 
-    get_failover_tracker().record_failure(
-        "default", ProviderExhaustedError("weekly cap")
-    )
+    _start_on_openrouter_slot()
     get_provider, _ = _patched_create_model()
     provider = get_provider.return_value
 
@@ -627,12 +694,8 @@ async def test_keyed_slot_runs_with_request_limit() -> None:
     Claude cap).
     """
     from pydantic_ai.usage import UsageLimits
-    from robotsix_llmio.core.failover import get_failover_tracker
-    from robotsix_llmio.exceptions import ProviderExhaustedError
 
-    get_failover_tracker().record_failure(
-        "default", ProviderExhaustedError("weekly cap")
-    )
+    _start_on_openrouter_slot()
     get_provider, handle = _patched_create_model("reply")
 
     with patch("robotsix_chat.llm.agent.get_provider_for_identifier", get_provider):
@@ -651,6 +714,7 @@ async def test_keyless_slot_runs_without_usage_limits() -> None:
     The SDK tool path warns-and-drops run kwargs it cannot honor, and the
     CLI runs the agent loop internally so the cap never applies.
     """
+    _start_on_claude_sdk_slot()
     get_provider, handle = _patched_create_model("reply")
 
     with patch("robotsix_chat.llm.agent.get_provider_for_identifier", get_provider):
@@ -918,6 +982,24 @@ def test_chat_turn_transient_excludes_usage_and_auth() -> None:
     )
 
 
+def test_bare_control_request_timeout_is_transient() -> None:
+    """The SDK's bare ``Exception("Control request timeout: initialize")``.
+
+    claude_agent_sdk raises it when a freshly spawned CLI cannot answer
+    ``initialize`` within its window (the 2026-10-26 10:00Z host IO storm);
+    llmio >= 0.10.0 (#729) classifies it as transient, so the turn retries
+    instead of failing on its first attempt — also when it is wrapped.
+    """
+    from robotsix_chat.llm.agent import _is_chat_turn_transient
+
+    bare = Exception("Control request timeout: initialize")
+    assert _is_chat_turn_transient(bare)
+
+    wrapped = RuntimeError("Claude Agent SDK transport/process failure")
+    wrapped.__cause__ = bare
+    assert _is_chat_turn_transient(wrapped)
+
+
 @pytest.mark.asyncio
 async def test_no_retry_on_non_transient_error() -> None:
     """Non-transient errors raise immediately with no retry."""
@@ -1040,6 +1122,7 @@ async def test_usage_exhausted_fails_over_to_openrouter_same_level() -> None:
         result.output = "deepseek reply"
         return result
 
+    _start_on_claude_sdk_slot()
     get_provider, default_provider, fallback_provider = _slot_handles(
         exhausted, recovered
     )
@@ -1132,6 +1215,7 @@ async def test_both_slots_failing_raises() -> None:
     ) -> None:
         raise RuntimeError("deepseek is also down")
 
+    _start_on_claude_sdk_slot()
     get_provider, _, _ = _slot_handles(exhausted, also_boom)
 
     with patch("robotsix_chat.llm.agent.get_provider_for_identifier", get_provider):
@@ -1424,6 +1508,7 @@ async def test_auth_failure_fails_over_to_keyed_slot() -> None:
         result.output = "openrouter reply"
         return result
 
+    _start_on_claude_sdk_slot()
     get_provider, _, _ = _slot_handles(expired, recovered)
 
     with patch("robotsix_chat.llm.agent.get_provider_for_identifier", get_provider):
@@ -1468,6 +1553,7 @@ async def test_keyless_primary_level_never_receives_the_api_key() -> None:
     provider = MagicMock()
     provider.build_agent.return_value = handle
     create_model_patch = MagicMock(return_value=provider)
+    _start_on_claude_sdk_slot()
 
     with patch(
         "robotsix_chat.llm.agent.get_provider_for_identifier", create_model_patch
@@ -1747,6 +1833,7 @@ async def test_keyed_fallback_caps_oversized_history() -> None:
         result.output = "capped reply"
         return result
 
+    _start_on_claude_sdk_slot()
     get_provider, _, _ = _slot_handles(exhausted, recovered)
 
     with patch("robotsix_chat.llm.agent.get_provider_for_identifier", get_provider):

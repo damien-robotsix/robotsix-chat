@@ -870,9 +870,10 @@ class LlmioChatAgent:
                 # this attempt: keyed OpenRouter slots (DeepSeek/mimo) are
                 # text-only, so image-returning tools degrade to text instead
                 # of 404ing the whole turn ("No endpoints found that support
-                # image input"). The Claude transport reads images natively.
+                # image input"). The Claude transports (Claude SDK and the
+                # direct Anthropic API) read images natively.
                 capability_token = set_model_supports_images(
-                    not slot_needs_api_key(tlc)
+                    not slot_needs_api_key(tlc) or tlc.provider == _ANTHROPIC_PROVIDER
                 )
                 try:
                     with _activity_context(on_activity):
