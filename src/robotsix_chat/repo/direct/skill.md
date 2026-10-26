@@ -615,6 +615,46 @@ central-deploy `github` component has no repository GET/PATCH route — use thes
 
 ______________________________________________________________________
 
+## Creating repos and forks: `create_direct_repo` / `fork_direct_repo`
+
+`create_direct_repo` creates a repository under the operator's **personal** GitHub account
+(`POST /user/repos`); `fork_direct_repo` forks `owner/name` into that account
+(`POST /repos/{owner}/{repo}/forks`, then waits until the fork exists).
+
+### PAT requirement
+
+Both tools authenticate with the personal access token in `direct_repo.github_pat` — never the
+GitHub App (an App installation token cannot create repos or forks on a personal account: GitHub
+answers `403 Resource not accessible by integration`). The PAT needs, for a fine-grained token,
+**Administration: Read and write** on the account's repositories; for a classic token, the `repo`
+scope. When `github_pat` is empty the two tools are not offered at all.
+
+### Operator-instruction rule
+
+- Call them ONLY when the operator has explicitly asked, in this conversation, for that repo or
+  fork. Never create or fork on your own initiative or as a side-step of another task.
+- They are not offered to periodic sessions or subsession workers — unattended runs cannot create
+  repositories or forks.
+- Two-step confirmation: call first with `confirmed=false` (default). Nothing is created; the tool
+  echoes the owner/name/visibility (or `upstream → fork`). Show the echo to the operator, wait for
+  their confirmation, then call again with the same arguments and `confirmed=true`.
+- After a successful creation the result suggests (it does NOT run) registering the repo with mill
+  (`POST /repos` on the board API) and applying the fleet ruleset
+  (`robotsix-github-workflows/scripts/apply-branch-protection.sh`). Offer these to the operator; run
+  them only on their instruction.
+
+### Refusals and errors
+
+| Condition                         | Response                                                             |
+| --------------------------------- | -------------------------------------------------------------------- |
+| Invalid repo name / `owner/name`  | `Refused: ... is not a valid ...`                                    |
+| Forking a repo the PAT owner owns | `Refused: owner/name already belongs to ...`                         |
+| PAT rejected / account lookup     | `Error: could not resolve the github_pat account: <detail>`          |
+| GitHub rejects the create / fork  | `Error creating repo: <detail>` / `Error forking repo: <detail>`     |
+| Fork not visible before timeout   | `Fork of 'owner/name' was accepted by GitHub but ... did not appear` |
+
+______________________________________________________________________
+
 ## Other direct-repo tools (read-only or gated on BLOCKED state)
 
 The following tools are available for push/PR operations. They require the ticket to be in BLOCKED

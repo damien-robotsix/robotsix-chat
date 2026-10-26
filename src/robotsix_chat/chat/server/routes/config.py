@@ -221,6 +221,7 @@ _SECRET_KEY_SUFFIXES: tuple[str, ...] = (
     "private_key",
     "public_key",
     "deploy_api_key",
+    "github_pat",
 )
 
 

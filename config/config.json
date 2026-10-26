@@ -148,7 +148,8 @@
     "github_api_base_url": "https://api.github.com",
     "board_api_base_url": "http://127.0.0.1:8077",
     "board_api_token": "",
-    "timeout": 30.0
+    "timeout": 30.0,
+    "github_pat": ""
   },
   "github_security": {
     "enabled": false,

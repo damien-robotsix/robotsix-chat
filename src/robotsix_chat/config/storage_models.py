@@ -54,6 +54,19 @@ class DirectRepoSettings(BaseModel):
             lookups (verifying BLOCKED state).
         board_api_token: Optional bearer token for the board API.
         timeout: Per-request HTTP timeout in seconds.
+        github_pat: GitHub personal access token used ONLY to create
+            repositories (``create_direct_repo``) and forks
+            (``fork_direct_repo``) under the token owner's personal
+            account — GitHub App installation tokens cannot do either on a
+            personal account (``403 Resource not accessible by
+            integration``).  Every other direct-repo operation keeps using
+            the GitHub App.  Required permissions: fine-grained token —
+            *Administration: Read and write* on the account's repositories
+            (plus the default *Metadata: Read*); classic token — the
+            ``repo`` scope.  **Leave empty** (default) and the two tools
+            are not offered.  Masked on read by ``GET /config`` and
+            preserved on a masked/blank ``PUT /config`` like the other
+            secrets.
 
     """
 
@@ -66,6 +79,7 @@ class DirectRepoSettings(BaseModel):
     board_api_base_url: str = "http://mill:8077"
     board_api_token: SecretStr = SecretStr("")
     timeout: float = 30.0
+    github_pat: SecretStr = SecretStr("")
     model_config = ConfigDict(extra="forbid")
 
 

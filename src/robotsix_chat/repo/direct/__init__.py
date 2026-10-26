@@ -54,6 +54,7 @@ from robotsix_http import RetryConfig, acall_with_retry
 from .github_tools import (
     FILES_JSON_FORMS,
     build_github_tools,
+    build_repo_creation_tools,
     validate_file_entries,
 )
 
@@ -86,8 +87,15 @@ def build_direct_repo_tools(
     component_request: Callable[..., Any] | None = None,
     *,
     file_hub_work_dir: str | None = None,
+    operator_attended: bool = True,
 ) -> list[Callable[..., Any]]:
     """Return direct-repo tool(s) for the agent, or ``[]`` when disabled.
+
+    *operator_attended* (default ``True``) gates the PAT-authenticated
+    ``create_direct_repo`` / ``fork_direct_repo`` tools: pass ``False`` for
+    unattended agents (periodic sessions, subsession workers) so they are
+    never offered there.  The tools are also omitted when
+    ``settings.github_pat`` is empty.
 
     When *component_request* is provided, ticket-state verification uses
     it (the same roster-based connectivity as the component API) instead
@@ -694,5 +702,10 @@ def build_direct_repo_tools(
 
         tools.append(direct_fix)
         tools.append(patch_direct_repo_file)
+
+    # Repo creation / forking (PAT-authenticated) — only for an
+    # operator-attended agent and only when ``github_pat`` is set.
+    if operator_attended:
+        tools.extend(build_repo_creation_tools(client=client, settings=settings))
 
     return tools
