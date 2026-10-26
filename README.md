@@ -172,9 +172,11 @@ place.
 The browser UI provides a dropdown model selector in the header, so operators can switch the active
 session to a different capability level without restarting. The selected model applies to all
 subsequent turns in that session only — other sessions retain their own configured level or
-selection. Every level is served by the keyless claudeSDK default slot; llmio fails over to the
-keyed OpenRouter slot automatically (the header badge flags it), which requires
-`openrouter_api_key`.
+selection. Levels are served by the default provider slot: the direct Anthropic API slot when
+`anthropic_api_key` (or `ANTHROPIC_API_KEY`) is set, otherwise the keyless claudeSDK slot. llmio
+fails over to the keyed OpenRouter slot automatically (the header badge flags it), which requires
+`openrouter_api_key`. Transient Claude SDK failures, including `Control request timeout: initialize`
+from a freshly spawned CLI, are retried per turn before failover is considered.
 
 ### Image attachments (vision fallback)
 

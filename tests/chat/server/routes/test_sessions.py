@@ -668,6 +668,22 @@ async def test_sessions_close_endpoint_no_feedback_on_empty_history() -> None:
 # ---------------------------------------------------------------------------
 
 
+def _arm_failover_to_openrouter() -> None:
+    """Arm failover past the Anthropic and Claude SDK slots to OpenRouter.
+
+    The baked chain is anthropic -> claudeSDK -> openrouter; exhausting the
+    first two slots routes new calls to the keyed OpenRouter slot.
+    """
+    from robotsix_llmio.config.tier import FailoverConfig
+    from robotsix_llmio.core.failover import get_failover_tracker
+    from robotsix_llmio.exceptions import ProviderExhaustedError
+
+    tracker = get_failover_tracker()
+    tracker.configure(FailoverConfig(), chain_length=3)
+    tracker.record_failure("default", ProviderExhaustedError("api credits"))
+    tracker.record_failure("fallback", ProviderExhaustedError("weekly cap"))
+
+
 def _first_level_needing_key() -> int:
     """Return the lowest configured level whose provider needs an API key."""
     for level in range(1, FRONTIER_MODEL_LEVEL + 1):
@@ -704,6 +720,7 @@ async def test_models_list_endpoint_all_available_with_key() -> None:
 @pytest.mark.asyncio
 async def test_models_list_endpoint_reports_failover_state() -> None:
     """``/models`` carries provider + llmio failover status for the UI badge."""
+    from robotsix_llmio.config.tier import FailoverConfig
     from robotsix_llmio.core.failover import get_failover_tracker
     from robotsix_llmio.exceptions import ProviderExhaustedError
 
@@ -713,16 +730,29 @@ async def test_models_list_endpoint_reports_failover_state() -> None:
     body = json.loads((await models_list_endpoint(request)).body)  # type: ignore[arg-type]
     assert body["failover"]["failover_active"] is False
     assert body["failover"]["active_slot"] == "default"
-    assert all(m["provider"] == "claudeSDK" for m in body["models"])
+    # The baked chain starts on the direct Anthropic API slot, which never
+    # needs the OpenRouter key (it cascades to the keyless Claude SDK slot).
+    assert all(m["provider"] == "anthropic" for m in body["models"])
+    assert not any(m["needs_api_key"] for m in body["models"])
 
+    get_failover_tracker().configure(FailoverConfig(), chain_length=3)
     get_failover_tracker().record_failure(
-        "default", ProviderExhaustedError("weekly cap")
+        "default", ProviderExhaustedError("api credits")
     )
     body = json.loads((await models_list_endpoint(request)).body)  # type: ignore[arg-type]
     assert body["failover"]["failover_active"] is True
     assert body["failover"]["active_slot"] == "fallback"
     assert body["failover"]["failover_until"] is not None
-    # The slot-resolved names now come from the OpenRouter fallback slot.
+    # The slot-resolved names now come from the keyless Claude SDK slot.
+    assert all(m["provider"] == "claudeSDK" for m in body["models"])
+    assert not any(m["needs_api_key"] for m in body["models"])
+
+    get_failover_tracker().record_failure(
+        "fallback", ProviderExhaustedError("weekly cap")
+    )
+    body = json.loads((await models_list_endpoint(request)).body)  # type: ignore[arg-type]
+    assert body["failover"]["failover_active"] is True
+    # The slot-resolved names now come from the OpenRouter slot.
     assert all(m["provider"] == "openrouter" for m in body["models"])
     assert all(m["needs_api_key"] for m in body["models"])
 
@@ -794,12 +824,7 @@ async def test_session_model_set_endpoint_rejects_non_integer() -> None:
 @pytest.mark.asyncio
 async def test_session_model_set_endpoint_requires_api_key() -> None:
     """While failover routes to the keyed slot, a keyless server rejects with 409."""
-    from robotsix_llmio.core.failover import get_failover_tracker
-    from robotsix_llmio.exceptions import ProviderExhaustedError
-
-    get_failover_tracker().record_failure(
-        "default", ProviderExhaustedError("weekly cap")
-    )
+    _arm_failover_to_openrouter()
     level = _first_level_needing_key()
     state = MagicMock(chat_api_key_available=False, chat_model_level=2)
     request = _make_json_request({"level": level})
