@@ -17,6 +17,7 @@ import asyncio
 import base64
 import json
 import logging
+import re
 from pathlib import Path
 from typing import TYPE_CHECKING, Any, cast
 from urllib.parse import quote
@@ -51,6 +52,19 @@ def _b64encode(data: bytes) -> str:
 # ``common.github_app_token``.  This client keeps no local token/installation
 # caches; routing through the public API is exactly what the consolidation
 # removed the private ``robotsix_github_auth._auth`` reach for.
+
+
+_REPO_NAME_RE = re.compile(r"^[A-Za-z0-9._-]{1,100}$")
+
+
+def is_valid_repo_name(name: str) -> bool:
+    """Return ``True`` when *name* is a safe GitHub owner or repository name.
+
+    Allows only GitHub's name alphabet (letters, digits, ``.``, ``_``,
+    ``-``; at most 100 chars) and rejects ``.``/``..`` so the value can be
+    interpolated into an API path without traversal.
+    """
+    return bool(_REPO_NAME_RE.fullmatch(name)) and name not in (".", "..")
 
 
 def _owner_repo_from_path(path: str) -> tuple[str, str] | None:
@@ -623,7 +637,154 @@ class DirectRepoClient(PROperationsMixin):
 
     # -- public API --------------------------------------------------------
 
+    def _pat_headers(self) -> dict[str, str]:
+        """Return GitHub API headers authenticated with ``github_pat``.
+
+        Used ONLY by :meth:`create_repo`, :meth:`fork_repo` and
+        :meth:`pat_login` — never falls back to the GitHub App token (an
+        installation token cannot create repos or forks on a personal
+        account).  The token is never logged.
+        """
+        pat = self._s.github_pat.get_secret_value()
+        if not pat:
+            raise RuntimeError(
+                "direct_repo.github_pat is not configured — repository "
+                "creation and forking require a personal access token."
+            )
+        return {
+            "Accept": "application/vnd.github+json",
+            "Authorization": f"Bearer {pat}",
+            "X-GitHub-Api-Version": "2022-11-28",
+        }
+
+    async def _pat_request(
+        self, method: str, path: str, body: dict[str, Any] | None = None
+    ) -> Any:
+        """Issue *method* on *path* with the PAT; return the HttpResult."""
+        return await safe_http_request(
+            method,
+            f"{self._base_url}{path}",
+            headers=self._pat_headers(),
+            timeout=self._s.timeout,
+            json_body=body,
+            label="GitHub API (PAT)",
+        )
+
+    async def pat_login(self) -> str:
+        """Return the login of the account owning ``github_pat`` (``GET /user``).
+
+        Raises RuntimeError on any failure.
+        """
+        result = await self._pat_request("GET", "/user")
+        if result.error:
+            raise RuntimeError(f"GitHub API GET /user: {result.error}")
+        try:
+            login = json.loads(result.text or "").get("login", "")
+        except (json.JSONDecodeError, AttributeError) as exc:
+            raise RuntimeError(f"GitHub API GET /user: invalid JSON: {exc}") from exc
+        if not login:
+            raise RuntimeError("GitHub API GET /user: no 'login' in response")
+        return str(login)
+
     async def create_repo(
+        self,
+        name: str,
+        private: bool,
+        description: str = "",
+        auto_init: bool = True,
+    ) -> str:
+        """Create a repository under the PAT owner's personal account.
+
+        Calls ``POST /user/repos`` authenticated with ``github_pat`` (never
+        the GitHub App token).  *name* must be a valid repository name (see
+        :func:`is_valid_repo_name`).
+
+        Never raises — returns a success/error message string.
+        """
+        if not is_valid_repo_name(name):
+            return f"Error creating repo: invalid repository name {name!r}."
+        body: dict[str, Any] = {
+            "name": name,
+            "private": private,
+            "auto_init": auto_init,
+        }
+        if description:
+            body["description"] = description
+        try:
+            result = await self._pat_request("POST", "/user/repos", body)
+            if result.error:
+                return f"Error creating repo: {result.error}"
+            data = json.loads(result.text or "{}")
+        except Exception as exc:
+            return f"Error creating repo: {exc}"
+        full_name = data.get("full_name") or name
+        html_url = data.get("html_url", "")
+        return f"Repository '{full_name}' created successfully.\n" + (
+            f"URL: {html_url}" if html_url else ""
+        )
+
+    async def fork_repo(
+        self,
+        owner: str,
+        repo: str,
+        default_branch_only: bool = False,
+        *,
+        poll_interval: float = 2.0,
+        poll_timeout: float = 120.0,
+    ) -> str:
+        """Fork ``owner/repo`` into the PAT owner's personal account.
+
+        Calls ``POST /repos/{owner}/{repo}/forks`` authenticated with
+        ``github_pat`` (never the GitHub App token).  GitHub answers ``202``
+        and creates the fork asynchronously, so this polls
+        ``GET /repos/{me}/{repo}`` every *poll_interval* seconds until the
+        fork exists or *poll_timeout* elapses.
+
+        Never raises — returns a success/error message string.
+        """
+        if not (is_valid_repo_name(owner) and is_valid_repo_name(repo)):
+            return f"Error forking repo: invalid repository {owner!r}/{repo!r}."
+        try:
+            result = await self._pat_request(
+                "POST",
+                f"/repos/{owner}/{repo}/forks",
+                {"default_branch_only": default_branch_only},
+            )
+            if result.error:
+                return f"Error forking repo: {result.error}"
+            data = json.loads(result.text or "{}")
+            fork_full_name = str(data.get("full_name") or "")
+            if not fork_full_name:
+                fork_full_name = f"{await self.pat_login()}/{repo}"
+            fork_owner, _, fork_repo = fork_full_name.partition("/")
+            if not (is_valid_repo_name(fork_owner) and is_valid_repo_name(fork_repo)):
+                return f"Error forking repo: unexpected fork name {fork_full_name!r}."
+            html_url = str(data.get("html_url") or "")
+
+            loop = asyncio.get_running_loop()
+            deadline = loop.time() + poll_timeout
+            while True:
+                probe = await self._pat_request(
+                    "GET", f"/repos/{fork_owner}/{fork_repo}"
+                )
+                if not probe.error:
+                    break
+                if probe.status_code != 404:
+                    return f"Error polling fork {fork_full_name}: {probe.error}"
+                if loop.time() >= deadline:
+                    return (
+                        f"Fork of '{owner}/{repo}' was accepted by GitHub but "
+                        f"'{fork_full_name}' did not appear within "
+                        f"{poll_timeout:.0f}s — check again later."
+                    )
+                await asyncio.sleep(poll_interval)
+        except Exception as exc:
+            return f"Error forking repo: {exc}"
+        return f"Fork '{owner}/{repo}' → '{fork_full_name}' created successfully.\n" + (
+            f"URL: {html_url}" if html_url else ""
+        )
+
+    async def create_org_repo(
         self,
         *,
         org_name: str,
@@ -632,7 +793,9 @@ class DirectRepoClient(PROperationsMixin):
     ) -> str:
         """Create a new repository under the GitHub organisation.
 
-        Calls ``POST /orgs/{org}/repos``.  When *auto_init* is ``True``
+        Calls ``POST /orgs/{org}/repos`` with the GitHub App installation
+        token (used by the ``POST /chat/github/repos`` HTTP endpoint; not
+        an agent tool).  When *auto_init* is ``True``
         (the default), seeds the new repo with an initial ``README.md``
         so that workflows and branch pushes can proceed immediately
         — an empty repo has no default branch to push against, which

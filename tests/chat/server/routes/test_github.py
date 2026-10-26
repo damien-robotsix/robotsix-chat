@@ -734,7 +734,7 @@ async def test_create_repo_400_description_not_string() -> None:
     """Returns 400 when 'description' is not a string."""
     request = _make_post_request(body={"name": "my-repo", "description": 123})
     # description/private are ignored by the current endpoint (not passed
-    # to create_repo), so this request proceeds past body validation;
+    # to create_org_repo), so this request proceeds past body validation;
     # the 502 is from the missing deploy credentials (JWT sign failure).
     with pytest.raises(HTTPException) as exc_info:
         await github_repo_create_endpoint(request)
@@ -767,7 +767,7 @@ async def test_create_repo_502_list_installation_repos_failure() -> None:
 
 @pytest.mark.asyncio
 async def test_create_repo_502_client_error() -> None:
-    """Returns 502 when ``create_repo`` returns an error string."""
+    """Returns 502 when ``create_org_repo`` returns an error string."""
     settings = _mock_settings(api_key="secret-key")  # pragma: allowlist secret
     settings.github_org = "test-org"
     request = _make_post_request(
@@ -782,7 +782,7 @@ async def test_create_repo_502_client_error() -> None:
         mock_client.list_installation_repos = AsyncMock(
             return_value=["test-org/other-repo"],
         )
-        mock_client.create_repo = AsyncMock(
+        mock_client.create_org_repo = AsyncMock(
             return_value="Error: repo already exists",
         )
         with pytest.raises(HTTPException) as exc_info:
@@ -842,7 +842,7 @@ async def test_create_repo_200_success() -> None:
         mock_client.list_installation_repos = AsyncMock(
             return_value=["test-org/other-repo"],
         )
-        mock_client.create_repo = AsyncMock(
+        mock_client.create_org_repo = AsyncMock(
             return_value="Repository 'test-org/my-repo' created successfully.\n"
             "URL: https://github.com/test-org/my-repo",
         )
@@ -855,7 +855,7 @@ async def test_create_repo_200_success() -> None:
     assert body["repo"] == "test-org/my-repo"
     assert "created successfully" in body["message"]
 
-    mock_client.create_repo.assert_called_once_with(
+    mock_client.create_org_repo.assert_called_once_with(
         org_name="test-org",
         repo_name="my-repo",
         auto_init=True,
@@ -879,7 +879,7 @@ async def test_create_repo_200_with_description_and_private() -> None:
         mock_client.list_installation_repos = AsyncMock(
             return_value=["test-org/other-repo"],
         )
-        mock_client.create_repo = AsyncMock(
+        mock_client.create_org_repo = AsyncMock(
             return_value="Repository 'test-org/my-repo' created successfully.\n"
             "URL: https://github.com/test-org/my-repo",
         )
@@ -888,7 +888,7 @@ async def test_create_repo_200_with_description_and_private() -> None:
     assert isinstance(response, JSONResponse)
     assert response.status_code == 200
 
-    mock_client.create_repo.assert_called_once_with(
+    mock_client.create_org_repo.assert_called_once_with(
         org_name="test-org",
         repo_name="my-repo",
         auto_init=True,

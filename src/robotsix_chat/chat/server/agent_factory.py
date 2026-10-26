@@ -68,10 +68,13 @@ def _build_static_tools(
     diagnostic_store: Any = None,
     knowledge_store: Any = None,
     continuation_store: Any = None,
+    operator_attended: bool = True,
 ) -> list[Any]:
     """Return the static (non-per-request) tool suite gated by *settings*.
 
     When *bare* is ``True`` returns an empty list — the agent gets no tools.
+    *operator_attended* ``False`` withholds operator-instruction-only tools
+    (``create_direct_repo`` / ``fork_direct_repo``) from unattended agents.
     """
     if bare:
         return []
@@ -95,6 +98,7 @@ def _build_static_tools(
             settings.direct_repo,
             component_request=component_request,
             file_hub_work_dir=settings.file_hub_tools.working_dir,
+            operator_attended=operator_attended,
         ),
         *build_github_security_tools(settings.github_security, settings.direct_repo),
         *build_github_actions_tools(settings.github_actions, settings.direct_repo),
@@ -292,6 +296,7 @@ def create_agent_from_settings(
     diagnostic_store: Any = None,
     knowledge_store: Any = None,
     continuation_store: Any = None,
+    operator_attended: bool = True,
 ) -> LlmioChatAgent:
     """Build an :class:`LlmioChatAgent` wired from *settings*.
 
@@ -316,6 +321,11 @@ def create_agent_from_settings(
     auto-continue) that would otherwise recall + cognify every turn around
     the clock; they get a ``NullMemory``.  The interactive main-chat agent
     keeps the default.  ``bare`` already implies no memory regardless.
+
+    *operator_attended* (default ``True``) must be ``False`` for agents no
+    operator is watching (periodic sessions); it withholds the
+    operator-instruction-only repo creation / fork tools.  Subsession agents
+    (*subsession_ctx* set) are always treated as unattended.
 
     Subsession wiring (*subsession_env*):
 
@@ -382,6 +392,7 @@ def create_agent_from_settings(
         diagnostic_store=diagnostic_store,
         knowledge_store=knowledge_store,
         continuation_store=continuation_store,
+        operator_attended=operator_attended and subsession_ctx is None,
     )
     if tool_wrapper is not None:
         tools = tool_wrapper(tools)

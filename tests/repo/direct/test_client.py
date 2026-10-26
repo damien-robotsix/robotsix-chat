@@ -721,7 +721,7 @@ async def test_git_push_files_changelog_already_has_newline(
 
 
 # ============================================================================
-# DirectRepoClient — create_repo
+# DirectRepoClient — create_org_repo
 # ============================================================================
 
 
@@ -740,7 +740,7 @@ async def test_create_repo_success(respx_mock: respx.MockRouter) -> None:
         )
     )
 
-    result = await client.create_repo(org_name="myorg", repo_name="newrepo")
+    result = await client.create_org_repo(org_name="myorg", repo_name="newrepo")
     assert "created successfully" in result
     assert "myorg/newrepo" in result
 
@@ -757,7 +757,7 @@ async def test_create_repo_api_error(respx_mock: respx.MockRouter) -> None:
         return_value=httpx.Response(422, text="Validation Failed")
     )
 
-    result = await client.create_repo(org_name="myorg", repo_name="bad-name")
+    result = await client.create_org_repo(org_name="myorg", repo_name="bad-name")
     assert "Error creating repo" in result
 
 

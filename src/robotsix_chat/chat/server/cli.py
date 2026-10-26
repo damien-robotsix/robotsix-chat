@@ -357,6 +357,9 @@ def run_server_from_config(agent: ChatAgent | None = None) -> None:
                 # Periodic agents get read-only component recall via the
                 # gated path in create_agent_from_settings.
                 memory_enabled=False,
+                # Unattended: no operator-instruction-only tools (repo
+                # creation / forks).
+                operator_attended=False,
                 diagnostic_store=diagnostic_store,
                 knowledge_store=knowledge_store,
             )

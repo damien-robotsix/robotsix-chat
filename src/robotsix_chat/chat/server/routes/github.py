@@ -281,7 +281,7 @@ async def github_repo_create_endpoint(request: Request) -> JSONResponse:
         )
 
     # -- action ------------------------------------------------------------
-    result = await client.create_repo(
+    result = await client.create_org_repo(
         org_name=org,
         repo_name=repo_name,
         auto_init=auto_init,
