@@ -146,6 +146,10 @@ jobs:
           ignore-unfixed: true
           exit-code: 1
           vuln-type: os,library
+          # Same explicit .trivyignore as ci.yml image-scan so CI and release
+          # enforce one suppression policy (trivy-action only exports
+          # TRIVY_IGNOREFILE when trivyignores is set).
+          trivyignores: .trivyignore
 
       - name: Trivy scan (SARIF for code-scanning)
         if: always() && steps.scan-ref.outputs.image != ''
@@ -157,6 +161,7 @@ jobs:
           output: trivy-results.sarif
           ignore-unfixed: true
           vuln-type: os,library
+          trivyignores: .trivyignore
 
       - name: Upload SARIF
         if: always() && hashFiles('trivy-results.sarif') != ''
