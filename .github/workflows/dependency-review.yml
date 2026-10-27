@@ -12,48 +12,27 @@ concurrency:
 
 jobs:
   dependency-review:
-    name: Dependency Review
-    runs-on: ubuntu-latest
+    name: Dependency Review (shared)
+    if: github.event_name == 'pull_request'
     permissions:
       contents: read        # checkout the repo
-      pull-requests: write  # post comment-summary-in-pr
-    steps:
-      - name: Harden Runner
-        uses: step-security/harden-runner@ccd8616d44fd3846e67624a50d5aad6d37bf2d25  # v2.22.1
-        with:
-          egress-policy: audit
-      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1  # v7.0.1
-        with:
-          persist-credentials: false
-      - uses: actions/dependency-review-action@a1d282b36b6f3519aa1f3fc636f609c47dddb294  # v5.0.0
-        with:
-          fail-on-severity: moderate
-          comment-summary-in-pr: true
-          allow-licenses: >-
-            MIT,
-            MIT-CMU,
-            Apache-2.0,
-            BSD-2-Clause,
-            BSD-3-Clause,
-            ISC,
-            Python-2.0,
-            0BSD,
-            Unlicense,
-            HPND-Markus-Kuhn
-          # mdformat-frontmatter, mdit-py-plugins, and ruamel-yaml are all MIT-
-          # licensed but the dependency-review-action cannot detect their
-          # license from PyPI metadata — explicitly allow them.
-          # reportlab is BSD-3-Clause (permissive, OSI-approved) but declares
-          # its license as freeform "BSD license (see license.txt)" metadata
-          # that cannot be mapped to an SPDX id — explicitly allow it.
-          # certifi is MPL-2.0 (file-level copyleft on Mozilla's CA bundle,
-          # which we never modify). It has been in the tree at that license
-          # all along; the action only evaluates CHANGED packages, so the
-          # 2026-10-19 security bump (GHSA-6q48-6c7w-9gw2) was the first
-          # time it looked. Pin the allowance to the version we ship.
-          allow-dependencies-licenses: >-
-            pkg:pypi/mdformat-frontmatter@2.1.2,
-            pkg:pypi/mdit-py-plugins@0.6.1,
-            pkg:pypi/ruamel-yaml@0.19.1,
-            pkg:pypi/reportlab@5.0.1,
-            pkg:pypi/certifi@2026.10.19
+      pull-requests: write  # PR summary comment from dependency-review
+    uses: damien-robotsix/robotsix-github-workflows/.github/workflows/dependency-review.yml@47523e8aa2d34d41da060d29b57f75ab262cb840  # v1.4.0
+    with:
+      fail-on-severity: moderate
+      comment-summary-in-pr: true
+      allow-licenses: >-
+        MIT,
+        MIT-CMU,
+        Apache-2.0,
+        BSD-2-Clause,
+        BSD-3-Clause,
+        ISC,
+        Python-2.0,
+        0BSD,
+        Unlicense,
+        HPND-Markus-Kuhn
+      # Per-package license allowances (allow-dependencies-licenses) and their
+      # justifications live in the config file: the shared workflow has no
+      # matching input for them.
+      config-file: ./.github/dependency-review-config.yml

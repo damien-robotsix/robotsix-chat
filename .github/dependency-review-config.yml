@@ -1,0 +1,24 @@
+# Configuration for actions/dependency-review-action, passed via the
+# `config-file` input of the shared robotsix-github-workflows
+# dependency-review.yml (see .github/workflows/dependency-review.yml).
+# `fail-on-severity`, `comment-summary-in-pr` and `allow-licenses` are passed
+# as inputs on the caller; this file carries only the per-package license
+# allowances, which have no matching input on the shared workflow.
+
+# mdformat-frontmatter, mdit-py-plugins, and ruamel-yaml are all MIT-
+# licensed but the dependency-review-action cannot detect their
+# license from PyPI metadata — explicitly allow them.
+# reportlab is BSD-3-Clause (permissive, OSI-approved) but declares
+# its license as freeform "BSD license (see license.txt)" metadata
+# that cannot be mapped to an SPDX id — explicitly allow it.
+# certifi is MPL-2.0 (file-level copyleft on Mozilla's CA bundle,
+# which we never modify). It has been in the tree at that license
+# all along; the action only evaluates CHANGED packages, so the
+# 2026-10-19 security bump (GHSA-6q48-6c7w-9gw2) was the first
+# time it looked. Pin the allowance to the version we ship.
+allow-dependencies-licenses:
+  - pkg:pypi/mdformat-frontmatter@2.1.2
+  - pkg:pypi/mdit-py-plugins@0.6.1
+  - pkg:pypi/ruamel-yaml@0.19.1
+  - pkg:pypi/reportlab@5.0.1
+  - pkg:pypi/certifi@2026.10.19
