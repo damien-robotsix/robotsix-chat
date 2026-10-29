@@ -7,6 +7,13 @@ volume.
 Use the **⚙** (gear) button in the header bar to open the panel. The panel can be resized by
 dragging its left edge.
 
+On desktop (viewport 768px and wider) the settings panel docks on the right edge and pushes the chat
+content and header aside, the same way the Sessions and Subsessions panels do, rather than covering
+them. The Settings and Subsessions panels both dock on the right, so only one of them is open at a
+time: opening Settings closes Subsessions, and opening Subsessions closes Settings. The Sessions
+panel on the left can stay open alongside either one. On narrower viewports the panel overlays the
+content as before.
+
 ## How it works
 
 The settings panel is backed by HTTP endpoints on the chat server:
