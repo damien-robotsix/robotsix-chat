@@ -162,3 +162,8 @@ repos:
         additional_dependencies:
           - mdformat-gfm
           - mdformat-frontmatter
+
+  - repo: https://github.com/damien-robotsix/robotsix-standards
+    rev: v0.10.0
+    hooks:
+      - id: check-secret-str
