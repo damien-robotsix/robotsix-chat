@@ -853,6 +853,12 @@ body {
   body:has(#subsessions-panel.visible) #appshell-header {
     margin-right: var(--subsessions-width);
   }
+  #settings-panel.visible ~ #content-wrap {
+    margin-right: var(--settings-width);
+  }
+  body:has(#settings-panel.visible) #appshell-header {
+    margin-right: var(--settings-width);
+  }
 }
 
 /* ------------------------------------------------------------------ */
