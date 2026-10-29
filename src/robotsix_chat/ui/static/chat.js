@@ -2405,7 +2405,22 @@ import {
     renderSubsessionsList();
   }
 
+  // Settings and Subsessions both dock on the right edge: at most one of
+  // them may be visible at a time, so opening one closes the other.
+  function closeSubsessionsPanel() {
+    subsPanel.classList.remove("visible");
+    setSubsPanelVisible(false);
+    hideResizeHandle();
+  }
+
+  function closeSettingsPanelIfVisible() {
+    if (settingsPanel && settingsPanel.classList.contains("visible")) {
+      closeSettingsPanel();
+    }
+  }
+
   function openSubsessionsPanel() {
+    closeSettingsPanelIfVisible();
     if (!subsPanel.classList.contains("visible")) {
       subsPanel.classList.add("visible");
       setSubsPanelVisible(true);
@@ -3629,6 +3644,7 @@ import {
     subsPanel.classList.toggle("visible");
     setSubsPanelVisible(subsPanel.classList.contains("visible"));
     if (opening) {
+      closeSettingsPanelIfVisible();
       // Opening the panel reveals every expanded transcript, so those
       // subsessions are now read — clear their unread state and recompute
       // ancestors so no badge sticks once the messages are on screen.
@@ -4009,6 +4025,9 @@ import {
   }
 
   function openSettingsPanel() {
+    if (subsPanel.classList.contains("visible")) {
+      closeSubsessionsPanel();
+    }
     settingsPanel.classList.add("visible");
     positionSettingsResizeHandle();
     document.documentElement.style.setProperty('--settings-width', settingsPanel.getBoundingClientRect().width + 'px');
