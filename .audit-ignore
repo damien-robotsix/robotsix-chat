@@ -1,0 +1,13 @@
+# Single-source dependency-audit ignore list (robotsix-github-workflows
+# scripts/audit_ignore.py format). Read by python-ci.yml's uv audit (plain
+# and SARIF), the scheduled dependency-audit.yml workflow and the uv-audit
+# pre-commit hook. One advisory per line: `ID  # reason`; add
+# `# expires: YYYY-MM-DD` once a fix is released so the ignore is re-reviewed.
+# Ids are passed to uv as --ignore-until-fixed, so they auto-clear once a
+# fixed version ships.
+#
+# Dropped when single-sourcing (fixed in the lock): aiohttp 3.14.1
+# GHSA-mfx4-hv73-q22v / GHSA-mq44-7p77-q5h7 / GHSA-cq5v-8q36-5273 (aiohttp
+# is no longer in uv.lock) and cryptography GHSA-g6cj-pr64-35w5
+# (CVE-2026-69247; uv.lock pins cryptography 50.0.0, the fixed release).
+GHSA-w8v5-vhqr-4h9v  # diskcache CVE-2025-69872 unsafe pickle deserialization; no fixed release yet
