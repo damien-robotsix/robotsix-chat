@@ -225,8 +225,8 @@ standard, "CI-time image scan").
 `python-ci.yml` (`ci` job: `run-audit: true`, `check-lock: true`, `audit-sarif: true`). Ignored
 advisories live in exactly one place — the repo-root `.audit-ignore` (one `ID  # reason` per line,
 optional `# expires: YYYY-MM-DD`), parsed by the shared `scripts/audit_ignore.py` and passed to uv
-as `--ignore-until-fixed`. `python-ci.yml`, the daily `dependency-audit.yml` workflow and the
-shared `uv-audit` pre-commit hook all read it; never re-add inline id lists.
+as `--ignore-until-fixed`. `python-ci.yml`, the daily `dependency-audit.yml` workflow and the shared
+`uv-audit` pre-commit hook all read it; never re-add inline id lists.
 
 **Rule:** The shared security job's blocking pip-audit runs only when the PR touches `uv.lock` or
 `pyproject.toml` (the `changes` job in `ci.yml`), and on push to main; pre-commit skips its
