@@ -64,29 +64,17 @@ repos:
         types: [yaml]
         pass_filenames: false
 
-  - repo: local
+  # Shared audit hooks: both read the single-source repo-root .audit-ignore
+  # (also used by ci.yml's python-ci.yml audit and dependency-audit.yml).
+  # uv-audit runs `uv audit --frozen --preview` with every .audit-ignore id
+  # passed as --ignore-until-fixed; audit-ignore-check validates the file
+  # (format, reasons, expiry). Keep `rev` on the python-ci.yml release that
+  # ci.yml calls.
+  - repo: https://github.com/damien-robotsix/robotsix-github-workflows
+    rev: 86a722f2938c1dda343bbf8d3c5989613cbf1794  # frozen: v1.5.0
     hooks:
+      - id: audit-ignore-check
       - id: uv-audit
-        name: uv audit
-        # --preview-features audit-command: uv ≥0.12 requires the flag; older
-        # versions accept it without error, so this is safe to pass always.
-        entry: uv --preview-features audit-command audit
-        # CVE-2025-69872 / GHSA-w8v5-vhqr-4h9v: diskcache unsafe pickle deserialization.
-        # No fix version available; ignored until a patched release is published.
-        # aiohttp 3.14.1: GHSA-mfx4-hv73-q22v, GHSA-mq44-7p77-q5h7 (both fixed in 3.14.2),
-        #   GHSA-cq5v-8q36-5273 (fixed in 3.14.3).
-        # cryptography 49.0.0: GHSA-g6cj-pr64-35w5 (CVE-2026-69247, fixed in 50.0.0).
-        args:
-          [
-            "--ignore-until-fixed", "GHSA-w8v5-vhqr-4h9v",
-            "--ignore-until-fixed", "GHSA-mfx4-hv73-q22v",
-            "--ignore-until-fixed", "GHSA-mq44-7p77-q5h7",
-            "--ignore-until-fixed", "GHSA-cq5v-8q36-5273",
-            "--ignore-until-fixed", "GHSA-g6cj-pr64-35w5",
-          ]
-        language: unsupported
-        pass_filenames: false
-        files: ^uv\.lock$
 
   - repo: https://github.com/hadolint/hadolint
     rev: v2.15.1
