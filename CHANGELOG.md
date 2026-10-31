@@ -69,6 +69,23 @@ Everything below predates the release-please migration and was
 maintained by hand or by towncrier. It is kept verbatim; new entries
 are added above by release-please.
 
+## [0.31.0](https://github.com/damien-robotsix/robotsix-chat/compare/v0.30.0...v0.31.0) (2026-10-31)
+
+
+### Features
+
+* Settings panel: dock alongside chat (push layout) instead of overlaying, mutually exclusive with Subsessions (20261029T110341Z-settings-panel-dock-alongside-chat-push-a25b) ([#2244](https://github.com/damien-robotsix/robotsix-chat/issues/2244)) ([05116d2](https://github.com/damien-robotsix/robotsix-chat/commit/05116d25759ec702b8fd275dcb4b9db9d5d36130))
+
+
+### Bug Fixes
+
+* CI failure: Scheduled dependency audit on main (20261031T052310Z-ci-failure-scheduled-dependency-audit-on-004d) ([#2255](https://github.com/damien-robotsix/robotsix-chat/issues/2255)) ([6b60763](https://github.com/damien-robotsix/robotsix-chat/commit/6b607630a366ccaafe6b1d6b865dad3400eeae64))
+
+
+### Documentation
+
+* trace-review: 1 finding(s) for trace `008c9c53` (session: robotsix-chat · 20261029T112947Z-robotsix-chat-single-source-the-five-ghs-5105) (20261030T092416Z-trace-review-1-finding-s-for-trace-008c9-4ed5) ([#2256](https://github.com/damien-robotsix/robotsix-chat/issues/2256)) ([4d64324](https://github.com/damien-robotsix/robotsix-chat/commit/4d64324410008b28340c6016bce611efec7abc6a))
+
 ## [0.30.0](https://github.com/damien-robotsix/robotsix-chat/compare/v0.29.0...v0.30.0) (2026-10-26)
 
 
