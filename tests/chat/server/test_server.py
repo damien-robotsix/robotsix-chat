@@ -1649,14 +1649,14 @@ async def test_security_headers_on_every_response(path: str) -> None:
 async def test_csp_allows_swagger_inline_script_by_hash() -> None:
     """The /docs inline bootstrap script's SHA-256 is in the CSP script-src."""
     import hashlib
-    import re
 
     async with mock_app() as f:
         response = await f.client.get("/docs")
 
-    inline = re.findall(r"<script>(.*?)</script>", response.text, re.DOTALL)
-    assert len(inline) == 1
-    digest = base64.b64encode(hashlib.sha256(inline[0].encode()).digest()).decode()
+    parts = response.text.split("<script>")
+    assert len(parts) == 2
+    inline = parts[1].split("</script>", 1)[0]
+    digest = base64.b64encode(hashlib.sha256(inline.encode()).digest()).decode()
     assert f"'sha256-{digest}'" in response.headers["content-security-policy"]
 
 
