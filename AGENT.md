@@ -239,6 +239,18 @@ binary appears on your branch, remove it from tracking and add it to the `.gitig
 tool binaries accidentally committed during local testing" block instead of registering it as a
 module path.
 
+**Rule:** In a network-filtered agent sandbox, do not run the full `pre-commit run --all-files`
+suite. Its remote hook repos (`pre-commit-hooks`, `typos`, `ruff-pre-commit`, `actionlint`,
+`hadolint`, `trufflehog`, `markdownlint-cli2`, `mdformat`, `robotsix-standards`) are cloned from
+GitHub when the hooks are installed. The egress filter refuses those clones
+(`URLError: Tunnel connection failed: 403 Filtered`), and retrying does not help. Run the relevant
+linters directly on the files you changed instead, for example `uv run ruff check <files>`,
+`uv run ruff format --check <files>`, `uv run mypy`, `actionlint`, `zizmor .github/workflows/` or
+`mdformat --wrap 100 <docs>`. CI runs the complete pre-commit suite.
+
+**Rationale:** Trace `008c9c53` (ticket 20261029T112947Z-…-5105) spent a $1.22, 72-observation
+implement pass partly on a failed full pre-commit run before it fell back to individual linters.
+
 ## Testing conventions
 
 Tests for module `robotsix_chat.<module>` live under `tests/<module>/`, mirroring the per-module
