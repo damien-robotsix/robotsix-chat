@@ -20,4 +20,4 @@ jobs:
     permissions:
       contents: read  # checkout inside the called workflow
       security-events: write  # upload Trivy SARIF to Code Scanning
-    uses: damien-robotsix/robotsix-github-workflows/.github/workflows/scan-container.yml@d2a2353830cf211a9f18f3585085016766294dff  # main
+    uses: damien-robotsix/robotsix-github-workflows/.github/workflows/scan-container.yml@86a722f2938c1dda343bbf8d3c5989613cbf1794  # v1.5.0

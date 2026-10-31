@@ -96,7 +96,7 @@ jobs:
 
   ci:
     name: Python CI (shared)
-    uses: damien-robotsix/robotsix-github-workflows/.github/workflows/python-ci.yml@0234f4b82365d776fc021c774dc104c5e7042c29  # main
+    uses: damien-robotsix/robotsix-github-workflows/.github/workflows/python-ci.yml@86a722f2938c1dda343bbf8d3c5989613cbf1794  # v1.5.0
     with:
       python-version: "3.14"
       # Must match pyproject.toml's [tool.uv] required-version: the shared
@@ -123,7 +123,7 @@ jobs:
   security:
     name: Security scan (shared)
     needs: [changes]
-    uses: damien-robotsix/robotsix-github-workflows/.github/workflows/python-security.yml@454851ccfdba26ba4d08f3effea09258dfc3fe2f  # main
+    uses: damien-robotsix/robotsix-github-workflows/.github/workflows/python-security.yml@86a722f2938c1dda343bbf8d3c5989613cbf1794  # v1.5.0
     with:
       install-extras: ""
       # Align with the [tool.uv] required-version pin (uv 0.12.19); the shared
