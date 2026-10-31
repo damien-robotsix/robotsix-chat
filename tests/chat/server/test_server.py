@@ -1623,6 +1623,71 @@ async def test_cors_headers(
 
 
 # ---------------------------------------------------------------------------
+# HTTP security headers / SSE response headers
+# ---------------------------------------------------------------------------
+
+
+@pytest.mark.asyncio
+@pytest.mark.parametrize("path", ["/health", "/", "/docs", "/does-not-exist"])
+async def test_security_headers_on_every_response(path: str) -> None:
+    """SecureASGIMiddleware decorates every response, including errors."""
+    async with mock_app() as f:
+        response = await f.client.get(path)
+
+    assert response.headers["x-content-type-options"] == "nosniff"
+    assert response.headers["x-frame-options"] == "SAMEORIGIN"
+    assert response.headers["referrer-policy"] == "strict-origin-when-cross-origin"
+    assert "strict-transport-security" in response.headers
+    assert "permissions-policy" in response.headers
+    csp = response.headers["content-security-policy"]
+    assert "default-src 'self'" in csp
+    assert "script-src-attr 'none'" in csp
+    assert "'unsafe-inline'" not in csp.split("script-src ")[1].split(";")[0]
+
+
+@pytest.mark.asyncio
+async def test_csp_allows_swagger_inline_script_by_hash() -> None:
+    """The /docs inline bootstrap script's SHA-256 is in the CSP script-src."""
+    import hashlib
+
+    async with mock_app() as f:
+        response = await f.client.get("/docs")
+
+    parts = response.text.split("<script>")
+    assert len(parts) == 2
+    inline = parts[1].split("</script>", 1)[0]
+    digest = base64.b64encode(hashlib.sha256(inline.encode()).digest()).decode()
+    assert f"'sha256-{digest}'" in response.headers["content-security-policy"]
+
+
+@pytest.mark.asyncio
+async def test_chat_sse_response_headers() -> None:
+    """POST /chat streams with the anti-buffering SSE header set."""
+    async with mock_app() as f:
+        response = await f.client.post("/chat", json={"message": "hi"})
+
+    assert response.headers["content-type"] == SSE_CONTENT_TYPE
+    assert response.headers["cache-control"] == "no-cache"
+    assert response.headers["connection"] == "keep-alive"
+    assert response.headers["x-accel-buffering"] == "no"
+
+
+def test_sse_response_factory_headers() -> None:
+    """sse_response() defines the SSE header set once; extra headers merge."""
+    from robotsix_chat.chat.server.routes._shared import sse_response
+
+    async def gen() -> AsyncIterator[bytes]:
+        yield b": keepalive\n\n"
+
+    response = sse_response(gen(), headers={"X-Extra": "1"})
+    assert response.headers["content-type"] == SSE_CONTENT_TYPE
+    assert response.headers["cache-control"] == "no-cache"
+    assert response.headers["connection"] == "keep-alive"
+    assert response.headers["x-accel-buffering"] == "no"
+    assert response.headers["x-extra"] == "1"
+
+
+# ---------------------------------------------------------------------------
 # Correlation ID header
 # ---------------------------------------------------------------------------
 

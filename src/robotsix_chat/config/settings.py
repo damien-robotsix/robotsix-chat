@@ -7,9 +7,12 @@ loads from a single JSON file located by ``ROBOTSIX_CONFIG_FILE``.
 from __future__ import annotations
 
 import hashlib
+import json
 import logging
 import os
+from pathlib import Path
 from typing import Any
+from urllib.parse import urlsplit
 
 from pydantic import (
     BaseModel,
@@ -19,7 +22,7 @@ from pydantic import (
     field_validator,
     model_validator,
 )
-from robotsix_config import load_config
+from robotsix_config import InvalidConfigError, load_config, resolve_config_path
 
 from robotsix_chat.config.constants import (
     VALID_MODEL_LEVELS,
@@ -140,6 +143,40 @@ def _remap_legacy_model_level(value: Any) -> Any:
     return _LEGACY_LEVEL_REMAP.get(value, value)
 
 
+LEGACY_LLMIO_API_KEY_ERROR = (
+    "Config key 'llmio_api_key' is no longer supported: rename it to "
+    "'openrouter_api_key' in the config file (the value is the OpenRouter "
+    "fallback-slot API key)."
+)
+
+
+def _reject_legacy_llmio_api_key(data: dict[str, Any]) -> None:
+    """Fail config load when the pre-standard ``llmio_api_key`` key is present.
+
+    The component standard's no-fallback rule forbids reading pre-standard
+    credential field names; the error names the canonical key so the
+    operator can migrate the config file.
+    """
+    if "llmio_api_key" in data:
+        raise ValueError(LEGACY_LLMIO_API_KEY_ERROR)
+
+
+def _reject_legacy_keys_in_file(path: Path) -> None:
+    """Fail fast when the raw config file still carries ``llmio_api_key``.
+
+    Runs before :func:`robotsix_config.load_config`, whose self-healing pass
+    would otherwise strip the unknown key — and persist the stripped file,
+    silently discarding the operator's secret — instead of failing load.
+    Unreadable / malformed files are left for ``load_config`` to report.
+    """
+    try:
+        raw = json.loads(path.read_text(encoding="utf-8"))
+    except OSError, ValueError:
+        return
+    if isinstance(raw, dict) and "llmio_api_key" in raw:
+        raise InvalidConfigError(f"{path}: {LEGACY_LLMIO_API_KEY_ERROR}")
+
+
 class Settings(BaseModel):
     """Application settings, loaded from a single JSON config file.
 
@@ -157,8 +194,9 @@ class Settings(BaseModel):
         openrouter_api_key: OpenRouter API key, forwarded to llmio only for
             keyed (OpenRouter) slot attempts; unused while the keyless
             ``claudeSDK`` default slot serves calls. Without it, provider
-            failover is unavailable. Accepts the legacy config key
-            ``llmio_api_key`` as a backward-compatible alias.
+            failover is unavailable. The pre-standard key ``llmio_api_key``
+            is no longer accepted: a config carrying it fails to load with
+            an error naming ``openrouter_api_key``.
         anthropic_api_key: Anthropic API key, forwarded to llmio only for
             slot attempts served by the direct Anthropic Messages API
             transport (provider ``anthropic``). Resolution order: this
@@ -191,9 +229,13 @@ class Settings(BaseModel):
         log_json_format: When ``True`` (default), log lines are emitted as
             structured JSON via structlog.  Set to ``False`` for human-readable
             console output during local development.
-        cors_allow_origins: Origins allowed to call /chat cross-origin
-            (empty = none; ``["*"]`` = any). Only needed when the browser
-            UI is hosted on a different origin than the server.
+        cors_allow_origins: Exact origins (``scheme://host[:port]``) allowed
+            to call /chat cross-origin; empty (the default) = none, which is
+            the compliant default. Wildcards (``"*"``, ``*.example.com``) and
+            non-origin values (paths, ``null``) are rejected at load time —
+            the server sits behind the authenticated central-deploy gateway.
+            Only needed when the browser UI is hosted on a different origin
+            than the server.
         correlation_id_header: HTTP header name used for the correlation /
             request-id (both inbound and outbound). Default ``X-Request-ID``.
         langfuse: The component's canonical Langfuse credential block —
@@ -236,8 +278,7 @@ class Settings(BaseModel):
             "subsystem, keyed by the Langfuse project alias they bill under. "
             "Both are the same provider but distinct credentials for "
             "different consumers, so they are intentionally not merged. "
-            "Accepts the legacy config key ``llmio_api_key`` as a "
-            "backward-compatible alias."
+            "The pre-standard key ``llmio_api_key`` is rejected at load time."
         ),
     )
     anthropic_api_key: SecretStr = Field(
@@ -276,6 +317,38 @@ class Settings(BaseModel):
             "llmio_failover_window_seconds is layered on top."
         ),
     )
+
+    @field_validator("cors_allow_origins")
+    @classmethod
+    def _validate_cors_allow_origins(cls, v: list[str]) -> list[str]:
+        """Accept only exact ``scheme://host[:port]`` origins (cors-policy rule 2).
+
+        A wildcard on this gateway-authenticated surface is prohibited, so
+        ``"*"``, wildcard hosts, ``null`` and anything carrying a path, query
+        or userinfo are rejected instead of silently widening CORS.
+        """
+        for origin in v:
+            if "*" in origin:
+                raise ValueError(
+                    f"cors_allow_origins: wildcard origin {origin!r} is not "
+                    "allowed; list exact origins (scheme://host[:port])"
+                )
+            parsed = urlsplit(origin)
+            if (
+                parsed.scheme not in ("http", "https")
+                or not parsed.hostname
+                or parsed.username is not None
+                or parsed.password is not None
+                or parsed.path
+                or parsed.query
+                or parsed.fragment
+                or origin != f"{parsed.scheme}://{parsed.netloc}"
+            ):
+                raise ValueError(
+                    f"cors_allow_origins: {origin!r} is not an exact origin; "
+                    "expected scheme://host[:port] with no path or trailing slash"
+                )
+        return v
 
     @field_validator("llmio_tier_overrides")
     @classmethod
@@ -1413,23 +1486,10 @@ class Settings(BaseModel):
             legacy_level = data.pop("llmio_model_level")
             data.setdefault("chat_default_model_level", legacy_level)
 
-        # Rename legacy ``llmio_api_key`` → ``openrouter_api_key``. The field
-        # is the OpenRouter fallback-slot key; the old name was misleading.
-        # Configs serialized before the rename still carry the old key; map
-        # its value over so the secret is preserved (extra="forbid" would
-        # otherwise reject the stale key and brick config load).
-        if "llmio_api_key" in data:
-            logger.info(
-                "Renaming legacy config key 'llmio_api_key' → 'openrouter_api_key'"
-            )
-            data = dict(data)
-            legacy_key = data.pop("llmio_api_key")
-            # Prefer an explicitly-set (non-empty) canonical value, else fall
-            # back to the legacy key. A plain ``setdefault`` would lose the
-            # legacy value when the default-merged effective config injects an
-            # empty ``openrouter_api_key`` before validation.
-            if not data.get("openrouter_api_key"):
-                data["openrouter_api_key"] = legacy_key
+        # The pre-standard ``llmio_api_key`` credential key is rejected, not
+        # silently renamed: the component standard forbids credential
+        # fallbacks, and a silent rename keeps unmigrated configs invisible.
+        _reject_legacy_llmio_api_key(data)
 
         # Strip pre_authorized_ticket_patterns from subsessions.
         subsessions = data.get("subsessions")
@@ -1611,14 +1671,9 @@ class Settings(BaseModel):
             )
             legacy_level = data.pop("llmio_model_level")
             data.setdefault("chat_default_model_level", legacy_level)
-        if "llmio_api_key" in data:
-            logger.info(
-                "migrate_legacy_config: renaming legacy key 'llmio_api_key' "
-                "→ 'openrouter_api_key'"
-            )
-            legacy_key = data.pop("llmio_api_key")
-            if not data.get("openrouter_api_key"):
-                data["openrouter_api_key"] = legacy_key
+        # ``llmio_api_key`` is deliberately NOT handled here: the loader
+        # swallows hook errors and would then strip (and persist away) the
+        # key. ``Settings.load`` rejects it on the raw file instead.
         subsessions = data.get("subsessions")
         if (
             isinstance(subsessions, dict)
@@ -1745,6 +1800,7 @@ class Settings(BaseModel):
         overlaid onto ``langfuse.projects`` in memory — see
         :func:`~robotsix_chat.config.langfuse_models.overlay_env_projects`.
         """
+        _reject_legacy_keys_in_file(resolve_config_path())
         settings = load_config(cls)
         langfuse = overlay_env_projects(settings.langfuse, os.environ)
         if langfuse is settings.langfuse:

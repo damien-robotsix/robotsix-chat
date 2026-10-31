@@ -6,6 +6,7 @@ from typing import Any
 from unittest.mock import MagicMock, patch
 
 import pytest
+from pydantic import SecretStr
 
 from robotsix_chat.config import Settings
 from robotsix_chat.llm.vision import (
@@ -17,7 +18,7 @@ from robotsix_chat.llm.vision import (
 
 def _settings(vision_model: str = "openrouter/openai/gpt-4o-mini") -> Settings:
     """Build a Settings instance with the given vision_model and an API key."""
-    return Settings(vision_model=vision_model, llmio_api_key="or-key")  # type: ignore[arg-type]
+    return Settings(vision_model=vision_model, openrouter_api_key=SecretStr("or-key"))
 
 
 def _patched_provider(output: str = "a red square") -> tuple[MagicMock, MagicMock]:

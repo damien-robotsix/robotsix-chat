@@ -181,7 +181,7 @@ def make_settings(
     image_publish_workflow_name: str = "release-image.yml",
     image_publish_verify_timeout_seconds: float = 1800.0,
     turn_budget: Any | None = None,
-    llmio_api_key: str = "test-key",
+    openrouter_api_key: str = "test-key",
 ) -> SimpleNamespace:
     """Build a settings stand-in with test-friendly (tiny) intervals.
 
@@ -244,7 +244,7 @@ def make_settings(
             turn_budget=turn_budget,
         ),
         central_deploy=SimpleNamespace(url="https://central-deploy.example.com"),
-        llmio_api_key=SecretStr(llmio_api_key),
+        openrouter_api_key=SecretStr(openrouter_api_key),
     )
 
 
