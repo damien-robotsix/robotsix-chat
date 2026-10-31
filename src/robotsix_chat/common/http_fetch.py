@@ -239,7 +239,10 @@ def build_ssrf_guarded_client(
     automatically and the validated IP is the connected IP (TOCTOU closed).
     Fleet-component *fleet_hosts* keep their exemption inside the pool.
     """
-    transport = httpx.AsyncHTTPTransport()
+    # trust_env=False on both transport and client: no environment proxy
+    # (HTTP(S)_PROXY / ALL_PROXY) may route the fetch — and the SSRF check —
+    # around the guarded pool (ssrf-hardened-fetchers standard, "No proxy").
+    transport = httpx.AsyncHTTPTransport(trust_env=False)
     # Replace the default pool with the SSRF-guarded one. The discarded pool
     # was never opened, so nothing leaks; ssl_context defaults to httpcore's
     # certifi-backed context.
@@ -249,6 +252,7 @@ def build_ssrf_guarded_client(
         timeout=timeout,
         follow_redirects=follow_redirects,
         max_redirects=max_redirects,
+        trust_env=False,
     )
 
 

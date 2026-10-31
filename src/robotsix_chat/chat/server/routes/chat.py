@@ -26,9 +26,9 @@ from ._shared import (
     _parse_json_body,
     _sse_frame,
     build_transcript,
+    sse_response,
 )
 from .constants import (
-    SSE_CONTENT_TYPE,
     SSE_DONE_TYPE,
     SSE_ERROR_TYPE,
     SSE_HEARTBEAT_FRAME,
@@ -970,11 +970,7 @@ async def chat_endpoint(
             if not finished_normally:
                 logger.debug("SSE client left before DONE (session %s)", session_id)
 
-    return StreamingResponse(
-        sse_stream(),
-        media_type=SSE_CONTENT_TYPE,
-        headers={"Content-Type": SSE_CONTENT_TYPE},
-    )
+    return sse_response(sse_stream())
 
 
 async def cancel_queued_endpoint(request: Request) -> JSONResponse:

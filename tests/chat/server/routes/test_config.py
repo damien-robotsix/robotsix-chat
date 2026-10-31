@@ -959,16 +959,16 @@ def test_put_masked_secret_preserves_original(tmp_path: Path) -> None:
         config_path,
         {
             "chat_default_model_level": 2,
-            "llmio_api_key": "sk-real-key",  # pragma: allowlist secret
+            "openrouter_api_key": "sk-real-key",  # pragma: allowlist secret
         },
     )
     client = _make_app(config_path)
 
-    resp = client.put("/config", json={"llmio_api_key": "**********"})
+    resp = client.put("/config", json={"openrouter_api_key": "**********"})
     assert resp.status_code == 200
 
     on_disk = _read_config_json(config_path)
-    assert on_disk["llmio_api_key"] == "sk-real-key"  # pragma: allowlist secret
+    assert on_disk["openrouter_api_key"] == "sk-real-key"  # pragma: allowlist secret
 
 
 def test_put_blank_secret_preserves_original(tmp_path: Path) -> None:
@@ -978,16 +978,16 @@ def test_put_blank_secret_preserves_original(tmp_path: Path) -> None:
         config_path,
         {
             "chat_default_model_level": 2,
-            "llmio_api_key": "sk-real-key",  # pragma: allowlist secret
+            "openrouter_api_key": "sk-real-key",  # pragma: allowlist secret
         },
     )
     client = _make_app(config_path)
 
-    resp = client.put("/config", json={"llmio_api_key": ""})
+    resp = client.put("/config", json={"openrouter_api_key": ""})
     assert resp.status_code == 200
 
     on_disk = _read_config_json(config_path)
-    assert on_disk["llmio_api_key"] == "sk-real-key"  # pragma: allowlist secret
+    assert on_disk["openrouter_api_key"] == "sk-real-key"  # pragma: allowlist secret
 
 
 def test_put_new_secret_overwrites_existing(tmp_path: Path) -> None:
@@ -997,19 +997,19 @@ def test_put_new_secret_overwrites_existing(tmp_path: Path) -> None:
         config_path,
         {
             "chat_default_model_level": 2,
-            "llmio_api_key": "sk-old",  # pragma: allowlist secret
+            "openrouter_api_key": "sk-old",  # pragma: allowlist secret
         },
     )
     client = _make_app(config_path)
 
     resp = client.put(
         "/config",
-        json={"llmio_api_key": "sk-new"},  # pragma: allowlist secret
+        json={"openrouter_api_key": "sk-new"},  # pragma: allowlist secret
     )
     assert resp.status_code == 200
 
     on_disk = _read_config_json(config_path)
-    assert on_disk["llmio_api_key"] == "sk-new"  # pragma: allowlist secret
+    assert on_disk["openrouter_api_key"] == "sk-new"  # pragma: allowlist secret
 
 
 # ---------------------------------------------------------------------------
