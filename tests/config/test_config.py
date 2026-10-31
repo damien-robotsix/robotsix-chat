@@ -7,6 +7,7 @@ from pathlib import Path
 
 import pytest
 from pydantic import SecretStr, ValidationError
+from robotsix_config import InvalidConfigError
 
 from robotsix_chat.config import (
     CentralDeploySettings,
@@ -189,33 +190,48 @@ def test_key_bearing_config_with_key_ok() -> None:
     assert settings.openrouter_api_key.get_secret_value() == "sk-x"
 
 
-def test_legacy_llmio_api_key_alias() -> None:
-    """The legacy ``llmio_api_key`` config key still loads via the alias.
+def test_legacy_llmio_api_key_rejected() -> None:
+    """The pre-standard ``llmio_api_key`` key fails validation, naming the new key.
 
-    A raw rename would trip ``extra="forbid"`` and brick config load for
-    deployed configs serialized with the old key name; the before-validator
-    maps it onto the canonical ``openrouter_api_key`` field instead.
+    The component standard forbids credential fallbacks: the old key is no
+    longer silently renamed onto ``openrouter_api_key``.
     """
-    settings = Settings.model_validate(
-        {"llmio_api_key": "sk-legacy"}  # pragma: allowlist secret
-    )
-    # pragma: allowlist secret
-    assert settings.openrouter_api_key.get_secret_value() == "sk-legacy"
+    with pytest.raises(ValidationError, match="openrouter_api_key"):
+        Settings.model_validate(
+            {"llmio_api_key": "sk-legacy"}  # pragma: allowlist secret
+        )
 
 
-def test_constructor_form_legacy_llmio_api_key_alias() -> None:
-    """The legacy ``llmio_api_key`` key also aliases via the direct constructor.
+def test_constructor_form_legacy_llmio_api_key_rejected() -> None:
+    """The direct constructor rejects the legacy keyword too."""
+    with pytest.raises(ValidationError, match="openrouter_api_key"):
+        Settings(llmio_api_key="sk-test")  # type: ignore[call-arg]  # pragma: allowlist secret
 
-    Pydantic v2's ``Settings(...)`` constructor routes keyword arguments
-    through ``model_validate``, so the ``mode="before"`` migration validator
-    renames ``llmio_api_key`` onto ``openrouter_api_key`` here too. Several
-    test helpers (e.g. ``make_settings``) still pass the legacy keyword; this
-    pins that form so a future migration refactor cannot silently break them.
-    """
-    settings = Settings(llmio_api_key="sk-test")  # type: ignore[call-arg]  # pragma: allowlist secret
-    # pragma: allowlist secret
-    assert settings.openrouter_api_key.get_secret_value() == "sk-test"
-    assert not hasattr(settings, "llmio_api_key")
+
+@pytest.mark.parametrize(
+    "origins",
+    [
+        ["*"],
+        ["https://*.example.com"],
+        ["https://ui.example.com/"],
+        ["https://ui.example.com/path"],
+        ["null"],
+        ["ui.example.com"],
+        ["https://user@ui.example.com"],
+    ],
+)
+def test_cors_allow_origins_rejects_wildcards_and_non_origins(
+    origins: list[str],
+) -> None:
+    """Only exact ``scheme://host[:port]`` CORS origins are accepted."""
+    with pytest.raises(ValidationError, match="cors_allow_origins"):
+        Settings(cors_allow_origins=origins)
+
+
+def test_cors_allow_origins_accepts_exact_origins() -> None:
+    """Exact origins (with or without a port) load unchanged."""
+    origins = ["https://ui.example.com", "http://localhost:8000"]
+    assert Settings(cors_allow_origins=origins).cors_allow_origins == origins
 
 
 def test_invalid_model_level_raises() -> None:
@@ -276,14 +292,13 @@ def test_load_from_json_file(tmp_path: Path, monkeypatch: pytest.MonkeyPatch) ->
 # ---------------------------------------------------------------------------
 
 
-def test_load_from_file_migrates_legacy_llmio_api_key(
+def test_load_from_file_rejects_legacy_llmio_api_key(
     tmp_path: Path, monkeypatch: pytest.MonkeyPatch
 ) -> None:
-    """An early-deployment config file with ``llmio_api_key`` loads via the alias.
+    """A config file still carrying ``llmio_api_key`` fails load with a clear error.
 
-    Reads a JSON file with the pre-audit key name through the real production
-    path and asserts the secret is preserved under (and accessible via) the
-    canonical ``openrouter_api_key`` field.
+    Exercises the real production path (``migrate_legacy_config`` runs on the
+    raw file before validation) and asserts the error names the canonical key.
     """
     config_path = _write_config_json(
         tmp_path,
@@ -291,11 +306,11 @@ def test_load_from_file_migrates_legacy_llmio_api_key(
     )
     monkeypatch.setenv("ROBOTSIX_CONFIG_FILE", str(config_path))
 
-    settings = Settings.load()
-
-    # pragma: allowlist secret
-    assert settings.openrouter_api_key.get_secret_value() == "sk-early-deploy"
-    assert not hasattr(settings, "llmio_api_key")
+    with pytest.raises(InvalidConfigError, match="openrouter_api_key"):
+        Settings.load()
+    # The loader's self-healing strip never ran: the secret is still on disk.
+    on_disk = json.loads(config_path.read_text())
+    assert on_disk["llmio_api_key"] == "sk-early-deploy"  # pragma: allowlist secret
 
 
 def test_load_from_file_ignores_removed_settings(
@@ -332,19 +347,18 @@ def test_load_from_file_ignores_removed_settings(
 def test_load_early_deployment_config_migrates_and_ignores(
     tmp_path: Path, monkeypatch: pytest.MonkeyPatch
 ) -> None:
-    """A real-shaped early-deployment config carrying BOTH legacy cases loads.
+    """A real-shaped early-deployment config carrying removed keys loads.
 
-    Mirrors a production config volume frozen before the settings audit: the
-    legacy ``llmio_api_key`` must survive as ``openrouter_api_key`` while the
-    removed self-pacing / compaction keys are silently dropped — a single load
-    exercising the rename and the removals together, as a real config would.
+    Mirrors a production config volume frozen before the settings audit
+    (already migrated to ``openrouter_api_key``): the canonical secret is kept
+    while the removed self-pacing / compaction keys are silently dropped.
     """
     config_path = _write_config_json(
         tmp_path,
         {
             "server_host": "0.0.0.0",
             "server_port": 8080,
-            "llmio_api_key": "sk-early-deploy",  # pragma: allowlist secret
+            "openrouter_api_key": "sk-early-deploy",  # pragma: allowlist secret
             "llmio_task_budget_tokens": 30_000,
             "compaction_min_turns": 3,
             "compaction_keep_recent_turns": 2,
@@ -354,13 +368,12 @@ def test_load_early_deployment_config_migrates_and_ignores(
 
     settings = Settings.load()
 
-    # The renamed key is preserved and accessible under the canonical name.
+    # The canonical key is preserved.
     # pragma: allowlist secret
     assert settings.openrouter_api_key.get_secret_value() == "sk-early-deploy"
     assert settings.server_port == 8080
-    # The removed keys are gone, and no legacy alias leaked onto the model.
+    # The removed keys are gone.
     for removed in (
-        "llmio_api_key",
         "llmio_task_budget_tokens",
         "compaction_min_turns",
         "compaction_keep_recent_turns",
@@ -1453,8 +1466,8 @@ _PREEXISTING_ALLOWLIST: set[tuple[str, int, str]] = {
     ("src/robotsix_chat/config/settings.py", 98, "-opus"),
     ("src/robotsix_chat/config/settings.py", 98, "claude-fable"),
     # config/settings.py — vision_model default (OpenRouter captioning model)
-    ("src/robotsix_chat/config/settings.py", 219, "gpt-"),
-    ("src/robotsix_chat/config/settings.py", 1120, "gpt-"),
+    ("src/robotsix_chat/config/settings.py", 261, "gpt-"),
+    ("src/robotsix_chat/config/settings.py", 1193, "gpt-"),
     # config/memory_models.py — gpt-5-nano / gpt-5-mini / deepseek-v4-flash
     ("src/robotsix_chat/config/memory_models.py", 26, "gpt-"),
     ("src/robotsix_chat/config/memory_models.py", 50, "gpt-"),

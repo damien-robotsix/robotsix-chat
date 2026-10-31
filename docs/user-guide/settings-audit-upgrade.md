@@ -1,13 +1,14 @@
 # Settings Audit — Upgrade & Migration Notes
 
 The **settings audit** cleaned up and reorganized robotsix-chat's application configuration: dead
-settings were removed, one misleadingly-named key was renamed (with backward compatibility), and the
-Settings panel gained UX improvements. This page is the operator-facing summary of what changed and
-what — if anything — you need to do when upgrading.
+settings were removed, one misleadingly-named key was renamed, and the Settings panel gained UX
+improvements. This page is the operator-facing summary of what changed and what — if anything — you
+need to do when upgrading.
 
-**Bottom line:** no operator action is required. Every change is backward compatible — old config
-files continue to load unchanged, and removed keys are silently ignored rather than rejected. See
-[Configuration](../configuration.md) for the full, up-to-date settings reference.
+**Bottom line:** the only required action is renaming `llmio_api_key` → `openrouter_api_key` if your
+config file still carries the old key — a config with it now fails to load. Removed keys are
+silently ignored rather than rejected. See [Configuration](../configuration.md) for the full,
+up-to-date settings reference.
 
 ## Removed settings
 
@@ -44,14 +45,11 @@ your config file at your leisure, but you are not required to.
 `llmio_api_key` was renamed to **`openrouter_api_key`**. The old name was misleading: the field is
 the OpenRouter fallback-slot API key (also used for vision captioning), not a generic "llmio" key.
 
-**Backward compatibility is solid.** A config file that still uses `llmio_api_key` continues to work
-— the loader accepts it as an alias and maps its value onto `openrouter_api_key` at load time. If
-both keys are present, an explicitly-set `openrouter_api_key` wins; otherwise the legacy value is
-carried over. No secret is lost and no startup crash occurs.
+**The legacy alias has been removed.** The component standard forbids credential fallbacks to
+pre-standard field names, so a config file that still uses `llmio_api_key` now **fails to load**
+with an error naming `openrouter_api_key` (the file is left untouched, so the secret is not lost).
 
-**Recommended (optional) step:** rename the key in your config file to `openrouter_api_key` the next
-time you edit it, so the file matches the canonical schema. This is a cosmetic cleanup — the alias
-will keep working.
+**Required step:** rename the key in your config file to `openrouter_api_key` before upgrading.
 
 ## New Settings-panel UX
 
@@ -70,8 +68,8 @@ See the [Settings UI guide](settings-ui.md) for the full panel walkthrough.
 
 ## Upgrade checklist
 
-1. Upgrade to the new image / release as usual — no config edit is required to boot.
-1. (Optional) Rename `llmio_api_key` → `openrouter_api_key` in your config file the next time you
-   edit it.
+1. Rename `llmio_api_key` → `openrouter_api_key` in your config file if it still carries the old key
+   — the config otherwise fails to load.
+1. Upgrade to the new image / release as usual.
 1. (Optional) Delete the removed keys (`llmio_task_budget_tokens`, `compaction_min_turns`,
    `compaction_keep_recent_turns`) from your config file; they are ignored either way.

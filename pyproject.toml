@@ -21,6 +21,9 @@ dependencies = [
     "pillow",
     "pydantic",
     "reportlab",
+    # secure: HTTP security headers (SecureASGIMiddleware) per the
+    # robotsix-standards http-security-headers standard.
+    "secure>=2.0.1",
     "structlog>=24.0.0",
     "prometheus-client>=0.20.0",
     "uvicorn",

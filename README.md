@@ -15,7 +15,7 @@ concrete provider), then serves it over Server-Sent Events:
 
 The UI and the API are served from the **same origin** by default, so the browser talks to `/chat`
 with no CORS configuration. When you host the UI separately, set `cors_allow_origins` in the config
-file.
+file to the UI's exact origin(s) (`scheme://host[:port]`; wildcards are rejected).
 
 robotsix-chat is a **deployable component** (see the
 [robotsix stack standards](https://github.com/damien-robotsix/robotsix-standards)): it ships as a

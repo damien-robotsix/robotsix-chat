@@ -362,7 +362,7 @@ async def test_spawn_tool_needs_no_api_key() -> None:
     Every level is served by the keyless default slot; the key only matters
     under provider failover.
     """
-    env = build_env(settings=make_settings(llmio_api_key=""))
+    env = build_env(settings=make_settings(openrouter_api_key=""))
     spawn = _by_name(build_subsession_tools(env, ctx=_ctx()), "spawn_subsession")
 
     result = await spawn("task", "t", "do it", model_level=1)

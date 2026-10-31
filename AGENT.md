@@ -99,6 +99,25 @@ Standardized robotsix layout (docker standard): non-root user `app`, uid/gid **1
 `WORKDIR /home/app`; the container listens on **8080** (from the mounted config), `EXPOSE 8080`,
 stdlib-only `HEALTHCHECK` on `/health`, exec-form `ENTRYPOINT ["robotsix-chat"]` (no entrypoint.sh).
 
+## Cross-origin (CORS) justification
+
+Per the standards' CORS policy, zero CORS headers is the default: the browser UI is served from the
+same origin as the API (`GET /` + `/static`), so production needs no CORS. The `CORSMiddleware` in
+`create_app` is registered **only** when `cors_allow_origins` is non-empty. The one cross-origin
+client it exists for is a separately-hosted copy of the UI (e.g. `index.html` opened from `file://`,
+whose `serverUrl()` falls back to `http://localhost:8000/chat`, or a UI on another dev origin). It
+allows only `GET`/`POST`/`OPTIONS`, the `Content-Type` request header, and no credentials.
+
+**Rule:** `cors_allow_origins` accepts exact origins only (`scheme://host[:port]`). The `Settings`
+field validator rejects `*`, wildcard hosts, `null` and values with a path, so a config can never
+open the gateway-authenticated surface to any origin. Do not relax it.
+
+**Rule:** Security headers come from one `SecureASGIMiddleware` registration in `create_app`
+(`build_secure_headers()`, BALANCED preset with a page-specific CSP). Every `text/event-stream`
+response goes through `routes/_shared.py:sse_response()`, which sets `Cache-Control: no-cache`,
+`Connection: keep-alive` and `X-Accel-Buffering: no`. Never build an SSE `StreamingResponse` by
+hand.
+
 ## Long-term memory (cognee)
 
 The agent is stateless by default. The optional `memory` extra adds persistent, cross-conversation

@@ -8,15 +8,18 @@ from __future__ import annotations
 import json
 import logging
 import re
+from collections.abc import AsyncIterable
 from typing import Any
 
 from starlette.exceptions import HTTPException
 from starlette.requests import Request
-from starlette.responses import HTMLResponse, JSONResponse
+from starlette.responses import HTMLResponse, JSONResponse, StreamingResponse
 
 # Re-exported: the transcript builder lives with the summariser so it can
 # render the per-turn actions log without a routes import cycle.
 from robotsix_chat.chat.summarize import build_transcript as build_transcript
+
+from .constants import SSE_CONTENT_TYPE
 
 # Re-exported: the transcript builder lives with the summariser so it can
 # render the per-turn actions log without a routes import cycle.
@@ -58,6 +61,37 @@ def _detect_truncation(text: str) -> str | None:
         if pat.search(tail):
             return _TRUNCATION_NOTE
     return None
+
+
+# Headers every ``text/event-stream`` response carries (sse-response-headers
+# standard): defeat intermediary caching, keep the connection open, and turn
+# off nginx-style proxy buffering so heartbeats and tokens are flushed live.
+SSE_RESPONSE_HEADERS: dict[str, str] = {
+    "Cache-Control": "no-cache",
+    "Connection": "keep-alive",
+    "X-Accel-Buffering": "no",
+}
+
+
+def sse_response(generator: AsyncIterable[bytes], **kwargs: Any) -> StreamingResponse:
+    """Build the one ``text/event-stream`` response every SSE endpoint uses.
+
+    Defines the SSE header set once (``SSE_RESPONSE_HEADERS``); callers may
+    pass extra ``headers`` / ``StreamingResponse`` kwargs, which are merged
+    on top.
+    """
+    # Explicit Content-Type keeps Starlette from appending "; charset=utf-8".
+    headers = {
+        "Content-Type": SSE_CONTENT_TYPE,
+        **SSE_RESPONSE_HEADERS,
+        **kwargs.pop("headers", {}),
+    }
+    return StreamingResponse(
+        generator,
+        media_type=SSE_CONTENT_TYPE,
+        headers=headers,
+        **kwargs,
+    )
 
 
 def _sse_frame(payload: object) -> bytes:

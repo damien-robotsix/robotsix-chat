@@ -2113,7 +2113,7 @@ def test_spawn_level_errors() -> None:
 
     Every level is served by the keyless default slot.
     """
-    env = build_env(settings=make_settings(llmio_api_key=""))
+    env = build_env(settings=make_settings(openrouter_api_key=""))
 
     with pytest.raises(SubsessionLevelError):
         _spawn(env, model_level=6)
@@ -2130,7 +2130,7 @@ async def test_spawn_monitor_model_level_clamped() -> None:
         settings=make_settings(
             monitor_max_model_level=2,
             default_model_level=3,
-            llmio_api_key="test-key",
+            openrouter_api_key="test-key",
         )
     )
 
