@@ -12,9 +12,8 @@ from collections.abc import AsyncIterator
 from starlette.requests import Request
 from starlette.responses import JSONResponse, StreamingResponse
 
-from ._shared import _get_session_id, _sse_frame
+from ._shared import _get_session_id, _sse_frame, sse_response
 from .constants import (
-    SSE_CONTENT_TYPE,
     SSE_HEARTBEAT_FRAME,
     SSE_HEARTBEAT_INTERVAL,
 )
@@ -51,8 +50,4 @@ async def events_endpoint(request: Request) -> JSONResponse | StreamingResponse:
         finally:
             request.app.state.event_bus.unsubscribe(session_id, queue)
 
-    return StreamingResponse(
-        event_stream(),
-        media_type=SSE_CONTENT_TYPE,
-        headers={"Content-Type": SSE_CONTENT_TYPE},
-    )
+    return sse_response(event_stream())

@@ -438,3 +438,14 @@ class TestBuildSSRFGuardedClient:
         assert isinstance(client._transport._pool, SSRFGuardPool)
         assert client.follow_redirects is True
         assert client.max_redirects == 3
+
+    def test_client_ignores_environment_proxies(
+        self, monkeypatch: pytest.MonkeyPatch
+    ) -> None:
+        """trust_env=False: an env proxy can never route around the guard."""
+        monkeypatch.setenv("HTTPS_PROXY", "http://proxy.invalid:3128")
+        monkeypatch.setenv("ALL_PROXY", "http://proxy.invalid:3128")
+        client = build_ssrf_guarded_client(timeout=5.0, fleet_hosts=set())
+        assert client.trust_env is False
+        assert not client._mounts
+        assert isinstance(client._transport._pool, SSRFGuardPool)
