@@ -572,6 +572,7 @@ modules:
       - tests/ui/conftest.py
       - tests/ui/test_chat_integration.py
       - tests/ui/test_smoke.py
+      - tests/ui/test_vendor_check.py
 
   - id: http-probe
     description: "Read-only HTTP uptime/render-probe tool for the agent — exposes build_http_probe_tools() returning an http_probe tool for HTTPS GET health checks with optional content assertions (status, expect_contains, expect_absent), plus load_http_probe_skill() for the component skill document."

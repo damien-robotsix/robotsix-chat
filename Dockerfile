@@ -69,11 +69,16 @@ FROM node:26-alpine AS ui
 # No release tag contains this commit yet; re-pin to the tag once released.
 ARG ROBOTSIX_UI_VERSION=f62ec92324a1a28b61b37d7a439f1f79270ee2a1
 WORKDIR /build
+COPY scripts/check-ui-vendor.sh /usr/local/bin/check-ui-vendor.sh
+# The dist build is chunked (vanilla.js re-exports from content-hashed chunks
+# such as appshell-<hash>.js); check-ui-vendor.sh fails the build when any
+# relative ./*.js import is missing from dist/.
 # hadolint ignore=DL3016,DL3018
 RUN apk add --no-cache git && \
     npm install --no-save --progress=false "github:damien-robotsix/robotsix-ui#${ROBOTSIX_UI_VERSION}" && \
     test -f node_modules/@robotsix/ui/dist/vanilla.js && \
-    test -f node_modules/@robotsix/ui/dist/style.css
+    test -f node_modules/@robotsix/ui/dist/style.css && \
+    sh /usr/local/bin/check-ui-vendor.sh node_modules/@robotsix/ui/dist
 
 # ---------------------------------------------------------------------------
 # Runtime stage: copy the installed site-packages and console script from the
@@ -85,11 +90,8 @@ FROM python:3.14-slim@sha256:cad9a2c871761c413caa6fdd6441c783451e740a48aaeba60ae
 SHELL ["/bin/bash", "-o", "pipefail", "-c"]
 
 COPY --from=builder /usr/local/lib/python3.14/site-packages/ /usr/local/lib/python3.14/site-packages/
-RUN mkdir -p /usr/local/lib/python3.14/site-packages/robotsix_chat/ui/static/vendor
-COPY --from=ui /build/node_modules/@robotsix/ui/dist/vanilla.js \
-  /usr/local/lib/python3.14/site-packages/robotsix_chat/ui/static/vendor/vanilla.js
-COPY --from=ui /build/node_modules/@robotsix/ui/dist/style.css \
-  /usr/local/lib/python3.14/site-packages/robotsix_chat/ui/static/vendor/style.css
+COPY --from=ui /build/node_modules/@robotsix/ui/dist/ \
+  /usr/local/lib/python3.14/site-packages/robotsix_chat/ui/static/vendor/
 COPY --from=builder /usr/local/bin/robotsix-chat /usr/local/bin/robotsix-chat
 COPY --from=builder /usr/local/bin/playwright /usr/local/bin/playwright
 
