@@ -63,10 +63,11 @@ RUN --mount=type=cache,target=/root/.cache/uv \
 # install from a real project directory (/build) instead.
 # ---------------------------------------------------------------------------
 FROM node:26-alpine AS ui
-# Pinned to the robotsix-ui PR #78 merge commit (ConfigPanel: foldable group
-# headers, advanced-settings mechanism removed, smart schema-driven grouping).
+# Pinned to the robotsix-ui main commit after PR #190 (ConfigPanel: field
+# descriptions only in the hover tooltip (#189); object-typed settings edited
+# as JSON instead of "[object Object]" (#190)).
 # No release tag contains this commit yet; re-pin to the tag once released.
-ARG ROBOTSIX_UI_VERSION=0a655e5b7be6a6f16b5ec67a28cd1c7255c35f06
+ARG ROBOTSIX_UI_VERSION=f62ec92324a1a28b61b37d7a439f1f79270ee2a1
 WORKDIR /build
 # hadolint ignore=DL3016,DL3018
 RUN apk add --no-cache git && \

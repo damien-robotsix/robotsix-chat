@@ -119,7 +119,8 @@ data no longer validates.
 ## Operator workflow
 
 1. Click the **⚙ Settings** button in the header bar.
-1. Browse the config sections — nested objects are shown as collapsible sections.
+1. Browse the config sections — nested objects are shown as collapsible sections. Each field's
+   description is shown only in its hover tooltip; there is no inline help text under the input.
 1. Edit the fields you want to change:
    - **Text fields** — free-form string input.
    - **Number fields** — numeric input (step "1" for integers, "any" for floats).
