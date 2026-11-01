@@ -240,17 +240,17 @@ The script handles annotated tags (peeled to the underlying commit), branches, a
 per run on this multi-GB image vs ~4 min cold. Do not switch back without timing both paths (docker
 standard, "CI-time image scan").
 
-**Rule:** The dependency CVE audit runs in the `lockfile` job (with the curated
-`--ignore-until-fixed` list), and `run-audit: false` is passed to the shared `python-ci.yml`. The
-shared audit step has no ignore mechanism, so enabling both hard-blocks CI on CVEs that have no
-released fix.
+**Rule:** The dependency CVE audit and the `uv lock --check` freshness check run in the shared
+`python-ci.yml` (`ci` job: `run-audit: true`, `check-lock: true`, `audit-sarif: true`). Ignored
+advisories live in exactly one place — the repo-root `.audit-ignore` (one `ID  # reason` per line,
+optional `# expires: YYYY-MM-DD`), parsed by the shared `scripts/audit_ignore.py` and passed to uv
+as `--ignore-until-fixed`. `python-ci.yml`, the daily `dependency-audit.yml` workflow and the shared
+`uv-audit` pre-commit hook all read it; never re-add inline id lists.
 
-**Rule:** The blocking PR audits (`lockfile` job's `uv audit`, the shared security job's pip-audit)
-run only when the PR touches `uv.lock` or `pyproject.toml` (the `changes` job in `ci.yml`), and
-on push to main; pre-commit skips its `uv-audit` hook in CI. New advisories against pinned deps are
-caught by the daily `dependency-audit.yml` workflow, which opens a tracking issue. The
-`--ignore-until-fixed` list lives in `ci.yml`, `dependency-audit.yml` and `.pre-commit-config.yaml`
-— keep all three in sync.
+**Rule:** The shared security job's blocking pip-audit runs only when the PR touches `uv.lock` or
+`pyproject.toml` (the `changes` job in `ci.yml`), and on push to main; pre-commit skips its
+`uv-audit` hook in CI (the `ci` job already audits). New advisories against pinned deps are also
+caught by the daily `dependency-audit.yml` workflow, which opens a tracking issue.
 
 **Rule:** Never commit pre-compiled tool binaries (e.g. hadolint, actionlint, shellcheck) to the
 repository — the pre-commit hooks fetch their own binaries via their hook installers. If a tool

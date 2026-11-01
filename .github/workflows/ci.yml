@@ -15,8 +15,8 @@ concurrency:
 jobs:
   changes:
     name: Detect dependency changes
-    # The blocking CVE audits (lockfile job's `uv audit`, the shared security
-    # job's pip-audit) only run when a PR touches uv.lock or pyproject.toml.
+    # The shared security job's blocking pip-audit only runs when a PR
+    # touches uv.lock or pyproject.toml.
     # A newly published advisory against an already-pinned transitive
     # dependency reproduces on main and is not caused by an unrelated diff —
     # it is caught by the scheduled `dependency-audit.yml` workflow, which
@@ -55,45 +55,6 @@ jobs:
             echo "deps=false" >> "$GITHUB_OUTPUT"
           fi
 
-  lockfile:
-    name: Lockfile and audit
-    needs: [changes]
-    runs-on: ubuntu-latest
-    permissions:
-      contents: read  # checkout the repo
-    steps:
-      - name: Harden Runner
-        uses: step-security/harden-runner@dc2769abcc0fcfbadfc1df54081c1608579ef6b2  # v2.22.2
-        with:
-          egress-policy: audit
-      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1  # v7.0.1
-        with:
-          persist-credentials: false
-      - uses: astral-sh/setup-uv@1c37ad07a6a961277cf70c0d37d6f313000f5884  # v10.3.0
-      - name: Check lockfile freshness
-        run: uv lock --check
-      - name: Audit dependencies
-        # Only when the PR touches uv.lock / pyproject.toml (or on push to
-        # main) — see the `changes` job. Keep the ignore list in sync with
-        # .github/workflows/dependency-audit.yml and .pre-commit-config.yaml.
-        if: ${{ needs.changes.outputs.deps == 'true' }}
-        # CVE-2025-69872 / GHSA-w8v5-vhqr-4h9v: diskcache unsafe pickle deserialization.
-        # No fix version available; ignored until a patched release is published.
-        # --preview-features audit-command: uv ≥0.12 requires the flag; older
-        # versions accept it without error, so this is safe to pass always.
-        #
-        # aiohttp 3.14.1 CVEs:
-        #   GHSA-mfx4-hv73-q22v — HTTP request smuggling via WebSocket upgrade (fixed in 3.14.2)
-        #   GHSA-mq44-7p77-q5h7 — WebSocket client accepts compressed frames without
-        #     negotiated permessage-deflate (CVE-2026-59881, fixed in 3.14.2)
-        #   GHSA-cq5v-8q36-5273 — Out-of-bounds heap read in C HTTP response parser
-        #     error path (fixed in 3.14.3)
-        #
-        # cryptography 49.0.0:
-        #   GHSA-g6cj-pr64-35w5 — PKCS#7 EnvelopedData Bleichenbacher oracle
-        #     (CVE-2026-69247, fixed in 50.0.0)
-        run: uv --preview-features audit-command audit --ignore-until-fixed GHSA-w8v5-vhqr-4h9v --ignore-until-fixed GHSA-mfx4-hv73-q22v --ignore-until-fixed GHSA-mq44-7p77-q5h7 --ignore-until-fixed GHSA-cq5v-8q36-5273 --ignore-until-fixed GHSA-g6cj-pr64-35w5
-
   ci:
     name: Python CI (shared)
     uses: damien-robotsix/robotsix-github-workflows/.github/workflows/python-ci.yml@86a722f2938c1dda343bbf8d3c5989613cbf1794  # v1.5.0
@@ -107,18 +68,20 @@ jobs:
       install-extras: ""
       # coverage-threshold deliberately omitted: the fleet-wide floor (80)
       # lives in the shared workflow — no per-repo threshold (repo baseline).
-      # The CVE audit runs in the `lockfile` job instead, which carries the
-      # curated --ignore-until-fixed list for unfixable advisories; the
-      # shared audit step has no ignore mechanism, so running both would
-      # hard-block CI on CVEs with no released fix.
-      run-audit: false
-    # python-ci.yml's nested `tests` job uploads SARIF, so it requests
-    # `security-events: write`. A caller job MUST grant at least that or
-    # GitHub rejects the reusable-workflow call with a startup_failure
+      # Dependency CVE audit (uv audit) and lockfile freshness (uv lock
+      # --check) run in the shared workflow. Ignored advisories come from the
+      # single-source repo-root .audit-ignore (audit-ignore-file default),
+      # passed to uv as --ignore-until-fixed by both the plain and SARIF audits.
+      run-audit: true
+      check-lock: true
+      audit-sarif: true
+    # python-ci.yml's nested `tests` and `audit-sarif` jobs upload SARIF, so
+    # they request `security-events: write`. A caller job MUST grant at least
+    # that or GitHub rejects the reusable-workflow call with a startup_failure
     # ("nested job 'tests' is requesting 'security-events: write'").
     permissions:
       contents: read         # checkout the repo
-      security-events: write  # required by python-ci.yml's nested `tests` job for SARIF upload
+      security-events: write  # required by python-ci.yml's nested `tests` / `audit-sarif` jobs for SARIF upload
 
   security:
     name: Security scan (shared)
@@ -136,8 +99,8 @@ jobs:
       # sources with postgres:// documentation strings, now removed from tracking).
       trufflehog-extra-args: "--results=verified,unknown --exclude-detectors=Lob,Postgres"
       # cryptography 49.0.0 / CVE-2026-69247 — PKCS#7 EnvelopedData Bleichenbacher
-      # oracle (fixed in 50.0.0). Ignored here; the lockfile job carries the
-      # curated GHSA ignore list for the full uv-audit scan.
+      # oracle (fixed in 50.0.0). Ignored here; the repo-root .audit-ignore
+      # carries the curated GHSA ignore list for the full uv-audit scan.
       pip-audit-ignore-vulns: CVE-2026-69247
       # pip-audit only blocks PRs that touch uv.lock / pyproject.toml (and
       # push to main); unrelated PRs skip it — new advisories against pinned
@@ -181,9 +144,9 @@ jobs:
           max_attempts: 3
           retry_wait_seconds: 15
           retry_on: error
-          # uv-audit is skipped here: the dependency CVE audit is scoped to
-          # dependency-changing PRs by the `lockfile` job (see `changes`),
-          # and `--all-files` would otherwise run it on every PR.
+          # uv-audit is skipped here: the dependency CVE audit already runs
+          # in the shared `ci` job (python-ci.yml run-audit), so running it
+          # again via `--all-files` would only duplicate it.
           command: |
             SKIP=uv-audit uv run --frozen --with pre-commit --with vulture --with pyright pre-commit run --all-files --show-diff-on-failure
 
@@ -521,7 +484,7 @@ jobs:
 
   check:
     name: All CI checks passed
-    needs: [changes, lockfile, ci, security, pre-commit, check-sse-types, check-subsession-kinds, check-activity-kinds, check-subsession-statuses, image-scan, check-config-schema, deptry, frontend-js, pyright, mypy]
+    needs: [changes, ci, security, pre-commit, check-sse-types, check-subsession-kinds, check-activity-kinds, check-subsession-statuses, image-scan, check-config-schema, deptry, frontend-js, pyright, mypy]
     # Use !cancelled() so the job still runs when a reusable-workflow call
     # (ci, security) is misreported as "skipped" due to a known GitHub
     # Actions edge case: when a reusable workflow has conditionally-skipped
@@ -538,7 +501,6 @@ jobs:
       - name: Verify all gates passed
         env:
           CHANGES_RESULT: ${{ needs.changes.result }}
-          LOCKFILE_RESULT: ${{ needs.lockfile.result }}
           CI_RESULT: ${{ needs.ci.result }}
           SECURITY_RESULT: ${{ needs.security.result }}
           PRE_COMMIT_RESULT: ${{ needs.pre-commit.result }}
@@ -575,7 +537,6 @@ jobs:
           }
           echo "--- CI gate results ---"
           check "$CHANGES_RESULT"                     changes
-          check "$LOCKFILE_RESULT"                    lockfile
           check "$CI_RESULT"                          ci                    allow-skipped
           check "$SECURITY_RESULT"                    security              non-blocking
           check "$PRE_COMMIT_RESULT"                  pre-commit

@@ -36,18 +36,25 @@ jobs:
         with:
           persist-credentials: false
       - uses: astral-sh/setup-uv@1c37ad07a6a961277cf70c0d37d6f313000f5884  # v10.3.0
+      - name: Checkout workflow library (audit-ignore parser)
+        # scripts/audit_ignore.py from robotsix-github-workflows — the same
+        # parser python-ci.yml's audit uses — pinned to the python-ci.yml
+        # release ci.yml calls (keep the two SHAs in step).
+        uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1  # v7.0.1
+        with:
+          repository: damien-robotsix/robotsix-github-workflows
+          ref: 86a722f2938c1dda343bbf8d3c5989613cbf1794  # v1.5.0
+          path: _workflow-lib
+          persist-credentials: false
       - name: Audit dependencies
-        # Keep the ignore list in sync with the `lockfile` job in ci.yml and
-        # the uv-audit hook in .pre-commit-config.yaml (see ci.yml for the
-        # per-advisory justifications).
+        # Ignored advisories come from the single-source repo-root
+        # .audit-ignore (shared with ci.yml's python-ci.yml audit and the
+        # uv-audit pre-commit hook); audit_ignore.py appends each id as
+        # --ignore-until-fixed and fails on malformed or expired entries.
         run: |
           set -euo pipefail
-          uv --preview-features audit-command audit \
-            --ignore-until-fixed GHSA-w8v5-vhqr-4h9v \
-            --ignore-until-fixed GHSA-mfx4-hv73-q22v \
-            --ignore-until-fixed GHSA-mq44-7p77-q5h7 \
-            --ignore-until-fixed GHSA-cq5v-8q36-5273 \
-            --ignore-until-fixed GHSA-g6cj-pr64-35w5 \
+          python3 _workflow-lib/scripts/audit_ignore.py --format uv -- \
+            uv --preview-features audit-command audit --frozen \
             2>&1 | tee audit.log
       - name: Open or update the advisory tracking issue
         if: failure()
@@ -66,8 +73,8 @@ jobs:
               '',
               'A newly published advisory affects a pinned dependency. Bump the',
               'affected package (`uv lock --upgrade-package <pkg>`), or — only when',
-              'no fixed release exists — add it to the `--ignore-until-fixed` list',
-              'in ci.yml, dependency-audit.yml and .pre-commit-config.yaml.',
+              'no fixed release exists — add an `ID  # reason` line to the',
+              'repo-root `.audit-ignore` file.',
               '',
               '```',
               log,
