@@ -11,7 +11,11 @@ TMP="$(mktemp -d)"
 trap 'rm -rf "$TMP"' EXIT
 cd "$TMP"
 npm install --no-save "github:damien-robotsix/robotsix-ui#${VERSION}"
+# The robotsix-ui dist is chunked (vanilla.js re-exports from content-hashed
+# chunks like appshell-<hash>.js), so vendor the whole dist/ directory and
+# clear the destination first so stale hashed chunks don't accumulate.
+rm -rf "$DEST"
 mkdir -p "$DEST"
-cp node_modules/@robotsix/ui/dist/vanilla.js "$DEST/vanilla.js"
-cp node_modules/@robotsix/ui/dist/style.css  "$DEST/style.css"
+cp -R node_modules/@robotsix/ui/dist/. "$DEST/"
+sh "${REPO_ROOT}/scripts/check-ui-vendor.sh" "$DEST"
 echo "Vendored @robotsix/ui@${VERSION} → $DEST"
