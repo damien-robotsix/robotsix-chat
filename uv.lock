@@ -2044,7 +2044,7 @@ dev = [
     { name = "pytest-randomly" },
     { name = "pytest-xdist", extras = ["psutil"] },
     { name = "respx" },
-    { name = "robotsix-modules", git = "https://github.com/damien-robotsix/robotsix-modules.git?rev=d7c5e59980516de6e050db02ff54aef4e15ff5c3" },
+    { name = "robotsix-modules", git = "https://github.com/damien-robotsix/robotsix-modules.git?rev=709d21dbcebc9ddec663f7d04a3d0829a43ef2bb" },
     { name = "ruff" },
 ]
 docs = [
@@ -2113,18 +2113,10 @@ tracing = [
 
 [[package]]
 name = "robotsix-modules"
-version = "0.2.0"
-source = { git = "https://github.com/damien-robotsix/robotsix-modules.git?rev=d7c5e59980516de6e050db02ff54aef4e15ff5c3#d7c5e59980516de6e050db02ff54aef4e15ff5c3" }
+version = "0.5.4"
+source = { git = "https://github.com/damien-robotsix/robotsix-modules.git?rev=709d21dbcebc9ddec663f7d04a3d0829a43ef2bb#709d21dbcebc9ddec663f7d04a3d0829a43ef2bb" }
 dependencies = [
     { name = "jsonschema" },
-    { name = "robotsix-yaml-config" },
-]
-
-[[package]]
-name = "robotsix-yaml-config"
-version = "0.1.0"
-source = { git = "https://github.com/damien-robotsix/robotsix-yaml-config.git?rev=d302ee4ada88905efa48333894ed19519f9f7920#d302ee4ada88905efa48333894ed19519f9f7920" }
-dependencies = [
     { name = "pyyaml" },
 ]
 
