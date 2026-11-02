@@ -16,6 +16,7 @@ jobs:
   verify:
     name: Verify release tag and CI status
     runs-on: ubuntu-latest
+    timeout-minutes: 15
     permissions:
       checks: read    # query CI check-run status
       contents: read  # checkout the repo
@@ -52,6 +53,7 @@ jobs:
     name: Generate and submit SBOM
     needs: verify
     runs-on: ubuntu-latest
+    timeout-minutes: 15
     permissions:
       contents: write  # upload-artifact + submit SBOM to dependency graph
     steps:
