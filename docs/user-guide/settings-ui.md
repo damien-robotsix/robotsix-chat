@@ -127,10 +127,15 @@ data no longer validates.
    - **Text fields** — free-form string input.
    - **Number fields** — numeric input (step "1" for integers, "any" for floats).
    - **Boolean fields** — checkbox.
-   - **Array fields** — text area containing JSON; edit the JSON directly.
-   - **Object fields** — e.g. `llmio_tier_overrides` — rendered as an editable JSON textarea (the
-     JSON is submitted as text and parsed by the server on save). Enter a valid JSON object; invalid
-     JSON is rejected with a clear error before anything is persisted.
+   - **Array and object fields** — e.g. `llmio_tier_overrides` — rendered as a multi-line,
+     monospace JSON editor showing the value pretty-printed with 2-space indentation. The editor
+     starts at about six rows, grows with its content up to a maximum height, and scrolls beyond
+     that; you can also drag its bottom edge to resize it. The "JSON object" label stays next to
+     the field. The JSON is validated as you type: if it is not valid JSON, an inline "Invalid
+     JSON — not saved" message appears under the editor, the field is highlighted in red, and
+     **Save** is blocked until the text parses again. Formatting and whitespace are presentation
+     only — the saved value is the parsed object, so it round-trips unchanged. Scalar and string
+     fields keep their single-line inputs.
    - **Periodic session presets** — the `periodic.sessions` array renders as a dedicated presets
      editor (see [Editing periodic-session presets](#editing-periodic-session-presets)) instead of a
      raw JSON text area.

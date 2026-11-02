@@ -1007,6 +1007,30 @@ body {
   box-sizing: border-box;
 }
 
+/* ---- Config panel: multi-line JSON object/list editor ---------------- */
+
+.rsu-config-row textarea.rsu-config-value.rsu-config-json-editor {
+  font-family: ui-monospace, SFMono-Regular, Menlo, Consolas, monospace;
+  font-size: 0.8rem;
+  line-height: 1.4;
+  min-height: 9rem;
+  max-height: 30rem;
+  overflow: auto;
+  white-space: pre;
+  overflow-wrap: normal;
+  resize: vertical;
+  tab-size: 2;
+  box-sizing: border-box;
+}
+
+.rsu-config-row textarea.rsu-config-json-editor.rsu-config-json-invalid {
+  border-color: #ef4444;
+}
+
+.rsu-config-row .rsu-config-json-error {
+  font-size: 0.72rem; color: #fca5a5; margin-top: 0.1rem;
+}
+
 .settings-empty {
   color: #64748b; font-style: italic; padding: 1rem 0;
   text-align: center;
