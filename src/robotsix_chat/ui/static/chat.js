@@ -2,6 +2,7 @@ import { processSSEStream } from "./sse-parser.js";
 import { drainSessionDraft } from "./drain-draft.js";
 import { closedPeriodicSessions, discardSessions } from "./discard-closed.js";
 import { renderMemoryBanner } from "./memory-banner.js";
+import { wireConfigJsonEditors } from "./config-json-editor.js";
 import { notify } from "./notify.js";
 import {
   isDocumentVisible,
@@ -3953,6 +3954,7 @@ import {
       const { mountConfigPanel } = await import('/static/vendor/vanilla.js');
       mountConfigPanel(el, { title: 'Settings' });
       _wireConfigLongTextFieldUpgrades(el);
+      wireConfigJsonEditors(el);
       _configPanelReady = true;
     } catch (_err) {
       el.textContent =

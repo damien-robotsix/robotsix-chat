@@ -546,6 +546,7 @@ modules:
       - src/robotsix_chat/ui/static/chat.css
       - src/robotsix_chat/ui/static/chat.js
       - src/robotsix_chat/ui/static/memory-banner.js
+      - src/robotsix_chat/ui/static/config-json-editor.js
       - src/robotsix_chat/ui/static/message-queue.js
       - src/robotsix_chat/ui/static/notify-gating.js
       - src/robotsix_chat/ui/static/notify-navigation.js
@@ -559,6 +560,7 @@ modules:
       - docs/user-guide/settings-ui.md
       - docs/user-guide/settings-audit-upgrade.md
       - tests/ui/js/memory-banner.test.js
+      - tests/ui/js/config-json-editor.test.js
       - tests/ui/js/message-queue.test.js
       - tests/ui/js/notify-gating.test.js
       - tests/ui/js/notify-navigation.test.js
