@@ -69,6 +69,13 @@ Everything below predates the release-please migration and was
 maintained by hand or by towncrier. It is kept verbatim; new entries
 are added above by release-please.
 
+## [0.32.0](https://github.com/damien-robotsix/robotsix-chat/compare/v0.31.0...v0.32.0) (2026-11-02)
+
+
+### Features
+
+* ConfigPanel: multi-line pretty-printed JSON editor for object-valued settings (20261102T130025Z-configpanel-multi-line-pretty-printed-js-2ba0) ([#2269](https://github.com/damien-robotsix/robotsix-chat/issues/2269)) ([7f16224](https://github.com/damien-robotsix/robotsix-chat/commit/7f162242b01fc45f3aec76b79a836da083daefce))
+
 ## [0.31.0](https://github.com/damien-robotsix/robotsix-chat/compare/v0.30.0...v0.31.0) (2026-11-02)
 
 
