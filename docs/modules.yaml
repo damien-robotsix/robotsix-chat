@@ -414,6 +414,7 @@ modules:
       - src/robotsix_chat/memory_push.py
       - docs/memory/api.md
       - tests/memory/__init__.py
+      - tests/memory/test_base.py
       - tests/memory/test_component_memory.py
 
   - id: subsessions
