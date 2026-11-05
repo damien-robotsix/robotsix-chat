@@ -16,6 +16,19 @@ from importlib import resources
 from typing import TYPE_CHECKING, Any
 
 from asgi_correlation_id import CorrelationIdMiddleware
+from secure import (
+    ContentSecurityPolicy,
+    CrossOriginOpenerPolicy,
+    CrossOriginResourcePolicy,
+    PermissionsPolicy,
+    ReferrerPolicy,
+    Secure,
+    Server,
+    StrictTransportSecurity,
+    XContentTypeOptions,
+    XFrameOptions,
+)
+from secure.middleware import SecureASGIMiddleware
 from starlette.applications import Starlette
 from starlette.exceptions import HTTPException
 from starlette.middleware import Middleware
@@ -34,7 +47,12 @@ from robotsix_chat.config.models import (
 
 from .idempotency import MessageIdempotencyStore
 from .middleware import StructlogContextMiddleware
-from .openapi import _API_ROUTE_SPECS, docs_endpoint, openapi_json_endpoint
+from .openapi import (
+    _API_ROUTE_SPECS,
+    SWAGGER_INIT_SCRIPT_CSP_SOURCE,
+    docs_endpoint,
+    openapi_json_endpoint,
+)
 from .routes import (
     ChatAgent,
     MessageCoalescer,
@@ -211,6 +229,55 @@ SHARED_PARAMS: frozenset[str] = frozenset(
         "continuation_store",
     }
 )
+
+
+def build_secure_headers() -> Secure:
+    """Return the HTTP security-header set applied to every response.
+
+    Mirrors ``secure``'s ``Preset.BALANCED`` (http-security-headers standard)
+    with the Content-Security-Policy widened only where the served pages need
+    it:
+
+    - ``script-src``: the chat UI loads ``marked`` + ``DOMPurify`` from
+      ``cdn.jsdelivr.net`` and ``/docs`` loads SwaggerUI from ``unpkg.com``;
+      the SwaggerUI bootstrap is the only inline script and is allow-listed
+      by hash (no ``'unsafe-inline'``). Inline event handlers stay blocked
+      (``script-src-attr 'none'``) — the UI wires listeners from static JS.
+    - ``img-src``: ``blob:`` for attachment previews (``URL.createObjectURL``)
+      and ``https:`` for images embedded in rendered Markdown replies.
+    - ``style-src``: BALANCED already permits inline styles (the UI uses
+      ``style="display:none"`` attributes) and ``https:`` (SwaggerUI CSS).
+    """
+    csp = (
+        ContentSecurityPolicy()
+        .default_src("'self'")
+        .base_uri("'self'")
+        .font_src("'self'", "https:", "data:")
+        .form_action("'self'")
+        .frame_ancestors("'self'")
+        .img_src("'self'", "data:", "blob:", "https:")
+        .object_src("'none'")
+        .script_src(
+            "'self'",
+            "https://cdn.jsdelivr.net",
+            "https://unpkg.com",
+            SWAGGER_INIT_SCRIPT_CSP_SOURCE,
+        )
+        .script_src_attr("'none'")
+        .style_src("'self'", "https:", "'unsafe-inline'")
+        .upgrade_insecure_requests()
+    )
+    return Secure(
+        coop=CrossOriginOpenerPolicy().same_origin(),
+        corp=CrossOriginResourcePolicy().same_origin(),
+        csp=csp,
+        hsts=StrictTransportSecurity().max_age(31536000).include_subdomains(),
+        permissions=PermissionsPolicy().geolocation().microphone().camera(),
+        referrer=ReferrerPolicy().strict_origin_when_cross_origin(),
+        server=Server().set(""),
+        xcto=XContentTypeOptions().nosniff(),
+        xfo=XFrameOptions().sameorigin(),
+    )
 
 
 def create_app(
@@ -442,6 +509,11 @@ def create_app(
                 allow_headers=["Content-Type"],
             )
         )
+
+    # Security headers (http-security-headers standard), registered exactly
+    # once here. Appended last so it sits innermost and decorates every
+    # response the routes / exception handlers produce.
+    middleware.append(Middleware(SecureASGIMiddleware, secure=build_secure_headers()))
 
     app = Starlette(
         routes=routes,

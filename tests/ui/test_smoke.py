@@ -79,13 +79,32 @@ class TestHtmlDomStructure:
     def test_header_bar(self, ui_html: str) -> None:
         """The AppShell mount point and header controls exist."""
         assert 'id="appshell-mount"' in ui_html
-        assert 'id="sessions-toggle"' in ui_html
         assert 'id="subsessions-toggle"' in ui_html
         assert 'id="connection-dot"' in ui_html
 
+    def test_header_has_no_chats_toggle(self, ui_html: str) -> None:
+        """The sessions panel is always open — no Chats toggle in the header."""
+        assert 'id="sessions-toggle"' not in ui_html
+        assert "Chats</button>" not in ui_html
+
+    def test_subsessions_and_settings_grouped(self, ui_html: str) -> None:
+        """Subsessions and Settings are adjacent, identically-styled buttons."""
+        match = re.search(
+            r'(<button id="subsessions-toggle"[^>]*>[^<]*</button>)\s*'
+            r'(<button id="settings-toggle"[^>]*>[^<]*</button>)',
+            ui_html,
+        )
+        assert match is not None
+        for tag in match.groups():
+            assert 'class="header-btn"' in tag
+            assert "style=" not in tag
+
     def test_sessions_panel(self, ui_html: str) -> None:
-        """The left sessions sidebar exists."""
-        assert 'id="sessions-panel"' in ui_html
+        """The left sessions sidebar exists and is always visible."""
+        assert '<div id="sessions-panel" class="visible">' in ui_html
+        after = ui_html.split('<div id="sessions-panel"', 1)[1]
+        panel = after.split("</div>\n</div>", 1)[0]
+        assert 'class="dismiss"' not in panel
         assert 'id="sessions-list"' in ui_html
         assert 'id="new-chat-btn"' in ui_html
         assert 'id="sessions-resize-handle"' in ui_html
