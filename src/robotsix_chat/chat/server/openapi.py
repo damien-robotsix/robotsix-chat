@@ -7,6 +7,8 @@ them.
 
 from __future__ import annotations
 
+import base64
+import hashlib
 import re
 from typing import Any
 
@@ -438,6 +440,20 @@ def _build_openapi_schema() -> dict[str, Any]:
 _OPENAPI_SCHEMA = _build_openapi_schema()
 
 
+# The SwaggerUI bootstrap is the page's only inline script.  Its SHA-256 is
+# allow-listed in the app's Content-Security-Policy ``script-src`` (see
+# ``app.py``) so /docs keeps working without ``'unsafe-inline'``.
+_SWAGGER_INIT_SCRIPT = """
+  window.onload = () => {
+    window.ui = SwaggerUIBundle({ url: "/openapi.json", dom_id: "#swagger-ui" });
+  };
+"""
+SWAGGER_INIT_SCRIPT_CSP_SOURCE = (
+    "'sha256-"
+    + base64.b64encode(hashlib.sha256(_SWAGGER_INIT_SCRIPT.encode()).digest()).decode()
+    + "'"
+)
+
 _SWAGGER_UI_HTML = f"""<!DOCTYPE html>
 <html lang="en">
 <head>
@@ -449,11 +465,7 @@ _SWAGGER_UI_HTML = f"""<!DOCTYPE html>
 <body>
 <div id="swagger-ui"></div>
 <script src="https://unpkg.com/swagger-ui-dist@5/swagger-ui-bundle.js"></script>
-<script>
-  window.onload = () => {{
-    window.ui = SwaggerUIBundle({{ url: "/openapi.json", dom_id: "#swagger-ui" }});
-  }};
-</script>
+<script>{_SWAGGER_INIT_SCRIPT}</script>
 </body>
 </html>
 """

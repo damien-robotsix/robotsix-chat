@@ -11,8 +11,10 @@ On desktop (viewport 768px and wider) the settings panel docks on the right edge
 content and header aside, the same way the Sessions and Subsessions panels do, rather than covering
 them. The Settings and Subsessions panels both dock on the right, so only one of them is open at a
 time: opening Settings closes Subsessions, and opening Subsessions closes Settings. The Sessions
-panel on the left can stay open alongside either one. On narrower viewports the panel overlays the
-content as before.
+panel on the left is always open — it has no close control and no header toggle — and stays
+alongside either one. The **⚙ Settings** and **🗂 Subsessions** buttons sit next to each other in
+the header and share identical styling. On narrower viewports the panel overlays the content as
+before.
 
 ## How it works
 
@@ -119,15 +121,21 @@ data no longer validates.
 ## Operator workflow
 
 1. Click the **⚙ Settings** button in the header bar.
-1. Browse the config sections — nested objects are shown as collapsible sections.
+1. Browse the config sections — nested objects are shown as collapsible sections. Each field's
+   description is shown only in its hover tooltip; there is no inline help text under the input.
 1. Edit the fields you want to change:
    - **Text fields** — free-form string input.
    - **Number fields** — numeric input (step "1" for integers, "any" for floats).
    - **Boolean fields** — checkbox.
-   - **Array fields** — text area containing JSON; edit the JSON directly.
-   - **Object fields** — e.g. `llmio_tier_overrides` — rendered as an editable JSON textarea (the
-     JSON is submitted as text and parsed by the server on save). Enter a valid JSON object; invalid
-     JSON is rejected with a clear error before anything is persisted.
+   - **Array and object fields** — e.g. `llmio_tier_overrides` — rendered as a multi-line,
+     monospace JSON editor showing the value pretty-printed with 2-space indentation. The editor
+     starts at about six rows, grows with its content up to a maximum height, and scrolls beyond
+     that; you can also drag its bottom edge to resize it. The "JSON object" label stays next to
+     the field. The JSON is validated as you type: if it is not valid JSON, an inline "Invalid
+     JSON — not saved" message appears under the editor, the field is highlighted in red, and
+     **Save** is blocked until the text parses again. Formatting and whitespace are presentation
+     only — the saved value is the parsed object, so it round-trips unchanged. Scalar and string
+     fields keep their single-line inputs.
    - **Periodic session presets** — the `periodic.sessions` array renders as a dedicated presets
      editor (see [Editing periodic-session presets](#editing-periodic-session-presets)) instead of a
      raw JSON text area.
@@ -140,6 +148,9 @@ data no longer validates.
      affected fields with a red border. You must fix the error before the save is accepted.
    - **Server error** — the panel shows the error message.
 1. Close the panel with the **×** button, the **Escape** key, or by clicking the gear button again.
+
+The Sessions panel is not part of this: it cannot be closed, and the older "Chats" header button has
+been removed.
 
 The panel remembers its open/closed state in `localStorage` across page reloads.
 

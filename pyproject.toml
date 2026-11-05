@@ -4,7 +4,7 @@ build-backend = "hatchling.build"
 
 [project]
 name = "robotsix-chat"
-version = "0.30.0"
+version = "0.32.0"
 description = "Browser + SSE chat server exposing an LLM agent to human users"
 readme = "README.md"
 requires-python = ">=3.14"
@@ -21,6 +21,9 @@ dependencies = [
     "pillow",
     "pydantic",
     "reportlab",
+    # secure: HTTP security headers (SecureASGIMiddleware) per the
+    # robotsix-standards http-security-headers standard.
+    "secure>=2.0.1",
     "structlog>=24.0.0",
     "prometheus-client>=0.20.0",
     "uvicorn",

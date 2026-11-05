@@ -16,9 +16,14 @@
 # all along; the action only evaluates CHANGED packages, so the
 # 2026-10-19 security bump (GHSA-6q48-6c7w-9gw2) was the first
 # time it looked. Pin the allowance to the version we ship.
+# secure (the security-header middleware behind SecureASGIMiddleware)
+# is MIT-licensed code; the CC-BY-SA-2.5/4.0 terms in its declared
+# license expression cover bundled OWASP header reference text, not
+# code we modify or redistribute separately. Pin to the version we ship.
 allow-dependencies-licenses:
   - pkg:pypi/mdformat-frontmatter@2.1.2
   - pkg:pypi/mdit-py-plugins@0.6.1
   - pkg:pypi/ruamel-yaml@0.19.1
   - pkg:pypi/reportlab@5.0.1
   - pkg:pypi/certifi@2026.10.19
+  - pkg:pypi/secure@2.0.1
