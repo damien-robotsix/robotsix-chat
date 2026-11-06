@@ -8,16 +8,46 @@ from __future__ import annotations
 
 import asyncio
 import logging
-from typing import TYPE_CHECKING
+from typing import Protocol
 
 from robotsix_chat.chat.events import subsession_started_frame
 
 from .models import SubsessionInfo, SubsessionKind, SubsessionStatus
-
-if TYPE_CHECKING:
-    from .registry import SubsessionRegistry
+from .registry_store import RegistryStore
 
 logger = logging.getLogger(__name__)
+
+
+class _RegistryCallbacks(Protocol):
+    """The parent-registry surface :class:`RegistryIndex` calls back into.
+
+    Structural type for :class:`~.registry.SubsessionRegistry`, declared
+    here so this module never imports ``registry`` (avoids an import cycle).
+    """
+
+    _store: RegistryStore
+
+    def _close_and_publish(
+        self,
+        info: SubsessionInfo,
+        *,
+        status: SubsessionStatus,
+        summary: str,
+        reason: str = ...,
+        closed_by: str = ...,
+        error: str | None = ...,
+    ) -> SubsessionInfo: ...
+
+    def cancel_and_close(
+        self,
+        sub_id: str,
+        *,
+        reason: str,
+        closed_by: str = ...,
+        summary: str | None = ...,
+    ) -> SubsessionInfo | None: ...
+
+    def _publish(self, owner_session_id: str, frame: dict[str, object]) -> None: ...
 
 
 class RegistryIndex:
@@ -35,7 +65,7 @@ class RegistryIndex:
         subs: dict[str, SubsessionInfo],
         by_owner: dict[str, set[str]],
         running: dict[str, asyncio.Task[None]],
-        registry: SubsessionRegistry,
+        registry: _RegistryCallbacks,
     ) -> None:
         """*subs*, *by_owner*, *running* are shared refs; *registry* is the parent."""
         self._subs = subs
