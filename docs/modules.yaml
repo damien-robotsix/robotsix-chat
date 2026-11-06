@@ -515,7 +515,11 @@ modules:
     description: "Automated feedback analysis — runs at compaction and session-end boundaries, analyses the conversation, and files improvement tickets via POST /tickets/ingest."
     paths:
       - src/robotsix_chat/feedback/__init__.py
+      - src/robotsix_chat/feedback/allowed_repos.py
+      - src/robotsix_chat/feedback/finding_state.py
+      - src/robotsix_chat/feedback/prompts.py
       - src/robotsix_chat/feedback/runner.py
+      - src/robotsix_chat/feedback/ticket_filing.py
       - tests/feedback/__init__.py
       - tests/feedback/test_runner.py
 
