@@ -114,7 +114,9 @@ RUN rm -rf /usr/local/lib/python3.14/site-packages/pip \
 # 3.5.6-1~deb13u2, trixie-security has 3.5.7-1~deb13u2.
 # perl-base and libsqlite3-0 are likewise upgraded to their +deb13u* update
 # builds to clear the Trivy findings the base image still carries at the older
-# trixie/main versions. libpcre2-8-0, libc6, libc-bin and gzip are NOT listed
+# trixie/main versions. apt and libapt-pkg7.0 (one source package, must move
+# together) cover CVE-2026-109518: the base image ships 3.0.3, trixie-security
+# has 3.0.4. libpcre2-8-0, libc6, libc-bin and gzip are NOT listed
 # here: their base builds use a `-` separator (e.g. 2.41-12+deb13u3), so an
 # `X.YZ.*` version glob never matches and apt-get aborts the build with
 # "Version ... not found"; their CVEs are handled via .trivyignore until the
@@ -132,6 +134,8 @@ RUN apt-get update \
         openssl-provider-legacy="3.5.*" \
         perl-base="5.40.*" \
         libsqlite3-0="3.46.*" \
+        apt="3.0.*" \
+        libapt-pkg7.0="3.0.*" \
     && apt-get install -y --no-install-recommends curl="8.*" gnupg="2.*" \
     && mkdir -p /etc/apt/keyrings \
     && curl -fsSL https://deb.nodesource.com/gpgkey/nodesource-repo.gpg.key \
