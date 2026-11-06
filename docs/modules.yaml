@@ -299,7 +299,12 @@ modules:
       - src/robotsix_chat/repo/direct/client.py
       - src/robotsix_chat/repo/direct/client_pr_operations.py
       - src/robotsix_chat/repo/direct/github_tools.py
+      - src/robotsix_chat/repo/direct/github_tools_admin.py
       - src/robotsix_chat/repo/direct/github_tools_ci.py
+      - src/robotsix_chat/repo/direct/github_tools_files.py
+      - src/robotsix_chat/repo/direct/github_tools_pr_inspect.py
+      - src/robotsix_chat/repo/direct/github_tools_pr_lifecycle.py
+      - src/robotsix_chat/repo/direct/github_tools_repo_create.py
       - src/robotsix_chat/repo/direct/skill.md
       - src/robotsix_chat/repo/direct/trivy_parser.py
       - tests/repo/direct/__init__.py
