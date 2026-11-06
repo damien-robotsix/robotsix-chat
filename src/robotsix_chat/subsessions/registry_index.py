@@ -36,7 +36,8 @@ class _RegistryCallbacks(Protocol):
         reason: str = ...,
         closed_by: str = ...,
         error: str | None = ...,
-    ) -> SubsessionInfo: ...
+    ) -> SubsessionInfo:
+        """Close *info* with *status* and publish the closed frame."""
 
     def cancel_and_close(
         self,
@@ -45,9 +46,11 @@ class _RegistryCallbacks(Protocol):
         reason: str,
         closed_by: str = ...,
         summary: str | None = ...,
-    ) -> SubsessionInfo | None: ...
+    ) -> SubsessionInfo | None:
+        """Cancel the running task for *sub_id* and close it."""
 
-    def _publish(self, owner_session_id: str, frame: dict[str, object]) -> None: ...
+    def _publish(self, owner_session_id: str, frame: dict[str, object]) -> None:
+        """Publish *frame* to the owner session's event stream."""
 
 
 class RegistryIndex:
