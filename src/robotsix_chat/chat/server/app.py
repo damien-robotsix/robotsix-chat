@@ -792,7 +792,7 @@ def create_app(
     _eg = evergoing_settings or EvergoingSettings()
     if app.state.summary_agent is not None:
         from robotsix_chat.evergoing import EvergoingSummaryScheduler
-        from robotsix_chat.memory_push import MemoryPush
+        from robotsix_chat.memory.push import MemoryPush
 
         _mc = memory_component_settings or MemoryComponentSettings()
         memory_push = (

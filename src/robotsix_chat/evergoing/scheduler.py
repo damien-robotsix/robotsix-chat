@@ -34,7 +34,7 @@ import logging
 from robotsix_chat.chat.conversation import ConversationStore, Session
 from robotsix_chat.chat.server.routes.chat import ChatAgent
 from robotsix_chat.chat.summarize import generate_idle_summary
-from robotsix_chat.memory_push import MemoryPush
+from robotsix_chat.memory.push import MemoryPush
 
 logger = logging.getLogger(__name__)
 
@@ -280,7 +280,7 @@ class EvergoingSummaryScheduler:
 
         Dedup contract: every push for one session reuses the same
         ``document_id`` with ``update_mode="replace"`` (see
-        :mod:`robotsix_chat.memory_push`), so successive summaries supersede
+        :mod:`robotsix_chat.memory.push`), so successive summaries supersede
         each other instead of accumulating near-duplicates.
         """
         if self._memory_push is None:

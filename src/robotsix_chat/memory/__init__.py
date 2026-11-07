@@ -8,7 +8,7 @@ The backend is the **robotsix-memory component** (a fleet service wrapping a
 Hindsight memory engine) — see
 :class:`~robotsix_chat.memory.component.ComponentMemory`. Recall is a cheap
 HTTP lookup rendered at the end of the agent prompt; writes belong to the
-evergoing summary pipeline (:mod:`robotsix_chat.memory_push`) and the
+evergoing summary pipeline (:mod:`robotsix_chat.memory.push`) and the
 agent's explicit skill calls. When the component is disabled a
 :class:`NullMemory` no-op is used and the agent behaves statelessly.
 
