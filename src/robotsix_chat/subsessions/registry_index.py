@@ -13,6 +13,7 @@ from typing import Protocol
 from robotsix_chat.chat.events import subsession_started_frame
 
 from .models import SubsessionInfo, SubsessionKind, SubsessionStatus
+from .registry_constants import _MONITOR_KINDS
 from .registry_store import RegistryStore
 
 logger = logging.getLogger(__name__)
@@ -51,6 +52,9 @@ class _RegistryCallbacks(Protocol):
 
     def _publish(self, owner_session_id: str, frame: dict[str, object]) -> None:
         """Publish *frame* to the owner session's event stream."""
+
+    def now(self) -> float:
+        """Return the registry's wall-clock reading."""
 
 
 class RegistryIndex:
@@ -108,6 +112,127 @@ class RegistryIndex:
                     descendants.append(info)
                     changed = True
         return descendants
+
+    # ------------------------------------------------------------------
+    # occupancy / slot queries
+    # ------------------------------------------------------------------
+
+    def count_active(self) -> int:
+        """Return the number of active subsessions process-wide.
+
+        PAUSED subsessions are excluded — their workers are alive but
+        idle, waiting on a resume signal, and should not count against
+        the concurrency cap.
+        """
+        return sum(
+            1
+            for info in self._subs.values()
+            if info.is_active and info.status is not SubsessionStatus.PAUSED
+        )
+
+    def count_active_for_owner(self, owner_session_id: str) -> int:
+        """Return the number of active subsessions owned by *owner_session_id*.
+
+        Uses the same exclusion rules as :meth:`count_active`: PAUSED
+        subsessions do not count against the concurrency cap.
+        """
+        sub_ids = self._by_owner.get(owner_session_id, ())
+        return sum(
+            1
+            for sub_id in sub_ids
+            if (info := self._subs.get(sub_id)) is not None
+            and info.is_active
+            and info.status is not SubsessionStatus.PAUSED
+        )
+
+    def count_occupied_for_owner(self, owner_session_id: str) -> int:
+        """Return the number of occupied monitor slots for *owner_session_id*.
+
+        Occupied slots are active + paused monitors (``periodic`` and
+        ``wait_for_event`` subsessions): a PAUSED monitor's worker is
+        still alive (retaining its slot) even though it does not count
+        against the concurrency cap.  One-shot ``task``/``user_chat``
+        subsessions are not monitors and never occupy a slot.  The
+        slot-budget manager uses this count to decide when a
+        conversation is at capacity.
+        """
+        sub_ids = self._by_owner.get(owner_session_id, ())
+        return sum(
+            1
+            for sub_id in sub_ids
+            if (info := self._subs.get(sub_id)) is not None
+            and info.is_active
+            and info.kind in _MONITOR_KINDS
+        )
+
+    def find_paused_for_reuse(self, owner_session_id: str) -> str | None:
+        """Return the least-recently-active PAUSED monitor for *owner_session_id*.
+
+        Returns ``None`` when the owner has no paused monitor.
+
+        Used by the slot-budget manager to repurpose a paused monitor's
+        slot for a newly requested monitor when the conversation is at
+        budget — the reclaimed slot keeps the occupied count unchanged.
+        """
+        sub_ids = self._by_owner.get(owner_session_id, ())
+        best: SubsessionInfo | None = None
+        for sub_id in sub_ids:
+            info = self._subs.get(sub_id)
+            if info is None or not info.is_active:
+                continue
+            if info.kind not in _MONITOR_KINDS:
+                continue
+            if info.status is not SubsessionStatus.PAUSED:
+                continue
+            if best is None or info.last_activity_at < best.last_activity_at:
+                best = info
+        return best.id if best is not None else None
+
+    _RECLAIMABLE_STATUSES: frozenset[SubsessionStatus] = frozenset(
+        {
+            SubsessionStatus.SLEEPING,
+            SubsessionStatus.PAUSED,
+        }
+    )
+
+    def find_stale_for_reclaim(
+        self, *, exclude_owner: str, stale_seconds: float
+    ) -> SubsessionInfo | None:
+        """Return the best candidate for stale-subsession reclamation.
+
+        A candidate must belong to an owner other than *exclude_owner*,
+        be in a reclaimable status (SLEEPING or PAUSED), and have
+        ``last_activity_at`` older than ``now() - stale_seconds``.
+        SLEEPING subsessions are preferred over PAUSED because they
+        count against the global capacity cap; reclaiming one actually
+        frees a slot.
+
+        Returns ``None`` when no eligible subsession exists.
+        """
+        now = self._registry.now()
+        cutoff = now - stale_seconds
+        best: SubsessionInfo | None = None
+        best_score = -1  # 2 = sleeping, 1 = paused
+
+        for owner_id, sub_ids in self._by_owner.items():
+            if owner_id == exclude_owner:
+                continue
+            for sub_id in sub_ids:
+                info = self._subs.get(sub_id)
+                if info is None:
+                    continue
+                if not info.is_active or info.last_activity_at > cutoff:
+                    continue
+                if info.status not in self._RECLAIMABLE_STATUSES:
+                    continue
+                score = 2 if info.status is SubsessionStatus.SLEEPING else 1
+                if score > best_score or (
+                    score == best_score
+                    and (best is None or info.last_activity_at < best.last_activity_at)
+                ):
+                    best = info
+                    best_score = score
+        return best
 
     # ------------------------------------------------------------------
     # mutations
