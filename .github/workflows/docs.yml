@@ -7,50 +7,25 @@ on:
   workflow_dispatch:
 
 permissions:
-  contents: read  # baseline: checkout the repo; the deploy job needs more
+  contents: read  # baseline: checkout the repo; the docs job needs more
 
+# Callers own concurrency: the reusable python-docs.yml defines none.
 concurrency:
   group: docs-${{ github.ref }}
   cancel-in-progress: ${{ github.event_name == 'pull_request' }}
 
 jobs:
-  build:
-    name: Build docs
-    runs-on: ubuntu-latest
-    steps:
-      - name: Harden Runner
-        uses: step-security/harden-runner@dc2769abcc0fcfbadfc1df54081c1608579ef6b2  # v2.22.2
-        with:
-          egress-policy: audit
-      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1  # v7.0.1
-        with:
-          persist-credentials: false
-      - uses: astral-sh/setup-uv@1c37ad07a6a961277cf70c0d37d6f313000f5884  # v10.3.0
-      - name: Install docs dependencies
-        run: uv sync --frozen --group docs
-      - name: Build mkdocs site
-        run: uv run mkdocs build --strict
-      - name: Upload Pages artifact
-        uses: actions/upload-pages-artifact@fc324d3547104276b827a68afc52ff2a11cc49c9  # v5.0.0
-        with:
-          path: site
-
-  deploy:
-    name: Deploy to GitHub Pages
-    needs: build
-    if: github.event_name != 'pull_request'
-    runs-on: ubuntu-latest
+  docs:
+    name: Docs
     permissions:
-      pages: write    # deploy the built site to GitHub Pages
+      contents: read  # checkout the repo
+      pages: write    # configure-pages (read) + deploy-pages in the called workflow
       id-token: write  # OIDC token for the Pages deployment
-    steps:
-      - name: Harden Runner
-        uses: step-security/harden-runner@dc2769abcc0fcfbadfc1df54081c1608579ef6b2  # v2.22.2
-        with:
-          egress-policy: audit
-      - name: Deploy to GitHub Pages
-        id: deployment
-        continue-on-error: true  # "Deployment failed, try again later." is a transient
-                                 # Pages infra error, not an action bug; when it occurs
-                                 # the deploy job succeeds after a manual re-run.
-        uses: actions/deploy-pages@368f82528645a54fb793d4d04e342629a3f51346  # v5.0.1
+    # Builds with `mkdocs build --strict` and deploys to GitHub Pages
+    # (deploy skipped on pull_request).
+    uses: damien-robotsix/robotsix-github-workflows/.github/workflows/python-docs.yml@86a722f2938c1dda343bbf8d3c5989613cbf1794  # v1.5.0
+    with:
+      docs-install-args: "--group docs"
+      # Align with the [tool.uv] required-version pin (uv 0.12.19); the shared
+      # workflow defaults to an older uv, which `uv sync` then refuses to run.
+      uv-version: "0.12.19"
