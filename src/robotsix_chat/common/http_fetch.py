@@ -287,7 +287,7 @@ async def fleet_component_hosts(
         return set()
     from urllib.parse import urlsplit
 
-    from robotsix_chat.component_access.roster import fetch_roster
+    from robotsix_chat.component.access.roster import fetch_roster
 
     try:
         entries = await fetch_roster(central_deploy)
