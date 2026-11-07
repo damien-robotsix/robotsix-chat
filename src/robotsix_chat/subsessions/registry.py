@@ -21,9 +21,7 @@ Single-worker asyncio process: the dicts are unsynchronised on purpose
 from __future__ import annotations
 
 import asyncio
-import json
 import logging
-import re
 import time
 import uuid
 from collections import defaultdict, deque
@@ -49,15 +47,22 @@ from .models import (
     SubsessionStatus,
     TranscriptEntry,
 )
+from .registry_checkpoint import (
+    TICKET_ID_RE,
+    _checkpoint_auto_stop_no_change_runs,
+    _checkpoint_no_change_pause_count,
+    _checkpoint_ticket_id,
+    _preserve_event_ticket_id,
+    _preserve_periodic_auto_stop_no_change_runs,
+    _preserve_periodic_no_change_pause_count,
+    _preserve_periodic_progress_flags,
+    _truncate,
+    user_chat_ticket_id,
+)
+from .registry_index import RegistryIndex
+from .registry_store import _MAX_TERMINAL_ENTRIES, RegistryStore
 
 logger = logging.getLogger(__name__)
-
-# Full mill ticket id: ``<UTC stamp>-<slug>-<4 hex>``. Used to bind operator
-# decision panels (user_chat) to the ticket they are about, whatever
-# ``dedup_key`` the spawning agent chose (2026-09-08: the gate drain used
-# run-scoped keys such as ``0d29-run-20260908T0745Z`` and re-opened a panel
-# for every still-gated ticket every 4 h — 14 panels open, several per ticket).
-TICKET_ID_RE = re.compile(r"\b\d{8}T\d{6}Z-[a-z0-9][a-z0-9-]*-[0-9a-f]{4}\b")
 
 # Mill states in which a ticket is waiting on a human; a decision panel is
 # only meaningful while its ticket sits in one of these. Once a mill event
@@ -70,21 +75,6 @@ TICKET_ID_RE = re.compile(r"\b\d{8}T\d{6}Z-[a-z0-9][a-z0-9-]*-[0-9a-f]{4}\b")
 # guarantees the decision-gate logic stays in sync when a new human-wait
 # state is added upstream.
 DECISION_GATE_STATES = HUMAN_WAIT_STATES
-
-
-def user_chat_ticket_id(info: SubsessionInfo) -> str | None:
-    """Return the mill ticket id a user_chat panel is about, if any.
-
-    Prefers a ``dedup_key`` that is itself a ticket id; otherwise the first
-    full ticket id mentioned in the title or prompt.
-    """
-    if info.kind is not SubsessionKind.USER_CHAT:
-        return None
-    if info.dedup_key and TICKET_ID_RE.fullmatch(info.dedup_key):
-        return info.dedup_key
-    m = TICKET_ID_RE.search(f"{info.title or ''}\n{info.prompt or ''}")
-    return m.group(0) if m else None
-
 
 # Subsession kinds that are "monitors" for slot-budget purposes: they
 # persist across turns watching a ticket and occupy a per-conversation
@@ -114,9 +104,6 @@ _TICKET_TERMINAL_CLOSE_REASONS: frozenset[str] = frozenset(
 # discarded instead of being drained into a dead session.
 OWNER_CLOSED_REASON = "session closed"
 
-# Terminal entries retained in memory/persistence so the panel can show
-# recent history after a reload; older ones are pruned oldest-first.
-_MAX_TERMINAL_ENTRIES = 50
 
 # Cap on persisted (turn_input, reply) pairs per subsession — must match
 # worker._MAX_WORKER_HISTORY_TURNS (the replay window the worker actually
@@ -124,424 +111,24 @@ _MAX_TERMINAL_ENTRIES = 50
 _MAX_TURN_HISTORY_ENTRIES = 20
 
 
-def _truncate(text: str, limit: int) -> str:
-    """Clip *text* to *limit* characters with an ellipsis marker."""
-    return text if len(text) <= limit else text[: limit - 1] + "…"
-
-
-def _checkpoint_ticket_id(checkpoint: dict[str, object] | None) -> str:
-    """Return the ``ticket_id`` in *checkpoint* when it is a non-empty string."""
-    raw = checkpoint.get("ticket_id") if checkpoint else None
-    return raw if isinstance(raw, str) and raw else ""
-
-
-def _preserve_event_ticket_id(
-    info: SubsessionInfo, checkpoint: dict[str, object] | None
-) -> dict[str, object] | None:
-    """Keep the system-owned ``ticket_id`` when a WAIT_FOR_EVENT checkpoint is replaced.
-
-    ``set_checkpoint`` (and any other checkpoint writer) replaces the whole
-    dict; a replacement that omits ``ticket_id`` would leave an
-    event-driven monitor unable to filter mill events after the next
-    restart.  Recover the previous value from the current checkpoint or,
-    failing that, the subsession's ``dedup_key`` (which for ticket
-    monitors is always the ticket id).
-    """
-    if _checkpoint_ticket_id(checkpoint):
-        return checkpoint
-    ticket_id = _checkpoint_ticket_id(info.checkpoint) or info.dedup_key
-    if not ticket_id:
-        return checkpoint
-    merged = dict(checkpoint or {})
-    merged["ticket_id"] = ticket_id
-    return merged
-
-
-def _checkpoint_auto_stop_no_change_runs(
-    checkpoint: dict[str, object] | None,
-) -> int | None:
-    """Return the valid per-spawn no-change threshold in *checkpoint*, if any.
-
-    Mirrors the read in :func:`_run_periodic_turn`: only a positive
-    ``int`` (excluding ``bool``, which is an ``int`` subclass) is a valid
-    override — anything else is treated as absent.
-    """
-    raw = checkpoint.get("auto_stop_no_change_runs") if checkpoint else None
-    if isinstance(raw, bool) or not isinstance(raw, int) or raw < 1:
-        return None
-    return raw
-
-
-def _preserve_periodic_auto_stop_no_change_runs(
-    info: SubsessionInfo, checkpoint: dict[str, object] | None
-) -> dict[str, object] | None:
-    """Keep a PERIODIC monitor's ``auto_stop_no_change_runs`` override on replacement.
-
-    The override is seeded into the checkpoint at spawn time.  Because
-    ``set_checkpoint`` (and other checkpoint writers) replace the whole
-    dict, a replacement that omits ``auto_stop_no_change_runs`` would
-    silently drop the override and let the monitor fall back to the global
-    ``subsessions.auto_stop_no_change_runs`` default — re-triggering the
-    premature auto-stop this override exists to prevent.  Recover the
-    previous value from the current checkpoint when it is missing.
-    """
-    if _checkpoint_auto_stop_no_change_runs(checkpoint) is not None:
-        return checkpoint
-    previous = _checkpoint_auto_stop_no_change_runs(info.checkpoint)
-    if previous is None:
-        return checkpoint
-    merged = dict(checkpoint or {})
-    merged["auto_stop_no_change_runs"] = previous
-    return merged
-
-
-def _checkpoint_no_change_pause_count(
-    checkpoint: dict[str, object] | None,
-) -> int | None:
-    """Return the no-change pause counter in *checkpoint*, if present.
-
-    ``0`` is a meaningful value (progress was observed since the last
-    pause), so — unlike the auto-stop override helper — this only
-    distinguishes *presence* from absence and does not validate the
-    magnitude.  A bool or non-int value is treated as absent.
-    """
-    if not checkpoint or "no_change_pause_count" not in checkpoint:
-        return None
-    raw = checkpoint["no_change_pause_count"]
-    if isinstance(raw, bool) or not isinstance(raw, int):
-        return None
-    return raw
-
-
-def _preserve_periodic_no_change_pause_count(
-    info: SubsessionInfo, checkpoint: dict[str, object] | None
-) -> dict[str, object] | None:
-    """Keep a PERIODIC monitor's no-change pause counter on replacement.
-
-    The counter is seeded into the checkpoint by the periodic turn loop
-    when the monitor auto-pauses.  ``set_checkpoint`` (and other
-    checkpoint writers) replace the whole dict; a replacement that omits
-    ``no_change_pause_count`` would silently reset the escalation budget
-    and let a stuck monitor keep pausing forever.  Recover the previous
-    value from the current checkpoint when it is missing.
-    """
-    if _checkpoint_no_change_pause_count(checkpoint) is not None:
-        return checkpoint
-    previous = _checkpoint_no_change_pause_count(info.checkpoint)
-    if previous is None:
-        return checkpoint
-    merged = dict(checkpoint or {})
-    merged["no_change_pause_count"] = previous
-    return merged
-
-
-def _preserve_periodic_progress_flags(
-    info: SubsessionInfo, checkpoint: dict[str, object] | None
-) -> dict[str, object] | None:
-    """Keep a PERIODIC monitor's ``recent_progress_flags`` on replacement.
-
-    The adaptive run-budget extension relies on the rolling progress
-    window surviving ``set_checkpoint`` calls, which replace the whole
-    dict.  Recover the previous window when a replacement omits it so a
-    monitor that records state every run still counts progress across the
-    configured ``max_runs_progress_window``.
-    """
-    if checkpoint is not None and isinstance(
-        checkpoint.get("recent_progress_flags"), list
-    ):
-        return checkpoint
-    previous = info.checkpoint or {}
-    if not isinstance(previous.get("recent_progress_flags"), list):
-        return checkpoint
-    merged = dict(checkpoint or {})
-    merged["recent_progress_flags"] = previous["recent_progress_flags"]
-    return merged
-
-
-class RegistryStore:
-    """JSON persistence for subsession records — file I/O and terminal retention.
-
-    Owns the store-path, serialisation, and pruning of old terminal
-    entries.  Mutates the shared dicts in-place so no return-value
-    synchronisation is needed.
-    """
-
-    def __init__(
-        self,
-        store_path: Path | None,
-        subs: dict[str, SubsessionInfo],
-        inboxes: dict[str, deque[InboxMessage]],
-        in_flight: dict[str, list[InboxMessage]],
-        wake_events: dict[str, asyncio.Event],
-        by_owner: dict[str, set[str]],
-    ) -> None:
-        """*store_path* is the JSON file; the dicts are shared references."""
-        self._store_path = store_path
-        self._subs = subs
-        self._inboxes = inboxes
-        self._in_flight = in_flight
-        self._wake_events = wake_events
-        self._by_owner = by_owner
-
-    # ------------------------------------------------------------------
-    # public (called by SubsessionRegistry / startup)
-    # ------------------------------------------------------------------
-
-    def load_persisted(self) -> list[dict[str, object]]:
-        """Read raw persisted entries for the startup resume hook.
-
-        Returns ``[]`` when persistence is disabled, the file is missing,
-        or it cannot be parsed (a corrupt store must not block startup).
-        """
-        if self._store_path is None or not self._store_path.exists():
-            return []
-        try:
-            raw = json.loads(self._store_path.read_text(encoding="utf-8"))
-        except OSError, ValueError:
-            logger.exception("Could not read subsession store %s", self._store_path)
-            return []
-        return raw if isinstance(raw, list) else []
-
-    def persist(self) -> None:
-        """Write the full registry state as JSON (skipped when disabled)."""
-        if self._store_path is None:
-            return
-        try:
-            self._store_path.parent.mkdir(parents=True, exist_ok=True)
-        except OSError:
-            logger.warning("Could not create parent dir for %s", self._store_path)
-            return
-        entries: list[dict[str, object]] = []
-        for info in self._subs.values():
-            entry = info.snapshot(with_transcript=True)
-            inbox = self._inboxes.get(info.id)
-            in_flight = self._in_flight.get(info.id)
-            entry["inbox"] = [message.as_dict() for message in inbox] if inbox else []
-            entry["in_flight_inbox"] = (
-                [message.as_dict() for message in in_flight] if in_flight else []
-            )
-            entries.append(entry)
-        # Write-then-rename so a crash or container kill mid-write can never
-        # truncate the store.
-        tmp_path = self._store_path.with_suffix(self._store_path.suffix + ".tmp")
-        try:
-            tmp_path.write_text(json.dumps(entries, indent=2), encoding="utf-8")
-            tmp_path.replace(self._store_path)
-        except OSError:
-            logger.exception("Failed to persist subsessions to %s", self._store_path)
-
-    def prune_terminal(self) -> None:
-        """Drop the oldest terminal entries beyond the retention cap."""
-        terminal = sorted(
-            (info for info in self._subs.values() if not info.is_active),
-            key=lambda i: i.last_activity_at,
-        )
-        for info in terminal[: max(0, len(terminal) - _MAX_TERMINAL_ENTRIES)]:
-            self._subs.pop(info.id, None)
-            self._inboxes.pop(info.id, None)
-            self._in_flight.pop(info.id, None)
-            self._wake_events.pop(info.id, None)
-            owner_set = self._by_owner.get(info.owner_session_id)
-            if owner_set is not None:
-                owner_set.discard(info.id)
-                if not owner_set:
-                    del self._by_owner[info.owner_session_id]
-
-
-class RegistryIndex:
-    """Owner-scoped queries and tree operations.
-
-    Owns the ``_by_owner`` index and provides fixpoint tree walks,
-    owner reassignment, orphan reaping, and bulk-close operations.
-    Receives shared dict references from the parent
-    :class:`SubsessionRegistry` and calls back into it for SSE publishing
-    and persistence.
-    """
-
-    def __init__(
-        self,
-        subs: dict[str, SubsessionInfo],
-        by_owner: dict[str, set[str]],
-        running: dict[str, asyncio.Task[None]],
-        registry: SubsessionRegistry,
-    ) -> None:
-        """*subs*, *by_owner*, *running* are shared refs; *registry* is the parent."""
-        self._subs = subs
-        self._by_owner = by_owner
-        self._running = running
-        self._registry = registry
-
-    # ------------------------------------------------------------------
-    # queries
-    # ------------------------------------------------------------------
-
-    def list_for_owner(self, owner_session_id: str) -> list[SubsessionInfo]:
-        """Return the whole subsession tree for an owner, oldest first."""
-        infos = [
-            self._subs[sub_id]
-            for sub_id in self._by_owner.get(owner_session_id, ())
-            if sub_id in self._subs
-        ]
-        return sorted(infos, key=lambda i: i.created_at)
-
-    def list_descendants(self, root_id: str) -> list[SubsessionInfo]:
-        """Return every (transitive) child of subsession *root_id*."""
-        root = self._subs.get(root_id)
-        if root is None:
-            return []
-        tree = self.list_for_owner(root.owner_session_id)
-        descendants: list[SubsessionInfo] = []
-        frontier = {root_id}
-        # Tree is small (bounded by the concurrency cap + terminal tail);
-        # a simple fixpoint pass keeps this dependency-free.
-        changed = True
-        while changed:
-            changed = False
-            for info in tree:
-                if info.parent_id in frontier and info.id not in frontier:
-                    frontier.add(info.id)
-                    descendants.append(info)
-                    changed = True
-        return descendants
-
-    # ------------------------------------------------------------------
-    # mutations
-    # ------------------------------------------------------------------
-
-    def reap_orphans(self) -> int:
-        """Cancel any timer whose subsession id is not in a conversation tree.
-
-        An orphaned subsession has a live worker task but no tree
-        membership — the record was removed while the timer survived.
-        Returns the number of timers cancelled.
-        """
-        orphaned: list[str] = []
-        for sub_id, task in list(self._running.items()):
-            if task.done():
-                continue
-            found = any(sub_id in owner_ids for owner_ids in self._by_owner.values())
-            if not found:
-                orphaned.append(sub_id)
-
-        for sub_id in orphaned:
-            orphan_task = self._running.get(sub_id)
-            if orphan_task is not None and not orphan_task.done():
-                orphan_task.cancel()
-            logger.warning(
-                "Reaped orphaned subsession timer %s — tree record was lost.",
-                sub_id,
-            )
-            # Transition to FAILED so the subsession no longer counts
-            # against the concurrency cap and shows as terminal in the
-            # UI.  _close_and_publish handles the frame, status mutation
-            # and persistence atomically.
-            info = self._subs.get(sub_id)
-            if info is not None:
-                self._registry._close_and_publish(
-                    info,
-                    status=SubsessionStatus.FAILED,
-                    summary=(
-                        "This subsession's tree record was lost; its "
-                        "timer has been cancelled."
-                    ),
-                    error="orphaned_timer_reaped",
-                )
-        return len(orphaned)
-
-    def close_all_for_owner(self, owner_session_id: str, *, reason: str) -> int:
-        """Close every active subsession owned by *owner_session_id*.
-
-        Used when a chat session is closed/deleted so its background work
-        does not outlive it.  No summaries are delivered — the parent
-        session is going away.  Returns the number actually closed.
-        """
-        closed = 0
-        for sub_id in list(self._by_owner.get(owner_session_id, ())):
-            if self._registry.cancel_and_close(
-                sub_id, reason=reason, closed_by="system"
-            ):
-                closed += 1
-        return closed
-
-    def reassign_owner(
-        self, old_owner_session_id: str, new_owner_session_id: str
-    ) -> int:
-        """Move every subsession owned by *old_owner_session_id* to the new owner.
-
-        Used when an idle-timeout compaction replaces a chat session with a
-        continuation session: the whole subsession tree (all kinds, all
-        statuses) follows the conversation, so running work keeps delivering
-        summaries to the session the user is actually in and the UI panel for
-        the continuation shows the full tree.
-
-        Publishes a ``subsession_started`` frame per moved subsession to the
-        new owner's event stream so an already-subscribed browser picks them
-        up without a refetch.  Returns the number of subsessions moved.
-        """
-        if old_owner_session_id == new_owner_session_id:
-            return 0
-        sub_ids = self._by_owner.pop(old_owner_session_id, None)
-        if not sub_ids:
-            return 0
-        moved = 0
-        for sub_id in sub_ids:
-            info = self._subs.get(sub_id)
-            if info is None:
-                continue
-            info.owner_session_id = new_owner_session_id
-            self._by_owner[new_owner_session_id].add(sub_id)
-            self._registry._publish(
-                new_owner_session_id,
-                subsession_started_frame(info.snapshot()),
-            )
-            moved += 1
-        self._registry._store.persist()
-        return moved
-
-    def reassign_live_user_chats(
-        self, old_owner_session_id: str, new_owner_session_id: str
-    ) -> int:
-        """Move the live ``user_chat`` panels of one owner to another.
-
-        Used when a periodic preset fires again: the previous run's
-        decision panels that still await the operator's answer follow the
-        preset to its new session instead of dying with the superseded one
-        — otherwise the new run finds no open panel and re-asks the same
-        question, and the operator never gets to answer any of them.
-
-        Only ACTIVE ``user_chat`` subsessions move (``running`` /
-        ``waiting``); every other kind and every terminal record stays with
-        the old owner, whose close path cleans it up.  Publishes a
-        ``subsession_started`` frame per moved panel to the new owner's
-        event stream.  Returns the number of panels moved.
-        """
-        if old_owner_session_id == new_owner_session_id:
-            return 0
-        sub_ids = self._by_owner.get(old_owner_session_id)
-        if not sub_ids:
-            return 0
-        moved = 0
-        for sub_id in list(sub_ids):
-            info = self._subs.get(sub_id)
-            if (
-                info is None
-                or info.kind is not SubsessionKind.USER_CHAT
-                or not info.is_active
-            ):
-                continue
-            sub_ids.discard(sub_id)
-            info.owner_session_id = new_owner_session_id
-            self._by_owner[new_owner_session_id].add(sub_id)
-            self._registry._publish(
-                new_owner_session_id,
-                subsession_started_frame(info.snapshot()),
-            )
-            moved += 1
-        if not sub_ids:
-            self._by_owner.pop(old_owner_session_id, None)
-        if moved:
-            self._registry._store.persist()
-        return moved
+__all__ = [
+    "DECISION_GATE_STATES",
+    "OWNER_CLOSED_REASON",
+    "TICKET_ID_RE",
+    "_MAX_TERMINAL_ENTRIES",
+    "RegistryIndex",
+    "RegistryStore",
+    "SubsessionRegistry",
+    "_checkpoint_auto_stop_no_change_runs",
+    "_checkpoint_no_change_pause_count",
+    "_checkpoint_ticket_id",
+    "_preserve_event_ticket_id",
+    "_preserve_periodic_auto_stop_no_change_runs",
+    "_preserve_periodic_no_change_pause_count",
+    "_preserve_periodic_progress_flags",
+    "_truncate",
+    "user_chat_ticket_id",
+]
 
 
 class SubsessionRegistry:
