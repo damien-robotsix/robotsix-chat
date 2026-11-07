@@ -413,12 +413,13 @@ modules:
       - src/robotsix_chat/memory/__init__.py
       - src/robotsix_chat/memory/base.py
       - src/robotsix_chat/memory/component.py
+      - src/robotsix_chat/memory/push.py
       - src/robotsix_chat/memory/tools.py
-      - src/robotsix_chat/memory_push.py
       - docs/memory/api.md
       - tests/memory/__init__.py
       - tests/memory/test_base.py
       - tests/memory/test_component_memory.py
+      - tests/memory/test_memory_push.py
 
   - id: subsessions
     description: "Unified subsession system — background agents (task / periodic / user_chat) spawned from chat sessions, with per-subsession model levels, depth-limited nesting, inbox steering, and parent summary delivery."
@@ -550,7 +551,6 @@ modules:
       - src/robotsix_chat/evergoing/__init__.py
       - src/robotsix_chat/evergoing/scheduler.py
       - tests/evergoing/__init__.py
-      - tests/evergoing/test_memory_push.py
       - tests/evergoing/test_scheduler.py
 
   - id: ui
