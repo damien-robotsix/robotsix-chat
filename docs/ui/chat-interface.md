@@ -44,8 +44,9 @@ in the text input.
 
 Long-running sessions are periodically summarised and their leading turns trimmed. When you reload
 the page, the UI fetches `/history`; for a compacted session the response includes compaction
-metadata (see the [deployment guide](deployment.md#compacted-sessions-and-the-missing-summary-flag)
-for examples):
+metadata (see the
+[deployment guide](../user-guide/deployment.md#compacted-sessions-and-the-missing-summary-flag) for
+examples):
 
 - `compacted_summary` — the summary text of the covered leading turns.
 - `compacted_turn_index` — how many leading `turns` the summary covers.
