@@ -212,6 +212,24 @@ not a style rule.
 **Provenance:** proposed by retrospect from
 20260809T064345Z-add-diagnostic-event-inspection-tool-for-b1aa
 
+**Rule:** Never leave a Protocol method body as a bare `...`; give it a one-line docstring instead,
+because CodeQL `py/ineffectual-statement` flags the bare ellipsis.
+
+**Rationale:** 2026-11-06 registry.py module-split run (PR #2281): a fixing_ci cycle at 23:39 showed
+three `py/ineffectual-statement` alerts on the `_RegistryCallbacks` Protocol stubs, cleared by
+adding docstrings.
+
+**Rule:** Never import a module back into the module it was split from, including under
+`TYPE_CHECKING`; pass a Protocol instead, because CodeQL `py/unsafe-cyclic-import` counts guarded
+imports as cycles.
+
+**Rationale:** 2026-11-06 registry.py module-split run (PR #2281): a fixing_ci cycle at 23:33 showed
+two `py/unsafe-cyclic-import` alerts caused by a `TYPE_CHECKING` back-import from
+`registry_index.py` into `registry.py`.
+
+**Provenance:** proposed by retrospect from
+20261106T231736Z-module-size-split-src-robotsix-chat-subs-429b
+
 ## CI workflow conventions
 
 **Rule:** All third-party GitHub Actions must be pinned by immutable 40-character commit SHA with
