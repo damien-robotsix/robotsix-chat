@@ -24,6 +24,7 @@ jobs:
   audit:
     name: Dependency CVE audit (main)
     runs-on: ubuntu-latest
+    timeout-minutes: 15
     permissions:
       contents: read  # checkout the repo
       issues: write   # open/comment on the advisory tracking issue

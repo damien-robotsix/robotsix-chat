@@ -23,6 +23,7 @@ jobs:
     # opens a fix issue, instead of parking every open PR in red CI.
     # Non-PR events (push to main) always audit.
     runs-on: ubuntu-latest
+    timeout-minutes: 15
     permissions:
       contents: read  # checkout the repo
     outputs:
@@ -113,6 +114,9 @@ jobs:
   pre-commit:
     name: Pre-commit hooks
     runs-on: ubuntu-latest
+    # Above the fleet default of 15: first-run hook-environment installs (golang
+    # hooks via `go install`) plus the retry wrapper (up to 20 min per attempt).
+    timeout-minutes: 30
     permissions:
       contents: read  # checkout the repo
     steps:
@@ -153,6 +157,7 @@ jobs:
   check-sse-types:
     name: SSE event type audit
     runs-on: ubuntu-latest
+    timeout-minutes: 15
     permissions:
       contents: read  # checkout the repo
     steps:
@@ -169,6 +174,7 @@ jobs:
   check-subsession-kinds:
     name: SubsessionKind audit
     runs-on: ubuntu-latest
+    timeout-minutes: 15
     permissions:
       contents: read  # checkout the repo
     steps:
@@ -185,6 +191,7 @@ jobs:
   check-activity-kinds:
     name: ActivityKind audit
     runs-on: ubuntu-latest
+    timeout-minutes: 15
     permissions:
       contents: read  # checkout the repo
     steps:
@@ -201,6 +208,7 @@ jobs:
   check-subsession-statuses:
     name: SubsessionStatus audit
     runs-on: ubuntu-latest
+    timeout-minutes: 15
     permissions:
       contents: read  # checkout the repo
     steps:
@@ -217,6 +225,7 @@ jobs:
   check-image-mime-sync:
     name: Image MIME allowlist audit
     runs-on: ubuntu-latest
+    timeout-minutes: 15
     permissions:
       contents: read  # checkout the repo
     steps:
@@ -236,6 +245,9 @@ jobs:
     # so vulnerable base images/dependencies surface before merge (see
     # robotsix-standards docker-standard "CI-time image scan").
     runs-on: ubuntu-latest
+    # Above the fleet default of 15: builds the multi-GB image without layer
+    # cache (with retries), boots a smoke test and runs Trivy.
+    timeout-minutes: 30
     permissions:
       contents: read         # checkout the repo
       security-events: write  # upload Trivy SARIF to Code Scanning
@@ -351,6 +363,7 @@ jobs:
   check-config-schema:
     name: Config schema sync
     runs-on: ubuntu-latest
+    timeout-minutes: 15
     permissions:
       contents: read  # checkout the repo
     steps:
@@ -372,6 +385,7 @@ jobs:
   deptry:
     name: Dependency hygiene (deptry)
     runs-on: ubuntu-latest
+    timeout-minutes: 15
     permissions:
       contents: read  # checkout the repo
     steps:
@@ -393,6 +407,7 @@ jobs:
   frontend-js:
     name: Frontend JS tests (vitest)
     runs-on: ubuntu-latest
+    timeout-minutes: 15
     permissions:
       contents: read  # checkout the repo
     steps:
@@ -415,6 +430,7 @@ jobs:
   pyright:
     name: Pyright type checker
     runs-on: ubuntu-latest
+    timeout-minutes: 15
     permissions:
       contents: read  # checkout the repo
     steps:
@@ -436,6 +452,7 @@ jobs:
   mypy:
     name: Mypy type checker (standalone)
     runs-on: ubuntu-latest
+    timeout-minutes: 15
     permissions:
       contents: read  # checkout the repo
     steps:
@@ -458,6 +475,7 @@ jobs:
     name: Chat microbenchmarks
     if: github.event_name == 'push' && github.ref == 'refs/heads/main'
     runs-on: ubuntu-latest
+    timeout-minutes: 15
     permissions:
       contents: read
     steps:
@@ -497,6 +515,7 @@ jobs:
     # pass/fail signal.
     if: ${{ !cancelled() }}
     runs-on: ubuntu-latest
+    timeout-minutes: 15
     steps:
       - name: Verify all gates passed
         env:
