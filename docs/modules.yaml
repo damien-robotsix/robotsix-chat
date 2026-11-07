@@ -132,20 +132,22 @@ modules:
   - id: component-client
     description: "Component agent client tools for the chat LLM — exposes build_component_tools(), a factory returning LLM tools that let the chat agent enumerate, inspect, and configure remote component agents via direct HTTP."
     paths:
-      - src/robotsix_chat/component_client/__init__.py
-      - src/robotsix_chat/component_client/client.py
-      - tests/component_client/__init__.py
-      - tests/component_client/test_component_client.py
+      - src/robotsix_chat/component/__init__.py
+      - src/robotsix_chat/component/client/__init__.py
+      - src/robotsix_chat/component/client/client.py
+      - tests/component/__init__.py
+      - tests/component/client/__init__.py
+      - tests/component/client/test_component_client.py
 
   - id: component-access
     description: "Generic component access via central-deploy roster — fetches the allowed-chat-components list, loads each component's skill into the agent, and returns a single generic component_request tool."
     paths:
-      - src/robotsix_chat/component_access/__init__.py
-      - src/robotsix_chat/component_access/roster.py
-      - src/robotsix_chat/component_access/tools.py
-      - tests/component_access/__init__.py
-      - tests/component_access/test_component_access.py
-      - tests/component_access/test_roster.py
+      - src/robotsix_chat/component/access/__init__.py
+      - src/robotsix_chat/component/access/roster.py
+      - src/robotsix_chat/component/access/tools.py
+      - tests/component/access/__init__.py
+      - tests/component/access/test_component_access.py
+      - tests/component/access/test_roster.py
 
   - id: caretaker
     description: "Model-free surfacing of central-deploy caretaker findings — polls GET /caretaker/status on a short interval (no agent turn) and broadcasts SSE desktop notifications for error-severity claude_auth/crash_loop/health findings, so an LLM-outage escalation reaches the operator without needing a model."

@@ -10,7 +10,7 @@ def test_fetch_roster_sync_works_inside_a_running_loop(monkeypatch) -> None:
     """
     import asyncio
 
-    from robotsix_chat.component_access import roster as roster_mod
+    from robotsix_chat.component.access import roster as roster_mod
 
     async def fake_fetch(settings):
         return [{"name": "x"}]
@@ -40,7 +40,7 @@ def test_fetch_roster_sync_inside_loop_serves_stale_cache_without_blocking(
     import time
     from types import SimpleNamespace
 
-    from robotsix_chat.component_access import roster as roster_mod
+    from robotsix_chat.component.access import roster as roster_mod
 
     stale = [{"id": "mill", "base_url": "http://mill:8077", "skill": ""}]
     old = (time.monotonic() - 3600.0, stale)
@@ -79,7 +79,7 @@ def test_fetch_roster_sync_inside_loop_serves_fresh_cache_without_refresh(
     import time
     from types import SimpleNamespace
 
-    from robotsix_chat.component_access import roster as roster_mod
+    from robotsix_chat.component.access import roster as roster_mod
 
     fresh = [{"id": "mill", "base_url": "http://mill:8077", "skill": ""}]
     monkeypatch.setattr(roster_mod, "_cache", (time.monotonic(), fresh))
