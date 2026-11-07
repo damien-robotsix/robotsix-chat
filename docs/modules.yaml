@@ -427,6 +427,9 @@ modules:
       - src/robotsix_chat/subsessions/prompts.py
       - src/robotsix_chat/subsessions/prompt_context.py
       - src/robotsix_chat/subsessions/registry.py
+      - src/robotsix_chat/subsessions/registry_checkpoint.py
+      - src/robotsix_chat/subsessions/registry_index.py
+      - src/robotsix_chat/subsessions/registry_store.py
       - src/robotsix_chat/subsessions/resume.py
       - src/robotsix_chat/subsessions/schedule.py
       - src/robotsix_chat/subsessions/skill.md
