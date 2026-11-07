@@ -30,13 +30,10 @@ from pathlib import Path
 
 from robotsix_chat.chat.events import (
     EventSink,
-    subsession_closed_frame,
-    subsession_failed_frame,
     subsession_message_frame,
     subsession_started_frame,
     subsession_updated_frame,
 )
-from robotsix_chat.ticket_poll.mill_states import HUMAN_WAIT_STATES
 
 from .models import (
     ACTIVE_STATUSES,
@@ -59,65 +56,32 @@ from .registry_checkpoint import (
     _truncate,
     user_chat_ticket_id,
 )
+from .registry_constants import (
+    _MAX_TURN_HISTORY_ENTRIES,
+    _MONITOR_KINDS,
+    _TICKET_TERMINAL_CLOSE_REASONS,
+    DECISION_GATE_STATES,
+    OWNER_CLOSED_REASON,
+)
 from .registry_index import RegistryIndex
+from .registry_lifecycle import RegistryLifecycle
 from .registry_store import _MAX_TERMINAL_ENTRIES, RegistryStore
+from .registry_tickets import RegistryTickets
 
 logger = logging.getLogger(__name__)
-
-# Mill states in which a ticket is waiting on a human; a decision panel is
-# only meaningful while its ticket sits in one of these. Once a mill event
-# reports the ticket somewhere else (approved → ready, closed, re-running),
-# the decision is moot and the panel is closed on the operator's behalf.
-#
-# This is an alias for the canonical ``HUMAN_WAIT_STATES`` set defined in
-# ``robotsix_chat.ticket_poll.mill_states`` (the single source of truth for
-# mill state-name sets). Aliasing — rather than re-typing the literal —
-# guarantees the decision-gate logic stays in sync when a new human-wait
-# state is added upstream.
-DECISION_GATE_STATES = HUMAN_WAIT_STATES
-
-# Subsession kinds that are "monitors" for slot-budget purposes: they
-# persist across turns watching a ticket and occupy a per-conversation
-# slot while active or paused.  One-shot task/user_chat subsessions are
-# transient work, not monitors, and never occupy a slot.
-_MONITOR_KINDS: frozenset[SubsessionKind] = frozenset(
-    {
-        SubsessionKind.PERIODIC,
-        SubsessionKind.WAIT_FOR_EVENT,
-    }
-)
-
-# Close reasons that indicate the monitored ticket reached a terminal
-# (resolved / completed) state — the prerequisite is done, so dependents
-# should NOT be paused.
-_TICKET_TERMINAL_CLOSE_REASONS: frozenset[str] = frozenset(
-    {
-        "ticket_terminal",
-        "ticket_terminal_without_pr",
-        "ticket_terminal_on_resume",
-        "completed",
-    }
-)
-
-# Close reason used when a whole conversation (owner) is torn down.  The
-# slot-budget manager treats it specially: pending monitor requests are
-# discarded instead of being drained into a dead session.
-OWNER_CLOSED_REASON = "session closed"
-
-
-# Cap on persisted (turn_input, reply) pairs per subsession — must match
-# worker._MAX_WORKER_HISTORY_TURNS (the replay window the worker actually
-# feeds the agent); capping here too bounds what's kept in the JSON store.
-_MAX_TURN_HISTORY_ENTRIES = 20
-
 
 __all__ = [
     "DECISION_GATE_STATES",
     "OWNER_CLOSED_REASON",
     "TICKET_ID_RE",
     "_MAX_TERMINAL_ENTRIES",
+    "_MAX_TURN_HISTORY_ENTRIES",
+    "_MONITOR_KINDS",
+    "_TICKET_TERMINAL_CLOSE_REASONS",
     "RegistryIndex",
+    "RegistryLifecycle",
     "RegistryStore",
+    "RegistryTickets",
     "SubsessionRegistry",
     "_checkpoint_auto_stop_no_change_runs",
     "_checkpoint_no_change_pause_count",
@@ -190,6 +154,23 @@ class SubsessionRegistry:
         # closed/failed/interrupted — i.e. a slot freed).  The
         # slot-budget manager registers here to drain pending queues.
         self._close_callbacks: list[Callable[[SubsessionInfo], None]] = []
+
+        self._lifecycle = RegistryLifecycle(
+            subs=self._subs,
+            running=self._running,
+            inboxes=self._inboxes,
+            in_flight=self._in_flight,
+            active_dedup_keys=self._active_dedup_keys,
+            close_callbacks=self._close_callbacks,
+            store=self._store,
+            registry=self,
+        )
+        self._tickets = RegistryTickets(
+            subs=self._subs,
+            active_dedup_keys=self._active_dedup_keys,
+            event_waiters=self._event_waiters,
+            registry=self,
+        )
 
     # ------------------------------------------------------------------
     # lifecycle
@@ -526,6 +507,10 @@ class SubsessionRegistry:
             return False
         return True
 
+    # ------------------------------------------------------------------
+    # delegation: lifecycle transitions
+    # ------------------------------------------------------------------
+
     def _close_and_publish(
         self,
         info: SubsessionInfo,
@@ -537,262 +522,44 @@ class SubsessionRegistry:
         error: str | None = None,
     ) -> SubsessionInfo:
         """Set terminal state, publish frame, persist, and return *info*."""
-        info.status = status
-        info.summary = summary
-        info.last_activity_at = self._clock()
-
-        # Clean up the dedup key so a new side-chat for the same issue can
-        # be spawned after this one closes.
-        if info.dedup_key is not None:
-            self._active_dedup_keys.pop(info.dedup_key, None)
-
-        if status is SubsessionStatus.FAILED:
-            info.error = error
-            frame = subsession_failed_frame(
-                info.id,
-                kind=info.kind.value,
-                title=info.title,
-                error=error,  # type: ignore[arg-type]  # non-None when FAILED
-                summary=summary,
-                parent_id=info.parent_id,
-            )
-        else:
-            info.close_reason = reason
-            frame = subsession_closed_frame(
-                info.id,
-                kind=info.kind.value,
-                title=info.title,
-                reason=reason,
-                summary=summary,
-                closed_by=closed_by,
-                parent_id=info.parent_id,
-            )
-
-        # Drop any queued / in-flight inbox messages: a terminal
-        # subsession can no longer deliver them, and leaving them in the
-        # store would resurrect stale messages if the record is reopened
-        # or a future restart re-enqueues them.
-        #
-        # NOTE: the wake event is intentionally left in place — removing
-        # it breaks ``reopen`` (which does not recreate it), causing
-        # ``wait_for_inbox`` to spin in a tight loop instead of blocking.
-        self._inboxes.pop(info.id, None)
-        self._in_flight.pop(info.id, None)
-        self._publish(info.owner_session_id, frame)
-        self._store.persist()
-        for callback in self._close_callbacks:
-            callback(info)
-        self._pause_dependents(info)
-        return info
+        return self._lifecycle._close_and_publish(
+            info,
+            status=status,
+            summary=summary,
+            reason=reason,
+            closed_by=closed_by,
+            error=error,
+        )
 
     def mark_closed(
         self, sub_id: str, *, summary: str, reason: str, closed_by: str = "agent"
     ) -> SubsessionInfo | None:
-        """Set terminal ``CLOSED`` state and publish ``subsession_closed``.
-
-        The worker's own clean-close path — does NOT cancel the task.
-        No-op (returns ``None``) when the subsession is unknown or already
-        terminal, so an external close racing the worker wins exactly once.
-        """
-        info = self._subs.get(sub_id)
-        if info is None or not info.is_active:
-            return None
-        return self._close_and_publish(
-            info,
-            status=SubsessionStatus.CLOSED,
-            summary=summary,
-            reason=reason,
-            closed_by=closed_by,
+        """Set terminal ``CLOSED`` state (see :meth:`RegistryLifecycle.mark_closed`)."""
+        return self._lifecycle.mark_closed(
+            sub_id, summary=summary, reason=reason, closed_by=closed_by
         )
 
     def mark_paused(
         self, sub_id: str, *, summary: str, reason: str = "paused"
     ) -> SubsessionInfo | None:
-        """Transition a live periodic subsession to ``PAUSED``.
-
-        Sets ``PAUSED`` status and publishes a ``subsession_updated``
-        frame — the worker stays alive and blocks on a resume signal
-        instead of terminating.  No-op (returns ``None``) when the
-        subsession is unknown or already terminal.
-        """
-        info = self._subs.get(sub_id)
-        if info is None or not info.is_active:
-            return None
-        if info.status in (SubsessionStatus.CLOSED, SubsessionStatus.FAILED):
-            return None
-        info.status = SubsessionStatus.PAUSED
-        info.summary = summary
-        info.close_reason = reason
-        info.last_activity_at = self._clock()
-        self._publish(
-            info.owner_session_id,
-            subsession_updated_frame(
-                sub_id,
-                status="paused",
-                runs=info.runs,
-                last_activity_at=info.last_activity_at,
-                last_result=info.last_result,
-            ),
-        )
-        self._store.persist()
-        return info
+        """Transition a live periodic subsession to ``PAUSED``."""
+        return self._lifecycle.mark_paused(sub_id, summary=summary, reason=reason)
 
     def resume(self, sub_id: str) -> SubsessionInfo | None:
-        """Resume a paused periodic subsession — PAUSED → RUNNING.
-
-        Clears *close_reason* and *summary*, publishes an update frame,
-        and persists.  Returns ``None`` when the subsession is unknown or
-        not currently ``PAUSED``.
-        """
-        info = self._subs.get(sub_id)
-        if info is None:
-            return None
-        if info.status is not SubsessionStatus.PAUSED:
-            return None
-        info.status = SubsessionStatus.RUNNING
-        info.last_activity_at = self._clock()
-        info.close_reason = None
-        info.summary = None
-        # Reset the human_approval_since timestamp so the resumed
-        # monitor does not immediately time out again.
-        if info.checkpoint is not None:
-            info.checkpoint.pop("human_approval_since", None)
-        self._publish(
-            info.owner_session_id,
-            subsession_updated_frame(
-                sub_id,
-                status="running",
-                runs=info.runs,
-                last_activity_at=info.last_activity_at,
-                last_result=info.last_result,
-            ),
-        )
-        self._store.persist()
-        return info
+        """Resume a paused periodic subsession — PAUSED → RUNNING."""
+        return self._lifecycle.resume(sub_id)
 
     def reopen(self, sub_id: str) -> SubsessionInfo | None:
-        """Reopen a terminal monitor subsession.
-
-        Accepts records whose status is ``CLOSED`` or ``PAUSED``, kind is
-        ``PERIODIC`` or ``WAIT_FOR_EVENT``, and ``close_reason`` is
-        ``"paused"``, ``"human_approval_timeout"``,
-        ``"pre_authorized_approval"``, ``"max_runs"``, or
-        ``"waiting_for_prerequisite"``.
-        Other records are left untouched.  Returns the updated record or
-        ``None`` when the subsession is unknown, not in a reopenable
-        state, or already active (excluding PAUSED).
-        """
-        info = self._subs.get(sub_id)
-        if info is None:
-            return None
-        # PAUSED subsessions are "active" but their worker may be dead
-        # after a restart — allow reopen for them.
-        if info.is_active and info.status is not SubsessionStatus.PAUSED:
-            return None
-        if (
-            info.status not in (SubsessionStatus.CLOSED, SubsessionStatus.PAUSED)
-            or info.kind not in (SubsessionKind.PERIODIC, SubsessionKind.WAIT_FOR_EVENT)
-            or info.close_reason
-            not in (
-                "paused",
-                "human_approval_timeout",
-                "pre_authorized_approval",
-                "max_runs",
-                "waiting_for_prerequisite",
-            )
-        ):
-            return None
-        info.status = SubsessionStatus.RUNNING
-        info.last_activity_at = self._clock()
-        # When reopening a max_runs-exhausted monitor, reset the run
-        # counter so the monitor gets a fresh budget rather than
-        # immediately hitting the limit again.  Capture the reason
-        # before we clear it below.
-        _was_max_runs = info.close_reason == "max_runs"
-        _has_escalation_count = (
-            info.checkpoint is not None
-            and info.checkpoint.get("max_runs_exhausted_count") is not None
-        )
-        info.close_reason = None
-        info.summary = None
-        if _was_max_runs or _has_escalation_count:
-            info.runs = 0
-        # Reset the human_approval_since timestamp so the reopened
-        # monitor does not immediately time out again.
-        if info.checkpoint is not None:
-            info.checkpoint.pop("human_approval_since", None)
-        self._publish(
-            info.owner_session_id,
-            subsession_updated_frame(
-                sub_id,
-                status="running",
-                runs=info.runs,
-                last_activity_at=info.last_activity_at,
-                last_result=info.last_result,
-            ),
-        )
-        self._store.persist()
-        return info
+        """Reopen a terminal monitor subsession (see :class:`RegistryLifecycle`)."""
+        return self._lifecycle.reopen(sub_id)
 
     def find_paused_periodic(self) -> list[SubsessionInfo]:
-        """Return every paused monitor subsession waiting for a state change.
-
-        Includes monitors of kind ``PERIODIC`` or ``WAIT_FOR_EVENT`` in
-        ``PAUSED`` status (auto-paused by ``max_idle_runs`` — worker is
-        alive, waiting on an inbox signal), and monitors closed with
-        reason ``"paused"``, ``"human_approval_timeout"``,
-        ``"pre_authorized_approval"``, ``"max_runs"``, or
-        ``"waiting_for_prerequisite"`` (legacy records from before the
-        ``PAUSED`` status existed, plus dependency-paused monitors).
-        All are waiting for a ticket-state change — typically a PR merge
-        or an operator action — before they can safely resume.
-        """
-        result: list[SubsessionInfo] = []
-        for info in self._subs.values():
-            if info.kind not in (
-                SubsessionKind.PERIODIC,
-                SubsessionKind.WAIT_FOR_EVENT,
-            ):
-                continue
-            if info.status is SubsessionStatus.PAUSED or (
-                info.status is SubsessionStatus.CLOSED
-                and info.close_reason
-                in (
-                    "paused",
-                    "human_approval_timeout",
-                    "pre_authorized_approval",
-                    "max_runs",
-                    "waiting_for_prerequisite",
-                )
-            ):
-                result.append(info)
-        return result
+        """Return every paused monitor subsession waiting for a state change."""
+        return self._lifecycle.find_paused_periodic()
 
     def find_paused_periodic_by_ticket_id(self, ticket_id: str) -> list[SubsessionInfo]:
-        """Return live ``PAUSED`` monitor subsessions tracking *ticket_id*.
-
-        Matches ``PERIODIC`` and ``WAIT_FOR_EVENT`` monitors.  Only live
-        workers are returned (``PAUSED`` status — the worker is alive and
-        blocking on an inbox signal).  Legacy closed records with a
-        paused-style close reason are handled by the background watcher's
-        reopen path, not by inbox wake.
-        """
-        result: list[SubsessionInfo] = []
-        for info in self._subs.values():
-            if info.kind not in (
-                SubsessionKind.PERIODIC,
-                SubsessionKind.WAIT_FOR_EVENT,
-            ):
-                continue
-            if info.status is not SubsessionStatus.PAUSED:
-                continue
-            cp = info.checkpoint
-            if cp is None:
-                continue
-            cp_ticket_id = cp.get("ticket_id")
-            if isinstance(cp_ticket_id, str) and cp_ticket_id == ticket_id:
-                result.append(info)
-        return result
+        """Return live ``PAUSED`` monitor subsessions tracking *ticket_id*."""
+        return self._lifecycle.find_paused_periodic_by_ticket_id(ticket_id)
 
     def cancel_and_close(
         self,
@@ -802,70 +569,18 @@ class SubsessionRegistry:
         closed_by: str = "system",
         summary: str | None = None,
     ) -> SubsessionInfo | None:
-        """Externally close a live subsession: cancel its worker, mark CLOSED.
-
-        Builds a best-effort summary from the last assistant transcript
-        entry.  Returns the closed record (so the caller can deliver the
-        summary to the parent) or ``None`` when unknown / already terminal.
-        Idempotent: a second call returns ``None``.
-        """
-        info = self._subs.get(sub_id)
-        if info is None or not info.is_active:
-            return None
-        # Cancel FIRST so the worker cannot race us into mark_closed /
-        # fail while we build the terminal state.
-        task = self._running.get(sub_id)
-        if task is not None and not task.done():
-            task.cancel()
-        last = self.last_assistant_text(info)
-        if summary is None:
-            summary = f"{reason.capitalize()}."
-            if last:
-                summary += f" Last state: {_truncate(last, 500)}"
-        return self._close_and_publish(
-            info,
-            status=SubsessionStatus.CLOSED,
-            summary=summary,
-            reason=reason,
-            closed_by=closed_by,
+        """Externally close a live subsession: cancel its worker, mark CLOSED."""
+        return self._lifecycle.cancel_and_close(
+            sub_id, reason=reason, closed_by=closed_by, summary=summary
         )
 
     def fail(self, sub_id: str, *, error: str) -> SubsessionInfo | None:
-        """Set terminal ``FAILED`` state and publish ``subsession_failed``.
-
-        Returns the failed record, or ``None`` when unknown / already
-        terminal (e.g. an external close landed first).
-        """
-        info = self._subs.get(sub_id)
-        if info is None or not info.is_active:
-            return None
-        last = self.last_assistant_text(info)
-        summary = f"Failed: {_truncate(error, 300)}"
-        if last:
-            summary += f" Last state: {_truncate(last, 500)}"
-        return self._close_and_publish(
-            info,
-            status=SubsessionStatus.FAILED,
-            summary=summary,
-            error=error,
-        )
+        """Set terminal ``FAILED`` state and publish ``subsession_failed``."""
+        return self._lifecycle.fail(sub_id, error=error)
 
     def mark_interrupted(self, sub_id: str, *, summary: str) -> SubsessionInfo | None:
-        """Set terminal ``INTERRUPTED`` state (startup resume path).
-
-        Published as a ``subsession_closed`` frame with ``closed_by=
-        "system"`` — the UI treats it like any other terminal close.
-        """
-        info = self._subs.get(sub_id)
-        if info is None or not info.is_active:
-            return None
-        return self._close_and_publish(
-            info,
-            status=SubsessionStatus.INTERRUPTED,
-            summary=summary,
-            reason="interrupted",
-            closed_by="system",
-        )
+        """Set terminal ``INTERRUPTED`` state (startup resume path)."""
+        return self._lifecycle.mark_interrupted(sub_id, summary=summary)
 
     # ------------------------------------------------------------------
     # delegation: persistence
@@ -909,6 +624,30 @@ class SubsessionRegistry:
             old_owner_session_id, new_owner_session_id
         )
 
+    def count_active(self) -> int:
+        """Return the number of active (non-PAUSED) subsessions process-wide."""
+        return self._index.count_active()
+
+    def count_active_for_owner(self, owner_session_id: str) -> int:
+        """Return the number of active subsessions owned by *owner_session_id*."""
+        return self._index.count_active_for_owner(owner_session_id)
+
+    def count_occupied_for_owner(self, owner_session_id: str) -> int:
+        """Return the number of occupied monitor slots for *owner_session_id*."""
+        return self._index.count_occupied_for_owner(owner_session_id)
+
+    def find_paused_for_reuse(self, owner_session_id: str) -> str | None:
+        """Return the least-recently-active PAUSED monitor for *owner_session_id*."""
+        return self._index.find_paused_for_reuse(owner_session_id)
+
+    def find_stale_for_reclaim(
+        self, *, exclude_owner: str, stale_seconds: float
+    ) -> SubsessionInfo | None:
+        """Return the best candidate for stale-subsession reclamation."""
+        return self._index.find_stale_for_reclaim(
+            exclude_owner=exclude_owner, stale_seconds=stale_seconds
+        )
+
     # ------------------------------------------------------------------
     # core queries (retained on registry)
     # ------------------------------------------------------------------
@@ -925,138 +664,9 @@ class SubsessionRegistry:
         """Return every registered subsession (all owners), oldest first."""
         return sorted(self._subs.values(), key=lambda i: i.created_at)
 
-    def count_active(self) -> int:
-        """Return the number of active subsessions process-wide.
-
-        PAUSED subsessions are excluded — their workers are alive but
-        idle, waiting on a resume signal, and should not count against
-        the concurrency cap.
-        """
-        return sum(
-            1
-            for info in self._subs.values()
-            if info.is_active and info.status is not SubsessionStatus.PAUSED
-        )
-
-    def count_active_for_owner(self, owner_session_id: str) -> int:
-        """Return the number of active subsessions owned by *owner_session_id*.
-
-        Uses the same exclusion rules as :meth:`count_active`: PAUSED
-        subsessions do not count against the concurrency cap.
-        """
-        sub_ids = self._by_owner.get(owner_session_id, ())
-        return sum(
-            1
-            for sub_id in sub_ids
-            if (info := self._subs.get(sub_id)) is not None
-            and info.is_active
-            and info.status is not SubsessionStatus.PAUSED
-        )
-
-    def count_occupied_for_owner(self, owner_session_id: str) -> int:
-        """Return the number of occupied monitor slots for *owner_session_id*.
-
-        Occupied slots are active + paused monitors (``periodic`` and
-        ``wait_for_event`` subsessions): a PAUSED monitor's worker is
-        still alive (retaining its slot) even though it does not count
-        against the concurrency cap.  One-shot ``task``/``user_chat``
-        subsessions are not monitors and never occupy a slot.  The
-        slot-budget manager uses this count to decide when a
-        conversation is at capacity.
-        """
-        sub_ids = self._by_owner.get(owner_session_id, ())
-        return sum(
-            1
-            for sub_id in sub_ids
-            if (info := self._subs.get(sub_id)) is not None
-            and info.is_active
-            and info.kind in _MONITOR_KINDS
-        )
-
-    def find_paused_for_reuse(self, owner_session_id: str) -> str | None:
-        """Return the least-recently-active PAUSED monitor for *owner_session_id*.
-
-        Returns ``None`` when the owner has no paused monitor.
-
-        Used by the slot-budget manager to repurpose a paused monitor's
-        slot for a newly requested monitor when the conversation is at
-        budget — the reclaimed slot keeps the occupied count unchanged.
-        """
-        sub_ids = self._by_owner.get(owner_session_id, ())
-        best: SubsessionInfo | None = None
-        for sub_id in sub_ids:
-            info = self._subs.get(sub_id)
-            if info is None or not info.is_active:
-                continue
-            if info.kind not in _MONITOR_KINDS:
-                continue
-            if info.status is not SubsessionStatus.PAUSED:
-                continue
-            if best is None or info.last_activity_at < best.last_activity_at:
-                best = info
-        return best.id if best is not None else None
-
-    _RECLAIMABLE_STATUSES: frozenset[SubsessionStatus] = frozenset(
-        {
-            SubsessionStatus.SLEEPING,
-            SubsessionStatus.PAUSED,
-        }
-    )
-
-    def find_stale_for_reclaim(
-        self, *, exclude_owner: str, stale_seconds: float
-    ) -> SubsessionInfo | None:
-        """Return the best candidate for stale-subsession reclamation.
-
-        A candidate must belong to an owner other than *exclude_owner*,
-        be in a reclaimable status (SLEEPING or PAUSED), and have
-        ``last_activity_at`` older than ``now() - stale_seconds``.
-        SLEEPING subsessions are preferred over PAUSED because they
-        count against the global capacity cap; reclaiming one actually
-        frees a slot.
-
-        Returns ``None`` when no eligible subsession exists.
-        """
-        now = self.now()
-        cutoff = now - stale_seconds
-        best: SubsessionInfo | None = None
-        best_score = -1  # 2 = sleeping, 1 = paused
-
-        for owner_id, sub_ids in self._by_owner.items():
-            if owner_id == exclude_owner:
-                continue
-            for sub_id in sub_ids:
-                info = self._subs.get(sub_id)
-                if info is None:
-                    continue
-                if not info.is_active or info.last_activity_at > cutoff:
-                    continue
-                if info.status not in self._RECLAIMABLE_STATUSES:
-                    continue
-                score = 2 if info.status is SubsessionStatus.SLEEPING else 1
-                if score > best_score or (
-                    score == best_score
-                    and (best is None or info.last_activity_at < best.last_activity_at)
-                ):
-                    best = info
-                    best_score = score
-        return best
-
     def claim_run(self, sub_id: str, run_n: int) -> bool:
-        """Atomically claim a periodic run number.
-
-        Returns ``True`` when *run_n* was claimed (not previously
-        executed); ``False`` when it was already completed — the caller
-        must skip the agent turn.
-        """
-        info = self._subs.get(sub_id)
-        if info is None or not info.is_active:
-            return False
-        if run_n in info.completed_runs:
-            return False
-        info.completed_runs.add(run_n)
-        self._store.persist()
-        return True
+        """Atomically claim a periodic run number (see :class:`RegistryLifecycle`)."""
+        return self._lifecycle.claim_run(sub_id, run_n)
 
     def update_checkpoint(
         self, sub_id: str, checkpoint: dict[str, object] | None
@@ -1099,375 +709,66 @@ class SubsessionRegistry:
         interval_seconds: float | None = None,
         max_runs: int | None = None,
     ) -> bool:
-        """Update the run configuration of an active periodic subsession.
+        """Update the run configuration of an active periodic subsession."""
+        return self._lifecycle.update_periodic_config(
+            sub_id, prompt=prompt, interval_seconds=interval_seconds, max_runs=max_runs
+        )
 
-        Only *prompt* (instructions), *interval_seconds*, and *max_runs*
-        are accepted — the run counter is never reset, so self-update
-        cannot bypass max-run limits.  Fields left at ``None`` are not
-        touched.
-
-        Returns ``True`` when the update was applied; ``False`` when the
-        subsession is unknown or not an active periodic.
-        """
-        info = self._subs.get(sub_id)
-        if info is None or not info.is_active:
-            return False
-        if info.kind is not SubsessionKind.PERIODIC:
-            return False
-        if prompt is not None:
-            info.prompt = prompt
-        if interval_seconds is not None:
-            info.interval_seconds = interval_seconds
-        if max_runs is not None:
-            info.max_runs = max_runs
-        self._store.persist()
-        return True
+    # ------------------------------------------------------------------
+    # delegation: ticket-scoped queries / mill events
+    # ------------------------------------------------------------------
 
     def is_dedup_key_active(self, dedup_key: str) -> str | None:
-        """Return the active subsession id for *dedup_key*, or ``None``.
-
-        Subsessions of any kind with a matching dedup_key are tracked.
-        Returns ``None`` when the key is unknown or the tracked subsession
-        has become terminal (the close/fail path cleans up proactively,
-        but this is a safety net for races).
-        """
-        sub_id = self._active_dedup_keys.get(dedup_key)
-        if sub_id is None:
-            return None
-        info = self._subs.get(sub_id)
-        if info is None or not info.is_active:
-            # Stale entry — clean up proactively.
-            self._active_dedup_keys.pop(dedup_key, None)
-            return None
-        return sub_id
+        """Return the active subsession id for *dedup_key*, or ``None``."""
+        return self._tickets.is_dedup_key_active(dedup_key)
 
     def find_active_user_chat_by_ticket_id(self, ticket_id: str) -> str | None:
-        """Return the id of an active USER_CHAT panel about *ticket_id*, else None.
-
-        Matches on the panel's ``dedup_key`` when that is the ticket id, or on
-        the first full ticket id in its title/prompt — so a second run that
-        picked a different key (or none) still finds the operator's open panel.
-        """
-        for info in self._subs.values():
-            if info.is_active and user_chat_ticket_id(info) == ticket_id:
-                return info.id
-        return None
+        """Return the id of an active USER_CHAT panel about *ticket_id*, else None."""
+        return self._tickets.find_active_user_chat_by_ticket_id(ticket_id)
 
     def close_user_chats_for_moved_ticket(
         self, ticket_id: str, old_state: str, new_state: str
     ) -> int:
-        """Close open decision panels whose ticket left the human gates.
-
-        A panel exists to collect ONE decision about a gated ticket; when the
-        mill reports the ticket in a non-gated state the decision has been
-        taken elsewhere (approved by the drain, resumed, closed) and the panel
-        would otherwise sit in the operator's list until closed by hand.
-        Returns the number of panels closed.
-        """
-        if not new_state or new_state.lower() in DECISION_GATE_STATES:
-            return 0
-        closed = 0
-        for info in list(self._subs.values()):
-            if not info.is_active or user_chat_ticket_id(info) != ticket_id:
-                continue
-            summary = (
-                f"Decision panel closed automatically: ticket {ticket_id} moved "
-                f"from '{old_state}' to '{new_state}', so the decision it asked "
-                f"for is no longer pending."
-            )
-            if self.cancel_and_close(
-                info.id, reason="ticket_moved", closed_by="system", summary=summary
-            ):
-                closed += 1
-                logger.info(
-                    "Closed user_chat %s: ticket %s left the gate (%s -> %s).",
-                    info.id,
-                    ticket_id,
-                    old_state,
-                    new_state,
-                )
-        return closed
+        """Close open decision panels whose ticket left the human gates."""
+        return self._tickets.close_user_chats_for_moved_ticket(
+            ticket_id, old_state, new_state
+        )
 
     def find_active_periodic_by_ticket_id(self, ticket_id: str) -> str | None:
-        """Return the id of an active PERIODIC or WAIT_FOR_EVENT.
-
-        subsession whose checkpoint carries *ticket_id*.
-
-        Returns ``None`` when no match is found.
-
-        This is a cross-reference complement to
-        ``is_dedup_key_active``: a monitor may have been
-        spawned without a dedup_key (the agent forgot), but
-        after its first run the checkpoint records the
-        watched ``ticket_id``.  When a new spawn arrives
-        WITH a dedup_key, this method catches the match
-        that ``is_dedup_key_active`` misses because the
-        original dedup_key was never set.
-        """
-        for info in self._subs.values():
-            if (
-                info.kind
-                not in (
-                    SubsessionKind.PERIODIC,
-                    SubsessionKind.WAIT_FOR_EVENT,
-                )
-                or not info.is_active
-            ):
-                continue
-            cp = info.checkpoint
-            if cp is None:
-                continue
-            cp_ticket_id = cp.get("ticket_id")
-            if isinstance(cp_ticket_id, str) and cp_ticket_id == ticket_id:
-                return info.id
-        return None
+        """Return the id of an active monitor whose checkpoint carries *ticket_id*."""
+        return self._tickets.find_active_periodic_by_ticket_id(ticket_id)
 
     def register_event_waiter(self, sub_id: str, ticket_id: str) -> None:
         """Register *sub_id* as waiting for events on *ticket_id*."""
-        self._event_waiters[ticket_id].add(sub_id)
+        self._tickets.register_event_waiter(sub_id, ticket_id)
 
     def unregister_event_waiter(self, sub_id: str, ticket_id: str) -> None:
         """Remove *sub_id* from the event-waiter set for *ticket_id*."""
-        waiters = self._event_waiters.get(ticket_id)
-        if waiters is not None:
-            waiters.discard(sub_id)
-            if not waiters:
-                del self._event_waiters[ticket_id]
+        self._tickets.unregister_event_waiter(sub_id, ticket_id)
 
     def route_mill_event(self, ticket_id: str, event_payload: dict[str, object]) -> int:
-        """Route an incoming mill state-change event to waiting monitors.
-
-        Wakes both ``WAIT_FOR_EVENT`` monitors registered as event waiters
-        and live ``PAUSED`` periodic monitors tracking the same ticket
-        (auto-paused monitors whose worker is blocking on the inbox).
-        """
-        old_state = event_payload.get("old_state", "")
-        new_state = event_payload.get("new_state", "")
-        timestamp = event_payload.get("timestamp", "")
-        event_text = (
-            f"Mill event: ticket {ticket_id} state changed from "
-            f"'{old_state}' to '{new_state}' at {timestamp}. "
-            f"This event was pushed from the mill — you MUST verify "
-            f"the current state via a live GET of the ticket API "
-            f"before acting on it."
-        )
-
-        woken = 0
-        waiters = self._event_waiters.get(ticket_id)
-        if waiters:
-            for sub_id in list(waiters):
-                if self.enqueue_message(sub_id, "system", event_text):
-                    woken += 1
-                else:
-                    waiters.discard(sub_id)
-
-            if not waiters:
-                del self._event_waiters[ticket_id]
-
-        # Auto-paused periodic monitors do not register as event waiters —
-        # their worker blocks in ``_paused_wait_loop`` on the same inbox
-        # wake mechanism, so enqueueing the event here re-arms them.
-        for info in self.find_paused_periodic_by_ticket_id(ticket_id):
-            if self.enqueue_message(info.id, "system", event_text):
-                woken += 1
-        # Operator decision panels about this ticket are moot once it has
-        # left the human gates — close them instead of leaving them waiting.
-        self.close_user_chats_for_moved_ticket(
-            ticket_id, str(old_state or ""), str(new_state or "")
-        )
-
-        if woken:
-            logger.info(
-                "Routed mill event for ticket %s to %d monitor(s).",
-                ticket_id,
-                woken,
-            )
-        else:
-            logger.debug(
-                "Mill event for ticket %s had no active waiters — ignored.",
-                ticket_id,
-            )
-
-        return woken
+        """Route an incoming mill state-change event to waiting monitors."""
+        return self._tickets.route_mill_event(ticket_id, event_payload)
 
     def get_owner_session_ids_for_ticket(self, ticket_id: str) -> set[str]:
-        """Return owner session ids for every active subsession tracking *ticket_id*.
-
-        Covers WAIT_FOR_EVENT waiters, paused periodic monitors, and any
-        other active PERIODIC or WAIT_FOR_EVENT subsession whose checkpoint
-        carries *ticket_id*.  Used by the mill-events endpoint to target
-        blocked-transition notifications to the right conversations.
-        """
-        sessions: set[str] = set()
-
-        # 1) WAIT_FOR_EVENT waiters keyed directly by ticket_id.
-        for sub_id in self._event_waiters.get(ticket_id, ()):
-            info = self._subs.get(sub_id)
-            if info is not None and info.owner_session_id:
-                sessions.add(info.owner_session_id)
-
-        # 2) Paused periodic monitors — covered by the general scan below,
-        #    but included explicitly for clarity and to ensure they are
-        #    never missed.
-        for info in self.find_paused_periodic_by_ticket_id(ticket_id):
-            if info.owner_session_id:
-                sessions.add(info.owner_session_id)
-
-        # 3) Any other active PERIODIC / WAIT_FOR_EVENT subsessions whose
-        #    checkpoint carries the ticket_id (catch-all).
-        for info in self._subs.values():
-            if (
-                info.kind
-                not in (SubsessionKind.PERIODIC, SubsessionKind.WAIT_FOR_EVENT)
-                or not info.is_active
-            ):
-                continue
-            if info.owner_session_id in sessions:
-                continue
-            cp = info.checkpoint
-            if cp is None:
-                continue
-            cp_ticket_id = cp.get("ticket_id")
-            if isinstance(cp_ticket_id, str) and cp_ticket_id == ticket_id:
-                sessions.add(info.owner_session_id)
-
-        return sessions
+        """Return owner session ids for every active subsession tracking *ticket_id*."""
+        return self._tickets.get_owner_session_ids_for_ticket(ticket_id)
 
     def is_duplicate_ticket_terminal(self, ticket_id: str, exclude_sub_id: str) -> bool:
-        """Check for a duplicate terminal report for *ticket_id*.
-
-        Returns ``True`` when a different (already-CLOSED) subsession has
-        already reported the same ticket as terminal — when a prior monitor
-        has already reported the ticket as closed/done, a second monitor's
-        completion notice for that ticket is a duplicate and should be
-        suppressed to avoid a redundant (and often verbose) reaction turn
-        in the parent conversation.
-        """
-        for info in self._subs.values():
-            if info.id == exclude_sub_id:
-                continue
-            if info.status is not SubsessionStatus.CLOSED:
-                continue
-            cp = info.checkpoint
-            if cp is None:
-                continue
-            cp_ticket_id = cp.get("ticket_id")
-            if not isinstance(cp_ticket_id, str) or cp_ticket_id != ticket_id:
-                continue
-            # Only count a prior subsession as a terminal reporter when
-            # its close_reason indicates it actually reported the terminal
-            # state (not a non-terminal close like pause / max_runs).
-            if info.close_reason in ("ticket_terminal", "completed"):
-                return True
-        return False
+        """Check for a duplicate terminal report for *ticket_id*."""
+        return self._tickets.is_duplicate_ticket_terminal(ticket_id, exclude_sub_id)
 
     def has_terminal_report_for_ticket(self, ticket_id: str) -> bool:
-        """Check whether a terminal monitor already reported *ticket_id*.
-
-        Returns ``True`` when any CLOSED subsession with a matching
-        ``checkpoint.ticket_id`` or ``dedup_key`` closed with a terminal
-        reason (e.g. ``ticket_terminal``, ``ticket_terminal_without_pr``,
-        ``ticket_terminal_on_resume``, or ``completed``).
-
-        Used at spawn time to prevent redundant monitors for tickets
-        that have already been tracked to completion.
-        """
-        terminal_reasons = _TICKET_TERMINAL_CLOSE_REASONS | {"completed"}
-        for info in self._subs.values():
-            if info.status is not SubsessionStatus.CLOSED:
-                continue
-            # Match via checkpoint.ticket_id (preferred) or dedup_key.
-            cp = info.checkpoint
-            cp_ticket_id = cp.get("ticket_id") if cp is not None else None
-            matched = (
-                isinstance(cp_ticket_id, str) and cp_ticket_id == ticket_id
-            ) or info.dedup_key == ticket_id
-            if not matched:
-                continue
-            if info.close_reason in terminal_reasons:
-                return True
-        return False
+        """Check whether a terminal monitor already reported *ticket_id*."""
+        return self._tickets.has_terminal_report_for_ticket(ticket_id)
 
     def is_duplicate_auto_pause(self, ticket_id: str, exclude_sub_id: str) -> bool:
-        """Check for a duplicate auto-pause / no-change report for *ticket_id*.
-
-        Returns ``True`` when a different (already-PAUSED or CLOSED)
-        subsession has already reported the same ticket as auto-paused,
-        auto-stopped, or terminal — when a prior monitor has already
-        notified the user that the ticket needs no attention, a second
-        monitor's no-change notice for that ticket is a duplicate and
-        should be suppressed to avoid a redundant (and often noisy)
-        reaction turn in the parent conversation.
-        """
-        for info in self._subs.values():
-            if info.id == exclude_sub_id:
-                continue
-            if info.status not in (
-                SubsessionStatus.CLOSED,
-                SubsessionStatus.PAUSED,
-            ):
-                continue
-            cp = info.checkpoint
-            if cp is None:
-                continue
-            cp_ticket_id = cp.get("ticket_id")
-            if not isinstance(cp_ticket_id, str) or cp_ticket_id != ticket_id:
-                continue
-            if info.close_reason in (
-                "paused",
-                "no_change_auto_stop",
-                "ticket_terminal",
-                "completed",
-            ):
-                return True
-        return False
+        """Check for a duplicate auto-pause / no-change report for *ticket_id*."""
+        return self._tickets.is_duplicate_auto_pause(ticket_id, exclude_sub_id)
 
     # ------------------------------------------------------------------
     # helpers
     # ------------------------------------------------------------------
-
-    def _pause_dependents(self, closed: SubsessionInfo) -> None:
-        """Pause monitors that depend on the ticket the *closed* monitor was watching.
-
-        When a prerequisite ticket's monitor closes without the ticket
-        reaching a terminal (resolved) state, every active monitor whose
-        ``depends_on_ticket_id`` matches is cancelled and closed with
-        reason ``waiting_for_prerequisite``.  The watcher polls the
-        prerequisite ticket and reopens the dependent when the
-        prerequisite reaches a terminal state.
-        """
-        ticket_id = _checkpoint_ticket_id(closed.checkpoint)
-        if not ticket_id:
-            return
-        if closed.close_reason in _TICKET_TERMINAL_CLOSE_REASONS:
-            return
-        for info in list(self._subs.values()):
-            if (
-                info.id != closed.id
-                and info.depends_on_ticket_id == ticket_id
-                and info.is_active
-                and info.status is not SubsessionStatus.PAUSED
-            ):
-                summary = (
-                    f"Paused: prerequisite ticket {ticket_id} monitor "
-                    f"closed ({closed.close_reason or 'unknown reason'}) "
-                    f"before the prerequisite was resolved."
-                )
-                logger.info(
-                    "Dependency pause: closing monitor %s (depends_on "
-                    "ticket %s) because prerequisite monitor %s closed "
-                    "with reason %r.",
-                    info.id,
-                    ticket_id,
-                    closed.id,
-                    closed.close_reason,
-                )
-                self.cancel_and_close(
-                    info.id,
-                    reason="waiting_for_prerequisite",
-                    summary=summary,
-                    closed_by="system",
-                )
 
     def _publish(self, owner_session_id: str, frame: dict[str, object]) -> None:
         """Publish *frame* to the owning UI session (no-op without a sink)."""
