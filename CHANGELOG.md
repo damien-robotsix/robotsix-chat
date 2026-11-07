@@ -69,6 +69,20 @@ Everything below predates the release-please migration and was
 maintained by hand or by towncrier. It is kept verbatim; new entries
 are added above by release-please.
 
+## [0.32.1](https://github.com/damien-robotsix/robotsix-chat/compare/v0.32.0...v0.32.1) (2026-11-07)
+
+
+### Bug Fixes
+
+* ci_fix: out-of-scope CI failure — All CI checks passed, Container image scan (Trivy) (20261106T233503Z-ci-fix-out-of-scope-ci-failure-all-ci-ch-228e) ([#2284](https://github.com/damien-robotsix/robotsix-chat/issues/2284)) ([530d73a](https://github.com/damien-robotsix/robotsix-chat/commit/530d73a3c0e93ad86e6d61c03865cd068ea231a7))
+
+
+### Documentation
+
+* AGENT.md: Python conventions — Never leave a Protocol method body as a bare `...`; give it a one-line docstrin… (+1 more) (20261107T000726Z-agent-md-python-conventions-never-leave-d48b) ([#2286](https://github.com/damien-robotsix/robotsix-chat/issues/2286)) ([6689de1](https://github.com/damien-robotsix/robotsix-chat/commit/6689de10ce3f921ec6226e9ac7d099025ddc1d5c))
+* Reorganize module ui: align to per-module layout (src/docs/tests) (20261107T062046Z-reorganize-module-ui-align-to-per-module-78a5) ([#2289](https://github.com/damien-robotsix/robotsix-chat/issues/2289)) ([c6f2e38](https://github.com/damien-robotsix/robotsix-chat/commit/c6f2e380241eb41d6586c83ecc4fdbcc5a203543))
+* Scrutinize touched modules (ui, memory, component-client, component-access) for stale old-layout references (20261107T070751Z-scrutinize-touched-modules-ui-memory-com-187b) ([#2292](https://github.com/damien-robotsix/robotsix-chat/issues/2292)) ([b36b646](https://github.com/damien-robotsix/robotsix-chat/commit/b36b646bee438038bfa824c09c219f09f08b9200))
+
 ## [0.32.0](https://github.com/damien-robotsix/robotsix-chat/compare/v0.31.0...v0.32.0) (2026-11-02)
 
 
