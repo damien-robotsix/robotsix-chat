@@ -12,7 +12,7 @@ from __future__ import annotations
 import logging
 
 from robotsix_chat.common.http import safe_http_request
-from robotsix_chat.component_access.roster import fetch_roster
+from robotsix_chat.component.access.roster import fetch_roster
 from robotsix_chat.config import CentralDeploySettings
 
 logger = logging.getLogger(__name__)

@@ -217,7 +217,7 @@ class TestComponentSkills:
         """Names in, bodies out — for component skills too."""
         settings = self._settings()
         with patch(
-            "robotsix_chat.component_access.roster.fetch_roster_sync",
+            "robotsix_chat.component.access.roster.fetch_roster_sync",
             return_value=self._ROSTER,
         ):
             prompt = _inject_skills(settings, "Base instruction.")
@@ -239,7 +239,7 @@ class TestComponentSkills:
         """
         settings = self._settings()
         with patch(
-            "robotsix_chat.component_access.roster.fetch_roster_sync",
+            "robotsix_chat.component.access.roster.fetch_roster_sync",
             return_value=self._ROSTER,
         ):
             prompt = _inject_skills(settings, "Base instruction.")
@@ -259,7 +259,7 @@ class TestComponentSkills:
         """The tool serves the roster skill verbatim, keyed by component id."""
         settings = self._settings()
         with patch(
-            "robotsix_chat.component_access.roster.fetch_roster_sync",
+            "robotsix_chat.component.access.roster.fetch_roster_sync",
             return_value=self._ROSTER,
         ):
             read_skill = _read_skill(settings)
@@ -270,7 +270,7 @@ class TestComponentSkills:
         """A roster outage degrades to bundled skills only, never to a crash."""
         settings = self._settings()
         with patch(
-            "robotsix_chat.component_access.roster.fetch_roster_sync",
+            "robotsix_chat.component.access.roster.fetch_roster_sync",
             side_effect=RuntimeError("boom"),
         ):
             names = [n for on, n, _ in _skill_registry(settings) if on]

@@ -12,8 +12,8 @@ import httpx
 import pytest
 import respx
 
-from robotsix_chat.component_client import build_component_tools
-from robotsix_chat.component_client.client import ComponentAgentClient
+from robotsix_chat.component.client import build_component_tools
+from robotsix_chat.component.client.client import ComponentAgentClient
 from robotsix_chat.config import ComponentClientSettings, ComponentTarget, Settings
 
 
