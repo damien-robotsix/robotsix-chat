@@ -11,8 +11,8 @@ from typing import TYPE_CHECKING, Any
 
 from robotsix_chat.chat.conversation import ConversationStore
 from robotsix_chat.chat.events import EventSink
-from robotsix_chat.component_access import build_component_access_tools
-from robotsix_chat.component_client import build_component_tools
+from robotsix_chat.component.access import build_component_access_tools
+from robotsix_chat.component.client import build_component_tools
 from robotsix_chat.config import Settings
 from robotsix_chat.continuation import build_continuation_tools
 from robotsix_chat.diagnostics import build_diagnostics_tools

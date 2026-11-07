@@ -1,4 +1,4 @@
-"""Tests for the component_access package.
+"""Tests for the component.access package.
 
 Uses ``respx`` (httpx transport-layer mocking) so the tests run without a
 real network.
@@ -13,8 +13,8 @@ import pytest
 import respx
 from pydantic import SecretStr
 
-import robotsix_chat.component_access.roster as _roster
-from robotsix_chat.component_access.roster import (
+import robotsix_chat.component.access.roster as _roster
+from robotsix_chat.component.access.roster import (
     _augment_with_fallbacks,
     _cache_valid,
     build_skill_prompt,
@@ -22,7 +22,7 @@ from robotsix_chat.component_access.roster import (
     fetch_roster,
     fetch_roster_sync,
 )
-from robotsix_chat.component_access.tools import (
+from robotsix_chat.component.access.tools import (
     _coerce_json_object,
     _component_request_impl,
     _health_probe,
