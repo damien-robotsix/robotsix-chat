@@ -4,7 +4,7 @@ Recall queries the component's ``GET /recall`` (Hindsight engine behind a
 stable fleet contract) and renders the ranked memories into the context
 block the agent appends at the end of the prompt. The write path is
 deliberately a no-op here: durable memory is written by the evergoing
-summary pipeline (:mod:`robotsix_chat.memory_push`) and by the agent
+summary pipeline (:mod:`robotsix_chat.memory.push`) and by the agent
 calling the component's skill explicitly — per-exchange auto-writes were
 cognee's design and are retired with it.
 
