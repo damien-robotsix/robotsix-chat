@@ -463,6 +463,7 @@ modules:
       - tests/subsessions/test_subsession_waits.py
       - tests/subsessions/test_tools.py
       - tests/subsessions/test_watcher.py
+      - tests/subsessions/test_watcher_helpers.py
       - tests/subsessions/test_worker.py
       - tests/subsessions/test_worker_mill.py
       - tests/subsessions/test_worker_settled_note.py
