@@ -122,12 +122,12 @@ packages = ["src/robotsix_chat"]
 # First-party git sources are pinned to commit SHAs (repo baseline); the
 # fleet pin-bump workflow advances them through reviewed PRs.
 [tool.uv.sources]
-robotsix-config = { git = "https://github.com/damien-robotsix/robotsix-config.git", rev = "884a452062a04f569fb63a9d103c29eafbf3c056" }  # pragma: allowlist secret
-robotsix-llmio = { git = "https://github.com/damien-robotsix/robotsix-llmio.git", rev = "3fb688be8cea3dbcb95430b5c72fdca096d710a6" }  # pragma: allowlist secret
+robotsix-config = { git = "https://github.com/damien-robotsix/robotsix-config.git", rev = "5fc9c65449ac7f6dbba3a55f53917339e6230be5" }  # pragma: allowlist secret
+robotsix-llmio = { git = "https://github.com/damien-robotsix/robotsix-llmio.git", rev = "2d19f2bc2e2db9d2fa5726e3977974d382e6e3ce" }  # pragma: allowlist secret
 # robotsix-modules: same SHA as robotsix-mill (coherent-set rule).
-robotsix-modules = { git = "https://github.com/damien-robotsix/robotsix-modules.git", rev = "d7c5e59980516de6e050db02ff54aef4e15ff5c3" }  # pragma: allowlist secret
-robotsix-http = { git = "https://github.com/damien-robotsix/robotsix-http.git", rev = "4bf6c1e317ccdf4f2e2764ad05c97a456b1ca0a1" }  # pragma: allowlist secret
-robotsix-github-auth = { git = "https://github.com/damien-robotsix/robotsix-github-auth.git", rev = "9447d652ffe98e3e19cad2a57fd4f2621074f28c" }  # pragma: allowlist secret
+robotsix-modules = { git = "https://github.com/damien-robotsix/robotsix-modules.git", rev = "0c992979ac91c250df2662ed8725a8a4325af7c6" }  # pragma: allowlist secret
+robotsix-http = { git = "https://github.com/damien-robotsix/robotsix-http.git", rev = "eb3d00244236bc187ea0cc842b1649d8e26adad9" }  # pragma: allowlist secret
+robotsix-github-auth = { git = "https://github.com/damien-robotsix/robotsix-github-auth.git", rev = "caf5ec770250df887397f39e127ce294a08fc493" }  # pragma: allowlist secret
 
 [tool.uv]
 # Pin the uv toolchain so astral-sh/setup-uv resolves the version from this
@@ -157,7 +157,7 @@ constraint-dependencies = [
 # It must stay >= 0.3.2: that release renamed `_compute_backoff` to the
 # public `compute_backoff`, which llmio now imports.
 override-dependencies = [
-    "robotsix-http[fastapi] @ git+https://github.com/damien-robotsix/robotsix-http.git@4bf6c1e317ccdf4f2e2764ad05c97a456b1ca0a1",
+    "robotsix-http[fastapi] @ git+https://github.com/damien-robotsix/robotsix-http.git@eb3d00244236bc187ea0cc842b1649d8e26adad9",
 ]
 
 [tool.ruff]
