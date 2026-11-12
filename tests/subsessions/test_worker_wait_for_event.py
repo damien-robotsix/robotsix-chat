@@ -422,7 +422,7 @@ async def test_task_subsession_no_model_tier_fallback() -> None:
     """
     env = build_env(
         agent=FakeAgent(error=_FakeModelTier404Error()),
-        settings=make_settings(llmio_api_key="test-key"),
+        settings=make_settings(openrouter_api_key="test-key"),
     )
 
     sub_id = _spawn(env, kind=SubsessionKind.TASK, model_level=2)
@@ -446,7 +446,7 @@ async def test_wait_for_event_model_tier_404_falls_back() -> None:
     factory = CapturingAgentFactory(error_agent, fallback_agent)
     env = build_env(
         agent_factory=factory,
-        settings=make_settings(llmio_api_key="test-key"),
+        settings=make_settings(openrouter_api_key="test-key"),
     )
 
     sub_id = _spawn(
@@ -472,7 +472,7 @@ async def test_periodic_model_tier_404_at_floor_no_fallback() -> None:
     """When already at the fallback floor (level 1), a 404 fails immediately."""
     env = build_env(
         agent=FakeAgent(error=_FakeModelTier404Error()),
-        settings=make_settings(llmio_api_key="test-key"),
+        settings=make_settings(openrouter_api_key="test-key"),
     )
 
     sub_id = _spawn(

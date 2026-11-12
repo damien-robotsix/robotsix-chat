@@ -99,6 +99,25 @@ Standardized robotsix layout (docker standard): non-root user `app`, uid/gid **1
 `WORKDIR /home/app`; the container listens on **8080** (from the mounted config), `EXPOSE 8080`,
 stdlib-only `HEALTHCHECK` on `/health`, exec-form `ENTRYPOINT ["robotsix-chat"]` (no entrypoint.sh).
 
+## Cross-origin (CORS) justification
+
+Per the standards' CORS policy, zero CORS headers is the default: the browser UI is served from the
+same origin as the API (`GET /` + `/static`), so production needs no CORS. The `CORSMiddleware` in
+`create_app` is registered **only** when `cors_allow_origins` is non-empty. The one cross-origin
+client it exists for is a separately-hosted copy of the UI (e.g. `index.html` opened from `file://`,
+whose `serverUrl()` falls back to `http://localhost:8000/chat`, or a UI on another dev origin). It
+allows only `GET`/`POST`/`OPTIONS`, the `Content-Type` request header, and no credentials.
+
+**Rule:** `cors_allow_origins` accepts exact origins only (`scheme://host[:port]`). The `Settings`
+field validator rejects `*`, wildcard hosts, `null` and values with a path, so a config can never
+open the gateway-authenticated surface to any origin. Do not relax it.
+
+**Rule:** Security headers come from one `SecureASGIMiddleware` registration in `create_app`
+(`build_secure_headers()`, BALANCED preset with a page-specific CSP). Every `text/event-stream`
+response goes through `routes/_shared.py:sse_response()`, which sets `Cache-Control: no-cache`,
+`Connection: keep-alive` and `X-Accel-Buffering: no`. Never build an SSE `StreamingResponse` by
+hand.
+
 ## Long-term memory (cognee)
 
 The agent is stateless by default. The optional `memory` extra adds persistent, cross-conversation
@@ -193,6 +212,24 @@ not a style rule.
 **Provenance:** proposed by retrospect from
 20260809T064345Z-add-diagnostic-event-inspection-tool-for-b1aa
 
+**Rule:** Never leave a Protocol method body as a bare `...`; give it a one-line docstring instead,
+because CodeQL `py/ineffectual-statement` flags the bare ellipsis.
+
+**Rationale:** 2026-11-06 registry.py module-split run (PR #2281): a fixing_ci cycle at 23:39 showed
+three `py/ineffectual-statement` alerts on the `_RegistryCallbacks` Protocol stubs, cleared by
+adding docstrings.
+
+**Rule:** Never import a module back into the module it was split from, including under
+`TYPE_CHECKING`; pass a Protocol instead, because CodeQL `py/unsafe-cyclic-import` counts guarded
+imports as cycles.
+
+**Rationale:** 2026-11-06 registry.py module-split run (PR #2281): a fixing_ci cycle at 23:33 showed
+two `py/unsafe-cyclic-import` alerts caused by a `TYPE_CHECKING` back-import from
+`registry_index.py` into `registry.py`.
+
+**Provenance:** proposed by retrospect from
+20261106T231736Z-module-size-split-src-robotsix-chat-subs-429b
+
 ## CI workflow conventions
 
 **Rule:** All third-party GitHub Actions must be pinned by immutable 40-character commit SHA with
@@ -221,23 +258,35 @@ The script handles annotated tags (peeled to the underlying commit), branches, a
 per run on this multi-GB image vs ~4 min cold. Do not switch back without timing both paths (docker
 standard, "CI-time image scan").
 
-**Rule:** The dependency CVE audit runs in the `lockfile` job (with the curated
-`--ignore-until-fixed` list), and `run-audit: false` is passed to the shared `python-ci.yml`. The
-shared audit step has no ignore mechanism, so enabling both hard-blocks CI on CVEs that have no
-released fix.
+**Rule:** The dependency CVE audit and the `uv lock --check` freshness check run in the shared
+`python-ci.yml` (`ci` job: `run-audit: true`, `check-lock: true`, `audit-sarif: true`). Ignored
+advisories live in exactly one place — the repo-root `.audit-ignore` (one `ID  # reason` per line,
+optional `# expires: YYYY-MM-DD`), parsed by the shared `scripts/audit_ignore.py` and passed to uv
+as `--ignore-until-fixed`. `python-ci.yml`, the daily `dependency-audit.yml` workflow and the shared
+`uv-audit` pre-commit hook all read it; never re-add inline id lists.
 
-**Rule:** The blocking PR audits (`lockfile` job's `uv audit`, the shared security job's pip-audit)
-run only when the PR touches `uv.lock` or `pyproject.toml` (the `changes` job in `ci.yml`), and
-on push to main; pre-commit skips its `uv-audit` hook in CI. New advisories against pinned deps are
-caught by the daily `dependency-audit.yml` workflow, which opens a tracking issue. The
-`--ignore-until-fixed` list lives in `ci.yml`, `dependency-audit.yml` and `.pre-commit-config.yaml`
-— keep all three in sync.
+**Rule:** The shared security job's blocking pip-audit runs only when the PR touches `uv.lock` or
+`pyproject.toml` (the `changes` job in `ci.yml`), and on push to main; pre-commit skips its
+`uv-audit` hook in CI (the `ci` job already audits). New advisories against pinned deps are also
+caught by the daily `dependency-audit.yml` workflow, which opens a tracking issue.
 
 **Rule:** Never commit pre-compiled tool binaries (e.g. hadolint, actionlint, shellcheck) to the
 repository — the pre-commit hooks fetch their own binaries via their hook installers. If a tool
 binary appears on your branch, remove it from tracking and add it to the `.gitignore` "Pre-commit
 tool binaries accidentally committed during local testing" block instead of registering it as a
 module path.
+
+**Rule:** In a network-filtered agent sandbox, do not run the full `pre-commit run --all-files`
+suite. Its remote hook repos (`pre-commit-hooks`, `typos`, `ruff-pre-commit`, `actionlint`,
+`hadolint`, `trufflehog`, `markdownlint-cli2`, `mdformat`, `robotsix-standards`) are cloned from
+GitHub when the hooks are installed. The egress filter refuses those clones
+(`URLError: Tunnel connection failed: 403 Filtered`), and retrying does not help. Run the relevant
+linters directly on the files you changed instead, for example `uv run ruff check <files>`,
+`uv run ruff format --check <files>`, `uv run mypy`, `actionlint`, `zizmor .github/workflows/` or
+`mdformat --wrap 100 <docs>`. CI runs the complete pre-commit suite.
+
+**Rationale:** Trace `008c9c53` (ticket 20261029T112947Z-…-5105) spent a $1.22, 72-observation
+implement pass partly on a failed full pre-commit run before it fell back to individual linters.
 
 ## Testing conventions
 

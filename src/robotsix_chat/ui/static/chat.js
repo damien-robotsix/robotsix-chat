@@ -2,6 +2,7 @@ import { processSSEStream } from "./sse-parser.js";
 import { drainSessionDraft } from "./drain-draft.js";
 import { closedPeriodicSessions, discardSessions } from "./discard-closed.js";
 import { renderMemoryBanner } from "./memory-banner.js";
+import { wireConfigJsonEditors } from "./config-json-editor.js";
 import { notify } from "./notify.js";
 import {
   isDocumentVisible,
@@ -50,26 +51,13 @@ import {
       controls.remove();
     }
 
-    // The AppShell provides its own Settings entry — hide the
-    // standalone settings toggle button to avoid duplicate controls.
-    var settingsToggle = document.getElementById("settings-toggle");
-    if (settingsToggle) settingsToggle.style.display = "none";
-
-    // Intercept the AppShell Settings link to open the side panel instead
-    // of navigating to '#'.
+    // Settings and Subsessions are grouped as two identical .header-btn
+    // controls in the right slot.  Hide the AppShell's own Settings entry
+    // so there is a single, consistently-styled Settings control.
     const settingsLink = handle.element.querySelector(
       ".rsu-appshell-settings"
     );
-    if (settingsLink) {
-      settingsLink.addEventListener("click", function (e) {
-        e.preventDefault();
-        // openSettingsPanel is defined inside the IIFE — reach it via the
-        // global internal registry so this top-level module code can call
-        // into the IIFE's closure.
-        var fn = window.__chatOpenSettingsPanel;
-        if (typeof fn === "function") fn();
-      });
-    }
+    if (settingsLink) settingsLink.style.display = "none";
 
     // Publish the AppShell root for CSS selectors that need to target it
     // (e.g. side-panel margin push).
@@ -94,9 +82,7 @@ import {
   const errorMsgEl   = errorBanner.querySelector(".msg");
   const errorDismiss = errorBanner.querySelector(".dismiss");
   const connDot      = document.getElementById("connection-dot");
-  const sessionsToggle  = document.getElementById("sessions-toggle");
   const sessionsPanel   = document.getElementById("sessions-panel");
-  const sessionsDismiss = sessionsPanel.querySelector(".dismiss");
   const sessionsResizeHandle = document.getElementById("sessions-resize-handle");
   const newChatBtn = document.getElementById("new-chat-btn");
   const subsToggle     = document.getElementById("subsessions-toggle");
@@ -526,23 +512,12 @@ import {
     if (getSubsPanelVisible()) { openSubsessionsPanel(); }
   }
 
-  // ---- Sessions panel visibility (localStorage-backed) ----------------
-  function getSessionsPanelVisible() {
-    try { return localStorage.getItem(SESSIONS_PANEL_KEY) !== "false"; }
-    catch (_) { return true; }
-  }
-
-  function setSessionsPanelVisible(visible) {
-    try { localStorage.setItem(SESSIONS_PANEL_KEY, visible ? "true" : "false"); } catch (_) {}
-  }
-
+  // ---- Sessions panel: always visible ---------------------------------
+  // The panel can no longer be dismissed.  Older builds persisted a
+  // "hidden" flag under SESSIONS_PANEL_KEY; drop it so it is never honoured.
   function restoreSessionsPanelState() {
-    if (getSessionsPanelVisible()) {
-      openSessionsPanel();
-    } else {
-      sessionsPanel.classList.remove("visible");
-      hideSessionsResizeHandle();
-    }
+    try { localStorage.removeItem(SESSIONS_PANEL_KEY); } catch (_) {}
+    openSessionsPanel();
   }
 
   function openSessionsPanel() {
@@ -3510,42 +3485,9 @@ import {
     }
   });
 
-  // ---- Session panel toggle and resize --------------------------------
-  sessionsToggle.addEventListener("click", function (e) {
-    e.stopPropagation();
-    var opening = !sessionsPanel.classList.contains("visible");
-    sessionsPanel.classList.toggle("visible");
-    setSessionsPanelVisible(sessionsPanel.classList.contains("visible"));
-    if (opening) {
-      positionSessionsResizeHandle();
-      // Refresh session list from server when opening.
-      refreshSessions();
-      // Sync CSS custom property so the push-layout margin tracks the panel width.
-      document.documentElement.style.setProperty('--sessions-width', sessionsPanel.getBoundingClientRect().width + 'px');
-    } else {
-      hideSessionsResizeHandle();
-    }
-  });
-
-  sessionsDismiss.addEventListener("click", function (e) {
-    e.stopPropagation();
-    sessionsPanel.classList.remove("visible");
-    setSessionsPanelVisible(false);
-    hideSessionsResizeHandle();
-  });
-
+  // ---- Session panel (always visible) and resize ----------------------
   sessionsPanel.addEventListener("click", function (e) {
     e.stopPropagation();
-  });
-
-  document.addEventListener("keydown", function (e) {
-    // Focus mode owns Escape for the subsessions panel.
-    if (e.key === "Escape" && focusedSubId === null &&
-        sessionsPanel.classList.contains("visible")) {
-      sessionsPanel.classList.remove("visible");
-      setSessionsPanelVisible(false);
-      hideSessionsResizeHandle();
-    }
   });
 
   // "New chat" button
@@ -3590,10 +3532,6 @@ import {
     var rect = sessionsPanel.getBoundingClientRect();
     sessionsResizeHandle.style.display = "block";
     sessionsResizeHandle.style.left = (rect.right) + "px";
-  }
-
-  function hideSessionsResizeHandle() {
-    sessionsResizeHandle.style.display = "none";
   }
 
   sessionsResizeHandle.addEventListener("mousedown", function (e) {
@@ -4016,6 +3954,7 @@ import {
       const { mountConfigPanel } = await import('/static/vendor/vanilla.js');
       mountConfigPanel(el, { title: 'Settings' });
       _wireConfigLongTextFieldUpgrades(el);
+      wireConfigJsonEditors(el);
       _configPanelReady = true;
     } catch (_err) {
       el.textContent =
@@ -4034,9 +3973,6 @@ import {
     setSettingsPanelVisible(true);
     _initConfigPanel();
   }
-
-  // Expose for the AppShell's Settings link (top-level module scope).
-  window.__chatOpenSettingsPanel = openSettingsPanel;
 
   function closeSettingsPanel() {
     settingsPanel.classList.remove("visible");

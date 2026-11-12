@@ -6,15 +6,15 @@
   it lists every importable namespace with its paths. Non-Python resources (e.g. `ui/*`) and tests
   are listed under the owning module. When new static/test files are added, they MUST be registered
   in the `ui` module's paths in `docs/modules.yaml`.
-- `docs/user-guide/` — user-facing feature docs: `chat-interface.md`, `deployment.md`,
-  `settings-ui.md`.
+- `docs/user-guide/` — user-facing feature docs: `deployment.md`.
+- `docs/ui/` — ui-module docs: `chat-interface.md`, `settings-ui.md`, `settings-audit-upgrade.md`.
 - `docs/periodic/` — periodic-module docs: `periodic-sessions.md`.
 - `docs/chat/server/` — server route docs.
 
 ## Conventions
 
 - User-facing behavioral changes to the browser chat UI belong in
-  `docs/user-guide/chat-interface.md`.
+  `docs/ui/chat-interface.md`.
 - Docs are markdownlint-checked and CI-gated (`docs/modules.yaml` and the baseline-check workflow).
 
 ## chat-interface.md sections

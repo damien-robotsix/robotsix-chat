@@ -128,7 +128,7 @@ module.exports = async ({github, context, core}) => {
     // Security scan (shared) runs trufflehog + pip-audit via the
     // python-security.yml reusable workflow.  Both checks are redundant
     // with this repo's own jobs: trufflehog is covered by pre-commit
-    // (detect-secrets), and pip-audit by the lockfile job (uv audit).
+    // (detect-secrets), and pip-audit by the shared python-ci.yml uv audit.
     // When a transient infrastructure failure (e.g. astral-sh/setup-uv
     // manifest fetch timeout) causes the shared security workflow to
     // fail, treating it as blocking prevents releasing an otherwise

@@ -192,15 +192,15 @@ Each subpackage lives under `src/robotsix_chat/`.
 
 ### Optional Tools (gated by `settings.<tool>.enabled`)
 
-| Package                 | Role                                                                                                         |
-| ----------------------- | ------------------------------------------------------------------------------------------------------------ |
-| **`mail/`**             | Email read/compose/send tools.                                                                               |
-| **`knowledge/`**        | Durable knowledge-note tools (`add`/`append`/`update`/`list`/`read`). Process-local, no external dependency. |
-| **`refdocs/`**          | `read_refdocs` tool — fetches documentation from allowlisted GitHub repositories.                            |
-| **`repo_study/`**       | Temporary local repo snapshots (GitHub tarball, no git) the agent can list/read/search; TTL cleanup.         |
-| **`selfreview/`**       | `read_recent_activity` tool — the agent can inspect its own conversation history to stay aware of context.   |
-| **`version_check/`**    | Tools to check for newer package versions.                                                                   |
-| **`component_client/`** | Tools to inspect and configure remote component agents over HTTP.                                            |
+| Package              | Role                                                                                                                                         |
+| -------------------- | -------------------------------------------------------------------------------------------------------------------------------------------- |
+| **`mail/`**          | Email read/compose/send tools.                                                                                                               |
+| **`knowledge/`**     | Durable knowledge-note tools (`add`/`append`/`update`/`list`/`read`). Process-local, no external dependency.                                 |
+| **`refdocs/`**       | `read_refdocs` tool — fetches documentation from allowlisted GitHub repositories.                                                            |
+| **`repo_study/`**    | Temporary local repo snapshots (GitHub tarball, no git) the agent can list/read/search; TTL cleanup.                                         |
+| **`selfreview/`**    | `read_recent_activity` tool — the agent can inspect its own conversation history to stay aware of context.                                   |
+| **`version_check/`** | Tools to check for newer package versions.                                                                                                   |
+| **`component/`**     | Remote-component tools: `client/` (direct HTTP to allowlisted component agents) and `access/` (central-deploy roster + `component_request`). |
 
 ### Memory
 
@@ -228,9 +228,9 @@ The LLM provider is selected indirectly: `model_level` (1–3) is passed to `rob
 resolves it against the provider slot its failover tracker designates as active — the direct
 Anthropic API slot (when an Anthropic key is configured, else cascading to the keyless claudeSDK
 slot: haiku/opus/fable) in normal operation, the keyed OpenRouter fallback slot (DeepSeek) while
-provider failover is armed. Level 2 (`opus` on the default slot) is the workhorse
-and the default for the main chat agent; subsessions default to level 2 and monitors are capped at
-level 1 unless configured otherwise.
+provider failover is armed. Level 2 (`opus` on the default slot) is the workhorse and the default
+for the main chat agent; subsessions default to level 2 and monitors are capped at level 1 unless
+configured otherwise.
 
 ______________________________________________________________________
 

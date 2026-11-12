@@ -1644,7 +1644,7 @@ class TestFileTickets:
         fake_span = MagicMock()
         fake_span.__enter__.return_value = fake_span
         with patch(
-            "robotsix_chat.feedback.runner.start_span",
+            "robotsix_chat.feedback.ticket_filing.start_span",
             return_value=fake_span,
         ):
             filed, failed, _routed, _dropped = await runner._file_tickets(
@@ -1683,7 +1683,7 @@ class TestFileTickets:
         fake_span = MagicMock()
         fake_span.__enter__.return_value = fake_span
         with patch(
-            "robotsix_chat.feedback.runner.start_span",
+            "robotsix_chat.feedback.ticket_filing.start_span",
             return_value=fake_span,
         ):
             filed, failed, _routed, _dropped = await runner._file_tickets(
@@ -1719,7 +1719,7 @@ class TestFileTickets:
         fake_span.__enter__.return_value = fake_span
         fake_span.record_exception.side_effect = RuntimeError("span broken")
         with patch(
-            "robotsix_chat.feedback.runner.start_span",
+            "robotsix_chat.feedback.ticket_filing.start_span",
             return_value=fake_span,
         ):
             filed, failed, _routed, _dropped = await runner._file_tickets(
@@ -2369,7 +2369,7 @@ class TestResolveAllowedRepos:
     @pytest.mark.asyncio
     async def test_mill_repo_id_shape_intersects(self, monkeypatch) -> None:
         """repo_id-keyed mill entries intersect with the deploy roster."""
-        from robotsix_chat.feedback import runner as runner_mod
+        from robotsix_chat.feedback import allowed_repos as runner_mod
 
         deploy_body = json.dumps(
             [{"id": "chat"}, {"id": "file-hub"}, {"id": "robotsix-chat"}]

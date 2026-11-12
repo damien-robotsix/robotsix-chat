@@ -78,7 +78,7 @@ Tasks that are pending, in-progress, or blocked.
   this repo.** The chat agent's tools are in-process Python function tools passed to
   `provider.build_agent(..., tools=...)` (`src/robotsix_chat/llm/agent.py:685`); there is no
   `mcp_servers` parameter. External services are reached only via the central-deploy roster
-  (`src/robotsix_chat/component_access/roster.py`) + the generic HTTP `component_request` tool
+  (`src/robotsix_chat/component/access/roster.py`) + the generic HTTP `component_request` tool
   against robotsix HTTP components — there are no MCP connectors today. **Prerequisite (upstream):**
   either robotsix_llmio's `build_agent` must accept and forward `mcp_servers` to
   `ClaudeAgentOptions`, OR a new deployable HTTP component that wraps Playwright must be built
@@ -110,8 +110,8 @@ Tasks that are pending, in-progress, or blocked.
 
   **Architecture context (verified in this clone).** The chat agent has NO per-component tools; it
   reaches every deployed component through ONE generic `component_request` tool
-  (`src/robotsix_chat/component_access/tools.py`) against the roster fetched at session start from
-  `GET {central_deploy.url}/chat/components` (`component_access/roster.py::fetch_roster`). Each
+  (`src/robotsix_chat/component/access/tools.py`) against the roster fetched at session start from
+  `GET {central_deploy.url}/chat/components` (`component/access/roster.py::fetch_roster`). Each
   roster entry carries `{id, base_url, skill, auth?}`; the `skill` doc is loaded into the agent
   system prompt so the LLM knows the component's API contract. Therefore "registering"
   robotsix-browser is primarily a central-deploy + browser-repo change, NOT a robotsix-chat code

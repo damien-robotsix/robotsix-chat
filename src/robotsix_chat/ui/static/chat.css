@@ -66,9 +66,10 @@ body {
 }
 #connection-dot.error { background: var(--dot-red); }
 
-/* Shared style for the labeled header buttons (Chats / Subsessions).
-   Icon + short text label + title tooltip, so their purpose is clear
-   at a glance. */
+/* Shared style for the grouped labeled header buttons (Subsessions /
+   Settings).  Both use exactly this rule — no per-id overrides — so they
+   render identically.  Icon + short text label + title tooltip, so their
+   purpose is clear at a glance. */
 .header-btn {
   display: inline-flex; align-items: center; gap: 0.3rem;
   background: none; border: 1px solid rgba(255,255,255,0.18);
@@ -1004,6 +1005,30 @@ body {
   line-height: 1.4;
   white-space: pre-wrap;
   box-sizing: border-box;
+}
+
+/* ---- Config panel: multi-line JSON object/list editor ---------------- */
+
+.rsu-config-row textarea.rsu-config-value.rsu-config-json-editor {
+  font-family: ui-monospace, SFMono-Regular, Menlo, Consolas, monospace;
+  font-size: 0.8rem;
+  line-height: 1.4;
+  min-height: 9rem;
+  max-height: 30rem;
+  overflow: auto;
+  white-space: pre;
+  overflow-wrap: normal;
+  resize: vertical;
+  tab-size: 2;
+  box-sizing: border-box;
+}
+
+.rsu-config-row textarea.rsu-config-json-editor.rsu-config-json-invalid {
+  border-color: #ef4444;
+}
+
+.rsu-config-row .rsu-config-json-error {
+  font-size: 0.72rem; color: #fca5a5; margin-top: 0.1rem;
 }
 
 .settings-empty {

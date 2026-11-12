@@ -118,7 +118,7 @@ def _component_skill_registry(
     """
     if not settings.central_deploy.url:
         return []
-    from robotsix_chat.component_access.roster import (
+    from robotsix_chat.component.access.roster import (
         component_skill_entries,
         fetch_roster_sync,
     )
@@ -284,7 +284,7 @@ def _inject_skills(
             "– If the roster is unavailable or a component returns an error, "
             "report the error clearly — do not retry in a loop."
         )
-        from robotsix_chat.component_access.roster import (
+        from robotsix_chat.component.access.roster import (
             build_skill_prompt,
             fetch_roster_sync,
         )

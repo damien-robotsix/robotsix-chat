@@ -90,6 +90,7 @@ modules:
       - .markdownlintignore
       - .pre-commit-config.yaml
       - .python-version
+      - .audit-ignore
       - .trivyignore
       - .trufflehog.yaml
       - AGENT.md
@@ -131,20 +132,22 @@ modules:
   - id: component-client
     description: "Component agent client tools for the chat LLM — exposes build_component_tools(), a factory returning LLM tools that let the chat agent enumerate, inspect, and configure remote component agents via direct HTTP."
     paths:
-      - src/robotsix_chat/component_client/__init__.py
-      - src/robotsix_chat/component_client/client.py
-      - tests/component_client/__init__.py
-      - tests/component_client/test_component_client.py
+      - src/robotsix_chat/component/__init__.py
+      - src/robotsix_chat/component/client/__init__.py
+      - src/robotsix_chat/component/client/client.py
+      - tests/component/__init__.py
+      - tests/component/client/__init__.py
+      - tests/component/client/test_component_client.py
 
   - id: component-access
     description: "Generic component access via central-deploy roster — fetches the allowed-chat-components list, loads each component's skill into the agent, and returns a single generic component_request tool."
     paths:
-      - src/robotsix_chat/component_access/__init__.py
-      - src/robotsix_chat/component_access/roster.py
-      - src/robotsix_chat/component_access/tools.py
-      - tests/component_access/__init__.py
-      - tests/component_access/test_component_access.py
-      - tests/component_access/test_roster.py
+      - src/robotsix_chat/component/access/__init__.py
+      - src/robotsix_chat/component/access/roster.py
+      - src/robotsix_chat/component/access/tools.py
+      - tests/component/access/__init__.py
+      - tests/component/access/test_component_access.py
+      - tests/component/access/test_roster.py
 
   - id: caretaker
     description: "Model-free surfacing of central-deploy caretaker findings — polls GET /caretaker/status on a short interval (no agent turn) and broadcasts SSE desktop notifications for error-severity claude_auth/crash_loop/health findings, so an LLM-outage escalation reaches the operator without needing a model."
@@ -189,6 +192,7 @@ modules:
       - tests/config/test_system_prompt_governance.py
       - tests/config/test_config_hypothesis.py
       - tests/config/test_langfuse_env_overlay.py
+      - tests/config/test_module_registration.py
 
   - id: continuation
     description: "Post-restart continuation — auto-resume a conversation after a restart so work-in-progress continues without human intervention."
@@ -409,11 +413,13 @@ modules:
       - src/robotsix_chat/memory/__init__.py
       - src/robotsix_chat/memory/base.py
       - src/robotsix_chat/memory/component.py
+      - src/robotsix_chat/memory/push.py
       - src/robotsix_chat/memory/tools.py
-      - src/robotsix_chat/memory_push.py
       - docs/memory/api.md
       - tests/memory/__init__.py
+      - tests/memory/test_base.py
       - tests/memory/test_component_memory.py
+      - tests/memory/test_memory_push.py
 
   - id: subsessions
     description: "Unified subsession system — background agents (task / periodic / user_chat) spawned from chat sessions, with per-subsession model levels, depth-limited nesting, inbox steering, and parent summary delivery."
@@ -425,6 +431,12 @@ modules:
       - src/robotsix_chat/subsessions/prompts.py
       - src/robotsix_chat/subsessions/prompt_context.py
       - src/robotsix_chat/subsessions/registry.py
+      - src/robotsix_chat/subsessions/registry_checkpoint.py
+      - src/robotsix_chat/subsessions/registry_constants.py
+      - src/robotsix_chat/subsessions/registry_index.py
+      - src/robotsix_chat/subsessions/registry_lifecycle.py
+      - src/robotsix_chat/subsessions/registry_store.py
+      - src/robotsix_chat/subsessions/registry_tickets.py
       - src/robotsix_chat/subsessions/resume.py
       - src/robotsix_chat/subsessions/schedule.py
       - src/robotsix_chat/subsessions/skill.md
@@ -513,7 +525,11 @@ modules:
     description: "Automated feedback analysis — runs at compaction and session-end boundaries, analyses the conversation, and files improvement tickets via POST /tickets/ingest."
     paths:
       - src/robotsix_chat/feedback/__init__.py
+      - src/robotsix_chat/feedback/allowed_repos.py
+      - src/robotsix_chat/feedback/finding_state.py
+      - src/robotsix_chat/feedback/prompts.py
       - src/robotsix_chat/feedback/runner.py
+      - src/robotsix_chat/feedback/ticket_filing.py
       - tests/feedback/__init__.py
       - tests/feedback/test_runner.py
 
@@ -535,7 +551,6 @@ modules:
       - src/robotsix_chat/evergoing/__init__.py
       - src/robotsix_chat/evergoing/scheduler.py
       - tests/evergoing/__init__.py
-      - tests/evergoing/test_memory_push.py
       - tests/evergoing/test_scheduler.py
 
   - id: ui
@@ -545,6 +560,7 @@ modules:
       - src/robotsix_chat/ui/static/chat.css
       - src/robotsix_chat/ui/static/chat.js
       - src/robotsix_chat/ui/static/memory-banner.js
+      - src/robotsix_chat/ui/static/config-json-editor.js
       - src/robotsix_chat/ui/static/message-queue.js
       - src/robotsix_chat/ui/static/notify-gating.js
       - src/robotsix_chat/ui/static/notify-navigation.js
@@ -554,10 +570,11 @@ modules:
       - src/robotsix_chat/ui/static/discard-closed.js
       - src/robotsix_chat/ui/static/sse-parser.js
       - src/robotsix_chat/ui/static/suggestions.js
-      - docs/user-guide/chat-interface.md
-      - docs/user-guide/settings-ui.md
-      - docs/user-guide/settings-audit-upgrade.md
+      - docs/ui/chat-interface.md
+      - docs/ui/settings-ui.md
+      - docs/ui/settings-audit-upgrade.md
       - tests/ui/js/memory-banner.test.js
+      - tests/ui/js/config-json-editor.test.js
       - tests/ui/js/message-queue.test.js
       - tests/ui/js/notify-gating.test.js
       - tests/ui/js/notify-navigation.test.js
@@ -571,6 +588,7 @@ modules:
       - tests/ui/conftest.py
       - tests/ui/test_chat_integration.py
       - tests/ui/test_smoke.py
+      - tests/ui/test_vendor_check.py
 
   - id: http-probe
     description: "Read-only HTTP uptime/render-probe tool for the agent — exposes build_http_probe_tools() returning an http_probe tool for HTTPS GET health checks with optional content assertions (status, expect_contains, expect_absent), plus load_http_probe_skill() for the component skill document."

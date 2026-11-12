@@ -449,7 +449,7 @@ def _roster(*base_urls: str):
         return [{"id": f"c{i}", "base_url": u} for i, u in enumerate(base_urls)]
 
     return mock.patch(
-        "robotsix_chat.component_access.roster.fetch_roster", _fake_fetch_roster
+        "robotsix_chat.component.access.roster.fetch_roster", _fake_fetch_roster
     )
 
 

@@ -1,6 +1,6 @@
 """Tests for the summary → memory-component push pipeline.
 
-Covers the :class:`~robotsix_chat.memory_push.MemoryPush` client payload
+Covers the :class:`~robotsix_chat.memory.push.MemoryPush` client payload
 contract (stable per-session ``document_id`` + ``update_mode="replace"`` —
 the dedup story), the scheduler pushing after a compaction, the
 close-of-conversation ``finalize_session`` path, and the strict
@@ -18,9 +18,8 @@ import respx
 
 from robotsix_chat.chat.conversation import OPERATOR_OWNER, ConversationStore
 from robotsix_chat.evergoing import EvergoingSummaryScheduler
-from robotsix_chat.memory_push import MemoryPush, session_document_id
-
-from .test_scheduler import _CountingAgent, _store_with_session
+from robotsix_chat.memory.push import MemoryPush, session_document_id
+from tests.evergoing.test_scheduler import _CountingAgent, _store_with_session
 
 MEMORY_URL = "http://memory:8080"
 
