@@ -1607,13 +1607,15 @@ def test_coerce_json_object_decodes_string() -> None:
 def test_coerce_json_object_rejects_garbage() -> None:
     obj, err = _coerce_json_object("{not json", "json_body")
     assert obj is None
-    assert err is not None and "json_body" in err
+    assert err is not None
+    assert "json_body" in err
 
 
 def test_coerce_json_object_rejects_non_object() -> None:
     obj, err = _coerce_json_object("[1, 2]", "params")
     assert obj is None
-    assert err is not None and "got list" in err
+    assert err is not None
+    assert "got list" in err
 
 
 # ---------------------------------------------------------------------------

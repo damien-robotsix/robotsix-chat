@@ -77,7 +77,8 @@ class TestSummarizeSkill:
         """Apply the summary budget to frontmatter descriptions too."""
         body = "---\nname: x\ndescription: " + "y" * 999 + "\n---\nbody\n"
         _, summary = summarize_skill(body, max_chars=50)
-        assert len(summary) == 50 and summary.endswith("…")
+        assert len(summary) == 50
+        assert summary.endswith("…")
 
     def test_unterminated_frontmatter_is_prose(self) -> None:
         """A lone leading --- is a horizontal rule, not frontmatter."""

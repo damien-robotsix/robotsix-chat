@@ -1783,7 +1783,8 @@ def test_put_config_hot_reloads_periodic_presets(tmp_path: Path) -> None:
 
     # Firing the preset uses the new definition.
     asyncio.run(scheduler.fire("nightly"))  # type: ignore[attr-defined]
-    assert submitted and "NEW prompt" in submitted[-1][1]
+    assert submitted
+    assert "NEW prompt" in submitted[-1][1]
 
 
 def test_put_config_without_periodic_change_does_not_reload(tmp_path: Path) -> None:

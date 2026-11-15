@@ -2470,5 +2470,5 @@ async def test_max_concurrent_runs_allows_that_many_in_flight() -> None:
 
 def test_max_concurrent_runs_default_and_floor() -> None:
     assert _settings().max_concurrent_runs == 2
-    with pytest.raises(ValueError):
+    with pytest.raises(ValueError, match="greater than or equal to 1"):
         _settings(max_concurrent_runs=0)

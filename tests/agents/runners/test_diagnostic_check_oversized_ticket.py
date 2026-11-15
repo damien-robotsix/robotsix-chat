@@ -251,13 +251,13 @@ def _reset_state() -> Iterator[None]:
     _FAKE_CHECK_REGISTRY.clear()
 
 
-@pytest.fixture()
-def _check() -> OversizedTicketCheck:
+@pytest.fixture
+def check() -> OversizedTicketCheck:
     return OversizedTicketCheck()
 
 
-@pytest.fixture()
-def _settings(tmp_path: Path) -> _FakeSettings:
+@pytest.fixture
+def settings(tmp_path: Path) -> _FakeSettings:
     return _FakeSettings(tmp_path)
 
 
@@ -290,17 +290,17 @@ class TestNoOversizedTickets:
     """When no tickets are oversized, the check should report ok=True."""
 
     def test_empty_board(
-        self, _check: OversizedTicketCheck, _settings: _FakeSettings
+        self, check: OversizedTicketCheck, settings: _FakeSettings
     ) -> None:
         """Empty board yields ok result with no drafts."""
-        ctx = _make_ctx(_settings)
-        result = _check.run(ctx)
+        ctx = _make_ctx(settings)
+        result = check.run(ctx)
         assert result.ok is True
         assert result.name == "oversized_ticket"
         assert "none with implement_cycles" in result.summary
 
     def test_below_threshold(
-        self, _check: OversizedTicketCheck, _settings: _FakeSettings
+        self, check: OversizedTicketCheck, settings: _FakeSettings
     ) -> None:
         """Tickets below the threshold should not be flagged."""
         _CREATED_TICKETS.append(
@@ -312,14 +312,14 @@ class TestNoOversizedTickets:
                 implement_cycles=1,
             )
         )
-        ctx = _make_ctx(_settings)
-        result = _check.run(ctx)
+        ctx = _make_ctx(settings)
+        result = check.run(ctx)
         assert result.ok is True
         assert len(result.drafts_created) == 0
         assert _EPIC_PROMOTIONS == []
 
     def test_threshold_zero_disables(
-        self, _check: OversizedTicketCheck, tmp_path: Path
+        self, check: OversizedTicketCheck, tmp_path: Path
     ) -> None:
         """Threshold of zero disables the check entirely."""
         settings = _FakeSettings(tmp_path, diagnostic_oversized_ticket_threshold=0)
@@ -333,7 +333,7 @@ class TestNoOversizedTickets:
             )
         )
         ctx = _make_ctx(settings)
-        result = _check.run(ctx)
+        result = check.run(ctx)
         assert result.ok is True
         assert "disabled" in result.summary
 
@@ -347,7 +347,7 @@ class TestPromotionBehavior:
     """Verify tickets at/above threshold get promoted to EPIC."""
 
     def test_oversized_ticket_promoted(
-        self, _check: OversizedTicketCheck, _settings: _FakeSettings
+        self, check: OversizedTicketCheck, settings: _FakeSettings
     ) -> None:
         """Ticket at or above threshold gets promoted and commented on."""
         _CREATED_TICKETS.append(
@@ -359,8 +359,8 @@ class TestPromotionBehavior:
                 implement_cycles=3,
             )
         )
-        ctx = _make_ctx(_settings)
-        result = _check.run(ctx)
+        ctx = _make_ctx(settings)
+        result = check.run(ctx)
 
         assert result.ok is True
         assert len(result.drafts_created) == 1
@@ -376,7 +376,7 @@ class TestPromotionBehavior:
         assert "Implement cycles" in _ADDED_COMMENTS[0]["body"]
 
     def test_at_exact_threshold(
-        self, _check: OversizedTicketCheck, _settings: _FakeSettings
+        self, check: OversizedTicketCheck, settings: _FakeSettings
     ) -> None:
         """Ticket at exactly the default threshold (2) should be promoted."""
         _CREATED_TICKETS.append(
@@ -388,14 +388,14 @@ class TestPromotionBehavior:
                 implement_cycles=2,
             )
         )
-        ctx = _make_ctx(_settings)
-        result = _check.run(ctx)
+        ctx = _make_ctx(settings)
+        result = check.run(ctx)
         assert result.ok is True
         assert len(result.drafts_created) == 1
         assert "T-1" in _EPIC_PROMOTIONS
 
     def test_custom_threshold(
-        self, _check: OversizedTicketCheck, tmp_path: Path
+        self, check: OversizedTicketCheck, tmp_path: Path
     ) -> None:
         """Custom threshold from settings is respected."""
         settings = _FakeSettings(tmp_path, diagnostic_oversized_ticket_threshold=5)
@@ -409,7 +409,7 @@ class TestPromotionBehavior:
             )
         )
         ctx = _make_ctx(settings)
-        result = _check.run(ctx)
+        result = check.run(ctx)
         # 3 < 5, so should NOT be promoted.
         assert result.ok is True
         assert len(result.drafts_created) == 0
@@ -425,7 +425,7 @@ class TestSkipConditions:
     """Verify tickets are skipped when they should be."""
 
     def test_already_epic_skipped(
-        self, _check: OversizedTicketCheck, _settings: _FakeSettings
+        self, check: OversizedTicketCheck, settings: _FakeSettings
     ) -> None:
         """Tickets already promoted to EPIC are skipped."""
         _CREATED_TICKETS.append(
@@ -437,14 +437,14 @@ class TestSkipConditions:
                 implement_cycles=5,
             )
         )
-        ctx = _make_ctx(_settings)
-        result = _check.run(ctx)
+        ctx = _make_ctx(settings)
+        result = check.run(ctx)
         assert result.ok is True
         assert len(result.drafts_created) == 0
         assert _EPIC_PROMOTIONS == []
 
     def test_has_children_skipped(
-        self, _check: OversizedTicketCheck, _settings: _FakeSettings
+        self, check: OversizedTicketCheck, settings: _FakeSettings
     ) -> None:
         """Tickets with existing children are skipped."""
         _CREATED_TICKETS.append(
@@ -465,14 +465,14 @@ class TestSkipConditions:
                 parent_id="T-1",
             )
         )
-        ctx = _make_ctx(_settings)
-        result = _check.run(ctx)
+        ctx = _make_ctx(settings)
+        result = check.run(ctx)
         assert result.ok is True
         assert len(result.drafts_created) == 0
         assert _EPIC_PROMOTIONS == []
 
     def test_has_parent_skipped(
-        self, _check: OversizedTicketCheck, _settings: _FakeSettings
+        self, check: OversizedTicketCheck, settings: _FakeSettings
     ) -> None:
         """Ticket already under a parent should not be re-promoted."""
         _CREATED_TICKETS.append(
@@ -485,13 +485,13 @@ class TestSkipConditions:
                 parent_id="T-0",
             )
         )
-        ctx = _make_ctx(_settings)
-        result = _check.run(ctx)
+        ctx = _make_ctx(settings)
+        result = check.run(ctx)
         assert result.ok is True
         assert len(result.drafts_created) == 0
 
     def test_done_ticket_skipped(
-        self, _check: OversizedTicketCheck, _settings: _FakeSettings
+        self, check: OversizedTicketCheck, settings: _FakeSettings
     ) -> None:
         """Done tickets are excluded from detection."""
         _CREATED_TICKETS.append(
@@ -503,13 +503,13 @@ class TestSkipConditions:
                 implement_cycles=5,
             )
         )
-        ctx = _make_ctx(_settings)
-        result = _check.run(ctx)
+        ctx = _make_ctx(settings)
+        result = check.run(ctx)
         assert result.ok is True
         assert len(result.drafts_created) == 0
 
     def test_closed_ticket_skipped(
-        self, _check: OversizedTicketCheck, _settings: _FakeSettings
+        self, check: OversizedTicketCheck, settings: _FakeSettings
     ) -> None:
         """Closed tickets are excluded from detection."""
         _CREATED_TICKETS.append(
@@ -521,13 +521,13 @@ class TestSkipConditions:
                 implement_cycles=5,
             )
         )
-        ctx = _make_ctx(_settings)
-        result = _check.run(ctx)
+        ctx = _make_ctx(settings)
+        result = check.run(ctx)
         assert result.ok is True
         assert len(result.drafts_created) == 0
 
     def test_existing_diagnostic_epic_skipped(
-        self, _check: OversizedTicketCheck, _settings: _FakeSettings
+        self, check: OversizedTicketCheck, settings: _FakeSettings
     ) -> None:
         """If a diagnostic EPIC already exists for this ticket, skip."""
         _CREATED_TICKETS.append(
@@ -548,8 +548,8 @@ class TestSkipConditions:
                 kind="epic",
             )
         )
-        ctx = _make_ctx(_settings)
-        result = _check.run(ctx)
+        ctx = _make_ctx(settings)
+        result = check.run(ctx)
         assert result.ok is True
         assert len(result.drafts_created) == 0
         assert _EPIC_PROMOTIONS == []
@@ -564,7 +564,7 @@ class TestMultipleTickets:
     """Verify batch behavior with multiple oversized tickets."""
 
     def test_multiple_oversized_tickets(
-        self, _check: OversizedTicketCheck, _settings: _FakeSettings
+        self, check: OversizedTicketCheck, settings: _FakeSettings
     ) -> None:
         """Multiple oversized tickets are all promoted."""
         _CREATED_TICKETS.append(
@@ -594,17 +594,17 @@ class TestMultipleTickets:
                 implement_cycles=1,
             )
         )
-        ctx = _make_ctx(_settings)
-        result = _check.run(ctx)
+        ctx = _make_ctx(settings)
+        result = check.run(ctx)
 
         assert result.ok is True
         assert len(result.drafts_created) == 2
-        assert set(t["id"] for t in result.drafts_created) == {"T-1", "T-2"}
+        assert {t["id"] for t in result.drafts_created} == {"T-1", "T-2"}
         assert set(_EPIC_PROMOTIONS) == {"T-1", "T-2"}
         assert len(_ADDED_COMMENTS) == 2
 
     def test_mixed_states(
-        self, _check: OversizedTicketCheck, _settings: _FakeSettings
+        self, check: OversizedTicketCheck, settings: _FakeSettings
     ) -> None:
         """Only active non-terminal tickets should be considered."""
         _CREATED_TICKETS.append(
@@ -634,8 +634,8 @@ class TestMultipleTickets:
                 implement_cycles=5,
             )
         )
-        ctx = _make_ctx(_settings)
-        result = _check.run(ctx)
+        ctx = _make_ctx(settings)
+        result = check.run(ctx)
         assert result.ok is True
         assert len(result.drafts_created) == 1
         assert result.drafts_created[0]["id"] == "T-1"
@@ -650,7 +650,7 @@ class TestErrorHandling:
     """Verify graceful handling of errors during promotion."""
 
     def test_promote_failure_does_not_crash(
-        self, _check: OversizedTicketCheck, _settings: _FakeSettings
+        self, check: OversizedTicketCheck, settings: _FakeSettings
     ) -> None:
         """A promote_to_epic failure should be logged but not crash the check."""
         _CREATED_TICKETS.append(
@@ -670,8 +670,8 @@ class TestErrorHandling:
 
         _FakeTicketService.promote_to_epic = failing_promote  # type: ignore[assignment]
         try:
-            ctx = _make_ctx(_settings)
-            result = _check.run(ctx)
+            ctx = _make_ctx(settings)
+            result = check.run(ctx)
             # The check should still report ok (it catches per-ticket errors).
             assert result.ok is True
             assert len(result.drafts_created) == 0

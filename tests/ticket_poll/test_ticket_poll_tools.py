@@ -2110,7 +2110,8 @@ async def test_mark_ticket_ready_waits_out_classifying_then_retries(
     tools = build_mark_ticket_ready_tool(_settings(), component_request=_req)
     result = await tools[0]("mr-classifying", justification="operator asked")
 
-    assert "HTTP 200" in result and "ready" in result
+    assert "HTTP 200" in result
+    assert "ready" in result
     assert [m for m, _ in calls] == ["POST", "GET", "GET", "GET", "POST"]
     assert all(p == "/tickets/mr-classifying" for m, p in calls if m == "GET")
 

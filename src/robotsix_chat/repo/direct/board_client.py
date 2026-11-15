@@ -215,7 +215,7 @@ class BoardClient:
             return {}
 
         if not self._board_url:
-            return {cid: None for cid in candidate_ids}
+            return dict.fromkeys(candidate_ids)
 
         url = f"{self._board_url}/tickets"
         headers: dict[str, str] = {"Accept": "application/json"}
@@ -235,7 +235,7 @@ class BoardClient:
                 "BoardClient: failed to fetch ticket list for ID resolution: %s",
                 exc,
             )
-            return {cid: None for cid in candidate_ids}
+            return dict.fromkeys(candidate_ids)
 
         # Extract ticket IDs from the response.
         if isinstance(tickets_data, list):
@@ -247,13 +247,13 @@ class BoardClient:
                     "BoardClient: unexpected GET /tickets response "
                     "format — expected list or {tickets: [...]}"
                 )
-                return {cid: None for cid in candidate_ids}
+                return dict.fromkeys(candidate_ids)
         else:
             logger.warning(
                 "BoardClient: unexpected GET /tickets response type %s",
                 type(tickets_data).__name__,
             )
-            return {cid: None for cid in candidate_ids}
+            return dict.fromkeys(candidate_ids)
 
         all_ids: list[str] = [
             t["ticket_id"]

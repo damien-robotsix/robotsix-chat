@@ -389,7 +389,7 @@ class TestRunMdformatOnChangedMdFiles:
             _run_mdformat_on_changed_md_files(tmp_path)
             mdformat_call = mock_run.call_args_list[1]
             md_files = mdformat_call[0][0][3:]  # skip uv, run, mdformat
-            # md_files = ["--number", "--wrap", "100", "README.md", "AGENT.md"]
+            # expected: --number --wrap 100 README.md AGENT.md
             assert "README.md" in md_files
             assert "AGENT.md" in md_files
 
@@ -627,7 +627,7 @@ class TestDocumentStageRun:
         assert "failed to compute diff" in outcome.note
 
     # ------------------------------------------------------------------
-    # Classifier: internal-only
+    # Classifier — internal-only
     # ------------------------------------------------------------------
 
     def test_classifier_internal_only_returns_deliverable(self, tmp_path: Path) -> None:

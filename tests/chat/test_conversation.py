@@ -1201,8 +1201,10 @@ def test_agent_history_actions_aligned_with_compacted_view() -> None:
     history = store.agent_history(sid)
     actions = store.agent_history_actions(sid)
     assert len(history) == len(actions) == 2
-    assert history[0][0] == "" and actions[0] == []
-    assert history[1] == ("q3", "a3") and actions[1] == ["three()"]
+    assert history[0][0] == ""
+    assert actions[0] == []
+    assert history[1] == ("q3", "a3")
+    assert actions[1] == ["three()"]
     assert store.agent_history_actions("unknown") == []
 
 
