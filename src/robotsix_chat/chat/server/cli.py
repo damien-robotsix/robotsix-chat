@@ -141,7 +141,13 @@ def _setup_observability() -> None:
         return
 
     setup_logging()
-    setup_langfuse_tracing()
+    # setup_langfuse_tracing imports the OTLP exporter lazily — only once
+    # credentials are present — so a missing ``tracing`` extra surfaces here
+    # as a call-time ImportError, not at module import. Guard it the same way.
+    try:
+        setup_langfuse_tracing()
+    except ImportError:
+        logger.debug("robotsix-llmio tracing extras not installed — skipping")
 
 
 def _export_langfuse_env(settings: Settings) -> None:
