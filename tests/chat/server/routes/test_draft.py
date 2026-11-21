@@ -10,34 +10,11 @@ from pathlib import Path
 
 from starlette.testclient import TestClient
 
-from robotsix_chat.chat.server.app import create_app
-
-# ---------------------------------------------------------------------------
-# Dummy agent for TestClient
-# ---------------------------------------------------------------------------
-
-
-class _DummyAgent:
-    """Minimal agent stub."""
-
-    async def stream(self, message: str, **kwargs: object):
-        yield "ok"
-        return
-
+from tests.conftest import ClientFactory
 
 # ---------------------------------------------------------------------------
 # Helpers
 # ---------------------------------------------------------------------------
-
-
-def _make_app(draft_dir: Path) -> TestClient:
-    """Build a Starlette TestClient with *draft_dir* wired."""
-    app = create_app(
-        _DummyAgent(),
-        draft_store_dir=str(draft_dir),
-        serve_ui=False,
-    )
-    return TestClient(app, raise_server_exceptions=False)
 
 
 def _put_draft(
@@ -72,16 +49,20 @@ def _get_draft(client: TestClient, session_id: str) -> dict:
 # ---------------------------------------------------------------------------
 
 
-def test_get_draft_nonexistent(tmp_path: Path) -> None:
+def test_get_draft_nonexistent(tmp_path: Path, client_factory: ClientFactory) -> None:
     """GET draft when none was saved returns empty object."""
-    client = _make_app(tmp_path / "drafts_dir")
+    client = client_factory(
+        draft_store_dir=str(tmp_path / "drafts_dir"), serve_ui=False
+    )
     draft = _get_draft(client, "s1")
     assert draft == {}
 
 
-def test_put_and_get_draft(tmp_path: Path) -> None:
+def test_put_and_get_draft(tmp_path: Path, client_factory: ClientFactory) -> None:
     """PUT a draft and GET it back."""
-    client = _make_app(tmp_path / "drafts_dir")
+    client = client_factory(
+        draft_store_dir=str(tmp_path / "drafts_dir"), serve_ui=False
+    )
 
     queue = [{"text": "hello", "images": [], "messageId": "abc"}]
     pending = [{"media_type": "image/png", "data": "aaaa", "filename": "x.png"}]
@@ -93,9 +74,13 @@ def test_put_and_get_draft(tmp_path: Path) -> None:
     assert draft["pending_images"] == pending
 
 
-def test_put_overwrites_existing_draft(tmp_path: Path) -> None:
+def test_put_overwrites_existing_draft(
+    tmp_path: Path, client_factory: ClientFactory
+) -> None:
     """PUT replaces an existing draft for the same session."""
-    client = _make_app(tmp_path / "drafts_dir")
+    client = client_factory(
+        draft_store_dir=str(tmp_path / "drafts_dir"), serve_ui=False
+    )
 
     _put_draft(client, "s1", queue=[{"text": "first", "images": [], "messageId": "1"}])
     _put_draft(client, "s1", queue=[{"text": "second", "images": [], "messageId": "2"}])
@@ -105,9 +90,13 @@ def test_put_overwrites_existing_draft(tmp_path: Path) -> None:
     assert draft["queue"][0]["text"] == "second"
 
 
-def test_drafts_isolated_per_session(tmp_path: Path) -> None:
+def test_drafts_isolated_per_session(
+    tmp_path: Path, client_factory: ClientFactory
+) -> None:
     """Drafts for different sessions do not interfere."""
-    client = _make_app(tmp_path / "drafts_dir")
+    client = client_factory(
+        draft_store_dir=str(tmp_path / "drafts_dir"), serve_ui=False
+    )
 
     _put_draft(client, "s1", queue=[{"text": "one", "images": [], "messageId": "1"}])
     _put_draft(client, "s2", queue=[{"text": "two", "images": [], "messageId": "2"}])
@@ -119,9 +108,11 @@ def test_drafts_isolated_per_session(tmp_path: Path) -> None:
     assert d2["queue"][0]["text"] == "two"
 
 
-def test_put_empty_body_is_ok(tmp_path: Path) -> None:
+def test_put_empty_body_is_ok(tmp_path: Path, client_factory: ClientFactory) -> None:
     """PUT with an empty body clears the draft for that session."""
-    client = _make_app(tmp_path / "drafts_dir")
+    client = client_factory(
+        draft_store_dir=str(tmp_path / "drafts_dir"), serve_ui=False
+    )
 
     _put_draft(client, "s1", queue=[{"text": "hi", "images": [], "messageId": "x"}])
     _put_draft(client, "s1", queue=[], pending_images=[])
@@ -130,9 +121,13 @@ def test_put_empty_body_is_ok(tmp_path: Path) -> None:
     assert draft == {"queue": [], "pending_images": []}
 
 
-def test_put_ignores_unknown_keys(tmp_path: Path) -> None:
+def test_put_ignores_unknown_keys(
+    tmp_path: Path, client_factory: ClientFactory
+) -> None:
     """Unknown top-level keys are not stored."""
-    client = _make_app(tmp_path / "drafts_dir")
+    client = client_factory(
+        draft_store_dir=str(tmp_path / "drafts_dir"), serve_ui=False
+    )
 
     resp = client.put(
         "/sessions/s1/draft",
@@ -145,10 +140,12 @@ def test_put_ignores_unknown_keys(tmp_path: Path) -> None:
     assert draft["queue"][0]["text"] == "hi"
 
 
-def test_corrupt_draft_file_is_renamed(tmp_path: Path) -> None:
+def test_corrupt_draft_file_is_renamed(
+    tmp_path: Path, client_factory: ClientFactory
+) -> None:
     """A corrupt draft file is renamed and an empty draft is returned."""
     draft_dir = tmp_path / "drafts_dir"
-    client = _make_app(draft_dir)
+    client = client_factory(draft_store_dir=str(draft_dir), serve_ui=False)
 
     # Create the directory and a corrupt file for session "bad".
     draft_dir.mkdir(parents=True, exist_ok=True)
@@ -165,10 +162,12 @@ def test_corrupt_draft_file_is_renamed(tmp_path: Path) -> None:
     assert "this is not json" in corrupt_files[0].read_text()
 
 
-def test_corrupt_draft_does_not_affect_other_sessions(tmp_path: Path) -> None:
+def test_corrupt_draft_does_not_affect_other_sessions(
+    tmp_path: Path, client_factory: ClientFactory
+) -> None:
     """A corrupt file for one session does not affect another session's draft."""
     draft_dir = tmp_path / "drafts_dir"
-    client = _make_app(draft_dir)
+    client = client_factory(draft_store_dir=str(draft_dir), serve_ui=False)
 
     # Save a valid draft for session "good".
     _put_draft(client, "good", queue=[{"text": "ok", "images": [], "messageId": "g"}])
@@ -187,10 +186,12 @@ def test_corrupt_draft_does_not_affect_other_sessions(tmp_path: Path) -> None:
     assert draft_good["queue"][0]["text"] == "ok"
 
 
-def test_concurrent_puts_different_sessions_no_race(tmp_path: Path) -> None:
+def test_concurrent_puts_different_sessions_no_race(
+    tmp_path: Path, client_factory: ClientFactory
+) -> None:
     """PUTs for different sessions write to different files — no race."""
     draft_dir = tmp_path / "drafts_dir"
-    client = _make_app(draft_dir)
+    client = client_factory(draft_store_dir=str(draft_dir), serve_ui=False)
 
     # Simulate concurrent PUTs by writing both without any interleaving concern.
     _put_draft(client, "a", queue=[{"text": "aaa", "images": [], "messageId": "a1"}])
@@ -201,10 +202,12 @@ def test_concurrent_puts_different_sessions_no_race(tmp_path: Path) -> None:
     assert _get_draft(client, "b")["queue"][0]["text"] == "bbb"
 
 
-def test_draft_dir_created_on_first_write(tmp_path: Path) -> None:
+def test_draft_dir_created_on_first_write(
+    tmp_path: Path, client_factory: ClientFactory
+) -> None:
     """The drafts directory is created automatically on first PUT."""
     draft_dir = tmp_path / "nonexistent" / "drafts"
-    client = _make_app(draft_dir)
+    client = client_factory(draft_store_dir=str(draft_dir), serve_ui=False)
 
     _put_draft(client, "s1", queue=[{"text": "hi", "images": [], "messageId": "x"}])
     assert draft_dir.is_dir()
