@@ -14,45 +14,53 @@ from fastapi import FastAPI
 from robotsix_http.fastapi import (
     assert_chat_skill_route_parity,
 )
-from starlette.testclient import TestClient
 
-from robotsix_chat.chat.server.app import create_app
-
-
-class _DummyAgent:
-    """Minimal agent stub — ``stream`` is the only method the app calls."""
-
-    async def stream(self, message: str, **kwargs: object):
-        yield "ok"
-        return
+from tests.conftest import ClientFactory
 
 
-def _make_client(tmp_path: Path) -> TestClient:
+def _write_empty_config(tmp_path: Path) -> Path:
+    """Write an empty committed-config template and return its path."""
     config_path = tmp_path / "config.json"
     config_path.write_text(json.dumps({}))
-    app = create_app(_DummyAgent(), config_path=str(config_path), serve_ui=False)
-    return TestClient(app, raise_server_exceptions=False)
+    return config_path
 
 
-def test_chat_skill_returns_markdown(tmp_path: Path) -> None:
-    resp = _make_client(tmp_path).get("/chat-skill")
+def test_chat_skill_returns_markdown(
+    tmp_path: Path, client_factory: ClientFactory
+) -> None:
+    config_path = _write_empty_config(tmp_path)
+    resp = client_factory(config_path=str(config_path), serve_ui=False).get(
+        "/chat-skill"
+    )
     assert resp.status_code == 200
     assert resp.headers["content-type"].startswith("text/markdown")
     assert resp.text.strip()
 
 
-def test_chat_skill_has_frontmatter(tmp_path: Path) -> None:
+def test_chat_skill_has_frontmatter(
+    tmp_path: Path, client_factory: ClientFactory
+) -> None:
     """The roster and the consuming agent both key off the frontmatter."""
-    body = _make_client(tmp_path).get("/chat-skill").text
+    body = (
+        client_factory(config_path=str(_write_empty_config(tmp_path)), serve_ui=False)
+        .get("/chat-skill")
+        .text
+    )
     assert body.startswith("---\n")
     head = body.split("---", 2)[1]
     assert "name: robotsix-chat" in head
     assert "description:" in head
 
 
-def test_chat_skill_documents_the_config_endpoints(tmp_path: Path) -> None:
+def test_chat_skill_documents_the_config_endpoints(
+    tmp_path: Path, client_factory: ClientFactory
+) -> None:
     """An endpoint missing from the skill is one the agent will not call."""
-    body = _make_client(tmp_path).get("/chat-skill").text
+    body = (
+        client_factory(config_path=str(_write_empty_config(tmp_path)), serve_ui=False)
+        .get("/chat-skill")
+        .text
+    )
     for route in (
         "GET /config",
         "PUT /config",
@@ -62,9 +70,15 @@ def test_chat_skill_documents_the_config_endpoints(tmp_path: Path) -> None:
         assert route in body, f"{route} missing from the skill document"
 
 
-def test_chat_skill_steers_away_from_the_deploy_plane(tmp_path: Path) -> None:
+def test_chat_skill_steers_away_from_the_deploy_plane(
+    tmp_path: Path, client_factory: ClientFactory
+) -> None:
     """Writes must not go through the deploy plane's template-derived path."""
-    body = _make_client(tmp_path).get("/chat-skill").text
+    body = (
+        client_factory(config_path=str(_write_empty_config(tmp_path)), serve_ui=False)
+        .get("/chat-skill")
+        .text
+    )
     assert "/chat/config/{name}" in body
 
 

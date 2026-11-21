@@ -12,7 +12,6 @@ from pathlib import Path
 
 from starlette.testclient import TestClient
 
-from robotsix_chat.chat.server.app import create_app
 from robotsix_chat.chat.server.routes.config import (
     _deep_merge,
     _mask_secrets,
@@ -20,36 +19,7 @@ from robotsix_chat.chat.server.routes.config import (
     _read_config_json,
     _write_config_json,
 )
-
-# ---------------------------------------------------------------------------
-# Dummy agent for TestClient
-# ---------------------------------------------------------------------------
-
-
-class _DummyAgent:
-    """Minimal agent stub — only ``stream`` is called by the chat endpoint."""
-
-    async def stream(self, message: str, **kwargs: object):
-        yield "ok"
-        return
-
-    # stream() is the only method called; cancel, tool_calls, etc. are
-    # optional.
-
-
-# ---------------------------------------------------------------------------
-# Helpers
-# ---------------------------------------------------------------------------
-
-
-def _make_app(config_path: Path) -> TestClient:
-    """Build a Starlette TestClient with a *config_path* wired."""
-    app = create_app(
-        _DummyAgent(),
-        config_path=str(config_path),
-        serve_ui=False,
-    )
-    return TestClient(app, raise_server_exceptions=False)
+from tests.conftest import ClientFactory
 
 
 def _write_config(path: Path, data: dict) -> None:
@@ -336,7 +306,9 @@ def _assert_version_header(data: dict, expected_version: int) -> None:
 # ---------------------------------------------------------------------------
 
 
-def test_get_config_returns_masked_data(tmp_path: Path) -> None:
+def test_get_config_returns_masked_data(
+    tmp_path: Path, client_factory: ClientFactory
+) -> None:
     """GET /config returns config with secrets masked, plus version and schema."""
     config_path = tmp_path / "config.json"
     _write_config(
@@ -354,7 +326,7 @@ def test_get_config_returns_masked_data(tmp_path: Path) -> None:
             },
         },
     )
-    client = _make_app(config_path)
+    client = client_factory(config_path=str(config_path), serve_ui=False)
     resp = client.get("/config")
     assert resp.status_code == 200
     data = resp.json()
@@ -370,10 +342,10 @@ def test_get_config_returns_masked_data(tmp_path: Path) -> None:
     )
 
 
-def test_get_config_missing_file(tmp_path: Path) -> None:
+def test_get_config_missing_file(tmp_path: Path, client_factory: ClientFactory) -> None:
     """GET /config returns version 1 and empty config when no config file exists."""
     config_path = tmp_path / "nonexistent.json"
-    client = _make_app(config_path)
+    client = client_factory(config_path=str(config_path), serve_ui=False)
     resp = client.get("/config")
     assert resp.status_code == 200
     data = resp.json()
@@ -382,11 +354,13 @@ def test_get_config_missing_file(tmp_path: Path) -> None:
     assert isinstance(data["config"], dict)
 
 
-def test_get_config_includes_schema(tmp_path: Path) -> None:
+def test_get_config_includes_schema(
+    tmp_path: Path, client_factory: ClientFactory
+) -> None:
     """GET /config includes a valid JSON Schema at the ``schema`` key."""
     config_path = tmp_path / "config.json"
     _write_config(config_path, {"chat_default_model_level": 2})
-    client = _make_app(config_path)
+    client = client_factory(config_path=str(config_path), serve_ui=False)
     resp = client.get("/config")
     assert resp.status_code == 200
     data = resp.json()
@@ -401,14 +375,16 @@ def test_get_config_includes_schema(tmp_path: Path) -> None:
 # ---------------------------------------------------------------------------
 
 
-def test_get_config_includes_periodic_when_absent(tmp_path: Path) -> None:
+def test_get_config_includes_periodic_when_absent(
+    tmp_path: Path, client_factory: ClientFactory
+) -> None:
     """Absent ``periodic`` still appears in GET /config via schema defaults.
 
     The presets editor always has a section to render.
     """
     config_path = tmp_path / "config.json"
     _write_config(config_path, {"chat_default_model_level": 2, "server_port": 8080})
-    client = _make_app(config_path)
+    client = client_factory(config_path=str(config_path), serve_ui=False)
 
     resp = client.get("/config")
     assert resp.status_code == 200
@@ -420,7 +396,9 @@ def test_get_config_includes_periodic_when_absent(tmp_path: Path) -> None:
     assert periodic["ready_staleness_minutes"] == 10
 
 
-def test_get_config_overlay_preserves_file_values(tmp_path: Path) -> None:
+def test_get_config_overlay_preserves_file_values(
+    tmp_path: Path, client_factory: ClientFactory
+) -> None:
     """When the file sets a value, it takes precedence over the default."""
     config_path = tmp_path / "config.json"
     _write_config(
@@ -438,7 +416,7 @@ def test_get_config_overlay_preserves_file_values(tmp_path: Path) -> None:
             },
         },
     )
-    client = _make_app(config_path)
+    client = client_factory(config_path=str(config_path), serve_ui=False)
 
     resp = client.get("/config")
     assert resp.status_code == 200
@@ -470,11 +448,13 @@ def _config_with_secrets(config_path: Path) -> None:
     )
 
 
-def test_get_config_keys_only_lists_top_level(tmp_path: Path) -> None:
+def test_get_config_keys_only_lists_top_level(
+    tmp_path: Path, client_factory: ClientFactory
+) -> None:
     """keys_only=true returns the top-level key names with sizes and no schema."""
     config_path = tmp_path / "config.json"
     _config_with_secrets(config_path)
-    client = _make_app(config_path)
+    client = client_factory(config_path=str(config_path), serve_ui=False)
 
     resp = client.get("/config?keys_only=true")
     assert resp.status_code == 200
@@ -492,11 +472,13 @@ def test_get_config_keys_only_lists_top_level(tmp_path: Path) -> None:
         assert isinstance(entry["size"], int)
 
 
-def test_get_config_path_returns_subtree(tmp_path: Path) -> None:
+def test_get_config_path_returns_subtree(
+    tmp_path: Path, client_factory: ClientFactory
+) -> None:
     """path=<dotted> returns only that subtree, masked, with no schema."""
     config_path = tmp_path / "config.json"
     _config_with_secrets(config_path)
-    client = _make_app(config_path)
+    client = client_factory(config_path=str(config_path), serve_ui=False)
 
     resp = client.get("/config?path=periodic")
     assert resp.status_code == 200
@@ -508,11 +490,13 @@ def test_get_config_path_returns_subtree(tmp_path: Path) -> None:
     assert [p["name"] for p in sessions] == ["nightly"]
 
 
-def test_get_config_path_nested_array(tmp_path: Path) -> None:
+def test_get_config_path_nested_array(
+    tmp_path: Path, client_factory: ClientFactory
+) -> None:
     """path=periodic.sessions returns just that array, with no schema."""
     config_path = tmp_path / "config.json"
     _config_with_secrets(config_path)
-    client = _make_app(config_path)
+    client = client_factory(config_path=str(config_path), serve_ui=False)
 
     resp = client.get("/config?path=periodic.sessions")
     assert resp.status_code == 200
@@ -521,11 +505,13 @@ def test_get_config_path_nested_array(tmp_path: Path) -> None:
     assert [p["name"] for p in data["config"]] == ["nightly"]
 
 
-def test_get_config_path_agent_instruction(tmp_path: Path) -> None:
+def test_get_config_path_agent_instruction(
+    tmp_path: Path, client_factory: ClientFactory
+) -> None:
     """path=agent_instruction returns the scalar base prompt."""
     config_path = tmp_path / "config.json"
     _config_with_secrets(config_path)
-    client = _make_app(config_path)
+    client = client_factory(config_path=str(config_path), serve_ui=False)
 
     resp = client.get("/config?path=agent_instruction")
     assert resp.status_code == 200
@@ -534,22 +520,26 @@ def test_get_config_path_agent_instruction(tmp_path: Path) -> None:
     assert data["config"] == "You are helpful."
 
 
-def test_get_config_path_masks_secret(tmp_path: Path) -> None:
+def test_get_config_path_masks_secret(
+    tmp_path: Path, client_factory: ClientFactory
+) -> None:
     """Path into a secret leaf still masks the value."""
     config_path = tmp_path / "config.json"
     _config_with_secrets(config_path)
-    client = _make_app(config_path)
+    client = client_factory(config_path=str(config_path), serve_ui=False)
 
     resp = client.get("/config?path=openrouter_api_key")
     assert resp.status_code == 200
     assert resp.json()["config"] == "**********"
 
 
-def test_get_config_path_missing_returns_404(tmp_path: Path) -> None:
+def test_get_config_path_missing_returns_404(
+    tmp_path: Path, client_factory: ClientFactory
+) -> None:
     """Path that does not exist returns 404 with a clear message."""
     config_path = tmp_path / "config.json"
     _config_with_secrets(config_path)
-    client = _make_app(config_path)
+    client = client_factory(config_path=str(config_path), serve_ui=False)
 
     resp = client.get("/config?path=nope.nope")
     assert resp.status_code == 404
@@ -558,11 +548,13 @@ def test_get_config_path_missing_returns_404(tmp_path: Path) -> None:
     assert "does not exist" in body["detail"]
 
 
-def test_get_config_include_schema_false_omits_schema(tmp_path: Path) -> None:
+def test_get_config_include_schema_false_omits_schema(
+    tmp_path: Path, client_factory: ClientFactory
+) -> None:
     """include_schema=false returns full masked config with no schema."""
     config_path = tmp_path / "config.json"
     _config_with_secrets(config_path)
-    client = _make_app(config_path)
+    client = client_factory(config_path=str(config_path), serve_ui=False)
 
     resp = client.get("/config?include_schema=false")
     assert resp.status_code == 200
@@ -573,33 +565,39 @@ def test_get_config_include_schema_false_omits_schema(tmp_path: Path) -> None:
     assert data["config"]["openrouter_api_key"] == "**********"
 
 
-def test_get_config_keys_only_and_path_conflict_returns_400(tmp_path: Path) -> None:
+def test_get_config_keys_only_and_path_conflict_returns_400(
+    tmp_path: Path, client_factory: ClientFactory
+) -> None:
     """Combining keys_only and path is a 400."""
     config_path = tmp_path / "config.json"
     _config_with_secrets(config_path)
-    client = _make_app(config_path)
+    client = client_factory(config_path=str(config_path), serve_ui=False)
 
     resp = client.get("/config?keys_only=true&path=periodic")
     assert resp.status_code == 400
     assert resp.json()["status"] == 400
 
 
-def test_get_config_malformed_bool_returns_400(tmp_path: Path) -> None:
+def test_get_config_malformed_bool_returns_400(
+    tmp_path: Path, client_factory: ClientFactory
+) -> None:
     """A non-boolean keys_only value is a 400."""
     config_path = tmp_path / "config.json"
     _config_with_secrets(config_path)
-    client = _make_app(config_path)
+    client = client_factory(config_path=str(config_path), serve_ui=False)
 
     resp = client.get("/config?keys_only=maybe")
     assert resp.status_code == 400
     assert resp.json()["status"] == 400
 
 
-def test_get_config_empty_path_returns_400(tmp_path: Path) -> None:
+def test_get_config_empty_path_returns_400(
+    tmp_path: Path, client_factory: ClientFactory
+) -> None:
     """An empty path value is a 400."""
     config_path = tmp_path / "config.json"
     _config_with_secrets(config_path)
-    client = _make_app(config_path)
+    client = client_factory(config_path=str(config_path), serve_ui=False)
 
     resp = client.get("/config?path=")
     assert resp.status_code == 400
@@ -611,7 +609,9 @@ def test_get_config_empty_path_returns_400(tmp_path: Path) -> None:
 # ---------------------------------------------------------------------------
 
 
-def test_get_config_drops_retired_autonomous_block(tmp_path: Path) -> None:
+def test_get_config_drops_retired_autonomous_block(
+    tmp_path: Path, client_factory: ClientFactory
+) -> None:
     """A file still carrying the retired ``autonomous`` block loads fine.
 
     The block is stripped rather than bricking validation (stored templates
@@ -625,7 +625,7 @@ def test_get_config_drops_retired_autonomous_block(tmp_path: Path) -> None:
             "autonomous": {"completion_marker": "---AUTONOMOUS COMPLETE---"},
         },
     )
-    client = _make_app(config_path)
+    client = client_factory(config_path=str(config_path), serve_ui=False)
 
     resp = client.get("/config")
     assert resp.status_code == 200
@@ -637,6 +637,7 @@ def test_get_config_drops_retired_autonomous_block(tmp_path: Path) -> None:
 
 def test_put_succeeds_when_file_has_retired_autonomous_block(
     tmp_path: Path,
+    client_factory: ClientFactory,
 ) -> None:
     """PUT /config succeeds despite a retired on-disk ``autonomous`` block.
 
@@ -650,7 +651,7 @@ def test_put_succeeds_when_file_has_retired_autonomous_block(
             "autonomous": {"sessions": [{"name": "default"}]},
         },
     )
-    client = _make_app(config_path)
+    client = client_factory(config_path=str(config_path), serve_ui=False)
 
     resp = client.put("/config", json={"idle_timeout_minutes": 45})
     assert resp.status_code == 200, resp.text
@@ -664,7 +665,9 @@ def test_put_succeeds_when_file_has_retired_autonomous_block(
 # ---------------------------------------------------------------------------
 
 
-def test_put_preserves_unmentioned_keys(tmp_path: Path) -> None:
+def test_put_preserves_unmentioned_keys(
+    tmp_path: Path, client_factory: ClientFactory
+) -> None:
     """Keys absent from the PUT body are preserved from on-disk config."""
     config_path = tmp_path / "config.json"
     _write_config(
@@ -677,7 +680,7 @@ def test_put_preserves_unmentioned_keys(tmp_path: Path) -> None:
             },
         },
     )
-    client = _make_app(config_path)
+    client = client_factory(config_path=str(config_path), serve_ui=False)
 
     # Submit only server_port — memory.embedding.endpoint must be preserved.
     resp = client.put("/config", json={"server_port": 9000})
@@ -693,7 +696,9 @@ def test_put_preserves_unmentioned_keys(tmp_path: Path) -> None:
     assert on_disk["memory"]["embedding"]["endpoint"] == "http://box:11434/v1"
 
 
-def test_put_preserves_nested_object_keys(tmp_path: Path) -> None:
+def test_put_preserves_nested_object_keys(
+    tmp_path: Path, client_factory: ClientFactory
+) -> None:
     """Submitting a partial nested object preserves sibling keys."""
     config_path = tmp_path / "config.json"
     _write_config(
@@ -708,7 +713,7 @@ def test_put_preserves_nested_object_keys(tmp_path: Path) -> None:
             },
         },
     )
-    client = _make_app(config_path)
+    client = client_factory(config_path=str(config_path), serve_ui=False)
 
     # Submit only memory.enabled — everything else must be preserved.
     resp = client.put("/config", json={"memory": {"enabled": False}})
@@ -724,7 +729,9 @@ def test_put_preserves_nested_object_keys(tmp_path: Path) -> None:
     assert on_disk["memory"]["embedding"]["dimensions"] == 1024  # preserved
 
 
-def test_put_drops_repinned_default_agent_instruction(tmp_path: Path) -> None:
+def test_put_drops_repinned_default_agent_instruction(
+    tmp_path: Path, client_factory: ClientFactory
+) -> None:
     """A Save echoing the code-default ``agent_instruction`` is not persisted.
 
     The settings panel GETs the effective config (defaults merged in) and PUTs
@@ -735,7 +742,7 @@ def test_put_drops_repinned_default_agent_instruction(tmp_path: Path) -> None:
 
     config_path = tmp_path / "config.json"
     _write_config(config_path, {"chat_default_model_level": 2})
-    client = _make_app(config_path)
+    client = client_factory(config_path=str(config_path), serve_ui=False)
 
     default = Settings.model_fields["agent_instruction"].default
     resp = client.put(
@@ -749,11 +756,13 @@ def test_put_drops_repinned_default_agent_instruction(tmp_path: Path) -> None:
     assert on_disk["server_port"] == 9000  # unrelated change persisted
 
 
-def test_put_keeps_custom_agent_instruction(tmp_path: Path) -> None:
+def test_put_keeps_custom_agent_instruction(
+    tmp_path: Path, client_factory: ClientFactory
+) -> None:
     """A genuine ``agent_instruction`` override (≠ default) is still persisted."""
     config_path = tmp_path / "config.json"
     _write_config(config_path, {"chat_default_model_level": 2})
-    client = _make_app(config_path)
+    client = client_factory(config_path=str(config_path), serve_ui=False)
 
     custom = "You are a helpful assistant. Bespoke operator override."
     resp = client.put("/config", json={"agent_instruction": custom})
@@ -768,11 +777,13 @@ def test_put_keeps_custom_agent_instruction(tmp_path: Path) -> None:
 # ---------------------------------------------------------------------------
 
 
-def test_put_rejects_invalid_model_level(tmp_path: Path) -> None:
+def test_put_rejects_invalid_model_level(
+    tmp_path: Path, client_factory: ClientFactory
+) -> None:
     """An invalid model_level is rejected with 422 and does not persist."""
     config_path = tmp_path / "config.json"
     _write_config(config_path, {"chat_default_model_level": 2})
-    client = _make_app(config_path)
+    client = client_factory(config_path=str(config_path), serve_ui=False)
 
     resp = client.put("/config", json={"chat_default_model_level": 99})
     assert resp.status_code == 422
@@ -784,7 +795,9 @@ def test_put_rejects_invalid_model_level(tmp_path: Path) -> None:
     assert on_disk["chat_default_model_level"] == 2
 
 
-def test_put_model_level_preserves_tier_overrides(tmp_path: Path) -> None:
+def test_put_model_level_preserves_tier_overrides(
+    tmp_path: Path, client_factory: ClientFactory
+) -> None:
     """Changing only the model level via the panel keeps llmio_tier_overrides.
 
     Regression guard: the settings panel serialised the dict-typed
@@ -804,7 +817,7 @@ def test_put_model_level_preserves_tier_overrides(tmp_path: Path) -> None:
             "llmio_tier_overrides": stored_overrides,
         },
     )
-    client = _make_app(config_path)
+    client = client_factory(config_path=str(config_path), serve_ui=False)
 
     # Mimic the panel: it re-serialises the whole document and mangles the
     # object field into "[object Object]" while the operator only changed
@@ -824,7 +837,9 @@ def test_put_model_level_preserves_tier_overrides(tmp_path: Path) -> None:
     assert on_disk["llmio_tier_overrides"] == stored_overrides
 
 
-def test_put_accepts_llmio_tier_overrides_as_json_string(tmp_path: Path) -> None:
+def test_put_accepts_llmio_tier_overrides_as_json_string(
+    tmp_path: Path, client_factory: ClientFactory
+) -> None:
     """A JSON-text submission for llmio_tier_overrides is parsed and saved.
 
     The panel renders dict-typed fields as an editable JSON textarea whose
@@ -835,7 +850,7 @@ def test_put_accepts_llmio_tier_overrides_as_json_string(tmp_path: Path) -> None
 
     config_path = tmp_path / "config.json"
     _write_config(config_path, {"llmio_tier_overrides": {}})
-    client = _make_app(config_path)
+    client = client_factory(config_path=str(config_path), serve_ui=False)
 
     new_overrides = {"fallback": {"level2": FALLBACK_LEVEL3.model_dump()}}
     resp = client.put(
@@ -849,12 +864,14 @@ def test_put_accepts_llmio_tier_overrides_as_json_string(tmp_path: Path) -> None
     assert on_disk["llmio_tier_overrides"] == new_overrides
 
 
-def test_put_rejects_invalid_json_for_llmio_tier_overrides(tmp_path: Path) -> None:
+def test_put_rejects_invalid_json_for_llmio_tier_overrides(
+    tmp_path: Path, client_factory: ClientFactory
+) -> None:
     """Invalid JSON is rejected with clear feedback and never persisted."""
     config_path = tmp_path / "config.json"
     stored_overrides = {"fallback": {"level2": {"model": "openrouter/x"}}}
     _write_config(config_path, {"llmio_tier_overrides": stored_overrides})
-    client = _make_app(config_path)
+    client = client_factory(config_path=str(config_path), serve_ui=False)
 
     resp = client.put(
         "/config",
@@ -870,14 +887,16 @@ def test_put_rejects_invalid_json_for_llmio_tier_overrides(tmp_path: Path) -> No
     assert on_disk["llmio_tier_overrides"] == stored_overrides
 
 
-def test_put_llmio_tier_overrides_round_trip(tmp_path: Path) -> None:
+def test_put_llmio_tier_overrides_round_trip(
+    tmp_path: Path, client_factory: ClientFactory
+) -> None:
     """Load → edit → save round-trips an existing valid value correctly."""
     from robotsix_llmio.config import FALLBACK_LEVEL3
 
     config_path = tmp_path / "config.json"
     original = {"fallback": {"level2": FALLBACK_LEVEL3.model_dump()}}
     _write_config(config_path, {"llmio_tier_overrides": original})
-    client = _make_app(config_path)
+    client = client_factory(config_path=str(config_path), serve_ui=False)
 
     # GET returns the value as a dict (what the textarea is seeded from).
     get_resp = client.get("/config")
@@ -913,7 +932,9 @@ def test_strip_corrupt_object_sentinels_recurses() -> None:
     assert cleaned == {"b": 2, "nested": {"d": "keep"}}
 
 
-def test_put_reports_all_precondition_failures(tmp_path: Path) -> None:
+def test_put_reports_all_precondition_failures(
+    tmp_path: Path, client_factory: ClientFactory
+) -> None:
     """Multiple precondition failures are all reported in the failures list."""
     config_path = tmp_path / "config.json"
     _write_config(
@@ -929,7 +950,7 @@ def test_put_reports_all_precondition_failures(tmp_path: Path) -> None:
             },
         },
     )
-    client = _make_app(config_path)
+    client = client_factory(config_path=str(config_path), serve_ui=False)
 
     # Trigger multiple failures: invalid model_level + blank embedding endpoint
     resp = client.put(
@@ -952,7 +973,9 @@ def test_put_reports_all_precondition_failures(tmp_path: Path) -> None:
 # ---------------------------------------------------------------------------
 
 
-def test_put_masked_secret_preserves_original(tmp_path: Path) -> None:
+def test_put_masked_secret_preserves_original(
+    tmp_path: Path, client_factory: ClientFactory
+) -> None:
     """Submitting the sentinel for a secret field preserves the on-disk value."""
     config_path = tmp_path / "config.json"
     _write_config(
@@ -962,7 +985,7 @@ def test_put_masked_secret_preserves_original(tmp_path: Path) -> None:
             "openrouter_api_key": "sk-real-key",  # pragma: allowlist secret
         },
     )
-    client = _make_app(config_path)
+    client = client_factory(config_path=str(config_path), serve_ui=False)
 
     resp = client.put("/config", json={"openrouter_api_key": "**********"})
     assert resp.status_code == 200
@@ -971,7 +994,9 @@ def test_put_masked_secret_preserves_original(tmp_path: Path) -> None:
     assert on_disk["openrouter_api_key"] == "sk-real-key"  # pragma: allowlist secret
 
 
-def test_put_blank_secret_preserves_original(tmp_path: Path) -> None:
+def test_put_blank_secret_preserves_original(
+    tmp_path: Path, client_factory: ClientFactory
+) -> None:
     """Submitting an empty string for a secret field preserves the on-disk value."""
     config_path = tmp_path / "config.json"
     _write_config(
@@ -981,7 +1006,7 @@ def test_put_blank_secret_preserves_original(tmp_path: Path) -> None:
             "openrouter_api_key": "sk-real-key",  # pragma: allowlist secret
         },
     )
-    client = _make_app(config_path)
+    client = client_factory(config_path=str(config_path), serve_ui=False)
 
     resp = client.put("/config", json={"openrouter_api_key": ""})
     assert resp.status_code == 200
@@ -990,7 +1015,9 @@ def test_put_blank_secret_preserves_original(tmp_path: Path) -> None:
     assert on_disk["openrouter_api_key"] == "sk-real-key"  # pragma: allowlist secret
 
 
-def test_put_new_secret_overwrites_existing(tmp_path: Path) -> None:
+def test_put_new_secret_overwrites_existing(
+    tmp_path: Path, client_factory: ClientFactory
+) -> None:
     """Submitting a real (non-masked) secret overwrites the on-disk value."""
     config_path = tmp_path / "config.json"
     _write_config(
@@ -1000,7 +1027,7 @@ def test_put_new_secret_overwrites_existing(tmp_path: Path) -> None:
             "openrouter_api_key": "sk-old",  # pragma: allowlist secret
         },
     )
-    client = _make_app(config_path)
+    client = client_factory(config_path=str(config_path), serve_ui=False)
 
     resp = client.put(
         "/config",
@@ -1017,11 +1044,11 @@ def test_put_new_secret_overwrites_existing(tmp_path: Path) -> None:
 # ---------------------------------------------------------------------------
 
 
-def test_put_invalid_json(tmp_path: Path) -> None:
+def test_put_invalid_json(tmp_path: Path, client_factory: ClientFactory) -> None:
     """Malformed JSON body returns 400."""
     config_path = tmp_path / "config.json"
     _write_config(config_path, {})
-    client = _make_app(config_path)
+    client = client_factory(config_path=str(config_path), serve_ui=False)
 
     resp = client.put(
         "/config",
@@ -1031,11 +1058,11 @@ def test_put_invalid_json(tmp_path: Path) -> None:
     assert resp.status_code == 400
 
 
-def test_put_array_body(tmp_path: Path) -> None:
+def test_put_array_body(tmp_path: Path, client_factory: ClientFactory) -> None:
     """An array body returns 400 (expected object)."""
     config_path = tmp_path / "config.json"
     _write_config(config_path, {})
-    client = _make_app(config_path)
+    client = client_factory(config_path=str(config_path), serve_ui=False)
 
     resp = client.put("/config", json=[1, 2, 3])
     assert resp.status_code == 400
@@ -1046,14 +1073,16 @@ def test_put_array_body(tmp_path: Path) -> None:
 # ---------------------------------------------------------------------------
 
 
-def test_put_settings_validation_roundtrip(tmp_path: Path) -> None:
+def test_put_settings_validation_roundtrip(
+    tmp_path: Path, client_factory: ClientFactory
+) -> None:
     """A valid full config round-trips through Settings validation."""
     from robotsix_chat.config import Settings
 
     config_path = tmp_path / "config.json"
     # Start with a minimal valid config.
     _write_config(config_path, {"chat_default_model_level": 2})
-    client = _make_app(config_path)
+    client = client_factory(config_path=str(config_path), serve_ui=False)
 
     # Add server_port and idle_timeout.
     resp = client.put(
@@ -1074,11 +1103,11 @@ def test_put_settings_validation_roundtrip(tmp_path: Path) -> None:
 # ---------------------------------------------------------------------------
 
 
-def test_put_increments_version(tmp_path: Path) -> None:
+def test_put_increments_version(tmp_path: Path, client_factory: ClientFactory) -> None:
     """Each successful PUT increments the version number."""
     config_path = tmp_path / "config.json"
     _write_config(config_path, {"chat_default_model_level": 2})
-    client = _make_app(config_path)
+    client = client_factory(config_path=str(config_path), serve_ui=False)
 
     resp1 = client.put("/config", json={"server_port": 9000})
     assert resp1.status_code == 200
@@ -1096,11 +1125,13 @@ def test_put_increments_version(tmp_path: Path) -> None:
 # ---------------------------------------------------------------------------
 
 
-def test_get_versions_returns_history(tmp_path: Path) -> None:
+def test_get_versions_returns_history(
+    tmp_path: Path, client_factory: ClientFactory
+) -> None:
     """GET /config/versions returns version history entries."""
     config_path = tmp_path / "config.json"
     _write_config(config_path, {"chat_default_model_level": 2})
-    client = _make_app(config_path)
+    client = client_factory(config_path=str(config_path), serve_ui=False)
 
     # Bootstrap: at least one version exists from a GET.
     resp_get = client.get("/config")
@@ -1126,11 +1157,11 @@ def test_get_versions_returns_history(tmp_path: Path) -> None:
     assert versions[0]["version"] > versions[-1]["version"]
 
 
-def test_get_versions_no_history(tmp_path: Path) -> None:
+def test_get_versions_no_history(tmp_path: Path, client_factory: ClientFactory) -> None:
     """GET /config/versions bootstraps if no prior history exists."""
     config_path = tmp_path / "config.json"
     _write_config(config_path, {"chat_default_model_level": 2})
-    client = _make_app(config_path)
+    client = client_factory(config_path=str(config_path), serve_ui=False)
 
     # Don't call GET /config first — go straight to /config/versions.
     resp = client.get("/config/versions")
@@ -1145,7 +1176,9 @@ def test_get_versions_no_history(tmp_path: Path) -> None:
 # ---------------------------------------------------------------------------
 
 
-def test_get_version_document_strips_secrets(tmp_path: Path) -> None:
+def test_get_version_document_strips_secrets(
+    tmp_path: Path, client_factory: ClientFactory
+) -> None:
     """GET /config/versions/{version} returns the stored doc, secrets stripped.
 
     The fleet-standard ``robotsix_config.history`` never writes secret
@@ -1161,7 +1194,7 @@ def test_get_version_document_strips_secrets(tmp_path: Path) -> None:
             "openrouter": {"keys": {"robotsix-chat-cognee": "plain-secret-a"}},
         },
     )
-    client = _make_app(config_path)
+    client = client_factory(config_path=str(config_path), serve_ui=False)
 
     # Bootstrap version history (v1), then save a change (v2).
     client.get("/config")
@@ -1179,11 +1212,13 @@ def test_get_version_document_strips_secrets(tmp_path: Path) -> None:
     assert "plain-secret-a" not in resp.text
 
 
-def test_get_version_document_empty_secret_is_stripped(tmp_path: Path) -> None:
+def test_get_version_document_empty_secret_is_stripped(
+    tmp_path: Path, client_factory: ClientFactory
+) -> None:
     """An unset secret is stripped from the stored version document too."""
     config_path = tmp_path / "config.json"
     _write_config(config_path, {"openrouter": {"keys": {"robotsix-chat-cognee": ""}}})
-    client = _make_app(config_path)
+    client = client_factory(config_path=str(config_path), serve_ui=False)
     client.get("/config")  # bootstrap v1
 
     resp = client.get("/config/versions/1")
@@ -1191,11 +1226,13 @@ def test_get_version_document_empty_secret_is_stripped(tmp_path: Path) -> None:
     assert "robotsix-chat-cognee" not in resp.json()["config"]["openrouter"]["keys"]
 
 
-def test_get_version_document_unknown_version_returns_404(tmp_path: Path) -> None:
+def test_get_version_document_unknown_version_returns_404(
+    tmp_path: Path, client_factory: ClientFactory
+) -> None:
     """Unknown version returns 404; non-integer segment also 404s."""
     config_path = tmp_path / "config.json"
     _write_config(config_path, {"chat_default_model_level": 2})
-    client = _make_app(config_path)
+    client = client_factory(config_path=str(config_path), serve_ui=False)
     client.get("/config")  # bootstrap v1
 
     resp = client.get("/config/versions/999")
@@ -1210,7 +1247,9 @@ def test_get_version_document_unknown_version_returns_404(tmp_path: Path) -> Non
 # ---------------------------------------------------------------------------
 
 
-def test_version_diff_reports_nested_changed_paths(tmp_path: Path) -> None:
+def test_version_diff_reports_nested_changed_paths(
+    tmp_path: Path, client_factory: ClientFactory
+) -> None:
     """Diff reports dot-notation nested paths with old/new values.
 
     Mirrors the incident: v2 changed several nested fields (continuation,
@@ -1230,7 +1269,7 @@ def test_version_diff_reports_nested_changed_paths(tmp_path: Path) -> None:
             "openrouter": {"keys": {"robotsix-chat-cognee": "secret-a"}},
         },
     )
-    client = _make_app(config_path)
+    client = client_factory(config_path=str(config_path), serve_ui=False)
     client.get("/config")  # bootstrap v1
 
     # v2: bump continuation max, switch model to nano, rotate the key.
@@ -1282,7 +1321,9 @@ def test_version_diff_reports_nested_changed_paths(tmp_path: Path) -> None:
     assert by_path3["memory.llm.model"]["new"] == "openrouter/openai/gpt-5-mini"
 
 
-def test_version_diff_first_version_diffs_empty_document(tmp_path: Path) -> None:
+def test_version_diff_first_version_diffs_empty_document(
+    tmp_path: Path, client_factory: ClientFactory
+) -> None:
     """Version 1 (no predecessor) diffs against an empty document."""
     config_path = tmp_path / "config.json"
     _write_config(
@@ -1292,7 +1333,7 @@ def test_version_diff_first_version_diffs_empty_document(tmp_path: Path) -> None
             "memory": {"llm": {"model": "openrouter/openai/gpt-5-mini"}},
         },
     )
-    client = _make_app(config_path)
+    client = client_factory(config_path=str(config_path), serve_ui=False)
     client.get("/config")  # bootstrap v1
 
     resp = client.get("/config/versions/1/diff")
@@ -1316,11 +1357,13 @@ def test_version_diff_first_version_diffs_empty_document(tmp_path: Path) -> None
     assert "old" not in by_path["memory.llm.model"]
 
 
-def test_version_diff_unknown_version_returns_404(tmp_path: Path) -> None:
+def test_version_diff_unknown_version_returns_404(
+    tmp_path: Path, client_factory: ClientFactory
+) -> None:
     """Diff of a nonexistent version returns 404."""
     config_path = tmp_path / "config.json"
     _write_config(config_path, {"chat_default_model_level": 2})
-    client = _make_app(config_path)
+    client = client_factory(config_path=str(config_path), serve_ui=False)
     client.get("/config")  # bootstrap v1
 
     resp = client.get("/config/versions/999/diff")
@@ -1332,11 +1375,13 @@ def test_version_diff_unknown_version_returns_404(tmp_path: Path) -> None:
 # ---------------------------------------------------------------------------
 
 
-def test_rollback_to_previous_version(tmp_path: Path) -> None:
+def test_rollback_to_previous_version(
+    tmp_path: Path, client_factory: ClientFactory
+) -> None:
     """Rolling back restores that version's data and creates a new version."""
     config_path = tmp_path / "config.json"
     _write_config(config_path, {"chat_default_model_level": 2, "server_port": 8000})
-    client = _make_app(config_path)
+    client = client_factory(config_path=str(config_path), serve_ui=False)
 
     # Bootstrap version history.
     client.get("/config")
@@ -1361,11 +1406,13 @@ def test_rollback_to_previous_version(tmp_path: Path) -> None:
     assert on_disk["chat_default_model_level"] == 2
 
 
-def test_rollback_nonexistent_version(tmp_path: Path) -> None:
+def test_rollback_nonexistent_version(
+    tmp_path: Path, client_factory: ClientFactory
+) -> None:
     """Rollback to a nonexistent version returns 404."""
     config_path = tmp_path / "config.json"
     _write_config(config_path, {"chat_default_model_level": 2})
-    client = _make_app(config_path)
+    client = client_factory(config_path=str(config_path), serve_ui=False)
 
     # Bootstrap version history.
     client.get("/config")
@@ -1374,11 +1421,13 @@ def test_rollback_nonexistent_version(tmp_path: Path) -> None:
     assert resp.status_code == 404
 
 
-def test_rollback_invalid_version_param(tmp_path: Path) -> None:
+def test_rollback_invalid_version_param(
+    tmp_path: Path, client_factory: ClientFactory
+) -> None:
     """Rollback with a non-integer version param returns 400."""
     config_path = tmp_path / "config.json"
     _write_config(config_path, {"chat_default_model_level": 2})
-    client = _make_app(config_path)
+    client = client_factory(config_path=str(config_path), serve_ui=False)
 
     # Bootstrap version history.
     client.get("/config")
@@ -1387,11 +1436,11 @@ def test_rollback_invalid_version_param(tmp_path: Path) -> None:
     assert resp.status_code == 400
 
 
-def test_rollback_no_history(tmp_path: Path) -> None:
+def test_rollback_no_history(tmp_path: Path, client_factory: ClientFactory) -> None:
     """Rollback with no prior version history returns 404."""
     config_path = tmp_path / "config.json"
     _write_config(config_path, {"chat_default_model_level": 2})
-    client = _make_app(config_path)
+    client = client_factory(config_path=str(config_path), serve_ui=False)
 
     # No bootstrap (no GET /config, no PUT) — no version history.
     resp = client.post("/config/rollback", json={"version": 1})
@@ -1408,11 +1457,13 @@ def test_rollback_no_history(tmp_path: Path) -> None:
 # ---------------------------------------------------------------------------
 
 
-def test_get_config_nests_document_under_config_key(tmp_path: Path) -> None:
+def test_get_config_nests_document_under_config_key(
+    tmp_path: Path, client_factory: ClientFactory
+) -> None:
     """GET /config returns exactly ``config``/``schema``/``version``."""
     config_path = tmp_path / "config.json"
     _write_config(config_path, {"chat_default_model_level": 2, "server_port": 8080})
-    client = _make_app(config_path)
+    client = client_factory(config_path=str(config_path), serve_ui=False)
 
     data = client.get("/config").json()
 
@@ -1423,7 +1474,9 @@ def test_get_config_nests_document_under_config_key(tmp_path: Path) -> None:
     assert "chat_default_model_level" not in data
 
 
-def test_put_returns_effective_config(tmp_path: Path) -> None:
+def test_put_returns_effective_config(
+    tmp_path: Path, client_factory: ClientFactory
+) -> None:
     """PUT /config answers with the new effective config, secrets masked."""
     config_path = tmp_path / "config.json"
     _write_config(
@@ -1434,7 +1487,7 @@ def test_put_returns_effective_config(tmp_path: Path) -> None:
             "openrouter_api_key": "sk-real",  # pragma: allowlist secret
         },
     )
-    client = _make_app(config_path)
+    client = client_factory(config_path=str(config_path), serve_ui=False)
 
     resp = client.put("/config", json={"server_port": 9000})
     assert resp.status_code == 200
@@ -1447,7 +1500,9 @@ def test_put_returns_effective_config(tmp_path: Path) -> None:
     assert "sk-real" not in resp.text  # pragma: allowlist secret
 
 
-def test_put_response_config_matches_get(tmp_path: Path) -> None:
+def test_put_response_config_matches_get(
+    tmp_path: Path, client_factory: ClientFactory
+) -> None:
     """Re-rendering from the PUT response equals a fresh GET — no drift.
 
     The panel re-renders from the save response; when the two disagree the
@@ -1455,7 +1510,7 @@ def test_put_response_config_matches_get(tmp_path: Path) -> None:
     """
     config_path = tmp_path / "config.json"
     _write_config(config_path, {"chat_default_model_level": 2, "server_port": 8080})
-    client = _make_app(config_path)
+    client = client_factory(config_path=str(config_path), serve_ui=False)
     client.get("/config")  # bootstrap version history
 
     put_config = client.put("/config", json={"server_port": 9000}).json()["config"]
@@ -1464,11 +1519,13 @@ def test_put_response_config_matches_get(tmp_path: Path) -> None:
     assert put_config == get_config
 
 
-def test_get_versions_wraps_list_under_versions_key(tmp_path: Path) -> None:
+def test_get_versions_wraps_list_under_versions_key(
+    tmp_path: Path, client_factory: ClientFactory
+) -> None:
     """GET /config/versions returns ``{"versions": [...]}``, not a bare list."""
     config_path = tmp_path / "config.json"
     _write_config(config_path, {"chat_default_model_level": 2})
-    client = _make_app(config_path)
+    client = client_factory(config_path=str(config_path), serve_ui=False)
     client.get("/config")
 
     body = client.get("/config/versions").json()
@@ -1478,11 +1535,13 @@ def test_get_versions_wraps_list_under_versions_key(tmp_path: Path) -> None:
     assert body["versions"][0]["version"] >= 1
 
 
-def test_get_version_document_nests_under_config_key(tmp_path: Path) -> None:
+def test_get_version_document_nests_under_config_key(
+    tmp_path: Path, client_factory: ClientFactory
+) -> None:
     """GET /config/versions/{version} nests the stored document too."""
     config_path = tmp_path / "config.json"
     _write_config(config_path, {"chat_default_model_level": 2, "server_port": 8080})
-    client = _make_app(config_path)
+    client = client_factory(config_path=str(config_path), serve_ui=False)
     client.get("/config")  # bootstrap v1
 
     body = client.get("/config/versions/1").json()
@@ -1491,11 +1550,13 @@ def test_get_version_document_nests_under_config_key(tmp_path: Path) -> None:
     assert body["config"]["server_port"] == 8080
 
 
-def test_rollback_returns_effective_config(tmp_path: Path) -> None:
+def test_rollback_returns_effective_config(
+    tmp_path: Path, client_factory: ClientFactory
+) -> None:
     """POST /config/rollback answers with the same envelope as PUT."""
     config_path = tmp_path / "config.json"
     _write_config(config_path, {"chat_default_model_level": 2, "server_port": 8000})
-    client = _make_app(config_path)
+    client = client_factory(config_path=str(config_path), serve_ui=False)
     client.get("/config")  # v1
     client.put("/config", json={"server_port": 9000})  # v2
 
@@ -1512,14 +1573,16 @@ def test_rollback_returns_effective_config(tmp_path: Path) -> None:
 # ---------------------------------------------------------------------------
 
 
-def test_get_config_deploy_returns_deploy_section(tmp_path: Path) -> None:
+def test_get_config_deploy_returns_deploy_section(
+    tmp_path: Path, client_factory: ClientFactory
+) -> None:
     """GET /config/deploy returns only the central_deploy block."""
     config_path = tmp_path / "config.json"
     _write_config(
         config_path,
         {"central_deploy": {"url": "http://deploy:8100", "roster_cache_ttl": 600.0}},
     )
-    client = _make_app(config_path)
+    client = client_factory(config_path=str(config_path), serve_ui=False)
     resp = client.get("/config/deploy")
     assert resp.status_code == 200
     data = resp.json()
@@ -1531,11 +1594,13 @@ def test_get_config_deploy_returns_deploy_section(tmp_path: Path) -> None:
     assert data["config"]["roster_cache_ttl"] == 600.0
 
 
-def test_get_config_deploy_includes_schema(tmp_path: Path) -> None:
+def test_get_config_deploy_includes_schema(
+    tmp_path: Path, client_factory: ClientFactory
+) -> None:
     """GET /config/deploy returns a schema describing deploy config shape."""
     config_path = tmp_path / "config.json"
     _write_config(config_path, {"chat_default_model_level": 2})
-    client = _make_app(config_path)
+    client = client_factory(config_path=str(config_path), serve_ui=False)
     resp = client.get("/config/deploy")
     assert resp.status_code == 200
     data = resp.json()
@@ -1550,10 +1615,12 @@ def test_get_config_deploy_includes_schema(tmp_path: Path) -> None:
     assert "$schema" in schema
 
 
-def test_get_config_deploy_empty_config(tmp_path: Path) -> None:
+def test_get_config_deploy_empty_config(
+    tmp_path: Path, client_factory: ClientFactory
+) -> None:
     """GET /config/deploy returns empty deploy config when file is absent."""
     config_path = tmp_path / "config.json"
-    client = _make_app(config_path)
+    client = client_factory(config_path=str(config_path), serve_ui=False)
     resp = client.get("/config/deploy")
     assert resp.status_code == 200
     data = resp.json()
@@ -1570,7 +1637,9 @@ def test_get_config_deploy_empty_config(tmp_path: Path) -> None:
     assert "roster_cache_ttl" in props
 
 
-def test_get_config_deploy_secret_masked(tmp_path: Path) -> None:
+def test_get_config_deploy_secret_masked(
+    tmp_path: Path, client_factory: ClientFactory
+) -> None:
     """Secret fields in the deploy config are masked."""
     config_path = tmp_path / "config.json"
     _write_config(
@@ -1585,7 +1654,7 @@ def test_get_config_deploy_secret_masked(tmp_path: Path) -> None:
             },
         },
     )
-    client = _make_app(config_path)
+    client = client_factory(config_path=str(config_path), serve_ui=False)
     resp = client.get("/config/deploy")
     assert resp.status_code == 200
     data = resp.json()
@@ -1740,7 +1809,9 @@ def _attach_scheduler(client: TestClient, tmp_path: Path) -> tuple[object, list]
     return scheduler, submitted
 
 
-def test_put_config_hot_reloads_periodic_presets(tmp_path: Path) -> None:
+def test_put_config_hot_reloads_periodic_presets(
+    tmp_path: Path, client_factory: ClientFactory
+) -> None:
     """A one-item periodic.sessions PUT changes the live preset — no restart."""
     import asyncio
 
@@ -1759,7 +1830,7 @@ def test_put_config_hot_reloads_periodic_presets(tmp_path: Path) -> None:
             }
         },
     )
-    client = _make_app(config_path)
+    client = client_factory(config_path=str(config_path), serve_ui=False)
     scheduler, submitted = _attach_scheduler(client, tmp_path)
 
     resp = client.put(
@@ -1786,10 +1857,12 @@ def test_put_config_hot_reloads_periodic_presets(tmp_path: Path) -> None:
     assert submitted and "NEW prompt" in submitted[-1][1]
 
 
-def test_put_config_without_periodic_change_does_not_reload(tmp_path: Path) -> None:
+def test_put_config_without_periodic_change_does_not_reload(
+    tmp_path: Path, client_factory: ClientFactory
+) -> None:
     config_path = tmp_path / "config.json"
     _write_config(config_path, {})
-    client = _make_app(config_path)
+    client = client_factory(config_path=str(config_path), serve_ui=False)
     scheduler, _submitted = _attach_scheduler(client, tmp_path)
     calls: list[object] = []
     scheduler.reload_definitions = lambda defs: calls.append(defs) or 0  # type: ignore[attr-defined]
