@@ -6,7 +6,7 @@ import asyncio
 import base64
 import json
 import os
-from collections.abc import AsyncIterator, Callable
+from collections.abc import AsyncIterator, Callable, Iterator
 from pathlib import Path
 from typing import Any, cast
 from unittest.mock import MagicMock, patch
@@ -2485,6 +2485,25 @@ class TestExportLangfuseEnv:
         "LANGFUSE_HOST",
         "LANGFUSE_BASE_URL",
     )
+
+    @pytest.fixture(autouse=True)
+    def _restore_env(self) -> Iterator[None]:
+        """Force-restore the exported vars after each test.
+
+        ``_export_langfuse_env`` writes os.environ directly, so a
+        ``monkeypatch.delenv(var, raising=False)`` on an already-absent var
+        records nothing and the direct writes leak into later tests (e.g.
+        ``test_run_server_from_config_*`` then re-enter llmio's tracing
+        setup with credentials present and crash when the ``tracing`` extra
+        is not installed). Snapshot and restore unconditionally instead.
+        """
+        snapshot = {var: os.environ.get(var) for var in self._VARS}
+        yield
+        for var, value in snapshot.items():
+            if value is None:
+                os.environ.pop(var, None)
+            else:
+                os.environ[var] = value
 
     def test_exports_base_url_and_host(self, monkeypatch: pytest.MonkeyPatch) -> None:
         """Both host names are exported: llmio reads LANGFUSE_BASE_URL."""
