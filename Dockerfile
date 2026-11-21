@@ -116,7 +116,10 @@ RUN rm -rf /usr/local/lib/python3.14/site-packages/pip \
 # builds to clear the Trivy findings the base image still carries at the older
 # trixie/main versions. apt and libapt-pkg7.0 (one source package, must move
 # together) cover CVE-2026-109518: the base image ships 3.0.3, trixie-security
-# has 3.0.4. libpcre2-8-0, libc6, libc-bin and gzip are NOT listed
+# has 3.0.4. zlib1g covers the base image's zlib CVE; its trixie builds carry
+# epoch 1 (1:1.3.dfsg+really1.3.1-1+deb13uN), so the glob MUST keep the `1:`
+# prefix or apt cannot resolve the version and aborts the build.
+# libpcre2-8-0, libc6, libc-bin and gzip are NOT listed
 # here: their base builds use a `-` separator (e.g. 2.41-12+deb13u3), so an
 # `X.YZ.*` version glob never matches and apt-get aborts the build with
 # "Version ... not found"; their CVEs are handled via .trivyignore until the
@@ -136,6 +139,7 @@ RUN apt-get update \
         libsqlite3-0="3.46.*" \
         apt="3.0.*" \
         libapt-pkg7.0="3.0.*" \
+        zlib1g="1:1.3.*" \
     && apt-get install -y --no-install-recommends curl="8.*" gnupg="2.*" \
     && mkdir -p /etc/apt/keyrings \
     && curl -fsSL https://deb.nodesource.com/gpgkey/nodesource-repo.gpg.key \
@@ -144,7 +148,7 @@ RUN apt-get update \
         > /etc/apt/sources.list.d/nodesource.list \
     && apt-get update \
     && apt-get install -y --no-install-recommends nodejs="24.*" \
-    && npm install -g @anthropic-ai/claude-code@2.1.199 \
+    && npm install -g @anthropic-ai/claude-code@2.1.251 \
     && claude --version \
     && apt-get purge -y --auto-remove curl gnupg \
     && apt-get clean \
