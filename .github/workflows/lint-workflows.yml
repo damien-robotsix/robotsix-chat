@@ -38,6 +38,7 @@ jobs:
   actionlint:
     name: lint-workflows / actionlint
     runs-on: ubuntu-latest
+    timeout-minutes: 15
     permissions:
       contents: read  # checkout the repo
     steps:
