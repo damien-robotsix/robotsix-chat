@@ -1263,7 +1263,7 @@ async def test_create_agent_from_settings_uses_load_when_none(
     from robotsix_chat.config import Settings
 
     with patch(
-        "robotsix_chat.config.settings.load_config",
+        "robotsix_chat.config.settings_loader.load_config",
         return_value=Settings(
             chat_default_model_level=1, openrouter_api_key=SecretStr("sk-env-test")
         ),
@@ -1293,7 +1293,7 @@ async def test_run_server_from_config_creates_agent_from_settings(
 
     with (
         patch(
-            "robotsix_chat.config.settings.load_config",
+            "robotsix_chat.config.settings_loader.load_config",
             return_value=Settings(
                 chat_default_model_level=2,
                 server_host="127.0.0.1",
@@ -1406,7 +1406,7 @@ async def test_run_server_from_config_passes_explicit_agent(
     """
     # Patch load_config to use defaults (level 4 = keyless, no key needed).
     with patch(
-        "robotsix_chat.config.settings.load_config",
+        "robotsix_chat.config.settings_loader.load_config",
         return_value=Settings(),
     ):
         mock_agent = MagicMock()
