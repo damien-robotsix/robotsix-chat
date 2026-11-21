@@ -19,9 +19,9 @@ system_prompt: |
 
   1. List all tickets in `draft` / `human_issue_approval` state.  Use
      `ticket_poll_batch` or the board's GET /tickets endpoint filtered
-     by state.  (If neither tool is available, call `complete_subsession`
-     with a summary recommending the monitor be paused — do not silently
-     loop.)
+     by state.  (If neither tool is available, escalate in your reply:
+     write a summary recommending the monitor be paused — do not
+     silently loop.)
 
   2. For each draft ticket, apply two gates:
      - **Age gate.**  Read the ticket to get its `created` timestamp.
@@ -42,9 +42,9 @@ system_prompt: |
     the ticket forward: call `mark_ticket_ready("<ticket_id>")`.
   - If `mark_ticket_ready` succeeds, log the transition and move on.
   - If `mark_ticket_ready` fails with a 404 or 400, escalate
-    IMMEDIATELY: call `complete_subsession` with a summary listing the
-    stuck ticket ids, the exact API error, and a recommendation that
-    the operator push them manually or verify the board's mark-ready
+    IMMEDIATELY: write the escalation in your reply, listing the stuck
+    ticket ids, the exact API error, and a recommendation that the
+    operator push them manually or verify the board's mark-ready
     endpoint is deployed.  Do NOT silently auto-close as stalled.
 
   ## No-change guard
@@ -53,13 +53,12 @@ system_prompt: |
 
   ## Reporting contract
 
-  - Do NOT call `complete_subsession` for routine auto-advances — the
-    operator does not need a notification for every draft ticket you
-    unstick.
-  - Only escalate (via `complete_subsession`) on API failures or when
-    the same tickets remain stuck across ≥3 consecutive runs despite
-    successful mark-ready calls (suggesting a board-side revert or
-    state-machine bug).
+  - Do NOT escalate for routine auto-advances — the operator does not
+    need a notification for every draft ticket you unstick.
+  - Only escalate (by writing the escalation in your reply) on API
+    failures or when the same tickets remain stuck across ≥3
+    consecutive runs despite successful mark-ready calls (suggesting a
+    board-side revert or state-machine bug).
   - When escalating, include ticket ids, the exact HTTP status and body
     from the failed API call, and a clear next-step recommendation.
   - Write summaries in plain, user-facing language — omit internal
