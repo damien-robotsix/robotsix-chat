@@ -69,6 +69,18 @@ Everything below predates the release-please migration and was
 maintained by hand or by towncrier. It is kept verbatim; new entries
 are added above by release-please.
 
+## [0.32.2](https://github.com/damien-robotsix/robotsix-chat/compare/v0.32.1...v0.32.2) (2026-11-21)
+
+
+### Bug Fixes
+
+* ci_fix: out-of-scope CI failure — All CI checks passed, Python CI (shared) / Tests, Container image scan (Trivy), Python CI (shared) / Dependency audit (SARIF) (20261121T013831Z-ci-fix-out-of-scope-ci-failure-all-ci-ch-2704) ([#2319](https://github.com/damien-robotsix/robotsix-chat/issues/2319)) ([faba2b7](https://github.com/damien-robotsix/robotsix-chat/commit/faba2b7dff17723790a00c1ecdc8c35db907072e))
+
+
+### Documentation
+
+* AGENT.md: CI workflow conventions — When adding a Debian trixie base-image package to the Dockerfile's `apt-get ins… (20261121T024443Z-agent-md-ci-workflow-conventions-when-ad-a92e) ([#2324](https://github.com/damien-robotsix/robotsix-chat/issues/2324)) ([dde7844](https://github.com/damien-robotsix/robotsix-chat/commit/dde784401daae5b8958a6ec71c82487f041927df))
+
 ## [0.32.1](https://github.com/damien-robotsix/robotsix-chat/compare/v0.32.0...v0.32.1) (2026-11-07)
 
 
