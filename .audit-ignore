@@ -10,4 +10,5 @@
 # GHSA-mfx4-hv73-q22v / GHSA-mq44-7p77-q5h7 / GHSA-cq5v-8q36-5273 (aiohttp
 # is no longer in uv.lock) and cryptography GHSA-g6cj-pr64-35w5
 # (CVE-2026-69247; uv.lock pins cryptography 50.0.0, the fixed release).
-GHSA-w8v5-vhqr-4h9v  # diskcache CVE-2025-69872 unsafe pickle deserialization; no fixed release yet
+# GHSA-w8v5-vhqr-4h9v (diskcache CVE-2025-69872) dropped: diskcache is no
+# longer in uv.lock, so uv no longer reports the advisory.
