@@ -182,6 +182,7 @@ modules:
       - src/robotsix_chat/config/server_models.py
       - src/robotsix_chat/config/session_models.py
       - src/robotsix_chat/config/settings.py
+      - src/robotsix_chat/config/settings_loader.py
       - src/robotsix_chat/config/storage_models.py
       - src/robotsix_chat/config/system_prompt_history.py
       - docs/config/api.md
