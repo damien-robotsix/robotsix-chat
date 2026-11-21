@@ -455,6 +455,7 @@ modules:
       - src/robotsix_chat/subsessions/worker_mill.py
       - src/robotsix_chat/subsessions/worker_periodic.py
       - tests/subsessions/__init__.py
+      - tests/subsessions/conftest.py
       - tests/subsessions/test_delivery.py
       - tests/subsessions/test_models.py
       - tests/subsessions/test_registry.py
@@ -465,7 +466,11 @@ modules:
       - tests/subsessions/test_tools.py
       - tests/subsessions/test_watcher.py
       - tests/subsessions/test_worker.py
+      - tests/subsessions/test_worker_dedup.py
+      - tests/subsessions/test_worker_delivery_format.py
       - tests/subsessions/test_worker_mill.py
+      - tests/subsessions/test_worker_periodic.py
+      - tests/subsessions/test_worker_reply_class.py
       - tests/subsessions/test_worker_settled_note.py
       - tests/subsessions/test_worker_wait_for_event.py
 
