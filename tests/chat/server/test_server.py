@@ -1263,7 +1263,7 @@ async def test_create_agent_from_settings_uses_load_when_none(
     from robotsix_chat.config import Settings
 
     with patch(
-        "robotsix_chat.config.settings.load_config",
+        "robotsix_chat.config.settings_loader.load_config",
         return_value=Settings(
             chat_default_model_level=1, openrouter_api_key=SecretStr("sk-env-test")
         ),
@@ -1293,7 +1293,7 @@ async def test_run_server_from_config_creates_agent_from_settings(
 
     with (
         patch(
-            "robotsix_chat.config.settings.load_config",
+            "robotsix_chat.config.settings_loader.load_config",
             return_value=Settings(
                 chat_default_model_level=2,
                 server_host="127.0.0.1",
@@ -1406,7 +1406,7 @@ async def test_run_server_from_config_passes_explicit_agent(
     """
     # Patch load_config to use defaults (level 4 = keyless, no key needed).
     with patch(
-        "robotsix_chat.config.settings.load_config",
+        "robotsix_chat.config.settings_loader.load_config",
         return_value=Settings(),
     ):
         mock_agent = MagicMock()
@@ -2509,6 +2509,15 @@ class TestExportLangfuseEnv:
         assert os.environ["LANGFUSE_SECRET_KEY"] == sk
         assert os.environ["LANGFUSE_HOST"] == "https://langfuse.example.com"
         assert os.environ["LANGFUSE_BASE_URL"] == "https://langfuse.example.com"
+        # _export_langfuse_env assigns os.environ directly.  For vars that
+        # were absent before the test, monkeypatch.delenv(raising=False)
+        # registered no teardown, so remove them explicitly — otherwise the
+        # exported credentials leak into later tests (the suite runs under
+        # pytest-randomly) and make run_server_from_config's
+        # _setup_observability attempt uninstalled ``opentelemetry.exporter``
+        # imports.
+        for var in self._VARS:
+            os.environ.pop(var, None)
 
     def test_noop_without_public_key(self, monkeypatch: pytest.MonkeyPatch) -> None:
         """Absent credentials leave the environment untouched."""
