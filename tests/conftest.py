@@ -3,7 +3,7 @@
 from __future__ import annotations
 
 import sys
-from collections.abc import AsyncIterator
+from collections.abc import AsyncIterator, Callable
 from contextlib import asynccontextmanager
 from dataclasses import dataclass
 from pathlib import Path
@@ -18,6 +18,7 @@ if str(_local_pkgs) not in sys.path and _local_pkgs.is_dir():
 import pytest  # noqa: E402
 from httpx import ASGITransport, AsyncClient  # noqa: E402
 from starlette.applications import Starlette  # noqa: E402
+from starlette.testclient import TestClient  # noqa: E402
 
 
 @pytest.fixture(autouse=True)
@@ -113,6 +114,10 @@ class AppFixture:
     client: AsyncClient
 
 
+ClientFactory = Callable[..., TestClient]
+"""Type of the factory returned by the :func:`client_factory` fixture."""
+
+
 @asynccontextmanager
 async def http_client(
     app: Any,
@@ -149,3 +154,38 @@ async def mock_app(
 
     async with http_client(app, **transport_kwargs) as client:
         yield AppFixture(agent=agent, app=app, client=client)
+
+
+@pytest.fixture
+def client_factory() -> ClientFactory:
+    """Return a factory building a sync ``starlette.testclient.TestClient``.
+
+    The sync counterpart of :func:`mock_app`: with no ``app`` argument it
+    builds ``create_app`` around a fresh :class:`MockAgent` (extra keyword
+    arguments are forwarded to ``create_app``), so route tests stop
+    re-implementing the ``create_app(agent)`` + ``TestClient`` wrapper per
+    module. Pass a pre-built ``app`` to wrap a minimal test app instead
+    (the auth and error-handler suites stand up their own Starlette apps).
+    ``raise_server_exceptions`` defaults to ``False`` — the failure-mode
+    semantics the per-module helpers all encoded: error responses are
+    observed, not exceptions raised into the test.
+    """
+
+    def _make_client(
+        app: Starlette | None = None,
+        *,
+        tokens: list[str] | None = None,
+        error: Exception | None = None,
+        raise_server_exceptions: bool = False,
+        **create_app_kwargs: Any,
+    ) -> TestClient:
+        if app is None:
+            agent_kwargs: dict[str, Any] = {}
+            if tokens is not None:
+                agent_kwargs["tokens"] = tokens
+            if error is not None:
+                agent_kwargs["error"] = error
+            app = create_app(MockAgent(**agent_kwargs), **create_app_kwargs)
+        return TestClient(app, raise_server_exceptions=raise_server_exceptions)
+
+    return _make_client

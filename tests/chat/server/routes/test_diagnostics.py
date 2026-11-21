@@ -3,40 +3,21 @@
 from __future__ import annotations
 
 from pathlib import Path
-from typing import Any
 
-from starlette.testclient import TestClient
-
-from robotsix_chat.chat.server.app import create_app
 from robotsix_chat.diagnostics import DiagnosticStore
-
-
-class _DummyAgent:
-    """Minimal agent stub — only ``stream`` is called by the chat endpoint."""
-
-    async def stream(self, message: str, **kwargs: object) -> Any:
-        yield "ok"
-        return
-
-
-def _make_app(store: DiagnosticStore | None = None) -> TestClient:
-    app = create_app(
-        _DummyAgent(),  # type: ignore[arg-type]
-        diagnostic_store=store,
-        serve_ui=False,
-    )
-    return TestClient(app, raise_server_exceptions=False)
-
+from tests.conftest import ClientFactory
 
 # ---------------------------------------------------------------------------
 # POST /diagnostics/events
 # ---------------------------------------------------------------------------
 
 
-def test_create_records_event_and_returns_201(tmp_path: Path) -> None:
+def test_create_records_event_and_returns_201(
+    tmp_path: Path, client_factory: ClientFactory
+) -> None:
     """POST records event and returns 201 with the created bundle."""
     store = DiagnosticStore(str(tmp_path / "diag.json"))
-    client = _make_app(store)
+    client = client_factory(diagnostic_store=store, serve_ui=False)
 
     resp = client.post(
         "/diagnostics/events",
@@ -64,9 +45,9 @@ def test_create_records_event_and_returns_201(tmp_path: Path) -> None:
     assert events[0].id == data["id"]
 
 
-def test_create_503_when_store_not_configured() -> None:
+def test_create_503_when_store_not_configured(client_factory: ClientFactory) -> None:
     """POST returns 503 when no diagnostic store is configured."""
-    client = _make_app(store=None)
+    client = client_factory(diagnostic_store=None, serve_ui=False)
     resp = client.post(
         "/diagnostics/events",
         json={"category": "CI_FAILURE", "message": "test"},
@@ -74,10 +55,12 @@ def test_create_503_when_store_not_configured() -> None:
     assert resp.status_code == 503
 
 
-def test_create_400_when_category_missing(tmp_path: Path) -> None:
+def test_create_400_when_category_missing(
+    tmp_path: Path, client_factory: ClientFactory
+) -> None:
     """POST returns 400 when 'category' field is missing."""
     store = DiagnosticStore(str(tmp_path / "diag.json"))
-    client = _make_app(store)
+    client = client_factory(diagnostic_store=store, serve_ui=False)
     resp = client.post(
         "/diagnostics/events",
         json={"message": "no category"},
@@ -85,10 +68,12 @@ def test_create_400_when_category_missing(tmp_path: Path) -> None:
     assert resp.status_code == 400
 
 
-def test_create_400_when_message_missing(tmp_path: Path) -> None:
+def test_create_400_when_message_missing(
+    tmp_path: Path, client_factory: ClientFactory
+) -> None:
     """POST returns 400 when 'message' field is missing."""
     store = DiagnosticStore(str(tmp_path / "diag.json"))
-    client = _make_app(store)
+    client = client_factory(diagnostic_store=store, serve_ui=False)
     resp = client.post(
         "/diagnostics/events",
         json={"category": "CI_FAILURE"},
@@ -96,10 +81,12 @@ def test_create_400_when_message_missing(tmp_path: Path) -> None:
     assert resp.status_code == 400
 
 
-def test_create_400_when_details_not_a_dict(tmp_path: Path) -> None:
+def test_create_400_when_details_not_a_dict(
+    tmp_path: Path, client_factory: ClientFactory
+) -> None:
     """POST returns 400 when 'details' is not a JSON object."""
     store = DiagnosticStore(str(tmp_path / "diag.json"))
-    client = _make_app(store)
+    client = client_factory(diagnostic_store=store, serve_ui=False)
     resp = client.post(
         "/diagnostics/events",
         json={
@@ -111,10 +98,12 @@ def test_create_400_when_details_not_a_dict(tmp_path: Path) -> None:
     assert resp.status_code == 400
 
 
-def test_create_400_when_body_not_json(tmp_path: Path) -> None:
+def test_create_400_when_body_not_json(
+    tmp_path: Path, client_factory: ClientFactory
+) -> None:
     """POST returns 400 when body is not valid JSON."""
     store = DiagnosticStore(str(tmp_path / "diag.json"))
-    client = _make_app(store)
+    client = client_factory(diagnostic_store=store, serve_ui=False)
     resp = client.post(
         "/diagnostics/events",
         content=b"not json",
@@ -123,10 +112,12 @@ def test_create_400_when_body_not_json(tmp_path: Path) -> None:
     assert resp.status_code == 400
 
 
-def test_create_record_without_details(tmp_path: Path) -> None:
+def test_create_record_without_details(
+    tmp_path: Path, client_factory: ClientFactory
+) -> None:
     """POST accepts events without optional 'details' field."""
     store = DiagnosticStore(str(tmp_path / "diag.json"))
-    client = _make_app(store)
+    client = client_factory(diagnostic_store=store, serve_ui=False)
     resp = client.post(
         "/diagnostics/events",
         json={"category": "CI_FAILURE", "message": "no details"},
@@ -140,27 +131,29 @@ def test_create_record_without_details(tmp_path: Path) -> None:
 # ---------------------------------------------------------------------------
 
 
-def test_list_returns_all_events(tmp_path: Path) -> None:
+def test_list_returns_all_events(tmp_path: Path, client_factory: ClientFactory) -> None:
     """GET returns all events when no category filter is given."""
     store = DiagnosticStore(str(tmp_path / "diag.json"))
     store.record_event("CI_FAILURE", "first failure")
     store.record_event("CLONE_ERROR", "clone failed")
 
-    client = _make_app(store)
+    client = client_factory(diagnostic_store=store, serve_ui=False)
     resp = client.get("/diagnostics/events")
     assert resp.status_code == 200
     data = resp.json()
     assert len(data) == 2
 
 
-def test_list_filters_by_category(tmp_path: Path) -> None:
+def test_list_filters_by_category(
+    tmp_path: Path, client_factory: ClientFactory
+) -> None:
     """GET filters events by the 'category' query parameter."""
     store = DiagnosticStore(str(tmp_path / "diag.json"))
     store.record_event("CI_FAILURE", "failure 1")
     store.record_event("CI_FAILURE", "failure 2")
     store.record_event("OTHER", "other event")
 
-    client = _make_app(store)
+    client = client_factory(diagnostic_store=store, serve_ui=False)
     resp = client.get("/diagnostics/events?category=CI_FAILURE")
     assert resp.status_code == 200
     data = resp.json()
@@ -168,28 +161,32 @@ def test_list_filters_by_category(tmp_path: Path) -> None:
     assert all(e["category"] == "CI_FAILURE" for e in data)
 
 
-def test_list_empty_when_no_events(tmp_path: Path) -> None:
+def test_list_empty_when_no_events(
+    tmp_path: Path, client_factory: ClientFactory
+) -> None:
     """GET returns an empty list when no events exist."""
     store = DiagnosticStore(str(tmp_path / "diag.json"))
-    client = _make_app(store)
+    client = client_factory(diagnostic_store=store, serve_ui=False)
     resp = client.get("/diagnostics/events")
     assert resp.status_code == 200
     assert resp.json() == []
 
 
-def test_list_503_when_store_not_configured() -> None:
+def test_list_503_when_store_not_configured(client_factory: ClientFactory) -> None:
     """GET returns 503 when no diagnostic store is configured."""
-    client = _make_app(store=None)
+    client = client_factory(diagnostic_store=None, serve_ui=False)
     resp = client.get("/diagnostics/events")
     assert resp.status_code == 503
 
 
-def test_list_case_insensitive_category(tmp_path: Path) -> None:
+def test_list_case_insensitive_category(
+    tmp_path: Path, client_factory: ClientFactory
+) -> None:
     """GET category filter is case-insensitive."""
     store = DiagnosticStore(str(tmp_path / "diag.json"))
     store.record_event("CI_FAILURE", "failure")
 
-    client = _make_app(store)
+    client = client_factory(diagnostic_store=store, serve_ui=False)
     resp = client.get("/diagnostics/events?category=ci_failure")
     assert resp.status_code == 200
     data = resp.json()

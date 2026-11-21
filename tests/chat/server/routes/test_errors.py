@@ -19,7 +19,6 @@ from starlette.exceptions import HTTPException
 from starlette.requests import Request
 from starlette.responses import JSONResponse
 from starlette.routing import Route
-from starlette.testclient import TestClient
 
 from robotsix_chat.chat.server.routes.errors import (
     http_exception_handler,
@@ -27,14 +26,15 @@ from robotsix_chat.chat.server.routes.errors import (
     server_error_handler,
     unhandled_exception_handler,
 )
+from tests.conftest import ClientFactory
 
 
-def _build_client(
+def _build_app(
     *,
     with_unhandled_route: bool = False,
     with_http_400_route: bool = False,
-) -> TestClient:
-    """Build a minimal Starlette app with error handlers and return a TestClient.
+) -> Starlette:
+    """Build a minimal Starlette app with error handlers (not wrapped).
 
     ``server_error_handler`` cannot be exercised through the middleware
     stack (``ServerErrorMiddleware`` only uses the *last* of ``500``/
@@ -64,7 +64,7 @@ def _build_client(
             Exception: unhandled_exception_handler,
         },
     )
-    return TestClient(app, raise_server_exceptions=False)
+    return app
 
 
 # ---------------------------------------------------------------------------
@@ -113,9 +113,9 @@ def test_http_exception_handler_non_http_exception() -> None:
     assert data["correlation_id"] == "test-cid-500"
 
 
-def test_http_exception_handler_via_route() -> None:
+def test_http_exception_handler_via_route(client_factory: ClientFactory) -> None:
     """``HTTPException(400)`` raised inside a route hits ``http_exception_handler``."""
-    client = _build_client(with_http_400_route=True)
+    client = client_factory(app=_build_app(with_http_400_route=True))
     resp = client.get("/bad-request")
     assert resp.status_code == 400
     data = resp.json()
@@ -128,9 +128,9 @@ def test_http_exception_handler_via_route() -> None:
 # ---------------------------------------------------------------------------
 
 
-def test_not_found_unmatched_route() -> None:
+def test_not_found_unmatched_route(client_factory: ClientFactory) -> None:
     """Unmatched route returns generic ``{"error": "not found"}`` with 404."""
-    client = _build_client()
+    client = client_factory(app=_build_app())
     resp = client.get("/nonexistent")
     assert resp.status_code == 404
     data = resp.json()
@@ -231,9 +231,9 @@ def test_error_body_non_empty_detail() -> None:
 # ---------------------------------------------------------------------------
 
 
-def test_unhandled_exception_generic_500() -> None:
+def test_unhandled_exception_generic_500(client_factory: ClientFactory) -> None:
     """Non-``HTTPException`` raises return generic 500 with correlation id."""
-    client = _build_client(with_unhandled_route=True)
+    client = client_factory(app=_build_app(with_unhandled_route=True))
     resp = client.get("/custom-raise")
     assert resp.status_code == 500
     data = resp.json()
