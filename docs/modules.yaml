@@ -251,6 +251,11 @@ modules:
       - tests/chat/test_subsessions_e2e.py
       - tests/chat/server/__init__.py
       - tests/chat/server/test_server.py
+      - tests/chat/server/test_server_classes.py
+      - tests/chat/server/test_server_factory.py
+      - tests/chat/server/test_server_http.py
+      - tests/chat/server/test_server_resilience.py
+      - tests/chat/server/test_server_subsessions.py
       - tests/chat/server/test_skill_disclosure.py
       - tests/chat/server/test_datetime_injection.py
       - tests/chat/test_skill_index.py
