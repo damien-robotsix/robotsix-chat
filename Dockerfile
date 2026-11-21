@@ -136,6 +136,7 @@ RUN apt-get update \
         libsqlite3-0="3.46.*" \
         apt="3.0.*" \
         libapt-pkg7.0="3.0.*" \
+        zlib1g="1.3.dfsg+really1.3.1-1+deb13u1" \
     && apt-get install -y --no-install-recommends curl="8.*" gnupg="2.*" \
     && mkdir -p /etc/apt/keyrings \
     && curl -fsSL https://deb.nodesource.com/gpgkey/nodesource-repo.gpg.key \
@@ -144,7 +145,7 @@ RUN apt-get update \
         > /etc/apt/sources.list.d/nodesource.list \
     && apt-get update \
     && apt-get install -y --no-install-recommends nodejs="24.*" \
-    && npm install -g @anthropic-ai/claude-code@2.1.199 \
+    && npm install -g @anthropic-ai/claude-code@2.1.251 \
     && claude --version \
     && apt-get purge -y --auto-remove curl gnupg \
     && apt-get clean \
