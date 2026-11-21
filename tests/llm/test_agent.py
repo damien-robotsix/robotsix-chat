@@ -1610,7 +1610,8 @@ async def test_turn_does_not_bind_a_cli_session_and_carries_history_in_prompt() 
 
     assert handle._build_options is sentinel_builder  # never wrapped
     hist = seen["history"]
-    assert isinstance(hist, list) and len(hist) == 4  # 2 turns × (request, response)
+    assert isinstance(hist, list)
+    assert len(hist) == 4
     assert seen["prompt"] == "third question"
 
 
@@ -1729,10 +1730,10 @@ async def test_activity_events_feed_the_actions_collector() -> None:
             _ = [c async for c in agent.stream("file it", session_id="sess-1")]
 
     assert len(actions) == 2
-    assert actions[0].startswith("create_ticket(") and "T-04d8" in actions[0]
-    assert (
-        actions[1].startswith("merge_pr(") and "ERROR 405 not mergeable" in actions[1]
-    )
+    assert actions[0].startswith("create_ticket(")
+    assert "T-04d8" in actions[0]
+    assert actions[1].startswith("merge_pr(")
+    assert "ERROR 405 not mergeable" in actions[1]
     # all_messages() was consulted but the event-fed log was kept as is.
     assert handle.run is fake_run
 
@@ -1922,7 +1923,8 @@ async def test_named_trace_is_root_above_failover_attempt_span() -> None:
     # The primary (non-failover) attempt succeeds here, so llmio names its
     # attempt span ``llmio.attempt.primary``; only subsequent failover
     # attempts surface as ``llmio.failover.attempt``.
-    assert "chat-turn" in spans and "llmio.attempt.primary" in spans
+    assert "chat-turn" in spans
+    assert "llmio.attempt.primary" in spans
     turn = spans["chat-turn"]
     attempt = spans["llmio.attempt.primary"]
     assert turn.parent is None, "the named turn span must be the trace root"

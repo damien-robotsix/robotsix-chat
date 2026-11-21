@@ -583,7 +583,7 @@ class SubsessionRegistry:
         return self._lifecycle.mark_interrupted(sub_id, summary=summary)
 
     # ------------------------------------------------------------------
-    # delegation: persistence
+    # delegation — persistence
     # ------------------------------------------------------------------
 
     def load_persisted(self) -> list[dict[str, object]]:
@@ -591,7 +591,7 @@ class SubsessionRegistry:
         return self._store.load_persisted()
 
     # ------------------------------------------------------------------
-    # delegation: index / queries
+    # delegation — index / queries
     # ------------------------------------------------------------------
 
     def list_for_owner(self, owner_session_id: str) -> list[SubsessionInfo]:

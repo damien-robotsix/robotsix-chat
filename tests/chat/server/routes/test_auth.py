@@ -50,16 +50,16 @@ def _make_app(auth: MobileAuthSettings) -> Starlette:
 
 def _enabled_auth(**overrides: Any) -> MobileAuthSettings:
     """Return a ``MobileAuthSettings`` with sane defaults for testing."""
-    defaults = dict(
-        enabled=True,
-        tinyauth_url="https://auth.example.com",
-        subject_header="X-Forwarded-User",
-        session_header="X-Forwarded-Session",
-        token_secret=SecretStr("test-secret-key"),
-        token_ttl_seconds=3600,
-        allowed_redirect_domains=["app.example.com"],
-        callback_base_url="https://chat.example.com",
-    )
+    defaults = {
+        "enabled": True,
+        "tinyauth_url": "https://auth.example.com",
+        "subject_header": "X-Forwarded-User",
+        "session_header": "X-Forwarded-Session",
+        "token_secret": SecretStr("test-secret-key"),
+        "token_ttl_seconds": 3600,
+        "allowed_redirect_domains": ["app.example.com"],
+        "callback_base_url": "https://chat.example.com",
+    }
     defaults.update(overrides)
     return MobileAuthSettings(**defaults)
 

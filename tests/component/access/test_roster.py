@@ -65,7 +65,8 @@ def test_fetch_roster_sync_inside_loop_serves_stale_cache_without_blocking(
         # a second call while the refresh is in flight does not start another
         assert roster_mod.fetch_roster_sync(settings) == stale
         task = roster_mod._refresh_task
-        assert task is not None and not task.done()
+        assert task is not None
+        assert not task.done()
         await asyncio.wait_for(refreshed.wait(), 2.0)
         await task
 

@@ -224,7 +224,7 @@ async def _resolve_ticket_ids(
         return {}
 
     if not board_url:
-        return {cid: None for cid in candidate_ids}
+        return dict.fromkeys(candidate_ids)
 
     url = f"{board_url}/tickets"
     headers: dict[str, str] = {"Accept": "application/json"}
@@ -234,7 +234,7 @@ async def _resolve_ticket_ids(
     async with httpx.AsyncClient(timeout=timeout) as client:
         open_ids = await _fetch_ticket_ids(client, url, headers)
         if open_ids is None:
-            return {cid: None for cid in candidate_ids}
+            return dict.fromkeys(candidate_ids)
 
         result = _match_candidates(candidate_ids, open_ids)
         unresolved = [cid for cid, full in result.items() if full is None]

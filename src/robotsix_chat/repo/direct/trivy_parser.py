@@ -64,7 +64,7 @@ _SUMMARY_RE = re.compile(
 )
 
 # Matches the target line (first non-empty line before === separator):
-# "image (os os-version)"
+# for example ``image (os os-version)``
 _TARGET_RE = re.compile(r"^(.+?)\s+\(.*\)\s*$")
 
 # Matches a CVE-like ID (CVE-YYYY-NNNNN) or GHSA-like ID

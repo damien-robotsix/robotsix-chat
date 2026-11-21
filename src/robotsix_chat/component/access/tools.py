@@ -530,13 +530,12 @@ def build_component_access_tools(
                 request_timeout=_timeout,
             )
         except Exception as exc:
-            logger.error(
+            logger.exception(
                 "component_request %s %s %s unexpected error: %s",
                 component_id,
                 method,
                 path,
                 exc,
-                exc_info=True,
             )
             return (
                 f"Error calling {component_id} {method.upper()} {path}: "

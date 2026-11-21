@@ -363,7 +363,9 @@ async def server_error_handler(_request: Request, _exc: Exception) -> JSONRespon
 
     Logs the full traceback so operators can diagnose the root cause.
     """
-    logger.exception("Unhandled server error")
+    # Starlette invokes this handler inside its own ``except`` block, so the
+    # active exception (and its traceback) is available here.
+    logger.exception("Unhandled server error")  # noqa: LOG004
     return JSONResponse(_error_body("internal server error"), status_code=500)
 
 
@@ -375,5 +377,5 @@ async def unhandled_exception_handler(
     Logs the full traceback and returns a generic 500 so no raw
     traceback leaks to the client.
     """
-    logger.exception("Unhandled exception")
+    logger.exception("Unhandled exception")  # noqa: LOG004
     return JSONResponse(_error_body("internal server error"), status_code=500)

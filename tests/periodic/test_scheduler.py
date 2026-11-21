@@ -123,7 +123,8 @@ async def test_refire_close_failure_does_not_block_the_new_firing(tmp_path, capl
     with caplog.at_level("ERROR", logger="robotsix_chat.periodic.scheduler"):
         second = await scheduler.fire("mail-triage")
     await asyncio.sleep(0)
-    assert second is not None and second != first
+    assert second is not None
+    assert second != first
     assert [s[0] for s in submitted] == [first, second]
     assert any("closing previous session" in r.getMessage() for r in caplog.records)
 

@@ -729,7 +729,8 @@ async def test_resume_user_chat_waiting_rerenders_opening_question(
         "Which environment should I deploy to?",
     )
     staged = registry1.get(user_chat.id)
-    assert staged is not None and staged.transcript == []
+    assert staged is not None
+    assert staged.transcript == []
 
     agent = FakeAgent()
     registry2 = SubsessionRegistry(store_path=store_path)

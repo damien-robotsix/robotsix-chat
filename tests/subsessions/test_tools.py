@@ -290,7 +290,8 @@ async def test_spawn_user_chat_dedupes_per_ticket_whatever_the_key() -> None:
     )
     assert panel_id in second
     inbox = env.registry.drain_inbox(panel_id)
-    assert len(inbox) == 1 and "re-raised this decision" in inbox[0].text
+    assert len(inbox) == 1
+    assert "re-raised this decision" in inbox[0].text
     # No ticket id anywhere → ordinary spawn, no dedup applied.
     third = await spawn(
         kind="user_chat", title="Free-form question", instructions="Which colour?"

@@ -170,7 +170,8 @@ async def test_chat_endpoint_streams_tokens() -> None:
     assert done["type"] == SSE_DONE_TYPE
     # The done frame reports the session the turn landed in, so the client
     # can adopt a continuation session after idle-timeout compaction.
-    assert isinstance(done["session_id"], str) and done["session_id"]
+    assert isinstance(done["session_id"], str)
+    assert done["session_id"]
 
 
 @pytest.mark.asyncio
@@ -215,7 +216,8 @@ async def test_chat_endpoint_sends_done_at_end() -> None:
     tail = response.text.rstrip("\r\n").rsplit("data: ", 1)[-1]
     done = json.loads(tail)
     assert done["type"] == SSE_DONE_TYPE
-    assert isinstance(done["session_id"], str) and done["session_id"]
+    assert isinstance(done["session_id"], str)
+    assert done["session_id"]
     assert isinstance(done["timestamp"], int | float)
 
 
@@ -1931,7 +1933,7 @@ async def test_subsessions_transcript_endpoint() -> None:
 
 
 # ---------------------------------------------------------------------------
-# POST /subsessions/{id}/message
+# Tests for POST /subsessions/{id}/message
 # ---------------------------------------------------------------------------
 
 
@@ -1989,7 +1991,7 @@ async def test_subsessions_message_queues_into_inbox_and_transcript() -> None:
 
 
 # ---------------------------------------------------------------------------
-# POST /subsessions/{id}/close
+# Tests for POST /subsessions/{id}/close
 # ---------------------------------------------------------------------------
 
 

@@ -2662,4 +2662,5 @@ def test_reassign_live_user_chats_persists_new_owner(tmp_path: Path) -> None:
     raw = json.loads(store_path.read_text(encoding="utf-8"))
     entries = raw if isinstance(raw, list) else list(raw.values())
     stored = [e for e in entries if e.get("subsession_id") == info.id]
-    assert stored and stored[0]["owner_session_id"] == "run-2"
+    assert stored
+    assert stored[0]["owner_session_id"] == "run-2"

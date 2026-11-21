@@ -156,7 +156,8 @@ async def test_compaction_pushes_summary_to_memory() -> None:
     result = await scheduler.run_once()
     await _drain_background_tasks()
     sessions = result["sessions"]
-    assert isinstance(sessions, list) and sessions[0]["compacted"] is True
+    assert isinstance(sessions, list)
+    assert sessions[0]["compacted"] is True
     assert len(push.pushes) == 1
     p = push.pushes[0]
     assert p["session_id"] == sid
@@ -189,7 +190,8 @@ async def test_no_push_without_memory_push_configured() -> None:
     )
     result = await scheduler.run_once()
     sessions = result["sessions"]
-    assert isinstance(sessions, list) and sessions[0]["compacted"] is True
+    assert isinstance(sessions, list)
+    assert sessions[0]["compacted"] is True
 
 
 async def test_finalize_session_pushes_full_summary() -> None:

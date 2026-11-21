@@ -195,7 +195,8 @@ async def test_push_branch_rejects_invalid_files_json(
     )
     assert "Error" in out3
     assert "exactly one" in out3
-    assert "content_b64" in out3 and "local_path" in out3
+    assert "content_b64" in out3
+    assert "local_path" in out3
 
     # Entry with no content source → rejected.
     out4 = await push_fn(

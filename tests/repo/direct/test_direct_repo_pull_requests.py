@@ -849,7 +849,8 @@ async def test_list_open_prs_resolves_mill_repo_id(
     assert "state:closed" in query
     assert "updated:" not in query
     assert "for damien-robotsix/robotsix-central-deploy — 1 total" in out
-    assert "#821" in out and "[merged]" in out
+    assert "#821" in out
+    assert "[merged]" in out
 
 
 @pytest.mark.asyncio

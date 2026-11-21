@@ -65,7 +65,8 @@ async def test_fetch_extracts_and_summarizes(manager: WorkspaceManager) -> None:
     summary = await manager.fetch("acme/widget")
     assert "acme--widget--default" in summary
     assert "4 files" in summary
-    assert "README.md" in summary and "src/" in summary
+    assert "README.md" in summary
+    assert "src/" in summary
 
 
 @respx.mock

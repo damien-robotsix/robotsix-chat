@@ -70,10 +70,12 @@ def test_style_directive_documents_ticket_reference_rule() -> None:
     """
     directive = _load_prompt_style()
     assert directive, "Style directive is empty."
-    assert "full ID" in directive and "short name" in directive, (
+    _rule_msg = (
         f"Style directive in {_STYLE_PATH} must name the ticket reference "
         "rule (full ID + short name)."
     )
+    assert "full ID" in directive, _rule_msg
+    assert "short name" in directive, _rule_msg
     assert "never refer to a ticket by a bare truncated suffix" in directive, (
         f"Style directive in {_STYLE_PATH} must forbid bare truncated ticket suffixes."
     )

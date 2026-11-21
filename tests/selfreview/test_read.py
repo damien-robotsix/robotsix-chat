@@ -54,7 +54,7 @@ def _seed_store(store: ConversationStore) -> None:
 
 
 # ---------------------------------------------------------------------------
-# ConversationStore.recent_activity()
+# Tests for ConversationStore.recent_activity()
 # ---------------------------------------------------------------------------
 
 

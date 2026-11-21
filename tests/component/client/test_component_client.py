@@ -96,7 +96,7 @@ async def test_list_component_agents_empty() -> None:
 
 
 # ---------------------------------------------------------------------------
-# get_component_telemetry (monitor)
+# Tests for get_component_telemetry (monitor)
 # ---------------------------------------------------------------------------
 
 
@@ -128,7 +128,7 @@ async def test_get_component_telemetry_unknown_base_url() -> None:
 
 
 # ---------------------------------------------------------------------------
-# get_component_config (config-get)
+# Tests for get_component_config (config-get)
 # ---------------------------------------------------------------------------
 
 
@@ -159,7 +159,7 @@ async def test_get_component_config_unknown_base_url() -> None:
 
 
 # ---------------------------------------------------------------------------
-# set_component_config (config-set)
+# Tests for set_component_config (config-set)
 # ---------------------------------------------------------------------------
 
 

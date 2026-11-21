@@ -55,7 +55,8 @@ def _store_with_session(turns: int) -> tuple[ConversationStore, str]:
 
 def _one(result: dict[str, object]) -> dict[str, object]:
     sessions = result["sessions"]
-    assert isinstance(sessions, list) and len(sessions) == 1
+    assert isinstance(sessions, list)
+    assert len(sessions) == 1
     return sessions[0]
 
 
@@ -109,7 +110,8 @@ def test_compaction_keeps_last_runs_verbatim_and_out_of_summary() -> None:
     assert agent.calls == 1
     prompt = agent.prompts[0]
     assert "user 2" in prompt
-    assert "user 3" not in prompt and "assistant 7" not in prompt
+    assert "user 3" not in prompt
+    assert "assistant 7" not in prompt
     # Replay = summary + last 5 runs verbatim; UI transcript untouched.
     replay = store.agent_history(sid)
     assert len(replay) == 6

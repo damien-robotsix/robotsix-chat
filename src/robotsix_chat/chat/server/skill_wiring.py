@@ -367,7 +367,7 @@ def build_skill_tools(settings: Settings) -> list[Callable[..., Any]]:
                 return body or f"Skill {name!r} is registered but its body is empty."
 
         # All retries exhausted — try the cache.
-        logger.warning("read_skill(%s) failed after 3 attempts", name, exc_info=True)
+        logger.warning("read_skill(%s) failed after 3 attempts", name)
         cached = _skill_body_cache.get(name)
         if cached:
             logger.info("read_skill(%s) serving stale cached body", name)

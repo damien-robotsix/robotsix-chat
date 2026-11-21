@@ -104,8 +104,10 @@ def test_actions_from_messages_pairs_calls_with_returns() -> None:
     ]
     entries = actions_from_messages(messages)
     assert len(entries) == 2
-    assert entries[0].startswith("create_ticket(") and "T-04d8" in entries[0]
-    assert entries[1].startswith("merge_pr(") and "ERROR" in entries[1]
+    assert entries[0].startswith("create_ticket(")
+    assert "T-04d8" in entries[0]
+    assert entries[1].startswith("merge_pr(")
+    assert "ERROR" in entries[1]
 
 
 def test_actions_from_messages_is_empty_without_tool_calls() -> None:
