@@ -288,6 +288,19 @@ linters directly on the files you changed instead, for example `uv run ruff chec
 **Rationale:** Trace `008c9c53` (ticket 20261029T112947Z-…-5105) spent a $1.22, 72-observation
 implement pass partly on a failed full pre-commit run before it fell back to individual linters.
 
+**Rule:** When adding a Debian trixie base-image package to the Dockerfile's
+`apt-get install --only-upgrade` pin list in the image-scan step, always keep the full
+epoch-prefixed version glob (e.g. `zlib1g="1:1.3.*"`, `apt="3.0.*"`, `libapt-pkg7.0="3.0.*"`). Never
+hand-type an epoch-less exact version string without first confirming the package's Debian epoch
+(many trixie packages like zlib1g use `1:`). An unresolvable pin aborts the docker build and is only
+caught in CI's fixing_ci cycle, since the sandbox cannot run `docker build`.
+
+**Rationale:** Ticket 20261121T013831Z (ci_fix dependency run, PR #2319): the implement pass shipped
+`zlib1g="1.3.dfsg+really1.3.1-1+deb13u1"` (epoch-less), which Debian trixie cannot resolve, aborting
+the image-scan docker build across all retries and requiring a fixing_ci correction to
+`zlib1g="1:1.3.*"`. The Dockerfile's existing `X.Y.*`-glob convention (perl-base, libsqlite3-0, apt,
+libapt-pkg7.0) already implies this; the rule makes the epoch requirement explicit up front.
+
 ## Testing conventions
 
 Tests for module `robotsix_chat.<module>` live under `tests/<module>/`, mirroring the per-module
