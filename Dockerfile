@@ -5,7 +5,7 @@
 # system interpreter (/usr/local), exactly what the runtime stage copies.
 # Standard robotsix Dockerfile pattern — see robotsix-standards, docker page.
 # ---------------------------------------------------------------------------
-FROM python:3.14-slim@sha256:cad9a2c871761c413caa6fdd6441c783451e740a48aaeba60ae62a8b53525ef6 AS builder
+FROM python:3.15-slim@sha256:65a65fc7b30b06cb6df4930fd4650697cb23f4c2698ab81fc87e4b031bc36928 AS builder
 
 SHELL ["/bin/bash", "-o", "pipefail", "-c"]
 
@@ -85,7 +85,7 @@ RUN apk add --no-cache git && \
 # builder — no uv, no git, no compilers. Node.js + the claude CLI are the one
 # genuine runtime system dependency (claude-sdk transport spawns the CLI).
 # ---------------------------------------------------------------------------
-FROM python:3.14-slim@sha256:cad9a2c871761c413caa6fdd6441c783451e740a48aaeba60ae62a8b53525ef6 AS runtime
+FROM python:3.15-slim@sha256:65a65fc7b30b06cb6df4930fd4650697cb23f4c2698ab81fc87e4b031bc36928 AS runtime
 
 SHELL ["/bin/bash", "-o", "pipefail", "-c"]
 
