@@ -372,11 +372,13 @@ def test_reconcile_upgrades_stale_former_default(
     stale = "You are a helpful assistant. STALE FORMER DEFAULT — v0."
     stale_sha = hashlib.sha256(stale.encode()).hexdigest()
 
-    import robotsix_chat.config.settings as settings_mod
+    import robotsix_chat.config.settings_loader as loader_mod
 
-    # Pretend ``stale`` was once a governed default.
+    # Pretend ``stale`` was once a governed default.  The reconciler reads
+    # ``KNOWN_SYSTEM_PROMPT_SHA256S`` from its own module (the split moved it
+    # to ``settings_loader``), so that module's global is patched here.
     monkeypatch.setattr(
-        settings_mod,
+        loader_mod,
         "KNOWN_SYSTEM_PROMPT_SHA256S",
         frozenset({stale_sha}),
     )
