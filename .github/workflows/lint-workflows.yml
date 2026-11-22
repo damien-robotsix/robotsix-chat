@@ -33,6 +33,7 @@ jobs:
     with:
       run-actionlint: false  # run locally below to avoid Checks API dependency
       run-zizmor: true
+      dockerfiles: Dockerfile  # external FROM stages must be digest-pinned (lint_dockerfile_pins.py)
       sarif-workflows: "ci.yml scan-container.yml"
 
   actionlint:
