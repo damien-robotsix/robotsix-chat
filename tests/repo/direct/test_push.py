@@ -3,6 +3,7 @@
 from __future__ import annotations
 
 import json
+from collections.abc import Callable
 from typing import Any
 
 import httpx
@@ -652,22 +653,12 @@ async def test_push_files_to_branch_commits_creates_and_deletes(
 
 @pytest.mark.asyncio
 async def test_push_patch_to_pr_branch_rejects_non_blocked_ticket(
-    respx_mock: respx.MockRouter,
+    mock_installation_scope: Callable[..., respx.Route],
+    mock_board_ticket: Callable[[str, dict[str, Any]], respx.Route],
 ) -> None:
     """Ticket not in BLOCKED → push_patch_to_pr_branch is refused."""
-    respx_mock.get(
-        url__startswith="https://api.github.com/installation/repositories"
-    ).mock(
-        return_value=httpx.Response(
-            200,
-            text=json.dumps({"repositories": [{"full_name": "org/repo"}]}),
-        )
-    )
-    respx_mock.get("http://127.0.0.1:8077/tickets/t-ppr1").mock(
-        return_value=httpx.Response(
-            200, text=json.dumps({"id": "t-ppr1", "state": "draft"})
-        )
-    )
+    mock_installation_scope()
+    mock_board_ticket("t-ppr1", {"id": "t-ppr1", "state": "draft"})
 
     tools = build_direct_repo_tools(_settings())
     fn = [t for t in tools if t.__name__ == "push_patch_to_pr_branch"][0]
@@ -686,22 +677,12 @@ async def test_push_patch_to_pr_branch_rejects_non_blocked_ticket(
 
 @pytest.mark.asyncio
 async def test_push_patch_to_pr_branch_rejects_out_of_scope(
-    respx_mock: respx.MockRouter,
+    mock_installation_scope: Callable[..., respx.Route],
+    mock_board_ticket: Callable[[str, dict[str, Any]], respx.Route],
 ) -> None:
     """Repo not in installation scope → push_patch_to_pr_branch is refused."""
-    respx_mock.get(
-        url__startswith="https://api.github.com/installation/repositories"
-    ).mock(
-        return_value=httpx.Response(
-            200,
-            text=json.dumps({"repositories": [{"full_name": "other/repo"}]}),
-        )
-    )
-    respx_mock.get("http://127.0.0.1:8077/tickets/t-ppr2").mock(
-        return_value=httpx.Response(
-            200, text=json.dumps({"id": "t-ppr2", "state": "blocked"})
-        )
-    )
+    mock_installation_scope(["other/repo"])
+    mock_board_ticket("t-ppr2", {"id": "t-ppr2", "state": "blocked"})
 
     tools = build_direct_repo_tools(_settings())
     fn = [t for t in tools if t.__name__ == "push_patch_to_pr_branch"][0]
@@ -719,21 +700,13 @@ async def test_push_patch_to_pr_branch_rejects_out_of_scope(
 @pytest.mark.asyncio
 async def test_push_patch_to_pr_branch_allows_blocked_ticket(
     respx_mock: respx.MockRouter,
+    mock_installation_scope: Callable[..., respx.Route],
+    mock_board_ticket: Callable[[str, dict[str, Any]], respx.Route],
+    mock_repo_catchalls: Callable[[], None],
 ) -> None:
     """Ticket is BLOCKED → push_patch_to_pr_branch proceeds to push."""
-    respx_mock.get(
-        url__startswith="https://api.github.com/installation/repositories"
-    ).mock(
-        return_value=httpx.Response(
-            200,
-            text=json.dumps({"repositories": [{"full_name": "org/repo"}]}),
-        )
-    )
-    respx_mock.get("http://127.0.0.1:8077/tickets/t-ppr3").mock(
-        return_value=httpx.Response(
-            200, text=json.dumps({"id": "t-ppr3", "state": "blocked"})
-        )
-    )
+    mock_installation_scope()
+    mock_board_ticket("t-ppr3", {"id": "t-ppr3", "state": "blocked"})
     # PR fetch: return a PR with a head branch in the same repo
     respx_mock.get("https://api.github.com/repos/org/repo/pulls/42").mock(
         return_value=httpx.Response(
@@ -752,15 +725,7 @@ async def test_push_patch_to_pr_branch_allows_blocked_ticket(
     )
     # Catch-all for push_patched_file internal calls (get file content,
     # create blobs/trees/commits, update ref)
-    respx_mock.get(
-        url__startswith="https://api.github.com/repos/org/repo/contents/"
-    ).mock(return_value=httpx.Response(200, text="{}"))
-    respx_mock.post(url__startswith="https://api.github.com/repos/org/repo").mock(
-        return_value=httpx.Response(200, text="{}")
-    )
-    respx_mock.patch(url__startswith="https://api.github.com/repos/org/repo").mock(
-        return_value=httpx.Response(200, text="{}")
-    )
+    mock_repo_catchalls()
 
     tools = build_direct_repo_tools(_settings())
     fn = [t for t in tools if t.__name__ == "push_patch_to_pr_branch"][0]
@@ -779,21 +744,12 @@ async def test_push_patch_to_pr_branch_allows_blocked_ticket(
 @pytest.mark.asyncio
 async def test_push_patch_to_pr_branch_rejects_cross_repo_pr(
     respx_mock: respx.MockRouter,
+    mock_installation_scope: Callable[..., respx.Route],
+    mock_board_ticket: Callable[[str, dict[str, Any]], respx.Route],
 ) -> None:
     """PR head branch belongs to a different repo → refused."""
-    respx_mock.get(
-        url__startswith="https://api.github.com/installation/repositories"
-    ).mock(
-        return_value=httpx.Response(
-            200,
-            text=json.dumps({"repositories": [{"full_name": "org/repo"}]}),
-        )
-    )
-    respx_mock.get("http://127.0.0.1:8077/tickets/t-ppr4").mock(
-        return_value=httpx.Response(
-            200, text=json.dumps({"id": "t-ppr4", "state": "blocked"})
-        )
-    )
+    mock_installation_scope()
+    mock_board_ticket("t-ppr4", {"id": "t-ppr4", "state": "blocked"})
     # PR head is from a fork (different repo)
     respx_mock.get("https://api.github.com/repos/org/repo/pulls/42").mock(
         return_value=httpx.Response(
@@ -828,21 +784,12 @@ async def test_push_patch_to_pr_branch_rejects_cross_repo_pr(
 @pytest.mark.asyncio
 async def test_push_patch_to_pr_branch_handles_pr_fetch_error(
     respx_mock: respx.MockRouter,
+    mock_installation_scope: Callable[..., respx.Route],
+    mock_board_ticket: Callable[[str, dict[str, Any]], respx.Route],
 ) -> None:
     """PR fetch fails → returns error message."""
-    respx_mock.get(
-        url__startswith="https://api.github.com/installation/repositories"
-    ).mock(
-        return_value=httpx.Response(
-            200,
-            text=json.dumps({"repositories": [{"full_name": "org/repo"}]}),
-        )
-    )
-    respx_mock.get("http://127.0.0.1:8077/tickets/t-ppr5").mock(
-        return_value=httpx.Response(
-            200, text=json.dumps({"id": "t-ppr5", "state": "blocked"})
-        )
-    )
+    mock_installation_scope()
+    mock_board_ticket("t-ppr5", {"id": "t-ppr5", "state": "blocked"})
     respx_mock.get("https://api.github.com/repos/org/repo/pulls/99").mock(
         return_value=httpx.Response(404, text="Not Found")
     )
@@ -864,14 +811,12 @@ async def test_push_patch_to_pr_branch_handles_pr_fetch_error(
 @pytest.mark.asyncio
 async def test_push_patch_to_pr_branch_bypasses_scope_with_component_request(
     respx_mock: respx.MockRouter,
+    mock_board_ticket: Callable[[str, dict[str, Any]], respx.Route],
+    mock_repo_catchalls: Callable[[], None],
 ) -> None:
     """Scope check is bypassed when component_request is available."""
     # No installation/repositories mock — would fail scope check if it ran
-    respx_mock.get("http://127.0.0.1:8077/tickets/t-ppr6").mock(
-        return_value=httpx.Response(
-            200, text=json.dumps({"id": "t-ppr6", "state": "blocked"})
-        )
-    )
+    mock_board_ticket("t-ppr6", {"id": "t-ppr6", "state": "blocked"})
     respx_mock.get("https://api.github.com/repos/org/repo/pulls/42").mock(
         return_value=httpx.Response(
             200,
@@ -887,15 +832,7 @@ async def test_push_patch_to_pr_branch_bypasses_scope_with_component_request(
             ),
         )
     )
-    respx_mock.get(
-        url__startswith="https://api.github.com/repos/org/repo/contents/"
-    ).mock(return_value=httpx.Response(200, text="{}"))
-    respx_mock.post(url__startswith="https://api.github.com/repos/org/repo").mock(
-        return_value=httpx.Response(200, text="{}")
-    )
-    respx_mock.patch(url__startswith="https://api.github.com/repos/org/repo").mock(
-        return_value=httpx.Response(200, text="{}")
-    )
+    mock_repo_catchalls()
 
     async def _mock_component_request_blocked(
         component: str, method: str, path: str
@@ -928,21 +865,13 @@ async def test_push_patch_to_pr_branch_available_by_default() -> None:
 @pytest.mark.asyncio
 async def test_push_patch_to_pr_branch_uses_custom_commit_message(
     respx_mock: respx.MockRouter,
+    mock_installation_scope: Callable[..., respx.Route],
+    mock_board_ticket: Callable[[str, dict[str, Any]], respx.Route],
+    mock_repo_catchalls: Callable[[], None],
 ) -> None:
     """Custom commit_message is passed through to the push."""
-    respx_mock.get(
-        url__startswith="https://api.github.com/installation/repositories"
-    ).mock(
-        return_value=httpx.Response(
-            200,
-            text=json.dumps({"repositories": [{"full_name": "org/repo"}]}),
-        )
-    )
-    respx_mock.get("http://127.0.0.1:8077/tickets/t-ppr7").mock(
-        return_value=httpx.Response(
-            200, text=json.dumps({"id": "t-ppr7", "state": "blocked"})
-        )
-    )
+    mock_installation_scope()
+    mock_board_ticket("t-ppr7", {"id": "t-ppr7", "state": "blocked"})
     respx_mock.get("https://api.github.com/repos/org/repo/pulls/42").mock(
         return_value=httpx.Response(
             200,
@@ -958,15 +887,7 @@ async def test_push_patch_to_pr_branch_uses_custom_commit_message(
             ),
         )
     )
-    respx_mock.get(
-        url__startswith="https://api.github.com/repos/org/repo/contents/"
-    ).mock(return_value=httpx.Response(200, text="{}"))
-    respx_mock.post(url__startswith="https://api.github.com/repos/org/repo").mock(
-        return_value=httpx.Response(200, text="{}")
-    )
-    respx_mock.patch(url__startswith="https://api.github.com/repos/org/repo").mock(
-        return_value=httpx.Response(200, text="{}")
-    )
+    mock_repo_catchalls()
 
     tools = build_direct_repo_tools(_settings())
     fn = [t for t in tools if t.__name__ == "push_patch_to_pr_branch"][0]
