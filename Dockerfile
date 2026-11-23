@@ -62,7 +62,7 @@ RUN --mount=type=cache,target=/root/.cache/uv \
 # 'idealTree' already exists" error when run from the filesystem root (/), so
 # install from a real project directory (/build) instead.
 # ---------------------------------------------------------------------------
-FROM node:26-alpine AS ui
+FROM node:26-alpine@sha256:6bd9ab43c0ec0190ca7b2d193906cb8b7edf6e7f4afa43ddeccd6452710bffb5 AS ui
 # Pinned to the robotsix-ui main commit after PR #190 (ConfigPanel: field
 # descriptions only in the hover tooltip (#189); object-typed settings edited
 # as JSON instead of "[object Object]" (#190)).
