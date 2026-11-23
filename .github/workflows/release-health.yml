@@ -38,6 +38,7 @@ jobs:
   verify-permissions:
     name: Verify release-please prerequisites
     runs-on: ubuntu-latest
+    timeout-minutes: 15
     permissions:
       contents: read  # baseline; the App token is minted from App credentials, not GITHUB_TOKEN
     steps:
@@ -77,6 +78,7 @@ jobs:
   monitor-release-please:
     name: Monitor release-please status
     runs-on: ubuntu-latest
+    timeout-minutes: 15
     permissions:
       actions: read  # list workflow runs
     steps:

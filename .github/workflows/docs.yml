@@ -17,6 +17,7 @@ jobs:
   build:
     name: Build docs
     runs-on: ubuntu-latest
+    timeout-minutes: 15
     steps:
       - name: Harden Runner
         uses: step-security/harden-runner@dc2769abcc0fcfbadfc1df54081c1608579ef6b2  # v2.22.2
@@ -40,6 +41,7 @@ jobs:
     needs: build
     if: github.event_name != 'pull_request'
     runs-on: ubuntu-latest
+    timeout-minutes: 15
     permissions:
       pages: write    # deploy the built site to GitHub Pages
       id-token: write  # OIDC token for the Pages deployment

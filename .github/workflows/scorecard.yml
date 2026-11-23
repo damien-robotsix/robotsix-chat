@@ -27,6 +27,7 @@ jobs:
     # protection rule that referenced the old one.
     name: openssf-scorecard
     runs-on: ubuntu-latest
+    timeout-minutes: 15
     permissions:
       actions: read  # scorecard reads workflow runs
       contents: read  # checkout
