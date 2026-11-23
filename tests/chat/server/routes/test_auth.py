@@ -5,47 +5,14 @@ from __future__ import annotations
 from typing import Any
 
 from pydantic import SecretStr
-from starlette.applications import Starlette
-from starlette.exceptions import HTTPException
-from starlette.routing import Route
 
 from robotsix_chat.chat.server.routes.auth import (
     _domain_allowed,
     _sign_token,
     _verify_token,
-    auth_callback_endpoint,
-    auth_login_endpoint,
-    mobile_token_endpoint,
-)
-from robotsix_chat.chat.server.routes.errors import (
-    http_exception_handler,
-    not_found_handler,
-    unhandled_exception_handler,
 )
 from robotsix_chat.config.models import MobileAuthSettings
 from tests.conftest import ClientFactory
-
-
-def _make_app(auth: MobileAuthSettings) -> Starlette:
-    """Build a minimal Starlette app with the auth endpoints wired."""
-    app = Starlette(
-        routes=[
-            Route("/auth/login", auth_login_endpoint, methods=["GET"]),
-            Route("/auth/callback", auth_callback_endpoint, methods=["GET"]),
-            Route(
-                "/chat/auth/mobile-token",
-                mobile_token_endpoint,
-                methods=["POST"],
-            ),
-        ],
-        exception_handlers={
-            HTTPException: http_exception_handler,
-            404: not_found_handler,
-            Exception: unhandled_exception_handler,
-        },
-    )
-    app.state.mobile_auth = auth
-    return app
 
 
 def _enabled_auth(**overrides: Any) -> MobileAuthSettings:
@@ -135,7 +102,7 @@ class TestAuthLogin:
     def test_redirects_to_tinyauth(self, client_factory: ClientFactory) -> None:
         """Valid redirect_to triggers tinyauth redirect."""
         auth = _enabled_auth()
-        client = client_factory(app=_make_app(auth))
+        client = client_factory(mobile_auth=auth)
         resp = client.get(
             "/auth/login",
             params={"redirect_to": "https://app.example.com/callback"},
@@ -152,7 +119,7 @@ class TestAuthLogin:
     ) -> None:
         """Missing redirect_to parameter returns 400."""
         auth = _enabled_auth()
-        client = client_factory(app=_make_app(auth))
+        client = client_factory(mobile_auth=auth)
         resp = client.get("/auth/login")
         assert resp.status_code == 400
         assert "redirect_to" in resp.json()["error"]
@@ -160,7 +127,7 @@ class TestAuthLogin:
     def test_disallowed_domain_returns_400(self, client_factory: ClientFactory) -> None:
         """Domain not in allowlist returns 400."""
         auth = _enabled_auth()
-        client = client_factory(app=_make_app(auth))
+        client = client_factory(mobile_auth=auth)
         resp = client.get(
             "/auth/login",
             params={"redirect_to": "https://evil.com/steal"},
@@ -171,7 +138,7 @@ class TestAuthLogin:
     def test_disabled_returns_404(self, client_factory: ClientFactory) -> None:
         """Disabled mobile auth returns 404."""
         auth = MobileAuthSettings(enabled=False)
-        client = client_factory(app=_make_app(auth))
+        client = client_factory(mobile_auth=auth)
         resp = client.get(
             "/auth/login",
             params={"redirect_to": "https://app.example.com/callback"},
@@ -190,8 +157,7 @@ class TestAuthCallback:
     def test_redirects_to_app(self, client_factory: ClientFactory) -> None:
         """Valid callback redirects to the app with a signed token."""
         auth = _enabled_auth()
-        app = _make_app(auth)
-        client = client_factory(app=app)
+        client = client_factory(mobile_auth=auth)
         resp = client.get(
             "/auth/callback",
             params={"redirect_to": "https://app.example.com/done"},
@@ -214,8 +180,7 @@ class TestAuthCallback:
     ) -> None:
         """Token is appended without clobbering existing query params."""
         auth = _enabled_auth()
-        app = _make_app(auth)
-        client = client_factory(app=app)
+        client = client_factory(mobile_auth=auth)
         resp = client.get(
             "/auth/callback",
             params={"redirect_to": "https://app.example.com/done?foo=bar"},
@@ -234,7 +199,7 @@ class TestAuthCallback:
     def test_empty_secret_returns_500(self, client_factory: ClientFactory) -> None:
         """Empty token_secret returns 500 from callback."""
         auth = _enabled_auth(token_secret=SecretStr(""))
-        client = client_factory(app=_make_app(auth))
+        client = client_factory(mobile_auth=auth)
         resp = client.get(
             "/auth/callback",
             params={"redirect_to": "https://app.example.com/done"},
@@ -245,7 +210,7 @@ class TestAuthCallback:
     def test_missing_header_returns_401(self, client_factory: ClientFactory) -> None:
         """Missing identity header returns 401."""
         auth = _enabled_auth()
-        client = client_factory(app=_make_app(auth))
+        client = client_factory(mobile_auth=auth)
         resp = client.get(
             "/auth/callback",
             params={"redirect_to": "https://app.example.com/done"},
@@ -258,7 +223,7 @@ class TestAuthCallback:
     ) -> None:
         """Missing redirect_to returns 400."""
         auth = _enabled_auth()
-        client = client_factory(app=_make_app(auth))
+        client = client_factory(mobile_auth=auth)
         resp = client.get(
             "/auth/callback",
             headers={"X-Forwarded-User": "alice"},
@@ -268,7 +233,7 @@ class TestAuthCallback:
     def test_disallowed_domain_returns_400(self, client_factory: ClientFactory) -> None:
         """Domain not in allowlist returns 400."""
         auth = _enabled_auth()
-        client = client_factory(app=_make_app(auth))
+        client = client_factory(mobile_auth=auth)
         resp = client.get(
             "/auth/callback",
             params={"redirect_to": "https://evil.com/steal"},
@@ -279,7 +244,7 @@ class TestAuthCallback:
     def test_disabled_returns_404(self, client_factory: ClientFactory) -> None:
         """Disabled mobile auth returns 404."""
         auth = MobileAuthSettings(enabled=False)
-        client = client_factory(app=_make_app(auth))
+        client = client_factory(mobile_auth=auth)
         resp = client.get(
             "/auth/callback",
             params={"redirect_to": "https://app.example.com/done"},
@@ -299,7 +264,7 @@ class TestMobileToken:
     def test_issued_token(self, client_factory: ClientFactory) -> None:
         """Valid identity header issues a signed token."""
         auth = _enabled_auth()
-        client = client_factory(app=_make_app(auth))
+        client = client_factory(mobile_auth=auth)
         resp = client.post(
             "/chat/auth/mobile-token",
             headers={"X-Forwarded-User": "alice"},
@@ -315,7 +280,7 @@ class TestMobileToken:
     def test_missing_header_returns_401(self, client_factory: ClientFactory) -> None:
         """Missing identity header returns 401."""
         auth = _enabled_auth()
-        client = client_factory(app=_make_app(auth))
+        client = client_factory(mobile_auth=auth)
         resp = client.post("/chat/auth/mobile-token")
         assert resp.status_code == 401
         assert "identity header" in resp.json()["error"]
@@ -323,7 +288,7 @@ class TestMobileToken:
     def test_disabled_returns_404(self, client_factory: ClientFactory) -> None:
         """Disabled mobile auth returns 404."""
         auth = MobileAuthSettings(enabled=False)
-        client = client_factory(app=_make_app(auth))
+        client = client_factory(mobile_auth=auth)
         resp = client.post(
             "/chat/auth/mobile-token",
             headers={"X-Forwarded-User": "alice"},
@@ -333,7 +298,7 @@ class TestMobileToken:
     def test_custom_subject_header(self, client_factory: ClientFactory) -> None:
         """Custom subject_header is respected."""
         auth = _enabled_auth(subject_header="X-Custom-User")
-        client = client_factory(app=_make_app(auth))
+        client = client_factory(mobile_auth=auth)
         resp = client.post(
             "/chat/auth/mobile-token",
             headers={"X-Custom-User": "bob"},
@@ -344,7 +309,7 @@ class TestMobileToken:
     def test_empty_secret_returns_500(self, client_factory: ClientFactory) -> None:
         """Empty token_secret returns 500."""
         auth = _enabled_auth(token_secret=SecretStr(""))
-        client = client_factory(app=_make_app(auth))
+        client = client_factory(mobile_auth=auth)
         resp = client.post(
             "/chat/auth/mobile-token",
             headers={"X-Forwarded-User": "alice"},
@@ -354,7 +319,7 @@ class TestMobileToken:
     def test_body_token_fallback(self, client_factory: ClientFactory) -> None:
         """Valid signed token in body (no header) returns 200."""
         auth = _enabled_auth()
-        client = client_factory(app=_make_app(auth))
+        client = client_factory(mobile_auth=auth)
         # Pre-sign a token the way the callback endpoint would.
         signed = _sign_token("alice", "test-secret-key", 3600)
         resp = client.post(
@@ -371,7 +336,7 @@ class TestMobileToken:
     ) -> None:
         """Invalid signed token in body + no header returns 401."""
         auth = _enabled_auth()
-        client = client_factory(app=_make_app(auth))
+        client = client_factory(mobile_auth=auth)
         resp = client.post(
             "/chat/auth/mobile-token",
             json={"token": "bad|token|value"},
@@ -383,7 +348,7 @@ class TestMobileToken:
     ) -> None:
         """Empty body + no header returns 401."""
         auth = _enabled_auth()
-        client = client_factory(app=_make_app(auth))
+        client = client_factory(mobile_auth=auth)
         resp = client.post(
             "/chat/auth/mobile-token",
             json={},
@@ -395,7 +360,7 @@ class TestMobileToken:
     ) -> None:
         """Edge header identity takes precedence over body token."""
         auth = _enabled_auth()
-        client = client_factory(app=_make_app(auth))
+        client = client_factory(mobile_auth=auth)
         signed = _sign_token("bob", "test-secret-key", 3600)
         resp = client.post(
             "/chat/auth/mobile-token",
@@ -419,7 +384,7 @@ class TestAuthMetrics:
         from robotsix_chat.chat.server.metrics import AUTH_LOGIN_REQUESTS
 
         auth = _enabled_auth()
-        client = client_factory(app=_make_app(auth))
+        client = client_factory(mobile_auth=auth)
 
         # Get initial value
         initial = AUTH_LOGIN_REQUESTS.labels(status="302")._value.get()
@@ -442,7 +407,7 @@ class TestAuthMetrics:
         )
 
         auth = _enabled_auth()
-        client = client_factory(app=_make_app(auth))
+        client = client_factory(mobile_auth=auth)
 
         initial_rejections = REDIRECT_VALIDATION_REJECTIONS._value.get()
         initial_400 = AUTH_LOGIN_REQUESTS.labels(status="400")._value.get()
@@ -465,7 +430,7 @@ class TestAuthMetrics:
         )
 
         auth = _enabled_auth()
-        client = client_factory(app=_make_app(auth))
+        client = client_factory(mobile_auth=auth)
 
         initial_200 = MOBILE_TOKEN_EXCHANGE_REQUESTS.labels(status="200")._value.get()
         initial_issuance = TOKEN_ISSUANCE_EVENTS._value.get()
@@ -491,7 +456,7 @@ class TestAuthMetrics:
         )
 
         auth = _enabled_auth()
-        client = client_factory(app=_make_app(auth))
+        client = client_factory(mobile_auth=auth)
 
         initial_401 = MOBILE_TOKEN_EXCHANGE_REQUESTS.labels(status="401")._value.get()
         initial_failures = TOKEN_VERIFICATION_FAILURES.labels(

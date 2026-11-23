@@ -7,7 +7,7 @@ from collections.abc import AsyncIterator, Callable
 from contextlib import asynccontextmanager
 from dataclasses import dataclass
 from pathlib import Path
-from typing import Any
+from typing import TYPE_CHECKING, Any
 
 # Ensure locally-installed packages (asgi-correlation-id etc.) are
 # importable before any application code is loaded.
@@ -56,6 +56,9 @@ def _reset_feedback_repo_cache() -> Any:
 
 
 from robotsix_chat.chat.server import create_app  # noqa: E402
+
+if TYPE_CHECKING:
+    from robotsix_chat.config.models import MobileAuthSettings
 
 
 class MockAgent:
@@ -164,11 +167,14 @@ def client_factory() -> ClientFactory:
     builds ``create_app`` around a fresh :class:`MockAgent` (extra keyword
     arguments are forwarded to ``create_app``), so route tests stop
     re-implementing the ``create_app(agent)`` + ``TestClient`` wrapper per
-    module. Pass a pre-built ``app`` to wrap a minimal test app instead
-    (the auth and error-handler suites stand up their own Starlette apps).
-    ``raise_server_exceptions`` defaults to ``False`` — the failure-mode
-    semantics the per-module helpers all encoded: error responses are
-    observed, not exceptions raised into the test.
+    module. Pass a pre-built ``app`` to wrap a minimal test app instead.
+    Dependency overrides ``create_app`` accepts (``mobile_auth``, and any
+    other ``create_app`` keyword) are forwarded as first-class keyword
+    arguments — the auth suite builds its auth-injected app via
+    ``client_factory(mobile_auth=auth)`` instead of standing up its own
+    Starlette app. ``raise_server_exceptions`` defaults to ``False`` — the
+    failure-mode semantics the per-module helpers all encoded: error
+    responses are observed, not exceptions raised into the test.
     """
 
     def _make_client(
@@ -176,6 +182,7 @@ def client_factory() -> ClientFactory:
         *,
         tokens: list[str] | None = None,
         error: Exception | None = None,
+        mobile_auth: MobileAuthSettings | None = None,
         raise_server_exceptions: bool = False,
         **create_app_kwargs: Any,
     ) -> TestClient:
@@ -185,6 +192,8 @@ def client_factory() -> ClientFactory:
                 agent_kwargs["tokens"] = tokens
             if error is not None:
                 agent_kwargs["error"] = error
+            if mobile_auth is not None:
+                create_app_kwargs["mobile_auth"] = mobile_auth
             app = create_app(MockAgent(**agent_kwargs), **create_app_kwargs)
         return TestClient(app, raise_server_exceptions=raise_server_exceptions)
 
